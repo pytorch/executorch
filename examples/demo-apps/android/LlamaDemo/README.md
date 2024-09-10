@@ -16,7 +16,7 @@ This app demonstrates the use of the LLaMA chat app demonstrating local inferenc
 Note: This demo app and tutorial has only been validated with arm64-v8a [ABI](https://developer.android.com/ndk/guides/abis), with NDK 25.0.8775105.
 
 ## Getting models
-Please refer to the [ExecuTorch Llama2 docs](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/README.md) to export the model.
+Please refer to the [ExecuTorch Llama2 docs](https://github.com/pytorch/executorch/blob/main/examples/models/llama/README.md) to export the model.
 
 After you export the model and generate tokenizer.bin, push them device:
 ```bash

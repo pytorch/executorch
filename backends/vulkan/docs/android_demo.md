@@ -103,20 +103,20 @@ binary using the Android NDK toolchain.
   cmake --build cmake-android-out -j16 --target install)
 
 # Build LLaMA Runner library
-(rm -rf cmake-android-out/examples/models/llama2 && \
-  cmake examples/models/llama2 \
+(rm -rf cmake-android-out/examples/models/llama && \
+  cmake examples/models/llama \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI=$ANDROID_ABI \
     -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DPYTHON_EXECUTABLE=python \
-    -Bcmake-android-out/examples/models/llama2 && \
-  cmake --build cmake-android-out/examples/models/llama2 -j16)
+    -Bcmake-android-out/examples/models/llama && \
+  cmake --build cmake-android-out/examples/models/llama -j16)
 ```
 
 Finally, push and run the llama runner binary on your Android device.
 
 ```shell
-adb push cmake-android-out/examples/models/llama2/llama_main /data/local/tmp/llama_main
+adb push cmake-android-out/examples/models/llama/llama_main /data/local/tmp/llama_main
 
 adb shell /data/local/tmp/llama_main \
     --model_path=/data/local/tmp/llama/vulkan_llama2.pte \

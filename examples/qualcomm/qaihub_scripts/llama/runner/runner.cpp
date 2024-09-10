@@ -10,7 +10,7 @@
 // logic. The module takes in a string as input and emits a string as output.
 
 #if defined(QAIHUB_LLAMA3_RUNNER)
-#include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
+#include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #else
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #endif

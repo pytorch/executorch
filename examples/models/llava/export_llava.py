@@ -12,14 +12,14 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
 )
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.examples.models.llama2.export_llama_lib import (
+from executorch.examples.models.llama.export_llama_lib import (
     build_args_parser,
     get_quantizer_and_quant_params,
 )
-from executorch.examples.models.llama2.source_transformation.quantize import (
+from executorch.examples.models.llama.source_transformation.quantize import (
     get_quant_weight_transform,
 )
-from executorch.examples.models.llama2.source_transformation.sdpa import (
+from executorch.examples.models.llama.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
 from executorch.examples.models.llava.image_util import serialize_image

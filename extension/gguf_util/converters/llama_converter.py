@@ -9,7 +9,7 @@ from typing import Any, Mapping
 
 import torch
 import torch.nn as nn
-from executorch.examples.models.llama2.llama_transformer import (
+from executorch.examples.models.llama.llama_transformer import (
     ModelArgs as LlamaModelArgs,
     Transformer as LlamaTransformer,
 )

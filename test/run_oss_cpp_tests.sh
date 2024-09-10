@@ -89,8 +89,8 @@ build_and_run_test() {
     -Bcmake-out/"${test_dir}"
   cmake --build cmake-out/"${test_dir}" -j9
 
-  if [[ "$test_dir" =~ .*examples/models/llama2/tokenizer.* ]]; then
-    RESOURCES_PATH=$(realpath examples/models/llama2/tokenizer/test/resources)
+  if [[ "$test_dir" =~ .*examples/models/llama/tokenizer.* ]]; then
+    RESOURCES_PATH=$(realpath examples/models/llama/tokenizer/test/resources)
   elif [[ "$test_dir" =~ .*extension/llm/tokenizer.* ]]; then
     RESOURCES_PATH=$(realpath extension/llm/tokenizer/test/resources)
   else

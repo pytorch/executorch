@@ -17,7 +17,7 @@ Typical methods include:
 - _to_executorch_: get the executorch graph with optional optimization passes.
 - _save_to_pte_: finally, the lowered and optimized graph can be saved into a .pte file for the runtime.
 
-Some usage of LLMEdgeManager can be found in executorch/examples/models/llama2, and executorch/examples/models/llava.
+Some usage of LLMEdgeManager can be found in executorch/examples/models/llama, and executorch/examples/models/llava.
 
 When the .pte file is exported and saved, we can prepare a load and run it in a runner.
 
@@ -42,6 +42,6 @@ It hosts a custom sdpa operator. This sdpa operator implements CPU flash attenti
 ## runner
 It hosts the libary components used in a C++ llm runner. Currently, it hosts _stats.h_ on runtime status like token numbers and latency.
 
-With the components above, an actual runner can be built for a model or a series of models. An exmaple is in //executorch/examples/models/llama2/runner, where a C++ runner code is built to run Llama 2, 3, 3.1 and other models using the same architecture.
+With the components above, an actual runner can be built for a model or a series of models. An exmaple is in //executorch/examples/models/llama/runner, where a C++ runner code is built to run Llama 2, 3, 3.1 and other models using the same architecture.
 
 Usages can also be found in the [torchchat repo](https://github.com/pytorch/torchchat/tree/main/runner).

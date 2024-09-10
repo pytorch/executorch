@@ -72,7 +72,7 @@ target_compile_options(executorch_jni PUBLIC ${_common_compile_options})
 
 if(EXECUTORCH_BUILD_LLAMA_JNI)
   set(LLAMA_RUNNER_PATH
-      ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama2/runner/libllama_runner.a
+      ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama/runner/libllama_runner.a
   )
   add_library(llama_runner STATIC IMPORTED)
   set_property(

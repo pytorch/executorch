@@ -9,7 +9,7 @@ import unittest
 import torch
 
 from executorch.backends.xnnpack.test.tester import Tester
-from executorch.examples.models.llama2.model import Llama2Model
+from executorch.examples.models.llama.model import LlamaModel
 
 
 class TestLlama2ETExample(unittest.TestCase):
@@ -27,7 +27,7 @@ class TestLlama2ETExample(unittest.TestCase):
             torch.float16,
         ], f"Only fp32 and fp16 are supported, but got dtype: {dtype}"
 
-        llama2 = Llama2Model()
+        llama2 = LlamaModel()
         model = llama2.get_eager_model().to(dtype)
 
         # Only convert fp32 inputs to dtype

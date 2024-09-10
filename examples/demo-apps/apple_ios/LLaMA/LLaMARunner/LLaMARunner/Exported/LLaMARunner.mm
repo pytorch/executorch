@@ -9,7 +9,7 @@
 #import "LLaMARunner.h"
 
 #import <ExecuTorch/ExecuTorchLog.h>
-#import <executorch/examples/models/llama2/runner/runner.h>
+#import <executorch/examples/models/llama/runner/runner.h>
 
 using namespace ::torch::executor;
 

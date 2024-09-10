@@ -49,7 +49,7 @@ build_android_native_library() {
   fi
   cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config Release
 
-  cmake examples/models/llama2 \
+  cmake examples/models/llama \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="$ANDROID_ABI" \
     -DANDROID_PLATFORM=android-23 \
@@ -59,9 +59,9 @@ build_android_native_library() {
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DCMAKE_BUILD_TYPE=Release \
-    -B"${CMAKE_OUT}"/examples/models/llama2
+    -B"${CMAKE_OUT}"/examples/models/llama
 
-  cmake --build "${CMAKE_OUT}"/examples/models/llama2 -j "${CMAKE_JOBS}" --config Release
+  cmake --build "${CMAKE_OUT}"/examples/models/llama -j "${CMAKE_JOBS}" --config Release
 
 
   cmake extension/android \
