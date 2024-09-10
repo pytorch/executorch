@@ -7,6 +7,7 @@
 # pyre-unsafe
 
 import torch.fx
+from executorch.backends.arm.passes.arm_pass_utils import create_node
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -55,18 +56,18 @@ class ConvertSplitToSlicePass(ExportPass):
                 start = end
 
             # Output nodes are of type getitem
-            # Create one slice node for each output node with matching argumetns.
+            # Replace them with one slice node for each output node.
             with graph_module.graph.inserting_before(split_node):
                 for output_node in output_nodes:
                     index = output_node.args[1]
-                    slice_node = graph.create_node(
-                        "call_function",
+                    slice_node = create_node(
+                        graph,
                         self.slice,
                         (input_node, dim, starts[index], ends[index]),
                     )
                     slice_node.meta = split_node.meta.copy()
                     slice_node.meta["val"] = slice_node.meta["val"][index]
-                    output_node.replace_input_with(split_node, slice_node)
+                    output_node.replace_all_uses_with(slice_node)
         graph.eliminate_dead_code()
         graph_module.recompile()
         return PassResult(graph_module, True)
