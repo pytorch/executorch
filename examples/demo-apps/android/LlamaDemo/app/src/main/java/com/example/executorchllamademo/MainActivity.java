@@ -675,8 +675,8 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
                           ModelUtils.VISION_MODEL_IMAGE_CHANNELS,
                           rawPrompt,
                           ModelUtils.VISION_MODEL_SEQ_LEN,
-                          false,
-                          MainActivity.this);
+                          MainActivity.this,
+                          false);
                     } else {
                       // no image selected, we pass in empty int array
                       mModule.generate(
@@ -686,8 +686,8 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
                           ModelUtils.VISION_MODEL_IMAGE_CHANNELS,
                           rawPrompt,
                           ModelUtils.VISION_MODEL_SEQ_LEN,
-                          false,
-                          MainActivity.this);
+                          MainActivity.this,
+                          false);
                     }
                   } else {
                     String finalPrompt =
@@ -696,8 +696,8 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
                     mModule.generate(
                         finalPrompt,
                         (int) (finalPrompt.length() * 0.75) + 64,
-                        false,
-                        MainActivity.this);
+                        MainActivity.this,
+                        false);
                   }
 
                   long generateDuration = System.currentTimeMillis() - generateStartTime;

@@ -49,6 +49,7 @@ from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
 )
+from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
 from .source_transformation.sdpa import (
     replace_causal_mask,
@@ -288,6 +289,11 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
     parser.add_argument(
+        "--coreml-enable-state",
+        action="store_true",
+        help="This option is only for coreml, and is only supported for MacOS15+/iOS18+",
+    )
+    parser.add_argument(
         "--qnn",
         action="store_true",
         help="Delegate llama2 to qnn backend (Qualcomm), please use it --kv_cahce=True",
@@ -314,6 +320,14 @@ def build_args_parser() -> argparse.ArgumentParser:
         required=False,
         default=False,
         help="Generate logits for all inputs.",
+    )
+
+    parser.add_argument(
+        "--soc_model",
+        help="[QNN backend] SoC model of current device. e.g. 'SM8650' for Snapdragon 8 Gen 3.",
+        type=str,
+        required=False,
+        default="SM8650",
     )
     return parser
 
@@ -406,9 +420,16 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
 
     if args.use_kv_cache:
         if args.qnn:
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
+            from executorch.backends.qualcomm.utils.utils import (
+                convert_linear_to_conv2d,
+            )
+
             transforms.append(replace_kv_cache_with_simple_kv_cache)
             transforms.append(replace_sdpa_with_flex_sdpa)
             transforms.append(replace_causal_mask)
+            transforms.append(replace_rms_norm_with_native_rms_norm)
+            transforms.append(convert_linear_to_conv2d)
 
         elif args.coreml or args.mps:
             # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
@@ -515,7 +536,9 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
     if args.coreml:
         coreml_partitioner = get_coreml_partitioner(
-            args.use_kv_cache, args.pt2e_quantize
+            args.use_kv_cache and args.coreml_enable_state,
+            args.embedding_quantize,
+            args.pt2e_quantize,
         )
         partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
@@ -525,7 +548,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
         partitioners.append(
             get_qnn_partitioner(
-                args.use_kv_cache, args.pt2e_quantize, args.num_sharding
+                args.use_kv_cache, args.pt2e_quantize, args.num_sharding, args.soc_model
             )
         )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
@@ -552,7 +575,10 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
-            canonicalize_program(builder.edge_manager.exported_program())
+            # TODO: Need to remove this once we have better way to handle buffer size
+            canonicalize_program(
+                builder.edge_manager.exported_program(), custom_buffer_size=542048256
+            )
 
         builder = builder.to_executorch()
 
@@ -569,7 +595,10 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
-            canonicalize_program(builder.edge_manager.exported_program())
+            # TODO: Need to remove this once we have better way to handle buffer size
+            canonicalize_program(
+                builder.edge_manager.exported_program(), custom_buffer_size=542048256
+            )
 
         builder = builder.to_executorch()
 
