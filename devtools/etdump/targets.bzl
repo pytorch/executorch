@@ -95,9 +95,11 @@ def define_common_targets():
                 "etdump_flatcc.cpp",
                 "emitter.cpp",
             ],
+            headers = [
+                "emitter.h",
+            ],
             exported_headers = [
                 "etdump_flatcc.h",
-                "emitter.h",
             ],
             deps = [
                 "//executorch/runtime/platform:platform",

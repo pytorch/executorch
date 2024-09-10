@@ -279,6 +279,13 @@ class OpResizeNearestNeighbor:
 
 
 @dataclass(init=False, frozen=True)
+class OpRmsNorm:
+    op_name: str = "RmsNorm"
+    param_epsilon: str = "epsilon"
+    param_axes: str = "axes"
+
+
+@dataclass(init=False, frozen=True)
 class OpScatterNd:
     op_name: str = "ScatterNd"
     param_reduction: str = "reduction"
