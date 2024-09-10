@@ -18,12 +18,12 @@
  * all fp32 tensors.
  */
 
-#include <ctime>
-#include <iostream>
-#include <fstream>
-#include <memory>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <memory>
 
 #include <gflags/gflags.h>
 
@@ -38,14 +38,23 @@
 static uint8_t method_allocator_pool[8 * 1024U * 1024U]; // 8 MB
 
 // Model Path
-DEFINE_string(model_path, "model.pte", "Model serialized in flatbuffer format. Default to 'model.pte'");
-DEFINE_string(input_list, "input_list.txt", "Model input list. Default to 'input_list.txt'");
-DEFINE_string(output_folder, "outputs", "Model output folder. Default to 'outputs'");
+DEFINE_string(
+    model_path,
+    "model.pte",
+    "Model serialized in flatbuffer format. Default to 'model.pte'");
+DEFINE_string(
+    input_list,
+    "input_list.txt",
+    "Model input list. Default to 'input_list.txt'");
+DEFINE_string(
+    output_folder,
+    "outputs",
+    "Model output folder. Default to 'outputs'");
 
 using namespace torch::executor;
 using torch::executor::MemoryAllocator;
-using torch::executor::util::FileDataLoader;
 using torch::executor::util::BufferCleanup;
+using torch::executor::util::FileDataLoader;
 using namespace std::filesystem;
 
 int main(int argc, char** argv) {
@@ -132,11 +141,12 @@ int main(int argc, char** argv) {
   // fast/small SRAM, or for memory associated with particular cores.
   std::vector<std::unique_ptr<uint8_t[]>> planned_buffers; // Owns the memory
   std::vector<Span<uint8_t>> planned_spans; // Passed to the allocator
-  size_t num_memory_planned_buffers = method_meta_result->num_memory_planned_buffers();
+  size_t num_memory_planned_buffers =
+      method_meta_result->num_memory_planned_buffers();
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
     // .get() will always succeed because id < num_memory_planned_buffers.
-    size_t buffer_size =
-        static_cast<size_t>(method_meta_result->memory_planned_buffer_size(id).get());
+    size_t buffer_size = static_cast<size_t>(
+        method_meta_result->memory_planned_buffer_size(id).get());
     ET_LOG(Info, "Setting up planned buffer %zu, size %zu.", id, buffer_size);
     planned_buffers.push_back(std::make_unique<uint8_t[]>(buffer_size));
     planned_spans.push_back({planned_buffers.back().get(), buffer_size});
@@ -164,8 +174,8 @@ int main(int argc, char** argv) {
   std::ifstream input_list(FLAGS_input_list);
   ET_CHECK_MSG(
       input_list.is_open(),
-        "Error: cannot open input file %s",
-        FLAGS_input_list.c_str());
+      "Error: cannot open input file %s",
+      FLAGS_input_list.c_str());
 
   auto split = [](std::string s, std::string delimiter) {
     size_t pos_start = 0, pos_end, delim_len = delimiter.length();
@@ -225,7 +235,7 @@ int main(int argc, char** argv) {
           nbytes);
 
       fin.seekg(0, fin.beg);
-      fin.read(static_cast<char*> (data_ptr), file_size);
+      fin.read(static_cast<char*>(data_ptr), file_size);
       fin.close();
       inputs[num_allocated++] = data_ptr;
 
@@ -243,8 +253,7 @@ int main(int argc, char** argv) {
       Tensor tensor(&impl);
       Error ret = method->set_input(tensor, i);
       if (ret != Error::Ok) {
-        ET_LOG(
-            Error, "Failed to set input %zu: 0x%" PRIx32, i, (uint32_t)ret);
+        ET_LOG(Error, "Failed to set input %zu: 0x%" PRIx32, i, (uint32_t)ret);
         // The BufferCleanup will free the inputs when it goes out of scope.
         BufferCleanup cleanup({inputs, num_allocated});
         return 1;
@@ -258,14 +267,12 @@ int main(int argc, char** argv) {
     Error status = Error::Ok;
     status = method->execute();
     auto after_exec = std::chrono::high_resolution_clock::now();
-    double elapsed_time =
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            after_exec - before_exec).count() / 1000.0;
+    double elapsed_time = std::chrono::duration_cast<std::chrono::microseconds>(
+                              after_exec - before_exec)
+                              .count() /
+        1000.0;
 
-    ET_LOG(
-        Info,
-        "Inference took %f ms",
-        elapsed_time);
+    ET_LOG(Info, "Inference took %f ms", elapsed_time);
     ET_CHECK_MSG(
         status == Error::Ok,
         "Execution of method %s failed with status 0x%" PRIx32,
@@ -282,11 +289,9 @@ int main(int argc, char** argv) {
     for (size_t i = 0; i < output_size; i++) {
       auto output_tensor = outputs[i].toTensor();
       auto output_file_name = FLAGS_output_folder + "/output_" +
-          std::to_string(inference_index) + "_" +
-          std::to_string(i) + ".bin";
+          std::to_string(inference_index) + "_" + std::to_string(i) + ".bin";
       std::ofstream fout(output_file_name.c_str(), std::ios::binary);
-      fout.write(
-          output_tensor.const_data_ptr<char>(), output_tensor.nbytes());
+      fout.write(output_tensor.const_data_ptr<char>(), output_tensor.nbytes());
       fout.close();
     }
 

@@ -4,18 +4,19 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import argparse
 import json
 import os
+
 import numpy as np
-import argparse
 
 import torch
 from executorch.backends.mediatek import Precision
-from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.mediatek.aot_utils.oss_utils.utils import (
     build_executorch_binary,
     make_output_dir,
 )
+from executorch.examples.models.edsr import EdsrModel
 
 from PIL import Image
 from torch.utils.data import Dataset
@@ -32,6 +33,7 @@ class NhwcWrappedModel(torch.nn.Module):
         nchw_input1 = input1.permute(0, 3, 1, 2)
         nchw_output = self.edsr(nchw_input1)
         return nchw_output.permute(0, 2, 3, 1)
+
 
 class SrDataset(Dataset):
     def __init__(self, hr_dir: str, lr_dir: str):
@@ -59,7 +61,11 @@ class SrDataset(Dataset):
 
     def _resize_img(self, file: str, scale: int):
         with Image.open(file) as img:
-            return to_tensor(img.resize(tuple(self.input_size * scale))).unsqueeze(0).permute(0, 2, 3, 1)
+            return (
+                to_tensor(img.resize(tuple(self.input_size * scale)))
+                .unsqueeze(0)
+                .permute(0, 2, 3, 1)
+            )
 
     def get_input_list(self):
         input_list = ""
@@ -164,5 +170,3 @@ if __name__ == "__main__":
         [(input,) for input in inputs],
         quant_dtype=Precision.A8W8,
     )
-
-

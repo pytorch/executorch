@@ -4,20 +4,23 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import sys
-import os
-import piq
-import numpy as np
 import argparse
-import torch
 import json
+import os
+import sys
+
+import numpy as np
+import piq
+import torch
 
 
 def check_data(target_f, predict_f):
     target_files = os.listdir(target_f)
     predict_files = os.listdir(predict_f)
     if len(target_files) != len(predict_files):
-        raise RuntimeError("Data number in target folder and prediction folder must be same")
+        raise RuntimeError(
+            "Data number in target folder and prediction folder must be same"
+        )
 
     predict_set = set(predict_files)
     for f in target_files:
@@ -38,7 +41,7 @@ def eval_topk(target_f, predict_f):
     def solve(prob, target, k):
         _, indices = torch.topk(prob, k=k, sorted=True)
         golden = torch.reshape(target, [-1, 1])
-        correct = (golden == indices)
+        correct = golden == indices
         if torch.any(correct):
             return 1
         else:
@@ -62,18 +65,18 @@ def eval_topk(target_f, predict_f):
 
 def eval_piq(target_f, predict_f):
     target_files = os.listdir(target_f)
-    
+
     psnr_list = []
     ssim_list = []
     for target_name in target_files:
         pred_name = target_name.replace("golden", "output")
         hr = np.fromfile(os.path.join(target_f, target_name), dtype=np.float32)
-        hr = hr.reshape((1,448,448,3))
+        hr = hr.reshape((1, 448, 448, 3))
         hr = np.moveaxis(hr, 3, 1)
         hr = torch.from_numpy(hr)
 
         sr = np.fromfile(os.path.join(predict_f, pred_name), dtype=np.float32)
-        sr = sr.reshape((1,448,448,3))
+        sr = sr.reshape((1, 448, 448, 3))
         sr = np.moveaxis(sr, 3, 1)
         sr = torch.from_numpy(sr).clamp(0, 1)
 
@@ -188,11 +191,9 @@ if __name__ == "__main__":
 
     check_data(args.target_f, args.out_f)
 
-    if args.eval_type == 'topk':
+    if args.eval_type == "topk":
         eval_topk(args.target_f, args.out_f)
-    elif args.eval_type == 'piq':
+    elif args.eval_type == "piq":
         eval_piq(args.target_f, args.out_f)
-    elif args.eval_type == 'segmentation':
+    elif args.eval_type == "segmentation":
         eval_segmentation(args.target_f, args.out_f)
-
-

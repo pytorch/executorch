@@ -4,18 +4,19 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import argparse
 import json
 import os
+
 import numpy as np
-import argparse
 
 import torch
 from executorch.backends.mediatek import Precision
-from executorch.examples.models.inception_v3 import InceptionV3Model
 from executorch.examples.mediatek.aot_utils.oss_utils.utils import (
     build_executorch_binary,
     make_output_dir,
 )
+from executorch.examples.models.inception_v3 import InceptionV3Model
 
 
 class NhwcWrappedModel(torch.nn.Module):
@@ -27,6 +28,7 @@ class NhwcWrappedModel(torch.nn.Module):
         nchw_input1 = input1.permute(0, 3, 1, 2)
         output = self.inception(nchw_input1)
         return output
+
 
 def get_dataset(dataset_path, data_size):
     from torchvision import datasets, transforms
@@ -55,7 +57,7 @@ def get_dataset(dataset_path, data_size):
         if index >= data_size:
             break
         feature, target = data
-        feature = feature.permute(0, 2, 3, 1) # NHWC
+        feature = feature.permute(0, 2, 3, 1)  # NHWC
         inputs.append((feature,))
         targets.append(target)
         input_list += f"input_{index}_0.bin\n"
@@ -120,5 +122,3 @@ if __name__ == "__main__":
         inputs,
         quant_dtype=Precision.A8W8,
     )
-
-

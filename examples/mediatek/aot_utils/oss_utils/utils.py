@@ -6,11 +6,16 @@
 
 import os
 from typing import Optional
+
 import numpy as np
 
 import torch
 from executorch import exir
-from executorch.backends.mediatek import NeuropilotPartitioner, NeuropilotQuantizer, Precision
+from executorch.backends.mediatek import (
+    NeuropilotPartitioner,
+    NeuropilotQuantizer,
+    Precision,
+)
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
@@ -42,11 +47,17 @@ def build_executorch_binary(
 
     edge_compile_config = exir.EdgeCompileConfig(_check_ir_validity=False)
     # skipped op names are used for deeplabV3 model
-    neuro_partitioner = NeuropilotPartitioner([], op_names_to_skip={'aten_convolution_default_106', 'aten_convolution_default_107'})
+    neuro_partitioner = NeuropilotPartitioner(
+        [],
+        op_names_to_skip={
+            "aten_convolution_default_106",
+            "aten_convolution_default_107",
+        },
+    )
     edge_prog = to_edge_transform_and_lower(
-            aten_dialect,
-            compile_config=edge_compile_config,
-            partitioner=[neuro_partitioner],
+        aten_dialect,
+        compile_config=edge_compile_config,
+        partitioner=[neuro_partitioner],
     )
 
     exec_prog = edge_prog.to_executorch(
@@ -62,5 +73,3 @@ def make_output_dir(path: str):
             os.remove(os.path.join(path, f))
         os.removedirs(path)
     os.makedirs(path)
-
-

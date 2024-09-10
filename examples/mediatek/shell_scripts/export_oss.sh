@@ -27,4 +27,3 @@ elif [ $model = "resnet50" ]
 then
 	python3 model_export_scripts/resnet50.py -d PATH_TO_DATASET
 fi
-

@@ -147,4 +147,3 @@ python3 eval_utils/eval_oss_result.py --eval_type piq --target_f edsr --output_f
     - `eval_type`: topk/piq/segmentation
     - `target_f`: folder contain golden data files. file name is `golden_<data_idx>_0.bin`
     - `output_f`: folder contain model output data files. file name is `output_<data_idx>_0.bin`
-

@@ -4,21 +4,22 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import argparse
 import json
 import os
 import random
 import re
 import sys
+
 import numpy as np
-import argparse
 
 import torch
 from executorch.backends.mediatek import Precision
-from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.mediatek.aot_utils.oss_utils.utils import (
     build_executorch_binary,
     make_output_dir,
 )
+from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 
 
 class NhwcWrappedModel(torch.nn.Module):
@@ -112,7 +113,7 @@ if __name__ == "__main__":
     for idx, data in enumerate(targets):
         file_name = f"{args.artifact}/golden_{idx}_0.bin"
         data.tofile(file_name)
-        if idx==0:
+        if idx == 0:
             print("golden shape: ", data.shape)
             print("golden type: ", data.dtype)
 
@@ -126,4 +127,3 @@ if __name__ == "__main__":
         inputs,
         quant_dtype=Precision.A8W8,
     )
-
