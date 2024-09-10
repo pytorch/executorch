@@ -230,19 +230,12 @@ def build_executorch_binary(
     else:
         edge_prog = capture_program(model, inputs)
 
-    arch_table = {
-        "SM8650": QcomChipset.SM8650,
-        "SM8550": QcomChipset.SM8550,
-        "SM8475": QcomChipset.SM8475,
-        "SM8450": QcomChipset.SM8450,
-    }
-
     backend_options = generate_htp_compiler_spec(
         use_fp16=False if quant_dtype else True
     )
     qnn_partitioner = QnnPartitioner(
         generate_qnn_executorch_compiler_spec(
-            soc_model=arch_table[soc_model],
+            soc_model=getattr(QcomChipset, soc_model),
             backend_options=backend_options,
             debug=False,
             saver=False,

@@ -393,6 +393,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([3, 4]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_rms_norm(self):
+        module = RmsNorm()  # noqa: F405
+        sample_input = (torch.abs(torch.randn([1, 1, 1, 4])),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_rsqrt(self):
         module = Rsqrt()  # noqa: F405
         sample_input = (torch.abs(torch.randn([3, 4])),)
@@ -998,6 +1003,14 @@ class TestQNNQuantizedOperator(TestQNN):
         module = Reshape()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
         module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_rms_norm(self):
+        module = RmsNorm()  # noqa: F405
+        sample_input = (torch.abs(torch.randn([1, 1, 1, 4])),)
+        module = self.get_qdq_module(
+            module, sample_input, quant_dtype=QuantDtype.use_16a4w
+        )
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_rsqrt(self):

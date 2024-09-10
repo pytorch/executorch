@@ -4,13 +4,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import random
 import statistics
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 
-from typing import List
+from typing import Callable, List
 
 from unittest.mock import patch
 
@@ -32,6 +34,7 @@ from executorch.devtools.inspector._inspector import (
     InstructionEvent,
     InstructionEventSignature,
     ProfileEventSignature,
+    TimeScale,
 )
 
 from executorch.exir import ExportedProgram
@@ -87,6 +90,33 @@ class TestInspector(unittest.TestCase):
             mock_gen_from_etdump.assert_called_once()
             # Because we mocked parse_etrecord() to return None, this method shouldn't be called
             mock_gen_graphs_from_etrecord.assert_not_called()
+
+    def test_default_delegate_time_scale_converter(self):
+        # Create a context manager to patch functions called by Inspector.__init__
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ) as mock_gen_from_etdump, patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ), patch.object(
+            _inspector, "create_debug_handle_to_op_node_mapping"
+        ):
+            # Call the constructor of Inspector
+            Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+                source_time_scale=TimeScale.US,
+                target_time_scale=TimeScale.S,
+            )
+
+            # Verify delegate_time_scale_converter is set to be a callable
+            self.assertIsInstance(
+                mock_gen_from_etdump.call_args.get("delegate_time_scale_converter"),
+                Callable,
+            )
 
     def test_inspector_print_data_tabular(self):
         # Create a context manager to patch functions called by Inspector.__init__
