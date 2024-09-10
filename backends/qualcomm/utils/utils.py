@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
 from collections import OrderedDict
 from typing import Callable, Dict, List, Tuple
 
@@ -68,7 +69,72 @@ from executorch.exir.program._program import _get_updated_graph_signature
 from torch._decomp import core_aten_decompositions as torch_core_aten_decompositions
 from torch.export.exported_program import ExportedProgram
 from torch.fx import passes
+from torch.fx.passes.operator_support import OperatorSupportBase
 from torch.library import Library
+
+
+class _AnnotationSkipper(OperatorSupportBase):
+    """
+    Class used to partition out unwanted graph nodes.
+    e.g. - nodes are prevented from quantization annotation
+         - nodes have been grouped together as a submodule
+
+    Attributes
+    ----------
+    fp_node_id_set : set
+        a set contains nodes' name to be left in fp precision
+    fp_node_op_set : set
+        a set contains nodes' target (aten dialect) to be left in fp precision
+    skip_annotated_submodule : bool
+        flag to skip annotated submodule or not
+
+    Methods
+    -------
+    should_delegate(n: torch.fx.Node)
+        identify the residual nodes haven't be lowered with fixed-precision
+    should_skip(n: torch.fx.Node)
+        identify the nodes should be kept out with fixed-precision or not
+    is_node_supported(_, node: torch.fx.Node)
+        overridden method for graph partitioning
+    """
+
+    def __init__(
+        self,
+        fp_node_id_set: set = None,
+        fp_node_op_set: set = None,
+        skip_annotated_submodule: bool = False,
+    ):
+        self.fp_node_id_set = fp_node_id_set
+        self.fp_node_op_set = fp_node_op_set
+        self.skip_annotated_submodule = skip_annotated_submodule
+
+    def should_delegate(self, n: torch.fx.Node):
+        return n.op == "call_function" and n.target != operator.getitem
+
+    def should_skip(self, n: torch.fx.Node):
+        return n.name in self.fp_node_id_set or n.target in self.fp_node_op_set
+
+    def is_node_supported(self, _, node: torch.fx.Node) -> bool:
+        if self.skip_annotated_submodule:
+            if node.op == "get_attr":
+                return all(self.should_delegate(user) for user in node.users)
+            return self.should_delegate(node)
+
+        if any(
+            [
+                node.op in ("placeholder", "output"),
+                self.should_skip(node),
+                # check if parameters belong to fallbacked operator
+                (
+                    node.op == "get_attr"
+                    and all(self.should_skip(user) for user in node.users)
+                ),
+            ]
+        ):
+            print(f"[QNN Quantizer Annotation]: {node.name} | Skipped")
+            return False
+
+        return True
 
 
 def qnn_capture_config():
@@ -189,8 +255,10 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
     # The below super ops are supported by QNN
     remove_decompositions = [
         torch.ops.aten.pixel_shuffle.default,
+        torch.ops.aten.pixel_unshuffle.default,
         torch.ops.aten.hardsigmoid.default,
         torch.ops.aten.hardswish.default,
+        torch.ops.aten._safe_softmax.default,
     ]
 
     for key in remove_decompositions:
@@ -243,6 +311,285 @@ def capture_program(
     edge_ep = core_ep.to_edge(qnn_edge_config())
     _transform(edge_ep.exported_program)
     return edge_ep
+
+
+def _partition_graph_into_submodules(gm, subgm_tag, subgm_cb, ptn):
+    from torch.fx.passes.utils.fuser_utils import (
+        erase_nodes,
+        fuse_as_graphmodule,
+        insert_subgm,
+        legalize_graph,
+        topo_sort,
+    )
+
+    partitions = ptn.propose_partitions()
+    # insert meta for each partition group
+    for i, partition in enumerate(partitions):
+        for node in partition.nodes:
+            node.meta[subgm_tag] = i
+
+    for i in range(len(partitions)):
+        # find nodes with same group id in current graph
+        node_list = [
+            node for node in gm.graph.nodes if node.meta.get(subgm_tag, "") == i
+        ]
+        # fuse group nodes into submodule
+        sorted_nodes = topo_sort(node_list)
+        submodule_name = f"{subgm_tag}_{i}"
+        subgm, orig_inputs, orig_outputs = fuse_as_graphmodule(
+            gm, sorted_nodes, submodule_name
+        )
+        # insert submodule & trim group nodes
+        gm = insert_subgm(
+            gm,
+            subgm_cb(subgm, submodule_name),
+            orig_inputs,
+            orig_outputs,
+        )
+        erase_nodes(gm, sorted_nodes)
+        legalize_graph(gm)
+
+    gm.recompile()
+    return gm
+
+
+def _canonicalize_graph_with_lowered_module(gm, subgm_tag, ptn):
+    from executorch.exir.backend.backend_api import to_backend
+
+    # return lowered program for user to debug
+    exported_progs = []
+    # partition each submodule which went through convert_pt2e
+    for node in gm.graph.nodes:
+        if node.op == "call_module" and subgm_tag in node.name:
+            # obtain sample inputs through meta
+            subgm_input = [
+                torch.ones(arg.meta["val"].shape, dtype=arg.meta["val"].dtype)
+                for arg in node.args
+            ]
+            # program meets QNN backend requirement
+            sub_prog = capture_program(gm.get_submodule(node.name), tuple(subgm_input))
+            # start lowering with given partitioner
+            exported_progs.append(to_backend(sub_prog.exported_program, ptn))
+            # replace submodule with lowered module
+            gm.set_submodule(
+                node.name,
+                exported_progs[-1].graph_module,
+            )
+            # if node has multiple outputs, getitems will be default generated
+            if all(n.target != operator.getitem for n in node.users):
+                with gm.graph.inserting_after(node):
+                    getitem_node = gm.graph.call_function(
+                        operator.getitem,
+                        (node, 0),
+                    )
+                    getitem_node.meta = node.meta
+                    node.replace_all_uses_with(
+                        replace_with=getitem_node,
+                        delete_user_cb=lambda user: user.target != operator.getitem,
+                    )
+
+    gm.recompile()
+    return gm, exported_progs
+
+
+def skip_annotation(
+    nn_module: torch.nn.Module,
+    quantizer,
+    partitioner,
+    sample_input: Tuple[torch.Tensor, ...],
+    calibration_cb: Callable[[torch.fx.GraphModule], None],
+    fp_node_id_set: set = None,
+    fp_node_op_set: set = None,
+    fallback_to_cpu: bool = True,
+):
+    r"""
+    Exclude speific operators from quantizer annotation.
+    Skipped operators will defaultly stay in CPU, set 'fallback_to_cpu'
+    to False for trying to delegate them with FP16 precision.
+
+    e.g.: consider following graph:
+    bias_1 weight_1 input_1   bias_2 weight_2 input_2
+      | (placeholder) |         | (placeholder) |
+       \      |      /           \      |      /
+        \     |     /             \     |     /
+         \    |    /               \    |    /
+           conv2d_1                 conv2d_2
+           (torch.ops.aten.conv2d.default)
+               \                       /
+                \                     /
+                 \_______     _______/
+                         add_1
+             (torch.ops.aten.add.default)
+                           |
+                         output
+
+    If user wants to skip convolution op by names with
+    'skip_node_id_set' = {"conv2d_1"}
+    "bias_1 / weight_1 / input_1 / input_2 / conv2d_1"
+    will be partitioned out and not annotated / lowered with QNN.
+
+    [Generated graph]
+    bias_1 weight_1 input_1   input_2
+      | (placeholder) |          |
+       \      |      /           |
+        \     |     /            |
+         \    |    /             |
+           conv2d_1              |
+              \                 /
+               \               /
+                \             /
+               lowered_module_1
+            (QNN fixed precision)
+                      |
+                    output
+
+    If user wants to skip convolution op by target with
+    'skip_node_op_set' = {torch.ops.aten.conv2d.default}
+    "bias_1 / weight_1 / input_1 / conv2d_1,
+     bias_2 / weight_2 / input_2 / conv2d_2"
+    will be partitioned out and not annotated / lowered with QNN.
+
+    [Generated graph]
+    bias_1 weight_1 input_1   bias_2 weight_2 input_2
+      | (placeholder) |         | (placeholder) |
+       \      |      /           \      |      /
+        \     |     /             \     |     /
+         \    |    /               \    |    /
+           conv2d_1                 conv2d_2
+           (torch.ops.aten.conv2d.default)
+               \                       /
+                \                     /
+                 \__               __/
+                    lowered_module_1
+                 (QNN fixed precision)
+                           |
+                         output
+
+    If user wants to delegate the skipped conv2d from above graph
+    with 'fallback_to_cpu' = False:
+
+    [Generated graph]
+       input_1         input_2
+    (placeholder)   (placeholder)
+          |               |
+          \               /
+          lowered_module_2
+         (QNN fp16 precision)
+                  |
+                  |
+          lowered_module_1
+         (QNN fixed precision)
+                  |
+                output
+
+    Args:
+        nn_module (torch.nn.Module): The module to be lowered.
+        quantizer (QnnQuantizer): Instance of QnnQuantizer.
+        partitioner (QnnPartitioner): Instance of QnnPartitioner.
+        sample_input ((torch.Tensor, ...)): Sample input tensors for graph exporting.
+        calibration_cb (callable): Callback function for user-defined calibration.
+        fp_node_id_set ({str, ...}): Set of operator names to be left in fp precision.
+        fp_node_op_set ({torch.ops.aten.xxx, ...}): Set of operator targets to be left in fp precision.
+        fallback_to_cpu (bool): Whether to lower skipped nodes to fp16 or not.
+
+    Returns:
+        exported_programs: List of programs lowered to QnnBackend (quantized graphs only).
+    """
+    from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
+        QnnExecuTorchHtpPrecision,
+    )
+    from executorch.backends.qualcomm.serialization.qnn_compile_spec_serialize import (
+        convert_to_option,
+    )
+    from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+    from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
+
+    def prepare_subgm(subgm, subgm_name):
+        # prepare current submodule for quantization annotation
+        subgm_prepared = prepare_pt2e(subgm, quantizer)
+        # overwrite this attribute or name will be set to "GraphModule"
+        # we could not identify each submodule if action is not performed
+        subgm_prepared.__class__.__name__ = subgm_name
+        return subgm_prepared
+
+    fp_node_id_set = fp_node_id_set if fp_node_id_set is not None else set()
+    fp_node_op_set = fp_node_op_set if fp_node_op_set is not None else set()
+    graph_module = torch.export.export(nn_module, sample_input).module()
+    # define node support type
+    capability_partitioner = CapabilityBasedPartitioner(
+        graph_module,
+        _AnnotationSkipper(fp_node_id_set, fp_node_op_set),
+        allows_single_node_partition=True,
+    )
+    subgm_tag = "annotated_group"
+    graph_module = _partition_graph_into_submodules(
+        gm=graph_module,
+        subgm_tag=subgm_tag,
+        subgm_cb=prepare_subgm,
+        ptn=capability_partitioner,
+    )
+    # perform calibration
+    calibration_cb(graph_module)
+    # convert sub modules which went through prepare_pt2e
+    for node in graph_module.graph.nodes:
+        if node.op == "call_module":
+            graph_module.set_submodule(
+                node.name, convert_pt2e(graph_module.get_submodule(node.name))
+            )
+    # canonicalize graph for lowering again
+    graph_module, exported_progs = _canonicalize_graph_with_lowered_module(
+        gm=graph_module,
+        subgm_tag=subgm_tag,
+        ptn=partitioner,
+    )
+
+    if not fallback_to_cpu:
+        try:
+            from executorch.exir.backend.partitioner import DelegationSpec
+
+            # change HTP compiler spec for hardware to enable fp16
+            qnn_option = generate_qnn_executorch_option(
+                partitioner.compiler_specs_snapshot
+            )
+            compile_option = convert_to_option(qnn_option)
+            htp_options = compile_option.backend_options.htp_options
+            htp_options.precision = QnnExecuTorchHtpPrecision.kHtpFp16
+            partitioner.delegation_spec = DelegationSpec(
+                "QnnBackend",
+                [
+                    CompileSpec(
+                        QCOM_QNN_COMPILE_SPEC, convert_to_flatbuffer(compile_option)
+                    )
+                ],
+            )
+        except:
+            print(
+                "Failed to change HTP compiler spec with 'use_fp16' as True,"
+                " skipped operators will fallback to cpu,"
+            )
+            return graph_module, exported_progs
+
+        # try lowering skipped operator into fp16
+        capability_partitioner = CapabilityBasedPartitioner(
+            graph_module,
+            _AnnotationSkipper(skip_annotated_submodule=True),
+            allows_single_node_partition=True,
+        )
+        subgm_tag = "skipped_group"
+        graph_module = _partition_graph_into_submodules(
+            gm=graph_module,
+            subgm_tag=subgm_tag,
+            subgm_cb=lambda subgm, _: subgm,
+            ptn=capability_partitioner,
+        )
+        graph_module, exported_progs_fp = _canonicalize_graph_with_lowered_module(
+            gm=graph_module,
+            subgm_tag=subgm_tag,
+            ptn=partitioner,
+        )
+        exported_progs.extend(exported_progs_fp)
+
+    return graph_module, exported_progs
 
 
 def from_context_binary(
