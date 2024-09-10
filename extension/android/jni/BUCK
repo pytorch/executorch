@@ -77,7 +77,7 @@ fb_android_cxx_library(
         "-fexceptions",
         "-Wno-format",
     ],
-    soname = "libexecutorch_llama_jni.$(ext)",
+    soname = "libexecutorch.$(ext)",
     visibility = ["PUBLIC"],
     deps = [
         "//fbandroid/libraries/fbjni:fbjni",
