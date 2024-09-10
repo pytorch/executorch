@@ -68,7 +68,7 @@ ET_EXPERIMENTAL void inline safe_printf(const char* piece) {
 ET_EXPERIMENTAL long inline time_in_ms() {
   // return time in milliseconds, for benchmarking the model speed
   struct timespec time;
-  clock_gettime(CLOCK_REALTIME, &time);
+  timespec_get(&time, TIME_UTC);
   return time.tv_sec * 1000 + time.tv_nsec / 1000000;
 }
 
