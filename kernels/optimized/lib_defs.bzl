@@ -155,7 +155,9 @@ def define_libs():
             deps = select({
                 ":linux-x86_64": [mkl_dep] if not runtime.is_oss else [],
                 "DEFAULT": [],
-            }),
+            }) + [
+                "//executorch/extension/parallel:thread_parallel",
+            ],
             exported_deps = [
                 "//executorch/kernels/optimized:libutils",
                 "//executorch/runtime/core/exec_aten:lib",
