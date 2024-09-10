@@ -209,7 +209,7 @@ class LLMEdgeManager:
             from executorch.examples.models.llama2.evaluate import evaluate_model
         except ImportError:
             raise ImportError(
-                "Please install the llm eval dependency via examples/models/llama2/install_requirements.sh"
+                "Please install the llm eval dependency via examples/models/llama/install_requirements.sh"
             )
 
         tokenizer = get_tokenizer(tokenizer_path)
