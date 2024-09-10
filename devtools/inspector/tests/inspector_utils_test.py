@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import tempfile
 import unittest
 from typing import Dict, Tuple
@@ -23,11 +25,13 @@ from executorch.devtools.etdump import schema_flatcc as flatcc
 
 from executorch.devtools.etrecord.tests.etrecord_test import TestETRecord
 from executorch.devtools.inspector._inspector_utils import (
+    calculate_time_scale_factor,
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
     find_populated_event,
     gen_graphs_from_etrecord,
     is_inference_output_equal,
+    TimeScale,
 )
 
 
@@ -168,6 +172,19 @@ class TestInspectorUtils(unittest.TestCase):
                 "value_string",
                 "value_string",
             )
+        )
+
+    def test_calculate_time_scale_factor_second_based(self):
+        self.assertEqual(
+            calculate_time_scale_factor(TimeScale.NS, TimeScale.MS), 1000000
+        )
+        self.assertEqual(
+            calculate_time_scale_factor(TimeScale.MS, TimeScale.NS), 1 / 1000000
+        )
+
+    def test_calculate_time_scale_factor_cycles(self):
+        self.assertEqual(
+            calculate_time_scale_factor(TimeScale.CYCLES, TimeScale.CYCLES), 1
         )
 
 
