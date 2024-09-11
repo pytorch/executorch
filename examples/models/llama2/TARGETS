@@ -75,6 +75,7 @@ runtime.python_library(
         "source_transformation/rms_norm.py",
         "source_transformation/rope.py",
         "source_transformation/sdpa.py",
+        "source_transformation/spin_quant.py",
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama2",
@@ -85,6 +86,7 @@ runtime.python_library(
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
+        "//ai_codesign/gen_ai/fast_hadamard_transform:fast_hadamard_transform",
         "//caffe2:torch",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models:models",
