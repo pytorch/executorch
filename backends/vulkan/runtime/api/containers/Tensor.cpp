@@ -356,6 +356,14 @@ vkapi::VulkanBuffer& vTensor::buffer(
   return storage_.buffer_;
 }
 
+utils::uvec3 vTensor::mapped_extents() const {
+  utils::uvec3 m_extents;
+  m_extents[0] = storage_.image_extents_[axis_mapping_.at(0)];
+  m_extents[1] = storage_.image_extents_[axis_mapping_.at(1)];
+  m_extents[2] = storage_.image_extents_[axis_mapping_.at(2)];
+  return m_extents;
+}
+
 const vkapi::BufferBindInfo vTensor::sizes_ubo() {
   if (!sizes_uniform_.buffer()) {
     sizes_uniform_ =
