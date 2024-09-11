@@ -6,16 +6,25 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <stdio.h>
+#include <executorch/devtools/etdump/emitter.h>
+
 #include <cstdint>
+#include <cstring>
 
-#include "executorch/devtools/etdump/emitter.h"
-#include "executorch/runtime/platform/assert.h"
+#include <executorch/devtools/etdump/etdump_flatcc.h>
+#include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+#include <flatcc/flatcc_builder.h>
 
-static int _allocator_fn(
+using executorch::etdump::internal::ETDumpStaticAllocator;
+
+namespace executorch {
+namespace etdump {
+namespace internal {
+
+namespace {
+
+int allocator_fn(
     void* alloc_context,
     flatcc_iovec_t* b,
     size_t request,
@@ -24,8 +33,8 @@ static int _allocator_fn(
   void* p;
   size_t n;
 
-  struct etdump_static_allocator* state =
-      (struct etdump_static_allocator*)alloc_context;
+  ETDumpStaticAllocator* state =
+      reinterpret_cast<ETDumpStaticAllocator*>(alloc_context);
 
   // This allocator doesn't support freeing memory.
   if (request == 0) {
@@ -113,14 +122,14 @@ static int _allocator_fn(
 
 // This emitter implementation emits to a fixed size buffer and will fail if it
 // runs out of room on either end.
-static int _emitter_fn(
+int emitter_fn(
     void* emit_context,
     const flatcc_iovec_t* iov,
     int iov_count,
     flatbuffers_soffset_t offset,
     size_t len) {
-  struct etdump_static_allocator* E =
-      (struct etdump_static_allocator*)emit_context;
+  ETDumpStaticAllocator* E =
+      reinterpret_cast<ETDumpStaticAllocator*>(emit_context);
   uint8_t* p;
 
   if (offset < 0) {
@@ -144,40 +153,15 @@ static int _emitter_fn(
   return 0;
 }
 
-/*******************************************************************************
- * Public Functions
- ******************************************************************************/
+} // namespace
 
-int etdump_static_allocator_builder_init(
+int etdump_flatcc_custom_init(
     flatcc_builder_t* builder,
-    struct etdump_static_allocator* alloc) {
-  ET_CHECK(builder != nullptr);
-  ET_CHECK(alloc != nullptr);
-
-  // Ensure data size is multiple of 32 (minimum allocation size).
-  ET_CHECK((alloc->data_size & 0x1F) == 0);
-  // Ensure out_size is divisable by 2 to ensure front/back sizes are equal for
-  // emitter..
-  ET_CHECK((alloc->out_size & 0x1) == 0);
-
+    struct ETDumpStaticAllocator* alloc) {
   return flatcc_builder_custom_init(
-      builder, _emitter_fn, alloc, _allocator_fn, alloc);
+      builder, emitter_fn, alloc, allocator_fn, alloc);
 }
 
-void etdump_static_allocator_reset(struct etdump_static_allocator* alloc) {
-  ET_CHECK(alloc != nullptr);
-  alloc->allocated = 0;
-  size_t n = alloc->out_size / 2;
-  alloc->front_cursor = &alloc->data[alloc->data_size + n];
-  alloc->front_left = n;
-}
-
-int et_flatcc_custom_init(
-    flatcc_builder_t* builder,
-    struct etdump_static_allocator* alloc) {
-  return flatcc_builder_custom_init(
-      builder, _emitter_fn, alloc, _allocator_fn, alloc);
-}
-
-} // namespace executor
-} // namespace torch
+} // namespace internal
+} // namespace etdump
+} // namespace executorch

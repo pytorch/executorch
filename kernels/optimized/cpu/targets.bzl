@@ -41,6 +41,13 @@ _OPTIMIZED_ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_linear",
+        deps = [
+            "//executorch/kernels/optimized:libblas",
+            "//executorch/kernels/portable/cpu/util:matmul_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_log_softmax",
         deps = select({
             "DEFAULT": [
@@ -51,6 +58,13 @@ _OPTIMIZED_ATEN_OPS = (
                 "fbsource//third-party/sleef:sleef_arm",
             ],
         }),
+    ),
+    op_target(
+        name = "op_mm",
+        deps = [
+            "//executorch/kernels/optimized:libblas",
+            "//executorch/kernels/portable/cpu/util:matmul_ops_util",
+        ],
     ),
     op_target(
         name = "op_mul",

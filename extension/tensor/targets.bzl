@@ -15,6 +15,7 @@ def define_common_targets():
             srcs = [
                 "tensor_impl_ptr.cpp",
                 "tensor_ptr.cpp",
+                "tensor_ptr_maker.cpp",
             ],
             exported_headers = [
                 "tensor.h",
