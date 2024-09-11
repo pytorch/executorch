@@ -206,9 +206,7 @@ class TestLinear(unittest.TestCase):
             self.Linear(in_features=in_features, out_features=out_features), test_data
         )
 
-    # TODO(MLETORCH-352) Remove @unittest.expectedFailure when bug fixed in Regor
     @parameterized.expand(test_data_suite_rank1)
-    @unittest.expectedFailure
     def test_linear_tosa_u55_BI(
         self,
         test_name: str,

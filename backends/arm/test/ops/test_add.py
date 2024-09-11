@@ -127,15 +127,8 @@ class TestSimpleAdd(unittest.TestCase):
         test_data = (test_data,)
         self._test_add_tosa_BI_pipeline(self.Add(), test_data)
 
-    @parameterized.expand([Add.test_parameters[0]])
+    @parameterized.expand(Add.test_parameters)
     def test_add_u55_BI(self, test_data: torch.Tensor):
-        test_data = (test_data,)
-        self._test_add_u55_BI_pipeline(self.Add(), test_data)
-
-    # TODO(MLETORCH-352) Remove @unittest.expectedFailure when bug fixed in Regor
-    @parameterized.expand(Add.test_parameters[1:])
-    @unittest.expectedFailure
-    def test_add_u55_BI_fail(self, test_data: torch.Tensor):
         test_data = (test_data,)
         self._test_add_u55_BI_pipeline(self.Add(), test_data)
 
@@ -149,9 +142,7 @@ class TestSimpleAdd(unittest.TestCase):
         test_data = (operand1, operand2)
         self._test_add_tosa_BI_pipeline(self.Add2(), test_data)
 
-    # TODO(MLETORCH-352) Remove @unittest.expectedFailure when bug fixed in Regor
     @parameterized.expand(Add2.test_parameters)
-    @unittest.expectedFailure
     def test_add2_u55_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
         self._test_add_u55_BI_pipeline(self.Add2(), test_data)
