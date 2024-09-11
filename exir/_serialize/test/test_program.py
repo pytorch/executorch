@@ -272,6 +272,15 @@ class TestProgram(unittest.TestCase):
             f"{segment_table}",
         )
 
+        # Convert back.
+        program2 = deserialize_pte_binary(pte_data)
+        # Programs are the same besides constant_buffer, as deserialization
+        # does not preserve constant segment; padding may be added
+        # during serialization.
+        self.assertEqual(program2.execution_plan, program.execution_plan)
+        # Number of constant tensors should be the same.
+        self.assertEqual(len(program2.constant_buffer), len(program.constant_buffer))
+
     def test_canonicalize_delegate_indices(self) -> None:
         def make_execution_plan(
             name: str, delegates: List[BackendDelegate]
@@ -462,7 +471,6 @@ class TestProgram(unittest.TestCase):
         assert len(ret) == size
         return ret
 
-    @unittest.skip("TODO(T181362263): Update restore segments to restore cords")
     def test_round_trip_with_segments(self) -> None:
         # Create a program with some delegate data blobs.
         program = get_test_program()
@@ -802,6 +810,15 @@ class TestProgram(unittest.TestCase):
             # Start of segment[2].
             + b"\x40\x44\x44",
         )
+
+        # Convert back.
+        program2 = deserialize_pte_binary(pte_data)
+        # Programs are the same besides constant_buffer, as deserialization
+        # does not preserve constant segment; padding may be added
+        # during serialization.
+        self.assertEqual(program2.execution_plan, program.execution_plan)
+        # Number of constant tensors should be the same.
+        self.assertEqual(len(program2.constant_buffer), len(program.constant_buffer))
 
 
 # Common data for extended header tests. The two example values should produce

@@ -33,6 +33,7 @@ if hash nproc &> /dev/null; then NPROC=$(nproc); fi
 EXECUTORCH_COMMON_CMAKE_ARGS="                      \
         -DCMAKE_INSTALL_PREFIX=${BUILD_DIR}         \
         -DCMAKE_BUILD_TYPE=${BUILD_TYPE}            \
+        -DEXECUTORCH_ENABLE_LOGGING=ON              \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON      \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON      \
