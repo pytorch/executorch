@@ -7,7 +7,6 @@
 import json
 import os
 import re
-import sys
 from multiprocessing.connection import Client
 
 import numpy as np
@@ -124,7 +123,7 @@ def main(args):
     )
 
     if args.compile_only:
-        sys.exit(0)
+        return
 
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),

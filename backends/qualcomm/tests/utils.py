@@ -263,6 +263,8 @@ class TestQNN(unittest.TestCase):
                     "--output_folder_path",
                     f"{output_dir}",
                 ]
+                if expected_intermediate_events != -1:
+                    cmd.append("--dump_intermediate_outputs")
 
                 env = dict(os.environ)
                 env["LD_LIBRARY_PATH"] = f"{qnn_sdk}/lib/{target}/:{build_folder}/lib"

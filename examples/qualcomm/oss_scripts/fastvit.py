@@ -9,23 +9,45 @@ import os
 from multiprocessing.connection import Client
 
 import numpy as np
+import torch
+
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.quantizer.utils import (
+    _derived_bias_quant_spec,
+    MovingAverageMinMaxObserver,
+    ParamObserver,
+    QuantizationConfig,
+    QuantizationSpec,
+)
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_PASS_EXPAND_BROADCAST_SHAPE,
+)
+from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
     get_imagenet_dataset,
     make_output_dir,
+    make_quantizer,
     parse_skip_delegation_node,
     setup_common_args_and_variables,
     SimpleADB,
     topk_accuracy,
 )
 
-from torchvision.models import (
-    regnet_x_400mf,
-    RegNet_X_400MF_Weights,
-    regnet_y_400mf,
-    RegNet_Y_400MF_Weights,
-)
+
+def get_instance(repo_path: str, checkpoint_path: str):
+    import sys
+
+    sys.path.insert(0, repo_path)
+
+    from models.modules.mobileone import reparameterize_model
+    from timm.models import create_model
+
+    checkpoint = torch.load(checkpoint_path, weights_only=True)
+    model = create_model("fastvit_s12")
+    model = reparameterize_model(model).eval()
+    model.load_state_dict(checkpoint["state_dict"])
+    return model
 
 
 def main(args):
@@ -45,27 +67,57 @@ def main(args):
         dataset_path=f"{args.dataset}",
         data_size=data_num,
         image_shape=(256, 256),
-        crop_size=224,
     )
 
-    if args.weights == "regnet_y_400mf":
-        weights = RegNet_Y_400MF_Weights.DEFAULT
-        model = regnet_y_400mf(weights=weights).eval()
-        pte_filename = "regnet_y_400mf"
-    else:
-        weights = RegNet_X_400MF_Weights.DEFAULT
-        model = regnet_x_400mf(weights=weights).eval()
-        pte_filename = "regnet_x_400mf"
+    pte_filename = "fastvit_qnn"
+    quantizer = make_quantizer(quant_dtype=QuantDtype.use_8a8w)
 
+    # there are lots of outliers appearing in fastvit parameters
+    # we need to apply special configuration to saturate their impact
+    act_qspec = QuantizationSpec(
+        dtype=torch.uint8,
+        qscheme=torch.per_tensor_affine,
+        observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(
+            **{"averaging_constant": 0.02}
+        ),
+    )
+    weight_qspec = QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=torch.iinfo(torch.int8).min + 1,
+        quant_max=torch.iinfo(torch.int8).max,
+        qscheme=torch.per_channel_symmetric,
+        ch_axis=0,
+        observer_or_fake_quant_ctr=ParamObserver.with_args(
+            **{"steps": 200, "use_mse": True}
+        ),
+    )
+    # rewrite default per-channel ptq config
+    quantizer.per_channel_quant_config = QuantizationConfig(
+        input_activation=act_qspec,
+        output_activation=act_qspec,
+        weight=weight_qspec,
+        bias=_derived_bias_quant_spec,
+    )
+    # rewrite default ptq config
+    q_config = quantizer.bit8_quant_config
+    quantizer.bit8_quant_config = QuantizationConfig(
+        input_activation=act_qspec,
+        output_activation=act_qspec,
+        weight=q_config.weight,
+        bias=q_config.bias,
+    )
+    # lower to QNN
     build_executorch_binary(
-        model,
+        convert_linear_to_conv2d(get_instance(args.oss_repo, args.pretrained_weight)),
         inputs[0],
         args.model,
         f"{args.artifact}/{pte_filename}",
-        inputs,
+        dataset=inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
         quant_dtype=QuantDtype.use_8a8w,
+        custom_quantizer=quantizer,
+        custom_pass_config={QCOM_PASS_EXPAND_BROADCAST_SHAPE},
         shared_buffer=args.shared_buffer,
     )
 
@@ -111,11 +163,12 @@ def main(args):
 
 if __name__ == "__main__":
     parser = setup_common_args_and_variables()
+
     parser.add_argument(
         "-a",
         "--artifact",
-        help="path for storing generated artifacts by this example. Default ./regnet",
-        default="./regnet",
+        help="path for storing generated artifacts by this example. Default ./fastvit",
+        default="./fastvit",
         type=str,
     )
 
@@ -132,10 +185,22 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--weights",
+        "--oss_repo",
+        help="Path to cloned https://github.com/apple/ml-fastvit",
         type=str,
-        choices=["regnet_y_400mf", "regnet_x_400mf"],
-        help="Specify which regent weights/model to execute",
+        required=True,
+    )
+
+    parser.add_argument(
+        "-p",
+        "--pretrained_weight",
+        help=(
+            "Location of model pretrained weight."
+            "e.g., -p ./fastvit_s12_reparam.pth.tar"
+            "Pretrained model can be found in "
+            "https://docs-assets.developer.apple.com/ml-research/models/fastvit/image_classification_distilled_models/fastvit_s12_reparam.pth.tar"
+        ),
+        type=str,
         required=True,
     )
 

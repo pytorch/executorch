@@ -7,15 +7,14 @@
 import json
 import os
 import re
-import sys
 from multiprocessing.connection import Client
 
 import numpy as np
 import timm
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.examples.qualcomm.scripts.inception_v4 import get_dataset
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_imagenet_dataset,
     make_output_dir,
     setup_common_args_and_variables,
     SimpleADB,
@@ -36,9 +35,10 @@ def main(args):
     instance = timm.create_model("fbnetc_100", pretrained=True).eval()
 
     data_num = 100
-    inputs, targets, input_list = get_dataset(
+    inputs, targets, input_list = get_imagenet_dataset(
         dataset_path=f"{args.dataset}",
         data_size=data_num,
+        image_shape=(299, 299),
     )
 
     pte_filename = "fbnet"
@@ -50,10 +50,11 @@ def main(args):
         f"{args.artifact}/{pte_filename}",
         inputs,
         quant_dtype=QuantDtype.use_8a8w,
+        shared_buffer=args.shared_buffer,
     )
 
     if args.compile_only:
-        sys.exit(0)
+        return
 
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),

@@ -109,17 +109,13 @@ class ConvertToLinear(ExportPass):
 
         # Since QNN has no keep dims for linear op, we will need to add squeeze and unsqueeze around linear node
         # TODO: Find a more general conditional statement.
-        if (
-            fn_node.target == self.add
-            and linear_node.meta["val"].dim() == 3
-            and linear_node.meta["val"].shape[0] == 1
-        ):
-            squeeze_dim = linear_node.meta["val"].shape[1:]
-            linear_node.meta["val"] = torch.squeeze(linear_node.meta["val"], 0)
+        linear_output = linear_node.meta["val"]
+        if linear_output.dim() == 3 and linear_output.shape[0] == 1:
             with gm.graph.inserting_after(input_node):
                 input_users = list(input_node.users.keys())
-                squeeze_dim = linear_node.meta["val"].shape
-                squeeze_view_copy_node = gm.graph.create_node(
+                input_tensor = input_node.meta["val"]
+                squeeze_dim = input_tensor.shape[-2:]
+                squeeze_node = gm.graph.create_node(
                     "call_function",
                     self.view_copy,
                     (
@@ -127,14 +123,19 @@ class ConvertToLinear(ExportPass):
                         squeeze_dim,
                     ),
                 )
-                squeeze_view_copy_node.meta = linear_node.meta
+                # meta needs to be copied elementwisely for fake-tensor
+                # to be updated correctly and not affect meta of input_node
+                for k, v in input_node.meta.items():
+                    squeeze_node.meta[k] = v
+                squeeze_node.meta["val"] = input_tensor.reshape(squeeze_dim)
                 for user in input_users:
                     if user == linear_node:
-                        user.replace_input_with(input_node, squeeze_view_copy_node)
-            with gm.graph.inserting_after(output):
+                        user.replace_input_with(input_node, squeeze_node)
+
+            with gm.graph.inserting_after(linear_node):
                 output_users = list(linear_node.users.keys())
-                unsqueeze_dim = output.args[0].meta["val"].shape
-                unsqueeze_view_copy_node = gm.graph.create_node(
+                unsqueeze_dim = linear_output.shape
+                unsqueeze_node = gm.graph.create_node(
                     "call_function",
                     self.view_copy,
                     (
@@ -142,16 +143,16 @@ class ConvertToLinear(ExportPass):
                         unsqueeze_dim,
                     ),
                 )
-                unsqueeze_view_copy_node.meta = output.args[0].meta
+                # meta needs to be copied elementwisely for fake-tensor
+                # to be updated correctly and not affect meta of unsqueeze_node
+                for k, v in linear_node.meta.items():
+                    unsqueeze_node.meta[k] = v
+                # update linear node's shape
+                linear_node.meta["val"] = linear_output.reshape(
+                    linear_output.shape[-2:]
+                )
                 for user in output_users:
-                    user.replace_input_with(linear_node, unsqueeze_view_copy_node)
-            if QCOM_QUANT_ATTRS in linear_node.meta:
-                squeeze_view_copy_node.meta[QCOM_QUANT_ATTRS] = linear_node.meta[
-                    QCOM_QUANT_ATTRS
-                ]
-                unsqueeze_view_copy_node.meta[QCOM_QUANT_ATTRS] = linear_node.meta[
-                    QCOM_QUANT_ATTRS
-                ]
+                    user.replace_input_with(linear_node, unsqueeze_node)
 
     def _extract_mm_ops(self, partitioned_nodes: List[edge_op]) -> List[torch.fx.Node]:
         mm_node = [n for n in partitioned_nodes if n.target == self.mm][0]

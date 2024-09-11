@@ -51,8 +51,8 @@ class AvgPool2d(NodeVisitor):
             filter_size = filter_size + filter_size
         filter_size_shape = [len(filter_size)]
 
-        # stride info
-        stride = cast(List[int], node.args[2])
+        # stride info - default to kernel_size if not given
+        stride = cast(List[int], node.args[2]) if len(node.args) > 2 else filter_size
         if len(stride) == 1:
             stride = stride + stride
         stride_shape = [len(stride)]
