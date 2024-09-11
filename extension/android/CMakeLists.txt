@@ -98,6 +98,7 @@ endif()
 
 if(TARGET quantized_kernels)
   list(APPEND link_libraries quantized_kernels quantized_ops_lib)
+  target_link_options_shared_lib(quantized_ops_lib)
 endif()
 
 target_include_directories(
