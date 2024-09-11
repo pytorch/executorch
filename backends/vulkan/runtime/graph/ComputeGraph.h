@@ -288,6 +288,10 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().image_extents();
   }
 
+  inline utils::uvec3 mapped_extents_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().mapped_extents();
+  }
+
   inline int32_t numel_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().numel();
   }

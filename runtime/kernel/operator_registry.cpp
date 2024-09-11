@@ -8,53 +8,63 @@
 
 #include <executorch/runtime/kernel/operator_registry.h>
 
-#include <executorch/runtime/platform/runtime.h>
-#include <executorch/runtime/platform/system.h>
 #include <cinttypes>
 
 #include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/platform.h>
+#include <executorch/runtime/platform/system.h>
 
 namespace executorch {
 namespace runtime {
 
-OperatorRegistry& getOperatorRegistry();
-OperatorRegistry& getOperatorRegistry() {
-  static OperatorRegistry operator_registry;
-  return operator_registry;
-}
+namespace {
 
-Error register_kernels(const ArrayRef<Kernel>& kernels) {
-  Error success = getOperatorRegistry().register_kernels(kernels);
-  if (success == Error::InvalidArgument || success == Error::Internal) {
-    ET_CHECK_MSG(
-        false,
-        "Kernel registration failed with error %" PRIu32
-        ", see error log for details.",
-        static_cast<uint32_t>(success));
-  }
-  return success;
-}
+// Maximum number of operators and their associated kernels that can be
+// registered.
+#ifdef MAX_KERNEL_NUM
+constexpr uint32_t kMaxRegisteredKernels = MAX_KERNEL_NUM;
+#else
+constexpr uint32_t kMaxOperators = 250;
+constexpr uint32_t kMaxKernelsPerOp = 8;
+constexpr uint32_t kMaxRegisteredKernels = kMaxOperators * kMaxKernelsPerOp;
+#endif
 
-Error OperatorRegistry::register_kernels(const ArrayRef<Kernel>& kernels) {
-  // Operator registration happens in static initialization time when PAL init
-  // may or may not happen already. Here we are assuming et_pal_init() doesn't
-  // have any side effect even if falled multiple times.
+// Data that backs the kernel table. Since Kernel has a custom default
+// constructor (implicitly, because it contains KernelKey, which has a custom
+// ctor), some toolchains don't like having a global array of them: it would
+// require constructing them at init time. Since we don't care about the values
+// until we add each entry to the table, allocate static zeroed memory instead
+// and point the table at it.
+// @lint-ignore CLANGTIDY facebook-hte-CArray
+alignas(sizeof(Kernel)) uint8_t
+    registered_kernels_data[kMaxRegisteredKernels * sizeof(Kernel)];
+
+/// Global table of registered kernels.
+Kernel* registered_kernels = reinterpret_cast<Kernel*>(registered_kernels_data);
+
+/// The number of kernels registered in the table.
+size_t num_registered_kernels = 0;
+
+// Registers the kernels, but may return an error.
+Error register_kernels_internal(const Span<const Kernel> kernels) {
+  // Operator registration happens in static initialization time before or after
+  // PAL init, so call it here. It is safe to call multiple times.
   ::et_pal_init();
 
-  if (kernels.size() + this->num_kernels_ > kMaxNumOfKernels) {
+  if (kernels.size() + num_registered_kernels > kMaxRegisteredKernels) {
     ET_LOG(
         Error,
-        "The total number of kernels to be registered is larger than the limit %" PRIu32
-        ". %" PRIu32
-        " kernels are already registered and we're trying to register another %" PRIu32
-        " kernels.",
-        kMaxNumOfKernels,
-        (uint32_t)this->num_kernels_,
+        "The total number of kernels to be registered is larger than the limit "
+        "%" PRIu32 ". %" PRIu32
+        " kernels are already registered and we're trying to register another "
+        "%" PRIu32 " kernels.",
+        kMaxRegisteredKernels,
+        (uint32_t)num_registered_kernels,
         (uint32_t)kernels.size());
     ET_LOG(Error, "======== Kernels already in the registry: ========");
-    for (size_t i = 0; i < this->num_kernels_; i++) {
-      ET_LOG(Error, "%s", this->kernels_[i].name_);
-      ET_LOG_KERNEL_KEY(this->kernels_[i].kernel_key_);
+    for (size_t i = 0; i < num_registered_kernels; i++) {
+      ET_LOG(Error, "%s", registered_kernels[i].name_);
+      ET_LOG_KERNEL_KEY(registered_kernels[i].kernel_key_);
     }
     ET_LOG(Error, "======== Kernels being registered: ========");
     for (size_t i = 0; i < kernels.size(); i++) {
@@ -67,9 +77,9 @@ Error OperatorRegistry::register_kernels(const ArrayRef<Kernel>& kernels) {
   const char* lib_name = et_pal_get_shared_library_name(kernels.data());
 
   for (const auto& kernel : kernels) {
-    // linear search. This is fine if the number of kernels are small.
-    for (int32_t i = 0; i < this->num_kernels_; i++) {
-      Kernel k = this->kernels_[i];
+    // Linear search. This is fine if the number of kernels is small.
+    for (int32_t i = 0; i < num_registered_kernels; i++) {
+      Kernel k = registered_kernels[i];
       if (strcmp(kernel.name_, k.name_) == 0 &&
           kernel.kernel_key_ == k.kernel_key_) {
         ET_LOG(Error, "Re-registering %s, from %s", k.name_, lib_name);
@@ -77,7 +87,7 @@ Error OperatorRegistry::register_kernels(const ArrayRef<Kernel>& kernels) {
         return Error::InvalidArgument;
       }
     }
-    this->kernels_[this->num_kernels_++] = kernel;
+    registered_kernels[num_registered_kernels++] = kernel;
   }
   ET_LOG(
       Debug,
@@ -87,11 +97,23 @@ Error OperatorRegistry::register_kernels(const ArrayRef<Kernel>& kernels) {
   return Error::Ok;
 }
 
-bool hasOpsFn(const char* name, ArrayRef<TensorMeta> kernel_key) {
-  return getOperatorRegistry().hasOpsFn(name, kernel_key);
+} // namespace
+
+// Registers the kernels, but panics if an error occurs. Always returns Ok.
+Error register_kernels(const Span<const Kernel> kernels) {
+  Error success = register_kernels_internal(kernels);
+  if (success == Error::InvalidArgument || success == Error::Internal) {
+    ET_CHECK_MSG(
+        false,
+        "Kernel registration failed with error %" PRIu32
+        ", see error log for details.",
+        static_cast<uint32_t>(success));
+  }
+  return success;
 }
 
-static int copy_char_as_number_to_buf(char num, char* buf) {
+namespace {
+int copy_char_as_number_to_buf(char num, char* buf) {
   if ((char)num < 10) {
     *buf = '0' + (char)num;
     buf += 1;
@@ -104,10 +126,10 @@ static int copy_char_as_number_to_buf(char num, char* buf) {
     return 2;
   }
 }
+} // namespace
 
-void make_kernel_key_string(ArrayRef<TensorMeta> key, char* buf);
-
-void make_kernel_key_string(ArrayRef<TensorMeta> key, char* buf) {
+namespace internal {
+void make_kernel_key_string(Span<const TensorMeta> key, char* buf) {
   if (key.empty()) {
     // If no tensor is present in an op, kernel key does not apply
     return;
@@ -130,61 +152,43 @@ void make_kernel_key_string(ArrayRef<TensorMeta> key, char* buf) {
     buf += 1;
   }
 }
+} // namespace internal
 
-bool OperatorRegistry::hasOpsFn(
+bool registry_has_op_function(
     const char* name,
-    ArrayRef<TensorMeta> meta_list) {
-  char buf[KernelKey::MAX_SIZE] = {0};
-  make_kernel_key_string(meta_list, buf);
-  KernelKey kernel_key = KernelKey(buf);
-
-  for (size_t idx = 0; idx < this->num_kernels_; idx++) {
-    if (strcmp(this->kernels_[idx].name_, name) == 0) {
-      if (this->kernels_[idx].kernel_key_.is_fallback() ||
-          this->kernels_[idx].kernel_key_ == kernel_key) {
-        return true;
-      }
-    }
-  }
-
-  return false;
+    Span<const TensorMeta> meta_list) {
+  return get_op_function_from_registry(name, meta_list).ok();
 }
 
-const OpFunction& getOpsFn(const char* name, ArrayRef<TensorMeta> kernel_key) {
-  return getOperatorRegistry().getOpsFn(name, kernel_key);
-}
-
-const OpFunction& OperatorRegistry::getOpsFn(
+Result<OpFunction> get_op_function_from_registry(
     const char* name,
-    ArrayRef<TensorMeta> meta_list) {
+    Span<const TensorMeta> meta_list) {
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   char buf[KernelKey::MAX_SIZE] = {0};
-  make_kernel_key_string(meta_list, buf);
+  internal::make_kernel_key_string(meta_list, buf);
   KernelKey kernel_key = KernelKey(buf);
 
   int32_t fallback_idx = -1;
-  for (size_t idx = 0; idx < this->num_kernels_; idx++) {
-    if (strcmp(this->kernels_[idx].name_, name) == 0) {
-      if (this->kernels_[idx].kernel_key_ == kernel_key) {
-        return this->kernels_[idx].op_;
+  for (size_t idx = 0; idx < num_registered_kernels; idx++) {
+    if (strcmp(registered_kernels[idx].name_, name) == 0) {
+      if (registered_kernels[idx].kernel_key_ == kernel_key) {
+        return registered_kernels[idx].op_;
       }
-      if (this->kernels_[idx].kernel_key_.is_fallback()) {
+      if (registered_kernels[idx].kernel_key_.is_fallback()) {
         fallback_idx = idx;
       }
     }
   }
   if (fallback_idx != -1) {
-    return this->kernels_[fallback_idx].op_;
+    return registered_kernels[fallback_idx].op_;
   }
-  ET_CHECK_MSG(false, "kernel '%s' not found.", name);
+  ET_LOG(Error, "kernel '%s' not found.", name);
   ET_LOG_TENSOR_META(meta_list);
+  return Error::OperatorMissing;
 }
 
-ArrayRef<Kernel> get_kernels() {
-  return getOperatorRegistry().get_kernels();
-}
-
-ArrayRef<Kernel> OperatorRegistry::get_kernels() {
-  return ArrayRef<Kernel>(this->kernels_, this->num_kernels_);
+Span<const Kernel> get_registered_kernels() {
+  return {registered_kernels, num_registered_kernels};
 }
 
 } // namespace runtime

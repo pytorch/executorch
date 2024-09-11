@@ -28,6 +28,11 @@ Tensor& reflection_pad2d_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
+
   Tensor::SizesType target_sizes[kTensorDimensionLimit];
   size_t target_ndim = 0;
   get_padding_out_target_size(2, in, padding, target_sizes, &target_ndim);

@@ -96,7 +96,7 @@ can build it for a wide variety of target systems.
 
 #### C++ Language Considerations
 
-* The code is C++11-compatible to work with older toolchains.
+* The code is C++17-compatible to work with older toolchains.
 * The runtime does not use exceptions or RTTI, although it is not antagonistic
   to them.
 * The code is compatible with GCC and Clang, and has also been built with

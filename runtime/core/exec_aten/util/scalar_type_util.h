@@ -73,6 +73,10 @@ struct is_reduced_floating_point
           bool,
           std::is_same<T, torch::executor::Half>::value ||
               std::is_same<T, torch::executor::BFloat16>::value> {};
+
+template <typename T>
+constexpr bool is_reduced_floating_point_v =
+    is_reduced_floating_point<T>::value;
 #endif
 
 /// Maps ScalarTypes to C++ types.
