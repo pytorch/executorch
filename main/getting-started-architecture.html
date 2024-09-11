@@ -318,7 +318,7 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
@@ -379,17 +379,17 @@
 <li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
 <li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debug Backend Delegate</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">SDK</span></p>
+<p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="sdk-overview.html">Introduction to the ExecuTorch SDK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">SDK Delegate Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-tutorial.html">SDK usage tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
@@ -556,10 +556,10 @@ shapes</a>
 </ul>
 <p><em>Executor</em> is the entry point to load the program and execute it. The execution triggers corresponding operator kernels or backend execution from this very minimal runtime.</p>
 </div>
-<div class="section" id="sdk">
-<h2>SDK<a class="headerlink" href="#sdk" title="Permalink to this heading">¶</a></h2>
-<p>It should be efficient for users to go from research to production using the flow above. Productivity is essentially important, for users to author, optimize and deploy their models. We provide <a class="reference internal" href="sdk-overview.html"><span class="doc std std-doc">ExecuTorch SDK</span></a> to improve productivity. The SDK is not in the diagram. Instead it’s a tool set that covers the developer workflow in all three phases.</p>
-<p>During the program preparation and execution, users can use the ExecuTorch SDK to profile, debug, or visualize the program. Since the end-to-end flow is within the PyTorch ecosystem, users can correlate and display performance data along with graph visualization as well as direct references to the program source code and model hierarchy. We consider this to be a critical component for quickly iterating and lowering PyTorch programs to edge devices and environments.</p>
+<div class="section" id="developer-tools">
+<h2>Developer Tools<a class="headerlink" href="#developer-tools" title="Permalink to this heading">¶</a></h2>
+<p>It should be efficient for users to go from research to production using the flow above. Productivity is essentially important, for users to author, optimize and deploy their models. We provide <a class="reference internal" href="sdk-overview.html"><span class="doc std std-doc">ExecuTorch Developer Tools</span></a> to improve productivity. The Developer Tools are not in the diagram. Instead it’s a tool set that covers the developer workflow in all three phases.</p>
+<p>During the program preparation and execution, users can use the ExecuTorch Developer Tools to profile, debug, or visualize the program. Since the end-to-end flow is within the PyTorch ecosystem, users can correlate and display performance data along with graph visualization as well as direct references to the program source code and model hierarchy. We consider this to be a critical component for quickly iterating and lowering PyTorch programs to edge devices and environments.</p>
 </div>
 </div>
 
@@ -619,7 +619,7 @@ shapes</a>
 </li>
 <li><a class="reference internal" href="#runtime-preparation">Runtime Preparation</a></li>
 <li><a class="reference internal" href="#program-execution">Program Execution</a></li>
-<li><a class="reference internal" href="#sdk">SDK</a></li>
+<li><a class="reference internal" href="#developer-tools">Developer Tools</a></li>
 </ul>
 </li>
 </ul>

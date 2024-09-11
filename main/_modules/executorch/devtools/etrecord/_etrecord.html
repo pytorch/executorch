@@ -316,7 +316,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../tutorials/sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../tutorials/sdk-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
@@ -377,17 +377,17 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../debug-backend-delegate.html">Debug Backend Delegate</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">SDK</span></p>
+<p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../../../sdk-overview.html">Introduction to the ExecuTorch SDK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../sdk-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../sdk-delegate-integration.html">SDK Delegate Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../sdk-tutorial.html">SDK usage tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../sdk-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
@@ -474,6 +474,8 @@
 <span class="c1">#</span>
 <span class="c1"># This source code is licensed under the BSD-style license found in the</span>
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
+
+<span class="c1"># pyre-unsafe</span>
 
 <span class="kn">import</span> <span class="nn">json</span>
 <span class="kn">import</span> <span class="nn">os</span>
@@ -653,7 +655,7 @@
 <span class="sd">    is the closest graph module representation of what is eventually run on the device.</span>
 <span class="sd">    In addition to all the graph modules, we also serialize the program buffer, which the users</span>
 <span class="sd">    can provide to the ExecuTorch runtime to run the model, and the debug handle map</span>
-<span class="sd">    for SDK tooling usage.</span>
+<span class="sd">    for Developer Tools usage.</span>
 
 <span class="sd">    Args:</span>
 <span class="sd">        et_record: Path to where the `ETRecord` file will be saved to.</span>
@@ -672,7 +674,7 @@
 
     <span class="n">etrecord_zip</span> <span class="o">=</span> <span class="n">ZipFile</span><span class="p">(</span><span class="n">et_record</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span>
     <span class="c1"># Write the magic file identifier that will be used to verify that this file</span>
-    <span class="c1"># is an etrecord when it&#39;s used later in the SDK tooling.</span>
+    <span class="c1"># is an etrecord when it&#39;s used later in the Developer Tools.</span>
     <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span><span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">ETRECORD_IDENTIFIER</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="n">export_modules</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>

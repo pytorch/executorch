@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Using the ExecuTorch SDK to Profile a Model &mdash; ExecuTorch main documentation</title>
+  <title>Using the ExecuTorch Developer Tools to Profile a Model &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -318,7 +318,7 @@
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Using the ExecuTorch SDK to Profile a Model</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
@@ -379,17 +379,17 @@
 <li class="toctree-l1"><a class="reference internal" href="../backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../debug-backend-delegate.html">Debug Backend Delegate</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">SDK</span></p>
+<p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-overview.html">Introduction to the ExecuTorch SDK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-delegate-integration.html">SDK Delegate Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-tutorial.html">SDK usage tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
@@ -434,7 +434,7 @@
       </li>
 
         
-      <li>Using the ExecuTorch SDK to Profile a Model</li>
+      <li>Using the ExecuTorch Developer Tools to Profile a Model</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
@@ -499,18 +499,18 @@
 <p><a class="reference internal" href="#sphx-glr-download-tutorials-sdk-integration-tutorial-py"><span class="std std-ref">Go to the end</span></a>
 to download the full example code</p>
 </div>
-<div class="sphx-glr-example-title section" id="using-the-executorch-sdk-to-profile-a-model">
-<span id="sphx-glr-tutorials-sdk-integration-tutorial-py"></span><h1>Using the ExecuTorch SDK to Profile a Model<a class="headerlink" href="#using-the-executorch-sdk-to-profile-a-model" title="Permalink to this heading">¶</a></h1>
+<div class="sphx-glr-example-title section" id="using-the-executorch-developer-tools-to-profile-a-model">
+<span id="sphx-glr-tutorials-sdk-integration-tutorial-py"></span><h1>Using the ExecuTorch Developer Tools to Profile a Model<a class="headerlink" href="#using-the-executorch-developer-tools-to-profile-a-model" title="Permalink to this heading">¶</a></h1>
 <p><strong>Author:</strong> <a class="reference external" href="https://github.com/Jack-Khuu">Jack Khuu</a></p>
-<p>The <a class="reference external" href="../sdk-overview.html">ExecuTorch SDK</a> is a set of tools designed to
+<p>The <a class="reference external" href="../sdk-overview.html">ExecuTorch Developer Tools</a> is a set of tools designed to
 provide users with the ability to profile, debug, and visualize ExecuTorch
 models.</p>
-<p>This tutorial will show a full end-to-end flow of how to utilize the SDK.
+<p>This tutorial will show a full end-to-end flow of how to utilize the Developer Tools to profile a model.
 Specifically, it will:</p>
 <ol class="arabic simple">
-<li><p>Generate the artifacts consumed by the SDK (<a class="reference external" href="../sdk-etrecord.html">ETRecord</a>, <a class="reference external" href="../sdk-etdump.html">ETDump</a>).</p></li>
+<li><p>Generate the artifacts consumed by the Developer Tools (<a class="reference external" href="../sdk-etrecord.html">ETRecord</a>, <a class="reference external" href="../sdk-etdump.html">ETDump</a>).</p></li>
 <li><p>Create an Inspector class consuming these artifacts.</p></li>
-<li><p>Utilize the Inspector class to analyze the model.</p></li>
+<li><p>Utilize the Inspector class to analyze the model profiling result.</p></li>
 </ol>
 <div class="section" id="prerequisites">
 <h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
@@ -741,17 +741,17 @@ slowest <code class="docutils literal notranslate"><span class="pre">convolution
 <div class="section" id="conclusion">
 <h2>Conclusion<a class="headerlink" href="#conclusion" title="Permalink to this heading">¶</a></h2>
 <p>In this tutorial, we learned about the steps required to consume an ExecuTorch
-model with the ExecuTorch SDK. It also showed how to use the Inspector APIs
+model with the ExecuTorch Developer Tools. It also showed how to use the Inspector APIs
 to analyze the model run results.</p>
 <div class="section" id="links-mentioned">
 <h3>Links Mentioned<a class="headerlink" href="#links-mentioned" title="Permalink to this heading">¶</a></h3>
 <ul class="simple">
-<li><p><a class="reference external" href="../sdk-overview.html">ExecuTorch SDK</a></p></li>
+<li><p><a class="reference external" href="../sdk-overview.html">ExecuTorch Developer Tools Overview</a></p></li>
 <li><p><a class="reference external" href="../sdk-etrecord.html">ETRecord</a></p></li>
 <li><p><a class="reference external" href="../sdk-etdump.html">ETDump</a></p></li>
 <li><p><a class="reference external" href="../sdk-inspector.html">Inspector</a></p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.527 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.446 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-sdk-integration-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/00f28feeccb75cde665e2acd0ca1eb2e/sdk-integration-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">sdk-integration-tutorial.py</span></code></a></p>
@@ -810,7 +810,7 @@ to analyze the model run results.</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Using the ExecuTorch SDK to Profile a Model</a><ul>
+<li><a class="reference internal" href="#">Using the ExecuTorch Developer Tools to Profile a Model</a><ul>
 <li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
 <li><a class="reference internal" href="#generate-etrecord-optional">Generate ETRecord (Optional)</a></li>
 <li><a class="reference internal" href="#generate-etdump">Generate ETDump</a></li>

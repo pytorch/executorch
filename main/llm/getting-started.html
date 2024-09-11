@@ -318,7 +318,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../tutorials/sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/sdk-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
@@ -389,17 +389,17 @@
 <li class="toctree-l1"><a class="reference internal" href="../backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../debug-backend-delegate.html">Debug Backend Delegate</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">SDK</span></p>
+<p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-overview.html">Introduction to the ExecuTorch SDK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-delegate-integration.html">SDK Delegate Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-tutorial.html">SDK usage tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
@@ -1201,7 +1201,7 @@ To see a more detailed view, use the <code class="docutils literal notranslate">
 </div>
 <div class="section" id="performance-analysis">
 <h3>Performance Analysis<a class="headerlink" href="#performance-analysis" title="Permalink to this heading">¶</a></h3>
-<p>Through the ExecuTorch SDK, users are able to profile model execution, giving timing information for each operator in the model.</p>
+<p>Through the ExecuTorch Developer Tools, users are able to profile model execution, giving timing information for each operator in the model.</p>
 <div class="section" id="id1">
 <h4>Prerequisites<a class="headerlink" href="#id1" title="Permalink to this heading">¶</a></h4>
 <div class="section" id="etrecord-generation-optional">
@@ -1251,7 +1251,7 @@ model runs in a single trace, if desired.</p>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p>Additionally, update CMakeLists.txt to build with SDK and enable events to be traced and logged into ETDump:</p>
+<p>Additionally, update CMakeLists.txt to build with Developer Tools and enable events to be traced and logged into ETDump:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">option</span><span class="p">(</span><span class="n">EXECUTORCH_BUILD_SDK</span> <span class="s2">&quot;&quot;</span> <span class="n">ON</span><span class="p">)</span>
 
 <span class="c1"># ...</span>

@@ -318,7 +318,7 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
@@ -379,17 +379,17 @@
 <li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
 <li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debug Backend Delegate</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">SDK</span></p>
+<p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="sdk-overview.html">Introduction to the ExecuTorch SDK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">SDK Delegate Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-tutorial.html">SDK usage tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
@@ -474,7 +474,7 @@
               
   <div class="section" id="prerequisite-etdump-executorch-dump">
 <h1>Prerequisite | ETDump - ExecuTorch Dump<a class="headerlink" href="#prerequisite-etdump-executorch-dump" title="Permalink to this heading">¶</a></h1>
-<p>ETDump (ExecuTorch Dump) is one of the core components of the ExecuTorch SDK experience. It is the mechanism through which all forms of profiling and debugging data is extracted from the runtime. Users can’t parse ETDump directly; instead, they should pass it into the Inspector API, which deserializes the data, offering interfaces for flexible analysis and debugging.</p>
+<p>ETDump (ExecuTorch Dump) is one of the core components of the ExecuTorch Developer Tools. It is the mechanism through which all forms of profiling and debugging data is extracted from the runtime. Users can’t parse ETDump directly; instead, they should pass it into the Inspector API, which deserializes the data, offering interfaces for flexible analysis and debugging.</p>
 <div class="section" id="generating-an-etdump">
 <h2>Generating an ETDump<a class="headerlink" href="#generating-an-etdump" title="Permalink to this heading">¶</a></h2>
 <p>Generating an ETDump is a relatively straightforward process. Users can follow the steps detailed below to integrate it into their application that uses ExecuTorch.</p>
