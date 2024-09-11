@@ -6,26 +6,23 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <stdint.h>
-#include <stdlib.h>
-
-#include <executorch/devtools/etdump/etdump_flatcc.h>
-#include <flatcc/flatcc_builder.h>
-
 #pragma once
 
-namespace torch {
-namespace executor {
+#include <cstdint>
+#include <cstdlib>
 
-int et_flatcc_custom_init(
+#include <executorch/devtools/etdump/etdump_flatcc.h>
+
+typedef struct flatcc_builder flatcc_builder_t;
+
+namespace executorch {
+namespace etdump {
+namespace internal {
+
+int etdump_flatcc_custom_init(
     flatcc_builder_t* builder,
-    struct etdump_static_allocator* alloc);
+    internal::ETDumpStaticAllocator* alloc);
 
-int etdump_static_allocator_builder_init(
-    flatcc_builder_t* builder,
-    struct etdump_static_allocator* alloc);
-
-void etdump_static_allocator_reset(struct etdump_static_allocator* alloc);
-
-} // namespace executor
-} // namespace torch
+} // namespace internal
+} // namespace etdump
+} // namespace executorch

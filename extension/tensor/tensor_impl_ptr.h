@@ -66,7 +66,7 @@ TensorImplPtr make_tensor_impl_ptr(
     std::vector<exec_aten::DimOrderType> dim_order = {},
     std::vector<exec_aten::StridesType> strides = {},
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC,
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND,
     std::function<void(void*)> deleter = nullptr);
 
 /**
@@ -93,10 +93,10 @@ TensorImplPtr make_tensor_impl_ptr(
     std::vector<exec_aten::DimOrderType> dim_order = {},
     std::vector<exec_aten::StridesType> strides = {},
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC) {
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   constexpr exec_aten::ScalarType scalar_type =
       runtime::CppTypeToScalarType<T>::value;
-  auto raw_data_ptr = data.data();
+  const auto raw_data_ptr = data.data();
   auto data_ptr = std::make_shared<std::vector<T>>(std::move(data));
   return make_tensor_impl_ptr(
       scalar_type,
@@ -104,6 +104,40 @@ TensorImplPtr make_tensor_impl_ptr(
       raw_data_ptr,
       std::move(dim_order),
       std::move(strides),
+      dynamism,
+      [data_ptr = std::move(data_ptr)](void*) {});
+}
+
+/**
+ * Creates a TensorImplPtr that manages a newly created TensorImpl with the
+ * specified properties.
+ *
+ * This template overload is specialized for cases where the tensor data is
+ * provided as a vector. The scalar type is automatically deduced from the
+ * vector's data type. The deleter ensures that the data vector is properly
+ * managed and its lifetime is tied to the TensorImpl.
+ *
+ * @tparam T The C++ type of the tensor elements, deduced from the vector.
+ * @param data A vector containing the tensor's data.
+ * @param dynamism Specifies the mutability of the tensor's shape.
+ * @return A TensorImplPtr that manages the newly created TensorImpl.
+ */
+template <typename T = float>
+TensorImplPtr make_tensor_impl_ptr(
+    std::vector<T> data,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  constexpr exec_aten::ScalarType scalar_type =
+      runtime::CppTypeToScalarType<T>::value;
+  std::vector<exec_aten::SizesType> sizes{exec_aten::SizesType(data.size())};
+  const auto raw_data_ptr = data.data();
+  auto data_ptr = std::make_shared<std::vector<T>>(std::move(data));
+  return make_tensor_impl_ptr(
+      scalar_type,
+      std::move(sizes),
+      raw_data_ptr,
+      {0},
+      {1},
       dynamism,
       [data_ptr = std::move(data_ptr)](void*) {});
 }
@@ -131,7 +165,7 @@ TensorImplPtr make_tensor_impl_ptr(
     std::vector<exec_aten::DimOrderType> dim_order = {},
     std::vector<exec_aten::StridesType> strides = {},
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC);
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
 
 } // namespace extension
 } // namespace executorch

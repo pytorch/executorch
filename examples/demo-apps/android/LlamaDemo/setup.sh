@@ -16,6 +16,7 @@ cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
   -DEXECUTORCH_BUILD_XNNPACK=ON \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
   -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
   -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
   -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
@@ -37,6 +38,7 @@ cmake examples/models/llama2 \
          -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
          -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
          -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+         -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
          -DEXECUTORCH_BUILD_XNNPACK=ON \
          -DCMAKE_BUILD_TYPE=Release \
          -B"${CMAKE_OUT}"/examples/models/llama2
@@ -48,6 +50,7 @@ cmake extension/android \
   -DANDROID_ABI="${ANDROID_ABI}" \
   -DANDROID_PLATFORM=android-23 \
   -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
+  -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
   -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
   -DCMAKE_BUILD_TYPE=Release \
   -B"${CMAKE_OUT}"/extension/android
@@ -56,7 +59,7 @@ cmake --build "${CMAKE_OUT}"/extension/android -j "${CMAKE_JOBS}" --config Relea
 
 BUILD_AAR_DIR="$(mktemp -d)"
 mkdir -p "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}" "${BUILD_AAR_DIR}/libs"
-cp "${CMAKE_OUT}"/extension/android/libexecutorch_llama_jni.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}"
+cp "${CMAKE_OUT}"/extension/android/libexecutorch_jni.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/libexecutorch.so"
 cp extension/android/build/libs/executorch.jar "${BUILD_AAR_DIR}/libs"
 echo \<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\" \
   package=\"org.pytorch.executorch\"\> \
