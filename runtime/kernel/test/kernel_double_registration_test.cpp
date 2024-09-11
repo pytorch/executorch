@@ -20,6 +20,7 @@ using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::Kernel;
 using executorch::runtime::KernelRuntimeContext;
+using executorch::runtime::register_kernels;
 
 class KernelDoubleRegistrationTest : public ::testing::Test {
  public:
@@ -33,10 +34,9 @@ TEST_F(KernelDoubleRegistrationTest, Basic) {
       "aten::add.out",
       "v1/7;0,1,2,3|7;0,1,2,3|7;0,1,2,3",
       [](KernelRuntimeContext&, EValue**) {})};
-  ArrayRef<Kernel> kernels_array = ArrayRef<Kernel>(kernels);
   Error err = Error::InvalidArgument;
 
   ET_EXPECT_DEATH(
-      { auto res = register_kernels(kernels_array); },
+      { (void)register_kernels({kernels}); },
       std::to_string(static_cast<uint32_t>(err)));
 }

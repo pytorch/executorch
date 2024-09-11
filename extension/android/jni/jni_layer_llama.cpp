@@ -30,33 +30,6 @@
 #include <fbjni/ByteBuffer.h>
 #include <fbjni/fbjni.h>
 
-#ifdef __ANDROID__
-#include <android/log.h>
-
-// For Android, write to logcat
-void et_pal_emit_log_message(
-    et_timestamp_t timestamp,
-    et_pal_log_level_t level,
-    const char* filename,
-    const char* function,
-    size_t line,
-    const char* message,
-    size_t length) {
-  int android_log_level = ANDROID_LOG_UNKNOWN;
-  if (level == 'D') {
-    android_log_level = ANDROID_LOG_DEBUG;
-  } else if (level == 'I') {
-    android_log_level = ANDROID_LOG_INFO;
-  } else if (level == 'E') {
-    android_log_level = ANDROID_LOG_ERROR;
-  } else if (level == 'F') {
-    android_log_level = ANDROID_LOG_FATAL;
-  }
-
-  __android_log_print(android_log_level, "LLAMA", "%s", message);
-}
-#endif
-
 using namespace torch::executor;
 
 namespace executorch_jni {
@@ -150,8 +123,8 @@ class ExecuTorchLlamaJni
       jint channels,
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
-      jboolean echo,
-      facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback) {
+      facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback,
+      jboolean echo) {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       auto image_size = image->size();
       std::vector<Image> images;
@@ -170,7 +143,8 @@ class ExecuTorchLlamaJni
           prompt->toStdString(),
           seq_len,
           [callback](std::string result) { callback->onResult(result); },
-          [callback](const Stats& result) { callback->onStats(result); });
+          [callback](const Stats& result) { callback->onStats(result); },
+          echo);
     } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
       runner_->generate(
           prompt->toStdString(),
@@ -248,7 +222,8 @@ class ExecuTorchLlamaJni
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
       jlong start_pos,
-      facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback) {
+      facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback,
+      jboolean echo) {
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
       return static_cast<jint>(Error::NotSupported);
     }
@@ -259,7 +234,8 @@ class ExecuTorchLlamaJni
         [callback](const std::string& result) { callback->onResult(result); },
         [callback](const ::executorch::extension::llm::Stats& stats) {
           callback->onStats(stats);
-        }));
+        },
+        echo));
   }
 
   void stop() {
@@ -285,13 +261,18 @@ class ExecuTorchLlamaJni
         makeNativeMethod("generate", ExecuTorchLlamaJni::generate),
         makeNativeMethod("stop", ExecuTorchLlamaJni::stop),
         makeNativeMethod("load", ExecuTorchLlamaJni::load),
+        makeNativeMethod(
+            "prefillImagesNative", ExecuTorchLlamaJni::prefill_images),
+        makeNativeMethod(
+            "prefillPromptNative", ExecuTorchLlamaJni::prefill_prompt),
+        makeNativeMethod(
+            "generateFromPos", ExecuTorchLlamaJni::generate_from_pos),
     });
   }
 };
 
 } // namespace executorch_jni
 
-JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
-  return facebook::jni::initialize(
-      vm, [] { executorch_jni::ExecuTorchLlamaJni::registerNatives(); });
+void register_natives_for_llama() {
+  executorch_jni::ExecuTorchLlamaJni::registerNatives();
 }

@@ -14,8 +14,11 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/result.h>
+#include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/platform.h>
+
 // Debug switch for operator registry
 #if defined(ET_OP_REGISTRY_DEBUG)
 #include <ostream>
@@ -48,12 +51,10 @@ using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
  */
 struct TensorMeta {
   exec_aten::ScalarType dtype_;
-  ArrayRef<exec_aten::DimOrderType> dim_order_;
+  Span<exec_aten::DimOrderType> dim_order_;
 
   TensorMeta() = default;
-  TensorMeta(
-      exec_aten::ScalarType dtype,
-      ArrayRef<exec_aten::DimOrderType> order)
+  TensorMeta(exec_aten::ScalarType dtype, Span<exec_aten::DimOrderType> order)
       : dtype_(dtype), dim_order_(order) {}
 
   bool operator==(const TensorMeta& other) const {
@@ -190,73 +191,49 @@ struct Kernel {
   Kernel() {}
 };
 
-// Maximum number of operators and their associated kernels that can be
-// registered.
-constexpr uint32_t kOperatorTableMaxSize = 250;
-constexpr uint32_t kMaxNumOfKernelPerOp = 8;
-#ifdef MAX_KERNEL_NUM
-constexpr uint32_t kMaxNumOfKernels = MAX_KERNEL_NUM;
-#else
-constexpr uint32_t kMaxNumOfKernels =
-    kOperatorTableMaxSize * kMaxNumOfKernelPerOp;
-#endif
-/**
- * See OperatorRegistry::hasOpsFn()
- */
-bool hasOpsFn(const char* name, ArrayRef<TensorMeta> meta_list = {});
+namespace internal {
+void make_kernel_key_string(Span<const TensorMeta> key, char* buf);
+} // namespace internal
 
 /**
- * See OperatorRegistry::getOpsFn()
+ * Checks whether an operator exists with a given name and TensorMeta list. When
+ * TensorMeta is empty, it means this op does not have specialized kernels, so
+ * it checks whether it has any fallback kernels.
  */
-const OpFunction& getOpsFn(
+bool registry_has_op_function(
     const char* name,
-    ArrayRef<TensorMeta> meta_list = {});
+    Span<const TensorMeta> meta_list = {});
 
 /**
- * See OperatorRegistry::get_kernels()
+ * Returns the operator with a given name and TensorMeta list, if present.
  */
-ArrayRef<Kernel> get_kernels();
+::executorch::runtime::Result<OpFunction> get_op_function_from_registry(
+    const char* name,
+    Span<const TensorMeta> meta_list = {});
 
 /**
- * See OperatorRegistry::register_kernels(). Notice that the returned Error
- * object should be handled internally and the reason for keep returning is to
- * satisfy the requirement to run this in static initialization time.
+ * Returns all registered kernels.
  */
-ET_NODISCARD Error register_kernels(const ArrayRef<Kernel>&);
+Span<const Kernel> get_registered_kernels();
 
-struct OperatorRegistry {
- public:
-  OperatorRegistry() : num_kernels_(0) {}
+/**
+ * Registers the provided kernels.
+ *
+ * @param[in] kernels Kernel objects to register.
+ * @retval Error::Ok always. Panics on error. This function needs to return a
+ *     non-void type to run at static initialization time.
+ */
+ET_NODISCARD Error register_kernels(const Span<const Kernel>);
 
-  /**
-   * Registers the Kernels object (i.e. string name and function reference
-   * pair). The kernels will be merged into Operators based on the op name.
-   *
-   * @param[in] kernels Kernel object
-   * @retval Error code representing whether registration was successful.
-   */
-  ET_NODISCARD Error register_kernels(const ArrayRef<Kernel>&);
-
-  /**
-   * Checks whether an operator with a given name and TensorMeta list.
-   * When TensorMeta is empty, it means this op does not have specialized
-   * kernels, so it checks whether it has any fallback kernels.
-   */
-  bool hasOpsFn(const char* name, ArrayRef<TensorMeta> meta_list);
-
-  /**
-   * Get the operator with a given name and TensorMeta list
-   */
-  const OpFunction& getOpsFn(const char* name, ArrayRef<TensorMeta> meta_list);
-
-  /**
-   * Return all registered operators.
-   */
-  ArrayRef<Kernel> get_kernels();
-
- private:
-  Kernel kernels_[kMaxNumOfKernels];
-  uint32_t num_kernels_;
+/**
+ * Registers a single kernel.
+ *
+ * @param[in] kernel Kernel object to register.
+ * @retval Error::Ok always. Panics on error. This function needs to return a
+ *     non-void type to run at static initialization time.
+ */
+ET_NODISCARD inline Error register_kernel(const Kernel& kernel) {
+  return register_kernels({&kernel, 1});
 };
 
 } // namespace runtime
@@ -266,16 +243,32 @@ namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::get_kernels;
-using ::executorch::runtime::getOpsFn;
-using ::executorch::runtime::hasOpsFn;
 using ::executorch::runtime::Kernel;
 using ::executorch::runtime::KernelKey;
 using ::executorch::runtime::KernelRuntimeContext;
-using ::executorch::runtime::OperatorRegistry;
 using ::executorch::runtime::OpFunction;
-using ::executorch::runtime::register_kernels;
 using ::executorch::runtime::TensorMeta;
 using RuntimeContext = ::executorch::runtime::KernelRuntimeContext;
+
+inline ::executorch::runtime::Error register_kernels(ArrayRef<Kernel> kernels) {
+  return ::executorch::runtime::register_kernels(
+      {kernels.data(), kernels.size()});
+}
+inline OpFunction getOpsFn(
+    const char* name,
+    ArrayRef<TensorMeta> meta_list = {}) {
+  auto result = ::executorch::runtime::get_op_function_from_registry(
+      name, {meta_list.data(), meta_list.size()});
+  ET_CHECK(result.ok()); // get_op_function_from_registry() logs details.
+  return *result;
+}
+inline bool hasOpsFn(const char* name, ArrayRef<TensorMeta> meta_list = {}) {
+  return ::executorch::runtime::registry_has_op_function(
+      name, {meta_list.data(), meta_list.size()});
+}
+inline ArrayRef<Kernel> get_kernels() {
+  Span<const Kernel> kernels = ::executorch::runtime::get_registered_kernels();
+  return ArrayRef<Kernel>(kernels.data(), kernels.size());
+}
 } // namespace executor
 } // namespace torch
