@@ -41,6 +41,13 @@ _OPTIMIZED_ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_linear",
+        deps = [
+            "//executorch/kernels/optimized:libblas",
+            "//executorch/kernels/portable/cpu/util:matmul_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_log_softmax",
         deps = select({
             "DEFAULT": [
