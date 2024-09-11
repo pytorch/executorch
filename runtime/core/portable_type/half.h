@@ -62,7 +62,7 @@ struct alignas(2) Half {
 namespace internal {
 
 inline float fp32_from_bits(uint32_t w) {
-  static_assert(sizeof(float) == sizeof(uint32_t), "");
+  static_assert(sizeof(float) == sizeof(uint32_t));
   union {
     uint32_t as_bits;
     float as_value;
@@ -71,7 +71,7 @@ inline float fp32_from_bits(uint32_t w) {
 }
 
 inline uint32_t fp32_to_bits(float f) {
-  static_assert(sizeof(float) == sizeof(uint32_t), "");
+  static_assert(sizeof(float) == sizeof(uint32_t));
   union {
     float as_value;
     uint32_t as_bits;
