@@ -1044,6 +1044,9 @@
             <span class="n">EXIRATenDialectVerifier</span><span class="p">()(</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
         <span class="k">except</span> <span class="n">ExportError</span><span class="p">:</span>
             <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;If a particular operator failed core ATen IR check, please consider adding it to the exception list. &quot;</span>
+                <span class="s2">&quot;Add the operator to _core_aten_ops_exception_list in EdgeCompileConfig. This is the recommended way &quot;</span>
+                <span class="s2">&quot;to resolve this type of failure, so that the rest of the IR validation check can still be performed.</span><span class="se">\n</span><span class="s2">&quot;</span>
                 <span class="s2">&quot;If you&#39;d like to disable IR validation checking, please set _check_ir_validity in EdgeCompileConfig, &quot;</span>
                 <span class="s2">&quot;like *.to_edge(exir.EdgeCompileConfig(_check_ir_validity=False)).&quot;</span>
             <span class="p">)</span>
@@ -1061,7 +1064,11 @@
                 <span class="n">module_call_graph</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
                 <span class="n">example_inputs</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
                 <span class="n">constants</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
-                <span class="n">verifiers</span><span class="o">=</span><span class="p">[</span><span class="n">get_aten_verifier</span><span class="p">(</span><span class="n">enable</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">)],</span>
+                <span class="n">verifiers</span><span class="o">=</span><span class="p">[</span>
+                    <span class="n">get_aten_verifier</span><span class="p">(</span>
+                        <span class="n">config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="p">],</span>
             <span class="p">),</span>
             <span class="kc">False</span><span class="p">,</span>
         <span class="p">)</span>
@@ -1169,10 +1176,13 @@
     <span class="n">program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">ops_set_to_not_decompose</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
-
     <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">EXIRATenDialectVerifier</span><span class="p">(</span><span class="n">ops_set_to_not_decompose</span><span class="p">)(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
+            <span class="n">EXIRATenDialectVerifier</span><span class="p">(</span>
+                <span class="n">edge_compile_config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span>
+                <span class="n">class_only</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="n">exception_list</span><span class="o">=</span><span class="n">ops_set_to_not_decompose</span><span class="p">,</span>
+            <span class="p">)(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
         <span class="k">except</span> <span class="n">ExportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Input program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is not in ATen dialect.&quot;</span><span class="p">)</span>
             <span class="k">raise</span> <span class="n">e</span>
@@ -1491,13 +1501,8 @@
                 <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_backend</span><span class="p">({</span><span class="n">name</span><span class="p">:</span> <span class="n">curr_partitioner</span><span class="p">})</span>
 
     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-        <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">:</span>
-            <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
-                <span class="n">edge_compile_config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span>
-                <span class="n">class_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-            <span class="p">)()(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
 
-        <span class="n">ops_set_to_not_decompose</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">ops_set_to_not_decompose</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
         <span class="n">partitioners</span> <span class="o">=</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">[])</span>
         <span class="k">for</span> <span class="n">curr_partitioner</span> <span class="ow">in</span> <span class="n">partitioners</span><span class="p">:</span>
             <span class="n">curr_op_set</span><span class="p">,</span> <span class="n">check_op_support</span> <span class="o">=</span> <span class="n">curr_partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">(</span>
@@ -1512,6 +1517,13 @@
                 <span class="n">partitioner_name</span><span class="o">=</span><span class="n">curr_partitioner</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
                 <span class="n">generate_error</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">:</span>
+            <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
+                <span class="n">edge_compile_config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span>
+                <span class="n">class_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="n">exception_list</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">ops_set_to_not_decompose</span><span class="p">),</span>
+            <span class="p">)()(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">edge_manager</span>
 
@@ -1578,6 +1590,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">compile_config</span> <span class="o">=</span> <span class="n">compile_config</span> <span class="ow">or</span> <span class="n">EdgeCompileConfig</span><span class="p">()</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">edge_programs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
             <span class="n">edge_programs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">edge_programs</span><span class="p">}</span>
+
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
