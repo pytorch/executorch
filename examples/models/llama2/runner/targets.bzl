@@ -3,7 +3,11 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 def _get_operator_lib(aten = False):
     if aten:
         return ["//executorch/kernels/aten:generated_lib"]
-    return ["//executorch/configurations:optimized_native_cpu_ops", "//executorch/extension/llm/custom_ops:custom_ops"]
+    elif runtime.is_oss:
+        # TODO(T183193812): delete this path after optimized_oss.yaml is no more.
+        return ["//executorch/configurations:optimized_native_cpu_ops_oss", "//executorch/extension/llm/custom_ops:custom_ops"]
+    else:
+        return ["//executorch/configurations:optimized_native_cpu_ops", "//executorch/extension/llm/custom_ops:custom_ops"]
 
 def define_common_targets():
     for aten in (True, False):
