@@ -74,6 +74,8 @@ exclude_patterns = [
     # NB: Objective-C is not supported
     'examples/apple/**',
     'examples/demo-apps/apple_ios/**',
+    # File contains @generated
+    'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
 ]
 command = [
     'python',
@@ -177,6 +179,8 @@ exclude_patterns = [
     '**/*.bat',
     '**/*.jpg',
     '**/*.jar',
+    # File contains @generated
+    'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
 ]
 command = [
     'python',

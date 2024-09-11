@@ -40,6 +40,9 @@ Tensor& slice_scatter_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(input, out), InvalidArgument, out);
+
   if (input.numel() == 0) {
     return out;
   }

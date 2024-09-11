@@ -54,20 +54,6 @@ build_android_native_library() {
   fi
   cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config Release
 
-  cmake examples/models/llama2 \
-    -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
-    -DANDROID_ABI="$ANDROID_ABI" \
-    -DANDROID_PLATFORM=android-23 \
-    -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
-    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-    -DEXECUTORCH_BUILD_XNNPACK=ON \
-    -DCMAKE_BUILD_TYPE=Release \
-    -B"${CMAKE_OUT}"/examples/models/llama2
-
-  cmake --build "${CMAKE_OUT}"/examples/models/llama2 -j "${CMAKE_JOBS}" --config Release
-
-
   cmake extension/android \
     -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="${ANDROID_ABI}" \
@@ -75,6 +61,7 @@ build_android_native_library() {
     -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DEXECUTORCH_LOG_LEVEL=Info \
+    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
     -DCMAKE_BUILD_TYPE=Release \
     -B"${CMAKE_OUT}"/extension/android
@@ -110,7 +97,7 @@ build_aar() {
   find jni -type f -name "libexecutorch_jni.so" -exec bash -c 'mv "$1" "${1/_jni/}"' bash {} \;
   # Zip all necessary files into the AAR file
   zip -r executorch.aar libs jni/*/libexecutorch.so jni/*/libqnn*.so jni/*/libQnn*.so AndroidManifest.xml
-  zip -r executorch-llama.aar libs jni/*/libexecutorch_llama_jni.so jni/*/libqnn*.so jni/*/libQnn*.so AndroidManifest.xml
+  zip -r executorch-llama.aar libs jni/*/libexecutorch.so jni/*/libqnn*.so jni/*/libQnn*.so AndroidManifest.xml
   popd
 }
 

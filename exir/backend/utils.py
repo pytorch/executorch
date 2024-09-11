@@ -383,6 +383,40 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
                     node.meta["delegation_tag"] = user_tags.pop()
 
 
+def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
+    """
+    Util function for partitioners. This function tags the mutated buffer nodes
+    whose users all belong within the same partition. This should be called after tagging all other nodes.
+    Any buffer which is used as input to a subgraph, will be tagged with the same tag as that
+    subgraph. Throw error when buffers is used across different partitions. That is the
+    underlying data will be owned by multiple delegates.
+    """
+    for node in edge_program.graph.nodes:
+        # Determine whether this node is a mutated buffer
+        is_mutated_buffer_node = False
+        if node.op == "placeholder" and is_buffer(edge_program, node):
+            for node_user in node.users:
+                if node_user.name in edge_program.graph_signature.buffers_to_mutate:
+                    is_mutated_buffer_node = True
+                    break
+        # This node is mutated buffer, tag it
+        if is_mutated_buffer_node:
+            user_tags = set()
+            for user in node.users:
+                user_tag = user.meta.get("delegation_tag", None)
+                if user_tag is not None:
+                    user_tags.add(user_tag)
+            if len(user_tags) > 1:
+                logging.info(
+                    f"The data node is used across multiple partitions, including {user_tags}. "
+                    "If the data is too large and it's not preferred to copy, please tag the "
+                    "constant node like node.['no_copy'] = True and they won't be copied."
+                )
+            # tag the data node with the same tag as the last user
+            if len(user_tags) > 0:
+                node.meta["delegation_tag"] = user_tags.pop()
+
+
 # TODO - style: use templated types
 class DelegateMappingBuilder:
     """

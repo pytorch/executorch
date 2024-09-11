@@ -39,9 +39,8 @@ from executorch.extension.pybindings.portable_lib import (  # @manual=//executor
     _load_for_executorch_from_buffer,
 )
 from executorch.extension.pytree import tree_flatten
-from torch._export import capture_pre_autograd_graph
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
-from torch.export import export
+from torch.export import export, export_for_training
 from torch.fx.passes.operator_support import any_chain
 
 
@@ -77,7 +76,7 @@ class TestPartitioner(unittest.TestCase):
 
         mlp = MLP()
         example_inputs = mlp.get_random_inputs()
-        model = capture_pre_autograd_graph(mlp, example_inputs)
+        model = export_for_training(mlp, example_inputs).module()
         aten = export(model, example_inputs)
         spec_key = "path"
         spec_value = "/a/b/c/d"
@@ -138,7 +137,7 @@ class TestPartitioner(unittest.TestCase):
 
         mlp = MLP()
         example_inputs = mlp.get_random_inputs()
-        model = capture_pre_autograd_graph(mlp, example_inputs)
+        model = export_for_training(mlp, example_inputs).module()
         aten = export(model, example_inputs)
         edge = exir.to_edge(aten)
 
@@ -178,7 +177,7 @@ class TestPartitioner(unittest.TestCase):
 
         mlp = MLP()
         example_inputs = mlp.get_random_inputs()
-        model = capture_pre_autograd_graph(mlp, example_inputs)
+        model = export_for_training(mlp, example_inputs).module()
         edge = exir.to_edge(export(model, example_inputs))
 
         with self.assertRaisesRegex(
@@ -230,7 +229,7 @@ class TestPartitioner(unittest.TestCase):
                     partition_tags=partition_tags,
                 )
 
-        model = capture_pre_autograd_graph(self.AddConst(), (torch.ones(2, 2),))
+        model = export_for_training(self.AddConst(), (torch.ones(2, 2),)).module()
         edge = exir.to_edge(export(model, (torch.ones(2, 2),)))
         delegated = edge.to_backend(PartitionerNoTagData())
 
@@ -309,7 +308,7 @@ class TestPartitioner(unittest.TestCase):
                     partition_tags=partition_tags,
                 )
 
-        model = capture_pre_autograd_graph(self.AddConst(), (torch.ones(2, 2),))
+        model = export_for_training(self.AddConst(), (torch.ones(2, 2),)).module()
         edge = exir.to_edge(export(model, (torch.ones(2, 2),)))
         delegated = edge.to_backend(PartitionerTagData())
 
@@ -384,7 +383,7 @@ class TestPartitioner(unittest.TestCase):
                     partition_tags=partition_tags,
                 )
 
-        model = capture_pre_autograd_graph(self.AddConst(), (torch.ones(2, 2),))
+        model = export_for_training(self.AddConst(), (torch.ones(2, 2),)).module()
         edge = exir.to_edge(export(model, (torch.ones(2, 2),)))
         delegated = edge.to_backend(PartitionerTagData())
 
@@ -472,7 +471,7 @@ class TestPartitioner(unittest.TestCase):
                 )
 
         inputs = (torch.ones(2, 2),)
-        model = capture_pre_autograd_graph(ReuseConstData(), (torch.ones(2, 2),))
+        model = export_for_training(ReuseConstData(), (torch.ones(2, 2),)).module()
         edge = exir.to_edge(export(model, (torch.ones(2, 2),)))
         exec_prog = edge.to_backend(PartitionerTagData()).to_executorch()
         executorch_module = _load_for_executorch_from_buffer(exec_prog.buffer)
@@ -532,7 +531,7 @@ class TestPartitioner(unittest.TestCase):
                     partition_tags=partition_tags,
                 )
 
-        model = capture_pre_autograd_graph(ReuseConstData(), (torch.ones(2, 2),))
+        model = export_for_training(ReuseConstData(), (torch.ones(2, 2),)).module()
         edge = exir.to_edge(export(model, (torch.ones(2, 2),)))
         with self.assertRaises(RuntimeError) as error:
             _ = edge.to_backend(PartitionerTagData())
