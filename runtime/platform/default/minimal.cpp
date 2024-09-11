@@ -47,3 +47,9 @@ void et_pal_emit_log_message(
     ET_UNUSED size_t line,
     ET_UNUSED const char* message,
     ET_UNUSED size_t length) {}
+
+void* et_pal_allocate(ET_UNUSED size_t size) {
+  return nullptr;
+}
+
+void et_pal_free(ET_UNUSED void* ptr) {}

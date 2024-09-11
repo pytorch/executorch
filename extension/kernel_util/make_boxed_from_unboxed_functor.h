@@ -173,9 +173,9 @@ static executorch::runtime::Kernel make_boxed_kernel(
 } // namespace extension
 } // namespace executorch
 
-#define EXECUTORCH_LIBRARY(ns, op_name, func)                     \
-  static auto res_##ns = ::executorch::runtime::register_kernels( \
-      ::executorch::extension::make_boxed_kernel(                 \
+#define EXECUTORCH_LIBRARY(ns, op_name, func)                    \
+  static auto res_##ns = ::executorch::runtime::register_kernel( \
+      ::executorch::extension::make_boxed_kernel(                \
           #ns "::" op_name, EXECUTORCH_FN(func)))
 
 namespace torch {
