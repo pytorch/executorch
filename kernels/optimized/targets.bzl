@@ -19,6 +19,14 @@ def define_common_targets():
         ],
     )
 
+    runtime.export_file(
+        name = "optimized_oss.yaml",
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
     runtime.cxx_library(
         name = "optimized_operators",
         srcs = [],
