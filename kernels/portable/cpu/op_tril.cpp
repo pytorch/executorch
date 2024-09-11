@@ -145,11 +145,6 @@ Tensor& tril_out(
       InvalidArgument,
       out);
 
-  ET_KERNEL_CHECK(
-      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
-
-  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(self), InvalidArgument, out);
-
   if (self.numel() == 0) {
     return out;
   }

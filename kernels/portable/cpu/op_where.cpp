@@ -35,9 +35,6 @@ Tensor& where_out(
       InvalidArgument,
       out);
 
-  ET_KERNEL_CHECK(
-      ctx, tensors_have_same_dim_order(cond, a, b, out), InvalidArgument, out);
-
   constexpr auto name = "where.self_out";
 
   ET_CHECK_MSG(
