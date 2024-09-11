@@ -8,9 +8,12 @@
 
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 
+#include <random>
+
 namespace executorch {
 namespace extension {
 namespace {
+
 template <
     typename INT_T,
     typename std::enable_if<
@@ -72,6 +75,25 @@ bool extract_scalar(exec_aten::Scalar scalar, BOOL_T* out_val) {
       extract_scalar(scalar, &out_val),    \
       #scalar " could not be extracted: wrong type or out of range");
 
+template <typename Distribution>
+TensorPtr random_strided(
+    std::vector<exec_aten::SizesType> sizes,
+    std::vector<exec_aten::StridesType> strides,
+    exec_aten::ScalarType type,
+    exec_aten::TensorShapeDynamism dynamism,
+    Distribution&& distribution) {
+  auto tensor =
+      empty_strided(std::move(sizes), std::move(strides), type, dynamism);
+  std::default_random_engine gen{std::random_device{}()};
+
+  ET_SWITCH_REALB_TYPES(type, nullptr, "random_strided", CTYPE, [&] {
+    std::generate_n(tensor->mutable_data_ptr<CTYPE>(), tensor->numel(), [&]() {
+      return static_cast<CTYPE>(distribution(gen));
+    });
+  });
+  return tensor;
+}
+
 } // namespace
 
 TensorPtr empty_strided(
@@ -108,6 +130,47 @@ TensorPtr full_strided(
         value);
   });
   return tensor;
+}
+
+TensorPtr rand_strided(
+    std::vector<exec_aten::SizesType> sizes,
+    std::vector<exec_aten::StridesType> strides,
+    exec_aten::ScalarType type,
+    exec_aten::TensorShapeDynamism dynamism) {
+  return random_strided(
+      std::move(sizes),
+      std::move(strides),
+      type,
+      dynamism,
+      std::uniform_real_distribution<float>(0.0f, 1.0f));
+}
+
+TensorPtr randn_strided(
+    std::vector<exec_aten::SizesType> sizes,
+    std::vector<exec_aten::StridesType> strides,
+    exec_aten::ScalarType type,
+    exec_aten::TensorShapeDynamism dynamism) {
+  return random_strided(
+      std::move(sizes),
+      std::move(strides),
+      type,
+      dynamism,
+      std::normal_distribution<float>(0.0f, 1.0f));
+}
+
+TensorPtr randint_strided(
+    int64_t low,
+    int64_t high,
+    std::vector<exec_aten::SizesType> sizes,
+    std::vector<exec_aten::StridesType> strides,
+    exec_aten::ScalarType type,
+    exec_aten::TensorShapeDynamism dynamism) {
+  return random_strided(
+      std::move(sizes),
+      std::move(strides),
+      type,
+      dynamism,
+      std::uniform_int_distribution<int64_t>(low, high - 1));
 }
 
 } // namespace extension
