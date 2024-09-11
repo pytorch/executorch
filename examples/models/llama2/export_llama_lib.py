@@ -305,6 +305,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="This option is only for coreml, and is only supported for MacOS15+/iOS18+",
     )
     parser.add_argument(
+        "--coreml-quantize",
+        default=None,
+        choices=["b4w"],
+        help="This option is only for coreml: Use coreml quantization, e.g. b4w (for blockwise 4 bit weight)",
+    )
+    parser.add_argument(
         "--qnn",
         action="store_true",
         help="Delegate llama2 to qnn backend (Qualcomm), please use it --kv_cahce=True",
@@ -523,6 +529,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
             args.use_kv_cache and args.coreml_enable_state,
             args.embedding_quantize,
             args.pt2e_quantize,
+            args.coreml_quantize,
         )
         partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
