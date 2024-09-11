@@ -116,6 +116,6 @@ class OperatorTest : public ::testing::Test {
   }
 
  protected:
-  exec_aten::RuntimeContext context_;
+  executorch::runtime::KernelRuntimeContext context_;
   bool expect_failure_;
 };

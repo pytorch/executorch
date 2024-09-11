@@ -18,8 +18,8 @@ namespace native {
 
 using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
-using exec_aten::RuntimeContext;
 using executor::Error;
+using executorch::runtime::KernelRuntimeContext;
 
 namespace {
 
@@ -61,7 +61,8 @@ void relu(const Tensor& input, Tensor& output) {
  *
  * relu.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)
  */
-Tensor& my_relu_out(RuntimeContext& context, const Tensor& input, Tensor& out) {
+Tensor&
+my_relu_out(KernelRuntimeContext& context, const Tensor& input, Tensor& out) {
   (void)context;
   resize(out, input.sizes());
   ET_KERNEL_CHECK(
