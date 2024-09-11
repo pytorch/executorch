@@ -38,7 +38,7 @@ namespace {
  */
 template <typename CTYPE>
 void gelu(
-    exec_aten::RuntimeContext& context,
+    executorch::runtime::KernelRuntimeContext& context,
     const Tensor& input,
     string_view approximate,
     Tensor& output) {

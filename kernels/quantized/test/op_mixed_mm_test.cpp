@@ -18,9 +18,9 @@
 
 using namespace ::testing;
 using exec_aten::optional;
-using exec_aten::RuntimeContext;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
+using executorch::runtime::KernelRuntimeContext;
 using torch::executor::native::quantized_mixed_mm_out;
 using torch::executor::testing::TensorFactory;
 
@@ -55,7 +55,7 @@ void test_dtype() {
       /*sizes=*/{1, 2},
       /*data=*/{3.8, 3.0});
 
-  RuntimeContext ctx{};
+  KernelRuntimeContext ctx{};
 
   quantized_mixed_mm_out(ctx, input, weight, weight_scales, opt_weight_zp, out);
 

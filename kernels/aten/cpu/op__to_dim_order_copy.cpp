@@ -115,7 +115,7 @@ Tensor& _to_dim_order_copy_out(
     bool non_blocking,
     OptionalArrayRef<int64_t> dim_order,
     Tensor& out) {
-  exec_aten::RuntimeContext ctx{};
+  executorch::runtime::KernelRuntimeContext ctx{};
   return _to_dim_order_copy_out(ctx, self, non_blocking, dim_order, out);
 }
 
