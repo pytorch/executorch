@@ -573,6 +573,9 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
             EXIRATenDialectVerifier()(ep.exported_program.graph_module)
         except ExportError:
             logging.info(
+                "If a particular operator failed core ATen IR check, please consider adding it to the exception list. "
+                "Add the operator to _core_aten_ops_exception_list in EdgeCompileConfig. This is the recommended way "
+                "to resolve this type of failure, so that the rest of the IR validation check can still be performed.\n"
                 "If you'd like to disable IR validation checking, please set _check_ir_validity in EdgeCompileConfig, "
                 "like *.to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))."
             )
@@ -590,7 +593,11 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
                 module_call_graph=ep.exported_program.module_call_graph,
                 example_inputs=ep.exported_program.example_inputs,
                 constants=ep.exported_program.constants,
-                verifiers=[get_aten_verifier(enable=config._check_ir_validity)],
+                verifiers=[
+                    get_aten_verifier(
+                        config=config,
+                    )
+                ],
             ),
             False,
         )
@@ -698,10 +705,13 @@ def _generate_edge_program(
     program: ExportedProgram,
     ops_set_to_not_decompose: Optional[List[torch._ops.OpOverload]] = None,
 ) -> ExportedProgram:
-
     if config._check_ir_validity:
         try:
-            EXIRATenDialectVerifier(ops_set_to_not_decompose)(program.graph_module)
+            EXIRATenDialectVerifier(
+                edge_compile_config=config,
+                class_only=False,
+                exception_list=ops_set_to_not_decompose,
+            )(program.graph_module)
         except ExportError as e:
             logging.info(f"Input program {name} is not in ATen dialect.")
             raise e
@@ -1020,13 +1030,8 @@ def to_edge_transform_and_lower(
                 edge_manager = edge_manager.to_backend({name: curr_partitioner})
 
     for name, program in edge_manager._edge_programs.items():
-        if config._check_ir_validity:
-            EXIREdgeDialectVerifier(
-                edge_compile_config=config,
-                class_only=True,
-            )()(program.graph_module)
 
-        ops_set_to_not_decompose = set()
+        ops_set_to_not_decompose: Set[torch._ops.OpOverload] = set()
         partitioners = partitioner.get(name, [])
         for curr_partitioner in partitioners:
             curr_op_set, check_op_support = curr_partitioner.ops_to_not_decompose(
@@ -1041,6 +1046,13 @@ def to_edge_transform_and_lower(
                 partitioner_name=curr_partitioner.__class__.__name__,
                 generate_error=True,
             )
+
+        if config._check_ir_validity:
+            EXIREdgeDialectVerifier(
+                edge_compile_config=config,
+                class_only=True,
+                exception_list=list(ops_set_to_not_decompose),
+            )()(program.graph_module)
 
     return edge_manager
 
@@ -1107,6 +1119,7 @@ class EdgeProgramManager:
         self.compile_config = compile_config or EdgeCompileConfig()
         if not isinstance(edge_programs, dict):
             edge_programs = {"forward": edge_programs}
+
         for name, program in edge_programs.items():
             try:
                 EXIREdgeDialectVerifier(
