@@ -67,7 +67,7 @@ We've also provided a simple set of utilities that let users perform quality ana
 
 
 ```python
-from executorch.devtools.inspector._inspector_utils import compare_results
+from executorch.devtools.inspector import compare_results
 
 # Run a simple quality analysis between the model outputs sourced from the
 # runtime and a set of reference outputs.
