@@ -13,7 +13,9 @@ on:
       - examples/demo-apps/apple_ios/default-ios-device-farm-appium-test-spec.yml
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  # NB: This concurency group needs to be different than the one used in android-perf, otherwise
+  # GH complains about concurrency deadlock
+  group: apple-spec-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
 jobs:
