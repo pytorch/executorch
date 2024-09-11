@@ -91,6 +91,7 @@ fi
 ### Optional user args
 ########
 root_dir=${1:-"${script_dir}/ethos-u-scratch"}
+mkdir -p ${root_dir}
 root_dir=$(realpath ${root_dir})
 
 ########
@@ -246,7 +247,6 @@ fi
 cd "${script_dir}"
 
 # Setup the root dir
-mkdir -p "${root_dir}"
 cd "${root_dir}"
 echo "[main] Using root dir ${root_dir}"
 

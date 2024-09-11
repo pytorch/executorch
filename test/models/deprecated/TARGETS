@@ -1,0 +1,12 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.export_file(
+    name = "ModuleLinear-no-constant-segment.pte",
+    src = "ModuleLinear-no-constant-segment.pte",
+    visibility = [
+        "//executorch/runtime/executor/test/...",
+        "//executorch/test/...",
+    ],
+)

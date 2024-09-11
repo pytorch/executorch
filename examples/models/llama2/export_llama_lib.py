@@ -16,7 +16,7 @@ import shlex
 from enum import Enum
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Optional, Union
+from typing import Callable, List, Optional, Union
 
 import pkg_resources
 
@@ -45,10 +45,15 @@ from executorch.extension.llm.export.quantizer_lib import (
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
 from ..model_factory import EagerModelFactory
+from .source_transformation.apply_spin_quant_r1_r2 import (
+    fuse_layer_norms,
+    get_model_with_r1_r2,
+)
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
 )
+from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
 from .source_transformation.sdpa import (
     replace_causal_mask,
@@ -166,19 +171,25 @@ def build_args_parser() -> argparse.ArgumentParser:
         nargs="+",
         type=str,
         default=None,
-        help="Tasks for GPTQ calibration",
+        help="Tasks for GPTQ calibration from lm_eval",
     )
     parser.add_argument(
         "--calibration_limit",
         type=int,
         default=None,
-        help="number of samples used for calibration",
+        help="number of samples used for calibration from lm_eval",
     )
     parser.add_argument(
         "--calibration_seq_length",
         type=int,
         default=None,
-        help="Sequence length for GPTQ calibration",
+        help="Sequence length for GPTQ calibration from lm_eval",
+    )
+    parser.add_argument(
+        "--calibration_data",
+        type=str,
+        default="Once upon a time",
+        help="Calibration prompts from users",
     )
     parser.add_argument(
         "-t",
@@ -219,6 +230,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="config.json",
     )
     parser.add_argument(
+        "--optimized_rotation_path",
+        default=None,
+        required=False,
+        help="[QNN backend] Optimized rotation checkpoint path. Just apply R1/R2 here."
+        "You can download the optimized rotation matrices from https://github.com/facebookresearch/SpinQuant/tree/main",
+    )
+    parser.add_argument(
         "-m",
         "--metadata",
         default=None,
@@ -256,9 +274,9 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--dtype-override",
         default="fp32",
         type=str,
-        choices=["fp32", "fp16"],
+        choices=["fp32", "fp16", "bf16"],
         help="Override the dtype of the model (default is the checkpoint dtype)."
-        "Options: fp32, fp16. Please be aware that only some backends support fp16.",
+        "Options: fp32, fp16, bf16. Please be aware that only some backends support fp16 and bf16.",
     )
 
     parser.add_argument(
@@ -281,6 +299,11 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("-V", "--vulkan", action="store_true")
     parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
+    parser.add_argument(
+        "--coreml-enable-state",
+        action="store_true",
+        help="This option is only for coreml, and is only supported for MacOS15+/iOS18+",
+    )
     parser.add_argument(
         "--qnn",
         action="store_true",
@@ -309,11 +332,27 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=False,
         help="Generate logits for all inputs.",
     )
+
+    parser.add_argument(
+        "--soc_model",
+        help="[QNN backend] SoC model of current device. e.g. 'SM8650' for Snapdragon 8 Gen 3.",
+        type=str,
+        required=False,
+        default="SM8650",
+    )
+
+    parser.add_argument(
+        "-sq",
+        "--use_spin_quant",
+        type=str,
+        default=None,
+        choices=["cuda", "native"],
+        help="Use SpinQuant for better quantization performance. Only support cuda and native.",
+    )
     return parser
 
 
 def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
-
     path = str(path)
 
     if verbose_export():
@@ -381,35 +420,6 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
     else:
         dtype_override = None
 
-    # source transforms
-    transforms = []
-    if args.quantization_mode:
-        modelname = f"{modelname}_q"
-        transforms.append(
-            get_quant_weight_transform(args, dtype_override, verbose_export())
-        )
-
-    if args.embedding_quantize:
-        modelname = f"{modelname}_e"
-        transforms.append(get_quant_embedding_transform(args))
-
-    if args.expand_rope_table:
-        transforms.append(materialze_broadcast_of_rope_freq_cis)
-
-    if args.use_sdpa_with_kv_cache:
-        transforms.append(replace_sdpa_with_custom_op)
-
-    if args.use_kv_cache:
-        if args.qnn:
-            transforms.append(replace_kv_cache_with_simple_kv_cache)
-            transforms.append(replace_sdpa_with_flex_sdpa)
-            transforms.append(replace_causal_mask)
-
-        elif args.coreml or args.mps:
-            # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
-            # to get free perf gain.
-            transforms.append(replace_sdpa_with_simple_sdpa)
-            transforms.append(replace_causal_mask)
     return (
         _load_llama_model(
             modelname=modelname,
@@ -421,13 +431,19 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             generate_full_logits=args.generate_full_logits,
             weight_type=weight_type,
             enable_dynamic_shape=args.enable_dynamic_shape,
+            calibration_tasks=args.calibration_tasks,
+            calibration_limit=args.calibration_limit,
+            calibration_seq_length=args.calibration_seq_length,
+            calibration_data=args.calibration_data,
+            tokenizer_path=args.tokenizer_path,
             verbose=args.verbose,
             max_seq_len=args.max_seq_length,
             metadata_str=args.metadata,
+            args=args,
         )
         .set_output_dir(output_dir_path)
         .to_dtype(dtype_override)
-        .source_transform(transforms)
+        .source_transform(_get_source_transforms(modelname, dtype_override, args))
     )
 
 
@@ -504,7 +520,9 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
     if args.coreml:
         coreml_partitioner = get_coreml_partitioner(
-            args.use_kv_cache, args.pt2e_quantize
+            args.use_kv_cache and args.coreml_enable_state,
+            args.embedding_quantize,
+            args.pt2e_quantize,
         )
         partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
@@ -514,7 +532,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
         partitioners.append(
             get_qnn_partitioner(
-                args.use_kv_cache, args.pt2e_quantize, args.num_sharding
+                args.use_kv_cache, args.pt2e_quantize, args.num_sharding, args.soc_model
             )
         )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
@@ -541,7 +559,10 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
-            canonicalize_program(builder.edge_manager.exported_program())
+            # TODO: Need to remove this once we have better way to handle buffer size
+            canonicalize_program(
+                builder.edge_manager.exported_program(), custom_buffer_size=542048256
+            )
 
         builder = builder.to_executorch()
 
@@ -558,7 +579,10 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
-            canonicalize_program(builder.edge_manager.exported_program())
+            # TODO: Need to remove this once we have better way to handle buffer size
+            canonicalize_program(
+                builder.edge_manager.exported_program(), custom_buffer_size=542048256
+            )
 
         builder = builder.to_executorch()
 
@@ -630,9 +654,15 @@ def _load_llama_model(
     generate_full_logits: bool = False,
     weight_type: WeightType = WeightType.LLAMA,
     enable_dynamic_shape: bool = False,
+    calibration_tasks: Optional[List[str]] = None,
+    calibration_limit: Optional[int] = None,
+    calibration_seq_length: Optional[int] = None,
+    calibration_data: Optional[str] = None,
+    tokenizer_path: Optional[str] = None,
     verbose: bool = False,
     max_seq_len: int = 128,
     metadata_str: Optional[str] = None,
+    args,
 ) -> "LLMEdgeManager":
     """
     A helper util that builds a Llama2 model. It returns a LLMEdgeManager that
@@ -683,8 +713,14 @@ def _load_llama_model(
         max_seq_len=model.params.max_seq_len,
         dtype=dtype,
         use_kv_cache=use_kv_cache,
+        generate_full_logits=generate_full_logits,
         example_inputs=example_inputs,
         enable_dynamic_shape=enable_dynamic_shape,
+        calibration_tasks=calibration_tasks,
+        calibration_limit=calibration_limit,
+        calibration_seq_length=calibration_seq_length,
+        calibration_data=calibration_data,
+        tokenizer_path=tokenizer_path,
         verbose=verbose,
         metadata=_load_llama_model_metadata(
             weight_type,
@@ -694,4 +730,61 @@ def _load_llama_model(
             model.params,
             metadata_str,
         ),
+        args=args,
     )
+
+
+def _get_source_transforms(
+    modelname: str, dtype_override: Optional[DType], args
+) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
+    transforms = []
+    if args.quantization_mode:
+        modelname = f"{modelname}_q"
+        transforms.append(
+            get_quant_weight_transform(args, dtype_override, verbose_export())
+        )
+
+    if args.embedding_quantize:
+        modelname = f"{modelname}_e"
+        transforms.append(get_quant_embedding_transform(args))
+
+    if args.expand_rope_table:
+        transforms.append(materialze_broadcast_of_rope_freq_cis)
+
+    if args.use_sdpa_with_kv_cache:
+        transforms.append(replace_sdpa_with_custom_op)
+
+    if args.use_kv_cache:
+        if args.qnn:
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
+            from executorch.backends.qualcomm.utils.utils import (
+                convert_linear_to_conv2d,
+            )
+
+            transforms.append(replace_kv_cache_with_simple_kv_cache)
+            transforms.append(replace_sdpa_with_flex_sdpa)
+            transforms.append(replace_causal_mask)
+            transforms.append(replace_rms_norm_with_native_rms_norm)
+            if args.optimized_rotation_path:
+                transforms.append(fuse_layer_norms)
+                transforms.append(get_model_with_r1_r2(args.optimized_rotation_path))
+            transforms.append(convert_linear_to_conv2d)
+
+        elif args.coreml or args.mps:
+            # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
+            # to get free perf gain.
+            transforms.append(replace_sdpa_with_simple_sdpa)
+            transforms.append(replace_causal_mask)
+
+    if args.use_spin_quant:
+        if args.use_spin_quant == "cuda":
+            from .source_transformation.spin_quant import (
+                inject_fast_hadamard_transform_cuda_for_spin_quant,
+            )
+
+            transforms.append(inject_fast_hadamard_transform_cuda_for_spin_quant)
+
+        elif args.use_spin_quant == "native":
+            raise NotImplementedError("native SpinQuant is not implemented yet.")
+
+    return transforms

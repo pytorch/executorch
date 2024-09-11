@@ -5,12 +5,12 @@
 
 import os
 import struct
-import subprocess
 import tempfile
 
 from typing import List
 
 import numpy as np
+from ethosu.vela import vela
 
 
 # Pack either input or output tensor block, compose the related arrays into
@@ -38,19 +38,15 @@ def vela_compile(tosa_graph, args: List[str]):
     with tempfile.TemporaryDirectory() as tmpdir:
         tosaname = "out.tosa"
         flatbuffer = tosa_graph.serialize()
-        with open(os.path.join(tmpdir, tosaname), "wb") as f:
+        tosa_path = os.path.join(tmpdir, tosaname)
+        with open(tosa_path, "wb") as f:
             f.write(flatbuffer)
 
         # invoke vela
-        vela_command = f"cd {tmpdir}; vela {' '.join(args)} {tosaname}"
-        try:
-            subprocess.run([vela_command], shell=True, check=True, capture_output=True)
-        except subprocess.CalledProcessError as process_error:
-            raise RuntimeError(
-                f"Vela compiler ('{vela_command}') failed with error:\n \
-                                     {process_error.stderr.decode()}\n \
-                                      Stdout:\n{process_error.stdout.decode()}"
-            )
+        output_dir = os.path.join(tmpdir, "output")
+        args.append(f"--output-dir={output_dir}")
+        args.append(tosa_path)
+        vela.main(" ".join(args).split(" "))
 
         if any("ethos-u85" in arg for arg in args) or any(
             "debug-force-regor" in arg for arg in args

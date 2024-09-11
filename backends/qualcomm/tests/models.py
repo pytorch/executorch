@@ -55,6 +55,16 @@ class AvgPoolModule(torch.nn.Module):
         return self.avgPool(x)
 
 
+class BatchNorm(torch.nn.Module):
+    def __init__(self, n_features):
+        super().__init__()
+        self.native_batchnorm = torch.nn.BatchNorm2d(n_features)
+        self.eval()
+
+    def forward(self, x):
+        return self.native_batchnorm(x)
+
+
 class Bmm(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -732,6 +742,16 @@ class ResizeNearest2D(torch.nn.Module):
             size=list(torch.randn(output_shape).shape),
             mode="nearest",
         )
+
+
+class RmsNorm(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.eps = 1e-5
+        self.rms = torch.nn.RMSNorm([4], 1e-5)
+
+    def forward(self, x):
+        return self.rms(x)
 
 
 class Rsqrt(torch.nn.Module):

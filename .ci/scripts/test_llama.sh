@@ -75,7 +75,7 @@ echo "COREML option ${COREML}"
 if [[ "${MODE}" =~ .*qnn.* ]]; then
   QNN=ON
   export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-  export QNN_SDK_ROOT=/tmp/qnn/2.23.0.240531
+  export QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728
   export LD_LIBRARY_PATH="${QNN_SDK_ROOT}/lib/x86_64-linux-clang"
   export PYTHONPATH=".."
   cp schema/program.fbs exir/_serialize/program.fbs
@@ -107,8 +107,9 @@ cmake_install_executorch_libraries() {
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Debug \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM="$CUSTOM" \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \

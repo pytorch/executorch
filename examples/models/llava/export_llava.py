@@ -33,7 +33,10 @@ from executorch.exir import (
 
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
-from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
+from executorch.exir.passes.sym_shape_eval_pass import (
+    ConstraintBasedSymShapeEvalPass,
+    HintBasedSymShapeEvalPass,
+)
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.tokenizer.tokenizer import Tokenizer
@@ -86,6 +89,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
         use_kv_cache=True,
         example_inputs=(torch.tensor([0], dtype=torch.int64), embeddings),
         dynamic_shapes=dynamic_shapes,
+        args=llava.text_model_args,
     )
 
     dtype_override = DType.fp32
@@ -142,6 +146,7 @@ def export_image_encoder(llava, resized, dynamic_shapes):
             use_kv_cache=True,
             example_inputs=(resized,),
             dynamic_shapes=dynamic_shapes,
+            args=None,
         )
         .capture_pre_autograd_graph()
         .pt2e_quantize([quantizer])
@@ -208,10 +213,15 @@ def export_all(llava_model: LlavaModel):
         partitioner={
             "image_encoder": [XnnpackPartitioner()],
             "text_model": [
+                # First partition the DQLinear nodes, then partition the rest of the nodes,
+                # to avoid multiple DQLinear nodes in the same partition,
+                # to avoid holding multiple unpacked and packed weight buffers in memory,
+                # to reduce peak memory footprint.
                 XnnpackPartitioner(
                     config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
                     per_op_mode=True,
-                )
+                ),
+                XnnpackPartitioner(),
             ],
         },
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
@@ -219,7 +229,6 @@ def export_all(llava_model: LlavaModel):
 
     executorch_program = lowered_and_edge.to_executorch(
         ExecutorchBackendConfig(
-            extract_constant_segment=True,
             extract_delegate_segments=True,
             passes=[
                 QuantFusionPass(),
@@ -227,6 +236,8 @@ def export_all(llava_model: LlavaModel):
             memory_planning_pass=MemoryPlanningPass("greedy", alloc_graph_input=False),
             sym_shape_eval_pass={
                 "image_encoder": ConstraintBasedSymShapeEvalPass(),
+                "text_model": ConstraintBasedSymShapeEvalPass(),
+                "token_embedding": HintBasedSymShapeEvalPass(),
             },
         )
     )

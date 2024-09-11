@@ -21,3 +21,19 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
     )
+
+    runtime.python_library(
+        name = "tiktoken_py",
+        srcs = [
+            "tiktoken.py",
+        ],
+        _is_external_target = True,
+        visibility = [
+            "//bento/...",
+            "//bento_kernels/...",
+            "//executorch/...",
+        ],
+        deps = [
+            "fbsource//third-party/pypi/tiktoken:tiktoken",
+        ],
+    )

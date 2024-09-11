@@ -181,6 +181,8 @@ option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
        OFF
 )
 
+option(EXECUTORCH_BUILD_EXTENSION_TENSOR "Build the Tensor extension" OFF)
+
 option(EXECUTORCH_BUILD_GTESTS "Build googletest based test binaries" OFF)
 
 option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
@@ -226,6 +228,7 @@ cmake_dependent_option(
 )
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
+  set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
   set(EXECUTORCH_BUILD_KERNELS_CUSTOM ON)
 endif()
 
@@ -635,6 +638,17 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_TENSOR)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/tensor)
+endif()
+
+if(EXECUTORCH_BUILD_PTHREADPOOL
+   AND EXECUTORCH_BUILD_CPUINFO
+   AND CMAKE_CXX_STANDARD GREATER_EQUAL 14
+)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/threadpool)
 endif()
 
 if(EXECUTORCH_BUILD_PYBIND)

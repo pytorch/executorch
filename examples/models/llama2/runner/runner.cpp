@@ -14,7 +14,6 @@
 #include <ctime>
 
 #include <executorch/extension/llm/runner/util.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
 
 #include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
@@ -69,17 +68,19 @@ Error Runner::load() {
     return Error::Ok;
   }
   ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("forward"));
-  // load tokenizer
+  // load tokenizer. Assuming tiktoken is the default tokenizer
   tokenizer_ = nullptr;
-  tokenizer_ = std::make_unique<BPETokenizer>();
+  tokenizer_ = get_tiktoken_for_llama();
   Error err = tokenizer_->load(tokenizer_path_);
+  // Rely on tiktoken to throw error if the artifact is incompatible. Then we
+  // fallback to BPE tokenizer.
   if (err == Error::InvalidArgument) {
     ET_LOG(
         Info,
-        "Failed to load %s as a BPETokenizer artifact, trying Tiktoken",
+        "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
         tokenizer_path_.c_str());
     tokenizer_.reset();
-    tokenizer_ = get_tiktoken_for_llama();
+    tokenizer_ = std::make_unique<BPETokenizer>();
     tokenizer_->load(tokenizer_path_);
   }
 
@@ -124,7 +125,6 @@ Error Runner::load() {
       metadata_.at(kVocabSize),
       temperature_);
   text_prefiller_ = std::make_unique<TextPrefiller>(
-      tokenizer_.get(),
       text_decoder_runner_.get(),
       metadata_.at(kUseKVCache),
       metadata_.at(kEnableDynamicShape));
@@ -143,7 +143,8 @@ Error Runner::generate(
     const std::string& prompt,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback) {
+    std::function<void(const Stats&)> stats_callback,
+    bool echo) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
@@ -152,6 +153,11 @@ Error Runner::generate(
     ET_CHECK_OK_OR_RETURN_ERROR(load());
     stats_.model_load_end_ms = util::time_in_ms();
   }
+
+  ET_LOG(
+      Info,
+      "RSS after loading model: %f MiB (0 if unsupported)",
+      util::get_rss_bytes() / 1024.0 / 1024.0);
 
   // Wrap the token_callback with print function
   std::function<void(const std::string&)> wrapped_callback =
@@ -201,8 +207,13 @@ Error Runner::generate(
   // Prefill first
   // Here feed all tokens to the model and get the next predicted token
   // after the prompt. After that we will enter generate loop.
-  auto prefill_res =
-      text_prefiller_->prefill(prompt_tokens, 0, wrapped_callback);
+
+  // print prompts
+  if (echo) {
+    wrapped_callback(prompt);
+  }
+  int64_t pos = 0;
+  auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos);
   stats_.first_token_ms = util::time_in_ms();
   stats_.prompt_eval_end_ms = util::time_in_ms();
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
@@ -210,6 +221,10 @@ Error Runner::generate(
 
   // print the first token from prefill. No prev_token so use cur_token for it.
   wrapped_callback(ET_UNWRAP(tokenizer_->decode(cur_token, cur_token)));
+  ET_LOG(
+      Info,
+      "RSS after prompt prefill: %f MiB (0 if unsupported)",
+      util::get_rss_bytes() / 1024.0 / 1024.0);
 
   // start the main loop
   prompt_tokens.push_back(cur_token);
@@ -218,6 +233,10 @@ Error Runner::generate(
 
   stats_.inference_end_ms = util::time_in_ms();
   printf("\n");
+  ET_LOG(
+      Info,
+      "RSS after finishing text generation: %f MiB (0 if unsupported)",
+      util::get_rss_bytes() / 1024.0 / 1024.0);
 
   if (num_prompt_tokens + num_generated_tokens == seq_len) {
     ET_LOG(Info, "Sequence length (%i tokens) reached!", seq_len);

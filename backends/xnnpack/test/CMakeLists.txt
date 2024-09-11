@@ -34,6 +34,7 @@ et_cxx_test(
   SOURCES
   ${_test_srcs}
   EXTRA_LIBS
+  extension_threadpool
   xnnpack_backend
   XNNPACK
   pthreadpool

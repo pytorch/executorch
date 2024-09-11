@@ -23,6 +23,7 @@ set(CMAKE_BUILD_TYPE Release)
 # Set options for executorch build.
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "" ON)
+option(EXECUTORCH_BUILD_EXTENSION_TENSOR "" ON)
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "" ON)
 option(EXECUTORCH_BUILD_XNNPACK "" ON)
 
@@ -47,6 +48,6 @@ target_include_directories(
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/gflags/src
 )
 target_link_libraries(
-  phi_3_mini_runner PRIVATE executorch extension_module_static
+  phi_3_mini_runner PRIVATE executorch extension_module_static extension_tensor
                             optimized_native_cpu_ops_lib xnnpack_backend gflags
 )

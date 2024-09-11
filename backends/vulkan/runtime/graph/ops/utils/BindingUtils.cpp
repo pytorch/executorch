@@ -66,7 +66,7 @@ uint32_t bind_params_to_descriptor_set(
 }
 
 void bind_staging_to_descriptor_set(
-    api::StorageBuffer& staging,
+    api::StagingBuffer& staging,
     vkapi::DescriptorSet& descriptor_set,
     const uint32_t idx) {
   descriptor_set.bind(idx, staging.buffer());
