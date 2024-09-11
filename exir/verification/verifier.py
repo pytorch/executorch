@@ -52,12 +52,6 @@ def _check_valid_dim_order_ops(op, use_dim_order) -> None:
 class EXIRATenDialectVerifierBase(Verifier):
     dialect = "OLD_EXIR_ATEN_DISABLED"
 
-    def __init__(
-        self, exception_list: Optional[List[torch._ops.OpOverload]] = None
-    ) -> None:
-        super().__init__()
-        self._exception_list = exception_list if exception_list else []
-
     def allowed_getattr_types(self) -> Tuple[Type[Any], ...]:
         return (
             torch.fx.GraphModule,
@@ -78,38 +72,68 @@ class EXIRATenDialectVerifierBase(Verifier):
             raise RuntimeError("")
 
 
-class EXIRATenDialectVerifier(EXIRATenDialectVerifierBase):
-    dialect = "OLD_EXIR_ATEN"
+def EXIRATenDialectVerifier(  # noqa: C901
+    edge_compile_config: Optional[EdgeCompileConfig] = None,
+    class_only: bool = False,
+    exception_list: Optional[List[torch._ops.OpOverload]] = None,
+):
+    """
+    Returns a verifier class that runs ATen dialect specific checks on the graph module.
+    """
+    # merge the exception list from edge_compile_config and exception_list
+    if edge_compile_config and edge_compile_config._core_aten_ops_exception_list:
+        exception_list = edge_compile_config._core_aten_ops_exception_list + (
+            exception_list or []
+        )
 
-    def _get_exception_list(self) -> List[torch._ops.OpOverload]:
-        exception_list = [
-            torch.ops.aten.mkldnn_rnn_layer.default,
-            torch.ops.aten._upsample_bilinear2d_aa.default,
-            torch.ops.aten.quantize_per_tensor.default,
-            torch.ops.aten.dequantize.self,
-            torch.ops.aten.max.default,  # TODO(T188268054)
-            torch.ops.aten.min.default,  # TODO(T188268054)
-            torch.ops.aten.full_like.default,  # TODO(T183507359)
-        ]
-        exception_list += self._exception_list
+    class _EXIRATenDialectVerifier(EXIRATenDialectVerifierBase):
+        dialect = "OLD_EXIR_ATEN"
 
-        return exception_list
+        def __init__(self) -> None:
+            super().__init__()
+            # Note: here we are using the exception list passed from EXIRATenDialectVerifier function!
+            self._exception_list = exception_list if exception_list else []
 
-    def check_valid_op(self, op):
-        if isinstance(op, OpOverload):
-            # TODO These special ops should be removable easily.
-            if op.namespace != "aten" or op in self._get_exception_list():
-                return
-            if torch.Tag.core not in op.tags and torch.Tag.view_copy not in op.tags:
-                # NOTE(qihan): whether view_copy operators are marked as canonical is still under
-                #            discussion.
-                raise SpecViolationError(
-                    f"Operator {op.__module__}.{op.__name__} is not Aten Canonical."
-                )
+        def _get_exception_list(self) -> List[torch._ops.OpOverload]:
+            exception_list = [
+                torch.ops.aten.mkldnn_rnn_layer.default,
+                torch.ops.aten._upsample_bilinear2d_aa.default,
+                torch.ops.aten.quantize_per_tensor.default,
+                torch.ops.aten.dequantize.self,
+                torch.ops.aten.max.default,  # TODO(T188268054)
+                torch.ops.aten.min.default,  # TODO(T188268054)
+                torch.ops.aten.full_like.default,  # TODO(T183507359)
+            ]
+            exception_list += self._exception_list
+
+            return exception_list
+
+        def check_valid_op(self, op):
+            if isinstance(op, OpOverload):
+                # TODO These special ops should be removable easily.
+                if op.namespace != "aten" or op in self._get_exception_list():
+                    return
+                if torch.Tag.core not in op.tags and torch.Tag.view_copy not in op.tags:
+                    # NOTE(qihan): whether view_copy operators are marked as canonical is still under
+                    #            discussion.
+                    raise SpecViolationError(
+                        f"Operator {op.__module__}.{op.__name__} is not Aten Canonical."
+                    )
+
+    ret = _EXIRATenDialectVerifier
+    if not class_only:
+        ret = ret()
+    return ret
 
 
-def get_aten_verifier(enable: bool = True):
-    return EXIRATenDialectVerifier if enable else EXIRATenDialectVerifierBase
+def get_aten_verifier(config: EdgeCompileConfig):
+    return (
+        EXIRATenDialectVerifier(
+            class_only=True, exception_list=config._core_aten_ops_exception_list
+        )
+        if config._check_ir_validity
+        else EXIRATenDialectVerifierBase
+    )
 
 
 def _get_inputs(graph_module: GraphModule) -> List[Optional[FakeTensor]]:
@@ -160,6 +184,12 @@ def EXIREdgeDialectVerifier(  # noqa: C901
     class_only: bool = False,
     exception_list: Optional[List[torch._ops.OpOverload]] = None,
 ):
+    # merge the exception list from edge_compile_config and exception_list
+    if edge_compile_config and edge_compile_config._core_aten_ops_exception_list:
+        exception_list = edge_compile_config._core_aten_ops_exception_list + (
+            exception_list or []
+        )
+
     class _EXIREdgeDialectVerifier(Verifier):
         dialect = "EDGE"
 
@@ -170,7 +200,9 @@ def EXIREdgeDialectVerifier(  # noqa: C901
             self.check_edge_ops = _edge_compile_config._use_edge_ops
             self.use_dim_order = not _edge_compile_config._skip_dim_order
 
-            self.aten_op_verifier = EXIRATenDialectVerifier(exception_list)
+            self.aten_op_verifier = EXIRATenDialectVerifier(
+                exception_list=exception_list
+            )
             self.check_valid_aten_op = self.aten_op_verifier.check_valid_op
 
             if self.check_edge_ops:
