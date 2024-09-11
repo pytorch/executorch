@@ -45,6 +45,10 @@ from executorch.extension.llm.export.quantizer_lib import (
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
 from ..model_factory import EagerModelFactory
+from .source_transformation.apply_spin_quant_r1_r2 import (
+    fuse_layer_norms,
+    get_model_with_r1_r2,
+)
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
@@ -224,6 +228,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--params",
         default=f"{ckpt_dir}/params/demo_config.json",
         help="config.json",
+    )
+    parser.add_argument(
+        "--optimized_rotation_path",
+        default=None,
+        required=False,
+        help="[QNN backend] Optimized rotation checkpoint path. Just apply R1/R2 here."
+        "You can download the optimized rotation matrices from https://github.com/facebookresearch/SpinQuant/tree/main",
     )
     parser.add_argument(
         "-m",
@@ -429,6 +440,9 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             transforms.append(replace_sdpa_with_flex_sdpa)
             transforms.append(replace_causal_mask)
             transforms.append(replace_rms_norm_with_native_rms_norm)
+            if args.optimized_rotation_path:
+                transforms.append(fuse_layer_norms)
+                transforms.append(get_model_with_r1_r2(args.optimized_rotation_path))
             transforms.append(convert_linear_to_conv2d)
 
         elif args.coreml or args.mps:
@@ -436,6 +450,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             # to get free perf gain.
             transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_causal_mask)
+
     return (
         _load_llama_model(
             modelname=modelname,
@@ -729,6 +744,7 @@ def _load_llama_model(
         max_seq_len=model.params.max_seq_len,
         dtype=dtype,
         use_kv_cache=use_kv_cache,
+        generate_full_logits=generate_full_logits,
         example_inputs=example_inputs,
         enable_dynamic_shape=enable_dynamic_shape,
         calibration_tasks=calibration_tasks,
