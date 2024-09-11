@@ -531,11 +531,14 @@ class TestProgramManagers(unittest.TestCase):
         )
         self.assertTrue(edge_manager.exported_program().dialect == "EDGE")
 
-    def _test_edge_dialect_verifier(self, callable, validate_ir=True):
+    def _test_edge_dialect_verifier(
+        self, callable, validate_ir=True, exception_list=None
+    ):
         from executorch.exir import EdgeCompileConfig
 
         edge_compile_config = EdgeCompileConfig(
             _check_ir_validity=validate_ir,
+            _core_aten_ops_exception_list=exception_list,
         )
         # pre-autograd export. eventually this will become torch.export
         one = torch.ones(1, dtype=torch.float)
@@ -681,3 +684,35 @@ class TestProgramManagers(unittest.TestCase):
             ),
             1,
         )
+
+    def test_edge_dialect_non_core_aten_ops(self):
+        class LinalgNorm(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.linalg.norm(x)
+
+        from torch._export.verifier import SpecViolationError
+
+        input = torch.arange(9, dtype=torch.float) - 4
+        ep = torch.export.export(LinalgNorm(), (input,))
+
+        # aten::linalg_norm is not a core op, so it should error out
+        with self.assertRaises(SpecViolationError):
+            _ = to_edge(ep, compile_config=EdgeCompileConfig(_check_ir_validity=True))
+
+        # with exception list, it should not error out
+        try:
+            # This should not raise error
+            _ = to_edge(
+                ep,
+                compile_config=EdgeCompileConfig(
+                    _check_ir_validity=True,
+                    _core_aten_ops_exception_list=[
+                        torch.ops.aten.linalg_vector_norm.default
+                    ],
+                ),
+            )
+        except SpecViolationError:
+            self.fail("Should not error out on linalg_vector_norm op")

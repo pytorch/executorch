@@ -43,7 +43,7 @@ public class SettingsActivity extends AppCompatActivity {
   public SettingsFields mSettingsFields;
 
   private DemoSharedPreferences mDemoSharedPreferences;
-  public static double TEMPERATURE_MIN_VALUE = 0.1;
+  public static double TEMPERATURE_MIN_VALUE = 0.0;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -120,6 +120,7 @@ public class SettingsActivity extends AppCompatActivity {
                     public void onClick(DialogInterface dialog, int whichButton) {
                       mSettingsFields.saveLoadModelAction(true);
                       mLoadModelButton.setEnabled(false);
+                      onBackPressed();
                     }
                   })
               .setNegativeButton(android.R.string.no, null)
@@ -208,8 +209,7 @@ public class SettingsActivity extends AppCompatActivity {
                   new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface dialog, int whichButton) {
                       // Clear the messageAdapter and sharedPreference
-                      mSystemPromptEditText.setText(
-                          PromptFormat.getSystemPromptTemplate(mModelType));
+                      mSystemPromptEditText.setText(PromptFormat.DEFAULT_SYSTEM_PROMPT);
                     }
                   })
               .setNegativeButton(android.R.string.no, null)
