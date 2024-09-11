@@ -201,7 +201,7 @@ deps = [
 
 [targets.extension_parallel_thread_parallel]
 buck_targets = [
-  "//extension/parallel:thread_parallel
+  "//extension/parallel:thread_parallel",
 ]
 filters = [
   ".cpp$",
