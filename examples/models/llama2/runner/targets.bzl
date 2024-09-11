@@ -4,7 +4,8 @@ def _get_operator_lib(aten = False):
     if aten:
         return ["//executorch/kernels/aten:generated_lib"]
     elif runtime.is_oss:
-        return ["//executorch/kernels/portable:generated_lib", "//executorch/extension/llm/custom_ops:custom_ops"]
+        # TODO(T183193812): delete this path after optimized-oss.yaml is no more.
+        return ["//executorch/configurations:optimized_native_cpu_ops_oss", "//executorch/extension/llm/custom_ops:custom_ops"]
     else:
         return ["//executorch/configurations:optimized_native_cpu_ops", "//executorch/extension/llm/custom_ops:custom_ops"]
 
