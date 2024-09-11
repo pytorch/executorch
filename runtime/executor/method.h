@@ -53,6 +53,7 @@ class Method final {
       : step_state_(rhs.step_state_),
         program_(rhs.program_),
         memory_manager_(rhs.memory_manager_),
+        temp_allocator_(rhs.temp_allocator_),
         serialization_plan_(rhs.serialization_plan_),
         event_tracer_(rhs.event_tracer_),
         n_value_(rhs.n_value_),
@@ -273,10 +274,12 @@ class Method final {
   Method(
       const Program* program,
       MemoryManager* memory_manager,
-      EventTracer* event_tracer)
+      EventTracer* event_tracer,
+      MemoryAllocator* temp_allocator)
       : step_state_(),
         program_(program),
         memory_manager_(memory_manager),
+        temp_allocator_(temp_allocator),
         serialization_plan_(nullptr),
         event_tracer_(event_tracer),
         n_value_(0),
@@ -319,6 +322,7 @@ class Method final {
   StepState step_state_;
   const Program* program_;
   MemoryManager* memory_manager_;
+  MemoryAllocator* temp_allocator_;
   executorch_flatbuffer::ExecutionPlan* serialization_plan_;
   EventTracer* event_tracer_;
 

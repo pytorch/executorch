@@ -13,6 +13,7 @@ public class PromptFormat {
   public static final String SYSTEM_PLACEHOLDER = "{{ system_prompt }}";
   public static final String USER_PLACEHOLDER = "{{ user_prompt }}";
   public static final String ASSISTANT_PLACEHOLDER = "{{ assistant_response }}";
+  public static final String DEFAULT_SYSTEM_PROMPT = "Answer the questions in a few sentences";
 
   public static String getSystemPromptTemplate(ModelType modelType) {
     switch (modelType) {

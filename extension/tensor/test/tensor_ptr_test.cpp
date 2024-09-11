@@ -22,6 +22,28 @@ class TensorPtrTest : public ::testing::Test {
   }
 };
 
+TEST_F(TensorPtrTest, ScalarTensorCreation) {
+  float scalar_data = 3.14f;
+  auto tensor = make_tensor_ptr(exec_aten::ScalarType::Float, {}, &scalar_data);
+
+  EXPECT_EQ(tensor->numel(), 1);
+  EXPECT_EQ(tensor->dim(), 0);
+  EXPECT_EQ(tensor->sizes().size(), 0);
+  EXPECT_EQ(tensor->strides().size(), 0);
+  EXPECT_EQ(tensor->const_data_ptr<float>(), &scalar_data);
+  EXPECT_EQ(tensor->const_data_ptr<float>()[0], 3.14f);
+}
+
+TEST_F(TensorPtrTest, ScalarTensorOwningData) {
+  auto tensor = make_tensor_ptr({}, {3.14f});
+
+  EXPECT_EQ(tensor->numel(), 1);
+  EXPECT_EQ(tensor->dim(), 0);
+  EXPECT_EQ(tensor->sizes().size(), 0);
+  EXPECT_EQ(tensor->strides().size(), 0);
+  EXPECT_EQ(tensor->const_data_ptr<float>()[0], 3.14f);
+}
+
 TEST_F(TensorPtrTest, CreateTensorWithStridesAndDimOrder) {
   float data[20] = {2};
   auto tensor = make_tensor_ptr(
@@ -98,7 +120,7 @@ TEST_F(TensorPtrTest, TensorWithCustomDataDeleter) {
       data,
       {},
       {},
-      exec_aten::TensorShapeDynamism::STATIC,
+      exec_aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [&deleter_called](void* ptr) {
         deleter_called = true;
         delete[] static_cast<float*>(ptr);
@@ -118,7 +140,7 @@ TEST_F(TensorPtrTest, TensorManagesMovedVector) {
       data_ptr,
       {},
       {},
-      exec_aten::TensorShapeDynamism::STATIC,
+      exec_aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [moved_data = std::move(data), &deleter_called](void*) mutable {
         deleter_called = true;
       });
@@ -140,7 +162,7 @@ TEST_F(TensorPtrTest, TensorDeleterReleasesCapturedSharedPtr) {
       data_ptr.get(),
       {},
       {},
-      exec_aten::TensorShapeDynamism::STATIC,
+      exec_aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [data_ptr, &deleter_called](void*) mutable { deleter_called = true; });
 
   EXPECT_EQ(data_ptr.use_count(), 2);

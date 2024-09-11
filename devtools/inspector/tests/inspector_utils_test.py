@@ -78,6 +78,7 @@ class TestInspectorUtils(unittest.TestCase):
             end_time=2002,
         )
         debug_event = flatcc.DebugEvent(
+            name="test_debug_event",
             chain_index=1,
             instruction_id=0,
             delegate_debug_id_str="56",
