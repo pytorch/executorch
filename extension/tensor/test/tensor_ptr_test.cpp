@@ -197,6 +197,18 @@ TEST_F(TensorPtrTest, TensorOwningEmptyData) {
   EXPECT_EQ(tensor->strides()[0], 5);
   EXPECT_EQ(tensor->strides()[1], 1);
   EXPECT_EQ(tensor->data_ptr<float>(), nullptr);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Float);
+}
+
+TEST_F(TensorPtrTest, TensorImplDataOnly) {
+  auto tensor = make_tensor_ptr({1.0f, 2.0f, 3.0f, 4.0f});
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->strides()[0], 1);
+  EXPECT_EQ(tensor->const_data_ptr<float>()[0], 1.0);
+  EXPECT_EQ(tensor->const_data_ptr<float>()[3], 4.0);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Float);
 }
 
 TEST_F(TensorPtrTest, TensorImplDataOnlyDoubleType) {
@@ -208,6 +220,7 @@ TEST_F(TensorPtrTest, TensorImplDataOnlyDoubleType) {
   EXPECT_EQ(tensor->strides()[0], 1);
   EXPECT_EQ(tensor->const_data_ptr<double>()[0], 1.0);
   EXPECT_EQ(tensor->const_data_ptr<double>()[3], 4.0);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Double);
 }
 
 TEST_F(TensorPtrTest, TensorImplDataOnlyInt32Type) {
@@ -219,6 +232,7 @@ TEST_F(TensorPtrTest, TensorImplDataOnlyInt32Type) {
   EXPECT_EQ(tensor->strides()[0], 1);
   EXPECT_EQ(tensor->const_data_ptr<int32_t>()[0], 10);
   EXPECT_EQ(tensor->const_data_ptr<int32_t>()[3], 40);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Int);
 }
 
 TEST_F(TensorPtrTest, TensorImplDataOnlyInt64Type) {
@@ -230,6 +244,7 @@ TEST_F(TensorPtrTest, TensorImplDataOnlyInt64Type) {
   EXPECT_EQ(tensor->strides()[0], 1);
   EXPECT_EQ(tensor->const_data_ptr<int64_t>()[0], 100);
   EXPECT_EQ(tensor->const_data_ptr<int64_t>()[3], 400);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Long);
 }
 
 TEST_F(TensorPtrTest, TensorImplDataOnlyUint8Type) {
@@ -241,6 +256,7 @@ TEST_F(TensorPtrTest, TensorImplDataOnlyUint8Type) {
   EXPECT_EQ(tensor->strides()[0], 1);
   EXPECT_EQ(tensor->const_data_ptr<uint8_t>()[0], 10);
   EXPECT_EQ(tensor->const_data_ptr<uint8_t>()[3], 40);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Byte);
 }
 
 TEST_F(TensorPtrTest, TensorImplAmbiguityWithMixedVectors) {
