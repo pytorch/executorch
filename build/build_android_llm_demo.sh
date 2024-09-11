@@ -111,7 +111,7 @@ build_android_demo_apps() {
   mkdir -p extension/android/benchmark/app/libs
   cp ${BUILD_AAR_DIR}/executorch.aar extension/android/benchmark/app/libs
   pushd extension/android/benchmark
-  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build
+  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
   popd
 }
 
