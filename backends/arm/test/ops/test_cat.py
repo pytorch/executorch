@@ -125,7 +125,7 @@ class TestCat(unittest.TestCase):
         test_data = (operands, dim)
         self._test_cat_tosa_BI_pipeline(self.Cat(), test_data)
 
-    # TODO(MLETORCH-377) Fix this issue
+    # TODO: Remove @unittest.expectedFailure when this issue is fixed in Regor
     @parameterized.expand(Cat.test_parameters)
     @unittest.expectedFailure
     def test_cat_u55_BI(self, operands: tuple[torch.Tensor, ...], dim: int):
