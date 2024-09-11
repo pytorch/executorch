@@ -76,6 +76,10 @@ table DebugEvent {
 
   // String based delegate debug identifier.
   delegate_debug_id_str:string;
+
+  // Name assigned to this debug event by the runtime. If it is an operator
+  // call this will just be the name of the operator that was executed.
+  name:string;
 }
 
 // All the details pertaining to an allocation done in the runtime. The main
