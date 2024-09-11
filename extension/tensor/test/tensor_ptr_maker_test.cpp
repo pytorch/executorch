@@ -317,3 +317,123 @@ TEST_F(TensorPtrMakerTest, CreateZeros) {
   EXPECT_EQ(tensor4->scalar_type(), exec_aten::ScalarType::Double);
   EXPECT_EQ(tensor4->const_data_ptr<double>()[0], 0);
 }
+
+TEST_F(TensorPtrMakerTest, CreateRandTensor) {
+  auto tensor = rand({4, 5});
+
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->size(1), 5);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Float);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<float>()[i];
+    EXPECT_GE(val, 0.0f);
+    EXPECT_LT(val, 1.0f);
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateRandTensorWithIntType) {
+  auto tensor = rand({4, 5}, exec_aten::ScalarType::Int);
+
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->size(1), 5);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Int);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<int32_t>()[i];
+    EXPECT_EQ(val, 0);
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateRandTensorWithDoubleType) {
+  auto tensor = rand({4, 5}, exec_aten::ScalarType::Double);
+
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->size(1), 5);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Double);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<double>()[i];
+    EXPECT_GE(val, 0.0);
+    EXPECT_LT(val, 1.0);
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateRandnTensor) {
+  auto tensor = randn({4, 5});
+
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->size(1), 5);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Float);
+
+  auto sum = 0.0f;
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    sum += tensor->const_data_ptr<float>()[i];
+  }
+  const auto average = sum / tensor->numel();
+  EXPECT_NEAR(average, 0.0f, 0.5f);
+}
+
+TEST_F(TensorPtrMakerTest, CreateRandnTensorWithDoubleType) {
+  auto tensor = randn({4, 5}, exec_aten::ScalarType::Double);
+
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->size(1), 5);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Double);
+
+  auto sum = 0.0;
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    sum += tensor->const_data_ptr<double>()[i];
+  }
+  const auto average = sum / tensor->numel();
+  EXPECT_NEAR(average, 0.0, 0.5);
+}
+
+TEST_F(TensorPtrMakerTest, CreateRandIntTensorWithIntType) {
+  auto tensor = randint(10, 20, {4, 5}, exec_aten::ScalarType::Int);
+
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->size(1), 5);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Int);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<int32_t>()[i];
+    EXPECT_GE(val, 10);
+    EXPECT_LT(val, 20);
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateRandIntTensorWithLongType) {
+  auto tensor = randint(10, 20, {4, 5}, exec_aten::ScalarType::Long);
+
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->size(1), 5);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Long);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<int64_t>()[i];
+    EXPECT_GE(val, 10);
+    EXPECT_LT(val, 20);
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateRandnTensorWithIntType) {
+  auto tensor = rand({4, 5}, exec_aten::ScalarType::Int);
+
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->size(1), 5);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Int);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<int32_t>()[i];
+    EXPECT_EQ(val, 0);
+  }
+}
