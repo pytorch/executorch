@@ -4,3 +4,5 @@ safetensors
 sentencepiece
 tokenizers
 transformers
+piq
+pillow

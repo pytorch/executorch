@@ -23,6 +23,29 @@ class TensorImplPtrTest : public ::testing::Test {
   }
 };
 
+TEST_F(TensorImplPtrTest, ScalarTensorCreation) {
+  float scalar_data = 3.14f;
+  auto tensor_impl =
+      make_tensor_impl_ptr(exec_aten::ScalarType::Float, {}, &scalar_data);
+
+  EXPECT_EQ(tensor_impl->numel(), 1);
+  EXPECT_EQ(tensor_impl->dim(), 0);
+  EXPECT_EQ(tensor_impl->sizes().size(), 0);
+  EXPECT_EQ(tensor_impl->strides().size(), 0);
+  EXPECT_EQ((float*)tensor_impl->data(), &scalar_data);
+  EXPECT_EQ(((float*)tensor_impl->data())[0], 3.14f);
+}
+
+TEST_F(TensorImplPtrTest, ScalarTensorOwningData) {
+  auto tensor_impl = make_tensor_impl_ptr({}, {3.14f});
+
+  EXPECT_EQ(tensor_impl->numel(), 1);
+  EXPECT_EQ(tensor_impl->dim(), 0);
+  EXPECT_EQ(tensor_impl->sizes().size(), 0);
+  EXPECT_EQ(tensor_impl->strides().size(), 0);
+  EXPECT_EQ(((float*)tensor_impl->data())[0], 3.14f);
+}
+
 TEST_F(TensorImplPtrTest, TensorImplCreation) {
   float data[20] = {2};
   auto tensor_impl = make_tensor_impl_ptr(
@@ -34,8 +57,8 @@ TEST_F(TensorImplPtrTest, TensorImplCreation) {
   EXPECT_EQ(tensor_impl->strides()[0], 5);
   EXPECT_EQ(tensor_impl->strides()[1], 1);
   EXPECT_EQ(tensor_impl->data(), data);
-  EXPECT_EQ(tensor_impl->mutable_data(), data);
-  EXPECT_EQ(((float*)tensor_impl->mutable_data())[0], 2);
+  EXPECT_EQ(tensor_impl->data(), data);
+  EXPECT_EQ(((float*)tensor_impl->data())[0], 2);
 }
 
 TEST_F(TensorImplPtrTest, TensorImplSharedOwnership) {

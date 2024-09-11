@@ -142,8 +142,7 @@ inline TensorPtr make_tensor_ptr(
  *
  * This template overload is specialized for cases where the tensor data is
  * provided as a vector. The scalar type is automatically deduced from the
- * vector's data type. The deleter ensures that the data vector is properly
- * managed and its lifetime is tied to the TensorImpl.
+ * vector's data type.
  *
  * @tparam T The C++ type of the tensor elements, deduced from the vector.
  * @param sizes A vector specifying the size of each dimension.
@@ -174,8 +173,7 @@ TensorPtr make_tensor_ptr(
  *
  * This template overload is specialized for cases where the tensor data is
  * provided as a vector. The scalar type is automatically deduced from the
- * vector's data type. The deleter ensures that the data vector is properly
- * managed and its lifetime is tied to the TensorImpl.
+ * vector's data type.
  *
  * @tparam T The C++ type of the tensor elements, deduced from the vector.
  * @param data A vector containing the tensor's data.
@@ -188,6 +186,27 @@ TensorPtr make_tensor_ptr(
     exec_aten::TensorShapeDynamism dynamism =
         exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return make_tensor_ptr(make_tensor_impl_ptr(std::move(data), dynamism));
+}
+
+/**
+ * Creates a TensorPtr that manages a Tensor with the specified properties.
+ *
+ * This template overload allows creating a Tensor from an initializer list
+ * of data. The scalar type is automatically deduced from the type of the
+ * initializer list's elements.
+ *
+ * @tparam T The C++ type of the tensor elements, deduced from the initializer
+ * list.
+ * @param data An initializer list containing the tensor's data.
+ * @param dynamism Specifies the mutability of the tensor's shape.
+ * @return A TensorPtr that manages the newly created TensorImpl.
+ */
+template <typename T = float>
+TensorPtr make_tensor_ptr(
+    std::initializer_list<T> data,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  return make_tensor_ptr(std::vector<T>(data), dynamism);
 }
 
 /**

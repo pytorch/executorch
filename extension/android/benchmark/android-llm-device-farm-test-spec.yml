@@ -63,14 +63,7 @@ phases:
         # Check for this last to make sure that there is no failure
         elif [ $TESTS_PASSED -ne 0 ];
         then
-          OBSERVED_TPS=$(grep "INSTRUMENTATION_STATUS: TPS=" $INSTRUMENT_LOG | tail -n 1)
-
-          if [ -n "${OBSERVED_TPS}" ];
-          then
-            echo "[PyTorch] ${OBSERVED_TPS}";
-          else
-            echo "[PyTorch] Test passes but couldn't find the observed TPS from instrument log";
-          fi
+          cat "${INSTRUMENT_LOG}"
         fi;
 
       # Run the new generic benchmark activity https://developer.android.com/tools/adb#am
