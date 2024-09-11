@@ -244,7 +244,7 @@ def define_common_targets():
     _common_op_test("op_mean_test", ["aten", "portable"])
     _common_op_test("op_min_test", ["aten", "portable"])
     _common_op_test("op_minimum_test", ["aten", "portable"])
-    _common_op_test("op_mm_test", ["aten", "portable"])
+    _common_op_test("op_mm_test", ["aten", "portable", "optimized"])
     _common_op_test("op_mul_test", ["aten", "portable", "optimized"])
     _common_op_test("op_narrow_copy_test", ["aten", "portable"])
     _common_op_test("op_native_batch_norm_test", ["aten", "portable"])
