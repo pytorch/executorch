@@ -42,7 +42,7 @@ main() {
   if [[ "${BUILD_COREML}" == "ON" ]]; then
     cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Release \
-        -DEXECUTORCH_BUILD_SDK=ON \
+        -DEXECUTORCH_BUILD_DEVTOOLS=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
         -DEXECUTORCH_BUILD_COREML=ON \
         -Dprotobuf_BUILD_TESTS=OFF \
@@ -52,7 +52,7 @@ main() {
   else
    cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
       -DCMAKE_BUILD_TYPE=Release \
-      -DEXECUTORCH_BUILD_SDK=ON \
+      -DEXECUTORCH_BUILD_DEVTOOLS=ON \
       -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
       -Bcmake-out .
   fi

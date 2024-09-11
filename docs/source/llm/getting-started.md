@@ -808,7 +808,7 @@ if (result.buf != nullptr && result.size > 0) {
 Additionally, update CMakeLists.txt to build with SDK and enable events to be traced and logged into ETDump:
 
 ```
-option(EXECUTORCH_BUILD_SDK "" ON)
+option(EXECUTORCH_BUILD_DEVTOOLS "" ON)
 
 # ...
 

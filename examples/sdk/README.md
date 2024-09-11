@@ -34,7 +34,7 @@ python3 -m examples.sdk.scripts.export_bundled_program -m mv2 # for MobileNetv2
 
 ```bash
    cd executorch
-   rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DEXECUTORCH_BUILD_SDK=1 -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=1 ..
+   rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DEXECUTORCH_BUILD_DEVTOOLS=1 -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=1 ..
    cd ..
    cmake --build cmake-out -j8 -t sdk_example_runner
    ./cmake-out/examples/sdk/sdk_example_runner --bundled_program_path mv2_bundled.bpte --output_verification

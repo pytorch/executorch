@@ -197,7 +197,7 @@ option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 
 option(EXECUTORCH_BUILD_KERNELS_QUANTIZED "Build the quantized kernels" OFF)
 
-option(EXECUTORCH_BUILD_SDK "Build the ExecuTorch SDK")
+option(EXECUTORCH_BUILD_DEVTOOLS "Build the ExecuTorch SDK")
 
 option(EXECUTORCH_BUILD_SIZE_TEST "Build the size test" OFF)
 
@@ -616,7 +616,7 @@ if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
 endif()
 
-if(EXECUTORCH_BUILD_SDK)
+if(EXECUTORCH_BUILD_DEVTOOLS)
   set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
       ON
       CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE
@@ -658,7 +658,7 @@ if(EXECUTORCH_BUILD_PYBIND)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
   endif()
 
-  if(NOT EXECUTORCH_BUILD_SDK)
+  if(NOT EXECUTORCH_BUILD_DEVTOOLS)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
   endif()
 
