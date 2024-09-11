@@ -32,16 +32,18 @@ jobs:
           if-no-files-found: error
           path: examples/demo-apps/apple_ios/default-ios-device-farm-appium-test-spec.yml
 
-  # TODO (huydhn): An example on how to validate the test spec using the iOS demo app, but we need a proper
-  # perf benchmark workflow like android-perf
   validate-apple-test-spec:
     needs: upload-apple-test-spec-for-validation
-    uses: ./.github/workflows/apple.yml
+    uses: ./.github/workflows/apple-perf.yml
     secrets: inherit
     permissions:
       id-token: write
       contents: read
     with:
+      # Just use a small model here with a minimal amount of configuration to test the spec
+      models: stories110M
+      devices: apple_iphone_15
+      delegates: xnnpack
       test_spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/default-ios-device-farm-appium-test-spec.yml
 
   upload-apple-test-spec:
