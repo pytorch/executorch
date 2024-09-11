@@ -695,6 +695,7 @@ def _load_llama_model(
         fairseq2=weight_type == WeightType.FAIRSEQ2,
         max_seq_len=max_seq_len,
         enable_dynamic_shape=enable_dynamic_shape,
+        args=args,
     )
     state_dict = model.state_dict()
     dtype = state_dict[next(iter(state_dict))].dtype
@@ -747,9 +748,26 @@ def _get_source_transforms(
     transforms = []
     if args.quantization_mode:
         modelname = f"{modelname}_q"
-        transforms.append(
-            get_quant_weight_transform(args, dtype_override, verbose_export())
-        )
+        if args.use_spin_quant is None:
+            transforms.append(
+                get_quant_weight_transform(args, dtype_override, verbose_export())
+            )
+        # For SpinQuant, the checkpoints are already quantized
+        # aka the weights have corresponding scales value,
+        # So that means, we don't need to apply quantization
+        # transform. However, we will still need to apply
+        # transformations that change the model structure to
+        # match the checkpoint format.
+        # transform_for_spinquant() will apply these transformations
+        # later in model.py file.
+        elif args.use_spin_quant == "cuda":
+            from .source_transformation.spin_quant import (
+                inject_fast_hadamard_transform_cuda_for_spin_quant,
+            )
+
+            transforms.append(inject_fast_hadamard_transform_cuda_for_spin_quant)
+        elif args.use_spin_quant == "native":
+            raise NotImplementedError("native SpinQuant is not implemented yet.")
 
     if args.embedding_quantize:
         modelname = f"{modelname}_e"
@@ -782,16 +800,5 @@ def _get_source_transforms(
             # to get free perf gain.
             transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_causal_mask)
-
-    if args.use_spin_quant:
-        if args.use_spin_quant == "cuda":
-            from .source_transformation.spin_quant import (
-                inject_fast_hadamard_transform_cuda_for_spin_quant,
-            )
-
-            transforms.append(inject_fast_hadamard_transform_cuda_for_spin_quant)
-
-        elif args.use_spin_quant == "native":
-            raise NotImplementedError("native SpinQuant is not implemented yet.")
 
     return transforms
