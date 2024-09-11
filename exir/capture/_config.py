@@ -5,9 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
-
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Union
+
+import torch
 
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.pass_manager import PassType
@@ -38,6 +39,10 @@ class EdgeCompileConfig:
     _check_ir_validity: bool = True
     # TODO(larryliu): remove this
     _use_edge_ops: bool = True
+    # Allow core ATen ops check to be skipped for certain ops, but continue with the rest of the checks.
+    _core_aten_ops_exception_list: List[torch._ops.OpOverload] = field(
+        default_factory=list
+    )
     _skip_type_promotion: bool = False
     # TODO(gasoonjia): remove this
     # TODO(T192537614): reenanle dim order as default

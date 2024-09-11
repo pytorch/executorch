@@ -59,6 +59,7 @@ def get_coreml_partitioner(
     enable_state: bool = False,
     embedding_quantize: Optional[str] = None,
     pt2e_quantize: Optional[str] = None,
+    coreml_quantize: Optional[str] = None,
 ):
     try:
         import coremltools as ct
@@ -87,9 +88,21 @@ def get_coreml_partitioner(
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS17)
     # In Core ML, 4-bit weight compression is introduced in iOS 18
     if (
-        embedding_quantize is not None and int(embedding_quantize.split(",")[0]) == 4
-    ) or pt2e_quantize in ("coreml_c4w", "coreml_8a_c4w", "coreml_baseline_8a_c4w"):
+        (embedding_quantize is not None and int(embedding_quantize.split(",")[0]) == 4)
+        or pt2e_quantize in ("coreml_c4w", "coreml_8a_c4w", "coreml_baseline_8a_c4w")
+        or coreml_quantize == "b4w"
+    ):
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
+
+    op_linear_quantizer_config = None
+    if coreml_quantize == "b4w":
+        op_linear_quantizer_config = {
+            "mode": "linear_symmetric",
+            "dtype": "int4",
+            "granularity": "per_block",
+            "block_size": 32,
+            "weight_threshold": 512,
+        }
 
     compile_specs = CoreMLBackend.generate_compile_specs(  # pyre-fixme[16]
         minimum_deployment_target=minimum_deployment_target,
@@ -97,6 +110,7 @@ def get_coreml_partitioner(
         # using `ComputeUnit.ALL` can increase the model load time, default to `ComputeUnit.CPU_AND_GPU`
         compute_unit=ct.ComputeUnit[ct.ComputeUnit.CPU_AND_GPU.name.upper()],
         model_type=CoreMLBackend.MODEL_TYPE.MODEL,  # pyre-fixme[16]
+        op_linear_quantizer_config=op_linear_quantizer_config,
     )
     return CoreMLPartitioner(  # pyre-fixme[16]
         compile_specs=compile_specs,
@@ -139,16 +153,9 @@ def get_qnn_partitioner(
     if pt2e_quantize is not None:
         use_fp16 = False
 
-    soc_chip_table = {
-        "SM8650": QcomChipset.SM8650,
-        "SM8550": QcomChipset.SM8550,
-        "SM8475": QcomChipset.SM8475,
-        "SM8450": QcomChipset.SM8450,
-    }
-
     return QnnPartitioner(  # pyre-fixme[16]
         generate_qnn_executorch_compiler_spec(  # pyre-fixme[16]
-            soc_model=soc_chip_table[soc_model],  # pyre-fixme[16]
+            soc_model=getattr(QcomChipset, soc_model),  # pyre-fixme[16]
             # pyre-fixme[16]
             backend_options=generate_htp_compiler_spec(
                 use_fp16=use_fp16,
