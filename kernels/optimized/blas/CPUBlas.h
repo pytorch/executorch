@@ -17,6 +17,7 @@
 namespace executorch {
 namespace cpublas {
 
+using BFloat16 = torch::executor::BFloat16;
 using Half = torch::executor::Half;
 
 enum class TransposeType {
@@ -104,6 +105,15 @@ void gemm(
     const Half *b, int64_t ldb,
     const Half beta,
     Half *c, int64_t ldc);
+
+void gemm(
+    TransposeType transa, TransposeType transb,
+    int64_t m, int64_t n, int64_t k,
+    const BFloat16 alpha,
+    const BFloat16 *a, int64_t lda,
+    const BFloat16 *b, int64_t ldb,
+    const BFloat16 beta,
+    BFloat16 *c, int64_t ldc);
 // clang-format on
 
 // clang-format off
