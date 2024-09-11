@@ -136,6 +136,7 @@ collect_artifacts_to_be_uploaded() {
   MINIBENCH_APP_DIR="${ARTIFACTS_DIR_NAME}/minibench"
   mkdir -p "${MINIBENCH_APP_DIR}"
   cp extension/android/benchmark/app/build/outputs/apk/debug/*.apk "${MINIBENCH_APP_DIR}"
+  cp extension/android/benchmark/app/build/outputs/apk/androidTest/debug/*.apk "${MINIBENCH_APP_DIR}"
 }
 
 BUILD_AAR_DIR="$(mktemp -d)"
