@@ -197,16 +197,16 @@ utils::uvec3 calculate_image_extents(
 
   switch (memory_layout) {
     case utils::kWidthPacked:
-      VK_CHECK_COND(extents[0] % 4 == 0);
-      extents[0] /= 4;
+      VK_CHECK_COND(extents[axis_mapping.at(0)] % 4 == 0);
+      extents[axis_mapping.at(0)] /= 4;
       break;
     case utils::kHeightPacked:
-      VK_CHECK_COND(extents[1] % 4 == 0);
-      extents[1] /= 4;
+      VK_CHECK_COND(extents[axis_mapping.at(1)] % 4 == 0);
+      extents[axis_mapping.at(1)] /= 4;
       break;
     case utils::kChannelsPacked:
-      VK_CHECK_COND(extents[2] % 4 == 0);
-      extents[2] /= 4;
+      VK_CHECK_COND(extents[axis_mapping.at(2)] % 4 == 0);
+      extents[axis_mapping.at(2)] /= 4;
       break;
   }
 
@@ -236,12 +236,14 @@ vTensor::vTensor(
       unsqueezed_strides_{unsqueeze_strides(strides_, numel_)},
       padded_numel_(utils::multiply_integers(padded_sizes_)),
       texture_limits_{{0, 0, 0}},
+      logical_limits_{{0, 0, 0}},
       // Utility Uniform Buffers that can be passed to shaders as arguments
       sizes_uniform_(),
       strides_uniform_(),
       numel_uniform_(),
       axis_mapping_uniform_(),
       texture_limits_uniform_(),
+      logical_limits_uniform_(),
       // Construct Tensor storage
       storage_(
           context,
@@ -259,6 +261,8 @@ vTensor::vTensor(
         utils::safe_downcast<int32_t>(storage_.image_extents_[0]),
         utils::safe_downcast<int32_t>(storage_.image_extents_[1]),
         utils::safe_downcast<int32_t>(storage_.image_extents_[2])};
+
+    update_logical_limits();
   }
 
   if (dtype == vkapi::kHalf) {
@@ -284,12 +288,14 @@ vTensor::vTensor(const vTensor& other)
           other.unsqueezed_strides_.end()},
       padded_numel_(other.padded_numel_),
       texture_limits_{other.texture_limits_},
+      logical_limits_{other.logical_limits_},
       // Empty initialize Utility Uniform Buffers
       sizes_uniform_(),
       strides_uniform_(),
       numel_uniform_(),
       axis_mapping_uniform_(),
       texture_limits_uniform_(),
+      logical_limits_uniform_(),
       // Copy Tensor storage
       storage_(other.storage_) {}
 
@@ -309,13 +315,15 @@ vTensor::vTensor(
       padded_sizes_{calculate_padded_sizes(sizes, memory_layout_)},
       unsqueezed_strides_{unsqueeze_strides(strides_, numel_)},
       padded_numel_(utils::multiply_integers(padded_sizes_)),
-      texture_limits_{{0, 0, 0}},
+      texture_limits_{other.texture_limits_},
+      logical_limits_(other.logical_limits_),
       // Empty initialize Utility Uniform Buffers
       sizes_uniform_(),
       strides_uniform_(),
       numel_uniform_(),
       axis_mapping_uniform_(),
       texture_limits_uniform_(),
+      logical_limits_uniform_(),
       // Copy Tensor storage
       storage_(other.storage_, vkapi::element_size(dtype_) * offset_numel) {
   VK_CHECK_COND(
@@ -356,12 +364,18 @@ vkapi::VulkanBuffer& vTensor::buffer(
   return storage_.buffer_;
 }
 
-utils::uvec3 vTensor::mapped_extents() const {
-  utils::uvec3 m_extents;
-  m_extents[0] = storage_.image_extents_[axis_mapping_.at(0)];
-  m_extents[1] = storage_.image_extents_[axis_mapping_.at(1)];
-  m_extents[2] = storage_.image_extents_[axis_mapping_.at(2)];
-  return m_extents;
+void vTensor::update_logical_limits() {
+  logical_limits_.limits[0] = texture_limits_.limits[axis_mapping_.at(0)];
+  logical_limits_.limits[1] = texture_limits_.limits[axis_mapping_.at(1)];
+  logical_limits_.limits[2] = texture_limits_.limits[axis_mapping_.at(2)];
+}
+
+utils::uvec3 vTensor::logical_extents() const {
+  utils::uvec3 logical_extents(
+      {utils::safe_downcast<uint32_t>(logical_limits_.limits[0]),
+       utils::safe_downcast<uint32_t>(logical_limits_.limits[1]),
+       utils::safe_downcast<uint32_t>(logical_limits_.limits[2])});
+  return logical_extents;
 }
 
 const vkapi::BufferBindInfo vTensor::sizes_ubo() {
@@ -393,6 +407,13 @@ const vkapi::BufferBindInfo vTensor::texture_limits_ubo() {
     texture_limits_uniform_ = ParamsBuffer(storage_.context_, texture_limits_);
   }
   return vkapi::BufferBindInfo(texture_limits_uniform_.buffer());
+}
+
+const vkapi::BufferBindInfo vTensor::logical_limits_ubo() {
+  if (!logical_limits_uniform_.buffer()) {
+    logical_limits_uniform_ = ParamsBuffer(storage_.context_, logical_limits_);
+  }
+  return vkapi::BufferBindInfo(logical_limits_uniform_.buffer());
 }
 
 const vkapi::BufferBindInfo vTensor::numel_ubo() {
@@ -473,6 +494,8 @@ void vTensor::update_metadata() {
       utils::safe_downcast<int32_t>(virtual_extents[1]),
       utils::safe_downcast<int32_t>(virtual_extents[2])};
 
+  update_logical_limits();
+
   if (sizes_uniform_.buffer()) {
     sizes_uniform_.update(utils::make_whcn_ivec4(sizes_));
   }
@@ -487,6 +510,9 @@ void vTensor::update_metadata() {
   }
   if (texture_limits_uniform_.buffer()) {
     texture_limits_uniform_.update(texture_limits_);
+  }
+  if (logical_limits_uniform_.buffer()) {
+    logical_limits_uniform_.update(logical_limits_);
   }
 }
 

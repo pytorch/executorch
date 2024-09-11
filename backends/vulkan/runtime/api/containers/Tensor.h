@@ -286,6 +286,13 @@ class vTensor final {
   // texture_limits() function for more context. Note that the texture limits
   // are only relevant for texture storage, and not for buffer storage.
   TextureLimits texture_limits_;
+  // Contains the physical texture extents of the underlying image texture, but
+  // re-ordered such that the first element is the extent of the axis used to
+  // represent the tensor's width dimension, the second element is the extent of
+  // the axis used to represent the tensor's height dimension, and the third
+  // element is the extent of the axis used to represent the tensor's channels
+  // dimension.
+  TextureLimits logical_limits_;
 
   /*
    * Utility GPU buffers that can be passed to shaders in order to convey tensor
@@ -301,6 +308,7 @@ class vTensor final {
   ParamsBuffer numel_uniform_;
   ParamsBuffer axis_mapping_uniform_;
   ParamsBuffer texture_limits_uniform_;
+  ParamsBuffer logical_limits_uniform_;
 
   vTensorStorage storage_;
 
@@ -357,6 +365,10 @@ class vTensor final {
     return storage_.image_extents_;
   }
 
+ private:
+  void update_logical_limits();
+
+ public:
   /*
    * Returns the image extents of the underlying image texture, but re-ordered
    * such that the first element is the extent of the axis used to represent the
@@ -364,7 +376,7 @@ class vTensor final {
    * to represent the tensor's height dimension, and the third element is the
    * extent of the axis used to represent the tensor's channels dimension.
    */
-  utils::uvec3 mapped_extents() const;
+  utils::uvec3 logical_extents() const;
 
   /*
    * Extract an `vkapi::ScalarType` from the TensorOptions member
@@ -434,6 +446,16 @@ class vTensor final {
    * working outside the limits of the texture.
    */
   const vkapi::BufferBindInfo texture_limits_ubo();
+
+  /*
+   * Returns a GPU buffer containing the logical image extents of the tensor.
+   * The logical extents are a re-ordering of the physical image extents such
+   * that the first element is the extent of the axis used to represent the
+   * tensor's width dimension, the second element is the extent of the axis used
+   * to represent the tensor's height dimension, and the third element is the
+   * extent of the axis used to represent the tensor's channels dimension.
+   */
+  const vkapi::BufferBindInfo logical_limits_ubo();
 
   /*
    * Returns the number of elements in the buffer used to store the tensor.

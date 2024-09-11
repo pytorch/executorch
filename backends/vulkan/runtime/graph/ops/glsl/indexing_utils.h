@@ -32,6 +32,11 @@
 //
 
 /*
+ * Fast division by 4 using bit shifting
+ */
+#define div4(x) (x >> 2)
+
+/*
  * Divides input and rounds up to 4
  */
 #define divup4(x) ((x + 3) / 4)
@@ -54,6 +59,17 @@ int find_packed_dim(const ivec4 strides) {
     }
   }
   return packed_dim;
+}
+
+/*
+ * Return the elements of a texture position such that the first element is the
+ * texture coordinate corresponding to the width dimension, the second element
+ * is the texture coordinate corresponding to the height dimension, and the
+ * third element is the texture coordinate corresponding to the channels
+ * dimension.
+ */
+ivec3 get_logical_pos(const ivec3 pos, const ivec4 axis_mapping) {
+  return ivec3(pos[axis_mapping.x], pos[axis_mapping.y], pos[axis_mapping.z]);
 }
 
 //
@@ -308,6 +324,22 @@ ivec4 to_texture_elem_pos(
   // tensor elements in that dim.
   pos[axis_mapping[packed_dim]] /= 4;
   pos.w = idx[packed_dim] % 4;
+  return pos;
+}
+
+//
+// Convert between physical texture position and logical tensor position
+//
+
+/*
+ * Derive (x,y,z) physical texture position from (w,h,d) logical texture
+ * position using the axis mapping.
+ */
+ivec3 to_texture_pos(const ivec3 logical_pos, const ivec4 axis_mapping) {
+  ivec3 pos;
+  pos[axis_mapping.x] = logical_pos.x;
+  pos[axis_mapping.y] = logical_pos.y;
+  pos[axis_mapping.z] = logical_pos.z;
   return pos;
 }
 

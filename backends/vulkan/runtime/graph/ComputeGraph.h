@@ -288,8 +288,8 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().image_extents();
   }
 
-  inline utils::uvec3 mapped_extents_of(const ValueRef idx) const {
-    return values_.at(idx).toConstTensor().mapped_extents();
+  inline utils::uvec3 logical_extents_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().logical_extents();
   }
 
   inline int32_t numel_of(const ValueRef idx) const {
@@ -337,6 +337,10 @@ class ComputeGraph final {
 
   inline vkapi::BufferBindInfo texture_limits_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().texture_limits_ubo();
+  }
+
+  inline vkapi::BufferBindInfo logical_limits_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().logical_limits_ubo();
   }
 
   //
