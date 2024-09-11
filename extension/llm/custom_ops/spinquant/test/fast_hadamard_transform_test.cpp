@@ -111,22 +111,20 @@ int16_t quantize(float x, float scale) {
 }
 
 template <typename T>
-std::pair<std::vector<T>, float> quantize(
-    const std::vector<float>& data,
-    float scale) {
+std::vector<T> quantize(const std::vector<float>& data, float scale) {
   std::vector<T> result;
   result.reserve(data.size());
   for (const float unquant : data) {
     result.push_back(quantize(unquant, scale));
   }
-  return {result, scale};
+  return result;
 }
 
 template <typename T>
 std::pair<std::vector<T>, float> quantize(const std::vector<float>& data) {
   auto [minIt, maxIt] = std::minmax_element(data.begin(), data.end());
   float scale = (*maxIt - *minIt) / (qmax - qmin);
-  return quantize<T>(data, scale);
+  return {quantize<T>(data, scale), scale};
 }
 
 template <typename T>
@@ -157,25 +155,15 @@ void testQuantizedFastHadamardTransform(int logN) {
 
   auto expected_unquant = dequantize(qdata, scale);
   reference_fht_impl(expected_unquant.data(), expected_unquant.size());
-  // REVIEW: should we be recalculating the quantization scale as our
-  // basis for comparison, or reusing the quantization calculated
-  // before the operator? The current state (reusing) makes sense to
-  // me, since we can't expect the quantized operator to adjust the
-  // scale, but I'm not sure what the usual practice is.
-  // Recalculating the scale would cause failures because of outliers;
-  // dequantize(qmax) has a significantly different value if we
-  // recalculate the scale.
-  auto [expected, expected_scale] = quantize<int16_t>(expected_unquant, scale);
+  auto expected = quantize<int16_t>(expected_unquant, scale);
 
   auto actual = qdata;
-  auto actual_scale = scale;
   executorch::fast_hadamard_transform_symmetric_quantized_s16(
       actual.data(), logN);
 
   for (int ii = 0; ii < expected.size(); ++ii) {
     EXPECT_CLOSE(
-        dequantize(actual[ii], actual_scale),
-        dequantize(expected[ii], expected_scale));
+        dequantize(actual[ii], scale), dequantize(expected[ii], scale));
   }
 }
 
@@ -196,10 +184,9 @@ TEST(QuantizedFastHadamardTransform28NTest, Basic) {
 
   auto expected_unquant = dequantize(qdata, scale);
   fast_hadamard_transform_28N_with_transpose(expected_unquant.data(), 10);
-  auto [expected, expected_scale] = quantize<int16_t>(expected_unquant, scale);
+  auto expected = quantize<int16_t>(expected_unquant, scale);
 
   auto actual = qdata;
-  auto actual_scale = scale;
   executorch::fast_hadamard_transform_symmetric_quantized_s16_28N(
       actual.data(), 10);
 
@@ -207,7 +194,6 @@ TEST(QuantizedFastHadamardTransform28NTest, Basic) {
     std::cerr << "element " << ii << ": actual: " << actual[ii]
               << ", expected: " << expected[ii] << std::endl;
     EXPECT_CLOSE(
-        dequantize(actual[ii], actual_scale),
-        dequantize(expected[ii], expected_scale));
+        dequantize(actual[ii], scale), dequantize(expected[ii], scale));
   }
 }

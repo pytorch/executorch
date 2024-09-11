@@ -19,7 +19,8 @@ Error register_all_kernels() {
   Kernel kernels_to_register[] = {
       ${unboxed_kernels} // Generated kernels
   };
-  Error success_with_kernel_reg = register_kernels(kernels_to_register);
+  Error success_with_kernel_reg =
+      ::executorch::runtime::register_kernels({kernels_to_register});
   if (success_with_kernel_reg != Error::Ok) {
     ET_LOG(Error, "Failed register all kernels");
     return success_with_kernel_reg;
