@@ -143,9 +143,7 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
     quantized_ops_lib
   )
   ADD_LIBRARY(libneuron_buffer_allocator SHARED IMPORTED)
-  FIND_LIBRARY(libneuron_buffer_allocator_LIBRARY libneuron_buffer_allocator PATHS /home/hsz/e3/executorch/libneuron_buffer_allocator.so)
-  SET_PROPERTY(TARGET libneuron_buffer_allocator PROPERTY IMPORTED_LOCATION "${libneuron_buffer_allocator_LIBRARY}")
-  SET_PROPERTY(TARGET libneuron_buffer_allocator PROPERTY IMPORTED_IMPLIB "${libneuron_buffer_allocator_LIBRARY}")
+  SET_PROPERTY(TARGET libneuron_buffer_allocator PROPERTY IMPORTED_LOCATION /Users/cmodi/Documents/ai/clean/executorch/backends/mediatek/libneuron_buffer_allocator.so)
 
   target_link_libraries(executorch_llama_jni libneuron_buffer_allocator)
   target_compile_options(executorch_llama_jni PUBLIC ${_common_compile_options})
