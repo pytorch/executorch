@@ -45,6 +45,12 @@ class PlatformIntercept {
       ET_UNUSED const char* message,
       ET_UNUSED size_t length) {}
 
+  virtual void* allocate(ET_UNUSED size_t size) {
+    return nullptr;
+  }
+
+  virtual void free(ET_UNUSED void* ptr) {}
+
   virtual ~PlatformIntercept() = default;
 };
 

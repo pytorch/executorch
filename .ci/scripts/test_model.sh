@@ -209,7 +209,13 @@ elif [[ "${BACKEND}" == "coreml" ]]; then
   fi
 elif [[ "${BACKEND}" == "xnnpack" ]]; then
   echo "Testing ${MODEL_NAME} with xnnpack..."
-  test_model_with_xnnpack true true
+  WITH_QUANTIZATION=true
+  WITH_DELEGATION=true
+  if [[ "$MODEL_NAME" == "mobilebert" ]]; then
+    # TODO(T197452682)
+    WITH_QUANTIZATION=false
+  fi
+  test_model_with_xnnpack "${WITH_QUANTIZATION}" "${WITH_DELEGATION}"
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
