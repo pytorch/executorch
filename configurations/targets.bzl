@@ -51,7 +51,7 @@ def define_common_targets():
         ],
     )
 
-    # TODO(T183193812): delete this target after optimized_oss.yaml is gone
+    # TODO(T183193812): delete this target after optimized-oss.yaml is gone
     executorch_generated_lib(
         name = "optimized_native_cpu_ops_oss",
         deps = [
@@ -60,7 +60,7 @@ def define_common_targets():
             "//executorch/kernels/portable:executorch_aten_ops",
             "//executorch/kernels/portable:operators",
         ],
-        functions_yaml_target = "//executorch/kernels/optimized:optimized_oss.yaml",
+        functions_yaml_target = "//executorch/kernels/optimized:optimized-oss.yaml",
         fallback_yaml_target = "//executorch/kernels/portable:functions.yaml",
         define_static_targets = True,
         visibility = [

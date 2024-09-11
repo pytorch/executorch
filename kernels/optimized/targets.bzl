@@ -20,7 +20,7 @@ def define_common_targets():
     )
 
     runtime.export_file(
-        name = "optimized_oss.yaml",
+        name = "optimized-oss.yaml",
         visibility = [
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
