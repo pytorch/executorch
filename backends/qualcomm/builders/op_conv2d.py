@@ -10,16 +10,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
-from executorch.backends.qualcomm.utils.constants import (
-    QCOM_DATA,
-    QCOM_DTYPE,
-    QCOM_QUANT_ATTRS,
-    QCOM_QUANT_MAX,
-    QCOM_QUANT_MIN,
-    QCOM_SCALE,
-    QCOM_ZERO_POINT,
-)
-from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import (
@@ -94,52 +85,6 @@ class Conv2d(NodeVisitor):
 
         return conv_op
 
-    def _get_bias_tensor(
-        self,
-        node: torch.fx.Node,
-        nodes_to_wrappers: Dict[str, PyQnnWrapper.TensorWrapper],
-        num_output_channel: int,
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
-        # build dummy node if bias is not given
-        bias_node = (
-            node.args[2]
-            if node.args[2] is not None
-            else torch.fx.Node(
-                node.graph,
-                node.name + "_runtime_bias",
-                "call_function",
-                exir_ops.edge.aten.full.default,
-                (),  # args
-                {},  # kwargs
-            )
-        )
-        # zeros tensor to meet HTP constraint if bias is not given
-        bias_tensor = (
-            get_parameter(bias_node, self.edge_program)
-            if node.args[2] is not None
-            else torch.zeros(num_output_channel)
-        )
-        # insert quant attribute to meet HTP constraint if bias is not given
-        if (
-            node.args[2] is None
-            and (bias_quant_attrs := node.meta.get(QCOM_QUANT_ATTRS)) is not None
-        ):
-            quant_attrs = bias_quant_attrs.copy()
-            quant_attrs[QCOM_ZERO_POINT] = 0
-            quant_attrs[QCOM_SCALE] = 0
-            quant_attrs[QCOM_DTYPE] = torch.int32
-            quant_attrs[QCOM_QUANT_MAX] = torch.iinfo(torch.int32).max
-            quant_attrs[QCOM_QUANT_MIN] = torch.iinfo(torch.int32).min + 1
-            bias_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
-
-        return self.define_tensor(
-            bias_node,
-            bias_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
-            nodes_to_wrappers,
-            is_input_tensor=False,
-        )
-
     def _define_conv1d(
         self,
         node: torch.fx.Node,
@@ -204,9 +149,17 @@ class Conv2d(NodeVisitor):
             is_input_tensor=False,
         )
         conv_input_tensors = [unsqueeze_output_tensor_wrapper, filter_tensor_wrapper]
-        conv_input_tensors.append(
-            self._get_bias_tensor(node, nodes_to_wrappers, filter_tensor.shape[-1])
-        )
+        if node.args[2] is not None:
+            bias_node = node.args[2]
+            bias_tensor = get_parameter(bias_node, self.edge_program)
+            bias_tensor_wrapper = self.define_tensor(
+                bias_node,
+                bias_tensor,
+                PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+                nodes_to_wrappers,
+                is_input_tensor=False,
+            )
+            conv_input_tensors.append(bias_tensor_wrapper)
 
         stride = [1] + cast(List[int], node.args[3])
         padding = [0] + cast(List[int], node.args[4])
@@ -312,9 +265,18 @@ class Conv2d(NodeVisitor):
             is_input_tensor=False,
         )
         conv_input_tensors = [input_tensor_wrapper, filter_tensor_wrapper]
-        conv_input_tensors.append(
-            self._get_bias_tensor(node, nodes_to_wrappers, filter_tensor.shape[-1])
-        )
+
+        if node.args[2] is not None:
+            bias_node = node.args[2]
+            bias_tensor = get_parameter(bias_node, self.edge_program)
+            bias_tensor_wrapper = self.define_tensor(
+                bias_node,
+                bias_tensor,
+                PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+                nodes_to_wrappers,
+                is_input_tensor=False,
+            )
+            conv_input_tensors.append(bias_tensor_wrapper)
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(

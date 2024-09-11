@@ -46,6 +46,11 @@ Tensor& to_copy_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(self), InvalidArgument, out);
+
   ET_SWITCH_REALHBBF16_TYPES(self.scalar_type(), ctx, "to_copy", CTYPE_IN, [&] {
     ET_SWITCH_REALHBBF16_TYPES(
         out.scalar_type(), ctx, "to_copy", CTYPE_OUT, [&] {

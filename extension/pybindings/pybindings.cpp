@@ -71,6 +71,7 @@ void et_pal_emit_log_message(
 }
 
 namespace py = pybind11;
+using executorch::bundled_program::verify_method_outputs;
 using ::executorch::extension::BufferDataLoader;
 using ::executorch::extension::MallocMemoryAllocator;
 using ::executorch::extension::MmapDataLoader;
@@ -79,7 +80,7 @@ using ::executorch::runtime::DataLoader;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerDebugLogLevel;
-using ::executorch::runtime::get_kernels;
+using ::executorch::runtime::get_registered_kernels;
 using ::executorch::runtime::HierarchicalAllocator;
 using ::executorch::runtime::Kernel;
 using ::executorch::runtime::MemoryAllocator;
@@ -92,8 +93,6 @@ using ::executorch::runtime::Span;
 using ::executorch::runtime::Tag;
 using torch::executor::etdump_result;
 using torch::executor::ETDumpGen;
-using torch::executor::bundled_program::LoadBundledInput;
-using torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput;
 
 #ifndef USE_ATEN_LIB
 using ::executorch::extension::alias_attensor_to_etensor;
@@ -655,11 +654,11 @@ struct PyModule final {
       const std::string method_name,
       size_t testset_idx) {
     const void* bundled_program_ptr = m.get_bundled_program_ptr();
-    Error status = LoadBundledInput(
+    Error status = executorch::bundled_program::load_bundled_input(
         module_->get_method(method_name), bundled_program_ptr, testset_idx);
     THROW_IF_ERROR(
         status,
-        "LoadBundledInput failed with status %" PRIu32,
+        "load_bundled_input failed with status 0x%" PRIx32,
         static_cast<uint32_t>(status));
   }
 
@@ -671,13 +670,14 @@ struct PyModule final {
       double atol = 1e-8) {
     const void* bundled_program_ptr = m.get_bundled_program_ptr();
     auto& method = module_->get_method(method_name);
-    Error status = LoadBundledInput(method, bundled_program_ptr, testset_idx);
+    Error status = executorch::bundled_program::load_bundled_input(
+        method, bundled_program_ptr, testset_idx);
     THROW_IF_ERROR(
         status,
-        "LoadBundledInput failed with status %" PRIu32,
+        "load_bundled_input failed with status 0x%" PRIx32,
         static_cast<uint32_t>(status));
     py::list outputs = plan_execute(method_name);
-    status = VerifyResultWithBundledExpectedOutput(
+    status = executorch::bundled_program::verify_method_outputs(
         method, bundled_program_ptr, testset_idx, rtol, atol);
     THROW_IF_ERROR(
         status,
@@ -774,7 +774,7 @@ void create_profile_block(const std::string& name) {
 }
 
 py::list get_operator_names() {
-  ArrayRef<Kernel> kernels = get_kernels();
+  Span<const Kernel> kernels = get_registered_kernels();
   py::list res;
   for (const Kernel& k : kernels) {
     if (k.name_ != nullptr) {

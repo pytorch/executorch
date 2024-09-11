@@ -22,7 +22,7 @@ from executorch.extension.pybindings.portable_lib import (
 from parameterized import parameterized
 from PIL import Image
 
-from torchtune.models.clip.inference._transforms import (
+from torchtune.models.clip.inference._transform import (
     _CLIPImageTransform,
     CLIPImageTransform,
 )
