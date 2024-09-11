@@ -59,13 +59,11 @@ also work in similar environments.
   - We recommend `conda` as it provides cross-language
     support and integrates smoothly with `pip` (Python's built-in package manager)
   - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
-* `g++` version 8 or higher, `clang++` version 8 or higher, or another
-  C++17-compatible toolchain that supports GNU C-style [statement
-  expressions](https://gcc.gnu.org/onlinedocs/gcc/Statement-Exprs.html) (`({ ...
-  })` syntax).
+* `g++` version 7 or higher, `clang++` version 5 or higher, or another
+  C++17-compatible toolchain.
 
 Note that the cross-compilable core runtime code supports a wider range of
-toolchains, down to C++11. See the [Runtime Overview](./runtime-overview.md) for
+toolchains, down to C++17. See the [Runtime Overview](./runtime-overview.md) for
 portability details.
 
 ## Quick Setup: Colab/Jupyter Notebook Prototype

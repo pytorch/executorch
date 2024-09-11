@@ -215,6 +215,8 @@
 
 - op: linalg_vector_norm.out
 
+- op: linear.out
+
 - op: log.out
 
 - op: log10.out
