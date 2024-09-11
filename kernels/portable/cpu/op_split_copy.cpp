@@ -46,6 +46,11 @@ void split_copy_Tensor_out(
       check_split_copy_args(input, split_size, dim, out),
       InvalidArgument, );
 
+  for (size_t i = 0; i < out.size(); ++i) {
+    ET_KERNEL_CHECK(
+        ctx, tensors_have_same_dim_order(input, out[i]), InvalidArgument, );
+  }
+
   const size_t leading_dims = getLeadingDims(input, dim);
   const size_t trailing_dims = getTrailingDims(input, dim);
   const size_t step = input.size(dim) * trailing_dims;
