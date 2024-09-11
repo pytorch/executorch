@@ -179,6 +179,7 @@ jobs:
   upload-models:
     needs: export-models
     runs-on: linux.2xlarge
+    if: always()  # Continue this job regardless of previous job outcome
     steps:
       - name: Download the models from GitHub
         uses: actions/download-artifact@v3
