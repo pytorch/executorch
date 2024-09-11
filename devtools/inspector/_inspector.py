@@ -152,6 +152,7 @@ class ProfileEventSignature:
 # Signature of a DebugEvent
 @dataclass(frozen=True, order=True)
 class DebugEventSignature:
+    name: str = ""
     instruction_id: Optional[int] = -1
     delegate_id: Optional[int] = None
     delegate_id_str: Optional[str] = None
@@ -165,6 +166,7 @@ class DebugEventSignature:
         The Signature will convert these back to the intended None value
         """
         return DebugEventSignature(
+            event.name or "",
             event.instruction_id if event.instruction_id != -1 else None,
             event.delegate_debug_id_int if event.delegate_debug_id_int != -1 else None,
             event.delegate_debug_id_str if event.delegate_debug_id_str != "" else None,
@@ -470,6 +472,42 @@ class Event:
         return elapsed_time
 
     @staticmethod
+    def _populate_event_signature_fields(
+        ret_event: "Event",
+        event_signature: Optional[Union[ProfileEventSignature, DebugEventSignature]],
+    ) -> None:
+        """
+        Given a partially constructed Event, populate the fields related to
+        the profile event signature or debug event signature
+
+        Fields Updated:
+            name
+            delegate_debug_identifier
+            is_delegated_op
+        """
+        # TODO: T201347372 Push the None check to ealier in the stack.
+        if event_signature is not None:
+            if event_signature.delegate_id is not None:  # 0 is a valid value
+                delegate_debug_identifier = event_signature.delegate_id
+            else:
+                delegate_debug_identifier = event_signature.delegate_id_str or None
+
+            # Use the delegate identifier as the event name if delegated
+            is_delegated_op = delegate_debug_identifier is not None
+            name = (
+                event_signature.name
+                if not is_delegated_op
+                else str(delegate_debug_identifier)
+            )
+
+            # Update fields
+            # This is for older version of etdump that doesn't have the name field for debug events, we don't update the name field
+            if name:
+                ret_event.name = name
+            ret_event.delegate_debug_identifier = delegate_debug_identifier
+            ret_event.is_delegated_op = is_delegated_op
+
+    @staticmethod
     def _populate_profiling_related_fields(
         ret_event: "Event",
         profile_event_signature: Optional[ProfileEventSignature],
@@ -489,26 +527,7 @@ class Event:
         """
 
         # Fill out fields from profile event signature
-        if profile_event_signature is not None:
-            if profile_event_signature.delegate_id is not None:  # 0 is a valid value
-                delegate_debug_identifier = profile_event_signature.delegate_id
-            else:
-                delegate_debug_identifier = (
-                    profile_event_signature.delegate_id_str or None
-                )
-
-            # Use the delegate identifier as the event name if delegated
-            is_delegated_op = delegate_debug_identifier is not None
-            name = (
-                profile_event_signature.name
-                if not is_delegated_op
-                else str(delegate_debug_identifier)
-            )
-
-            # Update fields
-            ret_event.name = name
-            ret_event.delegate_debug_identifier = delegate_debug_identifier
-            ret_event.is_delegated_op = is_delegated_op
+        Event._populate_event_signature_fields(ret_event, profile_event_signature)
 
         # Fill out fields from profile event
         data = []
@@ -577,8 +596,14 @@ class Event:
         the debug events
 
         Fields Updated:
+            name
+            delegate_debug_identifier
+            is_delegated_op
             debug_data
         """
+
+        # Fill out fields from debug event signature
+        Event._populate_event_signature_fields(ret_event, debug_event_signature)
 
         debug_data: List[flatcc.Value] = []
         for event in events:

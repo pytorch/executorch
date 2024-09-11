@@ -318,6 +318,7 @@ class TestInspector(unittest.TestCase):
         )
 
         debug_event_0 = flatcc.DebugEvent(
+            name="event",
             chain_index=1,
             instruction_id=0,
             delegate_debug_id_int=1,
@@ -341,6 +342,7 @@ class TestInspector(unittest.TestCase):
 
         # Note the sizes of this tensor are different from the previous one
         debug_event_1 = flatcc.DebugEvent(
+            name="event",
             chain_index=1,
             instruction_id=0,
             delegate_debug_id_int=1,
@@ -385,6 +387,7 @@ class TestInspector(unittest.TestCase):
         )
 
         debug_event_0 = flatcc.DebugEvent(
+            name="event",
             chain_index=1,
             instruction_id=0,
             delegate_debug_id_int=1,
@@ -408,6 +411,7 @@ class TestInspector(unittest.TestCase):
 
         # Same as the event above except for offset
         debug_event_1 = flatcc.DebugEvent(
+            name="event",
             chain_index=1,
             instruction_id=0,
             delegate_debug_id_int=1,
