@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
-import json
 import os
 
 import numpy as np
@@ -14,14 +13,13 @@ import torch
 from executorch.backends.mediatek import Precision
 from executorch.examples.mediatek.aot_utils.oss_utils.utils import (
     build_executorch_binary,
-    make_output_dir,
 )
 from executorch.examples.models.edsr import EdsrModel
 
 from PIL import Image
 from torch.utils.data import Dataset
 from torchsr.datasets import B100
-from torchvision.transforms.functional import to_pil_image, to_tensor
+from torchvision.transforms.functional import to_tensor
 
 
 class NhwcWrappedModel(torch.nn.Module):

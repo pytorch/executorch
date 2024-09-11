@@ -7,8 +7,6 @@
 import os
 from typing import Optional
 
-import numpy as np
-
 import torch
 from executorch import exir
 from executorch.backends.mediatek import (

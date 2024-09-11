@@ -5,16 +5,12 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
-import json
 import os
-
-import numpy as np
 
 import torch
 from executorch.backends.mediatek import Precision
 from executorch.examples.mediatek.aot_utils.oss_utils.utils import (
     build_executorch_binary,
-    make_output_dir,
 )
 from executorch.examples.models.mobilenet_v2 import MV2Model
 

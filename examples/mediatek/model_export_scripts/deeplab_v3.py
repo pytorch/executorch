@@ -5,11 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
-import json
 import os
 import random
-import re
-import sys
 
 import numpy as np
 
@@ -17,7 +14,6 @@ import torch
 from executorch.backends.mediatek import Precision
 from executorch.examples.mediatek.aot_utils.oss_utils.utils import (
     build_executorch_binary,
-    make_output_dir,
 )
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 
@@ -34,7 +30,6 @@ class NhwcWrappedModel(torch.nn.Module):
 
 
 def get_dataset(data_size, dataset_dir, download):
-    import numpy as np
     from torchvision import datasets, transforms
 
     input_size = (224, 224)
