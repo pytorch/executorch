@@ -40,6 +40,7 @@ list(
   extension_runner_util
   extension_tensor
   extension_threadpool
+  pthreadpool
   fbjni
 )
 
