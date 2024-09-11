@@ -746,7 +746,7 @@ In the fragment of the output for nanoGPT below, observe that embedding and add 
 
 ### Performance Analysis
 
-Through the ExecuTorch SDK, users are able to profile model execution, giving timing information for each operator in the model.
+Through the ExecuTorch Developer Tools, users are able to profile model execution, giving timing information for each operator in the model.
 
 #### Prerequisites
 
@@ -805,7 +805,7 @@ if (result.buf != nullptr && result.size > 0) {
 }
 ```
 
-Additionally, update CMakeLists.txt to build with SDK and enable events to be traced and logged into ETDump:
+Additionally, update CMakeLists.txt to build with Developer Tools and enable events to be traced and logged into ETDump:
 
 ```
 option(EXECUTORCH_BUILD_SDK "" ON)

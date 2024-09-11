@@ -197,7 +197,7 @@ option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 
 option(EXECUTORCH_BUILD_KERNELS_QUANTIZED "Build the quantized kernels" OFF)
 
-option(EXECUTORCH_BUILD_SDK "Build the ExecuTorch SDK")
+option(EXECUTORCH_BUILD_SDK "Build the ExecuTorch Developer Tools")
 
 option(EXECUTORCH_BUILD_SIZE_TEST "Build the size test" OFF)
 
