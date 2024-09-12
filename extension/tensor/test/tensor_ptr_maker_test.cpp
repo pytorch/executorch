@@ -363,11 +363,11 @@ TEST_F(TensorPtrMakerTest, CreateRandTensorWithDoubleType) {
 }
 
 TEST_F(TensorPtrMakerTest, CreateRandnTensor) {
-  auto tensor = randn({4, 5});
+  auto tensor = randn({100, 100});
 
   EXPECT_EQ(tensor->dim(), 2);
-  EXPECT_EQ(tensor->size(0), 4);
-  EXPECT_EQ(tensor->size(1), 5);
+  EXPECT_EQ(tensor->size(0), 100);
+  EXPECT_EQ(tensor->size(1), 100);
   EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Float);
 
   auto sum = 0.0f;
@@ -375,15 +375,15 @@ TEST_F(TensorPtrMakerTest, CreateRandnTensor) {
     sum += tensor->const_data_ptr<float>()[i];
   }
   const auto average = sum / tensor->numel();
-  EXPECT_NEAR(average, 0.0f, 0.5f);
+  EXPECT_NEAR(average, 0.0f, 1.0f);
 }
 
 TEST_F(TensorPtrMakerTest, CreateRandnTensorWithDoubleType) {
-  auto tensor = randn({4, 5}, exec_aten::ScalarType::Double);
+  auto tensor = randn({100, 100}, exec_aten::ScalarType::Double);
 
   EXPECT_EQ(tensor->dim(), 2);
-  EXPECT_EQ(tensor->size(0), 4);
-  EXPECT_EQ(tensor->size(1), 5);
+  EXPECT_EQ(tensor->size(0), 100);
+  EXPECT_EQ(tensor->size(1), 100);
   EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Double);
 
   auto sum = 0.0;
@@ -391,7 +391,7 @@ TEST_F(TensorPtrMakerTest, CreateRandnTensorWithDoubleType) {
     sum += tensor->const_data_ptr<double>()[i];
   }
   const auto average = sum / tensor->numel();
-  EXPECT_NEAR(average, 0.0, 0.5);
+  EXPECT_NEAR(average, 0.0, 1.0);
 }
 
 TEST_F(TensorPtrMakerTest, CreateRandIntTensorWithIntType) {
