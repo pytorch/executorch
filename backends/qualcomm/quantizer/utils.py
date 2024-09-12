@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import numbers
+import operator
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -77,7 +78,7 @@ def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
 
 
 def get_default_8bit_qnn_ptq_config(
-    act_symmetric: bool = False, act_observer=MinMaxObserver
+    act_symmetric: bool = False, act_observer=MovingAverageMinMaxObserver
 ) -> QuantizationConfig:
     extra_args: Dict[str, Any] = {"eps": 2**-12}
 
@@ -96,7 +97,7 @@ def get_default_8bit_qnn_ptq_config(
         quant_max=torch.iinfo(torch.int8).max,
         qscheme=torch.per_tensor_symmetric,
         ch_axis=0,
-        observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
     )
 
     bias_quantization_spec = QuantizationSpec(
@@ -104,7 +105,7 @@ def get_default_8bit_qnn_ptq_config(
         quant_min=torch.iinfo(torch.int32).min,
         quant_max=torch.iinfo(torch.int32).max,
         qscheme=torch.per_tensor_symmetric,
-        observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
     )
 
     quantization_config = QuantizationConfig(
@@ -619,7 +620,13 @@ def annotate_upsample_nearest2d(
     annotate_single_in_single_out(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.softmax.int, torch.ops.aten._softmax.default])
+@register_annotator(
+    [
+        torch.ops.aten.softmax.int,
+        torch.ops.aten._softmax.default,
+        torch.ops.aten._safe_softmax.default,
+    ]
+)
 def annotate_softmax(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
@@ -682,6 +689,31 @@ def annotate_squeeze(node: Node, quantization_config: QuantizationConfig) -> Non
     annotate_in_out_obs_sharing_op(node, quantization_config)
     if not _is_annotated([node]):
         annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.rms_norm.default])
+def annotate_rms_norm(node: Node, quantization_config: QuantizationConfig) -> None:
+    act_node = node.args[0]
+    weight_node = node.args[2]
+
+    if _is_annotated([node]):
+        return
+
+    # TODO current only support 16a16w
+    _annotate_input_qspec_map(
+        node,
+        act_node,
+        quantization_config.input_activation,
+    )
+
+    _annotate_input_qspec_map(
+        node,
+        weight_node,
+        quantization_config.input_activation,
+    )
+    nodes_to_mark_annotated = [node]
+    _annotate_output_qspec(node, quantization_config.output_activation)
+    _mark_nodes_as_annotated(nodes_to_mark_annotated)
 
 
 @register_annotator([torch.ops.aten.rsqrt.default])
@@ -973,6 +1005,38 @@ def annotate_linear(node: Node, quantization_config: QuantizationConfig) -> None
 
     # We use get_source_partition in pass, but it is the same source for MultiheadAttention, so we need to change its source_fn_stack.
     node.meta["source_fn_stack"] = [(node, torch.nn.Linear)]
+
+
+@register_annotator([torch.ops.aten._native_batch_norm_legit_no_training.default])
+def annotate_batch_norm(node: Node, quantization_config: QuantizationConfig) -> None:
+    act, weight, bias = node.args[0:3]
+    if _is_annotated([node]):
+        return
+
+    _annotate_input_qspec_map(
+        node,
+        act,
+        quantization_config.input_activation,
+    )
+    # QNN requires uint8 instead of int8 in 'weight' config
+    _annotate_input_qspec_map(
+        node,
+        weight,
+        quantization_config.input_activation,
+    )
+    _annotate_input_qspec_map(
+        node,
+        bias,
+        quantization_config.bias,
+    )
+    _annotate_output_qspec(node, quantization_config.output_activation)
+    _mark_nodes_as_annotated([node, *node.args[0:3]])
+
+
+@register_annotator([operator.getitem])
+def annotate_getitem(node: Node, quantization_config: QuantizationConfig) -> None:
+    _annotate_output_qspec(node, quantization_config.output_activation)
+    _mark_nodes_as_annotated([node])
 
 
 @register_annotator([torch.ops.aten.layer_norm.default])

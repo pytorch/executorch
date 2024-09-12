@@ -8,6 +8,11 @@ from typing import Dict
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import torch
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_QUANT_ATTRS,
+    QCOM_QUANT_MAX,
+    QCOM_SCALE,
+)
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpBatchnorm, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -20,6 +25,14 @@ class BatchNorm(NodeVisitor):
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
+
+    def update_encoding(self, node: torch.fx.Node, tensor: torch.Tensor):
+        if isinstance(tensor, torch._subclasses.FakeTensor):
+            return
+
+        if quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
+            diff = max(abs(tensor.max()), abs(tensor.min()))
+            quant_attrs[QCOM_SCALE] = diff / quant_attrs[QCOM_QUANT_MAX]
 
     def define_node(
         self,
@@ -48,6 +61,7 @@ class BatchNorm(NodeVisitor):
 
         amount = (filter_tensor * mean_tensor) / torch.sqrt(var_tensor + eps)
         bias_tensor = bias_tensor - amount
+        self.update_encoding(bias_node, bias_tensor)
         bias_tensor_wrapper = self.define_tensor(
             bias_node,
             bias_tensor,
@@ -57,6 +71,7 @@ class BatchNorm(NodeVisitor):
         )
 
         filter_tensor = filter_tensor / torch.sqrt(var_tensor + eps)
+        self.update_encoding(filter_node, filter_tensor)
         filter_tensor_wrapper = self.define_tensor(
             filter_node,
             filter_tensor,

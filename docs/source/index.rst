@@ -193,7 +193,7 @@ Topics in this section will help you get started with ExecuTorch.
 .. toctree::
    :glob:
    :maxdepth: 1
-   :caption: SDK
+   :caption: Developer Tools
    :hidden:
 
    sdk-overview
@@ -244,11 +244,11 @@ ExecuTorch tutorials.
    :tags:
 
 .. customcarditem::
-   :header: Using the ExecuTorch SDK to Profile a Model
-   :card_description: A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.
+   :header: Using the ExecuTorch Developer Tools to Profile a Model
+   :card_description: A tutorial for using the ExecuTorch Developer Tools to profile and analyze a model with linkage back to source code.
    :image: _static/img/generic-pytorch-logo.png
    :link: tutorials/sdk-integration-tutorial.html
-   :tags: SDK
+   :tags: devtools
 
 .. customcarditem::
    :header: Integrating and Running ExecuTorch on Apple Platforms

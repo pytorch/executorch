@@ -170,3 +170,26 @@ void et_pal_emit_log_message(
       message);
   fflush(ET_LOG_OUTPUT_FILE);
 }
+
+/**
+ * NOTE: Core runtime code must not call this directly. It may only be called by
+ * a MemoryAllocator wrapper.
+ *
+ * Allocates size bytes of memory via malloc.
+ *
+ * @param[in] size Number of bytes to allocate.
+ * @returns the allocated memory, or nullptr on failure. Must be freed using
+ *     et_pal_free().
+ */
+void* et_pal_allocate(size_t size) {
+  return malloc(size);
+}
+
+/**
+ * Frees memory allocated by et_pal_allocate().
+ *
+ * @param[in] ptr Pointer to memory to free. May be nullptr.
+ */
+void et_pal_free(void* ptr) {
+  free(ptr);
+}
