@@ -96,10 +96,8 @@ using namespace ::executorch::runtime;
               XCTAssertEqual(tensor_meta.error(), Error::Ok);
 
               const auto sizes = tensor_meta->sizes();
-              tensors.emplace_back(make_tensor_ptr(
-                  tensor_meta->scalar_type(),
-                  {sizes.begin(), sizes.end()},
-                  std::vector<uint8_t>(tensor_meta->nbytes(), 0b01010101)));
+              tensors.emplace_back(ones({sizes.begin(), sizes.end()},
+                                        tensor_meta->scalar_type()));
               inputs.emplace_back(tensors.back());
             } break;
             default:
