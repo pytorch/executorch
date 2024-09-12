@@ -4,13 +4,13 @@ on:
   pull_request:
     paths:
       - .github/workflows/upload-android-test-specs.yml
-      - examples/demo-apps/android/LlamaDemo/android-llm-device-farm-test-spec.yml
+      - extension/android/benchmark/android-llm-device-farm-test-spec.yml
   push:
     branches:
       - main
     paths:
       - .github/workflows/upload-android-test-specs.yml
-      - examples/demo-apps/android/LlamaDemo/android-llm-device-farm-test-spec.yml
+      - extension/android/benchmark/android-llm-device-farm-test-spec.yml
 
 concurrency:
   # NB: This concurency group needs to be different than the one used in android-perf, otherwise
@@ -32,7 +32,7 @@ jobs:
             ${{ github.repository }}/${{ github.run_id }}/artifact
           retention-days: 1
           if-no-files-found: error
-          path: examples/demo-apps/android/LlamaDemo/android-llm-device-farm-test-spec.yml
+          path: extension/android/benchmark/android-llm-device-farm-test-spec.yml
 
   validate-android-test-spec:
     needs: upload-android-test-spec-for-validation
@@ -77,7 +77,7 @@ jobs:
 
       - name: Upload the spec to S3 ossci-android bucket
         shell: bash
-        working-directory: examples/demo-apps/android/LlamaDemo/
+        working-directory: extension/android/benchmark/
         env:
           SPEC_FILE: android-llm-device-farm-test-spec.yml
         run: |

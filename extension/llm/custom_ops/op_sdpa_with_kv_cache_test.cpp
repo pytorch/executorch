@@ -31,7 +31,7 @@ exec_aten::Tensor op_sdpa_with_kv_cache(
     bool is_causal,
     exec_aten::optional<double> scale,
     exec_aten::Tensor& out) {
-  exec_aten::RuntimeContext context{};
+  executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::native::sdpa_with_kv_cache_out(
       context,
       query,
