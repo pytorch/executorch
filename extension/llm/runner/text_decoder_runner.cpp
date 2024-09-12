@@ -42,7 +42,7 @@ TextDecoderRunner::TextDecoderRunner(
     TensorPtr& start_pos) {
   // ET_LOG(Info, "Input token %" PRIu64, input_token);
   if (use_kv_cache_) {
-    auto outputs_res = module_->forward({*tokens, *start_pos});
+    auto outputs_res = module_->forward({tokens, start_pos});
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
     ET_CHECK_MSG(
         outputs_res.get().size() == 1,
