@@ -12,6 +12,9 @@ def define_common_targets():
             "fast_hadamard_transform.h",
             "fast_hadamard_transform_special.h",
         ],
+        srcs = [
+            "fast_hadamard_transform.cpp",
+        ],
         exported_deps = [
             "//executorch/extension/llm/custom_ops/spinquant/third-party/FFHT:fht",
         ],
