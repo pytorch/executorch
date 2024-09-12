@@ -114,7 +114,6 @@ excludes = [
 deps = [
   "executorch_no_prim_ops",
   "executorch",
-  "extension_parallel_thread_parallel",
 ]
 
 [targets.optimized_native_cpu_ops_oss]
@@ -197,17 +196,6 @@ filters = [
 deps = [
   "executorch",
   "executorch_no_prim_ops",
-]
-
-[targets.extension_parallel_thread_parallel]
-buck_targets = [
-  "//extension/parallel:thread_parallel",
-]
-filters = [
-  ".cpp$",
-]
-deps = [
-  "executorch",
 ]
 # ---------------------------------- extension end ----------------------------------
 # ---------------------------------- binary start ----------------------------------
