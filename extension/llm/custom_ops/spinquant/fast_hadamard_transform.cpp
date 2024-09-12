@@ -8,6 +8,8 @@
 
 #include "fast_hadamard_transform.h"
 
+#include <algorithm>
+
 namespace executorch {
 void fast_hadamard_transform_symmetric_quantized_s16(
     int16_t* vec,
