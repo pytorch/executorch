@@ -34,7 +34,9 @@ class AnnotateChannelsLastDimOrder(ExportPass):
             prev_node = node.args[0]
             if cast(torch.fx.Node, prev_node).op != "placeholder":
                 return False
-            return is_consumer_node_depthwise_conv2d(node)
+            if is_consumer_node_depthwise_conv2d(node):
+                consumer_node = list(node.users)[0]
+                return consumer_node.args[1] == node
         elif node.op == "placeholder":
             # node is an input, weight or bias node
             consumer_node = list(node.users)[0]
