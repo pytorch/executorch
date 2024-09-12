@@ -57,6 +57,7 @@ cmake-out/examples/models/phi-3-mini/phi_3_mini_runner \
     --model_path=phi-3-mini.pte \
     --tokenizer_path=tokenizer.bin \
     --seq_len=128 \
+    --temperature=0 \
     --prompt="<|system|>
 You are a helpful assistant.<|end|>
 <|user|>
