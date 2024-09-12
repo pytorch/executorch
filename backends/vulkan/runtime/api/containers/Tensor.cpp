@@ -682,12 +682,9 @@ vTensorStorage::vTensorStorage(
       image_extents_(other.image_extents_),
       buffer_length_{other.buffer_length_},
       buffer_offset_{buffer_offset},
-      image_(),
+      image_(other.image_),
       buffer_(other.buffer_, buffer_offset),
       last_access_{other.last_access_} {
-  if (other.storage_type_ != utils::kBuffer) {
-    VK_THROW("Tensors with texture storage cannot be copied!");
-  }
 }
 
 vTensorStorage::~vTensorStorage() {
@@ -758,14 +755,10 @@ void vTensorStorage::transition(
 }
 
 bool vTensorStorage::is_copy_of(const vTensorStorage& other) const {
-  if (storage_type_ != other.storage_type_) {
-    return false;
+  if (storage_type_ == utils::kBuffer) {
+    return buffer_.is_copy_of(other.buffer_);
   }
-  // Copies are only enabled for buffer storage at the moment
-  if (storage_type_ != utils::kBuffer) {
-    return false;
-  }
-  return buffer_.is_copy_of(other.buffer_);
+  return image_.is_copy_of(other.image_);
 }
 
 void vTensorStorage::discard_and_reallocate(

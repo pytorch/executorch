@@ -98,6 +98,7 @@ VulkanImage::VulkanImage()
       allocator_(VK_NULL_HANDLE),
       memory_{},
       owns_memory_(false),
+      is_copy_(false),
       handles_{
           VK_NULL_HANDLE,
           VK_NULL_HANDLE,
@@ -120,6 +121,7 @@ VulkanImage::VulkanImage(
       allocator_(vma_allocator),
       memory_{},
       owns_memory_{allocate_memory},
+      is_copy_(false),
       handles_{
           VK_NULL_HANDLE,
           VK_NULL_HANDLE,
@@ -175,6 +177,17 @@ VulkanImage::VulkanImage(
   }
 }
 
+VulkanImage::VulkanImage(const VulkanImage& other) noexcept
+    : image_properties_(other.image_properties_),
+      view_properties_(other.view_properties_),
+      sampler_properties_(other.sampler_properties_),
+      allocator_(other.allocator_),
+      memory_(other.memory_),
+      owns_memory_{other.owns_memory_},
+      is_copy_(true),
+      handles_(other.handles_),
+      layout_(other.layout_) {}
+
 VulkanImage::VulkanImage(VulkanImage&& other) noexcept
     : image_properties_(other.image_properties_),
       view_properties_(other.view_properties_),
@@ -182,6 +195,7 @@ VulkanImage::VulkanImage(VulkanImage&& other) noexcept
       allocator_(other.allocator_),
       memory_(std::move(other.memory_)),
       owns_memory_(other.owns_memory_),
+      is_copy_(other.is_copy_),
       handles_(other.handles_),
       layout_(other.layout_) {
   other.handles_.image = VK_NULL_HANDLE;
@@ -201,6 +215,7 @@ VulkanImage& VulkanImage::operator=(VulkanImage&& other) noexcept {
   allocator_ = other.allocator_;
   memory_ = std::move(other.memory_);
   owns_memory_ = other.owns_memory_;
+  is_copy_ = other.is_copy_;
   handles_ = other.handles_;
   layout_ = other.layout_;
 
@@ -212,11 +227,15 @@ VulkanImage& VulkanImage::operator=(VulkanImage&& other) noexcept {
 }
 
 VulkanImage::~VulkanImage() {
-  if (VK_NULL_HANDLE != handles_.image_view) {
+  // Do not destroy the VkImage if this class instance is a copy of another
+  // class instance, since this means that this class instance does not have
+  // ownership of the underlying resource.
+  if (VK_NULL_HANDLE != handles_.image_view && !is_copy_) {
     vkDestroyImageView(this->device(), handles_.image_view, nullptr);
   }
 
-  if (VK_NULL_HANDLE != handles_.image) {
+  // Ditto
+  if (VK_NULL_HANDLE != handles_.image && !is_copy_) {
     if (owns_memory_) {
       vmaDestroyImage(allocator_, handles_.image, memory_.allocation);
     } else {
