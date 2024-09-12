@@ -172,8 +172,8 @@ with open(save_path, "wb") as f:
 # Use CMake (follow `these instructions <../runtime-build-and-cross-compilation.html#configure-the-cmake-build>`__ to set up cmake) to execute the Bundled Program to generate the ``ETDump``::
 #
 #       cd executorch
-#       ./examples/sdk/build_sdk_example_runner.sh
-#       cmake-out/examples/sdk/sdk_example_runner --bundled_program_path="bundled_program.bp"
+#       ./examples/devtools/build_example_runner.sh
+#       cmake-out/examples/devtools/example_runner --bundled_program_path="bundled_program.bp"
 
 ######################################################################
 # Creating an Inspector

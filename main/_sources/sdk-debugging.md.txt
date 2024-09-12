@@ -11,7 +11,7 @@ Currently, ExecuTorch supports the following debugging flows:
 ## Steps to debug a model in ExecuTorch
 
 ### Runtime
-For a real example reflecting the steps below, please refer to [sdk_example_runner.cpp](https://github.com/pytorch/executorch/blob/main/examples/sdk/sdk_example_runner/sdk_example_runner.cpp).
+For a real example reflecting the steps below, please refer to [example_runner.cpp](https://github.com/pytorch/executorch/blob/main/examples/devtools/example_runner/example_runner.cpp).
 
 1. [Optional] Generate an [ETRecord](./sdk-etrecord.rst) while exporting your model. When provided, this enables users to link profiling information back to the eager model source code (with stack traces and module hierarchy).
 2. Integrate [ETDump generation](./sdk-etdump.md) into the runtime and set the debugging level by configuring the `ETDumpGen` object. Then, provide an additional buffer to which intermediate outputs and program outputs will be written. Currently we support two levels of debugging:

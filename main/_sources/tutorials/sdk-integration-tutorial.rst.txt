@@ -208,8 +208,8 @@ In this tutorial, a `Bundled Program` is created from the example model above.
 Use CMake (follow `these instructions <../runtime-build-and-cross-compilation.html#configure-the-cmake-build>`__ to set up cmake) to execute the Bundled Program to generate the ``ETDump``::
 
       cd executorch
-      ./examples/sdk/build_sdk_example_runner.sh
-      cmake-out/examples/sdk/sdk_example_runner --bundled_program_path="bundled_program.bp"
+      ./examples/devtools/build_example_runner.sh
+      cmake-out/examples/devtools/example_runner --bundled_program_path="bundled_program.bp"
 
 .. GENERATED FROM PYTHON SOURCE LINES 179-190
 
@@ -405,7 +405,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.506 seconds)
+   **Total running time of the script:** (0 minutes 1.580 seconds)
 
 
 .. _sphx_glr_download_tutorials_sdk-integration-tutorial.py:

@@ -488,7 +488,7 @@
 <h2>Steps to debug a model in ExecuTorch<a class="headerlink" href="#steps-to-debug-a-model-in-executorch" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="runtime">
 <h3>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
-<p>For a real example reflecting the steps below, please refer to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/sdk/sdk_example_runner/sdk_example_runner.cpp">sdk_example_runner.cpp</a>.</p>
+<p>For a real example reflecting the steps below, please refer to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/devtools/example_runner/example_runner.cpp">example_runner.cpp</a>.</p>
 <ol class="arabic">
 <li><p>[Optional] Generate an <a class="reference internal" href="sdk-etrecord.html"><span class="doc std std-doc">ETRecord</span></a> while exporting your model. When provided, this enables users to link profiling information back to the eager model source code (with stack traces and module hierarchy).</p></li>
 <li><p>Integrate <a class="reference internal" href="sdk-etdump.html"><span class="doc std std-doc">ETDump generation</span></a> into the runtime and set the debugging level by configuring the <code class="docutils literal notranslate"><span class="pre">ETDumpGen</span></code> object. Then, provide an additional buffer to which intermediate outputs and program outputs will be written. Currently we support two levels of debugging:</p>
