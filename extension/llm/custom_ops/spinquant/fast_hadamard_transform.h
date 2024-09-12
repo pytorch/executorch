@@ -112,4 +112,11 @@ void fast_hadamard_transform_28N(T* vec, int log2_vec_size) {
   }
 }
 
+// We don't need the quantization scale; see the function-level
+// comment on fast_hadamard_transform_symmetric_quantized_s16 for
+// details.
+void fast_hadamard_transform_symmetric_quantized_s16_28N(
+    int16_t* vec,
+    int log2_vec_size);
+
 } // namespace executorch
