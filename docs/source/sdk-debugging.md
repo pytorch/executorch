@@ -1,6 +1,6 @@
 # Debugging Models in ExecuTorch
 
-With the ExecuTorch SDK, users can debug their models for numerical inaccurcies and extract model outputs from their device to do quality analysis (such as Signal-to-Noise, Mean square error etc.).
+With the ExecuTorch Developer Tools, users can debug their models for numerical inaccurcies and extract model outputs from their device to do quality analysis (such as Signal-to-Noise, Mean square error etc.).
 
 Currently, ExecuTorch supports the following debugging flows:
 - Extraction of model level outputs via ETDump.
@@ -11,7 +11,7 @@ Currently, ExecuTorch supports the following debugging flows:
 ## Steps to debug a model in ExecuTorch
 
 ### Runtime
-For a real example reflecting the steps below, please refer to [sdk_example_runner.cpp](https://github.com/pytorch/executorch/blob/main/examples/sdk/sdk_example_runner/sdk_example_runner.cpp).
+For a real example reflecting the steps below, please refer to [example_runner.cpp](https://github.com/pytorch/executorch/blob/main/examples/devtools/example_runner/example_runner.cpp).
 
 1. [Optional] Generate an [ETRecord](./sdk-etrecord.rst) while exporting your model. When provided, this enables users to link profiling information back to the eager model source code (with stack traces and module hierarchy).
 2. Integrate [ETDump generation](./sdk-etdump.md) into the runtime and set the debugging level by configuring the `ETDumpGen` object. Then, provide an additional buffer to which intermediate outputs and program outputs will be written. Currently we support two levels of debugging:
@@ -67,7 +67,7 @@ We've also provided a simple set of utilities that let users perform quality ana
 
 
 ```python
-from executorch.devtools.inspector._inspector_utils import compare_results
+from executorch.devtools.inspector import compare_results
 
 # Run a simple quality analysis between the model outputs sourced from the
 # runtime and a set of reference outputs.

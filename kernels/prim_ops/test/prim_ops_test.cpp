@@ -29,10 +29,10 @@ namespace executor {
 
 class RegisterPrimOpsTest : public ::testing::Test {
  protected:
-  RuntimeContext context;
+  KernelRuntimeContext context;
   void SetUp() override {
     torch::executor::runtime_init();
-    context = RuntimeContext();
+    context = KernelRuntimeContext();
   }
 };
 

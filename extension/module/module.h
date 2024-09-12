@@ -22,7 +22,7 @@ namespace extension {
 /**
  * A facade class for loading programs and executing methods within them.
  */
-class Module final {
+class Module {
  public:
   /**
    * Enum to define loading behavior.
@@ -48,8 +48,7 @@ class Module final {
   explicit Module(
       const std::string& file_path,
       const LoadMode load_mode = LoadMode::MmapUseMlock,
-      std::unique_ptr<::executorch::runtime::EventTracer> event_tracer =
-          nullptr);
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
 
   /**
    * Constructs an instance with the provided data loader and memory allocator.
@@ -61,13 +60,10 @@ class Module final {
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
    */
   explicit Module(
-      std::unique_ptr<::executorch::runtime::DataLoader> data_loader,
-      std::unique_ptr<::executorch::runtime::MemoryAllocator> memory_allocator =
-          nullptr,
-      std::unique_ptr<::executorch::runtime::MemoryAllocator> temp_allocator =
-          nullptr,
-      std::unique_ptr<::executorch::runtime::EventTracer> event_tracer =
-          nullptr);
+      std::unique_ptr<runtime::DataLoader> data_loader,
+      std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
+      std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
 
   /**
    * Constructs an instance using an existing shared program.
@@ -80,13 +76,10 @@ class Module final {
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
    */
   explicit Module(
-      std::shared_ptr<::executorch::runtime::Program> program,
-      std::unique_ptr<::executorch::runtime::MemoryAllocator> memory_allocator =
-          nullptr,
-      std::unique_ptr<::executorch::runtime::MemoryAllocator> temp_allocator =
-          nullptr,
-      std::unique_ptr<::executorch::runtime::EventTracer> event_tracer =
-          nullptr);
+      std::shared_ptr<runtime::Program> program,
+      std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
+      std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
 
   Module(const Module&) = delete;
   Module& operator=(const Module&) = delete;
@@ -102,9 +95,9 @@ class Module final {
    * @returns An Error to indicate success or failure of the loading process.
    */
   ET_NODISCARD
-  ::executorch::runtime::Error load(
-      const ::executorch::runtime::Program::Verification verification =
-          ::executorch::runtime::Program::Verification::Minimal);
+  runtime::Error load(
+      const runtime::Program::Verification verification =
+          runtime::Program::Verification::Minimal);
 
   /**
    * Checks if the program is loaded.
@@ -121,7 +114,7 @@ class Module final {
    *
    * @returns Shared pointer to the program or nullptr if it's not yet loaded.
    */
-  inline std::shared_ptr<::executorch::runtime::Program> program() const {
+  inline std::shared_ptr<runtime::Program> program() const {
     return program_;
   }
 
@@ -132,7 +125,7 @@ class Module final {
    * @returns A set of strings containing the names of the methods, or an error
    * if the program or method failed to load.
    */
-  ::executorch::runtime::Result<std::unordered_set<std::string>> method_names();
+  runtime::Result<std::unordered_set<std::string>> method_names();
 
   /**
    * Load a specific method from the program and set up memory management if
@@ -143,7 +136,9 @@ class Module final {
    * @returns An Error to indicate success or failure.
    */
   ET_NODISCARD
-  ::executorch::runtime::Error load_method(const std::string& method_name);
+  runtime::Error load_method(
+      const std::string& method_name,
+      torch::executor::EventTracer* tracer = nullptr);
 
   /**
    * Checks if a specific method is loaded.
@@ -166,7 +161,7 @@ class Module final {
    * @returns A method metadata, or an error if the program or method failed to
    * load.
    */
-  ::executorch::runtime::Result<::executorch::runtime::MethodMeta> method_meta(
+  runtime::Result<runtime::MethodMeta> method_meta(
       const std::string& method_name);
 
   /**
@@ -180,10 +175,9 @@ class Module final {
    *          from the method or an error to indicate failure.
    */
   ET_NODISCARD
-  ::executorch::runtime::Result<std::vector<::executorch::runtime::EValue>>
-  execute(
+  runtime::Result<std::vector<runtime::EValue>> execute(
       const std::string& method_name,
-      const std::vector<::executorch::runtime::EValue>& input);
+      const std::vector<runtime::EValue>& input);
 
   /**
    * Execute a specific method with a single input value.
@@ -195,13 +189,10 @@ class Module final {
    * @returns A Result object containing either a vector of output values
    *          from the method or an error to indicate failure.
    */
-  ET_NODISCARD inline ::executorch::runtime::Result<
-      std::vector<::executorch::runtime::EValue>>
-  execute(
+  ET_NODISCARD inline runtime::Result<std::vector<runtime::EValue>> execute(
       const std::string& method_name,
-      const ::executorch::runtime::EValue& input) {
-    return execute(
-        method_name, std::vector<::executorch::runtime::EValue>{input});
+      const runtime::EValue& input) {
+    return execute(method_name, std::vector<runtime::EValue>{input});
   }
 
   /**
@@ -213,10 +204,9 @@ class Module final {
    * @returns A Result object containing either a vector of output values
    *          from the method or an error to indicate failure.
    */
-  ET_NODISCARD inline ::executorch::runtime::Result<
-      std::vector<::executorch::runtime::EValue>>
-  execute(const std::string& method_name) {
-    return execute(method_name, std::vector<::executorch::runtime::EValue>{});
+  ET_NODISCARD inline runtime::Result<std::vector<runtime::EValue>> execute(
+      const std::string& method_name) {
+    return execute(method_name, std::vector<runtime::EValue>{});
   }
 
   /**
@@ -229,13 +219,12 @@ class Module final {
    * @returns A Result object containing either the first output value from the
    * method or an error to indicate failure.
    */
-  ET_NODISCARD inline ::executorch::runtime::Result<
-      ::executorch::runtime::EValue>
-  get(const std::string& method_name,
-      const std::vector<::executorch::runtime::EValue>& input) {
+  ET_NODISCARD inline runtime::Result<runtime::EValue> get(
+      const std::string& method_name,
+      const std::vector<runtime::EValue>& input) {
     auto result = ET_UNWRAP(execute(method_name, input));
     if (result.empty()) {
-      return ::executorch::runtime::Error::InvalidArgument;
+      return runtime::Error::InvalidArgument;
     }
     return result[0];
   }
@@ -250,11 +239,10 @@ class Module final {
    * @returns A Result object containing either the first output value from the
    * method or an error to indicate failure.
    */
-  ET_NODISCARD inline ::executorch::runtime::Result<
-      ::executorch::runtime::EValue>
-  get(const std::string& method_name,
-      const ::executorch::runtime::EValue& input) {
-    return get(method_name, std::vector<::executorch::runtime::EValue>{input});
+  ET_NODISCARD inline runtime::Result<runtime::EValue> get(
+      const std::string& method_name,
+      const runtime::EValue& input) {
+    return get(method_name, std::vector<runtime::EValue>{input});
   }
 
   /**
@@ -266,10 +254,9 @@ class Module final {
    * @returns A Result object containing either the first output value from the
    * method or an error to indicate failure.
    */
-  ET_NODISCARD inline ::executorch::runtime::Result<
-      ::executorch::runtime::EValue>
-  get(const std::string& method_name) {
-    return get(method_name, std::vector<::executorch::runtime::EValue>{});
+  ET_NODISCARD inline runtime::Result<runtime::EValue> get(
+      const std::string& method_name) {
+    return get(method_name, std::vector<runtime::EValue>{});
   }
 
   /**
@@ -281,9 +268,8 @@ class Module final {
    * @returns A Result object containing either a vector of output values
    *          from the 'forward' method or an error to indicate failure.
    */
-  ET_NODISCARD inline ::executorch::runtime::Result<
-      std::vector<::executorch::runtime::EValue>>
-  forward(const std::vector<::executorch::runtime::EValue>& input) {
+  ET_NODISCARD inline runtime::Result<std::vector<runtime::EValue>> forward(
+      const std::vector<runtime::EValue>& input) {
     return execute("forward", input);
   }
 
@@ -296,10 +282,9 @@ class Module final {
    * @returns A Result object containing either a vector of output values
    *          from the 'forward' method or an error to indicate failure.
    */
-  ET_NODISCARD inline ::executorch::runtime::Result<
-      std::vector<::executorch::runtime::EValue>>
-  forward(const ::executorch::runtime::EValue& input) {
-    return forward(std::vector<::executorch::runtime::EValue>{input});
+  ET_NODISCARD inline runtime::Result<std::vector<runtime::EValue>> forward(
+      const runtime::EValue& input) {
+    return forward(std::vector<runtime::EValue>{input});
   }
 
   /**
@@ -309,10 +294,8 @@ class Module final {
    * @returns A Result object containing either a vector of output values
    *          from the 'forward' method or an error to indicate failure.
    */
-  ET_NODISCARD inline ::executorch::runtime::Result<
-      std::vector<::executorch::runtime::EValue>>
-  forward() {
-    return forward(std::vector<::executorch::runtime::EValue>{});
+  ET_NODISCARD inline runtime::Result<std::vector<runtime::EValue>> forward() {
+    return forward(std::vector<runtime::EValue>{});
   }
 
   /**
@@ -323,7 +306,7 @@ class Module final {
    * @returns A pointer to the EventTracer instance. Returns nullptr if no
    * EventTracer is set.
    */
-  inline ::executorch::runtime::EventTracer* event_tracer() const {
+  inline runtime::EventTracer* event_tracer() const {
     return event_tracer_.get();
   }
 
@@ -335,28 +318,30 @@ class Module final {
    *
    * @returns An Error to indicate success or failure of the loading process.
    */
-  ::executorch::runtime::Error set_output_data_ptr(
-      ::executorch::runtime::EValue output_value,
-      size_t output_index);
+  runtime::Error set_output_data_ptr(
+      runtime::EValue output_value,
+      size_t output_index,
+      const std::string& method_name = "forward");
 
  private:
   struct MethodHolder {
     std::vector<std::vector<uint8_t>> planned_buffers;
-    std::vector<::executorch::runtime::Span<uint8_t>> planned_spans;
-    std::unique_ptr<::executorch::runtime::HierarchicalAllocator>
-        planned_memory;
-    std::unique_ptr<::executorch::runtime::MemoryManager> memory_manager;
-    std::unique_ptr<::executorch::runtime::Method> method;
+    std::vector<runtime::Span<uint8_t>> planned_spans;
+    std::unique_ptr<runtime::HierarchicalAllocator> planned_memory;
+    std::unique_ptr<runtime::MemoryManager> memory_manager;
+    std::unique_ptr<runtime::Method> method;
   };
 
  private:
   std::string file_path_;
   LoadMode load_mode_{LoadMode::MmapUseMlock};
-  std::shared_ptr<::executorch::runtime::Program> program_;
-  std::unique_ptr<::executorch::runtime::DataLoader> data_loader_;
-  std::unique_ptr<::executorch::runtime::MemoryAllocator> memory_allocator_;
-  std::unique_ptr<::executorch::runtime::MemoryAllocator> temp_allocator_;
-  std::unique_ptr<::executorch::runtime::EventTracer> event_tracer_;
+  std::shared_ptr<runtime::Program> program_;
+  std::unique_ptr<runtime::DataLoader> data_loader_;
+  std::unique_ptr<runtime::MemoryAllocator> memory_allocator_;
+  std::unique_ptr<runtime::MemoryAllocator> temp_allocator_;
+  std::unique_ptr<runtime::EventTracer> event_tracer_;
+
+ protected:
   std::unordered_map<std::string, MethodHolder> methods_;
 
   friend class ExecuTorchJni;

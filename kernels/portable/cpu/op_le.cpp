@@ -20,7 +20,7 @@ using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
 Tensor& le_tensor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
@@ -34,6 +34,9 @@ Tensor& le_tensor_out(
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "le.Tensor_out", CTYPE_A, [&]() {
     ET_SWITCH_REAL_TYPES_AND(
@@ -63,7 +66,7 @@ Tensor& le_tensor_out(
 }
 
 Tensor& le_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {
@@ -76,6 +79,9 @@ Tensor& le_scalar_out(
       InvalidArgument,
       out,
       "Failed to resize output tensor.");
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);

@@ -158,7 +158,7 @@ static inline scalar_t* conditional_data_ptr(scalar_t* ptr, scalar_t* ptr2) {
 template <
     typename scalar_t,
     typename std::enable_if_t<
-        ::executorch::runtime::is_reduced_floating_point<scalar_t>::value,
+        ::executorch::runtime::is_reduced_floating_point_v<scalar_t>,
         int> = 0>
 static inline scalar_t* conditional_data_ptr(float* ptr, scalar_t* ptr2) {
   (void)ptr;
@@ -247,7 +247,7 @@ void cpu_flash_attention(
       "KV_split_size must be greater than q_split_size");
 
   constexpr bool is_reduced_type =
-      ::executorch::runtime::is_reduced_floating_point<scalar_t>::value;
+      ::executorch::runtime::is_reduced_floating_point_v<scalar_t>;
 
   ET_CHECK_MSG(
       !is_reduced_type, "FlashAttention does not support reduced types.");
@@ -729,7 +729,7 @@ void update_cache(
 } // anonymous namespace
 
 Tensor& flash_attention_kernel_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& query,
     const Tensor& key,
     const Tensor& value,
@@ -811,7 +811,7 @@ Tensor& flash_attention_kernel_out(
   @param[in] seq_len: Seq length. e.g. seq_len dim of q_projected.
 */
 Tensor& sdpa_with_kv_cache_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& q_projected,
     const Tensor& k_projected,
     const Tensor& v_projected,

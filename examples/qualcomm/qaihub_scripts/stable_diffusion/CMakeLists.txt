@@ -24,9 +24,13 @@ target_link_libraries(
   executorch_no_prim_ops
   extension_data_loader
   extension_module
+  extension_tensor
   gflags
   re2::re2
 )
 target_compile_options(
   qaihub_stable_diffusion_runner PUBLIC ${_common_compile_options}
+)
+set_target_properties(
+  qaihub_stable_diffusion_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
 )

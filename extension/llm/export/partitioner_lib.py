@@ -56,11 +56,12 @@ def get_mps_partitioner(use_kv_cache: bool = False):
 
 
 def get_coreml_partitioner(
-    use_kv_cache: bool = False, pt2e_quantize: Optional[str] = None
+    enable_state: bool = False,
+    preserve_sdpa: bool = True,
+    embedding_quantize: Optional[str] = None,
+    pt2e_quantize: Optional[str] = None,
+    coreml_quantize: Optional[str] = None,
 ):
-    assert (
-        use_kv_cache is True
-    ), "CoreML backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
     try:
         import coremltools as ct
         from executorch.backends.apple.coreml.compiler import (  # pyre-ignore
@@ -75,22 +76,37 @@ def get_coreml_partitioner(
         )
 
     minimum_deployment_target = ct.target.iOS15
-    # In Core ML, quantization in introduced in iOS 16
-    if pt2e_quantize is not None:
+    # In Core ML, stateful execution is introduced in iOS 18
+    if enable_state:
+        minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
+    # In Core ML, sdpa op is introduced in iOS 18
+    if preserve_sdpa:
+        minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
+    # In Core ML, quantization is introduced in iOS 16
+    if embedding_quantize is not None or pt2e_quantize is not None:
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS16)
     # In Core ML, 8-bit activation quantization is introduced in iOS 17
-    if pt2e_quantize in ("coreml_8a_c8w", "coreml_baseline_8a_c8w"):
+    if (
+        embedding_quantize is not None and int(embedding_quantize.split(",")[0]) == 8
+    ) or pt2e_quantize in ("coreml_8a_c8w", "coreml_baseline_8a_c8w"):
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS17)
     # In Core ML, 4-bit weight compression is introduced in iOS 18
-    if pt2e_quantize in ("coreml_c4w", "coreml_8a_c4w", "coreml_baseline_8a_c4w"):
+    if (
+        (embedding_quantize is not None and int(embedding_quantize.split(",")[0]) == 4)
+        or pt2e_quantize in ("coreml_c4w", "coreml_8a_c4w", "coreml_baseline_8a_c4w")
+        or coreml_quantize == "b4w"
+    ):
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
-    # In Core ML, stateful execution is introduced in iOS 18
-    # TODO (https://github.com/pytorch/executorch/issues/4209)
-    # For now, since mutable buffer is kept in executorch runtime,
-    # state is out of place and can be handled by older iOS.
-    # Once mutable buffer can be handed over to delegate, i.e. state becomes in-place, we will have
-    # if use_kv_cache:
-    #     minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
+
+    op_linear_quantizer_config = None
+    if coreml_quantize == "b4w":
+        op_linear_quantizer_config = {
+            "mode": "linear_symmetric",
+            "dtype": "int4",
+            "granularity": "per_block",
+            "block_size": 32,
+            "weight_threshold": 512,
+        }
 
     compile_specs = CoreMLBackend.generate_compile_specs(  # pyre-fixme[16]
         minimum_deployment_target=minimum_deployment_target,
@@ -98,9 +114,11 @@ def get_coreml_partitioner(
         # using `ComputeUnit.ALL` can increase the model load time, default to `ComputeUnit.CPU_AND_GPU`
         compute_unit=ct.ComputeUnit[ct.ComputeUnit.CPU_AND_GPU.name.upper()],
         model_type=CoreMLBackend.MODEL_TYPE.MODEL,  # pyre-fixme[16]
+        op_linear_quantizer_config=op_linear_quantizer_config,
     )
     return CoreMLPartitioner(  # pyre-fixme[16]
         compile_specs=compile_specs,
+        take_over_mutable_buffer=enable_state,
     )
 
 
@@ -108,6 +126,7 @@ def get_qnn_partitioner(
     use_kv_cache: bool = False,
     pt2e_quantize: Optional[str] = None,
     num_sharding: int = 0,
+    soc_model: str = "SM8650",  # default to SM8650
 ):
     assert (
         use_kv_cache is True
@@ -130,17 +149,17 @@ def get_qnn_partitioner(
         )
     except ImportError:
         raise ImportError(
-            "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html"
+            "Please install the Qualcomm backend following https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html"
         )
 
     use_fp16 = True
-    skip_node_op_set = {"llama.fallback.default"}
+    skip_node_op_set = {"llama.fallback.default", "aten.embedding.default"}
     if pt2e_quantize is not None:
         use_fp16 = False
 
     return QnnPartitioner(  # pyre-fixme[16]
         generate_qnn_executorch_compiler_spec(  # pyre-fixme[16]
-            soc_model=QcomChipset.SM8650,  # default to SM8650  # pyre-fixme[16]
+            soc_model=getattr(QcomChipset, soc_model),  # pyre-fixme[16]
             # pyre-fixme[16]
             backend_options=generate_htp_compiler_spec(
                 use_fp16=use_fp16,

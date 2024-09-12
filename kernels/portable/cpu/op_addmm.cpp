@@ -20,7 +20,7 @@ using Tensor = exec_aten::Tensor;
 using Scalar = exec_aten::Scalar;
 
 Tensor& addmm_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& mat1,
     const Tensor& mat2,
@@ -44,6 +44,14 @@ Tensor& addmm_out(
 
   ET_KERNEL_CHECK(
       ctx, tensor_is_broadcastable_to(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      tensors_have_same_dim_order(in, mat1, mat2, out),
+      InvalidArgument,
+      out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   ScalarType alpha_dtype = utils::get_scalar_dtype(alpha);
   ScalarType beta_dtype = utils::get_scalar_dtype(beta);

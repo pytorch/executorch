@@ -93,7 +93,10 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
     target_link_libraries(custom_ops_aot_lib PUBLIC executorch_no_prim_ops)
   endif()
 
-  target_link_libraries(custom_ops_aot_lib PUBLIC cpublas torch)
+  target_link_libraries(
+    custom_ops_aot_lib PUBLIC cpublas torch extension_tensor
+                              extension_threadpool
+  )
   if(WIN32)
     # There is no direct replacement for libpthread.so on Windows. For the
     # Windows build, link directly against pthreadpool and cpuinfo.

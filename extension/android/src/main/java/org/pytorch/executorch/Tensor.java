@@ -36,6 +36,8 @@ import java.util.Locale;
  * between {@link Module} calls to avoid reallocation. Data retrieved from {@code Tensor} objects
  * may be copied or may be a reference to the {@code Tensor}'s internal data buffer. {@code shape}
  * is always copied.
+ *
+ * <p>Warning: These APIs are experimental and subject to change without notice
  */
 public abstract class Tensor {
   private static final String ERROR_MSG_DATA_BUFFER_NOT_NULL = "Data buffer must be not null";

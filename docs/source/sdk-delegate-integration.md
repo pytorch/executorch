@@ -1,4 +1,4 @@
-# SDK Delegate Integration
+# Developer Tools Delegate Integration
 
 [Delegate backends](compiler-delegate-and-partitioner.md) are a prominent component of on-device models due to their flexibility in defining behavior. A side effect of this flexibility is that it operates as an opaque transformation. This obfuscates rich associations and mutations that are valuable in post-processing.
 - For example, if two different operator fusions were to occur within a delegate, post processing wouldn’t be able to separate the two transformations.

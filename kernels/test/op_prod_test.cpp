@@ -23,7 +23,7 @@ using torch::executor::testing::TensorFactory;
 
 Tensor&
 op_prod_out(const Tensor& self, optional<ScalarType> dtype, Tensor& out) {
-  exec_aten::RuntimeContext context{};
+  executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::aten::prod_outf(context, self, dtype, out);
 }
 
@@ -33,7 +33,7 @@ Tensor& op_prod_int_out(
     bool keepdim,
     optional<ScalarType> dtype,
     Tensor& out) {
-  exec_aten::RuntimeContext context{};
+  executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::aten::prod_outf(
       context, self, dim, keepdim, dtype, out);
 }

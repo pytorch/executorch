@@ -105,6 +105,9 @@ Tensor& allclose_out(
       "Out tensor must be type Bool; saw type %" PRId8,
       static_cast<int8_t>(out.scalar_type()));
   ET_CHECK_MSG(
+      tensors_have_same_dim_order(self, other, out),
+      "self, other and out tensors should have same dim order");
+  ET_CHECK_MSG(
       out.numel() == 1,
       "Out tensor must be a single element; saw %zu elements",
       (size_t)out.numel());
@@ -143,7 +146,7 @@ Tensor allclose_tensor(
 }
 
 Tensor& allclose_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     const Tensor& other,
     double rtol,
@@ -158,7 +161,7 @@ Tensor& allclose_out(
 }
 
 Tensor allclose_tensor(
-    ET_UNUSED RuntimeContext& ctx,
+    ET_UNUSED KernelRuntimeContext& ctx,
     ET_UNUSED const Tensor& self,
     ET_UNUSED const Tensor& other,
     ET_UNUSED double rtol,

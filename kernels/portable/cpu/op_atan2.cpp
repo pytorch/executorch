@@ -17,14 +17,20 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
-Tensor&
-atan2_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
+Tensor& atan2_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Tensor& b,
+    Tensor& out) {
   // Determine output size and resize for dynamic shapes
   ET_KERNEL_CHECK(
       ctx,
       resize_to_broadcast_target_size(a, b, out) == Error::Ok,
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();

@@ -12,7 +12,11 @@ import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
 import java.util.Map;
 
-/** Java wrapper for ExecuTorch Module. */
+/**
+ * Java wrapper for ExecuTorch Module.
+ *
+ * <p>Warning: These APIs are experimental and subject to change without notice
+ */
 public class Module {
 
   /** Load mode for the module. Load the whole file as a buffer. */
@@ -75,16 +79,12 @@ public class Module {
   /**
    * Runs the 'forward' method of this module with the specified arguments.
    *
-   * @param inputs arguments for the ExecuTorch module's 'forward' method.
+   * @param inputs arguments for the ExecuTorch module's 'forward' method. Note: if method 'forward'
+   *     requires inputs but no inputs are given, the function will not error out, but run 'forward'
+   *     with sample inputs.
    * @return return value from the 'forward' method.
    */
   public EValue[] forward(EValue... inputs) {
-    if (inputs.length == 0) {
-      // forward default args (ones)
-      mNativePeer.forwardOnes();
-      // discard the return value
-      return null;
-    }
     return mNativePeer.forward(inputs);
   }
 

@@ -19,7 +19,7 @@ using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
 Tensor& mean_dim_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     optional<ArrayRef<int64_t>> dim_list,
     bool keepdim,
@@ -32,6 +32,11 @@ Tensor& mean_dim_out(
       check_mean_dim_args(in, dim_list, keepdim, dtype, out),
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   ET_KERNEL_CHECK(
       ctx,

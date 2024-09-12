@@ -19,7 +19,7 @@
 
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/runner_util/inputs.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
+#include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
@@ -55,6 +55,7 @@ void et_pal_emit_log_message(
 }
 #endif
 
+using namespace executorch::extension;
 using namespace torch::executor;
 
 namespace executorch::extension {
@@ -167,7 +168,7 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
         evalue.tag);
   }
 
-  static ManagedTensor JEValueToTensorImpl(
+  static TensorPtr JEValueToTensorImpl(
       facebook::jni::alias_ref<JEValue> JEValue) {
     static const auto typeCodeField =
         JEValue::javaClassStatic()->getField<jint>("mTypeCode");
@@ -221,7 +222,7 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
             numel,
             dataCapacity);
       }
-      return ManagedTensor(
+      return from_blob(
           jni->GetDirectBufferAddress(jbuffer.get()), shape_vec, scalar_type);
     }
     facebook::jni::throwNewJavaException(
@@ -293,9 +294,31 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       facebook::jni::alias_ref<
           facebook::jni::JArrayClass<JEValue::javaobject>::javaobject>
           jinputs) {
-    std::vector<EValue> evalues = {};
+    // If no inputs is given, it will run with sample inputs (ones)
+    if (jinputs->size() == 0) {
+      if (module_->load_method(method) != Error::Ok) {
+        return {};
+      }
+      auto&& underlying_method = module_->methods_[method].method;
+      auto&& buf = prepare_input_tensors(*underlying_method);
+      auto result = underlying_method->execute();
+      if (result != Error::Ok) {
+        return {};
+      }
+      facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> jresult =
+          facebook::jni::JArrayClass<JEValue>::newArray(
+              underlying_method->outputs_size());
 
-    std::vector<ManagedTensor> managed_tensors = {};
+      for (int i = 0; i < underlying_method->outputs_size(); i++) {
+        auto jevalue =
+            JEValue::newJEValueFromEValue(underlying_method->get_output(i));
+        jresult->setElement(i, *jevalue);
+      }
+      return jresult;
+    }
+
+    std::vector<EValue> evalues;
+    std::vector<TensorPtr> tensors;
 
     static const auto typeCodeField =
         JEValue::javaClassStatic()->getField<jint>("mTypeCode");
@@ -304,18 +327,17 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       auto jevalue = jinputs->getElement(i);
       const auto typeCode = jevalue->getFieldValue(typeCodeField);
       if (typeCode == JEValue::kTypeCodeTensor) {
-        managed_tensors.emplace_back(JEValue::JEValueToTensorImpl(jevalue));
-        evalues.emplace_back(
-            EValue(managed_tensors.back().get_aliasing_tensor()));
+        tensors.emplace_back(JEValue::JEValueToTensorImpl(jevalue));
+        evalues.emplace_back(tensors.back());
       } else if (typeCode == JEValue::kTypeCodeInt) {
         int64_t value = jevalue->getFieldValue(typeCodeField);
-        evalues.emplace_back(EValue(value));
+        evalues.emplace_back(value);
       } else if (typeCode == JEValue::kTypeCodeDouble) {
         double value = jevalue->getFieldValue(typeCodeField);
-        evalues.emplace_back(EValue(value));
+        evalues.emplace_back(value);
       } else if (typeCode == JEValue::kTypeCodeBool) {
         bool value = jevalue->getFieldValue(typeCodeField);
-        evalues.emplace_back(EValue(value));
+        evalues.emplace_back(value);
       }
     }
 
@@ -353,26 +375,26 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     return jresult;
   }
 
-  jint forward_ones() {
-    auto&& load_result = module_->load_method("forward");
-    auto&& buf = prepare_input_tensors(*(module_->methods_["forward"].method));
-    auto&& result = module_->methods_["forward"].method->execute();
-    return (jint)result;
-  }
-
   static void registerNatives() {
     registerHybrid({
         makeNativeMethod("initHybrid", ExecuTorchJni::initHybrid),
         makeNativeMethod("forward", ExecuTorchJni::forward),
         makeNativeMethod("execute", ExecuTorchJni::execute),
         makeNativeMethod("loadMethod", ExecuTorchJni::load_method),
-        makeNativeMethod("forwardOnes", ExecuTorchJni::forward_ones),
     });
   }
 };
 } // namespace executorch::extension
 
+#ifdef EXECUTORCH_BUILD_LLAMA_JNI
+extern void register_natives_for_llama();
+#else
+// No op if we don't build llama
+void register_natives_for_llama() {}
+#endif
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
-  return facebook::jni::initialize(
-      vm, [] { executorch::extension::ExecuTorchJni::registerNatives(); });
+  return facebook::jni::initialize(vm, [] {
+    executorch::extension::ExecuTorchJni::registerNatives();
+    register_natives_for_llama();
+  });
 }

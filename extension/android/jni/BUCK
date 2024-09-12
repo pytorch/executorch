@@ -1,0 +1,100 @@
+load("@fbsource//tools/build_defs/android:fb_android_cxx_library.bzl", "fb_android_cxx_library")
+load("@fbsource//xplat/executorch/codegen:codegen.bzl", "executorch_generated_lib")
+
+oncall("executorch")
+
+executorch_generated_lib(
+    name = "generated_op_lib_optimized",
+    custom_ops_aten_kernel_deps = [
+        "//executorch/kernels/portable:operators_aten",
+    ],
+    custom_ops_yaml_target = "//executorch/kernels/portable:custom_ops.yaml",
+    define_static_targets = True,
+    fallback_yaml_target = "//executorch/kernels/portable:functions.yaml",
+    functions_yaml_target = "//executorch/kernels/optimized:optimized.yaml",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/kernels/optimized:optimized_operators",
+        "//executorch/kernels/optimized:optimized_oplist",
+        "//executorch/kernels/portable:executorch_aten_ops",
+        "//executorch/kernels/portable:executorch_custom_ops",
+        "//executorch/kernels/portable:operators",
+    ],
+)
+
+fb_android_cxx_library(
+    name = "executorch_jni",
+    srcs = ["jni_layer.cpp"],
+    headers = ["jni_layer_constants.h"],
+    allow_jni_merging = False,
+    compiler_flags = [
+        "-frtti",
+        "-fexceptions",
+        "-Wno-unused-variable",
+    ],
+    soname = "libexecutorch.$(ext)",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//fbandroid/libraries/fbjni:fbjni",
+        "//fbandroid/native/fb:fb",
+        "//third-party/glog:glog",
+        "//xplat/executorch/extension/module:module_static",
+        "//xplat/executorch/extension/runner_util:inputs_static",
+        "//xplat/executorch/extension/tensor:tensor_static",
+    ],
+)
+
+fb_android_cxx_library(
+    name = "executorch_jni_full",
+    srcs = ["jni_layer.cpp"],
+    headers = ["jni_layer_constants.h"],
+    allow_jni_merging = False,
+    compiler_flags = [
+        "-frtti",
+        "-fexceptions",
+        "-Wno-unused-variable",
+    ],
+    soname = "libexecutorch.$(ext)",
+    visibility = ["PUBLIC"],
+    deps = [
+        ":generated_op_lib_optimized_static",
+        "//fbandroid/libraries/fbjni:fbjni",
+        "//fbandroid/native/fb:fb",
+        "//third-party/glog:glog",
+        "//xplat/executorch/backends/xnnpack:xnnpack_backend_static",
+        "//xplat/executorch/extension/module:module_static",
+        "//xplat/executorch/extension/runner_util:inputs_static",
+        "//xplat/executorch/extension/tensor:tensor_static",
+    ],
+)
+
+fb_android_cxx_library(
+    name = "executorch_llama_jni",
+    srcs = [
+        "jni_layer.cpp",
+        "jni_layer_llama.cpp",
+    ],
+    headers = ["jni_layer_constants.h"],
+    allow_jni_merging = False,
+    compiler_flags = [
+        "-frtti",
+        "-fexceptions",
+        "-DEXECUTORCH_BUILD_LLAMA_JNI",
+        "-Wno-format",
+    ],
+    soname = "libexecutorch.$(ext)",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//fbandroid/libraries/fbjni:fbjni",
+        "//fbandroid/native/fb:fb",
+        "//third-party/glog:glog",
+        "//xplat/executorch/backends/xnnpack:xnnpack_backend_static",
+        "//xplat/executorch/examples/models/llama2/runner:runner_static",
+        "//xplat/executorch/examples/models/llava/runner:runner_static",
+        "//xplat/executorch/extension/module:module_static",
+        "//xplat/executorch/extension/runner_util:inputs_static",
+        "//xplat/executorch/extension/tensor:tensor_static",
+        "//xplat/executorch/extension/threadpool:cpuinfo_utils_static",
+        "//xplat/executorch/extension/threadpool:threadpool_static",
+    ],
+)

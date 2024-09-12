@@ -28,7 +28,11 @@ target_link_libraries(
   full_portable_ops_lib
   extension_data_loader
   extension_module
+  extension_tensor
   gflags
   re2::re2
 )
 target_compile_options(qnn_llama_runner PUBLIC ${_common_compile_options})
+set_target_properties(
+  qnn_llama_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
+)

@@ -7,7 +7,7 @@
 
 set -x
 
-pip install transformers accelerate
+pip install transformers accelerate sentencepiece
 
 pip install --pre torchtune --extra-index-url https://download.pytorch.org/whl/nightly/cpu --no-cache-dir
 

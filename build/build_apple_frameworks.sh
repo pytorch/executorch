@@ -33,6 +33,7 @@ libexecutorch_no_prim_ops.a,\
 libextension_apple.a,\
 libextension_data_loader.a,\
 libextension_module.a,\
+libextension_tensor.a,\
 :$HEADERS_PATH"
 
 FRAMEWORK_BACKEND_COREML="backend_coreml:\
@@ -162,9 +163,11 @@ cmake_build() {
         -DEXECUTORCH_BUILD_COREML=$COREML \
         -DEXECUTORCH_BUILD_MPS=$MPS \
         -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
+        -DEXECUTORCH_XNNPACK_SHARED_WORKSPACE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_APPLE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM=$CUSTOM \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=$OPTIMIZED \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=$QUANTIZED \
@@ -188,6 +191,7 @@ mkdir -p "$HEADERS_PATH"
 
 "$SOURCE_ROOT_DIR"/build/print_exported_headers.py --buck2="$BUCK2" --targets \
   //extension/module: \
+  //extension/tensor: \
 | rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_PATH/executorch"
 
 cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.h "$HEADERS_PATH/executorch"

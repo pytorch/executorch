@@ -15,7 +15,7 @@
 
 using namespace ::testing;
 using executorch::runtime::Error;
-using executorch::runtime::hasOpsFn;
+using executorch::runtime::registry_has_op_function;
 
 class KernelManualRegistrationTest : public ::testing::Test {
  public:
@@ -26,15 +26,15 @@ class KernelManualRegistrationTest : public ::testing::Test {
 
 TEST_F(KernelManualRegistrationTest, ManualRegister) {
   // Before registering, we can't find the add operator.
-  EXPECT_FALSE(hasOpsFn("aten::add.out"));
+  EXPECT_FALSE(registry_has_op_function("aten::add.out"));
 
   // Call the generated registration function.
   Error result = torch::executor::register_all_kernels();
   EXPECT_EQ(result, Error::Ok);
 
   // We can now find the registered add operator.
-  EXPECT_TRUE(hasOpsFn("aten::add.out"));
+  EXPECT_TRUE(registry_has_op_function("aten::add.out"));
 
   // We can't find a random other operator.
-  EXPECT_FALSE(hasOpsFn("fpp"));
+  EXPECT_FALSE(registry_has_op_function("fpp"));
 }

@@ -5,6 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import torch
 from executorch.backends.arm.passes.annotate_channels_last_dim_order_pass import (
     AnnotateChannelsLastDimOrder,
@@ -15,6 +17,9 @@ from executorch.backends.arm.passes.convert_expand_copy_to_repeat import (
 from executorch.backends.arm.passes.convert_split_to_slice import (
     ConvertSplitToSlicePass,
 )
+from executorch.backends.arm.passes.meandim_to_averagepool_pass import (
+    ConvertMeanDimToAveragePool,
+)
 from executorch.backends.arm.passes.remove_clone_pass import RemoveClonePass
 from executorch.backends.arm.passes.size_adjust_conv2d_pass import SizeAdjustConv2DPass
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -23,16 +28,17 @@ from executorch.exir.pass_manager import PassManager
 
 class ArmPassManager(PassManager):
 
-    def _transform(self, graph_module: torch.fx.Graph):
+    def _transform(self, graph_module: torch.fx.GraphModule):
         return self(graph_module).graph_module
 
     def transform_to_backend_pipeline(
-        self, graph_module: torch.fx.Graph, compile_spec: CompileSpec
+        self, graph_module: torch.fx.GraphModule, compile_spec: list[CompileSpec]
     ):
         """Apply passes before transforming program to backend"""
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(RemoveClonePass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
+        self.add_pass(ConvertMeanDimToAveragePool())
         self.add_pass(ConvertSplitToSlicePass())
         for spec in compile_spec:
             if spec.key == "permute_memory_format":

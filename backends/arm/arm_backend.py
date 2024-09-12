@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 #
 # Main implementation of AoT flow to partition and preprocess for Arm target
 # backends. Converts via TOSA as an intermediate form supported by AoT and
@@ -159,10 +161,21 @@ def is_tosa(compile_spec: List[CompileSpec]) -> bool:
     return False
 
 
-def get_intermediate_path(compile_spec: List[CompileSpec]) -> str:
+def get_intermediate_path(compile_spec: List[CompileSpec]) -> Optional[str]:
     for spec in compile_spec:
         if spec.key == "debug_artifact_path":
             return spec.value.decode()
+    return None
+
+
+def _get_first_delegation_tag(graph_module) -> str | None:
+    """Get the first delegation tag from the graph_module or return None."""
+    for node in graph_module.graph.nodes:
+        tag = node.meta.get("delegation_tag")
+        if tag:
+            return tag
+
+    logger.debug("No delegation tag found in partition.")
     return None
 
 
@@ -220,8 +233,13 @@ class ArmBackend(BackendDetails):
         # TODO: It would be awesome if this dump could somehow be done on top level and not here.
         # Problem is that the desc.json has to be created on the tosa_graph object, which we can't
         # access from top level.
-        if artifact_path is not None:
-            dbg_tosa_dump(tosa_graph, artifact_path)
+        if artifact_path:
+            tag = _get_first_delegation_tag(graph_module)
+            dbg_tosa_dump(
+                tosa_graph,
+                artifact_path,
+                suffix="{}".format(f"_{tag}" if tag else ""),
+            )
 
         # Serialize and return the program. While we have always produced TOSA
         # output as an intermediate, some flows compile to device binaries in

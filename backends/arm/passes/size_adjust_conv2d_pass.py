@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from typing import cast, Optional
 
 import torch.fx
@@ -85,8 +87,8 @@ class SizeAdjustConv2DPass(ExportPass):
             input_node, weight, _, stride_hw, pad_hw, dilation_hw, _, _, _ = (
                 conv_node.args
             )
-            weight_shape = weight.meta["val"].shape
-            input_shape = input_node.meta["val"].shape
+            weight_shape = cast(torch.fx.Node, weight).meta["val"].shape
+            input_shape = cast(torch.fx.Node, input_node).meta["val"].shape
 
             slice_args = []
             for stride, pad, dilation, dim in zip(
@@ -119,7 +121,7 @@ class SizeAdjustConv2DPass(ExportPass):
                         last_node = dq_node
                     else:
                         last_node = slice_node
-                conv_node.replace_input_with(input_node, last_node)
+                conv_node.replace_input_with(cast(torch.fx.Node, input_node), last_node)
                 modified_graph = True
 
         if modified_graph:

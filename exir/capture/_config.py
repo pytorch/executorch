@@ -5,14 +5,15 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
-
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Union
+
+import torch
 
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
-from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.tracer import ExirDynamoConfig
 from torch.fx._compatibility import compatibility
 
@@ -38,6 +39,10 @@ class EdgeCompileConfig:
     _check_ir_validity: bool = True
     # TODO(larryliu): remove this
     _use_edge_ops: bool = True
+    # Allow core ATen ops check to be skipped for certain ops, but continue with the rest of the checks.
+    _core_aten_ops_exception_list: List[torch._ops.OpOverload] = field(
+        default_factory=list
+    )
     _skip_type_promotion: bool = False
     # TODO(gasoonjia): remove this
     # TODO(T192537614): reenanle dim order as default
@@ -65,12 +70,6 @@ class ExecutorchBackendConfig:
     # This makes it possible to free those blobs at runtime.
     extract_delegate_segments: bool = True
 
-    # Whether to extract constants from the Program into separate segments,
-    # rather than encoding those constants in the flatbuffer data.
-    # This reduces the memory overhead of creating the .pte file for models with
-    # large constant data.
-    extract_constant_segment: bool = True
-
     # When extracting segments, the starting offset of each segment will be
     # aligned to this value (in bytes). Must be a power of two.
     segment_alignment: int = 128
@@ -86,7 +85,7 @@ class ExecutorchBackendConfig:
     # A single sym shape eval pass can be defined for all the programs in the
     # EdgeProgramManager or can be defined per program.
     sym_shape_eval_pass: Union[PassType, Dict[str, PassType]] = (
-        HintBasedSymShapeEvalPass()
+        ConstraintBasedSymShapeEvalPass()
     )
 
     # If set to true, view_copy operations will be converted to lightweight

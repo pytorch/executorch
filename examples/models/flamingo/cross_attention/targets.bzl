@@ -12,8 +12,8 @@ def define_common_targets():
         srcs = ["cross_attention_mask.cpp"],
         exported_headers = ["cross_attention_mask.h"],
         exported_deps = [
+            "//executorch/extension/tensor:tensor",
             "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/extension/runner_util:managed_tensor",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     )

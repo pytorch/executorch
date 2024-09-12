@@ -3,9 +3,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import logging
 import os
-from typing import Any, Dict
+from typing import Any, cast, Dict
 
 import numpy as np
 import serializer.tosa_serializer as ts
@@ -48,10 +50,10 @@ def dbg_node(node):
 
 
 # Output TOSA flatbuffer and test harness file
-def dbg_tosa_dump(tosa_graph, path):
-    filename = "output.tosa"
+def dbg_tosa_dump(tosa_graph: ts.TosaSerializer, path: str, suffix: str = ""):
+    filename = f"output{suffix}.tosa"
 
-    logger.info(f"Emitting debug output to {path}")
+    logger.info(f"Emitting debug output to: {path=}, {suffix=}")
 
     os.makedirs(path, exist_ok=True)
 
@@ -63,7 +65,7 @@ def dbg_tosa_dump(tosa_graph, path):
         f.write(fb)
     assert os.path.exists(filepath_tosa_fb), "Failed to write TOSA flatbuffer"
 
-    filepath_desc_json = os.path.join(path, "desc.json")
+    filepath_desc_json = os.path.join(path, f"desc{suffix}.json")
     with open(filepath_desc_json, "w") as f:
         f.write(js)
     assert os.path.exists(filepath_desc_json), "Failed to write TOSA JSON"
@@ -74,7 +76,7 @@ def dbg_fail(node, tosa_graph, path):
     logger.warn("Internal error due to poorly handled node:")
     dbg_node(node)
     logger.warn(f"Debug output captured in '{path}'.")
-    raise RuntimeError("TOSA Internal Error on node, enable logging for further info")
+    raise RuntimeError("TOSA Internal Error on node, enable logging for further info.")
 
 
 # Helper function to match TOSA's broadcasting rank requirement
@@ -235,7 +237,7 @@ def build_avg_pool_2d_common(
     output_zp = 0
 
     if is_quant_node:
-        input_zp = get_quant_node_args(node.args[0]).zp
+        input_zp = get_quant_node_args(cast(torch.fx.Node, node.args[0])).zp
         output_zp = get_quant_node_args(list(node.users)[0]).zp
 
     attr = ts.TosaSerializerAttribute()
@@ -306,7 +308,9 @@ def process_call_function(
     )
 
     # Visiting each Node
+    # pyre-ignore[16]: Undefined attribute.
     if node.target.__name__ in node_visitors:
+        # pyre-ignore[16]: Undefined attribute.
         node_visitors[node.target.__name__].define_node(
             node,
             tosa_graph,
@@ -319,7 +323,10 @@ def process_call_function(
 
 
 def expand_dims(
-    tosa_graph: ts.TosaSerializer, input_node: TosaArg, dtype: ts.DType, dim: int
+    tosa_graph: ts.TosaSerializer,
+    input_node: TosaArg,
+    dtype: int,
+    dim: int,
 ) -> Any:
     """Inserts TOSA operators into the tosa_graph, that perform the equivalent
     of the expand_dims (a.k.a unsqueeze) operation. A new axis is created at the

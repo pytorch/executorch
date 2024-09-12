@@ -75,7 +75,8 @@ ElementwiseOptimizedPath inline select_optimized_path(
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
 
-  if (a_type != b_type || a_type != out_type || a_type == ScalarType::Half) {
+  if (a_type != b_type || a_type != out_type || a_type == ScalarType::Half ||
+      a_type == ScalarType::BFloat16) {
     return ElementwiseOptimizedPath::kNone;
   }
   if (a.sizes().equals(b.sizes()) ||

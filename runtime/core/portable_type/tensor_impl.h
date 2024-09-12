@@ -166,6 +166,11 @@ class TensorImpl {
     return ArrayRef<StridesType>{strides_, static_cast<size_t>(dim_)};
   }
 
+  /// Returns the mutability of the shape of the tensor.
+  TensorShapeDynamism shape_dynamism() const {
+    return shape_dynamism_;
+  }
+
   /// Returns a pointer of type T to the constant underlying data blob.
   template <typename T>
   inline const T* data() const {
@@ -253,5 +258,20 @@ class TensorImpl {
   const TensorShapeDynamism shape_dynamism_;
 };
 
+/**
+ * Compute the number of elements based on the sizes of a tensor.
+ */
+ssize_t compute_numel(
+    const ::torch::executor::TensorImpl::SizesType* sizes,
+    ssize_t dim);
+
 } // namespace executor
 } // namespace torch
+
+namespace executorch {
+namespace runtime {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using torch::executor::compute_numel;
+} // namespace runtime
+} // namespace executorch

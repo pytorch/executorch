@@ -71,6 +71,7 @@ void et_pal_emit_log_message(
 }
 
 namespace py = pybind11;
+using executorch::bundled_program::verify_method_outputs;
 using ::executorch::extension::BufferDataLoader;
 using ::executorch::extension::MallocMemoryAllocator;
 using ::executorch::extension::MmapDataLoader;
@@ -79,7 +80,7 @@ using ::executorch::runtime::DataLoader;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerDebugLogLevel;
-using ::executorch::runtime::get_kernels;
+using ::executorch::runtime::get_registered_kernels;
 using ::executorch::runtime::HierarchicalAllocator;
 using ::executorch::runtime::Kernel;
 using ::executorch::runtime::MemoryAllocator;
@@ -92,8 +93,6 @@ using ::executorch::runtime::Span;
 using ::executorch::runtime::Tag;
 using torch::executor::etdump_result;
 using torch::executor::ETDumpGen;
-using torch::executor::bundled_program::LoadBundledInput;
-using torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput;
 
 #ifndef USE_ATEN_LIB
 using ::executorch::extension::alias_attensor_to_etensor;
@@ -510,7 +509,8 @@ struct PyModule final {
 
   py::list run_method(
       const std::string& method_name,
-      const py::sequence& inputs) {
+      const py::sequence& inputs,
+      bool clone_outputs = true) {
     const auto inputs_size = py::len(inputs);
     std::vector<EValue> cpp_inputs;
     cpp_inputs.reserve(inputs_size);
@@ -604,17 +604,19 @@ struct PyModule final {
         module_->run_method(method_name, cpp_inputs, output_storage_spans);
 
     // Retrieve outputs
-    return get_outputs_as_py_list(outputs);
+    return get_outputs_as_py_list(outputs, clone_outputs);
   }
 
-  py::list forward(const py::sequence& inputs) {
-    return run_method("forward", inputs);
+  py::list forward(const py::sequence& inputs, bool clone_outputs = true) {
+    return run_method("forward", inputs, clone_outputs);
   }
 
-  py::list forward_single_input(const torch::Tensor& inputTensor) {
+  py::list forward_single_input(
+      const torch::Tensor& inputTensor,
+      bool clone_outputs = true) {
     py::list py_list;
     py_list.append(py::cast(inputTensor));
-    return run_method("forward", py_list);
+    return run_method("forward", py_list, clone_outputs);
   }
 
   bool has_etdump() {
@@ -655,11 +657,11 @@ struct PyModule final {
       const std::string method_name,
       size_t testset_idx) {
     const void* bundled_program_ptr = m.get_bundled_program_ptr();
-    Error status = LoadBundledInput(
+    Error status = executorch::bundled_program::load_bundled_input(
         module_->get_method(method_name), bundled_program_ptr, testset_idx);
     THROW_IF_ERROR(
         status,
-        "LoadBundledInput failed with status %" PRIu32,
+        "load_bundled_input failed with status 0x%" PRIx32,
         static_cast<uint32_t>(status));
   }
 
@@ -671,13 +673,14 @@ struct PyModule final {
       double atol = 1e-8) {
     const void* bundled_program_ptr = m.get_bundled_program_ptr();
     auto& method = module_->get_method(method_name);
-    Error status = LoadBundledInput(method, bundled_program_ptr, testset_idx);
+    Error status = executorch::bundled_program::load_bundled_input(
+        method, bundled_program_ptr, testset_idx);
     THROW_IF_ERROR(
         status,
-        "LoadBundledInput failed with status %" PRIu32,
+        "load_bundled_input failed with status 0x%" PRIx32,
         static_cast<uint32_t>(status));
     py::list outputs = plan_execute(method_name);
-    status = VerifyResultWithBundledExpectedOutput(
+    status = executorch::bundled_program::verify_method_outputs(
         method, bundled_program_ptr, testset_idx, rtol, atol);
     THROW_IF_ERROR(
         status,
@@ -686,7 +689,9 @@ struct PyModule final {
     return outputs;
   }
 
-  py::list plan_execute(const std::string method_name) {
+  py::list plan_execute(
+      const std::string method_name,
+      bool clone_outputs = true) {
     auto& method = module_->get_method(method_name);
     // Need to pre-allocate space for outputs just like in run_method.
     const auto num_outputs = method.outputs_size();
@@ -703,10 +708,12 @@ struct PyModule final {
         "executing execution plan for method 'forward' failed with error: 0x%" PRIx32,
         static_cast<uint32_t>(status));
     const auto outputs = module_->get_outputs(method_name);
-    return get_outputs_as_py_list(outputs);
+    return get_outputs_as_py_list(outputs, clone_outputs);
   }
 
-  py::list get_outputs_as_py_list(const std::vector<EValue>& outputs) {
+  py::list get_outputs_as_py_list(
+      const std::vector<EValue>& outputs,
+      bool clone_outputs = true) {
     const auto outputs_size = outputs.size();
     py::list list(outputs_size);
     for (size_t i = 0; i < outputs_size; ++i) {
@@ -725,9 +732,17 @@ struct PyModule final {
 #ifdef USE_ATEN_LIB
         // Clone so the outputs in python do not share a lifetime with the
         // module object
-        list[i] = py::cast(v.toTensor().clone());
+        if (clone_outputs) {
+          list[i] = py::cast(v.toTensor().clone());
+        } else {
+          list[i] = py::cast(v.toTensor());
+        }
 #else
-        list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()).clone());
+        if (clone_outputs) {
+          list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()).clone());
+        } else {
+          list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()));
+        }
 #endif
       } else {
         ET_ASSERT_UNREACHABLE_MSG("Invalid model output type");
@@ -774,7 +789,7 @@ void create_profile_block(const std::string& name) {
 }
 
 py::list get_operator_names() {
-  ArrayRef<Kernel> kernels = get_kernels();
+  Span<const Kernel> kernels = get_registered_kernels();
   py::list res;
   for (const Kernel& k : kernels) {
     if (k.name_ != nullptr) {
@@ -845,14 +860,25 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("rtol") = 1e-5,
           py::arg("atol") = 1e-8,
           call_guard)
-      .def("plan_execute", &PyModule::plan_execute, call_guard)
+      .def(
+          "plan_execute",
+          &PyModule::plan_execute,
+          py::arg("method_name"),
+          py::arg("clone_outputs") = true,
+          call_guard)
       .def(
           "run_method",
           &PyModule::run_method,
           py::arg("method_name"),
           py::arg("inputs") = py::list(),
+          py::arg("clone_outputs") = true,
           call_guard)
-      .def("forward", &PyModule::forward, call_guard)
+      .def(
+          "forward",
+          &PyModule::forward,
+          py::arg("inputs") = py::list(),
+          py::arg("clone_outputs") = true,
+          call_guard)
       .def("has_etdump", &PyModule::has_etdump, call_guard)
       .def(
           "write_etdump_result_to_file",
@@ -860,8 +886,18 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("path"),
           py::arg("debug_buffer_path") = py::none(),
           call_guard)
-      .def("__call__", &PyModule::forward, call_guard)
-      .def("__call__", &PyModule::forward_single_input, call_guard);
+      .def(
+          "__call__",
+          &PyModule::forward,
+          py::arg("inputs") = py::list(),
+          py::arg("clone_outputs") = true,
+          call_guard)
+      .def(
+          "__call__",
+          &PyModule::forward_single_input,
+          py::arg("inputs") = py::list(),
+          py::arg("clone_outputs") = true,
+          call_guard);
 
   py::class_<PyBundledModule>(m, "BundledModule");
 }

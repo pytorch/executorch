@@ -115,6 +115,8 @@
 
 - op: convolution.out
 
+- op: convolution_backward.out
+
 - op: copy.out
 
 - op: cos.out
@@ -213,6 +215,8 @@
 
 - op: linalg_vector_norm.out
 
+- op: linear.out
+
 - op: log.out
 
 - op: log10.out
@@ -256,6 +260,8 @@
 - op: mul.out
 
 - op: mul.Scalar_out
+
+- op: narrow_copy.out
 
 - op: native_batch_norm.out
 
@@ -320,6 +326,8 @@
 - op: rsub.Scalar_out
 
 - op: scalar_tensor.out
+
+- op: scatter.src_out
 
 - op: scatter.value_out
 
@@ -402,3 +410,9 @@
 - op: zeros_like.out
 
 - op: zeros.out
+
+- op: gather.out
+
+- op: scatter.value_out
+
+- op: aten::native_dropout.out

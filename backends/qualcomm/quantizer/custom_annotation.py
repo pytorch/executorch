@@ -91,15 +91,17 @@ def custom_annotate_llama_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noq
     def annotate_matmul_input1(node: Node, quantization_config: QuantizationConfig):
         if is_edge_condition(node):
             return
-        if node.target == torch.ops.aten.index_put_.default:
+        if node.target in [
+            torch.ops.aten.index_put.default,
+            torch.ops.aten.index_put_.default,
+        ]:
             annotate_index_put(node, quantization_config)
             annotate_matmul_input1(node.args[0], quantization_config)
         elif node.target == torch.ops.aten.cat.default:
             annotate_cat(node, quantization_config)
             # Expect that the inputs of the cat op are select ops
-            for arg in node.args[0][1:]:
-                annotate_single_in_single_out(arg, quantization_config)
-            annotate_matmul_input1(node.args[0][0], quantization_config)
+            for arg in node.args[0]:
+                annotate_matmul_input1(arg, quantization_config)
         else:
             annotate_single_in_single_out(node, quantization_config)
             annotate_matmul_input1(node.args[0], quantization_config)
