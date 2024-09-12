@@ -96,8 +96,7 @@ from executorch.devtools.bundled_program.config import MethodTestCase, MethodTes
 from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
-from torch._export import capture_pre_autograd_graph
-from torch.export import export
+from torch.export import export, export_for_training
 
 
 # Step 1: ExecuTorch Program Export
@@ -131,7 +130,7 @@ capture_input = (
 
 # Export method's FX Graph.
 method_graph = export(
-    capture_pre_autograd_graph(model, capture_input),
+    export_for_training(model, capture_input).module(),
     capture_input,
 )
 
@@ -338,7 +337,7 @@ inputs = (torch.ones(2, 2, dtype=torch.float), )
 
 # Find each method of model needs to be traced my its name, export its FX Graph.
 method_graph = export(
-    capture_pre_autograd_graph(model, inputs),
+    export_for_training(model, inputs).module(),
     inputs,
 )
 
@@ -474,7 +473,7 @@ inputs = (torch.ones(2, 2, dtype=torch.float),)
 
 # Find each method of model needs to be traced my its name, export its FX Graph.
 method_graph = export(
-    capture_pre_autograd_graph(model, inputs),
+    export_for_training(model, inputs).module(),
     inputs,
 )
 
