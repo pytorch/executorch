@@ -5,7 +5,11 @@ cache=${4:-512}
 cal=${5:-None}
 pres=${6:-A16W4}
 
-if [ $model = "llama3" ]
+if [ $model = "llama3_1" ]
+then
+	config_path=llama3_1-8B-instruct/config.json
+	pref="--preformatter aot_utils/llm_utils/preformatter_templates/llama3.json"
+elif [ $model = "llama3" ]
 then
 	config_path=llama3-8B-instruct/config.json
 	pref="--preformatter aot_utils/llm_utils/preformatter_templates/llama3.json"
