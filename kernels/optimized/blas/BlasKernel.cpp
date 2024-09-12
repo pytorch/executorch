@@ -54,7 +54,7 @@ static_assert(kF32RegistersPerIteration == 1 << kF32RegistersPerIterationShift);
 static inline double reduce(float32x4_t x[kF32RegistersPerIteration]) {
   int offset = kF32RegistersPerIteration;
   utils::ForcedUnroll<kF32RegistersPerIterationShift>{}(
-      [&offset, &x](auto idx) {
+      [&offset, &x](auto idx) ET_INLINE_ATTRIBUTE {
         offset /= 2;
         for (int i = 0; i < offset; ++i) {
           x[i] = vaddq_f32(x[i], x[offset + i]);
@@ -115,7 +115,7 @@ float dot_with_fp32_arith(const T* vec1, const T* vec2, int64_t len) {
     const auto* vec1_ = vec1 + j;
     const auto* vec2_ = vec2 + j;
     utils::ForcedUnroll<kF32RegisterPairsPerIteration>{}(
-        [vec1_, vec2_, &sum](auto k) {
+        [vec1_, vec2_, &sum](auto k) ET_INLINE_ATTRIBUTE {
           dot_with_fp32_arith_main_inner_loop(vec1_, vec2_, sum, k);
         });
   }
