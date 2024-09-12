@@ -9,7 +9,7 @@ users ahead of time (when they export their model to run on ExecuTorch).
 To draw a rough equivalent to conventional software development,
 ``ETRecord`` can be considered as the binary built with debug symbols
 that is used for debugging in GNU Debugger (gdb). It is expected that
-the user will supply this to the ExecuTorch SDK tooling in order for
+the user will supply this to the ExecuTorch Developer Tools in order for
 them to debug and visualize their model.
 
 ``ETRecord`` contains numerous components such as:
