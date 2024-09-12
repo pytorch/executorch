@@ -42,6 +42,9 @@ target_link_libraries(
 target_compile_options(
   qaihub_llama2_7b_runner PUBLIC ${_common_compile_options}
 )
+set_target_properties(
+  qaihub_llama2_7b_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
+)
 
 # preprocess qaihub llama3 8b runner src files
 set(_qaihub_llama3_8b_runner__srcs ${_qaihub_llama_runner__srcs})
@@ -96,4 +99,7 @@ target_link_libraries(
 )
 target_compile_options(
   qaihub_llama3_8b_runner PUBLIC ${_common_compile_options}
+)
+set_target_properties(
+  qaihub_llama3_8b_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
 )
