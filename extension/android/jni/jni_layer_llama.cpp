@@ -77,7 +77,7 @@ class ExecuTorchLlamaJni
 
   constexpr static int MODEL_TYPE_CATEGORY_LLM = 1;
   constexpr static int MODEL_TYPE_CATEGORY_MULTIMODAL = 2;
-  constexpr static int MODEL_TYPE_MEDIATEK_LLAMA = 3;
+  constexpr static int MODEL_TYPE_MEDIATEK_LLAMA = 1 /* 3 */;
 
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
