@@ -121,6 +121,7 @@ class ExecuTorchLlamaJni
         model_path->toStdString().c_str(),
         tokenizer_path->toStdString().c_str(),
         temperature);
+    }
   }
 
   jint generate(
@@ -164,8 +165,7 @@ class ExecuTorchLlamaJni
           prompt->toStdString(),
           seq_len,
           [callback](std::string result) { callback->onResult(result); },
-          [callback](const Stats& result) { callback->onStats(result); },
-          echo);
+          [callback](const Stats& result) { callback->onStats(result); });
     }
     return 0;
   }
