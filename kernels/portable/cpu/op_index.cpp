@@ -23,7 +23,7 @@ using Tensor = exec_aten::Tensor;
 using TensorOptList = exec_aten::ArrayRef<exec_aten::optional<Tensor>>;
 
 Tensor& index_Tensor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     TensorOptList indices,
     Tensor& out) {

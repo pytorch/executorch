@@ -23,7 +23,7 @@ using TensorList = exec_aten::TensorList;
  * unbind_copy.int_out(Tensor input, int dim=0, *, Tensor(a!)[] out) -> ()
  */
 void unbind_copy_int_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     int64_t dim,
     TensorList out) {

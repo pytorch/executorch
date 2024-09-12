@@ -37,7 +37,7 @@ void increment_coordinate_permuted(
 } // namespace
 
 Tensor& permute_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     IntArrayRef dims,
     Tensor& out) {
