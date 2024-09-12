@@ -10,6 +10,7 @@ fb_android_library(
         "src/main/java/org/pytorch/executorch/Module.java",
         "src/main/java/org/pytorch/executorch/NativePeer.java",
         "src/main/java/org/pytorch/executorch/Tensor.java",
+        "src/main/java/org/pytorch/executorch/annotations/Experimental.java",
     ],
     autoglob = False,
     language = "JAVA",
