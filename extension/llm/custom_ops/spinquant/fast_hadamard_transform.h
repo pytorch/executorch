@@ -12,6 +12,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <memory>
 
 #include "fast_hadamard_transform_special.h"
 
@@ -41,7 +42,9 @@ void normalize_after_fht(T* out, int log2_vec_size) {
 }
 
 template <typename T>
-void fast_hadamard_transform_simple_impl(T* vec, int log2_vec_size) {
+void fast_hadamard_transform_unnormalized_simple_impl(
+    T* vec,
+    int log2_vec_size) {
   if (log2_vec_size == 0) {
     return;
   }
@@ -59,7 +62,11 @@ void fast_hadamard_transform_simple_impl(T* vec, int log2_vec_size) {
     }
     step *= 2;
   }
+}
 
+template <typename T>
+void fast_hadamard_transform_simple_impl(T* vec, int log2_vec_size) {
+  fast_hadamard_transform_unnormalized_simple_impl(vec, log2_vec_size);
   normalize_after_fht(vec, log2_vec_size);
 }
 
@@ -72,6 +79,21 @@ template <typename T>
 void fast_hadamard_transform(T* vec, int log2_vec_size) {
   internal::fast_hadamard_transform_simple_impl(vec, log2_vec_size);
 }
+
+// Compute a quantized fast Walsh-Hadamard transform of vec, which
+// must be of length (1 << log2_vec_size) and symmetrically quantized.
+//
+// Note that we do not need to know the quantization scale, because
+// the Fast Hadamard transform is a series of additions and
+// subtractions with a final multiplication step, and we have the
+// following trivial identities:
+//
+// scale * a + scale * b = scale * (a + b)  (addition doesn't need the scale)
+// alpha * (scale * a) = scale * (alpha * a) (multiplication doesn't need the
+// scale)
+void fast_hadamard_transform_symmetric_quantized_s16(
+    int16_t* vec,
+    int log2_vec_size);
 
 // Like fast_hadamard_transform, but vec must be of length 28 * (1 <<
 // log2_vec_size) and the transform is computed by interpreting vec as
