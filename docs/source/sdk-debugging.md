@@ -1,6 +1,6 @@
 # Debugging Models in ExecuTorch
 
-With the ExecuTorch SDK, users can debug their models for numerical inaccurcies and extract model outputs from their device to do quality analysis (such as Signal-to-Noise, Mean square error etc.).
+With the ExecuTorch Developer Tools, users can debug their models for numerical inaccurcies and extract model outputs from their device to do quality analysis (such as Signal-to-Noise, Mean square error etc.).
 
 Currently, ExecuTorch supports the following debugging flows:
 - Extraction of model level outputs via ETDump.
@@ -67,7 +67,7 @@ We've also provided a simple set of utilities that let users perform quality ana
 
 
 ```python
-from executorch.devtools.inspector._inspector_utils import compare_results
+from executorch.devtools.inspector import compare_results
 
 # Run a simple quality analysis between the model outputs sourced from the
 # runtime and a set of reference outputs.
