@@ -25,6 +25,7 @@ fb_android_library(
     srcs = [
         "src/main/java/org/pytorch/executorch/LlamaCallback.java",
         "src/main/java/org/pytorch/executorch/LlamaModule.java",
+        "src/main/java/org/pytorch/executorch/annotations/Experimental.java",
     ],
     autoglob = False,
     language = "JAVA",
