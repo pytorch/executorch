@@ -75,7 +75,7 @@ class ExecuTorchLlamaJni
   constexpr static auto kJavaDescriptor =
       "Lorg/pytorch/executorch/LlamaModule;";
 
-  constexpr static int MODEL_TYPE_CATEGORY_LLM = 1;
+  constexpr static int MODEL_TYPE_CATEGORY_LLM = 3 /* should be put back to 1*/;
   constexpr static int MODEL_TYPE_CATEGORY_MULTIMODAL = 2;
   constexpr static int MODEL_TYPE_MEDIATEK_LLAMA = 1 /* 3 */;
 

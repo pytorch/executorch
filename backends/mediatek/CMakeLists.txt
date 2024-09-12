@@ -29,7 +29,6 @@ target_compile_options(neuron_backend PRIVATE "-frtti" "-fexceptions")
 target_link_libraries(neuron_backend
     PRIVATE
     executorch_no_prim_ops
-    portable_ops_lib
     android
     log
     ${NEURON_BUFFER_ALLOCATOR_LIB}

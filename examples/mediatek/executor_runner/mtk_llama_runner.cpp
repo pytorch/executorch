@@ -96,11 +96,13 @@ Error MTKLlamaRunner::load() {
   // Load tokenizer
   ET_LOG(Info, "Loading tokenizer.");
   tokenizer_ = load_tokenizer();
+  ET_LOG(Info, "Complete loading tokenizer.");
 
   // Load prompt model
   runtime_ = std::make_unique<LlamaRuntime>();
   ET_LOG(Info, "Loading prompt model.");
   runtime_->Initialize(modeloptions_, modelpaths_);
+  ET_LOG(Info, "Complete loading prompt model.");
 }
 
 bool MTKLlamaRunner::is_loaded() const {
@@ -156,6 +158,7 @@ LlamaModelOptions MTKLlamaRunner::get_model_options() {
       .cache_type = CACHE_TYPE,
       .mask_type = MASK_TYPE,
       .rot_emb_type = ROT_EMB_TYPE};
+  ET_LOG(Info, "Completed get_model_options");    
   return options;
 }
 
@@ -165,6 +168,7 @@ LlamaModelPaths MTKLlamaRunner::get_model_paths() {
       .token_embedding_path = TOKEN_EMBEDDING_PATH,
       .prompt_model_paths = utils::split(PROMPT_MODEL_PATHS, ','),
       .gen_model_paths = utils::split(GEN_MODEL_PATHS, ',')};
+  ET_LOG(Info, "Completed get_model_paths");   
   return model_paths;
 }
 
