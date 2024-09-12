@@ -21,7 +21,7 @@ using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
 Tensor& leaky_relu_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Scalar& negative_slope,
     Tensor& out) {

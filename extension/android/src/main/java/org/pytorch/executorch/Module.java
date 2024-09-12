@@ -11,12 +11,14 @@ package org.pytorch.executorch;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
 import java.util.Map;
+import org.pytorch.executorch.annotations.Experimental;
 
 /**
  * Java wrapper for ExecuTorch Module.
  *
  * <p>Warning: These APIs are experimental and subject to change without notice
  */
+@Experimental
 public class Module {
 
   /** Load mode for the module. Load the whole file as a buffer. */

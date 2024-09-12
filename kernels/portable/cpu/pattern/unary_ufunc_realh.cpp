@@ -17,7 +17,7 @@ namespace internal {
 
 Tensor& unary_ufunc_realh(
     double (*fn)(double),
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     Tensor& out) {
   (void)ctx;

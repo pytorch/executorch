@@ -74,7 +74,7 @@ void tile_crop_impl(const Tensor& in, int64_t tile_size, Tensor& out) {
 } // namespace
 
 Tensor& tile_crop_out_impl(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input, // NOLINT
     const int64_t tile_size, // NOLINT
     Tensor& out) {

@@ -248,7 +248,7 @@ using ::executorch::runtime::KernelKey;
 using ::executorch::runtime::KernelRuntimeContext;
 using ::executorch::runtime::OpFunction;
 using ::executorch::runtime::TensorMeta;
-using RuntimeContext = ::executorch::runtime::KernelRuntimeContext;
+using KernelRuntimeContext = ::executorch::runtime::KernelRuntimeContext;
 
 inline ::executorch::runtime::Error register_kernels(ArrayRef<Kernel> kernels) {
   return ::executorch::runtime::register_kernels(
