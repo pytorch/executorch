@@ -10,6 +10,7 @@ package com.example.executorchllamademo;
 
 import android.app.AlertDialog;
 import android.content.DialogInterface;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
@@ -18,6 +19,7 @@ import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -49,6 +51,10 @@ public class SettingsActivity extends AppCompatActivity {
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_settings);
+    if (Build.VERSION.SDK_INT >= 21) {
+      getWindow().setStatusBarColor(ContextCompat.getColor(this, R.color.status_bar));
+      getWindow().setNavigationBarColor(ContextCompat.getColor(this, R.color.nav_bar));
+    }
     ViewCompat.setOnApplyWindowInsetsListener(
         requireViewById(R.id.main),
         (v, insets) -> {
