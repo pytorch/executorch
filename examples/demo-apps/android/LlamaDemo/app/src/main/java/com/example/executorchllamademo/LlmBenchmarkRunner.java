@@ -18,7 +18,11 @@ import com.google.gson.Gson;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback {
   ModelRunner mModelRunner;
@@ -50,6 +54,7 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
     }
 
     mStatsDump = new StatsDump();
+    mStatsDump.name = model.getName().replace(".pte", "");
     mModelRunner = new ModelRunner(model.getPath(), tokenizerPath, temperature, this);
     mStatsDump.loadStart = System.currentTimeMillis();
   }
@@ -87,21 +92,69 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
           mTextView.append(mStatsDump.toString());
         });
 
-    // TODO (huydhn): Remove txt files here once the JSON format is ready
-    try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.txt")) {
-      writer.write(mStatsDump.toString());
-    } catch (IOException e) {
-      e.printStackTrace();
-    }
+    final List<BenchmarkMetric> results = new ArrayList<>();
+    // The list of metrics we have atm includes:
+    // Model load time
+    results.add(
+        new BenchmarkMetric(
+            mStatsDump.name,
+            "model_load_time(ms)",
+            mStatsDump.loadEnd - mStatsDump.loadStart,
+            0.0f));
+    // LLM generate time
+    results.add(
+        new BenchmarkMetric(
+            mStatsDump.name,
+            "generate_time(ms)",
+            mStatsDump.generateEnd - mStatsDump.generateStart,
+            0.0f));
+    // Token per second
+    results.add(
+        new BenchmarkMetric(mStatsDump.name, "token_per_sec", extractTPS(mStatsDump.tokens), 0.0f));
 
-    // TODO (huydhn): Figure out on what the final JSON results looks like, we need something
-    // with the same number of fields as https://github.com/pytorch/pytorch/pull/135042
     try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
       Gson gson = new Gson();
-      writer.write(gson.toJson(mStatsDump));
+      writer.write(gson.toJson(results));
     } catch (IOException e) {
       e.printStackTrace();
     }
+  }
+
+  private double extractTPS(final String tokens) {
+    final Matcher m = Pattern.compile("\\d+\\.?\\d*").matcher(tokens);
+    if (m.find()) {
+      return Double.parseDouble(m.group());
+    } else {
+      return 0.0f;
+    }
+  }
+}
+
+class BenchmarkMetric {
+  // The model name, i.e. stories110M
+  String name;
+
+  // The metric name, i.e. TPS
+  String metric;
+
+  // The actual value and the option target value
+  double actual;
+  double target;
+
+  // TODO (huydhn): Is there a way to get this information from the export model itself?
+  final String dtype = "float32";
+
+  // Let's see which information we want to include here
+  final String device = android.os.Build.BRAND;
+  // DEBUG DEBUG
+  final String arch = android.os.Build.DEVICE + " / " + android.os.Build.MODEL;
+
+  public BenchmarkMetric(
+      final String name, final String metric, final double actual, final double target) {
+    this.name = name;
+    this.metric = metric;
+    this.actual = actual;
+    this.target = target;
   }
 }
 
@@ -111,6 +164,7 @@ class StatsDump {
   long generateStart;
   long generateEnd;
   String tokens;
+  String name;
 
   @NonNull
   @Override

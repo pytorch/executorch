@@ -16,7 +16,11 @@ import com.google.gson.Gson;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallback {
   ModelRunner mModelRunner;
@@ -45,6 +49,7 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
     }
 
     mStatsInfo = new StatsInfo();
+    mStatsInfo.name = model.getName().replace(".pte", "");
     mModelRunner = new ModelRunner(model.getPath(), tokenizerPath, temperature, this);
     mStatsInfo.loadStart = System.currentTimeMillis();
   }
@@ -73,20 +78,40 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
   public void onGenerationStopped() {
     mStatsInfo.generateEnd = System.currentTimeMillis();
 
-    // TODO (huydhn): Remove txt files here once the JSON format is ready
-    try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.txt")) {
-      writer.write(mStatsInfo.toString());
+    final List<BenchmarkMetric> results = new ArrayList<>();
+    // The list of metrics we have atm includes:
+    // Model load time
+    results.add(
+        new BenchmarkMetric(
+            mStatsInfo.name,
+            "model_load_time(ms)",
+            mStatsInfo.loadEnd - mStatsInfo.loadStart,
+            0.0f));
+    // LLM generate time
+    results.add(
+        new BenchmarkMetric(
+            mStatsInfo.name,
+            "generate_time(ms)",
+            mStatsInfo.generateEnd - mStatsInfo.generateStart,
+            0.0f));
+    // Token per second
+    results.add(
+        new BenchmarkMetric(mStatsInfo.name, "token_per_sec", extractTPS(mStatsInfo.tokens), 0.0f));
+
+    try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
+      Gson gson = new Gson();
+      writer.write(gson.toJson(results));
     } catch (IOException e) {
       e.printStackTrace();
     }
+  }
 
-    // TODO (huydhn): Figure out on what the final JSON results looks like, we need something
-    // with the same number of fields as https://github.com/pytorch/pytorch/pull/135042
-    try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
-      Gson gson = new Gson();
-      writer.write(gson.toJson(mStatsInfo));
-    } catch (IOException e) {
-      e.printStackTrace();
+  private double extractTPS(final String tokens) {
+    final Matcher m = Pattern.compile("\\d+\\.?\\d*").matcher(tokens);
+    if (m.find()) {
+      return Double.parseDouble(m.group());
+    } else {
+      return 0.0f;
     }
   }
 }
@@ -97,6 +122,7 @@ class StatsInfo {
   long generateStart;
   long generateEnd;
   String tokens;
+  String name;
 
   @Override
   public String toString() {

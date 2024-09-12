@@ -46,18 +46,19 @@ public class BenchmarkActivity extends Activity {
       stats.latency.add(forwardMs);
     }
 
-    // TODO (huydhn): Remove txt files here once the JSON format is ready
-    try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.txt")) {
-      writer.write(stats.toString());
-    } catch (IOException e) {
-      e.printStackTrace();
-    }
+    final List<BenchmarkMetric> results = new ArrayList<>();
+    // The list of metrics we have atm includes:
+    // Avg inference latency after N iterations
+    results.add(
+        new BenchmarkMetric(
+            model.getName().replace(".pte", ""),
+            "avg_inference_latency(ms)",
+            stats.latency.stream().mapToDouble(l -> l).average().orElse(0.0f),
+            0.0f));
 
-    // TODO (huydhn): Figure out on what the final JSON results looks like, we need something
-    // with the same number of fields as https://github.com/pytorch/pytorch/pull/135042
     try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
       Gson gson = new Gson();
-      writer.write(gson.toJson(stats));
+      writer.write(gson.toJson(results));
     } catch (IOException e) {
       e.printStackTrace();
     }
