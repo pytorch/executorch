@@ -8,11 +8,14 @@
 
 package org.pytorch.executorch;
 
+import org.pytorch.executorch.annotations.Experimental;
+
 /**
  * Codes representing tensor data types.
  *
  * <p>Warning: These APIs are experimental and subject to change without notice
  */
+@Experimental
 public enum DType {
   // NOTE: "jniCode" must be kept in sync with scalar_type.h.
   // NOTE: Never serialize "jniCode", because it can change between releases.
