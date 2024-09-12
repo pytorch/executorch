@@ -43,15 +43,6 @@ void normalize_after_fht(T* out, int log2_vec_size) {
   }
 }
 
-inline void fast_hadamard_transform_ffht_impl(float* vec, int log2_vec_size) {
-  if (log2_vec_size <= 0) {
-    return;
-  }
-
-  fht_float(vec, log2_vec_size);
-  normalize_after_fht(vec, log2_vec_size);
-}
-
 template <typename T>
 void fast_hadamard_transform_unnormalized_simple_impl(
     T* vec,
@@ -82,6 +73,19 @@ template <typename T>
 void fast_hadamard_transform_simple_impl(T* vec, int log2_vec_size) {
   fast_hadamard_transform_unnormalized_simple_impl(vec, log2_vec_size);
   normalize_after_fht(vec, log2_vec_size);
+}
+
+inline void fast_hadamard_transform_ffht_impl(float* vec, int log2_vec_size) {
+#if defined(__aarch64__) || defined(__x86_64__)
+  if (log2_vec_size <= 0) {
+    return;
+  }
+
+  fht_float(vec, log2_vec_size);
+  normalize_after_fht(vec, log2_vec_size);
+#else
+  fast_hadamard_transform_simple_impl(vec, log2_vec_size);
+#endif
 }
 
 } // namespace internal
