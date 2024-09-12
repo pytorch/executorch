@@ -26,6 +26,7 @@ from executorch.backends.arm.passes.scalars_to_attribute_pass import (
     ScalarsToAttributePass,
 )
 from executorch.backends.arm.passes.size_adjust_conv2d_pass import SizeAdjustConv2DPass
+from executorch.exir import ExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_manager import PassManager
 
@@ -36,7 +37,7 @@ class ArmPassManager(PassManager):
         return self(graph_module).graph_module
 
     def transform_to_backend_pipeline(
-        self, graph_module: torch.fx.GraphModule, compile_spec: list[CompileSpec]
+        self, exported_program: ExportedProgram, compile_spec: list[CompileSpec]
     ):
         """Apply passes before transforming program to backend"""
         self.add_pass(SizeAdjustConv2DPass())
@@ -51,7 +52,7 @@ class ArmPassManager(PassManager):
                 if memory_format == "nhwc":
                     self.add_pass(AnnotateChannelsLastDimOrder())
 
-        return self._transform(graph_module)
+        return self._transform(exported_program.graph_module)
 
     def transform_for_annotation_pipeline(self, graph_module: torch.fx.GraphModule):
         self.add_pass(DecomposeDivPass())
