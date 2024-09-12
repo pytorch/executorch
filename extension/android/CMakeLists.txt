@@ -145,10 +145,7 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   ADD_LIBRARY(libneuron_buffer_allocator SHARED IMPORTED)
   SET_PROPERTY(TARGET libneuron_buffer_allocator PROPERTY IMPORTED_LOCATION /Users/cmodi/Documents/ai/clean/executorch/backends/mediatek/libneuron_buffer_allocator.so)
 
-  ADD_LIBRARY(libneuron_backend SHARED IMPORTED)
-  SET_PROPERTY(TARGET libneuron_backend PROPERTY IMPORTED_LOCATION /Users/cmodi/Documents/ai/clean/executorch/cmake-out-android-arm64-v8a/backends/mediatek/libneuron_backend.so)
-
-  target_link_libraries(executorch_llama_jni libneuron_buffer_allocator libneuron_backend)
+  target_link_libraries(executorch_llama_jni libneuron_buffer_allocator)
   target_compile_options(executorch_llama_jni PUBLIC ${_common_compile_options})
   # link re2
   set(ABSL_ENABLE_INSTALL ON)
