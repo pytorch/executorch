@@ -17,7 +17,7 @@ namespace native {
 
 using Tensor = exec_aten::Tensor;
 
-Tensor& sigmoid_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& sigmoid_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   ET_KERNEL_CHECK(

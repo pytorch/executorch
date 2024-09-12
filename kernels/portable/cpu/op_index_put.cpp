@@ -19,7 +19,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& index_put_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
     const Tensor& values,

@@ -146,7 +146,7 @@ Tensor allclose_tensor(
 }
 
 Tensor& allclose_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     const Tensor& other,
     double rtol,
@@ -161,7 +161,7 @@ Tensor& allclose_out(
 }
 
 Tensor allclose_tensor(
-    ET_UNUSED RuntimeContext& ctx,
+    ET_UNUSED KernelRuntimeContext& ctx,
     ET_UNUSED const Tensor& self,
     ET_UNUSED const Tensor& other,
     ET_UNUSED double rtol,

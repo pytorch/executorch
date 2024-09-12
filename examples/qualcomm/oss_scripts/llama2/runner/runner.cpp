@@ -145,7 +145,7 @@ Result<torch::executor::Tensor> Runner::run_model_step(
   token->mutable_data_ptr<int32_t>()[0] = input_token;
 
   // inputs:[tokens, start_pos, atten_mask, k_cache, v_cache]
-  auto outputs_res = module_->forward({*token, *start_pos, *atten_mask});
+  auto outputs_res = module_->forward({token, start_pos, atten_mask});
   ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
 
   // TODO: need to handle batch size != 1

@@ -57,8 +57,10 @@ def get_mps_partitioner(use_kv_cache: bool = False):
 
 def get_coreml_partitioner(
     enable_state: bool = False,
+    preserve_sdpa: bool = True,
     embedding_quantize: Optional[str] = None,
     pt2e_quantize: Optional[str] = None,
+    coreml_quantize: Optional[str] = None,
 ):
     try:
         import coremltools as ct
@@ -77,6 +79,9 @@ def get_coreml_partitioner(
     # In Core ML, stateful execution is introduced in iOS 18
     if enable_state:
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
+    # In Core ML, sdpa op is introduced in iOS 18
+    if preserve_sdpa:
+        minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
     # In Core ML, quantization is introduced in iOS 16
     if embedding_quantize is not None or pt2e_quantize is not None:
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS16)
@@ -87,9 +92,21 @@ def get_coreml_partitioner(
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS17)
     # In Core ML, 4-bit weight compression is introduced in iOS 18
     if (
-        embedding_quantize is not None and int(embedding_quantize.split(",")[0]) == 4
-    ) or pt2e_quantize in ("coreml_c4w", "coreml_8a_c4w", "coreml_baseline_8a_c4w"):
+        (embedding_quantize is not None and int(embedding_quantize.split(",")[0]) == 4)
+        or pt2e_quantize in ("coreml_c4w", "coreml_8a_c4w", "coreml_baseline_8a_c4w")
+        or coreml_quantize == "b4w"
+    ):
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
+
+    op_linear_quantizer_config = None
+    if coreml_quantize == "b4w":
+        op_linear_quantizer_config = {
+            "mode": "linear_symmetric",
+            "dtype": "int4",
+            "granularity": "per_block",
+            "block_size": 32,
+            "weight_threshold": 512,
+        }
 
     compile_specs = CoreMLBackend.generate_compile_specs(  # pyre-fixme[16]
         minimum_deployment_target=minimum_deployment_target,
@@ -97,6 +114,7 @@ def get_coreml_partitioner(
         # using `ComputeUnit.ALL` can increase the model load time, default to `ComputeUnit.CPU_AND_GPU`
         compute_unit=ct.ComputeUnit[ct.ComputeUnit.CPU_AND_GPU.name.upper()],
         model_type=CoreMLBackend.MODEL_TYPE.MODEL,  # pyre-fixme[16]
+        op_linear_quantizer_config=op_linear_quantizer_config,
     )
     return CoreMLPartitioner(  # pyre-fixme[16]
         compile_specs=compile_specs,

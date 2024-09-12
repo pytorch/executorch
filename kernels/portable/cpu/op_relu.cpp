@@ -19,7 +19,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
-Tensor& relu_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& relu_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape

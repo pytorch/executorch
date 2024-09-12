@@ -424,8 +424,6 @@ def inference(args, pre_gen_pte=""):
     runner_cmd = " ".join(
         [
             f"cd {workspace} &&",
-            "export ADSP_LIBRARY_PATH=. &&",
-            "export LD_LIBRARY_PATH=. &&",
             f"./qnn_llama_runner {runner_args}",
         ]
     )

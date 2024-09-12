@@ -20,7 +20,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& index_select_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     const Tensor& index,

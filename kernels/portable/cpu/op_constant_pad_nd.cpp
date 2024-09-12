@@ -160,7 +160,7 @@ void constant_pad_nd_out_impl(
 } // namespace
 
 Tensor& constant_pad_nd_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     IntArrayRef pad,
     const Scalar& value,

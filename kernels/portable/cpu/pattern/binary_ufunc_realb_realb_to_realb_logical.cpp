@@ -17,7 +17,7 @@ namespace internal {
 
 Tensor& binary_ufunc_realb_realb_to_realb_logical(
     bool (*fn)(bool, bool),
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {

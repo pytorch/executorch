@@ -39,7 +39,7 @@ ScalarType get_compute_type(ScalarType a_type, ScalarType b_type) {
 } // namespace
 
 Tensor& opt_div_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
@@ -194,7 +194,7 @@ Tensor& opt_div_out(
 }
 
 Tensor& opt_div_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {

@@ -24,7 +24,7 @@ using Tensor = exec_aten::Tensor;
  * is equivalent to transpose(input, 0, 1).
  * t_copy.out(Tensor self, Tensor(a!) out)
  */
-Tensor& t_copy_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& t_copy_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   ET_KERNEL_CHECK(ctx, check_t_copy_args(in, out), InvalidArgument, out);
