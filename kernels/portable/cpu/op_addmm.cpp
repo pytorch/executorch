@@ -20,7 +20,7 @@ using Tensor = exec_aten::Tensor;
 using Scalar = exec_aten::Scalar;
 
 Tensor& addmm_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& mat1,
     const Tensor& mat2,

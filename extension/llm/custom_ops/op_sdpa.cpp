@@ -729,7 +729,7 @@ void update_cache(
 } // anonymous namespace
 
 Tensor& flash_attention_kernel_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& query,
     const Tensor& key,
     const Tensor& value,
@@ -811,7 +811,7 @@ Tensor& flash_attention_kernel_out(
   @param[in] seq_len: Seq length. e.g. seq_len dim of q_projected.
 */
 Tensor& sdpa_with_kv_cache_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& q_projected,
     const Tensor& k_projected,
     const Tensor& v_projected,

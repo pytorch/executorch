@@ -8,7 +8,7 @@
 
 #include <executorch/backends/vulkan/test/utils/test_utils.h>
 
-#include <executorch/runtime/core/portable_type/half.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
@@ -86,7 +86,7 @@ void record_nchw_to_image_op(
           vkapi::MemoryAccessType::WRITE),
       src_buffer,
       v_dst.sizes_ubo(),
-      v_dst.axis_mapping_ubo());
+      v_dst.axis_map_ubo());
 }
 
 void record_image_to_nchw_op(
@@ -108,7 +108,7 @@ void record_image_to_nchw_op(
       dst_buffer,
       v_src.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
       v_src.sizes_ubo(),
-      v_src.axis_mapping_ubo());
+      v_src.axis_map_ubo());
 }
 
 void record_int8_image_to_nchw_noint8_op(
@@ -129,7 +129,7 @@ void record_int8_image_to_nchw_noint8_op(
       dst_buffer.buffer(),
       v_src.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
       v_src.sizes_ubo(),
-      v_src.axis_mapping_ubo(),
+      v_src.axis_map_ubo(),
       v_src.numel_ubo());
 }
 
@@ -322,7 +322,7 @@ void record_reference_matmul(
   _(uint8_t, Byte)                \
   _(int8_t, Char)                 \
   _(int32_t, Int)                 \
-  _(torch::executor::Half, Half)  \
+  _(exec_aten::Half, Half)        \
   _(float, Float)                 \
   _(int8_t, QInt8)
 

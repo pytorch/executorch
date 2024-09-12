@@ -18,9 +18,9 @@
 
 using namespace ::testing;
 using exec_aten::optional;
-using exec_aten::RuntimeContext;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
+using executorch::runtime::KernelRuntimeContext;
 using torch::executor::native::quantized_mixed_linear_out;
 using torch::executor::testing::TensorFactory;
 
@@ -57,7 +57,7 @@ void test_dtype() {
       /*sizes=*/{1, 2},
       /*data=*/{2.3, 3.6});
 
-  RuntimeContext ctx{};
+  KernelRuntimeContext ctx{};
 
   quantized_mixed_linear_out(
       ctx, input, weight, weight_scales, opt_weight_zp, opt_dtype_out, out);
@@ -112,7 +112,7 @@ void test_dtype_partials() {
       {(1.0 * 5 + 1.5 * 3) * 0.2 + 2.0 * 1 * 1,
        (1.0 * 4 + 1.5 * 2) * 0.4 + 2.0 * 1 * 0.5});
 
-  RuntimeContext ctx{};
+  KernelRuntimeContext ctx{};
 
   quantized_mixed_linear_out(
       ctx, input, weight, weight_scales, opt_weight_zp, opt_dtype_out, out);

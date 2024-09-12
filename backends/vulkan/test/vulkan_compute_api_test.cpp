@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include <executorch/runtime/core/portable_type/half.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
@@ -485,7 +485,7 @@ TEST_F(VulkanComputeAPITest, test_buffer_float16) {
   if (!context()->adapter_ptr()->has_full_float16_buffers_support()) {
     GTEST_SKIP();
   }
-  test_storage_buffer_type<torch::executor::Half, vkapi::kHalf>(16);
+  test_storage_buffer_type<exec_aten::Half, vkapi::kHalf>(16);
 }
 
 TEST_F(VulkanComputeAPITest, test_buffer_int8) {
@@ -567,7 +567,7 @@ TEST_F(VulkanComputeAPITest, buffer_tensor_sanity_check) {
             run_buffer_tensor_sanity_check<float>(a);
             break;
           case vkapi::kHalf:
-            run_buffer_tensor_sanity_check<torch::executor::Half>(a);
+            run_buffer_tensor_sanity_check<exec_aten::Half>(a);
             break;
           case vkapi::kChar:
             run_buffer_tensor_sanity_check<int8_t>(a);
@@ -1415,7 +1415,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       /*shared_object_idx = */ 4);
 
   // +2: t.sizes_ubo() for each staging shader
-  // +2: t.axis_mapping_ubo() for each staging shader
+  // +2: t.axis_map_ubo() for each staging shader
   // +2: staging buffer for each input tensor
   EXPECT_TRUE(get_vma_allocation_count() == 6);
 
@@ -1434,7 +1434,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
 
   // +2: alpha UBO, broadcast UBO for arithmetic shader
   // +1: t.sizes_ubo() uniform buffer for staging shader
-  // +1: t.axis_mapping_ubo() uniform buffer for staging shader
+  // +1: t.axis_map_ubo() uniform buffer for staging shader
   // +1: staging buffer for the input tensor
   EXPECT_TRUE(get_vma_allocation_count() == 12);
 
@@ -1452,7 +1452,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
 
   // +2: alpha UBO, broadcast UBO for arithmetic shader
   // +1: t.sizes_ubo() for staging shader
-  // +1: t.axis_mapping_ubo() for staging shader
+  // +1: t.axis_map_ubo() for staging shader
   // +1 staging buffer for the input tensor
   EXPECT_TRUE(get_vma_allocation_count() == 17);
 
@@ -2395,7 +2395,7 @@ TEST(VulkanToFromGPUShaderTest, round_trip_tests) {
 
   for (auto& sizes : to_test) {
     RUN_TESTS(float, vkapi::kFloat)
-    RUN_TESTS(torch::executor::Half, vkapi::kHalf)
+    RUN_TESTS(exec_aten::Half, vkapi::kHalf)
   }
 
   for (auto& sizes : to_test_int8) {

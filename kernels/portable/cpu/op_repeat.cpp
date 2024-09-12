@@ -49,7 +49,7 @@ using Tensor = exec_aten::Tensor;
 
 // repeat.out(Tensor self, int[] repeats, *, Tensor(a!) out) -> Tensor(a!)
 Tensor& repeat_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     exec_aten::ArrayRef<int64_t> repeats,
     Tensor& out) {

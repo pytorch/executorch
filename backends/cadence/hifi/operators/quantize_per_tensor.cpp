@@ -14,13 +14,13 @@ namespace HiFi {
 namespace native {
 
 using Tensor = exec_aten::Tensor;
-using RuntimeContext = torch::executor::RuntimeContext;
+using executorch::runtime::KernelRuntimeContext;
 using ScalarType = exec_aten::ScalarType;
 
 // Quantize the input tensor (PT2 version). Note that quant_<min,max> are not
 // used in any computation.
 void quantize_per_tensor_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& input,
     double scale,
     int64_t zero_point,

@@ -46,9 +46,10 @@
 
 #endif
 
-namespace exec_aten {
+namespace executorch {
+namespace aten {
 
-using TensorShapeDynamism = torch::executor::TensorShapeDynamism;
+using TensorShapeDynamism = executorch::runtime::TensorShapeDynamism;
 
 #ifdef USE_ATEN_LIB
 
@@ -134,13 +135,17 @@ using OptionalArrayRef =
 
 using torch::executor::compute_numel;
 
-#endif // Use executor types
+#endif // Use ExecuTorch types
 
-} // namespace exec_aten
+} // namespace aten
+} // namespace executorch
+
+// DEPRECATED: The exec_aten:: namespace is deprecated. Use executorch::aten::
+// instead.
+namespace exec_aten = executorch::aten;
 
 namespace torch {
 namespace executor {
 using TensorList = exec_aten::TensorList;
-
 } // namespace executor
 } // namespace torch

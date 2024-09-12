@@ -116,13 +116,13 @@ void add_addmm_naive_node(
       {
           graph.sizes_ubo(out),
           graph.logical_limits_ubo(out),
-          graph.axis_mapping_ubo(out),
+          graph.axis_map_ubo(out),
           graph.sizes_ubo(mat1),
-          graph.axis_mapping_ubo(mat1),
+          graph.axis_map_ubo(mat1),
           graph.sizes_ubo(mat2),
-          graph.axis_mapping_ubo(mat2),
+          graph.axis_map_ubo(mat2),
           graph.sizes_ubo(self),
-          graph.axis_mapping_ubo(self),
+          graph.axis_map_ubo(self),
           graph.create_params_buffer(params),
       },
       // Specialization Constants
@@ -210,13 +210,13 @@ void add_addmm_optimized_node(
       // Shader params buffers
       {
           graph.sizes_ubo(out),
-          graph.axis_mapping_ubo(out),
+          graph.axis_map_ubo(out),
           graph.sizes_ubo(mat1_W_packed),
-          graph.axis_mapping_ubo(mat1_W_packed),
+          graph.axis_map_ubo(mat1_W_packed),
           graph.sizes_ubo(mat2_packed),
-          graph.axis_mapping_ubo(mat2_packed),
+          graph.axis_map_ubo(mat2_packed),
           graph.sizes_ubo(self),
-          graph.axis_mapping_ubo(self),
+          graph.axis_map_ubo(self),
           graph.create_params_buffer(params),
       },
       // Specialization Constants

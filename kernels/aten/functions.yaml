@@ -410,3 +410,9 @@
 - op: zeros_like.out
 
 - op: zeros.out
+
+- op: gather.out
+
+- op: scatter.value_out
+
+- op: aten::native_dropout.out

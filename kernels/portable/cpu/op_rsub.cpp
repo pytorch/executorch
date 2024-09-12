@@ -16,7 +16,7 @@ namespace executor {
 namespace native {
 
 Tensor& rsub_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     const Scalar& alpha,

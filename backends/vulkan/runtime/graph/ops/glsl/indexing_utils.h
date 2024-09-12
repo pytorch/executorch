@@ -68,8 +68,8 @@ int find_packed_dim(const ivec4 strides) {
  * third element is the texture coordinate corresponding to the channels
  * dimension.
  */
-ivec3 get_logical_pos(const ivec3 pos, const ivec4 axis_mapping) {
-  return ivec3(pos[axis_mapping.x], pos[axis_mapping.y], pos[axis_mapping.z]);
+ivec3 get_logical_pos(const ivec3 pos, const ivec4 axis_map) {
+  return ivec3(pos[axis_map.x], pos[axis_map.y], pos[axis_map.z]);
 }
 
 //
@@ -206,18 +206,18 @@ ivec4 to_tensor_idx(ivec3 pos, ivec4 sizes, int packed_dim) {
 ivec4 to_tensor_idx(
     ivec3 pos,
     ivec4 sizes,
-    const ivec4 axis_mapping,
+    const ivec4 axis_map,
     const int packed_dim) {
   // Align packed dim to next multiple of 4 to account for texel padding
   sizes[packed_dim] = alignup4(sizes[packed_dim]);
 
   // Packed dim contains 4 elements per texel, so moving 1 unit traverses 4
   // elements in the tensor.
-  pos[axis_mapping[packed_dim]] *= 4;
+  pos[axis_map[packed_dim]] *= 4;
 
   ivec4 tensor_idx;
   for (int dim = 0; dim < 3; ++dim) {
-    tensor_idx[dim] = pos[axis_mapping[dim]];
+    tensor_idx[dim] = pos[axis_map[dim]];
   }
 
   // Early return if batch is 1. Batch index will be 0.
@@ -229,8 +229,8 @@ ivec4 to_tensor_idx(
   // Else, adjust the dim that's concatenated with batch. Note that the axis
   // mapping for the batch dim indicates WHCN dim index of the dim that it is
   // concatenated with, not a texture axis.
-  tensor_idx.w = tensor_idx[axis_mapping[3]] / sizes[axis_mapping[3]];
-  tensor_idx[axis_mapping[3]] %= sizes[axis_mapping[3]];
+  tensor_idx.w = tensor_idx[axis_map[3]] / sizes[axis_map[3]];
+  tensor_idx[axis_map[3]] %= sizes[axis_map[3]];
 
   return tensor_idx;
 }
@@ -258,24 +258,24 @@ ivec3 to_texture_pos(ivec4 idx, ivec4 sizes, int packed_dim) {
 ivec3 to_texture_pos(
     const ivec4 idx,
     ivec4 sizes,
-    const ivec4 axis_mapping,
+    const ivec4 axis_map,
     const int packed_dim) {
   // Align packed dim to next multiple of 4 to account for texel padding
   sizes[packed_dim] = alignup4(sizes[packed_dim]);
 
   ivec3 pos;
   for (int dim = 0; dim < 3; ++dim) {
-    pos[axis_mapping[dim]] = idx[dim];
+    pos[axis_map[dim]] = idx[dim];
   }
 
   // Adjust batch dim if needed
   if (sizes.w > 1) {
-    pos[axis_mapping[axis_mapping[3]]] += idx.w * sizes.w;
+    pos[axis_map[axis_map[3]]] += idx.w * sizes.w;
   }
 
   // Adjust packed dim. Moving 1 texel unit along the packed dim traverses 4
   // tensor elements in that dim.
-  pos[axis_mapping[packed_dim]] /= 4;
+  pos[axis_map[packed_dim]] /= 4;
   return pos;
 }
 
@@ -305,24 +305,24 @@ ivec4 to_texture_elem_pos(ivec4 idx, ivec4 sizes, int packed_dim) {
 ivec4 to_texture_elem_pos(
     const ivec4 idx,
     ivec4 sizes,
-    const ivec4 axis_mapping,
+    const ivec4 axis_map,
     const int packed_dim) {
   // Align packed dim to next multiple of 4 to account for texel padding
   sizes[packed_dim] = alignup4(sizes[packed_dim]);
 
   ivec4 pos;
   for (int dim = 0; dim < 3; ++dim) {
-    pos[axis_mapping[dim]] = idx[dim];
+    pos[axis_map[dim]] = idx[dim];
   }
 
   // Adjust batch dim if needed
   if (sizes.w > 1) {
-    pos[axis_mapping[axis_mapping[3]]] += idx.w * sizes.w;
+    pos[axis_map[axis_map[3]]] += idx.w * sizes.w;
   }
 
   // Adjust packed dim. Moving 1 texel unit along the packed dim traverses 4
   // tensor elements in that dim.
-  pos[axis_mapping[packed_dim]] /= 4;
+  pos[axis_map[packed_dim]] /= 4;
   pos.w = idx[packed_dim] % 4;
   return pos;
 }
@@ -335,11 +335,11 @@ ivec4 to_texture_elem_pos(
  * Derive (x,y,z) physical texture position from (w,h,d) logical texture
  * position using the axis mapping.
  */
-ivec3 to_texture_pos(const ivec3 logical_pos, const ivec4 axis_mapping) {
+ivec3 to_texture_pos(const ivec3 logical_pos, const ivec4 axis_map) {
   ivec3 pos;
-  pos[axis_mapping.x] = logical_pos.x;
-  pos[axis_mapping.y] = logical_pos.y;
-  pos[axis_mapping.z] = logical_pos.z;
+  pos[axis_map.x] = logical_pos.x;
+  pos[axis_map.y] = logical_pos.y;
+  pos[axis_map.z] = logical_pos.z;
   return pos;
 }
 

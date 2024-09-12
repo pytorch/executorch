@@ -19,7 +19,7 @@ layout(std430) buffer;
 ${layout_declare_buffer(B, "w", "nchw_out", "int")}
 ${layout_declare_tensor(B, "r", "t_in", "int8", "texture3d")}
 ${layout_declare_ubo(B, "ivec4", "tensor_sizes")}
-${layout_declare_ubo(B, "ivec4", "axis_mapping")}
+${layout_declare_ubo(B, "ivec4", "axis_map")}
 ${layout_declare_ubo(B, "int", "out_numel")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;

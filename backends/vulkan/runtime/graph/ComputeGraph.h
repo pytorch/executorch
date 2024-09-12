@@ -331,8 +331,8 @@ class ComputeGraph final {
     return values_.at(idx).toTensor().numel_ubo();
   }
 
-  inline vkapi::BufferBindInfo axis_mapping_ubo(const ValueRef idx) {
-    return values_.at(idx).toTensor().axis_mapping_ubo();
+  inline vkapi::BufferBindInfo axis_map_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().axis_map_ubo();
   }
 
   inline vkapi::BufferBindInfo texture_limits_ubo(const ValueRef idx) {
