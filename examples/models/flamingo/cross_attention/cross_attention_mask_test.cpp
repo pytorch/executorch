@@ -11,9 +11,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::ScalarType;
-using torch::executor::Tensor;
-using torch::executor::TensorImpl;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
+using exec_aten::TensorImpl;
 
 TEST(CrossAttentxnMaskTest, TestCrossAttentionMask) {
   std::vector<int> tokens = {

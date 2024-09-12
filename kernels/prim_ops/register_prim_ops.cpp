@@ -12,7 +12,6 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 
-using KernelArrayRef = ::torch::executor::ArrayRef<::torch::executor::Kernel>;
 using torch::executor::function::et_copy_index;
 
 namespace torch {
@@ -294,13 +293,14 @@ static Kernel prim_ops[] = {
 
 };
 
-static KernelArrayRef kernel_array_ref(
+executorch::runtime::Span<const executorch::runtime::Kernel> kernel_span(
     prim_ops,
     prim_ops + sizeof(prim_ops) / sizeof(Kernel));
 
 // Return value not used. Keep the static variable assignment to register
 // operators in static initialization time.
-static auto success_with_kernel_reg = register_kernels(kernel_array_ref);
+auto success_with_kernel_reg =
+    executorch::runtime::register_kernels(kernel_span);
 
 } // namespace
 } // namespace function
