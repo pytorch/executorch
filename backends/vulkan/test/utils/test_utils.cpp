@@ -8,7 +8,7 @@
 
 #include <executorch/backends/vulkan/test/utils/test_utils.h>
 
-#include <executorch/runtime/core/portable_type/half.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
@@ -322,7 +322,7 @@ void record_reference_matmul(
   _(uint8_t, Byte)                \
   _(int8_t, Char)                 \
   _(int32_t, Int)                 \
-  _(torch::executor::Half, Half)  \
+  _(exec_aten::Half, Half)        \
   _(float, Float)                 \
   _(int8_t, QInt8)
 
