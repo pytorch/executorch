@@ -57,6 +57,7 @@ from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_nor
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
 from .source_transformation.sdpa import (
     replace_causal_mask,
+    replace_kv_cache_with_coreml_kv_cache,
     replace_kv_cache_with_simple_kv_cache,
     replace_sdpa_with_coreml_sdpa,
     replace_sdpa_with_custom_op,
@@ -810,12 +811,10 @@ def _get_source_transforms(
             transforms.append(replace_causal_mask)
 
         elif args.coreml:
-            # TODO: We might want to explore simple KV cache,
-            # since `k_out[:, :, input_pos] = k_val` decomposition is messy
-            # and is not easy to cleanly map to iOS18.slice_update
             if args.coreml_preserve_sdpa:
                 transforms.append(replace_sdpa_with_coreml_sdpa)
             else:
                 transforms.append(replace_sdpa_with_simple_sdpa)
+            transforms.append(replace_kv_cache_with_coreml_kv_cache)
 
     return transforms

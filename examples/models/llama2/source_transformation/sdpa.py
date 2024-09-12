@@ -270,6 +270,61 @@ def replace_sdpa_with_coreml_sdpa(module: torch.nn.Module):
     return module
 
 
+class KVCacheCoreML(torch.nn.Module):
+    """
+    Rather than k_out[:, :, input_pos] = k_val, use torch.ops.aten.index_put_,
+    which can directly translate to CoreML iOS18.silce_update
+    """
+
+    def __init__(
+        self,
+        max_batch_size: int,
+        max_seq_length: int,
+        n_heads: int,
+        head_dim: int,
+        dtype=torch.float32,
+    ):
+        super().__init__()
+        self.max_seq_length = max_seq_length
+        cache_shape = (max_batch_size, n_heads, max_seq_length, head_dim)
+
+        self.max_batch_size = max_batch_size
+        self.n_heads = n_heads
+        self.head_dim = head_dim
+        self.register_buffer(
+            "k_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")
+        )
+        self.register_buffer(
+            "v_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")
+        )
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        k_out = torch.ops.aten.index_put_(self.k_cache, [None, None, input_pos], k_val)
+        v_out = torch.ops.aten.index_put_(self.v_cache, [None, None, input_pos], v_val)
+        return k_out, v_out
+
+
+def replace_kv_cache_with_coreml_kv_cache(module: torch.nn.Module):
+    for name, child in module.named_children():
+        if isinstance(child, KVCache):
+            setattr(
+                module,
+                name,
+                KVCacheCoreML(
+                    child.max_batch_size,
+                    child.max_seq_length,
+                    child.n_heads,
+                    child.head_dim,
+                    child.k_cache.dtype,
+                ),
+            )
+        else:
+            replace_kv_cache_with_coreml_kv_cache(child)
+    return module
+
+
 class KVCacheSimple(torch.nn.Module):
     def __init__(
         self,
