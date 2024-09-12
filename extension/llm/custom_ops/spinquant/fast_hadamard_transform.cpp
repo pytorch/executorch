@@ -8,6 +8,8 @@
 
 #include "fast_hadamard_transform.h"
 
+#include <algorithm>
+
 namespace executorch {
 namespace {
 // Normalization step: divide by sqrt(1 << log2_vec_size). Similar
