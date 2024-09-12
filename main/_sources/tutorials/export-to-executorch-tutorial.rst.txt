@@ -359,8 +359,8 @@ Performing Quantization
 -----------------------
 
 To quantize a model, we first need to capture the graph with
-``torch._export.capture_pre_autograd_graph``, perform quantization, and then
-call ``torch.export``. ``torch._export.capture_pre_autograd_graph`` returns a
+``torch.export.export_for_training``, perform quantization, and then
+call ``torch.export``. ``torch.export.export_for_training`` returns a
 graph which contains ATen operators which are Autograd safe, meaning they are
 safe for eager-mode training, which is needed for quantization. We will call
 the graph at this level, the ``Pre-Autograd ATen Dialect`` graph.
@@ -378,10 +378,10 @@ model properly for a specific backend.
 .. code-block:: default
 
 
-    from torch._export import capture_pre_autograd_graph
+    from torch.export import export_for_training
 
     example_args = (torch.randn(1, 3, 256, 256),)
-    pre_autograd_aten_dialect = capture_pre_autograd_graph(SimpleConv(), example_args)
+    pre_autograd_aten_dialect = export_for_training(SimpleConv(), example_args).module()
     print("Pre-Autograd ATen Dialect Graph")
     print(pre_autograd_aten_dialect)
 
@@ -411,65 +411,69 @@ model properly for a specific backend.
  .. code-block:: none
 
     Pre-Autograd ATen Dialect Graph
-    GraphModule()
+    GraphModule(
+      (conv): Module()
+    )
 
 
 
     def forward(self, x):
-        arg0, = fx_pytree.tree_flatten_spec(([x], {}), self._in_spec)
-        arg0_1 = arg0
-        _param_constant0 = self.conv_weight
-        _param_constant1 = self.conv_bias
-        conv2d = torch.ops.aten.conv2d.default(arg0_1, _param_constant0, _param_constant1, [1, 1], [1, 1]);  arg0_1 = _param_constant0 = _param_constant1 = None
+        x, = fx_pytree.tree_flatten_spec(([x], {}), self._in_spec)
+        conv_weight = self.conv.weight
+        conv_bias = self.conv.bias
+        conv2d = torch.ops.aten.conv2d.default(x, conv_weight, conv_bias, [1, 1], [1, 1]);  x = conv_weight = conv_bias = None
         relu = torch.ops.aten.relu.default(conv2d);  conv2d = None
-        return pytree.tree_unflatten([relu], self._out_spec)
+        return pytree.tree_unflatten((relu,), self._out_spec)
     
     # To see more debug info, please use `graph_module.print_readable()`
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/ao/quantization/observer.py:1315: UserWarning: must run observer before calling calculate_qparams.                                    Returning default scale and zero point 
-      warnings.warn(
     /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/ao/quantization/utils.py:407: UserWarning: must run observer before calling calculate_qparams. Returning default values.
       warnings.warn(
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/ao/quantization/observer.py:1315: UserWarning: must run observer before calling calculate_qparams.                                    Returning default scale and zero point 
+      warnings.warn(
     Quantized Graph
-    GraphModule()
+    GraphModule(
+      (conv): Module()
+    )
 
 
 
     def forward(self, x):
-        arg0, = fx_pytree.tree_flatten_spec(([x], {}), self._in_spec)
-        arg0_1 = arg0
-        quantize_per_tensor_default = torch.ops.quantized_decomposed.quantize_per_tensor.default(arg0_1, 1.0, 0, -128, 127, torch.int8);  arg0_1 = None
-        dequantize_per_tensor_default = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_default, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_default = None
+        x, = fx_pytree.tree_flatten_spec(([x], {}), self._in_spec)
         _frozen_param0 = self._frozen_param0
-        dequantize_per_tensor_default_1 = torch.ops.quantized_decomposed.dequantize_per_tensor.default(_frozen_param0, 1.0, 0, -127, 127, torch.int8);  _frozen_param0 = None
-        _param_constant1 = self.conv_bias
-        conv2d = torch.ops.aten.conv2d.default(dequantize_per_tensor_default, dequantize_per_tensor_default_1, _param_constant1, [1, 1], [1, 1]);  dequantize_per_tensor_default = dequantize_per_tensor_default_1 = _param_constant1 = None
+        dequantize_per_tensor_default = torch.ops.quantized_decomposed.dequantize_per_tensor.default(_frozen_param0, 1.0, 0, -127, 127, torch.int8);  _frozen_param0 = None
+        conv_bias = self.conv.bias
+        quantize_per_tensor_default_1 = torch.ops.quantized_decomposed.quantize_per_tensor.default(x, 1.0, 0, -128, 127, torch.int8);  x = None
+        dequantize_per_tensor_default_1 = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_default_1, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_default_1 = None
+        conv2d = torch.ops.aten.conv2d.default(dequantize_per_tensor_default_1, dequantize_per_tensor_default, conv_bias, [1, 1], [1, 1]);  dequantize_per_tensor_default_1 = dequantize_per_tensor_default = conv_bias = None
         relu = torch.ops.aten.relu.default(conv2d);  conv2d = None
         quantize_per_tensor_default_2 = torch.ops.quantized_decomposed.quantize_per_tensor.default(relu, 1.0, 0, -128, 127, torch.int8);  relu = None
         dequantize_per_tensor_default_2 = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_default_2, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_default_2 = None
-        return pytree.tree_unflatten([dequantize_per_tensor_default_2], self._out_spec)
+        return pytree.tree_unflatten((dequantize_per_tensor_default_2,), self._out_spec)
     
     # To see more debug info, please use `graph_module.print_readable()`
     ATen Dialect Graph
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, p_conv_bias: "f32[16]", b__frozen_param0: "i8[16, 3, 3, 3]", x: "f32[1, 3, 256, 256]"):
-                 # File: <eval_with_key>.180:7 in forward, code: quantize_per_tensor_default = torch.ops.quantized_decomposed.quantize_per_tensor.default(arg0_1, 1.0, 0, -128, 127, torch.int8);  arg0_1 = None
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:64 in forward, code: a = self.conv(x)
+                dequantize_per_tensor: "f32[16, 3, 3, 3]" = torch.ops.quantized_decomposed.dequantize_per_tensor.default(b__frozen_param0, 1.0, 0, -127, 127, torch.int8);  b__frozen_param0 = None
+            
+                 # File: <eval_with_key>.185:9 in forward, code: quantize_per_tensor_default_1 = torch.ops.quantized_decomposed.quantize_per_tensor.default(x, 1.0, 0, -128, 127, torch.int8);  x = None
                 quantize_per_tensor: "i8[1, 3, 256, 256]" = torch.ops.quantized_decomposed.quantize_per_tensor.default(x, 1.0, 0, -128, 127, torch.int8);  x = None
             
                  # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:64 in forward, code: a = self.conv(x)
-                dequantize_per_tensor: "f32[1, 3, 256, 256]" = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor = None
-                dequantize_per_tensor_1: "f32[16, 3, 3, 3]" = torch.ops.quantized_decomposed.dequantize_per_tensor.default(b__frozen_param0, 1.0, 0, -127, 127, torch.int8);  b__frozen_param0 = None
-                conv2d: "f32[1, 16, 256, 256]" = torch.ops.aten.conv2d.default(dequantize_per_tensor, dequantize_per_tensor_1, p_conv_bias, [1, 1], [1, 1]);  dequantize_per_tensor = dequantize_per_tensor_1 = p_conv_bias = None
+                dequantize_per_tensor_1: "f32[1, 3, 256, 256]" = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor = None
+                conv2d: "f32[1, 16, 256, 256]" = torch.ops.aten.conv2d.default(dequantize_per_tensor_1, dequantize_per_tensor, p_conv_bias, [1, 1], [1, 1]);  dequantize_per_tensor_1 = dequantize_per_tensor = p_conv_bias = None
             
                  # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:65 in forward, code: return self.relu(a)
                 relu: "f32[1, 16, 256, 256]" = torch.ops.aten.relu.default(conv2d);  conv2d = None
                 quantize_per_tensor_1: "i8[1, 16, 256, 256]" = torch.ops.quantized_decomposed.quantize_per_tensor.default(relu, 1.0, 0, -128, 127, torch.int8);  relu = None
             
-                 # File: <eval_with_key>.180:15 in forward, code: dequantize_per_tensor_default_2 = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_default_2, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_default_2 = None
+                 # File: <eval_with_key>.185:14 in forward, code: dequantize_per_tensor_default_2 = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_default_2, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_default_2 = None
                 dequantize_per_tensor_2: "f32[1, 16, 256, 256]" = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_1, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_1 = None
                 return (dequantize_per_tensor_2,)
             
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.PARAMETER: 2>, arg=TensorArgument(name='p_conv_bias'), target='conv_bias', persistent=None), InputSpec(kind=<InputKind.BUFFER: 3>, arg=TensorArgument(name='b__frozen_param0'), target='_frozen_param0', persistent=True), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='dequantize_per_tensor_2'), target=None)])
+    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.PARAMETER: 2>, arg=TensorArgument(name='p_conv_bias'), target='conv.bias', persistent=None), InputSpec(kind=<InputKind.BUFFER: 3>, arg=TensorArgument(name='b__frozen_param0'), target='_frozen_param0', persistent=True), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='dequantize_per_tensor_2'), target=None)])
     Range constraints: {}
 
 
@@ -585,19 +589,6 @@ there is only one program, it will by default be saved to the name "forward".
 
  .. code-block:: none
 
-    Edge Dialect graph of decode
-    ExportedProgram:
-        class GraphModule(torch.nn.Module):
-            def forward(self, x: "f32[1, 5]"):
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:266 in forward, code: return torch.nn.functional.linear(x, torch.randn(10, 5))
-                aten_randn_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_randn_default([10, 5], device = device(type='cpu'), pin_memory = False)
-                aten_permute_copy_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
-                aten_mm_default: "f32[1, 10]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
-                return (aten_mm_default,)
-            
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
-    Range constraints: {}
-
     Edge Dialect graph of encode
     ExportedProgram:
         class GraphModule(torch.nn.Module):
@@ -606,6 +597,19 @@ there is only one program, it will by default be saved to the name "forward".
                 aten_randn_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_randn_default([5, 10], device = device(type='cpu'), pin_memory = False)
                 aten_permute_copy_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
                 aten_mm_default: "f32[1, 5]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
+                return (aten_mm_default,)
+            
+    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
+    Range constraints: {}
+
+    Edge Dialect graph of decode
+    ExportedProgram:
+        class GraphModule(torch.nn.Module):
+            def forward(self, x: "f32[1, 5]"):
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:266 in forward, code: return torch.nn.functional.linear(x, torch.randn(10, 5))
+                aten_randn_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_randn_default([10, 5], device = device(type='cpu'), pin_memory = False)
+                aten_permute_copy_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
+                aten_mm_default: "f32[1, 10]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
                 return (aten_mm_default,)
             
     Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
@@ -1213,14 +1217,13 @@ to be run.
 
 Here is an example for an entire end-to-end workflow:
 
-.. GENERATED FROM PYTHON SOURCE LINES 563-596
+.. GENERATED FROM PYTHON SOURCE LINES 563-595
 
 .. code-block:: default
 
 
     import torch
-    from torch._export import capture_pre_autograd_graph
-    from torch.export import export, ExportedProgram
+    from torch.export import export, export_for_training, ExportedProgram
 
 
     class M(torch.nn.Module):
@@ -1234,7 +1237,7 @@ Here is an example for an entire end-to-end workflow:
 
 
     example_args = (torch.randn(3, 4),)
-    pre_autograd_aten_dialect = capture_pre_autograd_graph(M(), example_args)
+    pre_autograd_aten_dialect = export_for_training(M(), example_args).module()
     # Optionally do quantization:
     # pre_autograd_aten_dialect = convert_pt2e(prepare_pt2e(pre_autograd_aten_dialect, CustomBackendQuantizer))
     aten_dialect: ExportedProgram = export(pre_autograd_aten_dialect, example_args)
@@ -1257,7 +1260,7 @@ Here is an example for an entire end-to-end workflow:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 597-612
+.. GENERATED FROM PYTHON SOURCE LINES 596-611
 
 Conclusion
 ----------
@@ -1278,7 +1281,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.462 seconds)
+   **Total running time of the script:** (0 minutes 1.489 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
