@@ -103,8 +103,6 @@ class TestLog(unittest.TestCase):
     def test_log_tosa_BI(self, test_name: str, test_data: torch.Tensor):
         self._test_log_tosa_BI_pipeline(self.Log(), (test_data,))
 
-    # Fails due to Vela diff from Tosa spec, logected to work with Regor.
     @parameterized.expand(test_data_suite)
-    @unittest.expectedFailure
     def test_log_tosa_u55_BI(self, test_name: str, test_data: torch.Tensor):
         self._test_log_tosa_u55_BI_pipeline(self.Log(), (test_data,))
