@@ -22,7 +22,7 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
   ModelRunner mModelRunner;
 
   String mPrompt;
-  LlmStats mLlmStats;
+  StatsInfo mStatsInfo;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -44,20 +44,20 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
       mPrompt = "The ultimate answer";
     }
 
-    mLlmStats = new LlmStats();
+    mStatsInfo = new StatsInfo();
     mModelRunner = new ModelRunner(model.getPath(), tokenizerPath, temperature, this);
-    mLlmStats.loadStart = System.currentTimeMillis();
+    mStatsInfo.loadStart = System.currentTimeMillis();
   }
 
   @Override
   public void onModelLoaded(int status) {
-    mLlmStats.loadEnd = System.currentTimeMillis();
+    mStatsInfo.loadEnd = System.currentTimeMillis();
     if (status != 0) {
       Log.e("LlmBenchmarkRunner", "Loaded failed: " + status);
       onGenerationStopped();
       return;
     }
-    mLlmStats.generateStart = System.currentTimeMillis();
+    mStatsInfo.generateStart = System.currentTimeMillis();
     mModelRunner.generate(mPrompt);
   }
 
@@ -66,16 +66,16 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
 
   @Override
   public void onStats(String stats) {
-    mLlmStats.tokens = stats;
+    mStatsInfo.tokens = stats;
   }
 
   @Override
   public void onGenerationStopped() {
-    mLlmStats.generateEnd = System.currentTimeMillis();
+    mStatsInfo.generateEnd = System.currentTimeMillis();
 
     // TODO (huydhn): Remove txt files here once the JSON format is ready
     try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.txt")) {
-      writer.write(mLlmStats.toString());
+      writer.write(mStatsInfo.toString());
     } catch (IOException e) {
       e.printStackTrace();
     }
@@ -84,14 +84,14 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
     // with the same number of fields as https://github.com/pytorch/pytorch/pull/135042
     try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
       Gson gson = new Gson();
-      writer.write(gson.toJson(mLlmStats));
+      writer.write(gson.toJson(mStatsInfo));
     } catch (IOException e) {
       e.printStackTrace();
     }
   }
 }
 
-class LlmStats {
+class StatsInfo {
   long loadStart;
   long loadEnd;
   long generateStart;
