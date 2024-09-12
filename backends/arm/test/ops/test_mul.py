@@ -141,9 +141,7 @@ class TestMul(unittest.TestCase):
         test_data = (input_, other_)
         self._test_mul_tosa_BI_pipeline(self.Mul(), test_data)
 
-    # Expected to fail since RESCALE cannot be fused with MUL in Vela.
     @parameterized.expand(test_data_sute)
-    @unittest.expectedFailure
     def test_mul_u55_BI(
         self,
         test_name: str,
