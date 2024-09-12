@@ -73,9 +73,12 @@ def quantize(
         if group_size is None:
             raise Exception("For 8da4w quantization, group size must be specified.")
         from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
+        from torchao.quantization.quant_primitives import MappingType
 
         model = Int8DynActInt4WeightQuantizer(
-            precision=torch_dtype, groupsize=group_size
+            precision=torch_dtype,
+            groupsize=group_size,
+            mapping_type=MappingType.SYMMETRIC_NO_CLIPPING_ERR,
         ).quantize(model)
         if verbose:
             print("quantized model:", model)
