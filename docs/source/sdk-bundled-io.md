@@ -253,7 +253,7 @@ We call `torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput
 
 ### Runtime Example
 
-Here we provide an example about how to run the bundled program step by step. Most of the code is borrowed from [executor_runner](https://github.com/pytorch/executorch/blob/main/examples/sdk/sdk_example_runner/sdk_example_runner.cpp), and please review that file if you need more info and context:
+Here we provide an example about how to run the bundled program step by step. Most of the code is borrowed from [executor_runner](https://github.com/pytorch/executorch/blob/main/examples/devtools/example_runner/example_runner.cpp), and please review that file if you need more info and context:
 
 ```c++
 // method_name is the name for the method we want to test

@@ -30,9 +30,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
 
-static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4MB
-static constexpr size_t kBundledAllocatorPoolSize = 16 * 1024U;
-static uint8_t bundled_allocator_pool[kBundledAllocatorPoolSize];
+static std::array<uint8_t, 4 * 1024U * 1024U> method_allocator_pool; // 4MB
 
 DEFINE_string(
     bundled_program_path,
@@ -170,8 +168,8 @@ int main(int argc, char** argv) {
   // MallocMemoryAllocator).
   //
   // In this example we use a statically allocated memory pool.
-  MemoryAllocator method_allocator{
-      MemoryAllocator(sizeof(method_allocator_pool), method_allocator_pool)};
+  MemoryAllocator method_allocator{MemoryAllocator(
+      sizeof(method_allocator_pool), method_allocator_pool.data())};
 
   // The memory-planned buffers will back the mutable tensors used by the
   // method. The sizes of these buffers were determined ahead of time during the
