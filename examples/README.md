@@ -13,7 +13,7 @@ examples
 ├── models                            # Contains a set of popular and representative PyTorch models
 ├── portable                          # Contains end-to-end demos for ExecuTorch in portable mode
 ├── selective_build                   # Contains demos of selective build for optimizing the binary size of the ExecuTorch runtime
-├── sdk                               # Contains demos of BundledProgram and ETDump
+├── devtools                          # Contains demos of BundledProgram and ETDump
 ├── demo-apps                         # Contains demo apps for Android and iOS
 ├── xnnpack                           # Contains end-to-end ExecuTorch demos with first-party optimization using XNNPACK
 ├── apple
@@ -39,9 +39,9 @@ A user's journey may commence by exploring the demos located in the [`portable/`
 
 To understand how to deploy the ExecuTorch runtime with optimization for binary size, explore the demos available in the [`selective_build/`](./selective_build) directory. These demos are specifically designed to illustrate the [Selective Build](../docs/source/kernel-library-selective_build.md), offering insights into reducing the binary size while maintaining efficiency.
 
-## Demo of ExecuTorch SDK
+## Demo of ExecuTorch Developer Tools
 
-You will find demos of [ExecuTorch SDK](./sdk/) in the [`sdk/`](./sdk/) directory. The examples focuses on exporting and executing BundledProgram for ExecuTorch model verification and ETDump for collecting profiling and debug data.
+You will find demos of [ExecuTorch Developer Tools](./devtools/) in the [`devtools/`](./devtools/) directory. The examples focuses on exporting and executing BundledProgram for ExecuTorch model verification and ETDump for collecting profiling and debug data.
 
 ## Demo Apps
 

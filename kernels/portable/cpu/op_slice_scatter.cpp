@@ -19,7 +19,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& slice_scatter_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& src,
     int64_t dim,

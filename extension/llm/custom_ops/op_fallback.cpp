@@ -15,7 +15,7 @@ namespace executor {
 namespace native {
 
 // Copy from op_clone.cpp
-Tensor& fallback_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& fallback_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   ET_KERNEL_CHECK(

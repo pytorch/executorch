@@ -51,7 +51,7 @@ void scatter_add_helper(
 } // namespace
 
 Tensor& scatter_add_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& self,
     int64_t dim,
     const Tensor& index,

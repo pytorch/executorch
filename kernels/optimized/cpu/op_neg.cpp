@@ -14,7 +14,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-Tensor& opt_neg_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& opt_neg_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape

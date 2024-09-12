@@ -16,7 +16,7 @@ namespace executor {
 namespace native {
 
 Tensor& sdpa_with_kv_cache_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& q_projected,
     const Tensor& k_projected,
     const Tensor& v_projected,
@@ -32,7 +32,7 @@ Tensor& sdpa_with_kv_cache_out(
     Tensor& output);
 
 Tensor& flash_attention_kernel_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& query,
     const Tensor& key,
     const Tensor& value,

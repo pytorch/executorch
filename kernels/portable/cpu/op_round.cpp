@@ -30,7 +30,7 @@ inline CTYPE round_to_even(CTYPE a) {
 
 } // namespace
 
-Tensor& round_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& round_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape

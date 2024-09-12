@@ -4,10 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Example CMakeLists.txt for building executor_runner with sdk support. In this
-# example we link sdk and bundled_program libraries into executor_runner binary
+# Example CMakeLists.txt for building executor_runner with Developer Tools
+# support. In this example we link devtools and bundled_program libraries into
+# executor_runner binary
 cmake_minimum_required(VERSION 3.19)
-project(sdk_example)
+project(devtools_example)
 
 option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
 
@@ -45,7 +46,7 @@ find_package(
   gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../third-party
 )
 
-add_executable(sdk_example_runner sdk_example_runner/sdk_example_runner.cpp)
+add_executable(example_runner example_runner/example_runner.cpp)
 target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
 
 target_include_directories(
@@ -53,7 +54,7 @@ target_include_directories(
                    ${EXECUTORCH_ROOT}/third-party/flatcc/include
 )
 target_link_libraries(
-  sdk_example_runner
+  example_runner
   executorch
   gflags
   etdump
@@ -80,10 +81,12 @@ if(EXECUTORCH_BUILD_COREML)
     NO_DEFAULT_PATH
   )
 
-  target_link_libraries(sdk_example_runner "-Wl,-force_load" coremldelegate)
+  target_link_libraries(
+    example_runner "-Wl,-force_load" coremldelegate
+  )
 
   target_link_libraries(
-    sdk_example_runner ${PROTOBUF_LITE} ${ACCELERATE_FRAMEWORK}
+    example_runner ${PROTOBUF_LITE} ${ACCELERATE_FRAMEWORK}
     ${COREML_FRAMEWORK} ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
   )
 endif()
