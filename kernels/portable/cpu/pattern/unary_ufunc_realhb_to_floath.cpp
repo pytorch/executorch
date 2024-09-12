@@ -17,7 +17,7 @@ namespace internal {
 
 Tensor& unary_ufunc_realhb_to_floath(
     double (*fn)(double),
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     Tensor& out) {
   (void)ctx;

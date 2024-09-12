@@ -71,7 +71,7 @@ static Kernel prim_ops[] = {
     // aten::sym_size.int(Tensor self, int dim) -> SymInt
     Kernel(
         "aten::sym_size.int",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           (void)context;
           EValue& self = *stack[0];
           EValue& dim = *stack[1];
@@ -84,7 +84,7 @@ static Kernel prim_ops[] = {
     // aten::_local_scalar_dense(Tensor self) -> Scalar
     Kernel(
         "aten::_local_scalar_dense",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           (void)context;
           EValue& self = *stack[0];
           EValue& out = *stack[1];
@@ -101,7 +101,7 @@ static Kernel prim_ops[] = {
     // aten::sym_numel(Tensor self) -> SymInt
     Kernel(
         "aten::sym_numel",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           (void)context;
           EValue& self = *stack[0];
           EValue& out = *stack[1];
@@ -112,7 +112,7 @@ static Kernel prim_ops[] = {
     // executorch_prim::add.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::add.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           (void)context;
           ALGEBRA_ET_PRIM_OP(+, stack, context);
         }),
@@ -120,14 +120,14 @@ static Kernel prim_ops[] = {
     // executorch_prim::sub.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::sub.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           ALGEBRA_ET_PRIM_OP(-, stack, context);
         }),
 
     // executorch_prim::mul.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::mul.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           ALGEBRA_ET_PRIM_OP(*, stack, context);
         }),
 
@@ -142,7 +142,7 @@ static Kernel prim_ops[] = {
      */
     Kernel(
         "executorch_prim::floordiv.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           (void)context;
           EValue& a = *stack[0];
           EValue& b = *stack[1];
@@ -171,7 +171,7 @@ static Kernel prim_ops[] = {
     // executorch_prim::floordiv.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::truediv.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           // can't use macro because of custom casting behavior
           (void)context;
           EValue& a = *stack[0];
@@ -196,7 +196,7 @@ static Kernel prim_ops[] = {
     // executorch_prim::sym_float.Scalar(Scalar) -> Scalar
     Kernel(
         "executorch_prim::sym_float.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           // can't use macro because of custom casting behavior
           // TODO: Now that we are reliably generating conversion operators,
           // we can remove the mixed type handling for other operators
@@ -217,41 +217,41 @@ static Kernel prim_ops[] = {
     // executorch_prim::eq.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::eq.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           BOOLEAN_ET_PRIM_OP(==, stack, context);
         }),
 
     // executorch_prim::gt.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::gt.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           BOOLEAN_ET_PRIM_OP(>, stack, context);
         }),
 
     // executorch_prim::lt.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::lt.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           BOOLEAN_ET_PRIM_OP(<, stack, context);
         }),
 
     // executorch_prim::ge.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::ge.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           BOOLEAN_ET_PRIM_OP(>=, stack, context);
         }),
 
     // executorch_prim::le.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::le.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           BOOLEAN_ET_PRIM_OP(<=, stack, context);
         }),
     // executorch_prim::neg.Scalar(Scalar) -> Scalar
     Kernel(
         "executorch_prim::neg.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           (void)context;
           EValue& a = *stack[0];
           EValue& out = *stack[1];
@@ -268,7 +268,7 @@ static Kernel prim_ops[] = {
     // executorch_prim::floordiv.int(int, int) -> int
     Kernel(
         "executorch_prim::floordiv.int",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           (void)context;
           EValue& a = *stack[0];
           EValue& b = *stack[1];
@@ -279,7 +279,7 @@ static Kernel prim_ops[] = {
     // executorch_prim::mod.int(int, int) -> int
     Kernel(
         "executorch_prim::mod.int",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           (void)context;
           EValue& a = *stack[0];
           EValue& b = *stack[1];

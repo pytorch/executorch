@@ -1161,7 +1161,7 @@ inline exec_aten::ScalarType promoteTypes(
 // Arguments:
 //   - ADDITIONAL: Additional ScalarType case to add
 //   - TYPE: The ScalarType to handle through the switch statement
-//   - CONTEXT: The RuntimeContext instance used for error handling, etc.
+//   - CONTEXT: The KernelRuntimeContext instance used for error handling, etc.
 //   - NAME: A name for this operation which will be used in error messages
 //   - CTYPE_ALIAS: A typedef for the ctype associated with the ScalarType.
 //   - [&](){...}: A lambda function to be applied to each ScalarType case

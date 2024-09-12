@@ -72,7 +72,7 @@ using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
 Tensor& opt_sub_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     const Scalar& alpha,
@@ -245,7 +245,7 @@ Tensor& opt_sub_out(
 }
 
 Tensor& opt_sub_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     const Scalar& alpha,

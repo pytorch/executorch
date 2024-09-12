@@ -20,7 +20,7 @@ using Tensor = exec_aten::Tensor;
 
 // view_copy.out(Tensor self, int[] size, *, Tensor(a!) out) -> Tensor(a!)
 Tensor& view_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     exec_aten::ArrayRef<int64_t> size_int64_t,
     Tensor& out) {
