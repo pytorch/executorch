@@ -6,23 +6,23 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Using the ExecuTorch SDK to Profile a Model
+Using the ExecuTorch Developer Tools to Profile a Model
 ========================
 
 **Author:** `Jack Khuu <https://github.com/Jack-Khuu>`__
 """
 
 ######################################################################
-# The `ExecuTorch SDK <../sdk-overview.html>`__ is a set of tools designed to
+# The `ExecuTorch Developer Tools <../sdk-overview.html>`__ is a set of tools designed to
 # provide users with the ability to profile, debug, and visualize ExecuTorch
 # models.
 #
-# This tutorial will show a full end-to-end flow of how to utilize the SDK.
+# This tutorial will show a full end-to-end flow of how to utilize the Developer Tools to profile a model.
 # Specifically, it will:
 #
-# 1. Generate the artifacts consumed by the SDK (`ETRecord <../sdk-etrecord.html>`__, `ETDump <../sdk-etdump.html>`__).
+# 1. Generate the artifacts consumed by the Developer Tools (`ETRecord <../sdk-etrecord.html>`__, `ETDump <../sdk-etdump.html>`__).
 # 2. Create an Inspector class consuming these artifacts.
-# 3. Utilize the Inspector class to analyze the model.
+# 3. Utilize the Inspector class to analyze the model profiling result.
 
 ######################################################################
 # Prerequisites
@@ -288,13 +288,13 @@ print(inspector.find_total_for_module("L__self___conv2"))
 # ----------
 #
 # In this tutorial, we learned about the steps required to consume an ExecuTorch
-# model with the ExecuTorch SDK. It also showed how to use the Inspector APIs
+# model with the ExecuTorch Developer Tools. It also showed how to use the Inspector APIs
 # to analyze the model run results.
 #
 # Links Mentioned
 # ^^^^^^^^^^^^^^^
 #
-# - `ExecuTorch SDK <../sdk-overview.html>`__
+# - `ExecuTorch Developer Tools Overview <../sdk-overview.html>`__
 # - `ETRecord <../sdk-etrecord.html>`__
 # - `ETDump <../sdk-etdump.html>`__
 # - `Inspector <../sdk-inspector.html>`__
