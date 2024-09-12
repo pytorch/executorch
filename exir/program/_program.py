@@ -924,9 +924,12 @@ def _gen_edge_manager_for_partitioners(
                 curr_ops_no_decomp, _ = curr_partitioner.ops_to_not_decompose(program)
                 all_ops_no_decomp |= set(curr_ops_no_decomp)
 
-            program = program.run_decompositions(
-                _default_decomposition_table(), _preserve_ops=tuple(all_ops_no_decomp)
-            )
+            decomp_table = _default_decomposition_table()
+            for op in all_ops_no_decomp:
+                if op in decomp_table:
+                    del decomp_table[op]
+
+            program = program.run_decompositions(decomp_table)
             # Among all the preserved aten ops, use the check_op_fn to do an additional
             # check on which ops need to be preserved and which ops need to be decomposed
             # Those which are truly preserved will be replaced with transformed ops
