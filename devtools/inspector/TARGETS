@@ -26,8 +26,8 @@ python_binary(
     main_function = ".inspector_cli.main",
     main_src = "inspector_cli.py",
     deps = [
-        ":inspector_utils",
         "//executorch/devtools:lib",
+        "//executorch/devtools/inspector:lib",
     ],
 )
 
