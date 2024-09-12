@@ -113,7 +113,7 @@ Tensor& quantized_mixed_linear_out(
 }
 
 Tensor& quantized_mixed_linear_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,

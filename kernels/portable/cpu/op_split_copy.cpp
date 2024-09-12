@@ -30,7 +30,7 @@ using TensorList = exec_aten::TensorList;
  * Tensor(a!)[] out) -> ()
  */
 void split_copy_Tensor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     int64_t split_size,
     int64_t dim,

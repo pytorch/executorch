@@ -24,7 +24,7 @@ using exec_aten::Tensor;
  * empty.out(SymInt[] size, *, Tensor(a!) out) -> Tensor(a!)
  */
 Tensor& empty_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     IntArrayRef size,
     torch::executor::optional<torch::executor::MemoryFormat> memory_format,
     Tensor& out) {

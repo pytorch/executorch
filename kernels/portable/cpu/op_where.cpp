@@ -15,7 +15,7 @@ namespace executor {
 namespace native {
 
 Tensor& where_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& cond,
     const Tensor& a,
     const Tensor& b,
