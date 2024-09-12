@@ -69,6 +69,7 @@ class LLMEdgeManager:
         example_inputs,
         args: Optional[Any] = None,
         enable_dynamic_shape: bool = False,
+        generate_full_logits: bool = False,
         calibration_tasks: Optional[List[str]] = None,
         calibration_limit: Optional[int] = None,
         calibration_seq_length: Optional[int] = None,
@@ -86,6 +87,7 @@ class LLMEdgeManager:
         self.dtype = dtype
         self.example_inputs = example_inputs
         self.use_kv_cache = use_kv_cache
+        self.generate_full_logits = generate_full_logits
         self.enable_dynamic_shape = enable_dynamic_shape
         self.verbose = verbose
         self.metadata = metadata
@@ -229,7 +231,12 @@ class LLMEdgeManager:
                     )
                     pos += 1
                     if pos >= len(token_list):
-                        token_list.append(torch.argmax(logits[:], dim=-1).item())
+                        if self.generate_full_logits:
+                            token_list.append(
+                                torch.argmax(logits[:, -1], dim=-1).item()
+                            )
+                        else:
+                            token_list.append(torch.argmax(logits[:], dim=-1).item())
 
         calibrate_template(
             module=prepared_module,
@@ -243,6 +250,7 @@ class LLMEdgeManager:
             tokenizer=tokenizer,
             max_seq_length=calibration_seq_length,
             use_kv_cache=self.use_kv_cache,
+            generate_full_logits=self.generate_full_logits,
             enable_dynamic_shape=self.enable_dynamic_shape,
         )
         eval_results = evaluate_model(
