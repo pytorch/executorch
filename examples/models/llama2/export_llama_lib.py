@@ -318,6 +318,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="This option is only for coreml: Use coreml quantization, e.g. b4w (for blockwise 4 bit weight)",
     )
     parser.add_argument(
+        "--coreml-ios",
+        type=int,
+        default=15,
+        choices=(15, 16, 17, 18),
+        help="This option is only for coreml: The minimum iOS version to deploy",
+    )
+    parser.add_argument(
         "--qnn",
         action="store_true",
         help="Delegate llama2 to qnn backend (Qualcomm), please use it --kv_cahce=True",
@@ -533,8 +540,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
     if args.coreml:
         coreml_partitioner = get_coreml_partitioner(
-            args.use_kv_cache and args.coreml_enable_state,
-            args.coreml_preserve_sdpa,
+            args.coreml_ios,
             args.embedding_quantize,
             args.pt2e_quantize,
             args.coreml_quantize,
@@ -810,7 +816,8 @@ def _get_source_transforms(  # noqa
             transforms.append(replace_causal_mask)
 
         elif args.coreml:
-            if args.coreml_preserve_sdpa:
+            # iOS 18 introduced fused sdpa op
+            if args.coreml_ios >= 18:
                 transforms.append(replace_sdpa_with_coreml_sdpa)
             else:
                 transforms.append(replace_sdpa_with_simple_sdpa)
