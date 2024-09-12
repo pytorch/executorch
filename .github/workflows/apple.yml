@@ -19,15 +19,6 @@ on:
       - extension/apple/**
       - extension/module/**
   workflow_dispatch:
-  # TODO (huydhn): This is used to validate the test spec. Eventually, we need a proper
-  # perf benchmark workflow like android-perf. This can be cleaned up once that workflow
-  # is ready
-  workflow_call:
-    inputs:
-      test_spec:
-        description: The test spec to drive the test on AWS devices
-        required: false
-        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
@@ -116,7 +107,7 @@ jobs:
       # Uploaded to S3 from the previous job
       ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/ExecuTorchDemo.ipa
       ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/ExecuTorchDemo.xctestrun.zip
-      test-spec: ${{ inputs.test_spec || 'https://ossci-ios.s3.amazonaws.com/executorch/default-ios-device-farm-appium-test-spec.yml' }}
+      test-spec: https://ossci-ios.s3.amazonaws.com/executorch/default-ios-device-farm-appium-test-spec.yml
 
   build-frameworks-ios:
     name: build-frameworks-ios
