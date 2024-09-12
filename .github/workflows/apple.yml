@@ -15,7 +15,7 @@ on:
       - build/build_apple_frameworks.sh
       - build/create_frameworks.sh
       - build/test_ios_ci.sh
-      - examples/demo-apps/apple/**
+      - examples/demo-apps/apple_ios/**
       - extension/apple/**
       - extension/module/**
   workflow_dispatch:
@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   build-demo-ios:
-    name: test-demo-ios
+    name: build-demo-ios
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
