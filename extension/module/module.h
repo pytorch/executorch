@@ -136,7 +136,9 @@ class Module {
    * @returns An Error to indicate success or failure.
    */
   ET_NODISCARD
-  runtime::Error load_method(const std::string& method_name);
+  runtime::Error load_method(
+      const std::string& method_name,
+      torch::executor::EventTracer* tracer = nullptr);
 
   /**
    * Checks if a specific method is loaded.
@@ -318,7 +320,8 @@ class Module {
    */
   runtime::Error set_output_data_ptr(
       runtime::EValue output_value,
-      size_t output_index);
+      size_t output_index,
+      const std::string& method_name = "forward");
 
  private:
   struct MethodHolder {
