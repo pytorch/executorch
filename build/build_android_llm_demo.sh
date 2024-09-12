@@ -34,6 +34,8 @@ build_android_native_library() {
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_NEURON=ON \
+    -DNEURON_BUFFER_ALLOCATOR_LIB="$NEURON_BUFFER_ALLOCATOR_LIB" \
     -DCMAKE_BUILD_TYPE=Release \
     -B"${CMAKE_OUT}"
 
@@ -65,6 +67,8 @@ build_android_native_library() {
     -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DEXECUTORCH_LOG_LEVEL=Info \
+    -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+    -DNEURON_BUFFER_ALLOCATOR_LIB="$NEURON_BUFFER_ALLOCATOR_LIB" \
     -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
     -DCMAKE_BUILD_TYPE=Release \
     -B"${CMAKE_OUT}"/extension/android
@@ -74,6 +78,10 @@ build_android_native_library() {
   # Copy artifacts to ABI specific directory
   mkdir -p "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}"
   cp "${CMAKE_OUT}"/extension/android/*.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/"
+
+  cp "${CMAKE_OUT}"/backends/mediatek/libneuron_backend.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
+  cp /Users/cmodi/Documents/ai/clean/executorch/backends/mediatek/libneuron_buffer_allocator.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
+  cp /Users/cmodi/Documents/ai/clean/executorch/backends/mediatek/libneuronusdk_adapter.mtk.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
 }
 
 build_aar() {
@@ -87,7 +95,7 @@ build_aar() {
   find jni -type f -name "libexecutorch_jni.so" -exec bash -c 'mv "$1" "${1/_jni/}"' bash {} \;
   # Zip all necessary files into the AAR file
   zip -r executorch.aar libs jni/*/libexecutorch.so AndroidManifest.xml
-  zip -r executorch-llama.aar libs jni/*/libexecutorch_llama_jni.so AndroidManifest.xml
+  zip -r executorch-llama.aar libs jni/*/libexecutorch_llama_jni.so jni/*/libneuron_backend.so jni/*/libneuron_buffer_allocator.so jni/*/libneuronusdk_adapter.mtk.so AndroidManifest.xml
   popd
 }
 
@@ -120,7 +128,7 @@ collect_artifacts_to_be_uploaded() {
 
 BUILD_AAR_DIR="$(mktemp -d)"
 export BUILD_AAR_DIR
-ANDROID_ABIS=("arm64-v8a" "x86_64")
+ANDROID_ABIS=("arm64-v8a")
 export ANDROID_ABIS
 
 ARTIFACTS_DIR_NAME="$1"
