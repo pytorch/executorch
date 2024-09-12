@@ -76,6 +76,7 @@ exclude_patterns = [
     'examples/demo-apps/apple_ios/**',
     # File contains @generated
     'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
+    'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
 ]
 command = [
     'python',
@@ -181,6 +182,7 @@ exclude_patterns = [
     '**/*.jar',
     # File contains @generated
     'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
+    'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
 ]
 command = [
     'python',
