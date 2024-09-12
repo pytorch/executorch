@@ -38,7 +38,7 @@ jobs:
 
   test-models-macos:
     name: test-models-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@upgrade-miniconda
     needs: gather-models
     strategy:
       matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
@@ -63,7 +63,7 @@ jobs:
 
   test-custom-ops-macos:
     name: test-custom-ops-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@upgrade-miniconda
     strategy:
       matrix:
         include:
@@ -85,7 +85,7 @@ jobs:
 
   test-selective-build-macos:
     name: test-selective-build-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@upgrade-miniconda
     strategy:
       matrix:
         include:
@@ -177,7 +177,7 @@ jobs:
 
   test-coreml-delegate:
     name: test-coreml-delegate
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@upgrade-miniconda
     with:
       runner: macos-13-xlarge
       python-version: '3.11'
@@ -195,7 +195,7 @@ jobs:
 
   test-pybind-build-macos:
     name: test-pybind-build-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@upgrade-miniconda
     strategy:
       matrix:
         include:
@@ -219,7 +219,7 @@ jobs:
 
   test-llama-runner-macos:
     name: test-llama-runner-mac
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@upgrade-miniconda
     strategy:
       matrix:
         dtype: [fp32]
@@ -324,7 +324,7 @@ jobs:
 
   test-coreml-model:
     name: test-coreml-model
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@upgrade-miniconda
     strategy:
       fail-fast: false
     with:
