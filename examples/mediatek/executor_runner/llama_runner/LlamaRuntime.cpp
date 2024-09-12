@@ -28,14 +28,21 @@ void LlamaRuntime::Initialize(
   const size_t numCache = 2 * modelOptions.num_layer / numChunk;
   ET_CHECK_MSG(numChunk > 0, "No model to initialize");
 
+  ET_LOG(Info, "cmodiii 1");
+  ET_LOG(Info, "cmodiii numChunk = %zu", numChunk);
+  ET_LOG(Info, "cmodiii numCache = %zu", numCache);
+
   // Initialize rotary embedding master lookup table
   const size_t rotEmbDim = modelOptions.hidden_size / modelOptions.num_head;
+  ET_LOG(Info, "cmodiii 2");
   mRotEmbMasterLut = std::make_unique<llm_helper::RotaryEmbeddingMasterLut>(
       modelOptions.rot_emb_type,
       modelOptions.max_token_length,
       rotEmbDim,
       modelOptions.rot_emb_base);
+  ET_LOG(Info, "cmodiii 3");
   mRotEmbMasterLut->generate();
+  ET_LOG(Info, "cmodiii 4");
 
   constexpr size_t numRotEmbInputs = 1;
   const bool usePromptModel = !modelPaths.prompt_model_paths.empty();
@@ -50,8 +57,10 @@ void LlamaRuntime::Initialize(
         return;
       modelPathMap[batchSize] = modelPaths[chunkIdx];
     };
+    ET_LOG(Info, "cmodiii 5");
     addModelPath(
         modelPaths.prompt_model_paths, modelOptions.prompt_token_batch_size);
+    ET_LOG(Info, "cmodiii 6");
     addModelPath(modelPaths.gen_model_paths, 1);
     auto llamaChunk = std::make_unique<LlamaModelChunk>(
         modelPathMap,
@@ -60,18 +69,25 @@ void LlamaRuntime::Initialize(
         numCache,
         numRotEmbInputs,
         mRotEmbMasterLut.get());
+    ET_LOG(Info, "cmodiii 7");
     mLlamaModelChunks.push_back(std::move(llamaChunk));
+    ET_LOG(Info, "cmodiii 8");
   }
 
   for (size_t i = 0; i < numChunk; i++) {
     auto& modelChunk = mLlamaModelChunks[i];
+    ET_LOG(Info, "cmodiii 9");
     if (i > 0) {
       const auto& prevModelChunk = mLlamaModelChunks[i - 1];
+      ET_LOG(Info, "cmodiii 9A");
       modelChunk->SetInputBuffer(prevModelChunk->GetOutputBuffer());
+      ET_LOG(Info, "cmodiii 10");
     }
     modelChunk->Initialize();
+    ET_LOG(Info, "cmodiii 11");
     // modelChunk->LogIoSummary();
   }
+  ET_LOG(Info, "cmodiii 12");
 
   // NOTE: Token embedding type here is assumed to follow the model input
   // embedding type.
@@ -80,9 +96,13 @@ void LlamaRuntime::Initialize(
       modelOptions.model_input_type,
       modelOptions.hidden_size);
 
+  ET_LOG(Info, "cmodiii 13");
+
   // Link first chunk emb input to token emb lut output
   const auto& tokenEmbInput = mLlamaModelChunks.front()->GetInputBuffer();
+  ET_LOG(Info, "cmodiii 14");
   mTokenEmbLut->setOutput(tokenEmbInput.data, tokenEmbInput.nbytes);
+  ET_LOG(Info, "cmodiii 15");
 }
 
 void LlamaRuntime::Release() {
