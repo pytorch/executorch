@@ -80,6 +80,7 @@ struct Allocation final {
   }
 
   friend class VulkanBuffer;
+  friend class VulkanImage;
 };
 
 } // namespace vkapi
