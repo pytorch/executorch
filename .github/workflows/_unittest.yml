@@ -50,6 +50,7 @@ jobs:
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      test-infra-ref: upgrade-miniconda
       script: |
         set -eux
 

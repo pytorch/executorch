@@ -48,6 +48,7 @@ jobs:
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      test-infra-ref: upgrade-miniconda
       timeout: ${{ matrix.timeout }}
       script: |
         MODEL_NAME=${{ matrix.model }}
@@ -74,6 +75,7 @@ jobs:
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      test-infra-ref: upgrade-miniconda
       script: |
         BUILD_TOOL=${{ matrix.build-tool }}
 
@@ -96,6 +98,7 @@ jobs:
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      test-infra-ref: upgrade-miniconda
       script: |
         BUILD_TOOL=${{ matrix.build-tool }}
 
@@ -183,6 +186,7 @@ jobs:
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      test-infra-ref: upgrade-miniconda
       timeout: 90
       script: |
         BUILD_TOOL=cmake
@@ -206,6 +210,7 @@ jobs:
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      test-infra-ref: upgrade-miniconda
       timeout: 180
       script: |
         bash .ci/scripts/setup-conda.sh
@@ -231,6 +236,7 @@ jobs:
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      test-infra-ref: upgrade-miniconda
       timeout: 900
       script: |
 
@@ -332,6 +338,7 @@ jobs:
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      test-infra-ref: upgrade-miniconda
       timeout: 90
       script: |
         BUILD_TOOL=cmake
