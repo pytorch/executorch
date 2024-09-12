@@ -750,8 +750,7 @@ def _load_llama_model(
     )
 
 
-# pyre-ignore: '_get_source_transforms' is too complex (14)
-def _get_source_transforms(
+def _get_source_transforms(  # noqa
     modelname: str, dtype_override: Optional[DType], args
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
     transforms = []
