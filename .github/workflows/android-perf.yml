@@ -227,13 +227,10 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
-        if [[ ${{ matrix.delegate }} == "qnn" ]]; then
-            PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
-            PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
-        fi
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+        export EXECUTORCH_BUILD_QNN=ON
 
-        # TODO: This needs to be replaced with a generic loader .apk
-        # Build LLM Demo for Android
         export ANDROID_ABIS="arm64-v8a"
         bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
 
