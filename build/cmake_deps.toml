@@ -114,7 +114,7 @@ excludes = [
 deps = [
   "executorch_no_prim_ops",
   "executorch",
-  "thread_parallel",
+  "extension_parallel_thread_parallel",
 ]
 
 [targets.optimized_native_cpu_ops_oss]
