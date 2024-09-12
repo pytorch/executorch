@@ -44,7 +44,7 @@ jobs:
         test/run_oss_cpp_tests.sh
 
   macos:
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@upgrade-miniconda
     with:
       runner: macos-m1-stable
       python-version: '3.11'
