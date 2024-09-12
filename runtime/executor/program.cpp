@@ -150,9 +150,12 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
 
   // Constant data may live inside the flatbuffer data (constant_buffer) or in a
   // separate segment (constant_segment). It should not be in both.
+  // Check constant_segment->offsets()->size() > 1, as the offsets list will
+  // always contain a placeholder value 0 for non-const tensors. If this is the
+  // only offset, the constant segment is empty and does not need to be loaded.
   const auto* constant_segment = flatbuffer_program->constant_segment();
   if (constant_segment != nullptr && constant_segment->offsets() != nullptr &&
-      constant_segment->offsets()->size() > 0) {
+      constant_segment->offsets()->size() > 1) {
     // The constant data is inside a separate segment.
     const auto* constant_buffer = flatbuffer_program->constant_buffer();
     ET_CHECK_OR_RETURN_ERROR(
