@@ -18,6 +18,7 @@ from executorch.backends.arm.passes.convert_split_to_slice import (
     ConvertSplitToSlicePass,
 )
 from executorch.backends.arm.passes.decompose_div_pass import DecomposeDivPass
+from executorch.backends.arm.passes.cast_int64_pass import CastInt64ToInt32Pass
 from executorch.backends.arm.passes.meandim_to_averagepool_pass import (
     ConvertMeanDimToAveragePool,
 )
@@ -40,6 +41,7 @@ class ArmPassManager(PassManager):
         self, exported_program: ExportedProgram, compile_spec: list[CompileSpec]
     ):
         """Apply passes before transforming program to backend"""
+        self.add_pass(CastInt64ToInt32Pass(exported_program))
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(RemoveClonePass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
