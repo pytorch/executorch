@@ -81,6 +81,7 @@ build_android_native_library() {
 
   cp "${CMAKE_OUT}"/backends/mediatek/libneuron_backend.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
   cp /Users/cmodi/Documents/ai/clean/executorch/backends/mediatek/libneuron_buffer_allocator.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
+  cp /Users/cmodi/Documents/ai/clean/executorch/backends/mediatek/libneuronusdk_adapter.mtk.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
 }
 
 build_aar() {
@@ -94,7 +95,7 @@ build_aar() {
   find jni -type f -name "libexecutorch_jni.so" -exec bash -c 'mv "$1" "${1/_jni/}"' bash {} \;
   # Zip all necessary files into the AAR file
   zip -r executorch.aar libs jni/*/libexecutorch.so AndroidManifest.xml
-  zip -r executorch-llama.aar libs jni/*/libexecutorch_llama_jni.so jni/*/libneuron_backend.so jni/*/libneuron_buffer_allocator.so AndroidManifest.xml
+  zip -r executorch-llama.aar libs jni/*/libexecutorch_llama_jni.so jni/*/libneuron_backend.so jni/*/libneuron_buffer_allocator.so jni/*/libneuronusdk_adapter.mtk.so AndroidManifest.xml
   popd
 }
 
