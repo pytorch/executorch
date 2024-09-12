@@ -53,5 +53,13 @@ cmake --build cmake-out/examples/models/phi-3-mini -j16 --config Release
 ```
 - Run model. Options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/phi-3-mini/main.cpp#L13-L30)
 ```
-cmake-out/examples/models/phi-3-mini/phi_3_mini_runner --model_path=<model pte file> --tokenizer_path=<tokenizer.bin> --seq_len=128 --prompt=<prompt>
+cmake-out/examples/models/phi-3-mini/phi_3_mini_runner \
+    --model_path=phi-3-mini.pte \
+    --tokenizer_path=tokenizer.bin \
+    --seq_len=128 \
+    --prompt="<|system|>
+You are a helpful assistant.<|end|>
+<|user|>
+What is the capital of France?<|end|>
+<|assistant|>"
 ```
