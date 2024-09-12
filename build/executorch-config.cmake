@@ -90,6 +90,9 @@ endforeach()
 
 # Legacy target names.
 add_library(executorch_no_prim_ops ALIAS executorch_core)
-add_library(coremldelegate ALIAS coreml_backend)
-add_library(mpsdelegate ALIAS mps_backend)
-
+if(TARGET coreml_backend)
+  add_library(coremldelegate ALIAS coreml_backend)
+endif()
+if(TARGET mps_backend)
+  add_library(mpsdelegate ALIAS mps_backend)
+endif()

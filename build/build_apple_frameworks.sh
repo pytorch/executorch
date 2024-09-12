@@ -37,11 +37,11 @@ libextension_tensor.a,\
 :$HEADERS_PATH"
 
 FRAMEWORK_BACKEND_COREML="backend_coreml:\
-libcoremldelegate.a,\
+libcoreml_backend.a,\
 :"
 
 FRAMEWORK_BACKEND_MPS="backend_mps:\
-libmpsdelegate.a,\
+libmps_backend.a,\
 :"
 
 FRAMEWORK_BACKEND_XNNPACK="backend_xnnpack:\
