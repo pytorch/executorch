@@ -16,6 +16,7 @@ phases:
       - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/minibench/*.bin"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/minibench/*.pte"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /data/local/tmp/minibench/"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "run-as org.pytorch.minibench rm -rf files"
 
   test:
     commands:
@@ -95,7 +96,7 @@ phases:
     commands:
       - echo "Gather benchmark results"
       - |
-        BENCHMARK_RESULTS=""
+        BENCHMARK_RESULTS=$(adb -s $DEVICEFARM_DEVICE_UDID shell run-as org.pytorch.minibench cat files/benchmark_results.json)
         ATTEMPT=0
         MAX_ATTEMPT=10
         while [ -z "${BENCHMARK_RESULTS}" ] && [ $ATTEMPT -lt $MAX_ATTEMPT ]; do
