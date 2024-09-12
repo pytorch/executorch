@@ -197,7 +197,7 @@ option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 
 option(EXECUTORCH_BUILD_KERNELS_QUANTIZED "Build the quantized kernels" OFF)
 
-option(EXECUTORCH_BUILD_SDK "Build the ExecuTorch SDK")
+option(EXECUTORCH_BUILD_SDK "Build the ExecuTorch Developer Tools")
 
 option(EXECUTORCH_BUILD_SIZE_TEST "Build the size test" OFF)
 
@@ -228,6 +228,7 @@ cmake_dependent_option(
 )
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
+  set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
   set(EXECUTORCH_BUILD_KERNELS_CUSTOM ON)
 endif()
 

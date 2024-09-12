@@ -22,7 +22,7 @@ using ScalarType = exec_aten::ScalarType;
 using string_view = exec_aten::string_view;
 
 Tensor& gelu_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     string_view approximate,
     Tensor& out) {
@@ -33,6 +33,9 @@ Tensor& gelu_out(
 
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   ET_SWITCH_FLOAT_TYPES(in.scalar_type(), ctx, "gelu.out", CTYPE, [&]() {
     if (approximate == "tanh") {

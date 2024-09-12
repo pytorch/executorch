@@ -22,6 +22,28 @@ class TensorPtrTest : public ::testing::Test {
   }
 };
 
+TEST_F(TensorPtrTest, ScalarTensorCreation) {
+  float scalar_data = 3.14f;
+  auto tensor = make_tensor_ptr(exec_aten::ScalarType::Float, {}, &scalar_data);
+
+  EXPECT_EQ(tensor->numel(), 1);
+  EXPECT_EQ(tensor->dim(), 0);
+  EXPECT_EQ(tensor->sizes().size(), 0);
+  EXPECT_EQ(tensor->strides().size(), 0);
+  EXPECT_EQ(tensor->const_data_ptr<float>(), &scalar_data);
+  EXPECT_EQ(tensor->const_data_ptr<float>()[0], 3.14f);
+}
+
+TEST_F(TensorPtrTest, ScalarTensorOwningData) {
+  auto tensor = make_tensor_ptr({}, {3.14f});
+
+  EXPECT_EQ(tensor->numel(), 1);
+  EXPECT_EQ(tensor->dim(), 0);
+  EXPECT_EQ(tensor->sizes().size(), 0);
+  EXPECT_EQ(tensor->strides().size(), 0);
+  EXPECT_EQ(tensor->const_data_ptr<float>()[0], 3.14f);
+}
+
 TEST_F(TensorPtrTest, CreateTensorWithStridesAndDimOrder) {
   float data[20] = {2};
   auto tensor = make_tensor_ptr(
@@ -98,7 +120,7 @@ TEST_F(TensorPtrTest, TensorWithCustomDataDeleter) {
       data,
       {},
       {},
-      exec_aten::TensorShapeDynamism::STATIC,
+      exec_aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [&deleter_called](void* ptr) {
         deleter_called = true;
         delete[] static_cast<float*>(ptr);
@@ -118,7 +140,7 @@ TEST_F(TensorPtrTest, TensorManagesMovedVector) {
       data_ptr,
       {},
       {},
-      exec_aten::TensorShapeDynamism::STATIC,
+      exec_aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [moved_data = std::move(data), &deleter_called](void*) mutable {
         deleter_called = true;
       });
@@ -140,7 +162,7 @@ TEST_F(TensorPtrTest, TensorDeleterReleasesCapturedSharedPtr) {
       data_ptr.get(),
       {},
       {},
-      exec_aten::TensorShapeDynamism::STATIC,
+      exec_aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [data_ptr, &deleter_called](void*) mutable { deleter_called = true; });
 
   EXPECT_EQ(data_ptr.use_count(), 2);
@@ -167,7 +189,7 @@ TEST_F(TensorPtrTest, TensorOwningData) {
 }
 
 TEST_F(TensorPtrTest, TensorOwningEmptyData) {
-  auto tensor = make_tensor_ptr({0, 5}, {});
+  auto tensor = make_tensor_ptr({0, 5}, std::vector<float>());
 
   EXPECT_EQ(tensor->dim(), 2);
   EXPECT_EQ(tensor->size(0), 0);
@@ -175,4 +197,121 @@ TEST_F(TensorPtrTest, TensorOwningEmptyData) {
   EXPECT_EQ(tensor->strides()[0], 5);
   EXPECT_EQ(tensor->strides()[1], 1);
   EXPECT_EQ(tensor->data_ptr<float>(), nullptr);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Float);
+}
+
+TEST_F(TensorPtrTest, TensorImplDataOnly) {
+  auto tensor = make_tensor_ptr({1.0f, 2.0f, 3.0f, 4.0f});
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->strides()[0], 1);
+  EXPECT_EQ(tensor->const_data_ptr<float>()[0], 1.0);
+  EXPECT_EQ(tensor->const_data_ptr<float>()[3], 4.0);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Float);
+}
+
+TEST_F(TensorPtrTest, TensorImplDataOnlyDoubleType) {
+  std::vector<double> data = {1.0, 2.0, 3.0, 4.0};
+  auto tensor = make_tensor_ptr(std::move(data));
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->strides()[0], 1);
+  EXPECT_EQ(tensor->const_data_ptr<double>()[0], 1.0);
+  EXPECT_EQ(tensor->const_data_ptr<double>()[3], 4.0);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Double);
+}
+
+TEST_F(TensorPtrTest, TensorImplDataOnlyInt32Type) {
+  std::vector<int32_t> data = {10, 20, 30, 40};
+  auto tensor = make_tensor_ptr(std::move(data));
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->strides()[0], 1);
+  EXPECT_EQ(tensor->const_data_ptr<int32_t>()[0], 10);
+  EXPECT_EQ(tensor->const_data_ptr<int32_t>()[3], 40);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Int);
+}
+
+TEST_F(TensorPtrTest, TensorImplDataOnlyInt64Type) {
+  std::vector<int64_t> data = {100, 200, 300, 400};
+  auto tensor = make_tensor_ptr(std::move(data));
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->strides()[0], 1);
+  EXPECT_EQ(tensor->const_data_ptr<int64_t>()[0], 100);
+  EXPECT_EQ(tensor->const_data_ptr<int64_t>()[3], 400);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Long);
+}
+
+TEST_F(TensorPtrTest, TensorImplDataOnlyUint8Type) {
+  std::vector<uint8_t> data = {10, 20, 30, 40};
+  auto tensor = make_tensor_ptr(std::move(data));
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->strides()[0], 1);
+  EXPECT_EQ(tensor->const_data_ptr<uint8_t>()[0], 10);
+  EXPECT_EQ(tensor->const_data_ptr<uint8_t>()[3], 40);
+  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Byte);
+}
+
+TEST_F(TensorPtrTest, TensorImplAmbiguityWithMixedVectors) {
+  std::vector<exec_aten::SizesType> sizes = {2, 2};
+  std::vector<float> data = {1.0f, 2.0f, 3.0f, 4.0f};
+  auto tensor = make_tensor_ptr(std::move(sizes), std::move(data));
+
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 2);
+  EXPECT_EQ(tensor->size(1), 2);
+  EXPECT_EQ(tensor->strides()[0], 2);
+  EXPECT_EQ(tensor->strides()[1], 1);
+  EXPECT_EQ(tensor->const_data_ptr<float>()[0], 1.0f);
+  EXPECT_EQ(tensor->const_data_ptr<float>()[3], 4.0f);
+
+  auto tensor2 = make_tensor_ptr({2, 2}, {1.0f, 2.0f, 3.0f, 4.0f});
+
+  EXPECT_EQ(tensor2->dim(), 2);
+  EXPECT_EQ(tensor2->size(0), 2);
+  EXPECT_EQ(tensor2->size(1), 2);
+  EXPECT_EQ(tensor2->strides()[0], 2);
+  EXPECT_EQ(tensor2->strides()[1], 1);
+  EXPECT_EQ(tensor2->const_data_ptr<float>()[0], 1.0f);
+  EXPECT_EQ(tensor2->const_data_ptr<float>()[3], 4.0f);
+}
+
+TEST_F(TensorPtrTest, TensorSharingImplModifiesSharedDataVector) {
+  std::vector<float> data = {1, 2, 3, 4, 5, 6};
+
+  auto tensor1 = make_tensor_ptr({2, 3}, std::move(data));
+  auto tensor2 = make_tensor_ptr(tensor1);
+
+  tensor1->mutable_data_ptr<float>()[0] = 10;
+  EXPECT_EQ(tensor2->const_data_ptr<float>()[0], 10);
+
+  tensor2->mutable_data_ptr<float>()[5] = 20;
+  EXPECT_EQ(tensor1->const_data_ptr<float>()[5], 20);
+}
+
+TEST_F(TensorPtrTest, TensorSharingImplResizingAffectsBothVector) {
+  std::vector<float> data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+
+  auto tensor1 = make_tensor_ptr(
+      {3, 4},
+      std::move(data),
+      {},
+      {},
+      exec_aten::TensorShapeDynamism::DYNAMIC_UNBOUND);
+  auto tensor2 = make_tensor_ptr(tensor1);
+
+  EXPECT_EQ(resize_tensor_ptr(tensor1, {2, 6}), Error::Ok);
+  EXPECT_EQ(tensor2->size(0), 2);
+  EXPECT_EQ(tensor2->size(1), 6);
+
+  EXPECT_EQ(resize_tensor_ptr(tensor2, {4, 3}), Error::Ok);
+  EXPECT_EQ(tensor1->size(0), 4);
+  EXPECT_EQ(tensor1->size(1), 3);
 }

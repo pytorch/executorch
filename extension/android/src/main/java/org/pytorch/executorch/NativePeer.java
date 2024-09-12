@@ -13,7 +13,11 @@ import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import java.util.Map;
 
-/** Interface for the native peer object for entry points to the Module */
+/**
+ * Interface for the native peer object for entry points to the Module
+ *
+ * <p>Warning: These APIs are experimental and subject to change without notice
+ */
 class NativePeer {
   static {
     // Loads libexecutorch.so from jniLibs
@@ -38,15 +42,6 @@ class NativePeer {
   /** Run a "forward" call with the given inputs */
   @DoNotStrip
   public native EValue[] forward(EValue... inputs);
-
-  /**
-   * Run a "forward" call with the sample inputs (ones) to test a module
-   *
-   * @return the outputs of the forward call
-   * @apiNote This is experimental and test-only API
-   */
-  @DoNotStrip
-  public native int forwardOnes();
 
   /** Run an arbitrary method on the module */
   @DoNotStrip

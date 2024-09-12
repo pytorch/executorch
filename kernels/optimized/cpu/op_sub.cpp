@@ -72,7 +72,7 @@ using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
 Tensor& opt_sub_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     const Scalar& alpha,
@@ -101,13 +101,11 @@ Tensor& opt_sub_out(
         scalar = &b;
         scalar_type = b_type;
       }
-      auto error = resize_tensor(out, tensor->sizes());
-      ET_KERNEL_CHECK_MSG(
+      ET_KERNEL_CHECK(
           ctx,
-          error == Error::Ok,
+          resize_to_broadcast_target_size(a, b, out) == Error::Ok,
           InvalidArgument,
-          out,
-          "Failed to resize output tensor.");
+          out);
       ET_SWITCH_REAL_TYPES(tensor_type, ctx, "sub.out", CTYPE, [&]() {
         ET_SWITCH_REAL_TYPES(scalar_type, ctx, "sub.out", CTYPE_SCALAR, [&]() {
           CTYPE alpha_val;
@@ -247,7 +245,7 @@ Tensor& opt_sub_out(
 }
 
 Tensor& opt_sub_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     const Scalar& alpha,

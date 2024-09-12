@@ -18,7 +18,7 @@ namespace native {
 using exec_aten::Tensor;
 
 Tensor& logit_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     exec_aten::optional<double> eps,
     Tensor& out) {
@@ -27,6 +27,9 @@ Tensor& logit_out(
   // Resize for dynamic shape
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   ET_KERNEL_CHECK(ctx, tensor_is_floating_type(out), InvalidArgument, out);
 

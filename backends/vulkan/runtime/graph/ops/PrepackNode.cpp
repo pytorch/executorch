@@ -53,8 +53,7 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
   if (graph->val_is_none(tref_)) {
     size_t numel = utils::multiply_integers(packed->sizes());
     api::StagingBuffer staging(graph->context(), packed->dtype(), numel);
-    size_t nbytes = numel * vkapi::element_size(packed->dtype());
-    set_staging_zeros(staging, nbytes);
+    staging.set_staging_zeros();
     return staging;
   }
 
@@ -62,7 +61,7 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
   size_t numel = utils::multiply_integers(tref->sizes);
   api::StagingBuffer staging(graph->context(), tref->dtype, numel);
   size_t nbytes = numel * vkapi::element_size(tref->dtype);
-  copy_ptr_to_staging(tref->data, staging, nbytes);
+  staging.copy_from(tref->data, nbytes);
   return staging;
 }
 

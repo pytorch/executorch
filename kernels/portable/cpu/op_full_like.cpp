@@ -17,7 +17,7 @@ using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
 Tensor& full_like_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Scalar& fill_value,
     optional<MemoryFormat> memory_format,
@@ -33,6 +33,11 @@ Tensor& full_like_out(
         out,
         "memory_format must be contiguous");
   }
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   // Resize for dynamic shape
   ET_KERNEL_CHECK_MSG(

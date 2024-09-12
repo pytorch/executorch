@@ -10,7 +10,6 @@ project(executorch_jni)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
-  # Can't set to 11 due to executor_runner.cpp make_unique
 endif()
 
 if(NOT ANDROID)
@@ -39,9 +38,9 @@ list(
   extension_data_loader
   extension_module
   extension_runner_util
+  extension_tensor
   extension_threadpool
   fbjni
-  neuron_backend
 )
 
 if(TARGET optimized_native_cpu_ops_lib)
@@ -71,38 +70,33 @@ if(TARGET vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
 endif()
 
+if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+  add_subdirectory(
+    ${EXECUTORCH_ROOT}/extension/llm/custom_ops
+    ${CMAKE_CURRENT_BINARY_DIR}/../../extension/llm/custom_ops
+  )
+  list(APPEND link_libraries custom_ops)
+  target_link_options_shared_lib(custom_ops)
+endif()
+
 add_library(executorch_jni SHARED jni/jni_layer.cpp)
-target_link_libraries(executorch_jni ${link_libraries})
-target_include_directories(
-  executorch_jni PRIVATE ${_common_include_directories}
-)
-target_compile_options(executorch_jni PUBLIC ${_common_compile_options})
 
 if(EXECUTORCH_BUILD_LLAMA_JNI)
-  set(LLAMA_RUNNER_PATH
-      ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama2/runner/libllama_runner.a
-  )
-  add_library(llama_runner STATIC IMPORTED)
-  set_property(
-    TARGET llama_runner PROPERTY IMPORTED_LOCATION ${LLAMA_RUNNER_PATH}
-  )
-
+  target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp)
+  list(APPEND link_libraries llama_runner llava_runner)
+  target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_LLAMA_JNI=1)
   add_subdirectory(
     ${EXECUTORCH_ROOT}/examples/models/llava/runner
     ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llava/runner
   )
 
-  set(CUSTOM_OPS_PATH
-      ${CMAKE_CURRENT_BINARY_DIR}/../../extension/llm/custom_ops/libcustom_ops.a
+  add_subdirectory(
+    ${EXECUTORCH_ROOT}/examples/models/llama2/runner
+    ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama2/runner
   )
-  add_library(custom_ops STATIC IMPORTED)
-  set_property(TARGET custom_ops PROPERTY IMPORTED_LOCATION ${CUSTOM_OPS_PATH})
-  target_link_options_shared_lib(custom_ops)
 
-  target_link_options_shared_lib(quantized_ops_lib)
-
-  set(
-    LLAMA_JNI_SRCS jni/jni_layer_llama.cpp
+  target_sources(
+    executorch_jni PRIVATE
     ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/mtk_llama_runner.cpp
     ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/LlamaModelChunk.cpp
     ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/LlamaRuntime.cpp
@@ -112,53 +106,39 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
     ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/llm_helper/rotary_embedding.cpp
     ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/llm_helper/token_embedding.cpp
   )
-  add_library(executorch_llama_jni SHARED ${LLAMA_JNI_SRCS})
-  if(TARGET pthreadpool)
-    target_compile_definitions(executorch_llama_jni PRIVATE ET_USE_THREADPOOL=1)
-    target_include_directories(
-      executorch_llama_jni
-      PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../backends/xnnpack/third-party/cpuinfo/include
-    )
-    target_include_directories(
-      executorch_llama_jni
-      PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../backends/xnnpack/third-party/pthreadpool/include
-    )
-  endif()
   target_include_directories(
-    executorch_llama_jni PRIVATE ${_common_include_directories}
+    executorch_jni PRIVATE
     ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/
     ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner
   )
-  target_link_libraries(
-    executorch_llama_jni
-    ${link_libraries}
-    llama_runner
-    llava_runner
-    custom_ops
-    cpublas
-    eigen_blas
-    quantized_kernels
-    quantized_ops_lib
-  )
   ADD_LIBRARY(libneuron_buffer_allocator SHARED IMPORTED)
   SET_PROPERTY(TARGET libneuron_buffer_allocator PROPERTY IMPORTED_LOCATION /Users/cmodi/Documents/ai/clean/executorch/backends/mediatek/libneuron_buffer_allocator.so)
+  list(APPEND link_libraries neuron_backend libneuron_buffer_allocator)
+endif()
 
-  target_link_libraries(executorch_llama_jni libneuron_buffer_allocator)
-  target_compile_options(executorch_llama_jni PUBLIC ${_common_compile_options})
-  # link re2
-  set(ABSL_ENABLE_INSTALL ON)
-  set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
-  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/third-party/abseil-cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
+if(TARGET quantized_kernels)
+  list(APPEND link_libraries quantized_kernels quantized_ops_lib)
+  target_link_options_shared_lib(quantized_ops_lib)
+endif()
+
+target_include_directories(
+  executorch_jni PRIVATE ${_common_include_directories}
+)
+
+target_compile_options(executorch_jni PUBLIC ${_common_compile_options})
+
+target_link_libraries(executorch_jni ${link_libraries})
+
+if(TARGET pthreadpool)
+  target_compile_definitions(executorch_jni PRIVATE ET_USE_THREADPOOL=1)
+  target_include_directories(
+    executorch_jni
+    PUBLIC
+      ${CMAKE_CURRENT_SOURCE_DIR}/../../backends/xnnpack/third-party/cpuinfo/include
   )
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/third-party/re2
-    ${CMAKE_CURRENT_BINARY_DIR}/re2
+  target_include_directories(
+    executorch_jni
+    PUBLIC
+      ${CMAKE_CURRENT_SOURCE_DIR}/../../backends/xnnpack/third-party/pthreadpool/include
   )
-  set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
-  target_link_libraries(executorch_llama_jni re2::re2)
 endif()

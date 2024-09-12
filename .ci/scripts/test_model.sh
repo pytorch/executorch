@@ -175,8 +175,21 @@ test_model_with_qnn() {
     EXPORTED_MODEL_NAME=vit_qnn.pte
   fi
 
-  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m SM8550 --compile_only
+  # Use SM8450 for S22, SM8550 for S23, and SM8560 for S24
+  QNN_CHIPSET=SM8450
+
+  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --compile_only
   EXPORTED_MODEL=./${EXPORT_SCRIPT}/${EXPORTED_MODEL_NAME}
+}
+
+test_model_with_coreml() {
+  if [[ "${BUILD_TOOL}" == "buck2" ]]; then
+    echo "coreml doesn't support buck2."
+    exit 1
+  fi
+
+  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}"
+  EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
 if [[ "${BACKEND}" == "portable" ]]; then
@@ -188,9 +201,21 @@ elif [[ "${BACKEND}" == "qnn" ]]; then
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
+elif [[ "${BACKEND}" == "coreml" ]]; then
+  echo "Testing ${MODEL_NAME} with coreml..."
+  test_model_with_coreml
+  if [[ $? -eq 0 ]]; then
+    prepare_artifacts_upload
+  fi
 elif [[ "${BACKEND}" == "xnnpack" ]]; then
   echo "Testing ${MODEL_NAME} with xnnpack..."
-  test_model_with_xnnpack true true
+  WITH_QUANTIZATION=true
+  WITH_DELEGATION=true
+  if [[ "$MODEL_NAME" == "mobilebert" ]]; then
+    # TODO(T197452682)
+    WITH_QUANTIZATION=false
+  fi
+  test_model_with_xnnpack "${WITH_QUANTIZATION}" "${WITH_DELEGATION}"
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi

@@ -18,14 +18,14 @@
 
         <TextView
             android:id="@+id/name"
-            android:layout_marginRight="15dp"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_alignParentRight="true"
-            android:layout_alignParentTop="true"
             android:layout_above="@+id/message_text"
+            android:layout_alignParentTop="true"
+            android:layout_alignParentRight="true"
+            android:layout_marginRight="15dp"
             android:paddingBottom="4dp"
-            android:text="Prompt"/>
+            android:textColor="#FFFFFF" />
 
         <TextView
             android:id="@+id/message_text"
@@ -37,7 +37,7 @@
             android:padding="10dp"
             android:text="My prompt"
             android:textColor="#fff"
-            android:textSize="18dp" />
+            android:textSize="16sp" />
 
         <ImageView
             android:id="@+id/message_image"
@@ -51,12 +51,13 @@
 
     <TextView
         android:id="@+id/timestamp"
-        android:layout_marginRight="10dp"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_below="@+id/message_content"
-        android:paddingBottom="4dp"
         android:layout_alignParentRight="true"
-        android:text=""/>
+        android:layout_marginRight="10dp"
+        android:paddingBottom="4dp"
+        android:text=""
+        android:textColor="#FFFFFF" />
 
 </RelativeLayout>

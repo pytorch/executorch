@@ -14,7 +14,7 @@ namespace reference {
 namespace native {
 
 using Tensor = exec_aten::Tensor;
-using RuntimeContext = torch::executor::RuntimeContext;
+using executorch::runtime::KernelRuntimeContext;
 
 template <typename T>
 void quantized_relu_(
@@ -44,7 +44,7 @@ void quantized_relu_(
 }
 
 void quantized_relu_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& in_zero_point,
     const int64_t out_zero_point,

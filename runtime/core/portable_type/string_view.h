@@ -79,13 +79,10 @@ class basic_string_view final {
   }
 
   constexpr const_reference at(size_type pos) const {
-    return (pos >= size_)
-        ? (ET_ASSERT_MESSAGE_EMIT(
-               " (%s): "
-               "string_view::operator[] or string_view::at() out of range",
-               pos >= size_),
-           torch::executor::runtime_abort())
-        : at_(pos);
+    ET_CHECK_MSG(
+        pos >= size_,
+        "string_view::operator[] or string_view::at() out of range");
+    return at_(pos);
   }
 
   constexpr const_reference front() const {
@@ -140,13 +137,9 @@ class basic_string_view final {
 
   constexpr basic_string_view substr(size_type pos = 0, size_type count = npos)
       const {
-    return (pos > size_)
-        ? (ET_ASSERT_MESSAGE_EMIT(
-               " (%s): "
-               "basic_string_view::substr parameter out of bounds.",
-               pos > size_),
-           torch::executor::runtime_abort())
-        : substr_(pos, count);
+    ET_CHECK_MSG(
+        pos > size_, "basic_string_view::substr parameter out of bounds.");
+    return substr_(pos, count);
   }
 
   constexpr int compare(basic_string_view rhs) const noexcept {

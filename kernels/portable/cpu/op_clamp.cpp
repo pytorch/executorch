@@ -69,7 +69,7 @@ ET_NODISCARD bool check_bounds(
 } // namespace
 
 Tensor& clamp_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const exec_aten::optional<Scalar>& min_opt,
     const exec_aten::optional<Scalar>& max_opt,
@@ -165,7 +165,7 @@ Tensor& clamp_out(
 }
 
 Tensor& clamp_tensor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const exec_aten::optional<Tensor>& min_opt,
     const exec_aten::optional<Tensor>& max_opt,

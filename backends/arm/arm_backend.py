@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 #
 # Main implementation of AoT flow to partition and preprocess for Arm target
 # backends. Converts via TOSA as an intermediate form supported by AoT and
@@ -159,7 +161,7 @@ def is_tosa(compile_spec: List[CompileSpec]) -> bool:
     return False
 
 
-def get_intermediate_path(compile_spec: List[CompileSpec]) -> str:
+def get_intermediate_path(compile_spec: List[CompileSpec]) -> Optional[str]:
     for spec in compile_spec:
         if spec.key == "debug_artifact_path":
             return spec.value.decode()

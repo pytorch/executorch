@@ -347,7 +347,6 @@ def serialize_pte_binary(
     *,
     mutable_data: Optional[List[Buffer]] = None,
     extract_delegate_segments: bool = False,
-    extract_constant_segment: bool = False,
     segment_alignment: int = 128,
     constant_tensor_alignment: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
@@ -363,8 +362,6 @@ def serialize_pte_binary(
               and the starting segment offset.
             - Update the Program.segments field with the offsets and lengths
               of each segment.
-        extract_constant_segment: Whether to move the constant data from the Program
-            into a separate segment.
         segment_alignment: Alignment in bytes. The starting offset of each
             segment will be aligned to this value in the output data.
         constant_tensor_alignment: The minimum alignment of tensor
@@ -387,19 +384,23 @@ def serialize_pte_binary(
     # Store extracted segment data; this may be constant data or delegate data.
     segments: List[Cord] = []
 
-    if extract_constant_segment:
-        constant_segment_data, constant_segment_offsets = _extract_constant_segment(
-            program.constant_buffer, tensor_alignment=constant_tensor_alignment
+    constant_segment_data, constant_segment_offsets = _extract_constant_segment(
+        program.constant_buffer, tensor_alignment=constant_tensor_alignment
+    )
+
+    # If there are no constants, len(constant_segment_data) = 0. However, there may
+    # be non-constants, in which case len(constant_segment_offsets) = 1, containing
+    # the placeholder value 0. Ensure the placeholder value is put into
+    # program.constant_segment.offsets.
+    if len(constant_segment_offsets) > 0:
+        # Update program.constant_segment with constant subsegment offset information.
+        program.constant_segment = SubsegmentOffsets(
+            segment_index=len(segments), offsets=constant_segment_offsets
         )
-        if len(constant_segment_data) > 0:
-            # Update program.constant_segment with constant subsegment offset information.
-            program.constant_segment = SubsegmentOffsets(
-                segment_index=len(segments), offsets=constant_segment_offsets
-            )
-            # Clear the constant buffer, as constant data will be stored in segments.
-            program.constant_buffer = []
-            # Add to the aggregate segments cord.
-            segments.append(constant_segment_data)
+        # Clear the constant buffer, as constant data will be stored in segments.
+        program.constant_buffer = []
+        # Add to the aggregate segments cord.
+        segments.append(constant_segment_data)
 
     if mutable_data is not None:
         mutable_segment_data, mutable_segment_offsets = _extract_constant_segment(
@@ -551,6 +552,24 @@ def _restore_segments(program: Program, segment_data: bytes) -> Program:
             delegate.processed = BackendDelegateDataReference(
                 location=DataLocation.INLINE, index=data_index
             )
+
+    # Replace constants from constant_segment into constant_buffer.
+    if program.constant_segment and len(program.constant_segment.offsets) > 0:
+        buffers: List[Buffer] = []
+        constant_segment = segments[program.constant_segment.segment_index]
+        for i in range(len(program.constant_segment.offsets)):
+            start_offset = program.constant_segment.offsets[i]
+            # Note: this is the original end offset plus any padding between
+            # it and the next start offset.
+            end_offset = (
+                program.constant_segment.offsets[i + 1]
+                if i < len(program.constant_segment.offsets) - 1
+                else len(constant_segment)
+            )
+            buffers.append(Buffer(storage=constant_segment[start_offset:end_offset]))
+        program.constant_buffer = buffers
+        program.constant_segment.segment_index = 0
+        program.constant_segment.offsets = []
 
     # Clear out the segments list since the original Program didn't have one.
     program.segments = []

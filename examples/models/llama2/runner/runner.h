@@ -40,7 +40,8 @@ class Runner {
       const std::string& prompt,
       int32_t seq_len = 128,
       std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const Stats&)> stats_callback = {});
+      std::function<void(const Stats&)> stats_callback = {},
+      bool echo = true);
   void stop();
 
  private:

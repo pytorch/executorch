@@ -16,13 +16,18 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& _pdist_forward_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     double p,
     Tensor& out) {
   (void)ctx;
 
   ET_KERNEL_CHECK(ctx, check_pdist_args(in, p, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   Tensor::SizesType target_sizes[kTensorDimensionLimit];
   size_t target_ndim = 0;

@@ -165,19 +165,21 @@ jobs:
           # Test llama2
           if [[ ${{ matrix.delegate }} == "xnnpack" ]]; then
             DELEGATE_CONFIG="xnnpack+custom+qe"
+          elif [[ ${{ matrix.delegate }} == "coreml" ]]; then
+            DELEGATE_CONFIG="coreml"
           fi
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
             bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
         else
-          # TODO (huydhn): Extend the export script here to support other backends such as coreml, mps
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-            bash .ci/scripts/test.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
+            bash .ci/scripts/test_model.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
         fi
         echo "::endgroup::"
 
   upload-models:
     needs: export-models
     runs-on: linux.2xlarge
+    if: always()  # Continue this job regardless of previous job outcome
     steps:
       - name: Download the models from GitHub
         uses: actions/download-artifact@v3
@@ -202,22 +204,19 @@ jobs:
           if-no-files-found: ignore
           path: ${{ runner.temp }}/artifacts/
 
-  build-llm-demo:
-    name: build-llm-demo
+  build-benchmark-app:
+    name: build-benchmark-app
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     needs:
       - set-parameters
     secrets: inherit
-    strategy:
-      matrix:
-          tokenizer: [bpe]
     with:
       runner: macos-latest-xlarge
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       upload-artifact: ios-apps
-      secrets-env: BUILD_CERTIFICATE_BASE64 BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
+      secrets-env: BUILD_CERTIFICATE_BASE64 EXECUTORCH_BENCHMARK_BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
       timeout: 90
       script: |
         set -eux
@@ -232,7 +231,7 @@ jobs:
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         # Setup Apple certificate for iOS development
-        BUILD_PROVISION_PROFILE_BASE64="${SECRET_BUILD_PROVISION_PROFILE_BASE64}" \
+        BUILD_PROVISION_PROFILE_BASE64="${SECRET_EXECUTORCH_BENCHMARK_BUILD_PROVISION_PROFILE_BASE64}" \
         BUILD_CERTIFICATE_BASE64="${SECRET_BUILD_CERTIFICATE_BASE64}" \
         KEYCHAIN_PASSWORD="${SECRET_KEYCHAIN_PASSWORD}" \
         .ci/scripts/setup-ios.sh
@@ -246,11 +245,38 @@ jobs:
           backends/apple/mps/install_requirements.sh
         echo "::endgroup::"
 
-        ${CONDA_RUN} --no-capture-output \
-          build/build_apple_llm_demo.sh ${{ matrix.tokenizer }} ${ARTIFACTS_DIR_NAME}
+        echo "::group::Build ExecuTorch iOS frameworks"
+        FRAMEWORKS=(
+          "executorch"
+          "backend_coreml"
+          "backend_mps"
+          "backend_xnnpack"
+          "kernels_custom"
+          "kernels_optimized"
+          "kernels_portable"
+          "kernels_quantized"
+        )
 
-  upload-ios-apps:
-    needs: build-llm-demo
+        # Build Release iOS Frameworks
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+          build/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack
+
+        mkdir -p extension/apple/Benchmark/Frameworks
+        for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
+          cp -r "cmake-out/${FRAMEWORK}.xcframework" extension/apple/Benchmark/Frameworks/
+        ) done
+        echo "::endgroup::"
+
+        # NB: Although exported models can be copied to this directory and bundled together with the
+        # app, we don't use this in CI and rely on AWS extra data parameter to make the model and the
+        # tokenizer available to the benchmark. This decouples the app and the model. We just need to
+        # create the directory here to pass the build
+        mkdir -p extension/apple/Benchmark/Models
+        ${CONDA_RUN} --no-capture-output \
+          build/build_apple_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+
+  upload-benchmark-app:
+    needs: build-benchmark-app
     runs-on: linux.2xlarge
     steps:
       - name: Download the apps from GitHub
@@ -279,7 +305,7 @@ jobs:
   benchmark-on-device:
     needs:
       - set-parameters
-      - upload-ios-apps
+      - upload-benchmark-app
       - upload-models
     permissions:
       id-token: write
@@ -290,6 +316,7 @@ jobs:
         model: ${{ fromJson(needs.set-parameters.outputs.models) }}
         delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
         device: ${{ fromJson(needs.set-parameters.outputs.devices) }}
+      fail-fast: false
     with:
       device-type: ios
       # For iOS testing, the runner just needs to call AWS Device Farm, so there is no need to run this on macOS
@@ -299,7 +326,7 @@ jobs:
       project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
       device-pool-arn: ${{ matrix.device }}
       # Uploaded to S3 from the previous job
-      ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/LLaMAPerfBenchmark.ipa
-      ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/LLaMAPerfBenchmark.xctestrun.zip
+      ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/Benchmark.ipa
+      ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/Benchmark.xctestrun.zip
       test-spec: ${{ inputs.test_spec || 'https://ossci-ios.s3.amazonaws.com/executorch/default-ios-device-farm-appium-test-spec.yml' }}
       extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/${{ matrix.model }}_${{ matrix.delegate }}/model.zip

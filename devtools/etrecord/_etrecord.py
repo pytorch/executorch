@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import json
 import os
 import pickle
@@ -182,7 +184,7 @@ def generate_etrecord(
     is the closest graph module representation of what is eventually run on the device.
     In addition to all the graph modules, we also serialize the program buffer, which the users
     can provide to the ExecuTorch runtime to run the model, and the debug handle map
-    for SDK tooling usage.
+    for Developer Tools usage.
 
     Args:
         et_record: Path to where the `ETRecord` file will be saved to.
@@ -201,7 +203,7 @@ def generate_etrecord(
 
     etrecord_zip = ZipFile(et_record, "w")
     # Write the magic file identifier that will be used to verify that this file
-    # is an etrecord when it's used later in the SDK tooling.
+    # is an etrecord when it's used later in the Developer Tools.
     etrecord_zip.writestr(ETRecordReservedFileNames.ETRECORD_IDENTIFIER, "")
 
     if export_modules is not None:

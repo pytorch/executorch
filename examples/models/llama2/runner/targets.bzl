@@ -4,7 +4,8 @@ def _get_operator_lib(aten = False):
     if aten:
         return ["//executorch/kernels/aten:generated_lib"]
     elif runtime.is_oss:
-        return ["//executorch/kernels/portable:generated_lib", "//executorch/extension/llm/custom_ops:custom_ops"]
+        # TODO(T183193812): delete this path after optimized-oss.yaml is no more.
+        return ["//executorch/configurations:optimized_native_cpu_ops_oss", "//executorch/extension/llm/custom_ops:custom_ops"]
     else:
         return ["//executorch/configurations:optimized_native_cpu_ops", "//executorch/extension/llm/custom_ops:custom_ops"]
 
@@ -34,8 +35,8 @@ def define_common_targets():
                 "//executorch/extension/llm/runner:text_prefiller" + aten_suffix,
                 "//executorch/extension/llm/runner:text_token_generator" + aten_suffix,
                 "//executorch/extension/evalue_util:print_evalue" + aten_suffix,
-                "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
                 "//executorch/extension/module:module" + aten_suffix,
+                "//executorch/extension/tensor:tensor" + aten_suffix,
                 "//executorch/kernels/quantized:generated_lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,

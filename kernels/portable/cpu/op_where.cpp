@@ -15,7 +15,7 @@ namespace executor {
 namespace native {
 
 Tensor& where_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& cond,
     const Tensor& a,
     const Tensor& b,
@@ -35,14 +35,17 @@ Tensor& where_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(cond, a, b, out), InvalidArgument, out);
+
   constexpr auto name = "where.self_out";
 
   ET_CHECK_MSG(
       cond_type == ScalarType::Bool || cond_type == ScalarType::Byte,
       "Unhandled dtype %s for where.self_out",
       torch::executor::toString(cond_type));
-  ET_SWITCH_REALHB_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
-    ET_SWITCH_REALHB_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
+    ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
       using CTYPE_OUT =
           typename torch::executor::promote_types<CTYPE_A, CTYPE_B>::type;
       apply_ternary_elementwise_fn<CTYPE_A, CTYPE_B, uint8_t, CTYPE_OUT>(

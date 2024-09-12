@@ -20,13 +20,18 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& index_select_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     const Tensor& index,
     Tensor& out) {
   ET_KERNEL_CHECK(
       ctx, check_index_select_args(in, dim, index, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   if (dim < 0) {
     dim += nonzero_dim(in);

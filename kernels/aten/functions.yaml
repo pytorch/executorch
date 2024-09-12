@@ -215,6 +215,8 @@
 
 - op: linalg_vector_norm.out
 
+- op: linear.out
+
 - op: log.out
 
 - op: log10.out
@@ -408,3 +410,9 @@
 - op: zeros_like.out
 
 - op: zeros.out
+
+- op: gather.out
+
+- op: scatter.value_out
+
+- op: aten::native_dropout.out

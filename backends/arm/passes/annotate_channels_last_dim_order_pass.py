@@ -4,6 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
+from typing import cast
+
 import torch
 from executorch.backends.arm.tosa_quant_utils import dq_op
 from executorch.backends.arm.tosa_utils import is_consumer_node_depthwise_conv2d
@@ -28,7 +32,7 @@ class AnnotateChannelsLastDimOrder(ExportPass):
             if node.target != dq_op:
                 return False
             prev_node = node.args[0]
-            if prev_node.op != "placeholder":
+            if cast(torch.fx.Node, prev_node).op != "placeholder":
                 return False
             return is_consumer_node_depthwise_conv2d(node)
         elif node.op == "placeholder":

@@ -61,7 +61,7 @@ class OpNativeBatchNormLegitOutTest : public OperatorTest {
       exec_aten::Tensor& out0,
       exec_aten::Tensor& out1,
       exec_aten::Tensor& out2) {
-    exec_aten::RuntimeContext context{};
+    executorch::runtime::KernelRuntimeContext context{};
     return torch::executor::aten::_native_batch_norm_legit_outf(
         context,
         input,

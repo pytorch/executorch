@@ -13,17 +13,32 @@
 
 #pragma once
 
-// Compiler support checks.
+/*
+ * Compiler support checks. Follows the logic used by pytorch/c10/util/C++17.h
+ * but may support older versions.
+ */
 
-#if !defined(__cplusplus)
-#error ExecuTorch must be compiled using a C++ compiler.
+// https://gcc.gnu.org/projects/cxx-status.html#cxx17
+#if !defined(__clang__) && !defined(_MSC_VER) && defined(__GNUC__) && \
+    __GNUC__ < 7
+#error \
+    "You're trying to build ExecuTorch with a too old version of GCC. We need GCC 7 or later."
 #endif
 
-#if __cplusplus < 201103L && (!defined(_MSC_VER) || _MSC_VER < 1600) && \
-    (!defined(__GNUC__) ||                                              \
-     (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__ < 40400))
-#error ExecuTorch must use a compiler supporting at least the C++11 standard.
-#error __cplusplus _MSC_VER __GNUC__  __GNUC_MINOR__  __GNUC_PATCHLEVEL__
+// https://clang.llvm.org/cxx_status.html#cxx17
+#if defined(__clang__) && __clang_major__ < 5
+#error \
+    "You're trying to build ExecuTorch with a too old version of Clang. We need Clang 5 or later."
+#endif
+
+#if (defined(_MSC_VER) && (!defined(_MSVC_LANG) || _MSVC_LANG < 201703L)) || \
+    (!defined(_MSC_VER) && __cplusplus < 201703L)
+#error "You need C++17 to compile ExecuTorch"
+#endif
+
+#if defined(_WIN32) && (defined(min) || defined(max))
+#error \
+    "Macro clash with min and max -- define NOMINMAX when compiling your program on Windows"
 #endif
 
 /*
@@ -42,6 +57,7 @@
 #define ET_NORETURN [[noreturn]]
 #define ET_NOINLINE __attribute__((noinline))
 #define ET_INLINE __attribute__((always_inline)) inline
+#define ET_INLINE_ATTRIBUTE __attribute__((always_inline))
 
 #if defined(__GNUC__)
 
