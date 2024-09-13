@@ -167,13 +167,12 @@ runtime::Result<runtime::MethodMeta> Module::method_meta(
 
 runtime::Result<std::vector<runtime::EValue>> Module::execute(
     const std::string& method_name,
-    const std::vector<runtime::EValue>& input_values) {
+    const std::vector<runtime::EValue>& input) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
   auto& method = methods_.at(method_name).method;
 
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      method->set_inputs(exec_aten::ArrayRef<runtime::EValue>(
-          input_values.data(), input_values.size())));
+  ET_CHECK_OK_OR_RETURN_ERROR(method->set_inputs(
+      exec_aten::ArrayRef<runtime::EValue>(input.data(), input.size())));
   ET_CHECK_OK_OR_RETURN_ERROR(method->execute());
 
   const auto outputs_size = method->outputs_size();
@@ -184,18 +183,13 @@ runtime::Result<std::vector<runtime::EValue>> Module::execute(
   return outputs;
 }
 
-runtime::Error Module::set_output(
-    const std::string& method_name,
+runtime::Error Module::set_output_data_ptr(
     runtime::EValue output_value,
-    size_t output_index) {
+    size_t output_index,
+    const std::string& method_name) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  auto& output_tensor = output_value.toTensor();
   auto& method = methods_.at(method_name).method;
-  ET_CHECK_OR_RETURN_ERROR(
-      output_value.isTensor(),
-      InvalidArgument,
-      "output type: %zu is not tensor",
-      (size_t)output_value.tag);
-  const auto& output_tensor = output_value.toTensor();
   return method->set_output_data_ptr(
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
 }

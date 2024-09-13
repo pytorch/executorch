@@ -373,11 +373,11 @@ Error Runner::generate(std::string prompt) {
       uncond_emb_vec.data(),
       {1, 77, 1024},
       encoder_method_meta.output_tensor_meta(0)->scalar_type());
-  modules_[0]->set_output(cond_emb_tensor);
+  modules_[0]->set_output_data_ptr(cond_emb_tensor, 0);
   long encoder_start = util::time_in_ms();
   auto cond_res = modules_[0]->forward(cond_tokens_tensor);
   stats_.text_encoder_execution_time += (util::time_in_ms() - encoder_start);
-  modules_[0]->set_output(uncond_emb_tensor);
+  modules_[0]->set_output_data_ptr(uncond_emb_tensor, 0);
   encoder_start = util::time_in_ms();
   auto uncond_res = modules_[0]->forward(uncond_tokens_tensor);
   stats_.text_encoder_execution_time += (util::time_in_ms() - encoder_start);
@@ -462,13 +462,13 @@ Error Runner::generate(std::string prompt) {
 
     stats_.unet_aggregate_post_processing_time +=
         (util::time_in_ms() - start_post_process);
-    modules_[1]->set_output(noise_pred_text_tensor);
+    modules_[1]->set_output_data_ptr(noise_pred_text_tensor, 0);
     long start_unet_execution = util::time_in_ms();
     auto cond_res = modules_[1]->forward(
         {latent_tensor, time_emb_tensors[step_index], cond_emb_tensor});
     stats_.unet_aggregate_execution_time +=
         (util::time_in_ms() - start_unet_execution);
-    modules_[1]->set_output(noise_pred_uncond_tensor);
+    modules_[1]->set_output_data_ptr(noise_pred_uncond_tensor, 0);
     start_unet_execution = util::time_in_ms();
     auto uncond_res = modules_[1]->forward(
         {latent_tensor,
@@ -519,7 +519,7 @@ Error Runner::generate(std::string prompt) {
 
   quant_tensor(latent, vae_input, vae_input_scale_, vae_input_offset_);
 
-  modules_[2]->set_output(output_tensor);
+  modules_[2]->set_output_data_ptr(output_tensor, 0);
   long start_vae_execution = util::time_in_ms();
   auto vae_res = modules_[2]->forward(vae_input_tensor);
   stats_.vae_execution_time = (util::time_in_ms() - start_vae_execution);
