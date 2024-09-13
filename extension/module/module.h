@@ -333,7 +333,7 @@ class Module {
   inline runtime::Error set_output(
       runtime::EValue output_value,
       size_t output_index = 0) {
-    return set_output("forward", output_value, output_index);
+    return set_output("forward", std::move(output_value), output_index);
   }
 
   /**
