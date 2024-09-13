@@ -57,6 +57,7 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
   @Override
   public void onModelLoaded(int status) {
     mStatsInfo.loadEnd = System.currentTimeMillis();
+    mStatsInfo.loadStatus = status;
     if (status != 0) {
       Log.e("LlmBenchmarkRunner", "Loaded failed: " + status);
       onGenerationStopped();
@@ -82,6 +83,8 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
         BenchmarkMetric.extractBackendAndQuantization(mStatsInfo.name);
     final List<BenchmarkMetric> results = new ArrayList<>();
     // The list of metrics we have atm includes:
+    // Load status
+    results.add(new BenchmarkMetric(benchmarkModel, "load_status", mStatsInfo.loadStatus, 0));
     // Model load time
     results.add(
         new BenchmarkMetric(
@@ -119,6 +122,7 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
 }
 
 class StatsInfo {
+  int loadStatus;
   long loadStart;
   long loadEnd;
   long generateStart;

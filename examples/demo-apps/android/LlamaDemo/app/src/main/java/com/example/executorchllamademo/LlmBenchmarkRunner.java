@@ -63,6 +63,7 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
   @Override
   public void onModelLoaded(int status) {
     mStatsDump.loadEnd = System.currentTimeMillis();
+    mStatsDump.loadStatus = status;
     if (status != 0) {
       Log.e("LlmBenchmarkRunner", "Loaded failed: " + status);
       onGenerationStopped();
@@ -97,6 +98,8 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
         BenchmarkMetric.extractBackendAndQuantization(mStatsDump.name);
     final List<BenchmarkMetric> results = new ArrayList<>();
     // The list of metrics we have atm includes:
+    // Load status
+    results.add(new BenchmarkMetric(benchmarkModel, "load_status", mStatsDump.loadStatus, 0));
     // Model load time
     results.add(
         new BenchmarkMetric(
@@ -153,8 +156,8 @@ class BenchmarkMetric {
   String metric;
 
   // The actual value and the option target value
-  double actual;
-  double target;
+  double actualValue;
+  double targetValue;
 
   // Let's see which information we want to include here
   final String device = Build.BRAND;
@@ -164,12 +167,12 @@ class BenchmarkMetric {
   public BenchmarkMetric(
       final BenchmarkModel benchmarkModel,
       final String metric,
-      final double actual,
-      final double target) {
+      final double actualValue,
+      final double targetValue) {
     this.benchmarkModel = benchmarkModel;
     this.metric = metric;
-    this.actual = actual;
-    this.target = target;
+    this.actualValue = actualValue;
+    this.targetValue = targetValue;
   }
 
   // TODO (huydhn): Figure out a way to extract the backend and quantization information from
@@ -187,6 +190,7 @@ class BenchmarkMetric {
 }
 
 class StatsDump {
+  int loadStatus;
   long loadStart;
   long loadEnd;
   long generateStart;

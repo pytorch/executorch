@@ -32,8 +32,8 @@ class BenchmarkMetric {
   String metric;
 
   // The actual value and the option target value
-  double actual;
-  double target;
+  double actualValue;
+  double targetValue;
 
   // Let's see which information we want to include here
   final String device = Build.BRAND;
@@ -43,12 +43,12 @@ class BenchmarkMetric {
   public BenchmarkMetric(
       final BenchmarkModel benchmarkModel,
       final String metric,
-      final double actual,
-      final double target) {
+      final double actualValue,
+      final double targetValue) {
     this.benchmarkModel = benchmarkModel;
     this.metric = metric;
-    this.actual = actual;
-    this.target = target;
+    this.actualValue = actualValue;
+    this.targetValue = targetValue;
   }
 
   // TODO (huydhn): Figure out a way to extract the backend and quantization information from

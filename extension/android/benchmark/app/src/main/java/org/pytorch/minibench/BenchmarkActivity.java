@@ -38,7 +38,11 @@ public class BenchmarkActivity extends Activity {
     // TODO: Format the string with a parsable format
     Stats stats = new Stats();
 
+    // Record the time it takes to load the model
+    stats.loadStart = System.currentTimeMillis();
     Module module = Module.load(model.getPath());
+    stats.loadEnd = System.currentTimeMillis();
+
     for (int i = 0; i < numIter; i++) {
       long start = System.currentTimeMillis();
       module.forward();
@@ -57,6 +61,10 @@ public class BenchmarkActivity extends Activity {
             "avg_inference_latency(ms)",
             stats.latency.stream().mapToDouble(l -> l).average().orElse(0.0f),
             0.0f));
+    // Model load time
+    results.add(
+        new BenchmarkMetric(
+            benchmarkModel, "model_load_time(ms)", stats.loadEnd - stats.loadStart, 0.0f));
 
     try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
       Gson gson = new Gson();
@@ -68,6 +76,8 @@ public class BenchmarkActivity extends Activity {
 }
 
 class Stats {
+  long loadStart;
+  long loadEnd;
   List<Long> latency = new ArrayList<>();
 
   @Override
