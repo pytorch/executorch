@@ -34,6 +34,7 @@ from executorch.backends.arm.test.runner_utils import (
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.lowered_backend_module import LoweredBackendModule
 from torch.fx import Graph
 
 logger = logging.getLogger(__name__)
@@ -44,21 +45,42 @@ class Partition(tester.Partition):
     def dump_artifact(self, path_to_dump: Optional[str]):
         super().dump_artifact(path_to_dump)
 
-        to_print = None
-        for spec in self.graph_module.lowered_module_0.compile_specs:
-            if spec.key == "output_format":
-                if spec.value == b"tosa":
-                    tosa_fb = self.graph_module.lowered_module_0.processed_bytes
+        def get_output_format(lowered_module) -> str | None:
+            for spec in lowered_module.compile_specs:
+                if spec.key == "output_format":
+                    return spec.value.decode()
+            return None
+
+        output = ""
+        for node in self.graph_module.graph.nodes:
+            if node.op == "get_attr" and node.name.startswith("lowered_module_"):
+                lowered_module = getattr(self.graph_module, node.name)
+                assert isinstance(
+                    lowered_module, LoweredBackendModule
+                ), f"Attribute {node.name} must be of type LoweredBackendModule."
+
+                output_format = get_output_format(lowered_module)
+                if output_format == "tosa":
+                    tosa_fb = lowered_module.processed_bytes
                     to_print = dbg_tosa_fb_to_json(tosa_fb)
                     to_print = pformat(to_print, compact=True, indent=1)
-                    to_print = f"\n TOSA deserialized: \n{to_print}"
-                elif spec.value == b"vela":
-                    vela_cmd_stream = self.graph_module.lowered_module_0.processed_bytes
-                    to_print = str(vela_cmd_stream)
-                    to_print = f"\n Vela command stream: \n{to_print}"
-                break
-        assert to_print is not None, "No TOSA nor Vela compile spec found"
-        _dump_str(to_print, path_to_dump)
+                    output += f"\nTOSA deserialized {node.name}: \n{to_print}\n"
+                elif output_format == "vela":
+                    vela_cmd_stream = lowered_module.processed_bytes
+                    output += (
+                        f"\nVela command stream {node.name}: \n{vela_cmd_stream}\n"
+                    )
+                else:
+                    logger.warning(
+                        f"No TOSA nor Vela compile spec found in compile specs of {node.name}."
+                    )
+                    continue
+
+        if not output:
+            logger.warning("No output to print generated from artifact.")
+            return
+
+        _dump_str(output, path_to_dump)
 
 
 class Serialize(tester.Serialize):

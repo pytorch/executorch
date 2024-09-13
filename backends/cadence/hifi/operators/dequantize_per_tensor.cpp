@@ -14,11 +14,11 @@ namespace HiFi {
 namespace native {
 
 using Tensor = exec_aten::Tensor;
-using RuntimeContext = torch::executor::RuntimeContext;
+using executorch::runtime::KernelRuntimeContext;
 using ScalarType = exec_aten::ScalarType;
 
 void dequantize_per_tensor_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& input,
     double scale,
     int64_t zero_point,

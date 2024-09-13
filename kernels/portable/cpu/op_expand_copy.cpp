@@ -54,7 +54,7 @@ size_t map_expand_to_repeats(
 } // namespace
 
 Tensor& expand_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     ArrayRef<int64_t> expand_sizes,
     bool implicit,

@@ -74,10 +74,12 @@ f32_fma_bf16(float32x4_t a, uint16x4_t b, uint16x4_t c) {
   return f32_fma(a, to_bfloat16(b), to_bfloat16(c));
 }
 
+#ifdef __ARM_FEATURE_BF16
 static ET_INLINE float32x4_t
 f32_dot_bf16(float32x4_t a, bfloat16x8_t b, bfloat16x8_t c) {
   return vbfdotq_f32(a, b, c);
 }
+#endif
 
 template <bool useBfloat16Dot>
 static ET_INLINE void dot_with_fp32_arith_main_inner_loop(
@@ -85,6 +87,7 @@ static ET_INLINE void dot_with_fp32_arith_main_inner_loop(
     const BFloat16* vec2,
     float32x4_t sum[kF32RegistersPerIteration],
     int registerPairIndex) {
+#ifdef __ARM_FEATURE_BF16
   if (useBfloat16Dot) {
     const bfloat16x8_t temp_vec1 = vld1q_bf16(reinterpret_cast<const __bf16*>(
         &vec1[registerPairIndex * 2 * kF32ElementsPerRegister]));
@@ -93,6 +96,7 @@ static ET_INLINE void dot_with_fp32_arith_main_inner_loop(
     sum[registerPairIndex] =
         f32_dot_bf16(sum[registerPairIndex], temp_vec1, temp_vec2);
   } else {
+#endif
     const uint16x8_t temp_vec1 = vld1q_u16(reinterpret_cast<const uint16_t*>(
         &vec1[registerPairIndex * 2 * kF32ElementsPerRegister]));
     const uint16x8_t temp_vec2 = vld1q_u16(reinterpret_cast<const uint16_t*>(
@@ -106,7 +110,9 @@ static ET_INLINE void dot_with_fp32_arith_main_inner_loop(
         sum[2 * registerPairIndex + 1],
         vget_high_u16(temp_vec1),
         vget_high_u16(temp_vec2));
+#ifdef __ARM_FEATURE_BF16
   }
+#endif
 }
 
 static ET_INLINE void dot_with_fp32_arith_vectorized_tail_inner_loop(
@@ -158,11 +164,15 @@ float bf16_dot_with_fp32_arith(
     const BFloat16* vec1,
     const BFloat16* vec2,
     int64_t len) {
+#ifdef __ARM_FEATURE_BF16
   if (cpuinfo_has_arm_bf16()) {
     return dot_with_fp32_arith<BFloat16, true>(vec1, vec2, len);
   } else {
+#endif
     return dot_with_fp32_arith<BFloat16, false>(vec1, vec2, len);
+#ifdef __ARM_FEATURE_BF16
   }
+#endif
 }
 #endif
 } // namespace internal

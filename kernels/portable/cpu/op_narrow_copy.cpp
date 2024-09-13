@@ -17,7 +17,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& narrow_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     int64_t start,

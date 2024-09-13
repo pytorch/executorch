@@ -14,7 +14,7 @@ namespace torch {
 namespace executor {
 
 namespace native {
-Tensor& fallback_out(RuntimeContext& ctx, const Tensor& in, Tensor& out);
+Tensor& fallback_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out);
 } // namespace native
 } // namespace executor
 } // namespace torch

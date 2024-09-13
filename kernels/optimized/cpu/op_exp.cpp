@@ -62,7 +62,7 @@ void exp_data(
 
 } // namespace
 
-Tensor& opt_exp_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& opt_exp_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape
