@@ -55,6 +55,11 @@ unsigned char __attribute__((
     section("network_model_sec"),
     aligned(16))) method_allocation_pool[METHOD_ALLOCATOR_POOL_SIZE];
 
+const size_t temp_allocation_pool_size = 1 * 1024 * 1024;
+unsigned char __attribute__((
+    section("network_model_sec"),
+    aligned(16))) temp_allocation_pool[temp_allocation_pool_size];
+
 void et_pal_init(void) {}
 
 ET_NORETURN void et_pal_abort(void) {
@@ -326,8 +331,11 @@ int main(int argc, const char* argv[]) {
   torch::executor::HierarchicalAllocator planned_memory(
       {planned_spans.data(), planned_spans.size()});
 
+  torch::executor::MemoryAllocator temp_allocator(
+      temp_allocation_pool_size, temp_allocation_pool);
+
   torch::executor::MemoryManager memory_manager(
-      &method_allocator, &planned_memory);
+      &method_allocator, &planned_memory, &temp_allocator);
 
   Result<torch::executor::Method> method =
       program->load_method(method_name, &memory_manager);

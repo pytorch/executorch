@@ -145,8 +145,6 @@ class TestSigmoid(unittest.TestCase):
             self.SigmoidAddSigmoid(), (test_data_suite[4][1], test_data_suite[3][1])
         )
 
-    # Fails due to Vela diff from Tosa spec, expected to work with Regor.
     @parameterized.expand(test_data_suite)
-    @unittest.expectedFailure
     def test_sigmoid_tosa_u55_BI(self, test_name: str, test_data: torch.Tensor):
         self._test_sigmoid_tosa_u55_BI_pipeline(self.Sigmoid(), (test_data,))

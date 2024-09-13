@@ -57,7 +57,9 @@ from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_nor
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
 from .source_transformation.sdpa import (
     replace_causal_mask,
+    replace_kv_cache_with_coreml_kv_cache,
     replace_kv_cache_with_simple_kv_cache,
+    replace_sdpa_with_coreml_sdpa,
     replace_sdpa_with_custom_op,
     replace_sdpa_with_flex_sdpa,
     replace_sdpa_with_simple_sdpa,
@@ -305,6 +307,11 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="This option is only for coreml, and is only supported for MacOS15+/iOS18+",
     )
     parser.add_argument(
+        "--coreml-preserve-sdpa",
+        action="store_true",
+        help="This option is only for coreml: Preserve sdpa in torch edge program to use coreml iOS18.sdpa op",
+    )
+    parser.add_argument(
         "--coreml-quantize",
         default=None,
         choices=["b4w"],
@@ -527,6 +534,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
     if args.coreml:
         coreml_partitioner = get_coreml_partitioner(
             args.use_kv_cache and args.coreml_enable_state,
+            args.coreml_preserve_sdpa,
             args.embedding_quantize,
             args.pt2e_quantize,
             args.coreml_quantize,
@@ -742,7 +750,7 @@ def _load_llama_model(
     )
 
 
-def _get_source_transforms(
+def _get_source_transforms(  # noqa
     modelname: str, dtype_override: Optional[DType], args
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
     transforms = []
@@ -795,10 +803,17 @@ def _get_source_transforms(
                 transforms.append(get_model_with_r1_r2(args.optimized_rotation_path))
             transforms.append(convert_linear_to_conv2d)
 
-        elif args.coreml or args.mps:
-            # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
+        elif args.mps:
+            # Currently mps doesn't support sdpa op, use the simpler decomposition
             # to get free perf gain.
             transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_causal_mask)
+
+        elif args.coreml:
+            if args.coreml_preserve_sdpa:
+                transforms.append(replace_sdpa_with_coreml_sdpa)
+            else:
+                transforms.append(replace_sdpa_with_simple_sdpa)
+            transforms.append(replace_kv_cache_with_coreml_kv_cache)
 
     return transforms

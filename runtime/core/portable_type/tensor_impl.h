@@ -166,6 +166,11 @@ class TensorImpl {
     return ArrayRef<StridesType>{strides_, static_cast<size_t>(dim_)};
   }
 
+  /// Returns the mutability of the shape of the tensor.
+  TensorShapeDynamism shape_dynamism() const {
+    return shape_dynamism_;
+  }
+
   /// Returns a pointer of type T to the constant underlying data blob.
   template <typename T>
   inline const T* data() const {
