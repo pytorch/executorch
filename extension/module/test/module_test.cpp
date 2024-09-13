@@ -122,7 +122,7 @@ TEST_F(ModuleTest, TestNonExistentMethodMeta) {
 
 TEST_F(ModuleTest, TestExecute) {
   Module module(model_path_);
-  auto tensor = make_tensor_ptr({1}, {1});
+  auto tensor = make_tensor_ptr({1});
 
   const auto result = module.execute("forward", {tensor, tensor});
   EXPECT_TRUE(result.ok());
@@ -141,7 +141,7 @@ TEST_F(ModuleTest, TestExecutePreload) {
   const auto error = module.load();
   EXPECT_EQ(error, Error::Ok);
 
-  auto tensor = make_tensor_ptr({1}, {1});
+  auto tensor = make_tensor_ptr({1});
 
   const auto result = module.execute("forward", {tensor, tensor});
   EXPECT_TRUE(result.ok());
@@ -157,7 +157,7 @@ TEST_F(ModuleTest, TestExecutePreload_method) {
   const auto error = module.load_method("forward");
   EXPECT_EQ(error, Error::Ok);
 
-  auto tensor = make_tensor_ptr({1}, {1});
+  auto tensor = make_tensor_ptr({1});
 
   const auto result = module.execute("forward", {tensor, tensor});
   EXPECT_TRUE(result.ok());
@@ -176,7 +176,7 @@ TEST_F(ModuleTest, TestExecutePreloadProgramAndMethod) {
   const auto load_method_error = module.load_method("forward");
   EXPECT_EQ(load_method_error, Error::Ok);
 
-  auto tensor = make_tensor_ptr({1}, {1});
+  auto tensor = make_tensor_ptr({1});
 
   const auto result = module.execute("forward", {tensor, tensor});
   EXPECT_TRUE(result.ok());
@@ -205,7 +205,7 @@ TEST_F(ModuleTest, TestExecuteOnCurrupted) {
 TEST_F(ModuleTest, TestGet) {
   Module module(model_path_);
 
-  auto tensor = make_tensor_ptr({1}, {1});
+  auto tensor = make_tensor_ptr({1});
 
   const auto result = module.get("forward", {tensor, tensor});
   EXPECT_TRUE(result.ok());
@@ -280,7 +280,7 @@ TEST_F(ModuleTest, TestProgramSharingAndDataLoaderManagement) {
   EXPECT_EQ(load_error, Error::Ok);
   EXPECT_TRUE(module1->is_loaded());
 
-  auto tensor = make_tensor_ptr({1}, {1});
+  auto tensor = make_tensor_ptr({1});
 
   const auto result1 = module1->execute("forward", {tensor, tensor});
   EXPECT_TRUE(result1.ok());
@@ -325,7 +325,7 @@ TEST_F(ModuleTest, TestProgramPersistenceAndReuseAfterModuleDestruction) {
 
   EXPECT_EQ(module.program(), shared_program);
 
-  auto tensor = make_tensor_ptr({1}, {1});
+  auto tensor = make_tensor_ptr({1});
 
   const auto result = module.execute("forward", {tensor, tensor});
   EXPECT_TRUE(result.ok());

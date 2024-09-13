@@ -177,8 +177,7 @@ Error Runner::generate(
       output_tensors.emplace_back(io_mem_->get_output_tensors(i));
       for (size_t j = 0; j < output_tensors[i].size(); ++j) {
         ET_CHECK_MSG(
-            modules_[i]->set_output_data_ptr(output_tensors[i][j], j) ==
-                Error::Ok,
+            modules_[i]->set_output(output_tensors[i][j], j) == Error::Ok,
             "failed to set output tensor for module %d's %zu'th output",
             i,
             j);
