@@ -58,7 +58,6 @@ class TestLlava(unittest.TestCase):
             )
         # the output includes prompt, removing it
         output_ids = output_ids[:, -5:]
-
         ref_outputs = self.llava_model.tokenizer.batch_decode(
             output_ids, skip_special_tokens=True
         )[0].strip()
@@ -69,12 +68,12 @@ class TestLlava(unittest.TestCase):
         )
         # Always generate one token at a time.
         new_tokens = [torch.argmax(prefill_logits).item()]
-        for i in range(5):
+        for i in range(4):
             logits = self.llava.step(
                 torch.tensor([new_tokens[i]]), torch.tensor([context_len + i])
             )
             new_tokens.append(torch.argmax(logits[-1, :]).item())
-        
+
         outputs = self.llava_model.tokenizer.batch_decode(
             torch.tensor([new_tokens]), skip_special_tokens=True
         )[0].strip()
