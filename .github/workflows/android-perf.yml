@@ -207,10 +207,6 @@ jobs:
     name: build-llm-demo
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     needs: set-parameters
-    strategy:
-      matrix:
-          delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
-      fail-fast: false
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
