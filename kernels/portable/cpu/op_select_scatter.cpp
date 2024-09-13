@@ -22,7 +22,7 @@ using Tensor = exec_aten::Tensor;
 /// aten::select_scatter.out(Tensor self, Tensor src, int dim, SymInt index, *,
 /// Tensor(a!) out) -> Tensor(a!)
 Tensor& select_scatter_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& src,
     int64_t dim,

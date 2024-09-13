@@ -123,7 +123,9 @@ runtime::Result<std::unordered_set<std::string>> Module::method_names() {
   return result;
 }
 
-runtime::Error Module::load_method(const std::string& method_name) {
+runtime::Error Module::load_method(
+    const std::string& method_name,
+    torch::executor::EventTracer* tracer) {
   if (!is_method_loaded(method_name)) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
 
@@ -151,9 +153,7 @@ runtime::Error Module::load_method(const std::string& method_name) {
         method_holder.planned_memory.get(),
         temp_allocator_.get());
     method_holder.method = ET_UNWRAP_UNIQUE(program_->load_method(
-        method_name.c_str(),
-        method_holder.memory_manager.get(),
-        event_tracer_.get()));
+        method_name.c_str(), method_holder.memory_manager.get(), tracer));
     methods_.emplace(method_name, std::move(method_holder));
   }
   return runtime::Error::Ok;
@@ -185,10 +185,11 @@ runtime::Result<std::vector<runtime::EValue>> Module::execute(
 
 runtime::Error Module::set_output_data_ptr(
     runtime::EValue output_value,
-    size_t output_index) {
-  ET_CHECK_OK_OR_RETURN_ERROR(load_method("forward"));
+    size_t output_index,
+    const std::string& method_name) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
   auto& output_tensor = output_value.toTensor();
-  auto& method = methods_.at("forward").method;
+  auto& method = methods_.at(method_name).method;
   return method->set_output_data_ptr(
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
 }

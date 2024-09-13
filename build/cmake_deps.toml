@@ -73,6 +73,7 @@ excludes = [
 deps = [
   "executorch",
   "executorch_no_prim_ops",
+  "extension_threadpool",
   "portable_kernels",
 ]
 
@@ -114,7 +115,6 @@ excludes = [
 deps = [
   "executorch_no_prim_ops",
   "executorch",
-  "extension_parallel_thread_parallel",
 ]
 
 [targets.optimized_native_cpu_ops_oss]
@@ -199,16 +199,16 @@ deps = [
   "executorch_no_prim_ops",
 ]
 
-[targets.extension_parallel_thread_parallel]
+[targets.extension_threadpool]
 buck_targets = [
-  "//extension/parallel:thread_parallel",
+  "//extension/threadpool:threadpool",
 ]
 filters = [
   ".cpp$",
 ]
 deps = [
   "executorch",
-  "pthreadpool",
+  "executorch_no_prim_ops",
 ]
 # ---------------------------------- extension end ----------------------------------
 # ---------------------------------- binary start ----------------------------------
@@ -346,6 +346,7 @@ deps = [
   "executorch",
   "executorch_no_prim_ops",
   "optimized_kernels",
+  "extension_threadpool",
   "xnnpack_backend",
 ]
 

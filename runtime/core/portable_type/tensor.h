@@ -105,6 +105,11 @@ class Tensor {
     return impl_->strides();
   }
 
+  /// Returns the mutability of the shape of the tensor.
+  TensorShapeDynamism shape_dynamism() const {
+    return impl_->shape_dynamism();
+  }
+
   /// Returns a pointer of type T to the constant underlying data blob.
   template <typename T>
   inline const T* const_data_ptr() const {

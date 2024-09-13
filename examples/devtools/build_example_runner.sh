@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Builds sdk_example_runner and prints its path.
+# Builds example_runner and prints its path.
 
 set -euo pipefail
 
@@ -20,9 +20,9 @@ export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-9}"
 BUILD_COREML=OFF
 
 usage() {
-  echo "Builds sdk example runner."
+  echo "Builds example runner."
   echo "Options:"
-  echo "  --coreml             Include this flag to enable Core ML backend when building the SDK."
+  echo "  --coreml             Include this flag to enable Core ML backend when building the Developer Tools."
   exit 0
 }
 
@@ -59,7 +59,7 @@ main() {
 
   cmake --build cmake-out --target install --config Release
 
-  local example_dir=examples/sdk
+  local example_dir=examples/devtools
   local build_dir="cmake-out/${example_dir}"
   local cmake_prefix_path="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
   rm -rf ${build_dir}
@@ -70,12 +70,12 @@ main() {
       "${example_dir}"
   cmake --build "${build_dir}" --config Release
 
-  local runner="${PWD}/${build_dir}/sdk_example_runner"
+  local runner="${PWD}/${build_dir}/example_runner"
   if [[ ! -f "${runner}" ]]; then
-    echo "ERROR: Failed to build ${build_dir}/sdk_example_runner" >&2
+    echo "ERROR: Failed to build ${build_dir}/example_runner" >&2
     exit 1
   else
-    echo "Built ${build_dir}/sdk_example_runner"
+    echo "Built ${build_dir}/example_runner"
   fi
 }
 

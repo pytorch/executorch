@@ -21,7 +21,7 @@ using Tensor = exec_aten::Tensor;
 // unsqueeze_copy.out(Tensor self, int dim, *, Tensor(a!) out) -> Tensor(a!)
 // -> Tensor(a!)
 Tensor& unsqueeze_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     int64_t dim,
     Tensor& out) {
@@ -37,11 +37,6 @@ Tensor& unsqueeze_copy_out(
 
   ET_KERNEL_CHECK(ctx, self.dim() + 1 == out.dim(), InvalidArgument, out);
   ET_KERNEL_CHECK(ctx, dim <= self.dim(), InvalidArgument, out);
-
-  ET_KERNEL_CHECK(
-      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
-
-  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(self), InvalidArgument, out);
 
   for (size_t i = 0; i < out.dim(); ++i) {
     if (i < dim) {

@@ -16,7 +16,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
-Tensor& any_all_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& any_all_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   ET_KERNEL_CHECK(
@@ -47,7 +47,7 @@ Tensor& any_all_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 }
 
 Tensor& any_dims_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     optional<ArrayRef<int64_t>> dim_list,
     bool keepdim,
@@ -108,7 +108,7 @@ Tensor& any_dims_out(
 }
 
 Tensor& any_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     bool keepdim,
