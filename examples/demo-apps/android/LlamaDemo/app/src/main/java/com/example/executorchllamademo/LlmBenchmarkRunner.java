@@ -162,7 +162,8 @@ class BenchmarkMetric {
   // Let's see which information we want to include here
   final String device = Build.BRAND;
   // The phone model and Android release version
-  final String arch = Build.MODEL + " / " + Build.VERSION.RELEASE;
+  final String arch = Build.MODEL;
+  final String os = "Android " + Build.VERSION.RELEASE;
 
   public BenchmarkMetric(
       final BenchmarkModel benchmarkModel,
