@@ -12,6 +12,7 @@ import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
+import org.pytorch.executorch.annotations.Experimental;
 
 /**
  * LlamaModule is a wrapper around the Executorch Llama model. It provides a simple interface to
@@ -19,6 +20,7 @@ import com.facebook.soloader.nativeloader.SystemDelegate;
  *
  * <p>Warning: These APIs are experimental and subject to change without notice
  */
+@Experimental
 public class LlamaModule {
 
   public static final int MODEL_TYPE_TEXT = 1;

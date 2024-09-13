@@ -12,12 +12,14 @@ import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import java.util.Map;
+import org.pytorch.executorch.annotations.Experimental;
 
 /**
  * Interface for the native peer object for entry points to the Module
  *
  * <p>Warning: These APIs are experimental and subject to change without notice
  */
+@Experimental
 class NativePeer {
   static {
     // Loads libexecutorch.so from jniLibs

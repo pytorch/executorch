@@ -273,6 +273,7 @@ def main():
     parser.add_argument(
         "--max-seq-len",
         default=768,
+        type=int,
         help="Maximum sequence length for the text model.",
     )
     parser.add_argument(
