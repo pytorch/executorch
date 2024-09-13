@@ -89,7 +89,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
         use_kv_cache=True,
         example_inputs=(torch.tensor([0], dtype=torch.int64), embeddings),
         dynamic_shapes=dynamic_shapes,
-        args=llava.text_model_args,
+        args=llava.llava_args.text_args,
     )
 
     dtype_override = DType.fp32
@@ -172,7 +172,7 @@ def export_token_embedding(llava, prompt):
         ).quantized_model()
 
     quantized_token_embed = quant_embedding(llava.model_.language_model.model)
-    token_dim_1 = Dim("token_dim_1", min=2, max=llava.text_model_args.max_seq_len)
+    token_dim_1 = Dim("token_dim_1", min=2, max=llava.llava_args.text_args.max_seq_len)
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():
         token_embedding_ep = torch.export.export(
