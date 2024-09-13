@@ -47,27 +47,40 @@ public class BenchmarkActivity extends Activity {
     // TODO: Format the string with a parsable format
     Stats stats = new Stats();
 
+    // Record the time it takes to load the model and the forward method
+    stats.loadStart = System.nanoTime();
     Module module = Module.load(model.getPath());
+    stats.errorCode = module.loadMethod("forward");
+    stats.loadEnd = System.nanoTime();
+
     for (int i = 0; i < numIter; i++) {
-      long start = System.currentTimeMillis();
+      long start = System.nanoTime();
       module.forward();
-      long forwardMs = System.currentTimeMillis() - start;
+      long forwardMs = System.nanoTime() - start;
       stats.latency.add(forwardMs);
     }
-    stats.errorCode = module.loadMethod("forward");
 
-    // TODO (huydhn): Remove txt files here once the JSON format is ready
-    try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.txt")) {
-      writer.write(stats.toString());
-    } catch (IOException e) {
-      e.printStackTrace();
-    }
+    final BenchmarkMetric.BenchmarkModel benchmarkModel =
+        BenchmarkMetric.extractBackendAndQuantization(model.getName().replace(".pte", ""));
+    final List<BenchmarkMetric> results = new ArrayList<>();
+    // The list of metrics we have atm includes:
+    // Avg inference latency after N iterations
+    results.add(
+        new BenchmarkMetric(
+            benchmarkModel,
+            "avg_inference_latency(ns)",
+            stats.latency.stream().mapToDouble(l -> l).average().orElse(0.0f),
+            0.0f));
+    // Model load time
+    results.add(
+        new BenchmarkMetric(
+            benchmarkModel, "model_load_time(ns)", stats.loadEnd - stats.loadStart, 0.0f));
+    // Load status
+    results.add(new BenchmarkMetric(benchmarkModel, "load_status", stats.errorCode, 0));
 
-    // TODO (huydhn): Figure out on what the final JSON results looks like, we need something
-    // with the same number of fields as https://github.com/pytorch/pytorch/pull/135042
     try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
       Gson gson = new Gson();
-      writer.write(gson.toJson(stats));
+      writer.write(gson.toJson(results));
     } catch (IOException e) {
       e.printStackTrace();
     }
@@ -75,6 +88,8 @@ public class BenchmarkActivity extends Activity {
 }
 
 class Stats {
+  long loadStart;
+  long loadEnd;
   List<Long> latency = new ArrayList<>();
   int errorCode = 0;
 
