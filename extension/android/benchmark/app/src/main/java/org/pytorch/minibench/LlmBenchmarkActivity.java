@@ -78,25 +78,27 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
   public void onGenerationStopped() {
     mStatsInfo.generateEnd = System.currentTimeMillis();
 
+    final BenchmarkMetric.BenchmarkModel benchmarkModel =
+        BenchmarkMetric.extractBackendAndQuantization(mStatsInfo.name);
     final List<BenchmarkMetric> results = new ArrayList<>();
     // The list of metrics we have atm includes:
     // Model load time
     results.add(
         new BenchmarkMetric(
-            mStatsInfo.name,
+            benchmarkModel,
             "model_load_time(ms)",
             mStatsInfo.loadEnd - mStatsInfo.loadStart,
             0.0f));
     // LLM generate time
     results.add(
         new BenchmarkMetric(
-            mStatsInfo.name,
+            benchmarkModel,
             "generate_time(ms)",
             mStatsInfo.generateEnd - mStatsInfo.generateStart,
             0.0f));
     // Token per second
     results.add(
-        new BenchmarkMetric(mStatsInfo.name, "token_per_sec", extractTPS(mStatsInfo.tokens), 0.0f));
+        new BenchmarkMetric(benchmarkModel, "token_per_sec", extractTPS(mStatsInfo.tokens), 0.0f));
 
     try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
       Gson gson = new Gson();

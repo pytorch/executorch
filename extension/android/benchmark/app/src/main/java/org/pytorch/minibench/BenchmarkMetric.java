@@ -8,9 +8,25 @@
 
 package org.pytorch.minibench;
 
+import android.os.Build;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 class BenchmarkMetric {
-  // The model name, i.e. stories110M
-  String name;
+  public static class BenchmarkModel {
+    // The model name, i.e. stories110M
+    String name;
+    String backend;
+    String quantization;
+
+    public BenchmarkModel(final String name, final String backend, final String quantization) {
+      this.name = name;
+      this.backend = backend;
+      this.quantization = quantization;
+    }
+  }
+
+  BenchmarkModel benchmarkModel;
 
   // The metric name, i.e. TPS
   String metric;
@@ -19,19 +35,39 @@ class BenchmarkMetric {
   double actual;
   double target;
 
-  // TODO (huydhn): Is there a way to get this information from the export model itself?
-  final String dtype = "float32";
-
   // Let's see which information we want to include here
-  final String device = android.os.Build.BRAND;
+  final String device = Build.BRAND;
   // DEBUG DEBUG
-  final String arch = android.os.Build.DEVICE + " / " + android.os.Build.MODEL;
+  final String arch =
+      Build.PRODUCT
+          + " / "
+          + Build.MODEL
+          + " / "
+          + Build.DISPLAY
+          + " / "
+          + Build.VERSION.RELEASE
+          + " / "
+          + Build.VERSION.SDK_INT;
 
   public BenchmarkMetric(
-      final String name, final String metric, final double actual, final double target) {
-    this.name = name;
+      final BenchmarkModel benchmarkModel,
+      final String metric,
+      final double actual,
+      final double target) {
+    this.benchmarkModel = benchmarkModel;
     this.metric = metric;
     this.actual = actual;
     this.target = target;
+  }
+
+  public static BenchmarkMetric.BenchmarkModel extractBackendAndQuantization(final String model) {
+    final Matcher m =
+        Pattern.compile("(?<name>\\w+)_(?<backend>\\w+)_(?<quantization>\\w+)").matcher(model);
+    if (m.matches()) {
+      return new BenchmarkMetric.BenchmarkModel(
+          m.group("name"), m.group("backend"), m.group("quantization"));
+    } else {
+      return new BenchmarkMetric.BenchmarkModel(model, "", "");
+    }
   }
 }

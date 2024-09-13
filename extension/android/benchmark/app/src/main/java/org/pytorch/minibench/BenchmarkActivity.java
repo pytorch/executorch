@@ -46,12 +46,14 @@ public class BenchmarkActivity extends Activity {
       stats.latency.add(forwardMs);
     }
 
+    final BenchmarkMetric.BenchmarkModel benchmarkModel =
+        BenchmarkMetric.extractBackendAndQuantization(model.getName().replace(".pte", ""));
     final List<BenchmarkMetric> results = new ArrayList<>();
     // The list of metrics we have atm includes:
     // Avg inference latency after N iterations
     results.add(
         new BenchmarkMetric(
-            model.getName().replace(".pte", ""),
+            benchmarkModel,
             "avg_inference_latency(ms)",
             stats.latency.stream().mapToDouble(l -> l).average().orElse(0.0f),
             0.0f));
