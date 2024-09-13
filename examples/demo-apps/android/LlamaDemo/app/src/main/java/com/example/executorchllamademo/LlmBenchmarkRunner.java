@@ -158,17 +158,8 @@ class BenchmarkMetric {
 
   // Let's see which information we want to include here
   final String device = Build.BRAND;
-  // DEBUG DEBUG
-  final String arch =
-      Build.PRODUCT
-          + " / "
-          + Build.MODEL
-          + " / "
-          + Build.DISPLAY
-          + " / "
-          + Build.VERSION.RELEASE
-          + " / "
-          + Build.VERSION.SDK_INT;
+  // The phone model and Android release version
+  final String arch = Build.MODEL + " / " + Build.VERSION.RELEASE;
 
   public BenchmarkMetric(
       final BenchmarkModel benchmarkModel,
@@ -181,6 +172,8 @@ class BenchmarkMetric {
     this.target = target;
   }
 
+  // TODO (huydhn): Figure out a way to extract the backend and quantization information from
+  // the .pte model itself instead of parsing its name
   public static BenchmarkMetric.BenchmarkModel extractBackendAndQuantization(final String model) {
     final Matcher m =
         Pattern.compile("(?<name>\\w+)_(?<backend>\\w+)_(?<quantization>\\w+)").matcher(model);
