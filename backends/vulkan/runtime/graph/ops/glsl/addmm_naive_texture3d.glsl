@@ -103,8 +103,7 @@ vec4 matmul_naive_k_dim_packed(const ivec3 out_mpos) {
   return texel;
 }
 
-vec4 matmul_naive_k_dim_packed_row_dim_packed(
-    const ivec3 out_mpos, const int width) {
+vec4 matmul_naive_k_dim_packed_row_dim_packed(const ivec3 out_mpos) {
   ivec3 mat1_pos;
   mat1_pos[mat1_axis_map.x] = 0;
   mat1_pos[mat1_axis_map.y] = out_mpos.y;
@@ -121,12 +120,12 @@ vec4 matmul_naive_k_dim_packed_row_dim_packed(
   const int mat2_y_axis = mat2_axis_map.y;
 
   vec4 texel = vec4(0);
-  int K = divup4(width);
+  const int K = divup4(mat1_sizes.x);
 
   for (int i = 0;
        i < K;
        ++i, mat1_pos[mat1_axis_map.x]++, mat2_pos[mat2_axis_map.y]+=4) {
-    vec4 mat1_tex = texelFetch(mat1_tensor, mat1_pos, 0);
+    const vec4 mat1_tex = texelFetch(mat1_tensor, mat1_pos, 0);
 
     for (int r = 0; r < 4; ++r) {
       // On-demand construction of mat2_pos appears to provide the lowest
@@ -156,13 +155,11 @@ void main() {
   if (mat2_packed_dim == W_DIM) {
     texel = matmul_naive_k_dim_packed(out_mpos);
   } else {
-    texel = matmul_naive_k_dim_packed_row_dim_packed(
-        out_mpos, mat1_sizes.x);
+    texel = matmul_naive_k_dim_packed_row_dim_packed(out_mpos);
   }
 #else
   if (mat2_packed_dim == W_DIM) {
-    texel = matmul_naive_k_dim_packed_row_dim_packed(
-        out_mpos, mat1_sizes.x);
+    texel = matmul_naive_k_dim_packed_row_dim_packed(out_mpos);
   } else {
     texel = matmul_naive_k_dim_packed(out_mpos);
   }
