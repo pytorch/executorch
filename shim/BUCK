@@ -1,3 +1,4 @@
+load("@prelude//platforms:defs.bzl", "execution_platform")
 load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")
 load("@prelude//toolchains:genrule.bzl", "system_genrule_toolchain")
 load("@prelude//toolchains:go.bzl", "system_go_toolchain")
@@ -53,5 +54,14 @@ system_rust_toolchain(
 
 remote_test_execution_toolchain(
     name = "remote_test_execution",
+    visibility = ["PUBLIC"],
+)
+
+execution_platform(
+    name = "android-arm64",
+    cpu_configuration = "prelude//cpu:arm64",
+    os_configuration = "prelude//os:android",
+    # REVIEW: not sure if this is correct
+    use_windows_path_separators = host_info().os.is_windows,
     visibility = ["PUBLIC"],
 )
