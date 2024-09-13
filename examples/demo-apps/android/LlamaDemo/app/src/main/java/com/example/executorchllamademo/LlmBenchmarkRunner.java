@@ -106,14 +106,14 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
         new BenchmarkMetric(
             benchmarkModel,
             "model_load_time(ns)",
-            mStatsDump.loadEnd - mStatsDump.loadStart,
+            (mStatsDump.loadEnd - mStatsDump.loadStart) * 1e-6,
             0.0f));
     // LLM generate time
     results.add(
         new BenchmarkMetric(
             benchmarkModel,
             "generate_time(ns)",
-            mStatsDump.generateEnd - mStatsDump.generateStart,
+            (mStatsDump.generateEnd - mStatsDump.generateStart) * 1e-6,
             0.0f));
     // Token per second
     results.add(
