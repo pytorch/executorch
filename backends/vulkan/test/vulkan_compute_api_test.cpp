@@ -1008,9 +1008,9 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
   // can alert ourselves to any significant changes in the sizes of these
   // objects by checking the `sizeof()` the class against some loose thresholds.
 
-  // Current known size on 64 bit system: 1824 B
-  EXPECT_TRUE(sizeof(vTensor) < 2000);
-  // Current known size on 64 bit system: 1840 B
+  // Current known size on 64 bit system: 2064 B
+  EXPECT_TRUE(sizeof(vTensor) < 2200);
+  // Current known size on 64 bit system: 2080 B
   EXPECT_TRUE(sizeof(Value) < 2200);
   // Current known size on 64 bit system: 240 B
   EXPECT_TRUE(sizeof(StagingBuffer) < 500);
@@ -1415,7 +1415,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       /*shared_object_idx = */ 4);
 
   // +2: t.sizes_ubo() for each staging shader
-  // +2: t.axis_mapping_ubo() for each staging shader
+  // +2: t.axis_map_ubo() for each staging shader
   // +2: staging buffer for each input tensor
   EXPECT_TRUE(get_vma_allocation_count() == 6);
 
@@ -1434,7 +1434,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
 
   // +2: alpha UBO, broadcast UBO for arithmetic shader
   // +1: t.sizes_ubo() uniform buffer for staging shader
-  // +1: t.axis_mapping_ubo() uniform buffer for staging shader
+  // +1: t.axis_map_ubo() uniform buffer for staging shader
   // +1: staging buffer for the input tensor
   EXPECT_TRUE(get_vma_allocation_count() == 12);
 
@@ -1452,7 +1452,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
 
   // +2: alpha UBO, broadcast UBO for arithmetic shader
   // +1: t.sizes_ubo() for staging shader
-  // +1: t.axis_mapping_ubo() for staging shader
+  // +1: t.axis_map_ubo() for staging shader
   // +1 staging buffer for the input tensor
   EXPECT_TRUE(get_vma_allocation_count() == 17);
 
