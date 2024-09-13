@@ -56,7 +56,7 @@ public class BenchmarkActivity extends Activity {
     for (int i = 0; i < numIter; i++) {
       long start = System.nanoTime();
       module.forward();
-      long forwardMs = System.nanoTime() - start;
+      double forwardMs = (System.nanoTime() - start) * 1e-6;
       stats.latency.add(forwardMs);
     }
 
@@ -68,13 +68,13 @@ public class BenchmarkActivity extends Activity {
     results.add(
         new BenchmarkMetric(
             benchmarkModel,
-            "avg_inference_latency(ns)",
+            "avg_inference_latency(ms)",
             stats.latency.stream().mapToDouble(l -> l).average().orElse(0.0f),
             0.0f));
     // Model load time
     results.add(
         new BenchmarkMetric(
-            benchmarkModel, "model_load_time(ns)", stats.loadEnd - stats.loadStart, 0.0f));
+            benchmarkModel, "model_load_time(ms)", (stats.loadEnd - stats.loadStart) * 1e-6, 0.0f));
     // Load status
     results.add(new BenchmarkMetric(benchmarkModel, "load_status", stats.errorCode, 0));
 
@@ -90,7 +90,7 @@ public class BenchmarkActivity extends Activity {
 class Stats {
   long loadStart;
   long loadEnd;
-  List<Long> latency = new ArrayList<>();
+  List<Double> latency = new ArrayList<>();
   int errorCode = 0;
 
   @Override
