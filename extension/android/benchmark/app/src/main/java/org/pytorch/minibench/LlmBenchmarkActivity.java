@@ -59,19 +59,19 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
     mStatsInfo = new StatsInfo();
     mStatsInfo.name = model.getName().replace(".pte", "");
     mModelRunner = new ModelRunner(model.getPath(), tokenizerPath, temperature, this);
-    mStatsInfo.loadStart = System.currentTimeMillis();
+    mStatsInfo.loadStart = System.nanoTime();
   }
 
   @Override
   public void onModelLoaded(int status) {
-    mStatsInfo.loadEnd = System.currentTimeMillis();
+    mStatsInfo.loadEnd = System.nanoTime();
     mStatsInfo.loadStatus = status;
     if (status != 0) {
       Log.e("LlmBenchmarkRunner", "Loaded failed: " + status);
       onGenerationStopped();
       return;
     }
-    mStatsInfo.generateStart = System.currentTimeMillis();
+    mStatsInfo.generateStart = System.nanoTime();
     mModelRunner.generate(mPrompt);
   }
 
@@ -85,7 +85,7 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
 
   @Override
   public void onGenerationStopped() {
-    mStatsInfo.generateEnd = System.currentTimeMillis();
+    mStatsInfo.generateEnd = System.nanoTime();
 
     final BenchmarkMetric.BenchmarkModel benchmarkModel =
         BenchmarkMetric.extractBackendAndQuantization(mStatsInfo.name);
@@ -97,14 +97,14 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
     results.add(
         new BenchmarkMetric(
             benchmarkModel,
-            "model_load_time(ms)",
+            "model_load_time(ns)",
             mStatsInfo.loadEnd - mStatsInfo.loadStart,
             0.0f));
     // LLM generate time
     results.add(
         new BenchmarkMetric(
             benchmarkModel,
-            "generate_time(ms)",
+            "generate_time(ns)",
             mStatsInfo.generateEnd - mStatsInfo.generateStart,
             0.0f));
     // Token per second

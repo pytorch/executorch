@@ -47,18 +47,18 @@ public class BenchmarkActivity extends Activity {
     // TODO: Format the string with a parsable format
     Stats stats = new Stats();
 
-    // Record the time it takes to load the model
-    stats.loadStart = System.currentTimeMillis();
+    // Record the time it takes to load the model and the forward method
+    stats.loadStart = System.nanoTime();
     Module module = Module.load(model.getPath());
-    stats.loadEnd = System.currentTimeMillis();
+    stats.errorCode = module.loadMethod("forward");
+    stats.loadEnd = System.nanoTime();
 
     for (int i = 0; i < numIter; i++) {
-      long start = System.currentTimeMillis();
+      long start = System.nanoTime();
       module.forward();
-      long forwardMs = System.currentTimeMillis() - start;
+      long forwardMs = System.nanoTime() - start;
       stats.latency.add(forwardMs);
     }
-    stats.errorCode = module.loadMethod("forward");
 
     final BenchmarkMetric.BenchmarkModel benchmarkModel =
         BenchmarkMetric.extractBackendAndQuantization(model.getName().replace(".pte", ""));
@@ -68,13 +68,15 @@ public class BenchmarkActivity extends Activity {
     results.add(
         new BenchmarkMetric(
             benchmarkModel,
-            "avg_inference_latency(ms)",
+            "avg_inference_latency(ns)",
             stats.latency.stream().mapToDouble(l -> l).average().orElse(0.0f),
             0.0f));
     // Model load time
     results.add(
         new BenchmarkMetric(
-            benchmarkModel, "model_load_time(ms)", stats.loadEnd - stats.loadStart, 0.0f));
+            benchmarkModel, "model_load_time(ns)", stats.loadEnd - stats.loadStart, 0.0f));
+    // Load status
+    results.add(new BenchmarkMetric(benchmarkModel, "load_status", stats.errorCode, 0));
 
     try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
       Gson gson = new Gson();
