@@ -33,7 +33,7 @@ Tensor& sdpa_with_kv_cache_out_no_context(
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
     const optional<double> scale,
     Tensor& output) {
-  exec_aten::RuntimeContext context{};
+  executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::native::sdpa_with_kv_cache_out(
       context,
       q_projected,

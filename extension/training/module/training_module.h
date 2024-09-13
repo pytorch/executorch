@@ -68,8 +68,7 @@ class ET_EXPERIMENTAL TrainingModule final : executorch::extension::Module {
    * parameters for.
    *
    * @returns A Result object containing a map of the fully qualified name to
-   * parameter tensor, or an error if the method is not a joint graph or has not
-   * been executed yet.
+   * parameter tensor, or an error if the method is not a joint graph.
    */
   ET_EXPERIMENTAL
   runtime::Result<const std::map<exec_aten::string_view, exec_aten::Tensor>>

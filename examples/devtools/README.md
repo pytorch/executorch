@@ -1,43 +1,41 @@
-# SDK Examples
+# Developer Tools Examples
 This directory contains examples of BundledProgram and ETDump generation.
 
 ## Directory structure
 ```bash
-examples/sdk
+examples/devtools
 ├── scripts                           # Python scripts to illustrate export workflow of bundled program.
-├── sdk_executor_runner               # Contains an example for both BundledProgram to verify ExecuTorch model, and generate ETDump for runtime results.
+├── executor_runner                   # Contains an example for both BundledProgram to verify ExecuTorch model, and generate ETDump for runtime results.
 └── README.md                         # Current file
 ```
 
 ## BundledProgram
 
-We will use an example model (in `torch.nn.Module`) and its representative inputs, both from [`models/`](../models) directory, to generate a [BundledProgram(`.bpte`)](../../docs/source/sdk-bundled-io.md) file using the [script](scripts/export_bundled_program.py). Then we will use [sdk_example_runner](sdk_example_runner/sdk_example_runner.cpp) to execute the `.bpte` model on the ExecuTorch runtime and verify the model on BundledProgram API.
+We will use an example model (in `torch.nn.Module`) and its representative inputs, both from [`models/`](../models) directory, to generate a [BundledProgram(`.bpte`)](../../docs/source/sdk-bundled-io.md) file using the [script](scripts/export_bundled_program.py). Then we will use [devtools/example_runner](example_runner/example_runner.cpp) to execute the `.bpte` model on the ExecuTorch runtime and verify the model on BundledProgram API.
 
 
 1. Sets up the basic development environment for ExecuTorch by [Setting up ExecuTorch from GitHub](https://pytorch.org/executorch/stable/getting-started-setup).
 
-2. Using the [script](scripts/export_bundled_program.py) to generate a BundledProgram binary file by retreiving a `torch.nn.Module` model and its representative inputs from the list of available models in the [`models/`](../models) dir。
+2. Using the [script](scripts/export_bundled_program.py) to generate a BundledProgram binary file by retreiving a `torch.nn.Module` model and its representative inputs from the list of available models in the [`models/`](../models) dir.
 
 ```bash
 cd executorch # To the top level dir
 
 # To get a list of example models
-python3 -m examples.sdk.scripts.export_bundled_program -h
+python3 -m examples.devtools.scripts.export_bundled_program -h
 
 # To generate a specific `.bpte` model
-python3 -m examples.sdk.scripts.export_bundled_program -m mv2 # for MobileNetv2
+python3 -m examples.devtools.scripts.export_bundled_program -m mv2 # for MobileNetv2
 
 # This should generate ./mv2_bundled.bpte file, if successful.
 ```
 
-3. Once we have the BundledProgram binary (`.bpte`) file, then let's run and verify it with ExecuTorch runtime and BundledProgram APIs using the [sdk_example_runner](sdk_example_runner/sdk_example_runner.cpp).
+3. Once we have the BundledProgram binary (`.bpte`) file, then let's run and verify it with ExecuTorch runtime and BundledProgram APIs using the [devtools/example_runner](example_runner/example_runner.cpp).
 
 ```bash
    cd executorch
-   rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DEXECUTORCH_BUILD_SDK=1 -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=1 ..
-   cd ..
-   cmake --build cmake-out -j8 -t sdk_example_runner
-   ./cmake-out/examples/sdk/sdk_example_runner --bundled_program_path mv2_bundled.bpte --output_verification
+   ./examples/devtools/build_example_runner.sh
+   ./cmake-out/examples/devtools/example_runner --bundled_program_path mv2_bundled.bpte --output_verification
    ```
 
 
@@ -51,7 +49,7 @@ We offer an example runner that accepts a `BundledProgram` (`.bpte`) and runs a 
 Running the program will generate an `ETDump` file (`.etdp`) at the location specified by `--etdump_path`. Make sure to build the program as specified below to enable the event tracer.
 
 ```bash
-   ./cmake-out/examples/sdk/sdk_example_runner --bundled_program_path mv2_bundled.bpte --etdump_path mv2_etdump.etdp
+   ./cmake-out/examples/devtools/example_runner --bundled_program_path mv2_bundled.bpte --etdump_path mv2_etdump.etdp
    ```
 
 ### Parsing ETDump

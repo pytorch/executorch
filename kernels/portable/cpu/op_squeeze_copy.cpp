@@ -20,7 +20,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& squeeze_copy_dim_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     Tensor& out) {
@@ -58,7 +58,7 @@ Tensor& squeeze_copy_dim_out(
 }
 
 Tensor& squeeze_copy_dims_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     exec_aten::ArrayRef<int64_t> dims,
     Tensor& out) {

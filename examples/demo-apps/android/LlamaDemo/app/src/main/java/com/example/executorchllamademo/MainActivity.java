@@ -16,6 +16,7 @@ import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -217,6 +218,11 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_main);
+
+    if (Build.VERSION.SDK_INT >= 21) {
+      getWindow().setStatusBarColor(ContextCompat.getColor(this, R.color.status_bar));
+      getWindow().setNavigationBarColor(ContextCompat.getColor(this, R.color.nav_bar));
+    }
 
     try {
       Os.setenv("ADSP_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir, true);

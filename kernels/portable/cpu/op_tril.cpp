@@ -57,7 +57,7 @@ void apply_tril(
  */
 template <typename CTYPE>
 void tril_kernel(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     int64_t diagonal,
     const Tensor& out) {
@@ -131,7 +131,7 @@ void tril_kernel(
  *       main one are also captured.
  */
 Tensor& tril_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     int64_t diagonal,
     Tensor& out) {

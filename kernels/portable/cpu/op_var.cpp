@@ -57,7 +57,7 @@ void compute_variance(
 } // namespace
 
 Tensor& var_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     optional<ArrayRef<int64_t>> dim_list,
     bool unbiased,
@@ -100,7 +100,7 @@ Tensor& var_out(
 }
 
 Tensor& var_correction_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     optional<ArrayRef<int64_t>> dim_list,
     const optional<Scalar>& correction,

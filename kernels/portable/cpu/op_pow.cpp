@@ -67,7 +67,7 @@ struct PowInner<false, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT>
 } // namespace
 
 Tensor& pow_Tensor_Tensor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
@@ -110,7 +110,7 @@ Tensor& pow_Tensor_Tensor_out(
 }
 
 Tensor& pow_Tensor_Scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {
@@ -165,7 +165,7 @@ Tensor& pow_Tensor_Scalar_out(
 }
 
 Tensor& pow_Scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Scalar& a,
     const Tensor& b,
     Tensor& out) {

@@ -22,7 +22,7 @@ using ScalarType = exec_aten::ScalarType;
 using string_view = exec_aten::string_view;
 
 Tensor& gelu_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     string_view approximate,
     Tensor& out) {

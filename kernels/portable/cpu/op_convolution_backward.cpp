@@ -227,7 +227,7 @@ void conv2d_backward_impl(
 } // namespace
 
 std::tuple<Tensor&, Tensor&, Tensor&> convolution_backward_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& grad_output,
     const Tensor& input,
     const Tensor& weight,

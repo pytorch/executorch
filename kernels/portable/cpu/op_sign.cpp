@@ -19,7 +19,7 @@ namespace native {
 
 using exec_aten::Tensor;
 
-Tensor& sign_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& sign_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape

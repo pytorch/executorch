@@ -23,7 +23,7 @@ using SizesType = exec_aten::SizesType;
 using Tensor = exec_aten::Tensor;
 
 std::tuple<Tensor&, Tensor&> min_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     bool keepdim,
