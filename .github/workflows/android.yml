@@ -141,29 +141,3 @@ jobs:
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           # This is to make sure that the job doesn't fail flakily
           emulator-boot-timeout: 900
-
-  # Let's see how expensive this job is, we might want to tone it down by running it periodically
-  test-llama-app:
-    # Only PR from ExecuTorch itself has permission to access AWS, forked PRs will fail to
-    # authenticate with the cloud service
-    if: ${{ !github.event.pull_request.head.repo.fork }}
-    needs: upload-artifacts
-    permissions:
-      id-token: write
-      contents: read
-    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
-    with:
-      device-type: android
-      runner: linux.2xlarge
-      test-infra-ref: ''
-      # This is the ARN of ExecuTorch project on AWS
-      project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
-      # This is the custom Android device pool that only includes Samsung Galaxy S2x
-      device-pool-arn: arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa
-      # Uploaded to S3 from the previous job, the name of the app comes from the project itself
-      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo/app-debug.apk
-      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo/app-debug-androidTest.apk
-      test-spec: https://ossci-android.s3.amazonaws.com/executorch/android-llm-device-farm-test-spec.yml
-      # Among the input, this is the biggest file, so it is cached on AWS to make the test faster. Note that the file is deleted by AWS after 30
-      # days and the job will automatically re-upload the file when that happens.
-      extra-data: https://ossci-assets.s3.amazonaws.com/executorch-android-llama2-7b-0717.zip
