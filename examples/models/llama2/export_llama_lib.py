@@ -57,7 +57,9 @@ from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_nor
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
 from .source_transformation.sdpa import (
     replace_causal_mask,
+    replace_kv_cache_with_coreml_kv_cache,
     replace_kv_cache_with_simple_kv_cache,
+    replace_sdpa_with_coreml_sdpa,
     replace_sdpa_with_custom_op,
     replace_sdpa_with_flex_sdpa,
     replace_sdpa_with_simple_sdpa,
@@ -305,6 +307,17 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="This option is only for coreml, and is only supported for MacOS15+/iOS18+",
     )
     parser.add_argument(
+        "--coreml-preserve-sdpa",
+        action="store_true",
+        help="This option is only for coreml: Preserve sdpa in torch edge program to use coreml iOS18.sdpa op",
+    )
+    parser.add_argument(
+        "--coreml-quantize",
+        default=None,
+        choices=["b4w"],
+        help="This option is only for coreml: Use coreml quantization, e.g. b4w (for blockwise 4 bit weight)",
+    )
+    parser.add_argument(
         "--qnn",
         action="store_true",
         help="Delegate llama2 to qnn backend (Qualcomm), please use it --kv_cahce=True",
@@ -521,8 +534,10 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
     if args.coreml:
         coreml_partitioner = get_coreml_partitioner(
             args.use_kv_cache and args.coreml_enable_state,
+            args.coreml_preserve_sdpa,
             args.embedding_quantize,
             args.pt2e_quantize,
+            args.coreml_quantize,
         )
         partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
@@ -688,6 +703,7 @@ def _load_llama_model(
         fairseq2=weight_type == WeightType.FAIRSEQ2,
         max_seq_len=max_seq_len,
         enable_dynamic_shape=enable_dynamic_shape,
+        args=args,
     )
     state_dict = model.state_dict()
     dtype = state_dict[next(iter(state_dict))].dtype
@@ -734,15 +750,32 @@ def _load_llama_model(
     )
 
 
-def _get_source_transforms(
+def _get_source_transforms(  # noqa
     modelname: str, dtype_override: Optional[DType], args
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
     transforms = []
     if args.quantization_mode:
         modelname = f"{modelname}_q"
-        transforms.append(
-            get_quant_weight_transform(args, dtype_override, verbose_export())
-        )
+        if args.use_spin_quant is None:
+            transforms.append(
+                get_quant_weight_transform(args, dtype_override, verbose_export())
+            )
+        # For SpinQuant, the checkpoints are already quantized
+        # aka the weights have corresponding scales value,
+        # So that means, we don't need to apply quantization
+        # transform. However, we will still need to apply
+        # transformations that change the model structure to
+        # match the checkpoint format.
+        # transform_for_spinquant() will apply these transformations
+        # later in model.py file.
+        elif args.use_spin_quant == "cuda":
+            from .source_transformation.spin_quant import (
+                inject_fast_hadamard_transform_cuda_for_spin_quant,
+            )
+
+            transforms.append(inject_fast_hadamard_transform_cuda_for_spin_quant)
+        elif args.use_spin_quant == "native":
+            raise NotImplementedError("native SpinQuant is not implemented yet.")
 
     if args.embedding_quantize:
         modelname = f"{modelname}_e"
@@ -770,21 +803,17 @@ def _get_source_transforms(
                 transforms.append(get_model_with_r1_r2(args.optimized_rotation_path))
             transforms.append(convert_linear_to_conv2d)
 
-        elif args.coreml or args.mps:
-            # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
+        elif args.mps:
+            # Currently mps doesn't support sdpa op, use the simpler decomposition
             # to get free perf gain.
             transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_causal_mask)
 
-    if args.use_spin_quant:
-        if args.use_spin_quant == "cuda":
-            from .source_transformation.spin_quant import (
-                inject_fast_hadamard_transform_cuda_for_spin_quant,
-            )
-
-            transforms.append(inject_fast_hadamard_transform_cuda_for_spin_quant)
-
-        elif args.use_spin_quant == "native":
-            raise NotImplementedError("native SpinQuant is not implemented yet.")
+        elif args.coreml:
+            if args.coreml_preserve_sdpa:
+                transforms.append(replace_sdpa_with_coreml_sdpa)
+            else:
+                transforms.append(replace_sdpa_with_simple_sdpa)
+            transforms.append(replace_kv_cache_with_coreml_kv_cache)
 
     return transforms

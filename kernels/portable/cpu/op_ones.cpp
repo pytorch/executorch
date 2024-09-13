@@ -12,7 +12,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-Tensor& ones_out(RuntimeContext& ctx, IntArrayRef size, Tensor& out) {
+Tensor& ones_out(KernelRuntimeContext& ctx, IntArrayRef size, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape

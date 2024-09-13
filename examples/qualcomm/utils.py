@@ -158,8 +158,6 @@ class SimpleADB:
             qnn_executor_runner_cmds = " ".join(
                 [
                     f"cd {self.workspace} &&",
-                    "export ADSP_LIBRARY_PATH=. &&",
-                    "export LD_LIBRARY_PATH=. &&",
                     f"./qnn_executor_runner {qnn_executor_runner_args}",
                 ]
             )
@@ -437,14 +435,6 @@ def setup_common_args_and_variables():
     if "QNN_SDK_ROOT" not in os.environ:
         raise RuntimeError("Environment variable QNN_SDK_ROOT must be set")
     print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
-
-    if "LD_LIBRARY_PATH" not in os.environ:
-        print(
-            "[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
-            "not found happen, please follow setup.md to set environment."
-        )
-    else:
-        print(f"LD_LIBRARY_PATH={os.getenv('LD_LIBRARY_PATH')}")
 
     return parser
 

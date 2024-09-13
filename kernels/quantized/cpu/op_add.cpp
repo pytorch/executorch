@@ -163,7 +163,7 @@ Tensor& quantized_add_out(
 }
 
 Tensor& quantized_add_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& a,
     double a_scale,
     int64_t a_zero_point,

@@ -112,7 +112,7 @@ void layer_norm(
 } // namespace
 
 std::tuple<Tensor&, Tensor&, Tensor&> opt_native_layer_norm_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     IntArrayRef normalized_shape,
     const exec_aten::optional<Tensor>& weight,

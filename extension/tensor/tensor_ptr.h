@@ -105,6 +105,35 @@ inline TensorPtr make_tensor_ptr(const TensorPtr& tensor) {
 }
 
 /**
+ * Creates a TensorPtr that manages a new Tensor with the same properties
+ * as the given Tensor, sharing the same data without owning it.
+ *
+ * @param tensor The Tensor whose properties are to be used to create a new
+ * TensorPtr.
+ * @return A new TensorPtr that manages a Tensor with the same properties as the
+ * original.
+ */
+inline TensorPtr make_tensor_ptr(const exec_aten::Tensor& tensor) {
+  return make_tensor_ptr(make_tensor_impl_ptr(
+      tensor.scalar_type(),
+      std::vector<exec_aten::SizesType>(
+          tensor.sizes().begin(), tensor.sizes().end()),
+      tensor.mutable_data_ptr(),
+#ifndef USE_ATEN_LIB
+      std::vector<exec_aten::DimOrderType>(
+          tensor.dim_order().begin(), tensor.dim_order().end()),
+      std::vector<exec_aten::StridesType>(
+          tensor.strides().begin(), tensor.strides().end()),
+      tensor.shape_dynamism()
+#else // USE_ATEN_LIB
+      {},
+      std::vector<exec_aten::StridesType>(
+          tensor.strides().begin(), tensor.strides().end())
+#endif // USE_ATEN_LIB
+          ));
+}
+
+/**
  * Creates a TensorPtr that manages a Tensor with the specified properties.
  *
  * @param type The scalar type of the tensor elements.
@@ -142,8 +171,7 @@ inline TensorPtr make_tensor_ptr(
  *
  * This template overload is specialized for cases where the tensor data is
  * provided as a vector. The scalar type is automatically deduced from the
- * vector's data type. The deleter ensures that the data vector is properly
- * managed and its lifetime is tied to the TensorImpl.
+ * vector's data type.
  *
  * @tparam T The C++ type of the tensor elements, deduced from the vector.
  * @param sizes A vector specifying the size of each dimension.
@@ -174,8 +202,7 @@ TensorPtr make_tensor_ptr(
  *
  * This template overload is specialized for cases where the tensor data is
  * provided as a vector. The scalar type is automatically deduced from the
- * vector's data type. The deleter ensures that the data vector is properly
- * managed and its lifetime is tied to the TensorImpl.
+ * vector's data type.
  *
  * @tparam T The C++ type of the tensor elements, deduced from the vector.
  * @param data A vector containing the tensor's data.
@@ -188,6 +215,27 @@ TensorPtr make_tensor_ptr(
     exec_aten::TensorShapeDynamism dynamism =
         exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return make_tensor_ptr(make_tensor_impl_ptr(std::move(data), dynamism));
+}
+
+/**
+ * Creates a TensorPtr that manages a Tensor with the specified properties.
+ *
+ * This template overload allows creating a Tensor from an initializer list
+ * of data. The scalar type is automatically deduced from the type of the
+ * initializer list's elements.
+ *
+ * @tparam T The C++ type of the tensor elements, deduced from the initializer
+ * list.
+ * @param data An initializer list containing the tensor's data.
+ * @param dynamism Specifies the mutability of the tensor's shape.
+ * @return A TensorPtr that manages the newly created TensorImpl.
+ */
+template <typename T = float>
+TensorPtr make_tensor_ptr(
+    std::initializer_list<T> data,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  return make_tensor_ptr(std::vector<T>(data), dynamism);
 }
 
 /**
@@ -220,6 +268,49 @@ inline TensorPtr make_tensor_ptr(
       std::move(dim_order),
       std::move(strides),
       dynamism));
+}
+
+/**
+ * Creates a TensorPtr that manages a new Tensor with the same properties
+ * as the given Tensor, but with a copy of the data owned by the returned
+ * TensorPtr.
+ *
+ * @param tensor The Tensor to clone.
+ * @return A new TensorPtr that manages a Tensor with the same properties as the
+ * original but with copied data.
+ */
+inline TensorPtr clone_tensor_ptr(const exec_aten::Tensor& tensor) {
+  return make_tensor_ptr(make_tensor_impl_ptr(
+      tensor.scalar_type(),
+      std::vector<exec_aten::SizesType>(
+          tensor.sizes().begin(), tensor.sizes().end()),
+      std::vector<uint8_t>(
+          (uint8_t*)tensor.const_data_ptr(),
+          (uint8_t*)tensor.const_data_ptr() + tensor.nbytes()),
+#ifndef USE_ATEN_LIB
+      std::vector<exec_aten::DimOrderType>(
+          tensor.dim_order().begin(), tensor.dim_order().end()),
+      std::vector<exec_aten::StridesType>(
+          tensor.strides().begin(), tensor.strides().end()),
+      tensor.shape_dynamism()
+#else // USE_ATEN_LIB
+      {},
+      std::vector<exec_aten::StridesType>(
+          tensor.strides().begin(), tensor.strides().end())
+#endif // USE_ATEN_LIB
+          ));
+}
+
+/**
+ * Creates a new TensorPtr by cloning the given TensorPtr, copying the
+ * underlying data.
+ *
+ * @param tensor The TensorPtr to clone.
+ * @return A new TensorPtr that manages a Tensor with the same properties as the
+ * original but with copied data.
+ */
+inline TensorPtr clone_tensor_ptr(const TensorPtr& tensor) {
+  return clone_tensor_ptr(*tensor);
 }
 
 /**

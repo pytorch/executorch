@@ -23,7 +23,7 @@ using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
 Tensor& op_expm1_out(const Tensor& a, Tensor& out) {
-  exec_aten::RuntimeContext context{};
+  executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::aten::expm1_outf(context, a, out);
 }
 
