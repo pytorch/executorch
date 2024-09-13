@@ -13,7 +13,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-Tensor& scalar_tensor_out(RuntimeContext& ctx, const Scalar& s, Tensor& out) {
+Tensor&
+scalar_tensor_out(KernelRuntimeContext& ctx, const Scalar& s, Tensor& out) {
   (void)ctx;
 
   ET_KERNEL_CHECK(

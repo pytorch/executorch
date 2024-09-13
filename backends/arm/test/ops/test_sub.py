@@ -104,9 +104,7 @@ class TestSimpleSub(unittest.TestCase):
         test_data = (test_data,)
         self._test_sub_tosa_BI_pipeline(self.Sub(), test_data)
 
-    # Expected to fail since RESCALE cannot be fused with SUB in Vela.
     @parameterized.expand(Sub.test_parameters)
-    @unittest.expectedFailure
     def test_sub_u55_BI(self, test_data: torch.Tensor):
         test_data = (test_data,)
         self._test_sub_u55_BI_pipeline(self.Sub(), test_data)

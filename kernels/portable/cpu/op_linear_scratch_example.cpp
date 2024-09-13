@@ -118,7 +118,7 @@ Tensor& linear_scratch_example(
 }
 
 Tensor& linear_scratch_example(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
     const optional<Tensor>& bias,

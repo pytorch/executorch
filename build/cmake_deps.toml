@@ -116,6 +116,20 @@ deps = [
   "executorch",
 ]
 
+[targets.optimized_native_cpu_ops_oss]
+buck_targets = [
+  "//configurations:optimized_native_cpu_ops_oss",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+]
+deps = [
+  "executorch_no_prim_ops",
+  "executorch",
+  "portable_kernels",
+]
 # ---------------------------------- core end ----------------------------------
 # ---------------------------------- extension start ----------------------------------
 [targets.extension_data_loader]
@@ -341,5 +355,6 @@ deps = [
   "portable_kernels",
   "quantized_kernels",
   "xnnpack_backend",
+  "optimized_native_cpu_ops_oss",
 ]
 # ---------------------------------- LLama end ----------------------------------
