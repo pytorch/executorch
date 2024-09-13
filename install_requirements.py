@@ -78,6 +78,14 @@ for arg in sys.argv[1:]:
         else:
             print(f"Error: {arg} must follow --pybind")
             sys.exit(1)
+    elif arg == "--clean":
+        print(f"Cleaning build artifacts...")
+        if sys.platform == "win32":
+            subprocess.run(["rmdir", "/s", "cmake-out*/"], check=True)
+            subprocess.run(["rmdir", "/s", "pip-out/"], check=True)
+        else:
+            subprocess.run(["rm", "-rf", "cmake-out*/"], check=True)
+            subprocess.run(["rm", "-rf", "pip-out/"], check=True)
     else:
         print(f"Error: Unknown option {arg}")
         sys.exit(1)
