@@ -254,12 +254,12 @@ et_cxx_test(
   ${_optimized_kernels_test_sources}
   EXTRA_LIBS
   cpuinfo
-  eigen_blas
   extension_threadpool
   optimized_kernels
   optimized_ops_lib
   portable_kernels
   pthreadpool
+  eigen_blas
 )
 add_dependencies(optimized_kernels_test generate_wrapper)
 target_include_directories(
