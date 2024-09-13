@@ -61,6 +61,7 @@ This example is verified with SM8550 and SM8450.
    - The below is public links to download various QNN versions. Hope they can be publicly discoverable soon.
    - [QNN 2.26.0](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.26.0.240828.zip)
    - [QNN 2.25.0](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.25.0.240728.zip)
+   - Note that convolution op might be failed for QNN 2.25.0.
 
 The directory with installed Qualcomm AI Engine Direct SDK looks like:
 ```
