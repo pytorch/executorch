@@ -46,11 +46,17 @@ struct ModelInstance {
 };
 
 void ModelChunk::Initialize() {
+  ET_LOG(Info, "cmodiii in ModuleChunk::Initialize");
   LoadModels();
+  ET_LOG(Info, "cmodiii after LoadModels");
   GetModelIoInfo();
+  ET_LOG(Info, "cmodiii after GetModelIoInfo");
   AllocateIoBuffers();
+  ET_LOG(Info, "cmodiii after AllocateIoBuffers");
   SetBackendInputs();
+  ET_LOG(Info, "cmodiii after SetBackendInputs");
   SetBackendOutputs();
+  ET_LOG(Info, "cmodiii after SetBackendOutputs");
   mIsInitialized = true;
 }
 

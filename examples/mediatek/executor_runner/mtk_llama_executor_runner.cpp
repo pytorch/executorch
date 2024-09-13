@@ -147,11 +147,11 @@ LlamaModelOptions get_model_options() {
       .rot_emb_base = FLAGS_rot_emb_base,
 
       // Types
-      .model_input_type = getLLMTypeFromName(FLAGS_input_type.c_str()),
-      .model_output_type = getLLMTypeFromName(FLAGS_output_type.c_str()),
-      .cache_type = getLLMTypeFromName(FLAGS_cache_type.c_str()),
-      .mask_type = getLLMTypeFromName(FLAGS_mask_type.c_str()),
-      .rot_emb_type = getLLMTypeFromName(FLAGS_rot_emb_type.c_str())};
+      .model_input_type = LLMType::FP32,
+      .model_output_type = LLMType::FP32,
+      .cache_type = LLMType::FP32,
+      .mask_type = LLMType::FP32,
+      .rot_emb_type = LLMType::FP32};
   return options;
 }
 
@@ -159,8 +159,8 @@ LlamaModelPaths get_model_paths() {
   LlamaModelPaths model_paths = {
       .tokenizer_path = FLAGS_tokenizer_path,
       .token_embedding_path = FLAGS_token_embedding_path,
-      .prompt_model_paths = utils::split(FLAGS_prompt_model_paths, ','),
-      .gen_model_paths = utils::split(FLAGS_gen_model_paths, ',')};
+      .prompt_model_paths = utils::split("/data/local/tmp/et-mtk/llama3/llama3-8B-instruct_A16W4_4_chunks_128t512c_0.pte,/data/local/tmp/et-mtk/llama3/llama3-8B-instruct_A16W4_4_chunks_128t512c_1.pte,/data/local/tmp/et-mtk/llama3/llama3-8B-instruct_A16W4_4_chunks_128t512c_2.pte,/data/local/tmp/et-mtk/llama3/llama3-8B-instruct_A16W4_4_chunks_128t512c_3.pte,", ','),
+      .gen_model_paths = utils::split("/data/local/tmp/et-mtk/llama3/llama3-8B-instruct_A16W4_4_chunks_1t512c_0.pte,/data/local/tmp/et-mtk/llama3/llama3-8B-instruct_A16W4_4_chunks_1t512c_1.pte,/data/local/tmp/et-mtk/llama3/llama3-8B-instruct_A16W4_4_chunks_1t512c_2.pte,/data/local/tmp/et-mtk/llama3/llama3-8B-instruct_A16W4_4_chunks_1t512c_3.pte,", ',')};
   return model_paths;
 }
 
@@ -353,23 +353,27 @@ int main(int argc, char** argv) {
   Timer timer_release(
       [](const auto elapsed_sec) { ET_LOG(Info, "Model released."); });
 
-  LlamaRuntime llama_runtime;
+  //LlamaRuntime llama_runtime;
+  std::unique_ptr<LlamaRuntime> llama_runtime = std::make_unique<LlamaRuntime>();
 
   // Initialize model
   ET_LOG(Info, "Begin model loading.");
   timer_init.Start();
   const auto tokenizer = load_tokenizer();
-  llama_runtime.Initialize(model_options, model_paths);
+  //llama_runtime.Initialize(model_options, model_paths);
+  llama_runtime->Initialize(model_options, model_paths);
   timer_init.End();
 
   // Run model
   ET_CHECK_MSG(!FLAGS_prompt_file.empty(), "No prompt file provided.");
   std::string prompt = utils::read_file(FLAGS_prompt_file);
-  inference(llama_runtime, tokenizer, prompt);
+  //inference(llama_runtime, tokenizer, prompt);
+  inference(*llama_runtime.get(), tokenizer, prompt);
 
   // Release model
   timer_release.Start();
-  llama_runtime.Release();
+  //llama_runtime.Release();
+  llama_runtime->Release();
   timer_release.End();
 
   return 0;

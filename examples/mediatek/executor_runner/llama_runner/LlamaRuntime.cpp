@@ -70,12 +70,30 @@ void LlamaRuntime::Initialize(
         numRotEmbInputs,
         mRotEmbMasterLut.get());
     ET_LOG(Info, "cmodiii 7");
+    if(llamaChunk.get() == nullptr) {
+      ET_LOG(Info, "cmodiii llamaChunk is null");
+    } else {
+      ET_LOG(Info, "cmodiii llamaChunk is not null");
+    }
+
     mLlamaModelChunks.push_back(std::move(llamaChunk));
+    
+    if(mLlamaModelChunks.empty()) {
+      ET_LOG(Info, "cmodiii mLlamaModelChunks is empty");
+    } else {
+      ET_LOG(Info, "cmodiii mLlamaModelChunks is not empty");
+    }
+
     ET_LOG(Info, "cmodiii 8");
   }
 
   for (size_t i = 0; i < numChunk; i++) {
     auto& modelChunk = mLlamaModelChunks[i];
+    if(modelChunk.get() == nullptr) {
+      ET_LOG(Info, "cmodiii modelChunk is null");
+    } else {
+      ET_LOG(Info, "cmodiii modelChunk is not null");
+    }
     ET_LOG(Info, "cmodiii 9");
     if (i > 0) {
       const auto& prevModelChunk = mLlamaModelChunks[i - 1];
