@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Computation times &mdash; ExecuTorch main documentation</title>
+  <title>Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,6 +42,9 @@
   <link rel="stylesheet" href="../_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
+
+<link rel="stylesheet" href="../_static/css/progress-bar.css">
+<script src="../_static/js/progress-bar.js" defer></script>
 
 
   <!-- Google Tag Manager -->
@@ -313,10 +316,10 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/sdk-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
@@ -331,7 +334,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -432,13 +435,13 @@
       </li>
 
         
-      <li>Computation times</li>
+      <li>Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="../_sources/tutorials/sg_execution_times.rst.txt" rel="nofollow"><img src="../_static/images/view-page-source-icon.svg"></a>
+            <a href="../_sources/llm/build-run-llama3-qualcomm-ai-engine-direct-backend.md.txt" rel="nofollow"><img src="../_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -460,28 +463,6 @@
         
 
 
-<div class="pytorch-call-to-action-links">
-  <div id="tutorial-type">tutorials/sg_execution_times</div>
-
-  <div id="google-colab-link">
-    <img class="call-to-action-img" src="../_static/images/pytorch-colab.svg" />
-    <div class="call-to-action-desktop-view">Run in Google Colab</div>
-    <div class="call-to-action-mobile-view">Colab</div>
-  </div>
-  <div id="download-notebook-link">
-    <img class="call-to-action-notebook-img" src="../_static/images/pytorch-download.svg" />
-    <div class="call-to-action-desktop-view">Download Notebook</div>
-    <div class="call-to-action-mobile-view">Notebook</div>
-  </div>
-  <div id="github-view-link">
-    <img class="call-to-action-img" src="../_static/images/pytorch-github.svg" />
-    <div class="call-to-action-desktop-view">View on GitHub</div>
-    <div class="call-to-action-mobile-view">GitHub</div>
-  </div>
-</div>
-
-
-
           <!-- Google Tag Manager (noscript) -->
           <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS"
           height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
@@ -492,26 +473,149 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="computation-times">
-<span id="sphx-glr-tutorials-sg-execution-times"></span><h1>Computation times<a class="headerlink" href="#computation-times" title="Permalink to this heading">¶</a></h1>
-<p><strong>00:02.934</strong> total execution time for <strong>tutorials</strong> files:</p>
-<table class="docutils align-default">
-<colgroup>
-<col style="width: 84%" />
-<col style="width: 9%" />
-<col style="width: 7%" />
-</colgroup>
-<tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="export-to-executorch-tutorial.html#sphx-glr-tutorials-export-to-executorch-tutorial-py"><span class="std std-ref">Exporting to ExecuTorch Tutorial</span></a> (<code class="docutils literal notranslate"><span class="pre">export-to-executorch-tutorial.py</span></code>)</p></td>
-<td><p>00:01.500</p></td>
-<td><p>0.0 MB</p></td>
-</tr>
-<tr class="row-even"><td><p><a class="reference internal" href="sdk-integration-tutorial.html#sphx-glr-tutorials-sdk-integration-tutorial-py"><span class="std std-ref">Using the ExecuTorch Developer Tools to Profile a Model</span></a> (<code class="docutils literal notranslate"><span class="pre">sdk-integration-tutorial.py</span></code>)</p></td>
-<td><p>00:01.434</p></td>
-<td><p>0.0 MB</p></td>
-</tr>
-</tbody>
-</table>
+  <div class="section" id="building-and-running-llama-3-8b-instruct-with-qualcomm-ai-engine-direct-backend">
+<h1>Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend<a class="headerlink" href="#building-and-running-llama-3-8b-instruct-with-qualcomm-ai-engine-direct-backend" title="Permalink to this heading">¶</a></h1>
+<p>This tutorial demonstrates how to export Llama 3 8B Instruct for Qualcomm AI Engine Direct Backend and running the model on a Qualcomm device.</p>
+<div class="section" id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Set up your ExecuTorch repo and environment if you haven’t done so by following <a class="reference internal" href="../getting-started-setup.html"><span class="doc std std-doc">the Setting up ExecuTorch</span></a> to set up the repo and dev environment.</p></li>
+<li><p>Read <a class="reference internal" href="../build-run-qualcomm-ai-engine-direct-backend.html"><span class="doc std std-doc">the Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend page</span></a> to understand how to export and run a model with Qualcomm AI Engine Direct Backend on Qualcomm device.</p></li>
+<li><p>Follow <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/models/llama2">the README for executorch llama</a> to know how to run a llama model on mobile via ExecuTorch.</p></li>
+<li><p>A Qualcomm device with 16GB RAM</p>
+<ul>
+<li><p>We are continuing to optimize our memory usage to ensure compatibility with lower memory devices.</p></li>
+</ul>
+</li>
+<li><p>The version of <a class="reference external" href="https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk">Qualcomm AI Engine Direct SDK</a> is 2.26.0 or above.</p></li>
+</ul>
+</div>
+<div class="section" id="instructions">
+<h2>Instructions<a class="headerlink" href="#instructions" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="step1-prepare-the-checkpoint-of-the-model-and-optimized-matrix-from-spin-quant">
+<h3>Step1: Prepare the checkpoint of the model and optimized matrix from <a class="reference external" href="https://github.com/facebookresearch/SpinQuant">Spin Quant</a><a class="headerlink" href="#step1-prepare-the-checkpoint-of-the-model-and-optimized-matrix-from-spin-quant" title="Permalink to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p>For Llama 3 tokenizer and checkpoint, please refer to https://github.com/meta-llama/llama-models/blob/main/README.md for further instructions on how to download <code class="docutils literal notranslate"><span class="pre">tokenizer.model</span></code>, <code class="docutils literal notranslate"><span class="pre">consolidated.00.pth</span></code> and <code class="docutils literal notranslate"><span class="pre">params.json</span></code>.</p></li>
+<li><p>To get the optimized matrix, please refer to <a class="reference external" href="https://github.com/facebookresearch/SpinQuant">SpinQuant on GitHub</a>. You can download the optimized rotation matrices in the Quantized Models section. Please choose <strong>LLaMA-3-8B/8B_W4A16KV16_lr_1.5_seed_0</strong>.</p></li>
+</ol>
+</div>
+<div class="section" id="step2-export-to-executorch-with-qualcomm-ai-engine-direct-backend">
+<h3>Step2: Export to ExecuTorch with Qualcomm AI Engine Direct Backend<a class="headerlink" href="#step2-export-to-executorch-with-qualcomm-ai-engine-direct-backend" title="Permalink to this heading">¶</a></h3>
+<p>Deploying large language models like Llama 3 on-device presents the following challenges:</p>
+<ol class="arabic simple">
+<li><p>The model size is too large to fit in device memory for inference.</p></li>
+<li><p>High model loading and inference time.</p></li>
+<li><p>Difficulty in quantization.</p></li>
+</ol>
+<p>To address these challenges, we have implemented the following solutions:</p>
+<ol class="arabic simple">
+<li><p>Using <code class="docutils literal notranslate"><span class="pre">--pt2e_quantize</span> <span class="pre">qnn_16a4w</span></code> to quantize activations and weights, thereby reducing the on-disk model size and alleviating memory pressure during inference.</p></li>
+<li><p>Using <code class="docutils literal notranslate"><span class="pre">--num_sharding</span> <span class="pre">8</span></code> to shard the model into sub-parts.</p></li>
+<li><p>Performing graph transformations to convert or decompose operations into more accelerator-friendly operations.</p></li>
+<li><p>Using <code class="docutils literal notranslate"><span class="pre">--optimized_rotation_path</span> <span class="pre">&lt;path_to_optimized_matrix&gt;</span></code> to apply R1 and R2 of <a class="reference external" href="https://github.com/facebookresearch/SpinQuant">Spin Quant</a> to improve accuracy.</p></li>
+<li><p>Using <code class="docutils literal notranslate"><span class="pre">--calibration_data</span> <span class="pre">&quot;&lt;|start_header_id|&gt;system&lt;|end_header_id|...&quot;</span></code> to ensure that during the quantization of Llama 3 8B instruct, the calibration includes special tokens in the prompt template. For more details on the prompt template, refer to <a class="reference external" href="https://llama.meta.com/docs/model-cards-and-prompt-formats/meta-llama-3/">the model card of meta llama3 instruct</a>.</p></li>
+</ol>
+<p>To export Llama 3 8B instruct with the Qualcomm AI Engine Direct Backend, ensure the following:</p>
+<ol class="arabic simple">
+<li><p>The host machine has more than 100GB of memory (RAM + swap space).</p></li>
+<li><p>The entire process takes a few hours.</p></li>
+</ol>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Please note that calibration_data must include the prompt template for special tokens.</span>
+python<span class="w"> </span>-m<span class="w"> </span>examples.models.llama2.export_llama<span class="w">  </span>-t<span class="w"> </span>&lt;path_to_tokenizer.model&gt;
+llama3/Meta-Llama-3-8B-Instruct/tokenizer.model<span class="w"> </span>-p<span class="w"> </span>&lt;path_to_params.json&gt;<span class="w"> </span>-c<span class="w"> </span>&lt;path_to_checkpoint_for_Meta-Llama-3-8B-Instruct&gt;<span class="w">  </span>--use_kv_cache<span class="w">  </span>--qnn<span class="w"> </span>--pt2e_quantize<span class="w"> </span>qnn_16a4w<span class="w"> </span>--disable_dynamic_shape<span class="w"> </span>--num_sharding<span class="w"> </span><span class="m">8</span><span class="w"> </span>--calibration_tasks<span class="w"> </span>wikitext<span class="w"> </span>--calibration_limit<span class="w"> </span><span class="m">1</span><span class="w"> </span>--calibration_seq_length<span class="w"> </span><span class="m">128</span><span class="w"> </span>--optimized_rotation_path<span class="w"> </span>&lt;path_to_optimized_matrix&gt;<span class="w"> </span>--calibration_data<span class="w"> </span><span class="s2">&quot;&lt;|start_header_id|&gt;system&lt;|end_header_id|&gt;\n\nYou are a funny chatbot.&lt;|eot_id|&gt;&lt;|start_header_id|&gt;user&lt;|end_header_id|&gt;\n\nCould you tell me about Facebook?&lt;|eot_id|&gt;&lt;|start_header_id|&gt;assistant&lt;|end_header_id|&gt;\n\n&quot;</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="step3-invoke-the-runtime-on-an-android-smartphone-with-qualcomm-socs">
+<h3>Step3: Invoke the Runtime on an Android smartphone with Qualcomm SoCs<a class="headerlink" href="#step3-invoke-the-runtime-on-an-android-smartphone-with-qualcomm-socs" title="Permalink to this heading">¶</a></h3>
+<ol class="arabic">
+<li><p>Build executorch with Qualcomm AI Engine Direct Backend for android</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ANDROID_NDK_ROOT</span><span class="si">}</span><span class="s2">/build/cmake/android.toolchain.cmake&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_ABI<span class="o">=</span>arm64-v8a<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_PLATFORM<span class="o">=</span>android-23<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-android-out<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_TENSOR<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_QNN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DQNN_SDK_ROOT<span class="o">=</span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_CUSTOM<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-Bcmake-android-out<span class="w"> </span>.
+
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out<span class="w"> </span>-j16<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Release
+</pre></div>
+</div>
+</li>
+<li><p>Build llama runner for android</p></li>
+</ol>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="w">    </span>cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">        </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ANDROID_NDK_ROOT</span><span class="si">}</span><span class="s2">&quot;</span>/build/cmake/android.toolchain.cmake<span class="w">  </span><span class="se">\</span>
+<span class="w">        </span>-DANDROID_ABI<span class="o">=</span>arm64-v8a<span class="w"> </span><span class="se">\</span>
+<span class="w">        </span>-DANDROID_PLATFORM<span class="o">=</span>android-23<span class="w"> </span><span class="se">\</span>
+<span class="w">        </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-android-out<span class="w"> </span><span class="se">\</span>
+<span class="w">        </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
+<span class="w">        </span>-DEXECUTORCH_BUILD_QNN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">        </span>-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">        </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">        </span>-DEXECUTORCH_BUILD_KERNELS_CUSTOM<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">        </span>-Bcmake-android-out/examples/models/llama2<span class="w"> </span>examples/models/llama2
+
+<span class="w">    </span>cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out/examples/models/llama2<span class="w"> </span>-j16<span class="w"> </span>--config<span class="w"> </span>Release
+</pre></div>
+</div>
+<ol class="arabic simple" start="3">
+<li><p>Run on Android via adb shell
+<em>Pre-requisite</em>: Make sure you enable USB debugging via developer options on your phone</p></li>
+</ol>
+<p><strong>3.1 Connect your android phone</strong></p>
+<p><strong>3.2 We need to push required QNN libraries to the device.</strong></p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># make sure you have write-permission on below path.</span>
+<span class="nv">DEVICE_DIR</span><span class="o">=</span>/data/local/tmp/llama
+adb<span class="w"> </span>shell<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtp.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnSystem.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtpV69Stub.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtpV73Stub.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtpV75Stub.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+</pre></div>
+</div>
+<p><strong>3.3 Upload model, tokenizer and llama runner binary to phone</strong></p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>adb<span class="w"> </span>push<span class="w"> </span>&lt;model.pte&gt;<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span>&lt;tokenizer.model&gt;<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span>cmake-android-out/lib/libqnn_executorch_backend.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span>cmake-out-android/examples/models/llama2/llama_main<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+</pre></div>
+</div>
+<p><strong>3.4 Run model</strong></p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>adb<span class="w"> </span>shell<span class="w"> </span><span class="s2">&quot;cd </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2"> &amp;&amp; ./llama_main --model_path &lt;model.pte&gt; --tokenizer_path &lt;tokenizer.model&gt; --prompt \&quot;&lt;|start_header_id|&gt;system&lt;|end_header_id|&gt;\n\nYou are a funny chatbot.&lt;|eot_id|&gt;&lt;|start_header_id|&gt;user&lt;|end_header_id|&gt;\n\nCould you tell me about Facebook?&lt;|eot_id|&gt;&lt;|start_header_id|&gt;assistant&lt;|end_header_id|&gt;\n\n\&quot; --seq_len 128&quot;</span>
+</pre></div>
+</div>
+<p>You should see the message:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>&lt;|start_header_id|&gt;system&lt;|end_header_id|&gt;\n\nYou are a funny chatbot.&lt;|eot_id|&gt;&lt;|start_header_id|&gt;user&lt;|end_header_id|&gt;\n\nCould you tell me about Facebook?&lt;|eot_id|&gt;&lt;|start_header_id|&gt;assistant&lt;|end_header_id|&gt;\n\nHello! I&#39;d be delighted to chat with you about Facebook. Facebook is a social media platform that was created in 2004 by Mark Zuckerberg and his colleagues while he was a student at Harvard University. It was initially called &quot;Facemaker&quot; but later changed to Facebook, which is a combination of the words &quot;face&quot; and &quot;book&quot;. The platform was initially intended for people to share their thoughts and share information with their friends, but it quickly grew to become one of the
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="what-is-coming">
+<h2>What is coming?<a class="headerlink" href="#what-is-coming" title="Permalink to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Improve the performance for Llama 3 Instruct</p></li>
+<li><p>Reduce the memory pressure during inference to support 12GB Qualcomm devices</p></li>
+<li><p>Support more LLMs</p></li>
+</ul>
+</div>
+<div class="section" id="faq">
+<h2>FAQ<a class="headerlink" href="#faq" title="Permalink to this heading">¶</a></h2>
+<p>If you encounter any issues while reproducing the tutorial, please file a github
+issue on ExecuTorch repo and tag use <code class="docutils literal notranslate"><span class="pre">#qcom_aisw</span></code> tag</p>
+</div>
 </div>
 
 
@@ -550,7 +654,18 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Computation times</a></li>
+<li><a class="reference internal" href="#">Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend</a><ul>
+<li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li><a class="reference internal" href="#instructions">Instructions</a><ul>
+<li><a class="reference internal" href="#step1-prepare-the-checkpoint-of-the-model-and-optimized-matrix-from-spin-quant">Step1: Prepare the checkpoint of the model and optimized matrix from Spin Quant</a></li>
+<li><a class="reference internal" href="#step2-export-to-executorch-with-qualcomm-ai-engine-direct-backend">Step2: Export to ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
+<li><a class="reference internal" href="#step3-invoke-the-runtime-on-an-android-smartphone-with-qualcomm-socs">Step3: Invoke the Runtime on an Android smartphone with Qualcomm SoCs</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#what-is-coming">What is coming?</a></li>
+<li><a class="reference internal" href="#faq">FAQ</a></li>
+</ul>
+</li>
 </ul>
 
             </div>
