@@ -8,6 +8,10 @@
         android:theme="@style/Theme.MiniBench"
         tools:targetApi="31">
 
+        <uses-native-library
+            android:name="libcdsprpc.so"
+            android:required="false" />
+
         <activity
             android:name=".BenchmarkActivity"
             android:exported="true">
