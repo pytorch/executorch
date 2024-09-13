@@ -59,6 +59,7 @@ __all__ = [
 
 
 def _supported_symmetric_quantized_operators() -> Dict[str, List[OperatorPatternType]]:
+    # pyre-fixme[9]: supported_operators has type `Dict[str, List[List[typing.Callabl...
     supported_operators: Dict[str, List[OperatorPatternType]] = {
         # Both conv and linear should be able to handle relu + hardtanh fusion since
         # those are clamp ops
