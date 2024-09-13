@@ -32,6 +32,7 @@ et_cxx_test(
   EXTRA_LIBS
   extension_data_loader
   extension_module_static
+  extension_tensor
   portable_kernels
   portable_ops_lib
 )

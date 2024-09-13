@@ -282,16 +282,9 @@ class vTensor final {
   // Contains the number of elements in the tensor according to the padded
   // sizes.
   size_t padded_numel_;
-  // Contains the "virtual" texture extents of the tensor. See the
-  // texture_limits() function for more context. Note that the texture limits
-  // are only relevant for texture storage, and not for buffer storage.
+  // See the comments documenting image_extents() for more context.
   TextureLimits texture_limits_;
-  // Contains the physical texture extents of the underlying image texture, but
-  // re-ordered such that the first element is the extent of the axis used to
-  // represent the tensor's width dimension, the second element is the extent of
-  // the axis used to represent the tensor's height dimension, and the third
-  // element is the extent of the axis used to represent the tensor's channels
-  // dimension.
+  // See the comments documenting logical_extents() for more context.
   TextureLimits logical_limits_;
 
   /*
@@ -453,11 +446,8 @@ class vTensor final {
 
   /*
    * Returns a GPU buffer containing the logical image extents of the tensor.
-   * The logical extents are a re-ordering of the physical image extents such
-   * that the first element is the extent of the axis used to represent the
-   * tensor's width dimension, the second element is the extent of the axis used
-   * to represent the tensor's height dimension, and the third element is the
-   * extent of the axis used to represent the tensor's channels dimension.
+   * It contains the same data as texture_limits_ubo(), but with the data
+   * re-ordered. See the comments for logical_extents() for more context.
    */
   const vkapi::BufferBindInfo logical_limits_ubo();
 
