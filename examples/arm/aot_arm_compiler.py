@@ -10,6 +10,7 @@
 import argparse
 import logging
 import os
+
 import torch
 
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
@@ -53,10 +54,9 @@ def get_model_and_inputs_from_name(model_name: str):
     #         ModelInputs should be a tuple of inputs to the forward function
     elif model_name.endswith(".py"):
         import importlib.util
-        import sys
 
         # load model's module and add it
-        spec = importlib.util.spec_from_file_location('tmp_model', model_name)
+        spec = importlib.util.spec_from_file_location("tmp_model", model_name)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         model = module.ModelUnderTest
@@ -175,7 +175,7 @@ if __name__ == "__main__":
         action="store",
         required=False,
         default="ethos-u55-128",
-        help=f"For ArmBackend delegated models, pick the target, and therefore the instruction set generated. valid targets are {targets}"
+        help=f"For ArmBackend delegated models, pick the target, and therefore the instruction set generated. valid targets are {targets}",
     )
     parser.add_argument(
         "-q",
@@ -200,14 +200,14 @@ if __name__ == "__main__":
         "--intermediates",
         action="store",
         required=False,
-        help=f"Store intermediate output (like TOSA artefacts) somewhere."
+        help="Store intermediate output (like TOSA artefacts) somewhere.",
     )
     parser.add_argument(
         "-o",
         "--output",
         action="store",
         required=False,
-        help="Location for outputs, if not the default of cwd."
+        help="Location for outputs, if not the default of cwd.",
     )
 
     args = parser.parse_args()
@@ -258,9 +258,9 @@ if __name__ == "__main__":
     if args.delegate is True:
         if args.target == "TOSA":
             compile_spec = (
-                ArmCompileSpecBuilder().
-                tosa_compile_spec().
-                set_permute_memory_format(True)
+                ArmCompileSpecBuilder()
+                .tosa_compile_spec()
+                .set_permute_memory_format(True)
             )
         elif args.target == "ethos-u55-128":
             compile_spec = (
@@ -288,16 +288,14 @@ if __name__ == "__main__":
                 .set_permute_memory_format(True)
             )
         else:
-            raise RuntimeError(f"Expected a target in {targets}, found {args.target}");
-        if args.intermediates != None:
+            raise RuntimeError(f"Expected a target in {targets}, found {args.target}")
+        if args.intermediates is not None:
             compile_spec.dump_intermediate_artifacts_to(args.intermediates)
         compile_spec = compile_spec.build()
 
     logging.debug(f"Exported graph:\n{edge.exported_program().graph}")
     if args.delegate is True:
-        edge = edge.to_backend(
-            ArmPartitioner( compile_spec )
-        )
+        edge = edge.to_backend(ArmPartitioner(compile_spec))
         logging.debug(f"Lowered graph:\n{edge.exported_program().graph}")
 
     try:
@@ -318,7 +316,7 @@ if __name__ == "__main__":
         f"_arm_delegate_{args.target}" if args.delegate is True else ""
     )
 
-    if args.output != None:
-        output_name = os.path.join( args.output, output_name )
+    if args.output is not None:
+        output_name = os.path.join(args.output, output_name)
 
     save_pte_program(exec_prog, output_name)
