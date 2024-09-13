@@ -29,7 +29,7 @@ PLATFORM_TARGET=("17.0" "17.0" "10.15")
 
 FRAMEWORK_EXECUTORCH="executorch:\
 libexecutorch.a,\
-libexecutorch_no_prim_ops.a,\
+libexecutorch_core.a,\
 libextension_apple.a,\
 libextension_data_loader.a,\
 libextension_module.a,\
@@ -37,11 +37,11 @@ libextension_tensor.a,\
 :$HEADERS_PATH"
 
 FRAMEWORK_BACKEND_COREML="backend_coreml:\
-libcoremldelegate.a,\
+libcoreml_backend.a,\
 :"
 
 FRAMEWORK_BACKEND_MPS="backend_mps:\
-libmpsdelegate.a,\
+libmps_backend.a,\
 :"
 
 FRAMEWORK_BACKEND_XNNPACK="backend_xnnpack:\

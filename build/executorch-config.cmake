@@ -13,7 +13,7 @@
 cmake_minimum_required(VERSION 3.19)
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../..")
-set(required_lib_list executorch executorch_no_prim_ops portable_kernels)
+set(required_lib_list executorch executorch_core portable_kernels)
 foreach(lib ${required_lib_list})
   set(lib_var "LIB_${lib}")
   add_library(${lib} STATIC IMPORTED)
@@ -26,7 +26,7 @@ foreach(lib ${required_lib_list})
   target_include_directories(${lib} INTERFACE ${_root})
 endforeach()
 
-target_link_libraries(executorch INTERFACE executorch_no_prim_ops)
+target_link_libraries(executorch INTERFACE executorch_core)
 
 if(CMAKE_BUILD_TYPE MATCHES "Debug")
   set(FLATCCRT_LIB flatccrt_d)
@@ -39,8 +39,8 @@ set(lib_list
     bundled_program
     extension_data_loader
     ${FLATCCRT_LIB}
-    coremldelegate
-    mpsdelegate
+    coreml_backend
+    mps_backend
     qnn_executorch_backend
     portable_ops_lib
     extension_module
@@ -86,3 +86,12 @@ foreach(lib ${lib_list})
     target_include_directories(${lib} INTERFACE ${_root})
   endif()
 endforeach()
+
+# Legacy target names.
+add_library(executorch_no_prim_ops ALIAS executorch_core)
+if(TARGET coreml_backend)
+  add_library(coremldelegate ALIAS coreml_backend)
+endif()
+if(TARGET mps_backend)
+  add_library(mpsdelegate ALIAS mps_backend)
+endif()
