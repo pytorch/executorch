@@ -90,7 +90,7 @@ public class BenchmarkActivity extends Activity {
 class Stats {
   long loadStart;
   long loadEnd;
-  List<double> latency = new ArrayList<>();
+  List<Double> latency = new ArrayList<>();
   int errorCode = 0;
 
   @Override
