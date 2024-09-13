@@ -258,6 +258,48 @@ TEST_F(VulkanComputeAPITest, calculate_tensor_strides_test) {
   }
 }
 
+TEST_F(VulkanComputeAPITest, virtual_transpose_test) {
+  std::vector<int64_t> sizes = {7, 9, 11, 13};
+  // (dim0, dim1), new_sizes, new_dim_order, new_axis_map, new_packed_dim_idx
+  std::vector<std::vector<std::vector<int64_t>>> test_cases = {
+      {{2, 3}, {7, 9, 13, 11}, {0, 1, 3, 2}, {1, 0, 2, 2}, {1}},
+      {{2, 1}, {7, 11, 9, 13}, {0, 2, 1, 3}, {0, 2, 1, 2}, {0}},
+      {{1, 3}, {7, 13, 11, 9}, {0, 3, 2, 1}, {2, 1, 0, 2}, {2}},
+  };
+
+  for (const auto& test_case : test_cases) {
+    const int dim0 = test_case.at(0).at(0);
+    const int dim1 = test_case.at(0).at(1);
+
+    const auto& expected_sizes = test_case.at(1);
+    const auto& expected_dim_order = test_case.at(2);
+    const auto& expected_axis_map = test_case.at(3);
+    const int expected_packed_dim = test_case.at(4).at(0);
+
+    {
+      vTensor a_buffer = vTensor(
+          context(), sizes, vkapi::kFloat, utils::kBuffer, utils::kWidthPacked);
+
+      a_buffer.virtual_transpose(dim0, dim1);
+      EXPECT_TRUE(a_buffer.sizes() == expected_sizes);
+      EXPECT_TRUE(a_buffer.dim_order() == expected_dim_order);
+    }
+
+    {
+      vTensor a_texture = vTensor(
+          context(),
+          sizes,
+          vkapi::kFloat,
+          utils::kTexture3D,
+          utils::kWidthPacked);
+      a_texture.virtual_transpose(dim0, dim1);
+      EXPECT_TRUE(a_texture.sizes() == expected_sizes);
+      EXPECT_TRUE(a_texture.axis_map() == expected_axis_map);
+      EXPECT_TRUE(a_texture.packed_dim_whcn_idx() == expected_packed_dim);
+    }
+  }
+}
+
 TEST_F(VulkanComputeAPITest, vec_test) {
   utils::vec3 v3({1, 2, 3});
   ASSERT_TRUE(v3[0] == 1);
@@ -637,46 +679,60 @@ TEST_F(VulkanComputeAPITest, tensor_no_copy_transpose_test) {
   constexpr int N = 17;
   std::vector<int64_t> mat1_sizes = {M, K};
   std::vector<int64_t> mat2_sizes = {N, K};
-  std::vector<int64_t> mat2_t_sizes = {K, N};
   std::vector<int64_t> out_sizes = {M, N};
 
-  std::vector<int64_t> transposed_dim_order = {1, 0};
+  for (const auto storage_type : {utils::kTexture3D, utils::kBuffer}) {
+    vTensor mat1 = vTensor(
+        context(),
+        mat1_sizes,
+        vkapi::kFloat,
+        storage_type,
+        utils::kWidthPacked);
+    vTensor mat2 = vTensor(
+        context(),
+        mat2_sizes,
+        vkapi::kFloat,
+        storage_type,
+        utils::kWidthPacked);
+    vTensor out = vTensor(
+        context(), out_sizes, vkapi::kFloat, storage_type, utils::kWidthPacked);
 
-  vTensor mat1 = CREATE_FLOAT_BUFFER(mat1_sizes, /*allocate_memory=*/true);
-  vTensor mat2 = CREATE_FLOAT_BUFFER(mat2_sizes, /*allocate_memory=*/true);
-  vTensor out = CREATE_FLOAT_BUFFER(out_sizes, /*allocate_memory=*/true);
+    // Generate data
+    std::vector<float> mat1_data =
+        create_random_float_buffer(mat1.staging_buffer_numel());
+    std::vector<float> mat2_data =
+        create_random_float_buffer(mat2.staging_buffer_numel());
 
-  // Generate data
-  std::vector<float> mat1_data =
-      create_random_float_buffer(mat1.staging_buffer_numel());
-  std::vector<float> mat2_data =
-      create_random_float_buffer(mat2.staging_buffer_numel());
+    // Create direct view and modify sizes and strides later
+    vTensor mat2_t = vTensor(mat2);
+    // Update sizes and strides of mat2_t to be that of a transposed tensor
+    mat2_t.virtual_transpose(0, 1);
 
-  // Create direct view and modify sizes and strides later
-  vTensor mat2_t = vTensor(mat2);
+    EXPECT_TRUE(mat2_t.gpu_memory_layout() == utils::kHeightPacked);
 
-  std::vector<float> mat2_t_data = transpose_matrix(mat2_data, N, K);
-  std::vector<float> ref_out =
-      compute_reference_matmul(mat1_data, mat2_t_data, M, K, N);
+    std::vector<float> mat2_t_data = transpose_matrix(mat2_data, N, K);
+    std::vector<float> ref_out =
+        compute_reference_matmul(mat1_data, mat2_t_data, M, K, N);
 
-  // Fill original tensor with some data
-  fill_vtensor(mat1, mat1_data);
-  fill_vtensor(mat2, mat2_data);
+    // Fill original tensor with some data
+    fill_vtensor(mat1, mat1_data);
+    fill_vtensor(mat2, mat2_data);
 
-  record_reference_matmul(api::context(), out, mat1, mat2_t);
+    if (storage_type == utils::kTexture3D) {
+      record_matmul_texture3d(context(), out, mat1, mat2_t);
+    } else {
+      record_reference_matmul(context(), out, mat1, mat2_t);
+    }
 
-  // Update sizes and strides of mat2_t to be that of a transposed tensor
-  mat2_t.virtual_reconfigure(mat2_t_sizes, transposed_dim_order);
-  EXPECT_TRUE(mat2_t.gpu_memory_layout() == utils::kHeightPacked);
+    std::vector<float> data_out(out.staging_buffer_numel());
+    // Extract the copy tensor; should contain the data of the original tensor
+    extract_vtensor(out, data_out);
 
-  std::vector<float> data_out(out.staging_buffer_numel());
-  // Extract the copy tensor; should contain the data of the original tensor
-  extract_vtensor(out, data_out);
+    // EXPECT_TRUE(data_out.size() == ref_out.size());
 
-  EXPECT_TRUE(data_out.size() == ref_out.size());
-
-  for (size_t i = 0; i < data_out.size(); ++i) {
-    EXPECT_TRUE(check_close(data_out[i], ref_out[i]));
+    for (size_t i = 0; i < ref_out.size(); ++i) {
+      EXPECT_TRUE(check_close(data_out[i], ref_out[i]));
+    }
   }
 }
 

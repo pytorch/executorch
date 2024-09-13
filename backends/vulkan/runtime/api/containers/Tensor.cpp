@@ -567,6 +567,48 @@ void vTensor::virtual_resize(const std::vector<int64_t>& new_sizes) {
   update_metadata();
 }
 
+/*
+ * Transposing the dim order is a bit unintuitive. dim0 and dim1 have swapped
+ * their "identities", so we need to swap the values of dim0 and dim1 wherever
+ * they appear in the dim order vector. Compare this to just swapping the
+ * elements at dim0 and dim1 in the `sizes` vectors.
+ */
+void transpose_dim_order_inplace(
+    std::vector<int64_t>& dim_order,
+    const int64_t dim0,
+    const int64_t dim1) {
+  for (int i = 0; i < dim_order.size(); ++i) {
+    if (dim_order[i] == dim0) {
+      dim_order[i] = dim1;
+    } else if (dim_order[i] == dim1) {
+      dim_order[i] = dim0;
+    }
+  }
+}
+
+void vTensor::virtual_transpose(const int64_t dim0, const int64_t dim1) {
+  std::iter_swap(sizes_.begin() + dim0, sizes_.begin() + dim1);
+  if (storage_type() == utils::kBuffer) {
+    transpose_dim_order_inplace(dim_order_, dim0, dim1);
+  } else {
+    const int dim0_whcn = sizes_.size() - 1 - dim0;
+    const int dim1_whcn = sizes_.size() - 1 - dim1;
+    // Cannot transpose batch dimension for texture storage
+    VK_CHECK_COND(dim0_whcn < 3 && dim1_whcn < 3);
+
+    std::iter_swap(
+        axis_map_.begin() + dim0_whcn, axis_map_.begin() + dim1_whcn);
+
+    if (packed_dim_whcn_idx() == dim0_whcn) {
+      memory_layout_ = utils::GPUMemoryLayout(dim1_whcn);
+    }
+    if (packed_dim_whcn_idx() == dim1_whcn) {
+      memory_layout_ = utils::GPUMemoryLayout(dim0_whcn);
+    }
+  }
+  update_metadata();
+}
+
 void vTensor::reallocate(const std::vector<int64_t>& new_sizes) {
   sizes_ = new_sizes;
   update_metadata();
