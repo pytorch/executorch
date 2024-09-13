@@ -9,4 +9,8 @@ set -x
 
 pip install transformers accelerate sentencepiece
 
+pip install --pre torchtune --extra-index-url https://download.pytorch.org/whl/nightly/cpu --no-cache-dir
+
+pip install torchao==0.5.0
+
 pip list
