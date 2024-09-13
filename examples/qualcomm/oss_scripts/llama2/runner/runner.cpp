@@ -187,7 +187,7 @@ Result<exec_aten::Tensor> Runner::run_model_step(
             *kv_outputs[j], new_out_addr, kv_outputs[j]->nbytes()) == Error::Ok,
         "Failed to set output tensor when updating v_cache");
     ET_CHECK_MSG(
-        module_->set_output(kv_outputs[j], j + 1) == Error::Ok,
+        module_->set_output_data_ptr(*kv_outputs[j], j + 1) == Error::Ok,
         "Failed to set llama output data pointer");
   }
 
@@ -291,7 +291,7 @@ Error Runner::generate(
         sizes,
         kv_tensors.back()->scalar_type()));
     ET_CHECK_MSG(
-        module_->set_output(kv_outputs.back(), i + 1) == Error::Ok,
+        module_->set_output_data_ptr(kv_outputs.back(), i + 1) == Error::Ok,
         "Failed to set output tensor for kv cache");
   }
 
@@ -323,7 +323,7 @@ Error Runner::generate(
         sizes,
         kv_tensors.back()->scalar_type()));
     ET_CHECK_MSG(
-        module_->set_output(kv_outputs.back(), output_index) ==
+        module_->set_output_data_ptr(kv_outputs.back(), output_index) ==
             Error::Ok,
         "Failed to set output tensor for llama block");
   }
@@ -333,7 +333,7 @@ Error Runner::generate(
       logits_data_shape,
       ScalarType::Float);
   ET_CHECK_MSG(
-      module_->set_output(affine_logits) == Error::Ok,
+      module_->set_output_data_ptr(affine_logits, 0) == Error::Ok,
       "Failed to set output tensor for affine module - logits");
 
   // Start consuming user's prompts and generating new tokens

@@ -165,12 +165,11 @@ class Module {
       const std::string& method_name);
 
   /**
-   * Execute a specific method with the given input values and retrieve the
-   * output values. Loads the program and method before executing if needed.
+   * Execute a specific method with the given input and retrieve output.
+   * Loads the program and method before executing if needed.
    *
    * @param[in] method_name The name of the method to execute.
-   * @param[in] input_values A vector of input values to be passed to the
-   * method.
+   * @param[in] input A vector of input values to be passed to the method.
    *
    * @returns A Result object containing either a vector of output values
    *          from the method or an error to indicate failure.
@@ -178,22 +177,22 @@ class Module {
   ET_NODISCARD
   runtime::Result<std::vector<runtime::EValue>> execute(
       const std::string& method_name,
-      const std::vector<runtime::EValue>& input_values);
+      const std::vector<runtime::EValue>& input);
 
   /**
    * Execute a specific method with a single input value.
    * Loads the program and method before executing if needed.
    *
    * @param[in] method_name The name of the method to execute.
-   * @param[in] input_value A value to be passed to the method.
+   * @param[in] input A value to be passed to the method.
    *
    * @returns A Result object containing either a vector of output values
    *          from the method or an error to indicate failure.
    */
   ET_NODISCARD inline runtime::Result<std::vector<runtime::EValue>> execute(
       const std::string& method_name,
-      const runtime::EValue& input_value) {
-    return execute(method_name, std::vector<runtime::EValue>{input_value});
+      const runtime::EValue& input) {
+    return execute(method_name, std::vector<runtime::EValue>{input});
   }
 
   /**
@@ -211,20 +210,19 @@ class Module {
   }
 
   /**
-   * Retrieve the output value of a specific method with the given input values.
+   * Retrieve the output value of a specific method with the given input.
    * Loads the program and method before execution if needed.
    *
    * @param[in] method_name The name of the method to execute.
-   * @param[in] input_values A vector of input values to be passed to the
-   * method.
+   * @param[in] input A vector of input values to be passed to the method.
    *
    * @returns A Result object containing either the first output value from the
    * method or an error to indicate failure.
    */
   ET_NODISCARD inline runtime::Result<runtime::EValue> get(
       const std::string& method_name,
-      const std::vector<runtime::EValue>& input_values) {
-    auto result = ET_UNWRAP(execute(method_name, input_values));
+      const std::vector<runtime::EValue>& input) {
+    auto result = ET_UNWRAP(execute(method_name, input));
     if (result.empty()) {
       return runtime::Error::InvalidArgument;
     }
@@ -236,15 +234,15 @@ class Module {
    * Loads the program and method before execution if needed.
    *
    * @param[in] method_name The name of the method to execute.
-   * @param[in] input_value A value to be passed to the method.
+   * @param[in] input A value to be passed to the method.
    *
    * @returns A Result object containing either the first output value from the
    * method or an error to indicate failure.
    */
   ET_NODISCARD inline runtime::Result<runtime::EValue> get(
       const std::string& method_name,
-      const runtime::EValue& input_value) {
-    return get(method_name, std::vector<runtime::EValue>{input_value});
+      const runtime::EValue& input) {
+    return get(method_name, std::vector<runtime::EValue>{input});
   }
 
   /**
@@ -262,31 +260,31 @@ class Module {
   }
 
   /**
-   * Execute the 'forward' method with the given input values and retrieve the
-   * output values. Loads the program and method before executing if needed.
+   * Execute the 'forward' method with the given input and retrieve output.
+   * Loads the program and method before executing if needed.
    *
-   * @param[in] input_values A vector of input values for the 'forward' method.
+   * @param[in] input A vector of input values for the 'forward' method.
    *
    * @returns A Result object containing either a vector of output values
    *          from the 'forward' method or an error to indicate failure.
    */
   ET_NODISCARD inline runtime::Result<std::vector<runtime::EValue>> forward(
-      const std::vector<runtime::EValue>& input_values) {
-    return execute("forward", input_values);
+      const std::vector<runtime::EValue>& input) {
+    return execute("forward", input);
   }
 
   /**
    * Execute the 'forward' method with a single value.
    * Loads the program and method before executing if needed.
    *
-   * @param[in] input_value A value for the 'forward' method.
+   * @param[in] input A value for the 'forward' method.
    *
    * @returns A Result object containing either a vector of output values
    *          from the 'forward' method or an error to indicate failure.
    */
   ET_NODISCARD inline runtime::Result<std::vector<runtime::EValue>> forward(
-      const runtime::EValue& input_value) {
-    return forward(std::vector<runtime::EValue>{input_value});
+      const runtime::EValue& input) {
+    return forward(std::vector<runtime::EValue>{input});
   }
 
   /**
@@ -301,42 +299,6 @@ class Module {
   }
 
   /**
-   * Sets the output tensor for a specific method.
-   *
-   * @param[in] method_name The name of the method.
-   * @param[in] output_value The EValue containing the Tensor to set as the
-   * method output.
-   * @param[in] output_index Zero-based index of the output to set.
-   *
-   * @returns An Error to indicate success or failure.
-   *
-   * @note Only Tensor outputs are currently supported for setting.
-   */
-  ET_NODISCARD
-  runtime::Error set_output(
-      const std::string& method_name,
-      runtime::EValue output_value,
-      size_t output_index = 0);
-
-  /**
-   * Sets the output tensor for the "forward" method.
-   *
-   * @param[in] output_value The EValue containing the Tensor to set as the
-   * method output.
-   * @param[in] output_index Zero-based index of the output to set.
-   *
-   * @returns An Error to indicate success or failure.
-   *
-   * @note Only Tensor outputs are currently supported for setting.
-   */
-  ET_NODISCARD
-  inline runtime::Error set_output(
-      runtime::EValue output_value,
-      size_t output_index = 0) {
-    return set_output("forward", output_value, output_index);
-  }
-
-  /**
    * Retrieves the EventTracer instance being used by the Module.
    * EventTracer is used for tracking and logging events during the execution
    * of methods.
@@ -347,6 +309,19 @@ class Module {
   inline runtime::EventTracer* event_tracer() const {
     return event_tracer_.get();
   }
+
+  /**
+   * Set output data pointer for forward method.
+   *
+   * @param[in] output_value A Tensor for the output of 'forward' method.
+   * @param[in] output_index Index of the output in 'forward' method.
+   *
+   * @returns An Error to indicate success or failure of the loading process.
+   */
+  runtime::Error set_output_data_ptr(
+      runtime::EValue output_value,
+      size_t output_index,
+      const std::string& method_name = "forward");
 
  private:
   struct MethodHolder {
