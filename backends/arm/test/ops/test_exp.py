@@ -103,8 +103,6 @@ class TestExp(unittest.TestCase):
     def test_exp_tosa_BI(self, test_name: str, test_data: torch.Tensor):
         self._test_exp_tosa_BI_pipeline(self.Exp(), (test_data,))
 
-    # Fails due to Vela diff from Tosa spec, expected to work with Regor.
     @parameterized.expand(test_data_suite)
-    @unittest.expectedFailure
     def test_exp_tosa_u55_BI(self, test_name: str, test_data: torch.Tensor):
         self._test_exp_tosa_u55_BI_pipeline(self.Exp(), (test_data,))

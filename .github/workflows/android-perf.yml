@@ -227,15 +227,11 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
-        if [[ ${{ matrix.delegate }} == "qnn" ]]; then
-            PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
-            PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
-        fi
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 
-        # TODO: This needs to be replaced with a generic loader .apk
-        # Build LLM Demo for Android
         export ANDROID_ABIS="arm64-v8a"
-        bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+        PYTHON_EXECUTABLE=python EXECUTORCH_BUILD_QNN=ON QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728 bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
 
   # Upload artifacts to S3. The artifacts are needed not only by the device farm but also TorchChat
   upload-android-apps:
@@ -292,8 +288,8 @@ jobs:
       # Unlike models there are limited numbers of build flavor for apps, and the model controls whether it should build with bpe/tiktoken tokenizer.
       # It's okay to build all possible apps with all possible flavors in job "build-llm-demo". However, in this job, once a model is given, there is only
       # one app+flavor that could load and run the model.
-      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo/app-debug.apk
-      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo/app-debug-androidTest.apk
+      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/minibench/app-debug.apk
+      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/minibench/app-debug-androidTest.apk
       # NB: Need to set the default spec here so that it works for periodic too
       test-spec: ${{ inputs.test_spec || 'https://ossci-android.s3.amazonaws.com/executorch/android-llm-device-farm-test-spec.yml' }}
       # Uploaded to S3 from the previous job

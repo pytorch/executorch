@@ -21,7 +21,7 @@ using Tensor = exec_aten::Tensor;
 using TensorList = exec_aten::TensorList;
 
 void split_with_sizes_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     exec_aten::ArrayRef<int64_t> split_sizes,
     int64_t dim,

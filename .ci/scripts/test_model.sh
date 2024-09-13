@@ -54,6 +54,7 @@ build_cmake_executor_runner() {
     && mkdir ${CMAKE_OUTPUT_DIR} \
     && cd ${CMAKE_OUTPUT_DIR} \
     && retry cmake -DCMAKE_BUILD_TYPE=Release \
+      -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
   cmake --build ${CMAKE_OUTPUT_DIR} -j4

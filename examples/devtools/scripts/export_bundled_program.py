@@ -6,6 +6,8 @@
 
 # Example script for exporting simple models to flatbuffer
 
+# pyre-unsafe
+
 import argparse
 
 from typing import List

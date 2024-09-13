@@ -30,7 +30,7 @@ Tensor& fast_hadamard_transform_out(
   ET_KERNEL_CHECK(
       ctx, mat.scalar_type() == out.scalar_type(), InvalidArgument, out);
 
-  if (mat.dim() == 0) {
+  if (mat.dim() == 0 || mat.numel() == 0) {
     return out;
   }
 

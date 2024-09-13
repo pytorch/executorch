@@ -22,7 +22,8 @@ namespace {} // namespace
  * Copy the tener `self` to `out`, assume `self` and `out` have same type and
  * shape
  */
-Tensor& detach_copy_out(RuntimeContext& ctx, const Tensor& self, Tensor& out) {
+Tensor&
+detach_copy_out(KernelRuntimeContext& ctx, const Tensor& self, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape

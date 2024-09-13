@@ -38,8 +38,11 @@ size_t unflip_flat_ix(size_t ix, const Tensor& in, ArrayRef<bool> flip_dim) {
 
 } // namespace
 
-Tensor&
-flip_out(RuntimeContext& ctx, const Tensor& in, IntArrayRef dims, Tensor& out) {
+Tensor& flip_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& in,
+    IntArrayRef dims,
+    Tensor& out) {
   (void)ctx;
 
   ET_KERNEL_CHECK(

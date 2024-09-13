@@ -17,10 +17,10 @@ namespace HiFi {
 namespace native {
 
 using Tensor = exec_aten::Tensor;
-using RuntimeContext = torch::executor::RuntimeContext;
+using executorch::runtime::KernelRuntimeContext;
 
 void quantized_linear_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& src,
     const Tensor& weight,
     const Tensor& bias,

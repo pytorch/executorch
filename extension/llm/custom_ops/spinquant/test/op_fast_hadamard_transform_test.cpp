@@ -9,9 +9,7 @@
 #include <executorch/extension/llm/custom_ops/op_fast_hadamard_transform.h>
 #include <executorch/extension/llm/custom_ops/spinquant/third-party/FFHT/dumb_fht.h>
 #include <executorch/kernels/test/TestUtil.h>
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
-#include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 
 #include <gtest/gtest.h>
 
@@ -38,7 +36,6 @@ void reference_fht_impl(float* buf, int n) {
 
 TEST(FastHadamardTransformTest, EmptyInput) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
   auto vec = tfFloat.zeros({0});
   auto out = tfFloat.zeros({0});
   auto result = fast_hadamard_transform_nocontext(vec, out);
@@ -47,7 +44,6 @@ TEST(FastHadamardTransformTest, EmptyInput) {
 
 TEST(FastHadamardTransformTest, SingleElementInput) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
   auto vec = tfFloat.ones({1});
   auto out = tfFloat.zeros({1});
   auto result = fast_hadamard_transform_nocontext(vec, out);
@@ -58,7 +54,6 @@ TEST(FastHadamardTransformTest, SingleElementInput) {
 
 TEST(FastHadamardTransformTest, FourKInput) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
   std::random_device rd;
   std::mt19937 gen(rd());
   std::normal_distribution<float> dist;
@@ -81,7 +76,6 @@ TEST(FastHadamardTransformTest, FourKInput) {
 
 TEST(FastHadamardTransformTest, MultipleRows) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
   std::random_device rd;
   std::mt19937 gen(rd());
   std::normal_distribution<float> dist;

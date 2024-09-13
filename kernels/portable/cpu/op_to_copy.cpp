@@ -29,7 +29,7 @@ void _to_impl(const Tensor& self, Tensor& out) {
 // to_copy.out(Tensor self, *, bool non_blocking=False, MemoryFormat?
 // memory_format=None, Tensor(a!) out) -> Tensor(a!)
 Tensor& to_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     bool non_blocking,
     exec_aten::optional<exec_aten::MemoryFormat> memory_format,

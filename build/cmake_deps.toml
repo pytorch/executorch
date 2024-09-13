@@ -116,6 +116,20 @@ deps = [
   "executorch",
 ]
 
+[targets.optimized_native_cpu_ops_oss]
+buck_targets = [
+  "//configurations:optimized_native_cpu_ops_oss",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+]
+deps = [
+  "executorch_no_prim_ops",
+  "executorch",
+  "portable_kernels",
+]
 # ---------------------------------- core end ----------------------------------
 # ---------------------------------- extension start ----------------------------------
 [targets.extension_data_loader]
@@ -310,7 +324,10 @@ buck_targets = [
   "//extension/llm/custom_ops:custom_ops",
 ]
 filters = [
-  ".cpp$",
+  # Second clause is to pick up fht_neon.c/fht_avx.c from FFHT. TODO:
+  # remove filters and patch extract_sources.py's Buck query to fetch
+  # srcs; presumably filters is here to remove .h files.
+  "(.cpp$)|(fht.*\\.c$)",
 ]
 excludes = [
   "^codegen",
@@ -341,5 +358,6 @@ deps = [
   "portable_kernels",
   "quantized_kernels",
   "xnnpack_backend",
+  "optimized_native_cpu_ops_oss",
 ]
 # ---------------------------------- LLama end ----------------------------------

@@ -20,7 +20,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const exec_aten::optional<Tensor>& weight,
     const exec_aten::optional<Tensor>& bias,
@@ -135,7 +135,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
 }
 
 std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const exec_aten::optional<Tensor>& weight,
     const exec_aten::optional<Tensor>& bias,
@@ -173,7 +173,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_out(
 }
 
 std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const exec_aten::optional<Tensor>& weight,
     const exec_aten::optional<Tensor>& bias,

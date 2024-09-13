@@ -97,7 +97,7 @@ build_aar() {
   find jni -type f -name "libexecutorch_jni.so" -exec bash -c 'mv "$1" "${1/_jni/}"' bash {} \;
   # Zip all necessary files into the AAR file
   zip -r executorch.aar libs jni/*/libexecutorch.so jni/*/libqnn*.so jni/*/libQnn*.so AndroidManifest.xml
-  zip -r executorch-llama.aar libs jni/*/libexecutorch.so jni/*/libqnn*.so jni/*/libQnn*.so AndroidManifest.xml
+  cp executorch.aar executorch-llama.aar
   popd
 }
 
@@ -111,7 +111,7 @@ build_android_demo_apps() {
   mkdir -p extension/android/benchmark/app/libs
   cp ${BUILD_AAR_DIR}/executorch.aar extension/android/benchmark/app/libs
   pushd extension/android/benchmark
-  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build
+  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
   popd
 }
 
@@ -136,6 +136,7 @@ collect_artifacts_to_be_uploaded() {
   MINIBENCH_APP_DIR="${ARTIFACTS_DIR_NAME}/minibench"
   mkdir -p "${MINIBENCH_APP_DIR}"
   cp extension/android/benchmark/app/build/outputs/apk/debug/*.apk "${MINIBENCH_APP_DIR}"
+  cp extension/android/benchmark/app/build/outputs/apk/androidTest/debug/*.apk "${MINIBENCH_APP_DIR}"
 }
 
 BUILD_AAR_DIR="$(mktemp -d)"

@@ -120,7 +120,7 @@ class IoMemMgr {
     std::vector<uint32_t> shape;
     uint32_t rank;
     size_t element_size;
-    torch::executor::ScalarType dtype;
+    exec_aten::ScalarType dtype;
   };
 
   struct IoInfo {

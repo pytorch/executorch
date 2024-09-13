@@ -16,7 +16,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& _pdist_forward_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     double p,
     Tensor& out) {
