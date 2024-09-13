@@ -50,14 +50,13 @@ prepare_artifacts_upload() {
 
 build_cmake_executor_runner() {
   echo "Building executor_runner"
-  (rm -rf ${CMAKE_OUTPUT_DIR} \
-    && mkdir ${CMAKE_OUTPUT_DIR} \
-    && cd ${CMAKE_OUTPUT_DIR} \
-    && retry cmake -DCMAKE_BUILD_TYPE=Release \
+  rm -rf ${CMAKE_OUTPUT_DIR}
+  cmake -DCMAKE_BUILD_TYPE=Debug \
       -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-      -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+      -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+      -B${CMAKE_OUTPUT_DIR} .
 
-  cmake --build ${CMAKE_OUTPUT_DIR} -j4
+  cmake --build ${CMAKE_OUTPUT_DIR} -j4 --config Debug
 }
 
 run_portable_executor_runner() {
@@ -65,9 +64,7 @@ run_portable_executor_runner() {
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
     buck2 run //examples/portable/executor_runner:executor_runner -- --model_path "./${MODEL_NAME}.pte"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
-    if [[ ! -f ${CMAKE_OUTPUT_DIR}/executor_runner ]]; then
-      build_cmake_executor_runner
-    fi
+    build_cmake_executor_runner
     ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "./${MODEL_NAME}.pte"
   else
     echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
