@@ -57,7 +57,7 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
     }
 
     mStatsInfo = new StatsInfo();
-    mStatsInfo.name = model.getName().replace(".pte", "");
+    mStatsInfo.modelName = model.getName().replace(".pte", "");
     mModelRunner = new ModelRunner(model.getPath(), tokenizerPath, temperature, this);
     mStatsInfo.loadStart = System.nanoTime();
   }
@@ -88,7 +88,7 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
     mStatsInfo.generateEnd = System.nanoTime();
 
     final BenchmarkMetric.BenchmarkModel benchmarkModel =
-        BenchmarkMetric.extractBackendAndQuantization(mStatsInfo.name);
+        BenchmarkMetric.extractBackendAndQuantization(mStatsInfo.modelName);
     final List<BenchmarkMetric> results = new ArrayList<>();
     // The list of metrics we have atm includes:
     // Load status
@@ -136,7 +136,7 @@ class StatsInfo {
   long generateStart;
   long generateEnd;
   String tokens;
-  String name;
+  String modelName;
 
   @Override
   public String toString() {

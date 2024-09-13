@@ -9,6 +9,7 @@
 package com.example.executorchllamademo;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
@@ -55,7 +56,7 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
     }
 
     mStatsDump = new StatsDump();
-    mStatsDump.name = model.getName().replace(".pte", "");
+    mStatsDump.modelName = model.getName().replace(".pte", "");
     mModelRunner = new ModelRunner(model.getPath(), tokenizerPath, temperature, this);
     mStatsDump.loadStart = System.nanoTime();
   }
@@ -95,7 +96,7 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
         });
 
     final BenchmarkMetric.BenchmarkModel benchmarkModel =
-        BenchmarkMetric.extractBackendAndQuantization(mStatsDump.name);
+        BenchmarkMetric.extractBackendAndQuantization(mStatsDump.modelName);
     final List<BenchmarkMetric> results = new ArrayList<>();
     // The list of metrics we have atm includes:
     // Load status
@@ -159,11 +160,17 @@ class BenchmarkMetric {
   double actualValue;
   double targetValue;
 
-  // Let's see which information we want to include here
-  final String device = Build.BRAND;
-  // The phone model and Android release version
-  final String arch = Build.MODEL;
-  final String os = "Android " + Build.VERSION.RELEASE;
+  public static class DeviceInfo {
+    // Let's see which information we want to include here
+    final String device = Build.BRAND;
+    // The phone model and Android release version
+    final String arch = Build.MODEL;
+    final String os = "Android " + Build.VERSION.RELEASE;
+    final long totalMem = new ActivityManager.MemoryInfo().totalMem;
+    final long availMem = new ActivityManager.MemoryInfo().availMem;
+  }
+
+  DeviceInfo deviceInfo;
 
   public BenchmarkMetric(
       final BenchmarkModel benchmarkModel,
@@ -197,7 +204,7 @@ class StatsDump {
   long generateStart;
   long generateEnd;
   String tokens;
-  String name;
+  String modelName;
 
   @NonNull
   @Override

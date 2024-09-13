@@ -8,6 +8,7 @@
 
 package org.pytorch.minibench;
 
+import android.app.ActivityManager;
 import android.os.Build;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -35,11 +36,17 @@ class BenchmarkMetric {
   double actualValue;
   double targetValue;
 
-  // Let's see which information we want to include here
-  final String device = Build.BRAND;
-  // The phone model and Android release version
-  final String arch = Build.MODEL;
-  final String os = "Android " + Build.VERSION.RELEASE;
+  public static class DeviceInfo {
+    // Let's see which information we want to include here
+    final String device = Build.BRAND;
+    // The phone model and Android release version
+    final String arch = Build.MODEL;
+    final String os = "Android " + Build.VERSION.RELEASE;
+    final long totalMem = new ActivityManager.MemoryInfo().totalMem;
+    final long availMem = new ActivityManager.MemoryInfo().availMem;
+  }
+
+  DeviceInfo deviceInfo;
 
   public BenchmarkMetric(
       final BenchmarkModel benchmarkModel,
