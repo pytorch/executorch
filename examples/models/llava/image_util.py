@@ -56,6 +56,38 @@ def serialize_image(image: torch.Tensor, path: str) -> None:
     logging.info(f"Saved image tensor to {path}")
 
 
+def image_to_csv(image: torch.Tensor, path: str) -> None:
+    im = torch.tensor(image)
+
+    # List of restrictions on the image tensor to ensure our naive csv converter works
+    assert im.dim() == 3, "Image must be 3D"
+    assert im.shape[0] == 3, "Image must have 3 channels"
+    assert im.dtype == torch.uint8, "Image data must be uint8"
+    assert im.device == torch.device("cpu"), "Image data must be on CPU"
+    assert im.is_contiguous(), "Image data must be contiguous"
+    assert im.dim_order() == (0, 1, 2), "Image data must be in CHW format"
+
+    # write header
+    with open(path, "w") as f:
+        # header
+        # dims, shape[...], sizeof(dtype)
+        f.write(f"{im.dim()},")
+        for i in range(im.dim()):
+            f.write(f"{im.shape[i]},")
+        f.write("1\n")  # sizeof(uint8_t), add a newline to end header
+
+    # append data as bytes
+    with open(path, "ab") as f:
+        # data as bytes
+        for i in range(im.shape[0]):
+            for j in range(im.shape[1]):
+                for k in range(im.shape[2]):
+                    b = int(im[i][j][k]).to_bytes(1, byteorder="little")
+                    f.write(b)
+
+    logging.info(f"Saved image csv to {path}")
+
+
 def main():
     parser = ArgumentParser()
     parser.add_argument(
@@ -67,11 +99,18 @@ def main():
         "--output-path",
         default="image.pt",
     )
+    parser.add_argument(
+        "--output-csv",
+        required=False,
+    )
     args = parser.parse_args()
 
     image = Image.open(args.image_path)
     image_tensor = prepare_image(image, target_h=336, target_w=336)
     serialize_image(image_tensor, args.output_path)
+
+    if args.output_csv:
+        image_to_csv(image_tensor, args.output_csv)
 
 
 if __name__ == "__main__":

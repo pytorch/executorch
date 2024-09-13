@@ -8,11 +8,11 @@
 
 #include <executorch/examples/models/llava/runner/llava_runner.h>
 #include <gflags/gflags.h>
-#ifndef LLAVA_NO_TORCH_DUMMY_IMAGE
+#ifndef BUILD_LLAVA_RUNNER_WITHOUT_TORCH
 #include <torch/torch.h>
-#else
-#include <algorithm> // std::fill
 #endif
+#include <fstream>
+#include <string>
 
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
@@ -31,7 +31,12 @@ DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
 DEFINE_string(
     image_path,
     "",
-    "The path to a .pt file, a serialized torch tensor for an image, longest edge resized to 336.");
+    "The path to a .pt file, a serialized torch tensor for an image. Only work if compiled without BUILD_LLAVA_RUNNER_WITHOUT_TORCH.");
+
+DEFINE_bool(
+    is_csv_image,
+    false,
+    "If true, the image is a csv file, otherwise it is assumed to be a torch saved .pt file.");
 
 DEFINE_double(
     temperature,
@@ -48,6 +53,101 @@ DEFINE_int32(
     -1,
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
+int get_images(
+    const std::string image_path,
+    std::vector<torch::executor::Image>& images,
+    bool is_csv) {
+  std::vector<uint8_t> image_data;
+  if (is_csv) {
+    // Work without torch, parse a csv file
+    // see image_util.py file for csv format
+    std::array<int32_t, 3> image_shape;
+    std::ifstream csv_image(image_path, std::ios::in | std::ios::binary);
+
+    if (csv_image.is_open()) {
+      std::string item;
+
+      // Parse csv header, first number of dims
+      std::getline(csv_image, item, ',');
+      uint32_t dims = std::stoul(item);
+      if (dims != 3) {
+        ET_LOG(Error, "csv image dims != 3");
+        return 1;
+      }
+
+      // Parse csv header, next shape
+      uint32_t numel = 1;
+      for (uint32_t i = 0; i < dims; i++) {
+        std::getline(csv_image, item, ',');
+        image_shape[i] = std::stoul(item);
+        numel *= image_shape[i];
+      }
+      ET_LOG(
+          Info,
+          "csv image shape: %u, %u, %u, numel: %u",
+          image_shape[0],
+          image_shape[1],
+          image_shape[2],
+          numel);
+
+      // Parse csv header, data type
+      std::getline(csv_image, item, '\n');
+      uint32_t data_type = std::stoul(item);
+      if (data_type != sizeof(uint8_t)) {
+        ET_LOG(Error, "csv image data type != uint8");
+        return 1;
+      }
+
+      // Read csv data
+      image_data.resize(numel);
+      csv_image.read((char*)image_data.data(), numel);
+      if (static_cast<uint32_t>(csv_image.gcount()) != numel) {
+        ET_LOG(
+            Error,
+            "Failed to read csv image data, expected %u bytes, read %u bytes",
+            numel,
+            static_cast<uint32_t>(csv_image.gcount()));
+        return 1;
+      }
+      images.push_back(
+          {.data = image_data,
+           .width = image_shape[2],
+           .height = image_shape[1]});
+      csv_image.close();
+    } else {
+      ET_LOG(
+          Error, "Failed to open input csv image file: %s", image_path.c_str());
+      return 1;
+    }
+  } else { // is_csv == false
+#ifndef BUILD_LLAVA_RUNNER_WITHOUT_TORCH
+    // Work with torch, load a serialized torch tensor
+    torch::Tensor image_tensor;
+    torch::load(image_tensor, image_path); // CHW
+    ET_LOG(
+        Info,
+        "tensor image size(0): %lld, size(1): %lld, size(2): %lld, numel: %lld",
+        image_tensor.size(0),
+        image_tensor.size(1),
+        image_tensor.size(2),
+        image_tensor.numel());
+    image_data.assign(
+        image_tensor.data_ptr<uint8_t>(),
+        image_tensor.data_ptr<uint8_t>() + image_tensor.numel());
+    images.push_back(
+        {.data = image_data,
+         .width = static_cast<int32_t>(image_tensor.size(2)),
+         .height = static_cast<int32_t>(image_tensor.size(1))});
+#else
+    ET_LOG(
+        Error,
+        "BUILD_LLAVA_RUNNER_WITHOUT_TORCH is defined, cannot load pt image.");
+    return 1;
+#endif // BUILD_LLAVA_RUNNER_WITHOUT_TORCH
+  }
+  return 0;
+}
+
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -59,8 +159,6 @@ int32_t main(int32_t argc, char** argv) {
   const char* tokenizer_path = FLAGS_tokenizer_path.c_str();
 
   const char* prompt = FLAGS_prompt.c_str();
-
-  std::string image_path = FLAGS_image_path;
 
   double temperature = FLAGS_temperature;
 
@@ -82,40 +180,27 @@ int32_t main(int32_t argc, char** argv) {
   // create llama runner
   example::LlavaRunner runner(model_path, tokenizer_path, temperature);
 
-  // read image and resize the longest edge to 336
-  std::vector<uint8_t> image_data;
+  // read image
+  std::vector<torch::executor::Image> images;
 
-#ifdef LLAVA_NO_TORCH_DUMMY_IMAGE
-  // Work without torch using a random data
-  image_data.resize(3 * 240 * 336);
-  std::fill(image_data.begin(), image_data.end(), 0); // black
-  std::array<int32_t, 3> image_shape = {3, 240, 336};
-  std::vector<torch::executor::Image> images = {
-      {.data = image_data, .width = image_shape[2], .height = image_shape[1]}};
-#else //  LLAVA_NO_TORCH_DUMMY_IMAGE
-  //   cv::Mat image = cv::imread(image_path, cv::IMREAD_COLOR);
-  //   int longest_edge = std::max(image.rows, image.cols);
-  //   float scale_factor = 336.0f / longest_edge;
-  //   cv::Size new_size(image.cols * scale_factor, image.rows * scale_factor);
-  //   cv::Mat resized_image;
-  //   cv::resize(image, resized_image, new_size);
-  //   image_data.assign(resized_image.datastart, resized_image.dataend);
-  torch::Tensor image_tensor;
-  torch::load(image_tensor, image_path); // CHW
-  ET_LOG(
-      Info,
-      "image size(0): %" PRId64 ", size(1): %" PRId64 ", size(2): %" PRId64,
-      image_tensor.size(0),
-      image_tensor.size(1),
-      image_tensor.size(2));
-  image_data.assign(
-      image_tensor.data_ptr<uint8_t>(),
-      image_tensor.data_ptr<uint8_t>() + image_tensor.numel());
-  std::vector<torch::executor::Image> images = {
-      {.data = image_data,
-       .width = static_cast<int32_t>(image_tensor.size(2)),
-       .height = static_cast<int32_t>(image_tensor.size(1))}};
-#endif // LLAVA_NO_TORCH_DUMMY_IMAGE
+  std::string image_path;
+  if (FLAGS_image_path == "") {
+    ET_LOG(Error, "image path is empty.");
+    return 1;
+  }
+#ifdef BUILD_LLAVA_RUNNER_WITHOUT_TORCH
+  if (FLAGS_is_csv_image == false) {
+    ET_LOG(
+        Error,
+        "pt image is not supported when compiled without torch. Only provide a csv image and set `is_csv_image` flag to true.");
+    return 1;
+  }
+#endif // BUILD_LLAVA_RUNNER_WITHOUT_TORCH
+
+  int ret = get_images(FLAGS_image_path, images, FLAGS_is_csv_image);
+  if (ret != 0) {
+    return ret;
+  }
 
   // generate
   runner.generate(std::move(images), prompt, seq_len);
