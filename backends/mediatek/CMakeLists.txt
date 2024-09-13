@@ -27,7 +27,7 @@ include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include)
 add_library(neuron_backend SHARED)
 target_link_libraries(neuron_backend
     PRIVATE
-    executorch_no_prim_ops
+    executorch_core
     portable_ops_lib
     android
     log

@@ -18,7 +18,7 @@ endif()
 
 list(TRANSFORM _extension_tensor__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(extension_tensor ${_extension_tensor__srcs})
-target_link_libraries(extension_tensor executorch_no_prim_ops)
+target_link_libraries(extension_tensor executorch_core)
 target_include_directories(extension_tensor PUBLIC ${EXECUTORCH_ROOT}/..)
 target_compile_options(extension_tensor PUBLIC ${_common_compile_options})
 
