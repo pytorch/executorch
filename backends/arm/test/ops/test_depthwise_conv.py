@@ -210,27 +210,25 @@ class TestDepthwiseConv2D(unittest.TestCase):
         self._test_dw_conv2d_tosa_BI_pipeline(model, model.get_inputs())
 
     @parameterized.expand(testsuite_u55, skip_on_empty=True)
-    @unittest.expectedFailure
     def test_dw_conv2d_u55_BI(
         self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
     ):
         self._test_dw_conv2d_ethos_BI_pipeline(
             model,
             common.get_u55_compile_spec(
-                permute_memory_to_nhwc=True, set_quantize_io=set_quantize_io
+                permute_memory_to_nhwc=True, quantize_io=set_quantize_io
             ),
             model.get_inputs(),
         )
 
     @parameterized.expand(testsuite)
-    @unittest.expectedFailure
     def test_dw_conv2d_u85_BI(
         self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
     ):
         self._test_dw_conv2d_ethos_BI_pipeline(
             model,
             common.get_u85_compile_spec(
-                permute_memory_to_nhwc=True, set_quantize_io=set_quantize_io
+                permute_memory_to_nhwc=True, quantize_io=set_quantize_io
             ),
             model.get_inputs(),
         )
