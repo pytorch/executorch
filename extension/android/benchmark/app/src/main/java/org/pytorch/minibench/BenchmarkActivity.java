@@ -11,6 +11,8 @@ package org.pytorch.minibench;
 import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
+import android.system.ErrnoException;
+import android.system.Os;
 import com.google.gson.Gson;
 import java.io.File;
 import java.io.FileWriter;
@@ -25,6 +27,13 @@ public class BenchmarkActivity extends Activity {
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
+
+    try {
+      Os.setenv("ADSP_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir, true);
+    } catch (ErrnoException e) {
+      finish();
+    }
+
     Intent intent = getIntent();
     File modelDir = new File(intent.getStringExtra("model_dir"));
     File model =
@@ -45,6 +54,7 @@ public class BenchmarkActivity extends Activity {
       long forwardMs = System.currentTimeMillis() - start;
       stats.latency.add(forwardMs);
     }
+    stats.errorCode = module.loadMethod("forward");
 
     // TODO (huydhn): Remove txt files here once the JSON format is ready
     try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.txt")) {
@@ -66,6 +76,7 @@ public class BenchmarkActivity extends Activity {
 
 class Stats {
   List<Long> latency = new ArrayList<>();
+  int errorCode = 0;
 
   @Override
   public String toString() {

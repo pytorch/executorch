@@ -110,9 +110,9 @@ quantizer.set_global(quantization_config)
 ### Quantizing your model with the XNNPACKQuantizer
 After configuring our quantizer, we are now ready to quantize our model
 ```python
-from torch._export import capture_pre_autograd_graph
+from torch.export import export_for_training
 
-exported_model = capture_pre_autograd_graph(model_to_quantize, example_inputs)
+exported_model = export_for_training(model_to_quantize, example_inputs).module()
 prepared_model = prepare_pt2e(exported_model, quantizer)
 print(prepared_model.graph)
 ```
