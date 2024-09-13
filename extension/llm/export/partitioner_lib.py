@@ -56,8 +56,7 @@ def get_mps_partitioner(use_kv_cache: bool = False):
 
 
 def get_coreml_partitioner(
-    enable_state: bool = False,
-    preserve_sdpa: bool = True,
+    ios: int = 15,
     embedding_quantize: Optional[str] = None,
     pt2e_quantize: Optional[str] = None,
     coreml_quantize: Optional[str] = None,
@@ -75,29 +74,42 @@ def get_coreml_partitioner(
             "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"
         )
 
-    minimum_deployment_target = ct.target.iOS15
-    # In Core ML, stateful execution is introduced in iOS 18
-    if enable_state:
-        minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
-    # In Core ML, sdpa op is introduced in iOS 18
-    if preserve_sdpa:
-        minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
-    # In Core ML, quantization is introduced in iOS 16
-    if embedding_quantize is not None or pt2e_quantize is not None:
-        minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS16)
-    # In Core ML, 8-bit activation quantization is introduced in iOS 17
-    if (
-        embedding_quantize is not None and int(embedding_quantize.split(",")[0]) == 8
-    ) or pt2e_quantize in ("coreml_8a_c8w", "coreml_baseline_8a_c8w"):
-        minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS17)
-    # In Core ML, 4-bit weight compression is introduced in iOS 18
-    if (
-        (embedding_quantize is not None and int(embedding_quantize.split(",")[0]) == 4)
-        or pt2e_quantize in ("coreml_c4w", "coreml_8a_c4w", "coreml_baseline_8a_c4w")
-        or coreml_quantize == "b4w"
-    ):
-        minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
+    def _validate_ios_version() -> None:
+        assert ios in (15, 16, 17, 18)
 
+        if embedding_quantize is not None and ios < 18:
+            raise ValueError(
+                "In Core ML, per-block quantization is introduced in iOS 18"
+            )
+
+        use_quantization = pt2e_quantize is not None or coreml_quantize is not None
+        if use_quantization and ios < 16:
+            raise ValueError("In Core ML, quantization is introduced in iOS 16")
+
+        use_8a = (pt2e_quantize is not None and "8a" in pt2e_quantize) or (
+            coreml_quantize is not None and "8a" in coreml_quantize
+        )
+        if use_8a and ios < 17:
+            raise ValueError(
+                "In Core ML, 8-bit activation quantization is introduced in iOS 17"
+            )
+
+        use_4w = (pt2e_quantize is not None and "4w" in pt2e_quantize) or (
+            coreml_quantize is not None and "4w" in coreml_quantize
+        )
+        if use_4w and ios < 18:
+            raise ValueError(
+                "In Core ML, 4-bit weight compression is introduced in iOS 18"
+            )
+
+    _validate_ios_version()
+
+    minimum_deployment_target = {
+        15: ct.target.iOS15,
+        16: ct.target.iOS16,
+        17: ct.target.iOS17,
+        18: ct.target.iOS18,
+    }[ios]
     op_linear_quantizer_config = None
     if coreml_quantize == "b4w":
         op_linear_quantizer_config = {
@@ -107,7 +119,6 @@ def get_coreml_partitioner(
             "block_size": 32,
             "weight_threshold": 512,
         }
-
     compile_specs = CoreMLBackend.generate_compile_specs(  # pyre-fixme[16]
         minimum_deployment_target=minimum_deployment_target,
         compute_precision=ct.precision(ct.precision.FLOAT16.value),
@@ -116,9 +127,12 @@ def get_coreml_partitioner(
         model_type=CoreMLBackend.MODEL_TYPE.MODEL,  # pyre-fixme[16]
         op_linear_quantizer_config=op_linear_quantizer_config,
     )
+
+    take_over_mutable_buffer = minimum_deployment_target >= ct.target.iOS18
+
     return CoreMLPartitioner(  # pyre-fixme[16]
         compile_specs=compile_specs,
-        take_over_mutable_buffer=enable_state,
+        take_over_mutable_buffer=take_over_mutable_buffer,
     )
 
 
