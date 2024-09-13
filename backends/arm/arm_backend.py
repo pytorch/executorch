@@ -56,7 +56,7 @@ class ArmCompileSpecBuilder:
         memory_mode: Optional[str] = None,
         extra_flags: Optional[str] = None,
         config_ini: Optional[str] = "Arm/vela.ini",
-    ):
+    ) -> "ArmCompileSpecBuilder":
         """
         Generate compile spec for Ethos-U NPU
 
@@ -86,7 +86,7 @@ class ArmCompileSpecBuilder:
 
         return self
 
-    def tosa_compile_spec(self):
+    def tosa_compile_spec(self) -> "ArmCompileSpecBuilder":
         """
         Generate compile spec for TOSA flatbuffer output
         """
@@ -96,14 +96,18 @@ class ArmCompileSpecBuilder:
         self.output_format = "tosa"
         return self
 
-    def dump_intermediate_artifacts_to(self, output_path: str):
+    def dump_intermediate_artifacts_to(
+        self, output_path: str
+    ) -> "ArmCompileSpecBuilder":
         """
         Sets a path for dumping intermediate results during such as tosa and pte.
         """
         self.path_for_intermediates = output_path
         return self
 
-    def set_permute_memory_format(self, set_nhwc_permutation: bool = True):
+    def set_permute_memory_format(
+        self, set_nhwc_permutation: bool = True
+    ) -> "ArmCompileSpecBuilder":
         """
         Permute to channel last in compiler and runtime. Compilation and
         runtime will convert rank 4 inputs to channel last for each sub-graph.
@@ -111,7 +115,7 @@ class ArmCompileSpecBuilder:
         self.permute_nhwc = set_nhwc_permutation
         return self
 
-    def set_quantize_io(self, quantize_io: bool = False):
+    def set_quantize_io(self, quantize_io: bool = False) -> "ArmCompileSpecBuilder":
         """
         Quantization of inputs and dequantization of outputs for cases where
         whole graph is quantized and method signature is not of quantized type.
@@ -119,7 +123,7 @@ class ArmCompileSpecBuilder:
         self.quantize_io = quantize_io
         return self
 
-    def build(self):
+    def build(self) -> List[CompileSpec]:
         """
         Generate a list of compile spec objects from the builder
         """

@@ -18,7 +18,7 @@ cmake_install_executorch_devtools_lib() {
   retry cmake -DBUCK2="$BUCK" \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
-          -DEXECUTORCH_BUILD_SDK=ON \
+          -DEXECUTORCH_BUILD_DEVTOOLS=ON \
           -DEXECUTORCH_BUILD_MPS=ON \
           -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \

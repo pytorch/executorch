@@ -11,6 +11,8 @@ package org.pytorch.minibench;
 import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
+import android.system.ErrnoException;
+import android.system.Os;
 import android.util.Log;
 import com.google.gson.Gson;
 import java.io.File;
@@ -46,6 +48,12 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
     mPrompt = intent.getStringExtra("prompt");
     if (mPrompt == null) {
       mPrompt = "The ultimate answer";
+    }
+
+    try {
+      Os.setenv("ADSP_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir, true);
+    } catch (ErrnoException e) {
+      finish();
     }
 
     mStatsInfo = new StatsInfo();

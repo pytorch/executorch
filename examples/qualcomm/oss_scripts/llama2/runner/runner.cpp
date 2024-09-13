@@ -135,7 +135,7 @@ int32_t Runner::logitsToToken(const exec_aten::Tensor& logits_tensor) {
 
 // Given an input token. Set up the inputs for the model and execute a single
 // step. Returning the logits tensor.
-Result<torch::executor::Tensor> Runner::run_model_step(
+Result<exec_aten::Tensor> Runner::run_model_step(
     int64_t input_token,
     TensorPtr& token,
     TensorPtr& start_pos,
