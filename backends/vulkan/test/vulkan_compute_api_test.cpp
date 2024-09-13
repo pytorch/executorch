@@ -608,10 +608,9 @@ TEST_F(VulkanComputeAPITest, tensor_alias_test) {
   for (utils::StorageType storage_type : {utils::kTexture3D, utils::kBuffer}) {
     std::vector<int64_t> sizes = {9, 9};
 
-    const size_t alloc_count_before = get_vma_allocation_count();    
+    const size_t alloc_count_before = get_vma_allocation_count();
 
-    vTensor original =
-        api::vTensor(api::context(), sizes, vkapi::kFloat, storage_type);
+    vTensor original = vTensor(context(), sizes, vkapi::kFloat, storage_type);
 
     vTensor copy = vTensor(original);
 

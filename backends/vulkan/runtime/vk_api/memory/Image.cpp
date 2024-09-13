@@ -227,15 +227,18 @@ VulkanImage& VulkanImage::operator=(VulkanImage&& other) noexcept {
 }
 
 VulkanImage::~VulkanImage() {
-  // Do not destroy the VkImage if this class instance is a copy of another
+  // Do not destroy any resources if this class instance is a copy of another
   // class instance, since this means that this class instance does not have
   // ownership of the underlying resource.
-  if (VK_NULL_HANDLE != handles_.image_view && !is_copy_) {
+  if (is_copy_) {
+    return;
+  }
+
+  if (VK_NULL_HANDLE != handles_.image_view) {
     vkDestroyImageView(this->device(), handles_.image_view, nullptr);
   }
 
-  // Ditto
-  if (VK_NULL_HANDLE != handles_.image && !is_copy_) {
+  if (VK_NULL_HANDLE != handles_.image) {
     if (owns_memory_) {
       vmaDestroyImage(allocator_, handles_.image, memory_.allocation);
     } else {

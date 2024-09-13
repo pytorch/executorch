@@ -101,10 +101,10 @@ class VulkanImage final {
       const VkImageLayout layout,
       VkSampler,
       const bool allocate_memory = true);
-  
+
  protected:
   /*
-   * The Copy constructor and allows for creation of a class instance that are
+   * The Copy constructor allows for creation of a class instance that are
    * "aliases" of another class instance. The resulting class instance will not
    * have ownership of the underlying VkImage.
    *
@@ -145,7 +145,7 @@ class VulkanImage final {
   Allocation memory_;
   // Indicates whether the underlying memory is owned by this resource
   bool owns_memory_;
-  // Indicates whether this VulkanBuffer was copied from another VulkanBuffer,
+  // Indicates whether this VulkanImage was copied from another VulkanImage,
   // thus it does not have ownership of the underlying VKBuffer
   bool is_copy_;
   Handles handles_;

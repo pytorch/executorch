@@ -684,8 +684,7 @@ vTensorStorage::vTensorStorage(
       buffer_offset_{buffer_offset},
       image_(other.image_),
       buffer_(other.buffer_, buffer_offset),
-      last_access_{other.last_access_} {
-}
+      last_access_{other.last_access_} {}
 
 vTensorStorage::~vTensorStorage() {
   flush();
