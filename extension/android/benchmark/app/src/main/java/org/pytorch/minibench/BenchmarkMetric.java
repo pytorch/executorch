@@ -46,7 +46,7 @@ class BenchmarkMetric {
     final long availMem = new ActivityManager.MemoryInfo().availMem;
   }
 
-  DeviceInfo deviceInfo;
+  DeviceInfo deviceInfo = new DeviceInfo();
 
   public BenchmarkMetric(
       final BenchmarkModel benchmarkModel,
