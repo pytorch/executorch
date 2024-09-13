@@ -480,12 +480,13 @@
 <span class="kn">import</span> <span class="nn">copy</span>
 <span class="kn">import</span> <span class="nn">io</span>
 <span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">TextIO</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">TextIO</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">import</span> <span class="nn">torch._export</span>
 <span class="kn">from</span> <span class="nn">executorch.exir._serialize</span> <span class="kn">import</span> <span class="n">_serialize_pte_binary</span>
 <span class="kn">from</span> <span class="nn">executorch.exir._serialize._cord</span> <span class="kn">import</span> <span class="n">Cord</span>
+<span class="kn">from</span> <span class="nn">executorch.exir._warnings</span> <span class="kn">import</span> <span class="n">experimental</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.backend.partitioner</span> <span class="kn">import</span> <span class="n">Partitioner</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.capture._config</span> <span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">ExecutorchBackendConfig</span>
@@ -1526,6 +1527,54 @@
             <span class="p">)()(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">edge_manager</span>
+
+
+<span class="nd">@experimental</span><span class="p">(</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    This is an experimental API which overloads to_edge by preserving specified ops to not be decomposed. </span>
+<span class="sd">    This function will be combined with to_edge in the future.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<span class="p">)</span>
+<span class="k">def</span> <span class="nf">to_edge_with_preserved_ops</span><span class="p">(</span>
+    <span class="n">programs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]],</span>
+    <span class="n">constant_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">compile_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">preserve_ops</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;EdgeProgramManager&quot;</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    :func:`to_edge` constructs an EdgeProgramManager from a set of exported programs in</span>
+<span class="sd">    ATen dialect. Upon construction those programs are transformed into edge dialect.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        programs: Can be a single ExportedProgram or a dictionary mapping function names to their corresponding ExportedPrograms. If only a single ExportedProgram is provided it will be assigned the name &quot;forward&quot;.</span>
+<span class="sd">        constant_methods: An optional dictionary of method name to the constant value returned by that method in eager mode. Often used to store config information on Edge models.</span>
+<span class="sd">        compile_config: An optional argument used to provide greater control over the transformation to edge dialect process.</span>
+<span class="sd">        preserve_ops: An argument used to specify ops that should not be decomposed.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        EdgeProgramManager</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">constant_methods</span><span class="p">,</span> <span class="n">EdgeCompileConfig</span><span class="p">)</span>
+    <span class="n">config</span> <span class="o">=</span> <span class="n">compile_config</span> <span class="ow">or</span> <span class="n">EdgeCompileConfig</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">programs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="n">aten_programs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">programs</span><span class="p">}</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">aten_programs</span> <span class="o">=</span> <span class="n">programs</span>
+
+    <span class="n">edge_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">aten_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="c1"># Decompose to Core ATen</span>
+        <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span>
+            <span class="n">_default_decomposition_table</span><span class="p">(),</span> <span class="n">_preserve_ops</span><span class="o">=</span><span class="n">preserve_ops</span>
+        <span class="p">)</span>
+        <span class="n">edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">_generate_edge_program</span><span class="p">(</span>
+            <span class="n">name</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">program</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">preserve_ops</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">EdgeProgramManager</span><span class="p">(</span>
+        <span class="n">edge_programs</span><span class="p">,</span> <span class="n">constant_methods</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">preserve_ops</span><span class="p">)</span>
+    <span class="p">)</span>
 
 
 <div class="viewcode-block" id="to_edge"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.to_edge">[docs]</a><span class="k">def</span> <span class="nf">to_edge</span><span class="p">(</span>
