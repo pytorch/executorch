@@ -13,6 +13,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 import torch
+import torch.nn as nn
+
 from executorch.examples.models.llama2.llama_transformer import ModelArgs, Transformer
 
 from executorch.examples.models.llama2.source_transformation.sdpa import (
@@ -77,6 +79,8 @@ class LlavaArgs:
 
 @dataclass
 class PreprocessorArgs:
+    height: int
+    width: int
     image_mean: List[float] = field(
         default_factory=lambda: [0.48145466, 0.4578275, 0.40821073]
     )
@@ -105,8 +109,6 @@ class Llava(torch.nn.Module):
     def __init__(
         self,
         llava_model: LlavaForConditionalGeneration,
-        use_sdpa_with_kv_cache_op: bool = True,
-        max_seq_len: int = 768,
         preprocessor_args: PreprocessorArgs,
         llava_args: LlavaArgs,
     ):
@@ -125,12 +127,6 @@ class Llava(torch.nn.Module):
         self.vision_tower = clip_vision_encoder(**self.llava_args.vision_args.__dict__)
         self.mm_projector = LlavaMultiModalProjector(llava_args.projector_args)
 
-        self.embed_tokens = nn.Embedding(
-            self.llava_args.text_args.vocab_size,
-            self.llava_args.text_args.dim,  # this may not right
-            self.llava_args.pad_token_id,
-        )
-
         self.text_model = Transformer(self.llava_args.text_args)
         # use custom op for SDPA.
         if self.use_sdpa_with_kv_cache_op:
@@ -141,11 +137,7 @@ class Llava(torch.nn.Module):
             strict=False,
             assign=True,
         )
-        self.embed_tokens.load_state_dict(
-            state_dict=self.model_.language_model.model.embed_tokens.state_dict(),
-            strict=True,
-            assign=True,
-        )
+
         self.vision_tower.load_state_dict(
             state_dict=self._translate_state_dict_for_vision_model(),
             strict=True,
@@ -202,7 +194,7 @@ class Llava(torch.nn.Module):
         # Define the mapping from old names to new names
         hf_weight_prefix = "vision_model."
         name_mapping = {
-            f"{hf_weight_prefix}embeddings.class_embedding": "cls_token_embedding.cls_embedding",
+            f"{hf_weight_prefix}embeddings.class_embedding": "cls_token_embedding.weight",
             f"{hf_weight_prefix}embeddings.position_embedding.weight": "token_pos_embedding.positional_embedding",
             f"{hf_weight_prefix}embeddings.patch_embedding.weight": "conv.weight",
             f"{hf_weight_prefix}pre_layrnorm.weight": "ln_pre.weight",
@@ -215,19 +207,23 @@ class Llava(torch.nn.Module):
         patterns = [
             (
                 rf"{hf_weight_prefix}encoder\.layers\.([0-9]+)\.self_attn\.(k|q|v)_proj\.(weight|bias)",
-                lambda match: f"transformer_layers.{match.group(1)}.self_attn.in_proj_{match.group(3)}",
+                lambda match: f"layers.{match.group(1)}.attn.{match.group(2)}_proj.{match.group(3)}",
             ),
             (
                 rf"{hf_weight_prefix}encoder\.layers\.([0-9]+)\.self_attn\.out_proj\.(weight|bias)",
-                lambda match: f"transformer_layers.{match.group(1)}.self_attn.out_proj.{match.group(2)}",
+                lambda match: f"layers.{match.group(1)}.attn.output_proj.{match.group(2)}",
             ),
             (
                 rf"{hf_weight_prefix}encoder\.layers\.([0-9]+)\.mlp\.fc(1|2)\.(weight|bias)",
-                lambda match: f"transformer_layers.{match.group(1)}.linear{match.group(2)}.{match.group(3)}",
+                lambda match: f"layers.{match.group(1)}.mlp.w{match.group(2)}.{match.group(3)}",
             ),
             (
-                rf"{hf_weight_prefix}encoder\.layers\.([0-9]+)\.layer_norm(1|2)\.(weight|bias)",
-                lambda match: f"transformer_layers.{match.group(1)}.norm{match.group(2)}.{match.group(3)}",
+                rf"{hf_weight_prefix}encoder\.layers\.([0-9]+)\.layer_norm1\.(weight|bias)",
+                lambda match: f"layers.{match.group(1)}.sa_norm.{match.group(2)}",
+            ),
+            (
+                rf"{hf_weight_prefix}encoder\.layers\.([0-9]+)\.layer_norm2\.(weight|bias)",
+                lambda match: f"layers.{match.group(1)}.mlp_norm.{match.group(2)}",
             ),
         ]
 
@@ -306,8 +302,8 @@ class Llava(torch.nn.Module):
         return image_features
 
     def image_preprocess(self, img: torch.Tensor) -> torch.Tensor:
-        target_h = self.image_processor.crop_size["height"]
-        target_w = self.image_processor.crop_size["width"]
+        target_h = self.preprocessor_args.height
+        target_w = self.preprocessor_args.width
         # pad the image with median rgb value, to make a square
         l_pad = (target_w - img.shape[2]) // 2
         t_pad = (target_h - img.shape[1]) // 2
@@ -441,6 +437,8 @@ class LlavaModel(EagerModelBase):
 
     def get_preprocessor_args(self):
         return PreprocessorArgs(
+            height=self.image_processor.crop_size["height"],
+            width=self.image_processor.crop_size["width"],
             image_mean=self.image_processor.image_mean,
             image_std=self.image_processor.image_std,
             rescale_factor=self.image_processor.rescale_factor,
@@ -457,6 +455,7 @@ class LlavaModel(EagerModelBase):
                 enable_dynamic_shape=True,  # allow parallel prefill
                 use_sdpa_with_kv_cache_op=self.use_sdpa_with_kv_cache_op,  # use sdpa_with_kv_cache op
                 use_hf_rope=True,
+                max_seq_len=self.max_seq_len,
             ),
             vision_feature_select_strategy="default",
             pad_token_id=self.model.config.pad_token_id,

@@ -58,21 +58,25 @@ class TestLlava(unittest.TestCase):
             )
         # the output includes prompt, removing it
         output_ids = output_ids[:, -5:]
+
+        print("ref output_ids:", output_ids)
         ref_outputs = self.llava_model.tokenizer.batch_decode(
             output_ids, skip_special_tokens=True
         )[0].strip()
 
         # being tested, using llama_transformer
         context_len, prefill_logits = self.llava.prefill(
-            self.prompt_before_image, self.resized, self.prompt_after_image
+            self.prompt_before_image, preprocessed, self.prompt_after_image
         )
         # Always generate one token at a time.
         new_tokens = [torch.argmax(prefill_logits).item()]
-        for i in range(4):
+        for i in range(10):
             logits = self.llava.step(
                 torch.tensor([new_tokens[i]]), torch.tensor([context_len + i])
             )
             new_tokens.append(torch.argmax(logits[-1, :]).item())
+        
+        print("new_tokens:", new_tokens)
 
         outputs = self.llava_model.tokenizer.batch_decode(
             torch.tensor([new_tokens]), skip_special_tokens=True
