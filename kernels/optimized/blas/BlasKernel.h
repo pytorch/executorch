@@ -11,6 +11,7 @@
 #include <executorch/kernels/optimized/utils/math_utils.h>
 #include <executorch/kernels/optimized/utils/unroll.h>
 
+#include <executorch/extension/parallel/thread_parallel.h>
 #include <executorch/runtime/core/portable_type/bfloat16.h>
 
 #include <array>
@@ -177,34 +178,37 @@ inline void gemm_transa_<torch::executor::BFloat16, torch::executor::BFloat16>(
     torch::executor::BFloat16 beta,
     torch::executor::BFloat16 *c, int64_t ldc) {
   // c = alpha * (a.T @ b) + beta * c
-//  parallel_for(0, m, 1, [&](int64_t begin, int64_t end) {
   if (alpha == 1 && beta == 0) {
-    const auto *a_ = a;
-    for (int i = 0; i < m; ++i) {
+    executorch::extension::parallel_for(0, m, 1, [&](int64_t begin, int64_t end) {
+      const auto *a_ = a + begin * lda;
+      for (int i = begin; i < end; ++i) {
+        const auto *b_ = b;
+        for (int j = 0; j < n; ++j) {
+          const auto dot = internal::bf16_dot_with_fp32_arith(a_, b_, k);
+          b_ += ldb;
+          c[j*ldc+i] = dot;
+        }
+        a_ += lda;
+      }
+    });
+    return;
+  }
+  executorch::extension::parallel_for(0, m, 1, [&](int64_t begin, int64_t end) {
+    const auto *a_ = a + begin * lda;
+    for (int i = begin; i < end; ++i) {
       const auto *b_ = b;
       for (int j = 0; j < n; ++j) {
         const auto dot = internal::bf16_dot_with_fp32_arith(a_, b_, k);
         b_ += ldb;
-        c[j*ldc+i] = dot;
+        if (beta == 0) {
+          c[j*ldc+i] = alpha*dot;
+        } else {
+          c[j*ldc+i] = beta*c[j*ldc+i]+alpha*dot;
+        }
       }
       a_ += lda;
     }
-    return;
-  }
-  const auto *a_ = a;
-  for (int i = 0; i < m; ++i) {
-    const auto *b_ = b;
-    for (int j = 0; j < n; ++j) {
-      const auto dot = internal::bf16_dot_with_fp32_arith(a_, b_, k);
-      b_ += ldb;
-      if (beta == 0) {
-        c[j*ldc+i] = alpha*dot;
-      } else {
-        c[j*ldc+i] = beta*c[j*ldc+i]+alpha*dot;
-      }
-    }
-    a_ += lda;
-  }
+  });
 }
 #endif
 
