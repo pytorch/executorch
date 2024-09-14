@@ -214,6 +214,7 @@ jobs:
     needs:
       - set-parameters
       - upload-android-apps
+      - export-models
     strategy:
       matrix:
         model: ${{ fromJson(needs.set-parameters.outputs.models) }}
