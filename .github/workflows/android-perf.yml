@@ -274,7 +274,6 @@ jobs:
         delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
         device: ${{ fromJson(needs.set-parameters.outputs.devices) }}
       fail-fast: false
-    timeout: 120 # Due to scheduling a job may be pushed beyond the default 60m threshold
     with:
       device-type: android
       runner: linux.2xlarge
