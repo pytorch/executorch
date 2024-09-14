@@ -218,13 +218,18 @@ runtime::Error Module::set_inputs(
   return runtime::Error::Ok;
 }
 
-runtime::Error Module::set_output_data_ptr(
+runtime::Error Module::set_output(
+    const std::string& method_name,
     runtime::EValue output_value,
-    size_t output_index,
-    const std::string& method_name) {
+    size_t output_index) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
-  auto& output_tensor = output_value.toTensor();
   auto& method = methods_.at(method_name).method;
+  ET_CHECK_OR_RETURN_ERROR(
+      output_value.isTensor(),
+      InvalidArgument,
+      "output type: %zu is not tensor",
+      (size_t)output_value.tag);
+  const auto& output_tensor = output_value.toTensor();
   return method->set_output_data_ptr(
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
 }
