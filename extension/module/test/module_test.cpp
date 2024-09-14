@@ -373,3 +373,51 @@ TEST_F(ModuleTest, TestConcurrentExecutionWithSharedProgram) {
   t4.join();
   t5.join();
 }
+
+TEST_F(ModuleTest, TestSetInputsBeforeExecute) {
+  Module module(model_path_);
+
+  auto tensor1 = make_tensor_ptr({4.f});
+  auto tensor2 = make_tensor_ptr({5.f});
+
+  EXPECT_EQ(module.set_inputs({tensor1, tensor2}), Error::Ok);
+
+  const auto result = module.forward();
+  EXPECT_EQ(result.error(), Error::Ok);
+
+  const auto data = result->at(0).toTensor().const_data_ptr<float>();
+  EXPECT_NEAR(data[0], 9, 1e-5);
+}
+
+TEST_F(ModuleTest, TestSetInputCombinedWithExecute) {
+  Module module(model_path_);
+
+  auto tensor1 = make_tensor_ptr({2.f});
+  auto tensor2 = make_tensor_ptr({3.f});
+
+  EXPECT_EQ(module.set_input(tensor2, 1), Error::Ok);
+
+  const auto result = module.forward(tensor1);
+  EXPECT_EQ(result.error(), Error::Ok);
+
+  const auto data = result->at(0).toTensor().const_data_ptr<float>();
+  EXPECT_NEAR(data[0], 5, 1e-5);
+}
+
+TEST_F(ModuleTest, TestPartiallySetInputs) {
+  Module module(model_path_);
+
+  auto tensor = make_tensor_ptr({1.f});
+
+  EXPECT_EQ(module.set_input(tensor, 0), Error::Ok);
+
+  const auto result = module.forward();
+  EXPECT_NE(result.error(), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestUnsetInputs) {
+  Module module(model_path_);
+
+  const auto result = module.forward();
+  EXPECT_NE(result.error(), Error::Ok);
+}
