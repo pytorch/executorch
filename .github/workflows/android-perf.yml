@@ -213,7 +213,6 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
     needs:
       - set-parameters
-      - upload-models
       - upload-android-apps
     strategy:
       matrix:

@@ -281,7 +281,6 @@ jobs:
     needs:
       - set-parameters
       - upload-benchmark-app
-      - upload-models
     permissions:
       id-token: write
       contents: read
