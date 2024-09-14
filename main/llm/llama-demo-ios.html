@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Building ExecuTorch Llama and Llava iOS Demo App &mdash; ExecuTorch main documentation</title>
+  <title>ExecuTorch Llama iOS Demo App &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -432,7 +432,7 @@
       </li>
 
         
-      <li>Building ExecuTorch Llama and Llava iOS Demo App</li>
+      <li>ExecuTorch Llama iOS Demo App</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
@@ -470,72 +470,87 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="building-executorch-llama-and-llava-ios-demo-app">
-<h1>Building ExecuTorch Llama and Llava iOS Demo App<a class="headerlink" href="#building-executorch-llama-and-llava-ios-demo-app" title="Permalink to this heading">¶</a></h1>
-<p>This app demonstrates the use of the LLM chat app demonstrating local inference use case with ExecuTorch, using <a class="reference external" href="https://github.com/meta-llama/llama-models">Llama 3.1</a> for text only chat and <a class="reference external" href="https://github.com/haotian-liu/LLaVA">Llava</a> for image and text chat.</p>
-<div class="section" id="prerequisites">
-<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
+  <div class="section" id="executorch-llama-ios-demo-app">
+<h1>ExecuTorch Llama iOS Demo App<a class="headerlink" href="#executorch-llama-ios-demo-app" title="Permalink to this heading">¶</a></h1>
+<p>We’re excited to share that the newly revamped iOS demo app is live and includes many new updates to provide a more intuitive and smoother user experience with a chat use case! The primary goal of this app is to showcase how easily ExecuTorch can be integrated into an iOS demo app and how to exercise the many features ExecuTorch and Llama models have to offer.</p>
+<p>This app serves as a valuable resource to inspire your creativity and provide foundational code that you can customize and adapt for your particular use case.</p>
+<p>Please dive in and start exploring our demo app today! We look forward to any feedback and are excited to see your innovative ideas.</p>
+<div class="section" id="key-concepts">
+<h2>Key Concepts<a class="headerlink" href="#key-concepts" title="Permalink to this heading">¶</a></h2>
+<p>From this demo app, you will learn many key concepts such as:</p>
 <ul class="simple">
-<li><p><a class="reference external" href="https://developer.apple.com/xcode">Xcode 15</a></p></li>
-<li><p><a class="reference external" href="https://developer.apple.com/ios">iOS 17 SDK</a></p></li>
-<li><p>Set up your ExecuTorch repo and environment if you haven’t done so by following the <a class="reference external" href="https://pytorch.org/executorch/stable/getting-started-setup">Setting up ExecuTorch</a> to set up the repo and dev environment:</p></li>
+<li><p>How to prepare Llama models, build the ExecuTorch library, and perform model inference across delegates</p></li>
+<li><p>Expose the ExecuTorch library via Swift Package Manager</p></li>
+<li><p>Familiarity with current ExecuTorch app-facing capabilities</p></li>
 </ul>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/pytorch/executorch.git<span class="w"> </span>--recursive<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>executorch
-</pre></div>
+<p>The goal is for you to see the type of support ExecuTorch provides and feel comfortable with leveraging it for your use cases.</p>
 </div>
-<p>Then create a virtual or conda environment using either</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
-</pre></div>
+<div class="section" id="supported-models">
+<h2>Supported Models<a class="headerlink" href="#supported-models" title="Permalink to this heading">¶</a></h2>
+<p>As a whole, the models that this app supports are (varies by delegate):</p>
+<ul class="simple">
+<li><p>Llama 3.1 8B</p></li>
+<li><p>Llama 3 8B</p></li>
+<li><p>Llama 2 7B</p></li>
+<li><p>Llava 1.5 (only XNNPACK)</p></li>
+</ul>
 </div>
-<p>or</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>executorch<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.10
-conda<span class="w"> </span>activate<span class="w"> </span>executorch
-</pre></div>
+<div class="section" id="building-the-application">
+<h2>Building the application<a class="headerlink" href="#building-the-application" title="Permalink to this heading">¶</a></h2>
+<p>First it’s important to note that currently ExecuTorch provides support across several delegates. Once you identify the delegate of your choice, select the README link to get a complete end-to-end instructions for environment set-up to export the models to build ExecuTorch libraries and apps to run on device:</p>
+<table class="colwidths-auto docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Delegate</p></th>
+<th class="head"><p>Resource</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>XNNPACK (CPU-based library)</p></td>
+<td><p><span class="xref myst">link</span></p></td>
+</tr>
+<tr class="row-odd"><td><p>MPS (Metal Performance Shader)</p></td>
+<td><p><span class="xref myst">link</span></p></td>
+</tr>
+</tbody>
+</table>
 </div>
-<p>After that, run:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_requirements.sh<span class="w"> </span>--pybind<span class="w"> </span>coreml<span class="w"> </span>mps<span class="w"> </span>xnnpack
-./backends/apple/coreml/scripts/install_requirements.sh
-./backends/apple/mps/install_requirements.sh
-</pre></div>
-</div>
-</div>
-<div class="section" id="exporting-models">
-<h2>Exporting models<a class="headerlink" href="#exporting-models" title="Permalink to this heading">¶</a></h2>
-<p>Please refer to the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/models/llama2/README.md">ExecuTorch Llama2 docs</a> to export the Llama 3.1 model.</p>
-</div>
-<div class="section" id="run-the-app">
-<h2>Run the App<a class="headerlink" href="#run-the-app" title="Permalink to this heading">¶</a></h2>
-<ol class="arabic simple">
-<li><p>Open the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/apple_ios/LLaMA/LLaMA.xcodeproj">project</a> in Xcode.</p></li>
-<li><p>Run the app (cmd+R).</p></li>
-<li><p>In app UI pick a model and tokenizer to use, type a prompt and tap the arrow buton.</p></li>
-</ol>
+<div class="section" id="how-to-use-the-app">
+<h2>How to Use the App<a class="headerlink" href="#how-to-use-the-app" title="Permalink to this heading">¶</a></h2>
+<p>This section will provide the main steps to use the app, along with a code snippet of the ExecuTorch API.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>ExecuTorch runtime is distributed as a Swift package providing some .xcframework as prebuilt binary targets.
-Xcode will dowload and cache the package on the first run, which will take some time.</p>
+Xcode will download and cache the package on the first run, which will take some time.</p>
 </div>
+<ul class="simple">
+<li><p>Open XCode and select “Open an existing project” to open <code class="docutils literal notranslate"><span class="pre">examples/demo-apps/apple_ios/LLama</span></code>.</p></li>
+<li><p>Ensure that the ExecuTorch package dependencies are installed correctly.</p></li>
+<li><p>Run the app. This builds and launches the app on the phone.</p></li>
+<li><p>In app UI pick a model and tokenizer to use, type a prompt and tap the arrow buton</p></li>
+</ul>
 </div>
 <div class="section" id="copy-the-model-to-simulator">
 <h2>Copy the model to Simulator<a class="headerlink" href="#copy-the-model-to-simulator" title="Permalink to this heading">¶</a></h2>
-<ol class="arabic simple">
-<li><p>Drag and drop the Llama 3.1 and Llava models and tokenizer files onto the Simulator window and save them somewhere inside the iLLaMA folder.</p></li>
+<ul class="simple">
+<li><p>Drag&amp;drop the model and tokenizer files onto the Simulator window and save them somewhere inside the iLLaMA folder.</p></li>
 <li><p>Pick the files in the app dialog, type a prompt and click the arrow-up button.</p></li>
-</ol>
+</ul>
 </div>
 <div class="section" id="copy-the-model-to-device">
 <h2>Copy the model to Device<a class="headerlink" href="#copy-the-model-to-device" title="Permalink to this heading">¶</a></h2>
-<ol class="arabic simple">
+<ul class="simple">
 <li><p>Wire-connect the device and open the contents in Finder.</p></li>
-<li><p>Navigate to the Files tab and drag and drop the models and tokenizer files onto the iLLaMA folder.</p></li>
+<li><p>Navigate to the Files tab and drag&amp;drop the model and tokenizer files onto the iLLaMA folder.</p></li>
 <li><p>Wait until the files are copied.</p></li>
-</ol>
-<p>Click the image below to see a demo video of the app running Llama 3.1 and Llava on an iPhone 15 Pro device:</p>
-<a href="https://drive.google.com/file/d/1yQ7UoB79vMEBuBaoYvO53dosYTjpOZhd/view?usp=sharing">
-  <img src="llama31.png" width="350" alt="iOS app running Llama 3.1">
-</a> <a href="https://drive.google.com/file/d/1yQ7UoB79vMEBuBaoYvO53dosYTjpOZhd/view?usp=sharing">
-  <img src="llava.png" width="350" alt="iOS app running Llava">
-</a>
+</ul>
+<p>If the app successfully run on your device, you should see something like below:</p>
+<p align="center">
+<img src="./docs/screenshots/ios_demo_app.jpg" alt="iOS LLaMA App" width="300">
+</p>
+<p>For Llava 1.5 models, you can select and image (via image/camera selector button) before typing prompt and send button.</p>
+<p align="center">
+<img src="./docs/screenshots/ios_demo_app_llava.jpg" alt="iOS LLaMA App" width="300">
+</p>
 </div>
 <div class="section" id="reporting-issues">
 <h2>Reporting Issues<a class="headerlink" href="#reporting-issues" title="Permalink to this heading">¶</a></h2>
@@ -579,10 +594,11 @@ Xcode will dowload and cache the package on the first run, which will take some 
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Building ExecuTorch Llama and Llava iOS Demo App</a><ul>
-<li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
-<li><a class="reference internal" href="#exporting-models">Exporting models</a></li>
-<li><a class="reference internal" href="#run-the-app">Run the App</a></li>
+<li><a class="reference internal" href="#">ExecuTorch Llama iOS Demo App</a><ul>
+<li><a class="reference internal" href="#key-concepts">Key Concepts</a></li>
+<li><a class="reference internal" href="#supported-models">Supported Models</a></li>
+<li><a class="reference internal" href="#building-the-application">Building the application</a></li>
+<li><a class="reference internal" href="#how-to-use-the-app">How to Use the App</a></li>
 <li><a class="reference internal" href="#copy-the-model-to-simulator">Copy the model to Simulator</a></li>
 <li><a class="reference internal" href="#copy-the-model-to-device">Copy the model to Device</a></li>
 <li><a class="reference internal" href="#reporting-issues">Reporting Issues</a></li>
