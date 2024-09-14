@@ -10,15 +10,14 @@
 
 #include <executorch/extension/llm/tokenizer/tiktoken.h>
 
-namespace torch {
-namespace executor {
+namespace example {
 
-enum Version {
-  DEFAULT,
-  MULTIMODAL,
+enum class Version {
+  Default,
+  Multimodal,
 };
 
-std::unique_ptr<Tiktoken> get_tiktoken_for_llama(Version version = DEFAULT);
+std::unique_ptr<::executorch::extension::llm::Tiktoken> get_tiktoken_for_llama(
+    Version version = Version::Default);
 
-} // namespace executor
-} // namespace torch
+} // namespace example

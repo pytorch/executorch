@@ -80,7 +80,7 @@ int32_t main(int32_t argc, char** argv) {
   }
 #endif
   // create llama runner
-  torch::executor::LlavaRunner runner(model_path, tokenizer_path, temperature);
+  example::LlavaRunner runner(model_path, tokenizer_path, temperature);
 
   // read image and resize the longest edge to 336
   std::vector<uint8_t> image_data;

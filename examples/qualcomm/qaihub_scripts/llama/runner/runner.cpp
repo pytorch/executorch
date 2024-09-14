@@ -66,7 +66,7 @@ Runner::Runner(
 
 // load tokenizer
 #if defined(QAIHUB_LLAMA3_RUNNER)
-  tokenizer_ = get_tiktoken_for_llama();
+  tokenizer_ = example::get_tiktoken_for_llama();
   tokenizer_->load(tokenizer_path_);
   eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
   version_ = LlamaVersion::kLlama3;
