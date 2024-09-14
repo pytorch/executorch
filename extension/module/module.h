@@ -357,6 +357,42 @@ class Module {
   }
 
   /**
+   * Sets the output tensor for a specific method.
+   *
+   * @param[in] method_name The name of the method.
+   * @param[in] output_value The EValue containing the Tensor to set as the
+   * method output.
+   * @param[in] output_index Zero-based index of the output to set.
+   *
+   * @returns An Error to indicate success or failure.
+   *
+   * @note Only Tensor outputs are currently supported for setting.
+   */
+  ET_NODISCARD
+  runtime::Error set_output(
+      const std::string& method_name,
+      runtime::EValue output_value,
+      size_t output_index = 0);
+
+  /**
+   * Sets the output tensor for the "forward" method.
+   *
+   * @param[in] output_value The EValue containing the Tensor to set as the
+   * method output.
+   * @param[in] output_index Zero-based index of the output to set.
+   *
+   * @returns An Error to indicate success or failure.
+   *
+   * @note Only Tensor outputs are currently supported for setting.
+   */
+  ET_NODISCARD
+  inline runtime::Error set_output(
+      runtime::EValue output_value,
+      size_t output_index = 0) {
+    return set_output("forward", std::move(output_value), output_index);
+  }
+
+  /**
    * Retrieves the EventTracer instance being used by the Module.
    * EventTracer is used for tracking and logging events during the execution
    * of methods.
@@ -367,19 +403,6 @@ class Module {
   inline runtime::EventTracer* event_tracer() const {
     return event_tracer_.get();
   }
-
-  /**
-   * Set output data pointer for forward method.
-   *
-   * @param[in] output_value A Tensor for the output of 'forward' method.
-   * @param[in] output_index Index of the output in 'forward' method.
-   *
-   * @returns An Error to indicate success or failure of the loading process.
-   */
-  runtime::Error set_output_data_ptr(
-      runtime::EValue output_value,
-      size_t output_index,
-      const std::string& method_name = "forward");
 
  private:
   struct MethodHolder {

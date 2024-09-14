@@ -421,3 +421,17 @@ TEST_F(ModuleTest, TestUnsetInputs) {
   const auto result = module.forward();
   EXPECT_NE(result.error(), Error::Ok);
 }
+
+TEST_F(ModuleTest, TestSetOutputInvalidIndex) {
+  Module module(model_path_);
+
+  auto output_tensor = empty({1});
+
+  EXPECT_NE(module.set_output(output_tensor, 1), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestSetOutputInvalidType) {
+  Module module(model_path_);
+
+  EXPECT_NE(module.set_output(EValue()), Error::Ok);
+}

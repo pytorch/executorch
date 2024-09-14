@@ -427,7 +427,7 @@ void KVCachedMemory::update_io(
             // k, v are placed interleaved
             int index = (cache_stride << 1) + (cache_group << 5) + head;
             ET_CHECK_MSG(
-                modules_[shard]->set_output_data_ptr(
+                modules_[shard]->set_output(
                     output_tensors[shard][index], index) == Error::Ok,
                 "failed to set output tensor for module %d's %d'th output "
                 "while updating kv_cache output tensors",
@@ -450,8 +450,8 @@ void KVCachedMemory::update_io(
     for (int shard = 0; shard < output_tensors.size(); shard++) {
       for (int index = 0; index < output_tensors[shard].size(); index++) {
         ET_CHECK_MSG(
-            modules_[shard]->set_output_data_ptr(
-                output_tensors[shard][index], index) == Error::Ok,
+            modules_[shard]->set_output(output_tensors[shard][index], index) ==
+                Error::Ok,
             "failed to set output tensor for module %d's %d'th output "
             "while updating kv_cache output tensors",
             shard,
