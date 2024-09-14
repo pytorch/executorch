@@ -25,7 +25,7 @@ concurrency:
 jobs:
   build-llm-demo:
     name: build-llm-demo
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@upload-nova-artifacts-to-s3-directly  # DEBUG: TO BE REMOVED
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
@@ -33,8 +33,7 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       upload-artifact: android-apps
-      use-s3: true
-      test-infra-ref: upload-nova-artifacts-to-s3-directly  # DEBUG: TO BE REMOVED
+      upload-artifact-to-s3: true
       script: |
         set -eux
 

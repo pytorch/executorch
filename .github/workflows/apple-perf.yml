@@ -116,7 +116,7 @@ jobs:
 
   export-models:
     name: export-models
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@upload-nova-artifacts-to-s3-directly  # DEBUG: TO BE REMOVED
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     needs: set-parameters
     strategy:
       matrix:
@@ -130,8 +130,7 @@ jobs:
       submodules: 'true'
       timeout: 60
       upload-artifact: ios-models
-      use-s3: true
-      test-infra-ref: upload-nova-artifacts-to-s3-directly  # DEBUG: TO BE REMOVED
+      upload-artifact-to-s3: true
       script: |
         set -eux
 

@@ -127,7 +127,7 @@ jobs:
 
   export-models:
     name: export-models
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@upload-nova-artifacts-to-s3-directly  # DEBUG: TO BE REMOVED
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     needs: set-parameters
     strategy:
       matrix:
@@ -140,8 +140,7 @@ jobs:
       submodules: 'true'
       timeout: 60
       upload-artifact: android-models
-      use-s3: true
-      test-infra-ref: upload-nova-artifacts-to-s3-directly  # DEBUG: TO BE REMOVED
+      upload-artifact-to-s3: true
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         echo "::group::Setting up dev environment"
@@ -179,7 +178,7 @@ jobs:
 
   build-llm-demo:
     name: build-llm-demo
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@upload-nova-artifacts-to-s3-directly  # DEBUG: TO BE REMOVED
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     needs: set-parameters
     with:
       runner: linux.2xlarge
@@ -188,8 +187,7 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       upload-artifact: android-apps
-      use-s3: true
-      test-infra-ref: upload-nova-artifacts-to-s3-directly  # DEBUG: TO BE REMOVED
+      upload-artifact-to-s3: true
       script: |
         set -eux
 
