@@ -15,7 +15,7 @@
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/log.h>
 
-namespace torch::executor {
+namespace example {
 
 #define SAMPLER_TOP 0.9f
 #define ENDOFTEXT_TOKEN 32000
@@ -81,7 +81,7 @@ uint64_t Runner::logits_to_token(const exec_aten::Tensor& logits_tensor) {
 }
 
 uint64_t Runner::prefill(std::vector<uint64_t>& tokens) {
-  auto result = module_->forward(from_blob(
+  auto result = module_->forward(executorch::extension::from_blob(
       tokens.data(),
       {1, static_cast<exec_aten::SizesType>(tokens.size())},
       ScalarType::Long));
@@ -91,7 +91,8 @@ uint64_t Runner::prefill(std::vector<uint64_t>& tokens) {
 }
 
 uint64_t Runner::run_model_step(uint64_t token) {
-  auto result = module_->forward(from_blob(&token, {1, 1}, ScalarType::Long));
+  auto result = module_->forward(
+      executorch::extension::from_blob(&token, {1, 1}, ScalarType::Long));
   ET_CHECK_MSG(
       result.error() == Error::Ok,
       "Failed to run forward() for token %" PRIu64,
@@ -100,4 +101,4 @@ uint64_t Runner::run_model_step(uint64_t token) {
   return logits_to_token(result.get()[0].toTensor());
 }
 
-} // namespace torch::executor
+} // namespace example

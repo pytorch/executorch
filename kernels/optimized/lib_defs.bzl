@@ -157,6 +157,7 @@ def define_libs():
                 "DEFAULT": [],
             }),
             exported_deps = [
+                "//executorch/extension/parallel:thread_parallel",
                 "//executorch/kernels/optimized:libutils",
                 "//executorch/runtime/core/exec_aten:lib",
             ],

@@ -26,6 +26,7 @@ from executorch.exir.program._program import (
     ExecutorchProgramManager,
     to_edge,
     to_edge_transform_and_lower,
+    to_edge_with_preserved_ops,
 )
 from executorch.exir.tracer import _default_decomposition_table
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
@@ -716,3 +717,89 @@ class TestProgramManagers(unittest.TestCase):
             )
         except SpecViolationError:
             self.fail("Should not error out on linalg_vector_norm op")
+
+    def _test_to_edge_with_preserved_ops(
+        self, program, preserved_ops, expected_preserved_ops
+    ):
+        edge = to_edge_with_preserved_ops(program, preserve_ops=preserved_ops)
+
+        def count_nodes(graph_module, target):
+            count = 0
+            for node in graph_module.graph.nodes:
+                if node.op == "call_function" and node.target in target:
+                    count += 1
+            return count
+
+        aten_ops_non_decomposed = count_nodes(
+            program.graph_module,
+            preserved_ops,
+        )
+
+        edge_ops_non_decomposed = count_nodes(
+            edge.exported_program().graph_module,
+            expected_preserved_ops,
+        )
+
+        self.assertEqual(aten_ops_non_decomposed, edge_ops_non_decomposed)
+
+    def test_to_edge_with_single_preserved_op(self):
+        model = TestLinear()
+        program = torch.export.export(model, model._get_random_inputs())
+
+        ops_not_to_decompose = [
+            torch.ops.aten.linear.default,
+        ]
+        expected_non_decomposed_edge_ops = [
+            exir_ops.edge.aten.linear.default,
+        ]
+
+        self._test_to_edge_with_preserved_ops(
+            program, ops_not_to_decompose, expected_non_decomposed_edge_ops
+        )
+
+    def test_to_edge_with_partial_ops_preserved(self):
+        model = TestLinearSDPACombined()
+        program = torch.export.export(model, model._get_random_inputs())
+
+        ops_not_to_decompose = [
+            torch.ops.aten.linear.default,
+        ]
+        expected_non_decomposed_edge_ops = [
+            exir_ops.edge.aten.linear.default,
+        ]
+
+        self._test_to_edge_with_preserved_ops(
+            program, ops_not_to_decompose, expected_non_decomposed_edge_ops
+        )
+
+    def test_to_edge_with_multiple_ops_preserved(self):
+        model = TestLinearSDPACombined()
+        program = torch.export.export(model, model._get_random_inputs())
+
+        ops_not_to_decompose = [
+            torch.ops.aten.linear.default,
+            torch.ops.aten.scaled_dot_product_attention.default,
+        ]
+        expected_non_decomposed_edge_ops = [
+            exir_ops.edge.aten.linear.default,
+            exir_ops.edge.aten.scaled_dot_product_attention.default,
+        ]
+
+        self._test_to_edge_with_preserved_ops(
+            program, ops_not_to_decompose, expected_non_decomposed_edge_ops
+        )
+
+    def test_to_edge_with_preserved_ops_not_in_model(self):
+        model = TestSDPA()
+        program = torch.export.export(model, model._get_random_inputs())
+
+        ops_not_to_decompose = [
+            torch.ops.aten.linear.default,
+        ]
+        expected_non_decomposed_edge_ops = [
+            exir_ops.edge.aten.linear.default,
+        ]
+
+        self._test_to_edge_with_preserved_ops(
+            program, ops_not_to_decompose, expected_non_decomposed_edge_ops
+        )

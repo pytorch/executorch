@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include <executorch/runtime/core/portable_type/half.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
@@ -485,7 +485,7 @@ TEST_F(VulkanComputeAPITest, test_buffer_float16) {
   if (!context()->adapter_ptr()->has_full_float16_buffers_support()) {
     GTEST_SKIP();
   }
-  test_storage_buffer_type<torch::executor::Half, vkapi::kHalf>(16);
+  test_storage_buffer_type<exec_aten::Half, vkapi::kHalf>(16);
 }
 
 TEST_F(VulkanComputeAPITest, test_buffer_int8) {
@@ -567,7 +567,7 @@ TEST_F(VulkanComputeAPITest, buffer_tensor_sanity_check) {
             run_buffer_tensor_sanity_check<float>(a);
             break;
           case vkapi::kHalf:
-            run_buffer_tensor_sanity_check<torch::executor::Half>(a);
+            run_buffer_tensor_sanity_check<exec_aten::Half>(a);
             break;
           case vkapi::kChar:
             run_buffer_tensor_sanity_check<int8_t>(a);
@@ -604,26 +604,30 @@ TEST_F(VulkanComputeAPITest, texture_add_sanity_check) {
   }
 }
 
-TEST_F(VulkanComputeAPITest, tensor_copy_test) {
-  std::vector<int64_t> sizes = {9, 9};
-  std::vector<int64_t> strides =
-      get_reference_strides(sizes, utils::kWidthPacked);
-  std::vector<int64_t> dim_order = {0, 1};
+TEST_F(VulkanComputeAPITest, tensor_alias_test) {
+  for (utils::StorageType storage_type : {utils::kTexture3D, utils::kBuffer}) {
+    std::vector<int64_t> sizes = {9, 9};
 
-  vTensor original = CREATE_FLOAT_BUFFER(sizes, /*allocate_memory=*/true);
-  vTensor copy = vTensor(original, sizes, dim_order);
-  EXPECT_TRUE(get_vma_allocation_count() == 1);
-  EXPECT_TRUE(copy.is_view_of(original));
+    const size_t alloc_count_before = get_vma_allocation_count();
 
-  // Fill original tensor with some data
-  fill_vtensor(original, 2.5f, true);
+    vTensor original = vTensor(context(), sizes, vkapi::kFloat, storage_type);
 
-  std::vector<float> data_out(copy.staging_buffer_numel());
-  // Extract the copy tensor; should contain the data of the original tensor
-  extract_vtensor(copy, data_out);
+    vTensor copy = vTensor(original);
 
-  for (size_t i = 0; i < data_out.size(); ++i) {
-    CHECK_VALUE(data_out, i, 2.5f + i);
+    // Two tensors but only one additional allocation.
+    EXPECT_TRUE(get_vma_allocation_count() == alloc_count_before + 1);
+    EXPECT_TRUE(copy.is_view_of(original));
+
+    // Fill original tensor with some data
+    fill_vtensor(original, 2.5f, true);
+
+    std::vector<float> data_out(copy.staging_buffer_numel());
+    // Extract the copy tensor; should contain the data of the original tensor
+    extract_vtensor(copy, data_out);
+
+    for (size_t i = 0; i < original.numel(); ++i) {
+      CHECK_VALUE(data_out, i, 2.5f + i);
+    }
   }
 }
 
@@ -1008,9 +1012,9 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
   // can alert ourselves to any significant changes in the sizes of these
   // objects by checking the `sizeof()` the class against some loose thresholds.
 
-  // Current known size on 64 bit system: 1824 B
-  EXPECT_TRUE(sizeof(vTensor) < 2000);
-  // Current known size on 64 bit system: 1840 B
+  // Current known size on 64 bit system: 2064 B
+  EXPECT_TRUE(sizeof(vTensor) < 2200);
+  // Current known size on 64 bit system: 2080 B
   EXPECT_TRUE(sizeof(Value) < 2200);
   // Current known size on 64 bit system: 240 B
   EXPECT_TRUE(sizeof(StagingBuffer) < 500);
@@ -1415,7 +1419,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       /*shared_object_idx = */ 4);
 
   // +2: t.sizes_ubo() for each staging shader
-  // +2: t.axis_mapping_ubo() for each staging shader
+  // +2: t.axis_map_ubo() for each staging shader
   // +2: staging buffer for each input tensor
   EXPECT_TRUE(get_vma_allocation_count() == 6);
 
@@ -1434,7 +1438,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
 
   // +2: alpha UBO, broadcast UBO for arithmetic shader
   // +1: t.sizes_ubo() uniform buffer for staging shader
-  // +1: t.axis_mapping_ubo() uniform buffer for staging shader
+  // +1: t.axis_map_ubo() uniform buffer for staging shader
   // +1: staging buffer for the input tensor
   EXPECT_TRUE(get_vma_allocation_count() == 12);
 
@@ -1452,7 +1456,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
 
   // +2: alpha UBO, broadcast UBO for arithmetic shader
   // +1: t.sizes_ubo() for staging shader
-  // +1: t.axis_mapping_ubo() for staging shader
+  // +1: t.axis_map_ubo() for staging shader
   // +1 staging buffer for the input tensor
   EXPECT_TRUE(get_vma_allocation_count() == 17);
 
@@ -2395,7 +2399,7 @@ TEST(VulkanToFromGPUShaderTest, round_trip_tests) {
 
   for (auto& sizes : to_test) {
     RUN_TESTS(float, vkapi::kFloat)
-    RUN_TESTS(torch::executor::Half, vkapi::kHalf)
+    RUN_TESTS(exec_aten::Half, vkapi::kHalf)
   }
 
   for (auto& sizes : to_test_int8) {

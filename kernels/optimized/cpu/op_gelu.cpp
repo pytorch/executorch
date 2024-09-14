@@ -38,7 +38,7 @@ namespace {
  */
 template <typename CTYPE>
 void gelu(
-    exec_aten::RuntimeContext& context,
+    executorch::runtime::KernelRuntimeContext& context,
     const Tensor& input,
     string_view approximate,
     Tensor& output) {
@@ -110,7 +110,7 @@ void gelu(
  * gelu.out(Tensor self, str approximate, *, Tensor(a!) out) -> Tensor(a!)
  */
 Tensor& opt_gelu_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& input,
     string_view approximate,
     Tensor& out) {

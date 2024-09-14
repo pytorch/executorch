@@ -20,7 +20,7 @@ using ScalarType = exec_aten::ScalarType;
 using Scalar = exec_aten::Scalar;
 
 Tensor& masked_fill_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& mask,
     const Scalar& value,

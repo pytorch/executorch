@@ -315,3 +315,138 @@ TEST_F(TensorPtrTest, TensorSharingImplResizingAffectsBothVector) {
   EXPECT_EQ(tensor1->size(0), 4);
   EXPECT_EQ(tensor1->size(1), 3);
 }
+
+TEST_F(TensorPtrTest, MakeTensorPtrFromExistingTensorInt32) {
+  std::vector<int32_t> data = {1, 2, 3, 4};
+  auto tensor = make_tensor_ptr({2, 2}, data);
+  auto new_tensor = make_tensor_ptr(*tensor);
+
+  EXPECT_EQ(new_tensor->dim(), tensor->dim());
+  EXPECT_EQ(new_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(new_tensor->size(1), tensor->size(1));
+  EXPECT_EQ(
+      new_tensor->const_data_ptr<int32_t>(), tensor->const_data_ptr<int32_t>());
+  EXPECT_EQ(new_tensor->scalar_type(), exec_aten::ScalarType::Int);
+}
+
+TEST_F(TensorPtrTest, CloneTensorPtrFromExistingTensorInt32) {
+  std::vector<int32_t> data = {1, 2, 3, 4};
+  auto tensor = make_tensor_ptr({2, 2}, std::move(data));
+  auto cloned_tensor = clone_tensor_ptr(*tensor);
+
+  EXPECT_EQ(cloned_tensor->dim(), tensor->dim());
+  EXPECT_EQ(cloned_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(cloned_tensor->size(1), tensor->size(1));
+  EXPECT_NE(
+      cloned_tensor->const_data_ptr<int32_t>(),
+      tensor->const_data_ptr<int32_t>());
+  EXPECT_EQ(cloned_tensor->const_data_ptr<int32_t>()[0], 1);
+  EXPECT_EQ(cloned_tensor->const_data_ptr<int32_t>()[3], 4);
+  EXPECT_EQ(cloned_tensor->scalar_type(), exec_aten::ScalarType::Int);
+}
+
+TEST_F(TensorPtrTest, CloneTensorPtrFromTensorPtrInt32) {
+  std::vector<int32_t> data = {1, 2, 3, 4};
+  auto tensor = make_tensor_ptr({2, 2}, std::move(data));
+  auto cloned_tensor = clone_tensor_ptr(tensor);
+
+  EXPECT_EQ(cloned_tensor->dim(), tensor->dim());
+  EXPECT_EQ(cloned_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(cloned_tensor->size(1), tensor->size(1));
+  EXPECT_NE(
+      cloned_tensor->const_data_ptr<int32_t>(),
+      tensor->const_data_ptr<int32_t>());
+  EXPECT_EQ(cloned_tensor->const_data_ptr<int32_t>()[0], 1);
+  EXPECT_EQ(cloned_tensor->const_data_ptr<int32_t>()[3], 4);
+  EXPECT_EQ(cloned_tensor->scalar_type(), exec_aten::ScalarType::Int);
+}
+
+TEST_F(TensorPtrTest, MakeTensorPtrFromExistingTensorDouble) {
+  std::vector<double> data = {1.0, 2.0, 3.0, 4.0};
+  auto tensor = make_tensor_ptr({2, 2}, data);
+  auto new_tensor = make_tensor_ptr(*tensor);
+
+  EXPECT_EQ(new_tensor->dim(), tensor->dim());
+  EXPECT_EQ(new_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(new_tensor->size(1), tensor->size(1));
+  EXPECT_EQ(
+      new_tensor->const_data_ptr<double>(), tensor->const_data_ptr<double>());
+  EXPECT_EQ(new_tensor->scalar_type(), exec_aten::ScalarType::Double);
+}
+
+TEST_F(TensorPtrTest, CloneTensorPtrFromExistingTensorDouble) {
+  std::vector<double> data = {1.0, 2.0, 3.0, 4.0};
+  auto tensor = make_tensor_ptr({2, 2}, std::move(data));
+  auto cloned_tensor = clone_tensor_ptr(*tensor);
+
+  EXPECT_EQ(cloned_tensor->dim(), tensor->dim());
+  EXPECT_EQ(cloned_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(cloned_tensor->size(1), tensor->size(1));
+  EXPECT_NE(
+      cloned_tensor->const_data_ptr<double>(),
+      tensor->const_data_ptr<double>());
+  EXPECT_EQ(cloned_tensor->const_data_ptr<double>()[0], 1.0);
+  EXPECT_EQ(cloned_tensor->const_data_ptr<double>()[3], 4.0);
+  EXPECT_EQ(cloned_tensor->scalar_type(), exec_aten::ScalarType::Double);
+}
+
+TEST_F(TensorPtrTest, CloneTensorPtrFromTensorPtrDouble) {
+  std::vector<double> data = {1.0, 2.0, 3.0, 4.0};
+  auto tensor = make_tensor_ptr({2, 2}, std::move(data));
+  auto cloned_tensor = clone_tensor_ptr(tensor);
+
+  EXPECT_EQ(cloned_tensor->dim(), tensor->dim());
+  EXPECT_EQ(cloned_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(cloned_tensor->size(1), tensor->size(1));
+  EXPECT_NE(
+      cloned_tensor->const_data_ptr<double>(),
+      tensor->const_data_ptr<double>());
+  EXPECT_EQ(cloned_tensor->const_data_ptr<double>()[0], 1.0);
+  EXPECT_EQ(cloned_tensor->const_data_ptr<double>()[3], 4.0);
+  EXPECT_EQ(cloned_tensor->scalar_type(), exec_aten::ScalarType::Double);
+}
+
+TEST_F(TensorPtrTest, MakeTensorPtrFromExistingTensorInt64) {
+  std::vector<int64_t> data = {100, 200, 300, 400};
+  auto tensor = make_tensor_ptr({2, 2}, data);
+  auto new_tensor = make_tensor_ptr(*tensor);
+
+  EXPECT_EQ(new_tensor->dim(), tensor->dim());
+  EXPECT_EQ(new_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(new_tensor->size(1), tensor->size(1));
+  EXPECT_EQ(
+      new_tensor->const_data_ptr<int64_t>(), tensor->const_data_ptr<int64_t>());
+  EXPECT_EQ(new_tensor->scalar_type(), exec_aten::ScalarType::Long);
+}
+
+TEST_F(TensorPtrTest, CloneTensorPtrFromExistingTensorInt64) {
+  std::vector<int64_t> data = {100, 200, 300, 400};
+  auto tensor = make_tensor_ptr({2, 2}, std::move(data));
+  auto cloned_tensor = clone_tensor_ptr(*tensor);
+
+  EXPECT_EQ(cloned_tensor->dim(), tensor->dim());
+  EXPECT_EQ(cloned_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(cloned_tensor->size(1), tensor->size(1));
+  EXPECT_NE(
+      cloned_tensor->const_data_ptr<int64_t>(),
+      tensor->const_data_ptr<int64_t>());
+  EXPECT_EQ(cloned_tensor->const_data_ptr<int64_t>()[0], 100);
+  EXPECT_EQ(cloned_tensor->const_data_ptr<int64_t>()[3], 400);
+  EXPECT_EQ(cloned_tensor->scalar_type(), exec_aten::ScalarType::Long);
+}
+
+TEST_F(TensorPtrTest, CloneTensorPtrFromTensorPtrInt64) {
+  std::vector<int64_t> data = {100, 200, 300, 400};
+  auto tensor = make_tensor_ptr({2, 2}, std::move(data));
+  auto cloned_tensor = clone_tensor_ptr(tensor);
+
+  EXPECT_EQ(cloned_tensor->dim(), tensor->dim());
+  EXPECT_EQ(cloned_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(cloned_tensor->size(1), tensor->size(1));
+  EXPECT_NE(
+      cloned_tensor->const_data_ptr<int64_t>(),
+      tensor->const_data_ptr<int64_t>());
+  EXPECT_EQ(cloned_tensor->const_data_ptr<int64_t>()[0], 100);
+  EXPECT_EQ(cloned_tensor->const_data_ptr<int64_t>()[3], 400);
+  EXPECT_EQ(cloned_tensor->scalar_type(), exec_aten::ScalarType::Long);
+}

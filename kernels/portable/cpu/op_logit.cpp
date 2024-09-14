@@ -18,7 +18,7 @@ namespace native {
 using exec_aten::Tensor;
 
 Tensor& logit_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     exec_aten::optional<double> eps,
     Tensor& out) {

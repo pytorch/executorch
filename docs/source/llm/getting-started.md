@@ -587,8 +587,8 @@ I'm not sure if you've heard of the "Curse of the Dragon" or not, but it's a ver
 The delegated model should be noticeably faster compared to the non-delegated model.
 
 For more information regarding backend delegateion, see the ExecuTorch guides
-for the [XNNPACK Backend](../tutorial-xnnpack-delegate-lowering.md) and [Core ML
-Backend](../build-run-coreml.md).
+for the [XNNPACK Backend](../tutorial-xnnpack-delegate-lowering.md),  [Core ML
+Backend](../build-run-coreml.md) and [Qualcomm AI Engine Direct Backend](build-run-llama3-qualcomm-ai-engine-direct-backend.md).
 
 ## Quantization
 
@@ -808,7 +808,7 @@ if (result.buf != nullptr && result.size > 0) {
 Additionally, update CMakeLists.txt to build with Developer Tools and enable events to be traced and logged into ETDump:
 
 ```
-option(EXECUTORCH_BUILD_SDK "" ON)
+option(EXECUTORCH_BUILD_DEVTOOLS "" ON)
 
 # ...
 

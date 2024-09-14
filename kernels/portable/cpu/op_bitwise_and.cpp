@@ -22,7 +22,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& bitwise_and_Tensor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
@@ -71,7 +71,7 @@ Tensor& bitwise_and_Tensor_out(
 }
 
 Tensor& bitwise_and_Scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {
