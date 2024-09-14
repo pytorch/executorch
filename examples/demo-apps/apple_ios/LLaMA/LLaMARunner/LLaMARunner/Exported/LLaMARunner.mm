@@ -144,39 +144,27 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
   return YES;
 }
 
-- (BOOL)generate:(NSArray<UIImage*>*)images
+- (BOOL)generate:(void*)imageBuffer
+                width:(CGFloat)width
+               height:(CGFloat)height
                prompt:(NSString*)prompt
        sequenceLength:(NSInteger)seq_len
     withTokenCallback:(nullable void (^)(NSString*))callback
                 error:(NSError**)error {
-  std::vector<Image> rawImages;
-  rawImages.reserve(images.count);
-
-  for (UIImage* image in images) {
-    CGImageRef cgImage = image.CGImage;
-    const int32_t width = CGImageGetWidth(cgImage);
-    const int32_t height = CGImageGetHeight(cgImage);
-    std::vector<uint8_t> buffer(height * width * 4);
-    CGContextRef context = CGBitmapContextCreate(
-        buffer.data(),
-        width,
-        height,
-        8,
-        width * 4,
-        CGColorSpaceCreateDeviceRGB(),
-        kCGImageAlphaPremultipliedLast);
-    CGContextDrawImage(context, CGRectMake(0, 0, width, height), cgImage);
-    CGContextRelease(context);
-    rawImages.push_back({std::move(buffer), width, height, 4});
-  }
+  const auto* data = static_cast<uint8_t*>(imageBuffer);
   const auto status = _runner->generate(
-      std::move(rawImages),
+      {Image{
+          std::vector<uint8_t>(
+              data, data + (int32_t)width * (int32_t)height * 3),
+          (int32_t)width,
+          (int32_t)height,
+          3}},
       prompt.UTF8String,
       seq_len,
       [callback](const std::string& token) { callback(@(token.c_str())); });
   if (status != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:LLaVARunnerErrorDomain
+      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
                                    code:(NSInteger)status
                                userInfo:nil];
       return NO;
