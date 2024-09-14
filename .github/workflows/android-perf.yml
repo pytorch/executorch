@@ -127,7 +127,7 @@ jobs:
 
   export-models:
     name: export-models
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@upload-nova-artifacts-to-s3-directly  # DEBUG: TO BE REMOVED
     needs: set-parameters
     strategy:
       matrix:
@@ -140,6 +140,8 @@ jobs:
       submodules: 'true'
       timeout: 60
       upload-artifact: android-models
+      use-s3: true
+      test-infra-ref: upload-nova-artifacts-to-s3-directly  # DEBUG: TO BE REMOVED
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         echo "::group::Setting up dev environment"
@@ -175,38 +177,9 @@ jobs:
         fi
         echo "::endgroup::"
 
-  # Upload models to S3. The artifacts are needed not only by the device farm but also TorchChat
-  upload-models:
-    needs: export-models
-    runs-on: linux.2xlarge
-    if: always()  # Continue this job regardless of previous job outcome
-    steps:
-      - name: Download the models from GitHub
-        uses: actions/download-artifact@v3
-        with:
-          # The name here needs to match the name of the upload-artifact parameter
-          name: android-models
-          path: ${{ runner.temp }}/artifacts/
-
-      - name: Verify the models
-        shell: bash
-        working-directory: ${{ runner.temp }}/artifacts/
-        run: |
-          ls -lah ./
-
-      - name: Upload the models to S3
-        uses: seemethere/upload-artifact-s3@v5
-        with:
-          s3-bucket: gha-artifacts
-          s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/artifact
-          retention-days: 1
-          if-no-files-found: ignore
-          path: ${{ runner.temp }}/artifacts/
-
   build-llm-demo:
     name: build-llm-demo
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@upload-nova-artifacts-to-s3-directly  # DEBUG: TO BE REMOVED
     needs: set-parameters
     with:
       runner: linux.2xlarge
@@ -215,6 +188,8 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       upload-artifact: android-apps
+      use-s3: true
+      test-infra-ref: upload-nova-artifacts-to-s3-directly  # DEBUG: TO BE REMOVED
       script: |
         set -eux
 
@@ -229,34 +204,6 @@ jobs:
 
         export ANDROID_ABIS="arm64-v8a"
         PYTHON_EXECUTABLE=python EXECUTORCH_BUILD_QNN=ON QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728 bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
-
-  # Upload artifacts to S3. The artifacts are needed not only by the device farm but also TorchChat
-  upload-android-apps:
-    needs: build-llm-demo
-    runs-on: linux.2xlarge
-    steps:
-      - name: Download the apps from GitHub
-        uses: actions/download-artifact@v3
-        with:
-          # The name here needs to match the name of the upload-artifact parameter
-          name: android-apps
-          path: ${{ runner.temp }}/artifacts/
-
-      - name: Verify the apps
-        shell: bash
-        working-directory: ${{ runner.temp }}/artifacts/
-        run: |
-          ls -lah ./
-
-      - name: Upload the apps to S3
-        uses: seemethere/upload-artifact-s3@v5
-        with:
-          s3-bucket: gha-artifacts
-          s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/artifact
-          retention-days: 14
-          if-no-files-found: ignore
-          path: ${{ runner.temp }}/artifacts/
 
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   benchmark-on-device:
@@ -285,9 +232,9 @@ jobs:
       # Unlike models there are limited numbers of build flavor for apps, and the model controls whether it should build with bpe/tiktoken tokenizer.
       # It's okay to build all possible apps with all possible flavors in job "build-llm-demo". However, in this job, once a model is given, there is only
       # one app+flavor that could load and run the model.
-      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/minibench/app-debug.apk
-      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/minibench/app-debug-androidTest.apk
+      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug.apk
+      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug-androidTest.apk
       # NB: Need to set the default spec here so that it works for periodic too
       test-spec: ${{ inputs.test_spec || 'https://ossci-android.s3.amazonaws.com/executorch/android-llm-device-farm-test-spec.yml' }}
       # Uploaded to S3 from the previous job
-      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/${{ matrix.model }}_${{ matrix.delegate }}/model.zip
+      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/model.zip
