@@ -167,12 +167,13 @@ runtime::Result<runtime::MethodMeta> Module::method_meta(
 
 runtime::Result<std::vector<runtime::EValue>> Module::execute(
     const std::string& method_name,
-    const std::vector<runtime::EValue>& input) {
+    const std::vector<runtime::EValue>& input_values) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
   auto& method = methods_.at(method_name).method;
 
-  ET_CHECK_OK_OR_RETURN_ERROR(method->set_inputs(
-      exec_aten::ArrayRef<runtime::EValue>(input.data(), input.size())));
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      method->set_inputs(exec_aten::ArrayRef<runtime::EValue>(
+          input_values.data(), input_values.size())));
   ET_CHECK_OK_OR_RETURN_ERROR(method->execute());
 
   const auto outputs_size = method->outputs_size();
