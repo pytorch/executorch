@@ -4,21 +4,21 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-addmm_naive:
+addmm_naive_texture3d:
   parameter_names_with_default_values:
     DTYPE: float
-    NDIM: 3
-    MAT1_PACKING: W_packed
-    MAT2_PACKING: H_packed
     MAT2_IS_TRANSPOSED: false
+    HAS_BIAS: true
   generate_variant_forall:
     DTYPE:
       - VALUE: float
       - VALUE: half
   shader_variants:
-    - NAME: addmm_naive_W_packed_H_packed
-    - NAME: addmm_naive_W_packed_W_packed
-      MAT2_PACKING: W_packed
-    - NAME: linear_naive_W_packed_W_packed
-      MAT2_PACKING: W_packed
+    - NAME: addmm_naive_texture3d
+    - NAME: matmul_naive_texture3d
+      HAS_BIAS: false
+    - NAME: linear_naive_texture3d
       MAT2_IS_TRANSPOSED: true
+    - NAME: matmul_transposed_naive_texture3d
+      MAT2_IS_TRANSPOSED: true
+      HAS_BIAS: false

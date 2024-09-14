@@ -32,7 +32,7 @@ namespace optimizer {
  * SGD optimizer state. This keeps track of the state of a given parameter to
  * be used in later epochs.
  */
-class SGDParamState {
+class ET_EXPERIMENTAL SGDParamState {
  public:
   /**
    * Constructs a new SGD param state.
@@ -55,7 +55,7 @@ class SGDParamState {
  * SGD optimizer options. This contains options for performing training on a
  * param group, such as the learning rate.
  */
-class SGDOptions {
+class ET_EXPERIMENTAL SGDOptions {
  public:
   /**
    * Constructs a new SGD optimizer options.
@@ -128,7 +128,7 @@ class SGDOptions {
  * SGD optimizer param group. This contains the parameters and
  * the SGDOptions associated to it.
  */
-class SGDParamGroup {
+class ET_EXPERIMENTAL SGDParamGroup {
  public:
   // NOTE: In order to store `SGDParamGroup` in a `std::vector`, it has
   // to be copy-constructible.
@@ -176,7 +176,7 @@ class SGDParamGroup {
  * SGD optimizer class. This is responsible for performing the optimization
  * step.
  */
-class SGD {
+class ET_EXPERIMENTAL SGD {
  public:
   explicit SGD(
       const std::vector<SGDParamGroup>& param_groups,
