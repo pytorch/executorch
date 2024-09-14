@@ -10,7 +10,6 @@
 
 #ifdef __aarch64__
 #include <arm_neon.h>
-#include <cpuinfo.h>
 #endif
 
 using torch::executor::BFloat16;
@@ -81,37 +80,32 @@ f32_dot_bf16(float32x4_t a, bfloat16x8_t b, bfloat16x8_t c) {
 }
 #endif
 
-template <bool useBfloat16Dot>
 static ET_INLINE void dot_with_fp32_arith_main_inner_loop(
     const BFloat16* vec1,
     const BFloat16* vec2,
     float32x4_t sum[kF32RegistersPerIteration],
     int registerPairIndex) {
 #ifdef __ARM_FEATURE_BF16
-  if (useBfloat16Dot) {
-    const bfloat16x8_t temp_vec1 = vld1q_bf16(reinterpret_cast<const __bf16*>(
-        &vec1[registerPairIndex * 2 * kF32ElementsPerRegister]));
-    const bfloat16x8_t temp_vec2 = vld1q_bf16(reinterpret_cast<const __bf16*>(
-        &vec2[registerPairIndex * 2 * kF32ElementsPerRegister]));
-    sum[registerPairIndex] =
-        f32_dot_bf16(sum[registerPairIndex], temp_vec1, temp_vec2);
-  } else {
-#endif
-    const uint16x8_t temp_vec1 = vld1q_u16(reinterpret_cast<const uint16_t*>(
-        &vec1[registerPairIndex * 2 * kF32ElementsPerRegister]));
-    const uint16x8_t temp_vec2 = vld1q_u16(reinterpret_cast<const uint16_t*>(
-        &vec2[registerPairIndex * 2 * kF32ElementsPerRegister]));
+  const bfloat16x8_t temp_vec1 = vld1q_bf16(reinterpret_cast<const __bf16*>(
+      &vec1[registerPairIndex * 2 * kF32ElementsPerRegister]));
+  const bfloat16x8_t temp_vec2 = vld1q_bf16(reinterpret_cast<const __bf16*>(
+      &vec2[registerPairIndex * 2 * kF32ElementsPerRegister]));
+  sum[registerPairIndex] =
+      f32_dot_bf16(sum[registerPairIndex], temp_vec1, temp_vec2);
+#else
+  const uint16x8_t temp_vec1 = vld1q_u16(reinterpret_cast<const uint16_t*>(
+      &vec1[registerPairIndex * 2 * kF32ElementsPerRegister]));
+  const uint16x8_t temp_vec2 = vld1q_u16(reinterpret_cast<const uint16_t*>(
+      &vec2[registerPairIndex * 2 * kF32ElementsPerRegister]));
 
-    sum[2 * registerPairIndex] = f32_fma_bf16(
-        sum[2 * registerPairIndex],
-        vget_low_u16(temp_vec1),
-        vget_low_u16(temp_vec2));
-    sum[2 * registerPairIndex + 1] = f32_fma_bf16(
-        sum[2 * registerPairIndex + 1],
-        vget_high_u16(temp_vec1),
-        vget_high_u16(temp_vec2));
-#ifdef __ARM_FEATURE_BF16
-  }
+  sum[2 * registerPairIndex] = f32_fma_bf16(
+      sum[2 * registerPairIndex],
+      vget_low_u16(temp_vec1),
+      vget_low_u16(temp_vec2));
+  sum[2 * registerPairIndex + 1] = f32_fma_bf16(
+      sum[2 * registerPairIndex + 1],
+      vget_high_u16(temp_vec1),
+      vget_high_u16(temp_vec2));
 #endif
 }
 
@@ -127,7 +121,7 @@ static ET_INLINE void dot_with_fp32_arith_vectorized_tail_inner_loop(
   *tailSum = f32_fma_bf16(*tailSum, temp_vec1, temp_vec2);
 }
 
-template <typename T, bool useBfloat16Dot>
+template <typename T>
 float dot_with_fp32_arith(const T* vec1, const T* vec2, int64_t len) {
   float32x4_t sum[kF32RegistersPerIteration] = {vdupq_n_f32(0)};
   const auto len_aligned = len & ~(kF32ElementsPerIteration - 1);
@@ -136,8 +130,7 @@ float dot_with_fp32_arith(const T* vec1, const T* vec2, int64_t len) {
     const auto* vec2_ = vec2 + j;
     utils::ForcedUnroll<kF32RegisterPairsPerIteration>{}(
         [vec1_, vec2_, &sum](auto k) ET_INLINE_ATTRIBUTE {
-          dot_with_fp32_arith_main_inner_loop<useBfloat16Dot>(
-              vec1_, vec2_, sum, k);
+          dot_with_fp32_arith_main_inner_loop(vec1_, vec2_, sum, k);
         });
   }
   auto reducedSum = reduce(sum);
@@ -164,15 +157,7 @@ float bf16_dot_with_fp32_arith(
     const BFloat16* vec1,
     const BFloat16* vec2,
     int64_t len) {
-#ifdef __ARM_FEATURE_BF16
-  if (cpuinfo_has_arm_bf16()) {
-    return dot_with_fp32_arith<BFloat16, true>(vec1, vec2, len);
-  } else {
-#endif
-    return dot_with_fp32_arith<BFloat16, false>(vec1, vec2, len);
-#ifdef __ARM_FEATURE_BF16
-  }
-#endif
+  return dot_with_fp32_arith(vec1, vec2, len);
 }
 #endif
 } // namespace internal
