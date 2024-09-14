@@ -185,7 +185,7 @@ function(extract_sources sources_file)
     endif()
 
     if(ANDROID_ABI)
-      if(STREQUAL "${ANDROID_ABI}" "arm64-v8a")
+      if("${ANDROID_ABI}" STREQUAL "arm64-v8a")
         set(target_platforms_arg "--target_platforms=shim//:android-arm64")
       else()
         message(FATAL_ERROR "Unsupported ANDROID_ABI setting ${ANDROID_ABI}. Please add it here!")
