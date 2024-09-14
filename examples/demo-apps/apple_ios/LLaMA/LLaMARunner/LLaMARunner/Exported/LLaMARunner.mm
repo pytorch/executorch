@@ -21,7 +21,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
 @end
 
 @implementation LLaMARunner {
-  std::unique_ptr<Runner> _runner;
+  std::unique_ptr<example::Runner> _runner;
 }
 
 - (instancetype)initWithModelPath:(NSString*)modelPath
@@ -29,7 +29,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
   self = [super init];
   if (self) {
     [ExecuTorchLog.sharedLog addSink:self];
-    _runner = std::make_unique<Runner>(
+    _runner = std::make_unique<example::Runner>(
         modelPath.UTF8String, tokenizerPath.UTF8String);
   }
   return self;
@@ -109,7 +109,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
 @end
 
 @implementation LLaVARunner {
-  std::unique_ptr<LlavaRunner> _runner;
+  std::unique_ptr<example::LlavaRunner> _runner;
 }
 
 - (instancetype)initWithModelPath:(NSString*)modelPath
@@ -117,7 +117,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
   self = [super init];
   if (self) {
     [ExecuTorchLog.sharedLog addSink:self];
-    _runner = std::make_unique<LlavaRunner>(
+    _runner = std::make_unique<example::LlavaRunner>(
         modelPath.UTF8String, tokenizerPath.UTF8String);
   }
   return self;

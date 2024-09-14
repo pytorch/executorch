@@ -19,7 +19,7 @@
 #include <executorch/extension/module/module.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 
-namespace torch::executor {
+namespace example {
 
 class Runner {
  public:
@@ -47,4 +47,4 @@ class Runner {
   std::unique_ptr<Sampler> sampler_;
 };
 
-} // namespace torch::executor
+} // namespace example
