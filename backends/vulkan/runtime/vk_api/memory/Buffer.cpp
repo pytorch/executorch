@@ -83,7 +83,7 @@ VulkanBuffer::VulkanBuffer(
     : buffer_properties_(other.buffer_properties_),
       allocator_(other.allocator_),
       memory_(other.memory_),
-      owns_memory_(other.owns_memory_),
+      owns_memory_(false),
       is_copy_(true),
       handle_(other.handle_) {
   // TODO: set the offset and range appropriately

@@ -27,14 +27,14 @@ ${layout_declare_tensor(B, "r", "mat2_tensor", DTYPE, "texture3d")}
 $if HAS_BIAS:
   ${layout_declare_tensor(B, "r", "bias_tensor", DTYPE, "texture3d")}
 ${layout_declare_ubo(B, "ivec4", "out_sizes")}
-${layout_declare_ubo(B, "ivec4", "out_axis_mapping")}
+${layout_declare_ubo(B, "ivec4", "out_axis_map")}
 ${layout_declare_ubo(B, "ivec4", "mat1_sizes")}
-${layout_declare_ubo(B, "ivec4", "mat1_axis_mapping")}
+${layout_declare_ubo(B, "ivec4", "mat1_axis_map")}
 ${layout_declare_ubo(B, "ivec4", "mat2_sizes")}
-${layout_declare_ubo(B, "ivec4", "mat2_axis_mapping")}
+${layout_declare_ubo(B, "ivec4", "mat2_axis_map")}
 $if HAS_BIAS:
   ${layout_declare_ubo(B, "ivec4", "bias_sizes")}
-  ${layout_declare_ubo(B, "ivec4", "bias_axis_mapping")}
+  ${layout_declare_ubo(B, "ivec4", "bias_axis_map")}
   ${layout_declare_ubo(B, "float", "alpha", "float", "beta")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -68,10 +68,10 @@ struct FloatMatrix_3d {
 vec4 get_texel_C_packed(const ivec2 idx) {
   ivec3 bias_pos = ivec3(0);
   if (bias_sizes.x > 1) {
-    bias_pos[bias_axis_mapping.x] = idx.x;
+    bias_pos[bias_axis_map.x] = idx.x;
   }
   if (bias_sizes.y > 1) {
-    bias_pos[bias_axis_mapping.y] = idx.y;
+    bias_pos[bias_axis_map.y] = idx.y;
   }
 
   return texelFetch(bias_tensor, bias_pos, 0);
@@ -95,11 +95,11 @@ FloatMatrix matmul_partial(const ivec4 out_idx_tl) {
   vec4 mat2_tensor_partial_load[FOUR];
 
 #ifdef MAT2_IS_TRANSPOSED
-  const int mat2_k_axis = mat2_axis_mapping.x;
-  const int mat2_row_axis = mat2_axis_mapping.y;
+  const int mat2_k_axis = mat2_axis_map.x;
+  const int mat2_row_axis = mat2_axis_map.y;
 #else
-  const int mat2_k_axis = mat2_axis_mapping.y;
-  const int mat2_row_axis = mat2_axis_mapping.x;
+  const int mat2_k_axis = mat2_axis_map.y;
+  const int mat2_row_axis = mat2_axis_map.x;
 #endif // MAT2_IS_TRANSPOSED
 
 #ifdef BATCH_MODE
@@ -113,10 +113,10 @@ FloatMatrix matmul_partial(const ivec4 out_idx_tl) {
     // read and cache (4 x TILE_ROWS) tile of mat1
     for (int r = 0; r < TILE_ROWS; r++) {
       ivec3 mat1_pos = ivec3(0);
-      mat1_pos[mat1_axis_mapping.x] = k_div4;
-      mat1_pos[mat1_axis_mapping.y] = out_idx_tl.y + r;
+      mat1_pos[mat1_axis_map.x] = k_div4;
+      mat1_pos[mat1_axis_map.y] = out_idx_tl.y + r;
 #ifdef BATCH_MODE
-      mat1_pos[mat1_axis_mapping.z] = out_idx_tl.z + batch_idx;
+      mat1_pos[mat1_axis_map.z] = out_idx_tl.z + batch_idx;
 #endif // BATCH_MODE
 
       mat1_tensor_partial_load[r] = texelFetch(mat1_tensor, mat1_pos, 0);
@@ -128,7 +128,7 @@ FloatMatrix matmul_partial(const ivec4 out_idx_tl) {
       mat2_pos[mat2_k_axis] = k_div4;
       mat2_pos[mat2_row_axis] = out_idx_tl.x + r;
 #if defined(BATCH_MODE) && !defined(MAT2_IS_TRANSPOSED)
-      mat2_pos[mat2_axis_mapping.z] = out_idx_tl.z + batch_idx;
+      mat2_pos[mat2_axis_map.z] = out_idx_tl.z + batch_idx;
 #endif // BATCH_MODE
 
       mat2_tensor_partial_load[r] = texelFetch(mat2_tensor, mat2_pos, 0);
@@ -159,21 +159,21 @@ FloatMatrix matmul_partial(const ivec4 out_idx_tl) {
 
 void write_results_C_packed(const ivec4 out_idx_tl, FloatMatrix results) {
   ivec3 out_pos = to_texture_pos(
-      out_idx_tl, out_sizes, out_axis_mapping, out_packed_dim);
+      out_idx_tl, out_sizes, out_axis_map, out_packed_dim);
 
   for (int tile_c = 0;
        tile_c < TILE_ROWS;
-       tile_c++, out_pos[out_axis_mapping.y]++) {
-    out_pos[out_axis_mapping.x] = out_idx_tl.x;
+       tile_c++, out_pos[out_axis_map.y]++) {
+    out_pos[out_axis_map.x] = out_idx_tl.x;
 
     for (int tile_r = 0;
          tile_r < FOUR;
-         tile_r++, out_pos[out_axis_mapping.x]++) {
+         tile_r++, out_pos[out_axis_map.x]++) {
 
 #ifdef HAS_BIAS
       ivec2 bias_idx;
-      bias_idx[bias_axis_mapping.x] = out_pos[out_axis_mapping.x];
-      bias_idx[bias_axis_mapping.y] = out_pos[out_axis_mapping.y];
+      bias_idx[bias_axis_map.x] = out_pos[out_axis_map.x];
+      bias_idx[bias_axis_map.y] = out_pos[out_axis_map.y];
       float bias_val = get_texel_C_packed(bias_idx).x;
 #ifdef BATCH_MODE
       vec4 bias_texel = vec4(bias_val);
