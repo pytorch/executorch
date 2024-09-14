@@ -7,10 +7,12 @@
  */
 
 import Foundation
+import SwiftUI
 
 enum MessageType {
   case prompted
-  case generated
+  case llamagenerated
+  case llavagenerated
   case info
 }
 
@@ -21,4 +23,5 @@ struct Message: Identifiable, Equatable {
   var type: MessageType = .prompted
   var text = ""
   var tokenCount = 0
+  var image: UIImage?
 }
