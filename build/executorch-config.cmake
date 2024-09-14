@@ -87,3 +87,7 @@ foreach(lib ${lib_list})
     target_include_directories(${lib} INTERFACE ${_root})
   endif()
 endforeach()
+
+if(TARGET xnnpack_backend)
+    target_link_libraries(xnnpack_backend INTERFACE XNNPACK microkernels-prod)
+endif()

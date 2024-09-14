@@ -39,6 +39,7 @@ et_cxx_test(
   XNNPACK
   pthreadpool
   cpuinfo
+  FP16
 )
 target_include_directories(
   backends_xnnpack_test

@@ -240,6 +240,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -280,7 +281,7 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_ssse3",
         srcs = select({
-            "DEFAULT": prod_srcs_for_arch_wrapper("sse3"),
+            "DEFAULT": prod_srcs_for_arch_wrapper("ssse3"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
         }),
@@ -359,6 +360,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -389,6 +391,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -421,6 +424,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -454,6 +458,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -483,6 +488,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -499,7 +505,7 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_avx512skx",
         srcs = select({
-            "DEFAULT": prod_srcs_for_arch_wrapper("avx_512skx"),
+            "DEFAULT": prod_srcs_for_arch_wrapper("avx512skx"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
         }),
@@ -518,6 +524,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -952,6 +959,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -1017,6 +1025,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
