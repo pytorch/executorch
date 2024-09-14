@@ -30,7 +30,8 @@
 #include <fbjni/ByteBuffer.h>
 #include <fbjni/fbjni.h>
 
-using namespace torch::executor;
+namespace llm = ::executorch::extension::llm;
+using ::executorch::runtime::Error;
 
 namespace executorch_jni {
 
@@ -48,7 +49,7 @@ class ExecuTorchLlamaCallbackJni
     method(self(), s);
   }
 
-  void onStats(const Stats& result) const {
+  void onStats(const llm::Stats& result) const {
     static auto cls = ExecuTorchLlamaCallbackJni::javaClassStatic();
     static const auto method = cls->getMethod<void(jfloat)>("onStats");
     double eval_time =
@@ -66,8 +67,8 @@ class ExecuTorchLlamaJni
  private:
   friend HybridBase;
   int model_type_category_;
-  std::unique_ptr<Runner> runner_;
-  std::unique_ptr<MultimodalRunner> multi_modal_runner_;
+  std::unique_ptr<example::Runner> runner_;
+  std::unique_ptr<llm::MultimodalRunner> multi_modal_runner_;
 
  public:
   constexpr static auto kJavaDescriptor =
@@ -104,12 +105,12 @@ class ExecuTorchLlamaJni
 
     model_type_category_ = model_type_category;
     if (model_type_category == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      multi_modal_runner_ = std::make_unique<LlavaRunner>(
+      multi_modal_runner_ = std::make_unique<example::LlavaRunner>(
           model_path->toStdString().c_str(),
           tokenizer_path->toStdString().c_str(),
           temperature);
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
-      runner_ = std::make_unique<Runner>(
+      runner_ = std::make_unique<example::Runner>(
           model_path->toStdString().c_str(),
           tokenizer_path->toStdString().c_str(),
           temperature);
@@ -127,7 +128,7 @@ class ExecuTorchLlamaJni
       jboolean echo) {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       auto image_size = image->size();
-      std::vector<Image> images;
+      std::vector<llm::Image> images;
       if (image_size != 0) {
         std::vector<jint> image_data_jint(image_size);
         std::vector<uint8_t> image_data(image_size);
@@ -135,7 +136,7 @@ class ExecuTorchLlamaJni
         for (int i = 0; i < image_size; i++) {
           image_data[i] = image_data_jint[i];
         }
-        Image image_runner{image_data, width, height, channels};
+        llm::Image image_runner{image_data, width, height, channels};
         images.push_back(image_runner);
       }
       multi_modal_runner_->generate(
@@ -143,14 +144,14 @@ class ExecuTorchLlamaJni
           prompt->toStdString(),
           seq_len,
           [callback](std::string result) { callback->onResult(result); },
-          [callback](const Stats& result) { callback->onStats(result); },
+          [callback](const llm::Stats& result) { callback->onStats(result); },
           echo);
     } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
       runner_->generate(
           prompt->toStdString(),
           seq_len,
           [callback](std::string result) { callback->onResult(result); },
-          [callback](const Stats& result) { callback->onStats(result); },
+          [callback](const llm::Stats& result) { callback->onStats(result); },
           echo);
     }
     return 0;
@@ -199,7 +200,7 @@ class ExecuTorchLlamaJni
     }
 
     auto image_size = image->size();
-    std::vector<Image> images;
+    std::vector<llm::Image> images;
     if (image_size != 0) {
       std::vector<jint> image_data_jint(image_size);
       std::vector<uint8_t> image_data(image_size);
@@ -207,7 +208,7 @@ class ExecuTorchLlamaJni
       for (int i = 0; i < image_size; i++) {
         image_data[i] = image_data_jint[i];
       }
-      Image image_runner{image_data, width, height, channels};
+      llm::Image image_runner{image_data, width, height, channels};
       images.push_back(image_runner);
     }
     // TODO(hsz): make  start_pos a reference and update it here
@@ -232,9 +233,7 @@ class ExecuTorchLlamaJni
         seq_len,
         start_pos,
         [callback](const std::string& result) { callback->onResult(result); },
-        [callback](const ::executorch::extension::llm::Stats& stats) {
-          callback->onStats(stats);
-        },
+        [callback](const llm::Stats& stats) { callback->onStats(stats); },
         echo));
   }
 

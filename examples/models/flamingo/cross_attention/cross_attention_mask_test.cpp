@@ -41,7 +41,7 @@ TEST(CrossAttentxnMaskTest, TestCrossAttentionMask) {
 
   std::vector<Tensor> images = {a, b, c};
   std::vector<std::vector<int>> mask_data;
-  auto output_masks = torch::executor::cross_attention_mask(
+  auto output_masks = example::cross_attention_mask(
       tokens,
       images,
       /*tile_size=*/1,

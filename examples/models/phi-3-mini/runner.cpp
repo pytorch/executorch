@@ -15,7 +15,7 @@
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/log.h>
 
-namespace torch::executor {
+namespace example {
 
 #define SAMPLER_TOP 0.9f
 #define ENDOFTEXT_TOKEN 32000
@@ -101,4 +101,4 @@ uint64_t Runner::run_model_step(uint64_t token) {
   return logits_to_token(result.get()[0].toTensor());
 }
 
-} // namespace torch::executor
+} // namespace example
