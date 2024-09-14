@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Building ExecuTorch LLaMA Android Demo App &mdash; ExecuTorch main documentation</title>
+  <title>ExecuTorch Llama Android Demo App &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -432,7 +432,7 @@
       </li>
 
         
-      <li>Building ExecuTorch LLaMA Android Demo App</li>
+      <li>ExecuTorch Llama Android Demo App</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
@@ -470,119 +470,153 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="building-executorch-llama-android-demo-app">
-<h1>Building ExecuTorch LLaMA Android Demo App<a class="headerlink" href="#building-executorch-llama-android-demo-app" title="Permalink to this heading">¶</a></h1>
-<p>This app demonstrates the use of the LLaMA chat app demonstrating local inference use case with ExecuTorch.</p>
-<div class="section" id="prerequisites">
-<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
+  <div class="section" id="executorch-llama-android-demo-app">
+<h1>ExecuTorch Llama Android Demo App<a class="headerlink" href="#executorch-llama-android-demo-app" title="Permalink to this heading">¶</a></h1>
+<p>We’re excited to share that the newly revamped Android demo app is live and includes many new updates to provide a more intuitive and smoother user experience with a chat use case! The primary goal of this app is to showcase how easily ExecuTorch can be integrated into an Android demo app and how to exercise the many features ExecuTorch and Llama models have to offer.</p>
+<p>This app serves as a valuable resource to inspire your creativity and provide foundational code that you can customize and adapt for your particular use case.</p>
+<p>Please dive in and start exploring our demo app today! We look forward to any feedback and are excited to see your innovative ideas.</p>
+<div class="section" id="key-concepts">
+<h2>Key Concepts<a class="headerlink" href="#key-concepts" title="Permalink to this heading">¶</a></h2>
+<p>From this demo app, you will learn many key concepts such as:</p>
 <ul class="simple">
-<li><p>Set up your ExecuTorch repo and environment if you haven’t done so by following the <a class="reference external" href="https://pytorch.org/executorch/stable/getting-started-setup">Setting up ExecuTorch</a> to set up the repo and dev environment.</p></li>
-<li><p>Install <a class="reference external" href="https://www.oracle.com/java/technologies/javase/jdk17-archive-downloads.html">Java 17 JDK</a>.</p></li>
-<li><p>Install the <a class="reference external" href="https://developer.android.com/about/versions/14/setup-sdk">Android SDK API Level 34</a> and
-<a class="reference external" href="https://developer.android.com/studio/projects/install-ndk">Android NDK 25.0.8775105</a>.</p></li>
-<li><p>If you have Android Studio set up, you can install them with</p>
-<ul>
-<li><p>Android Studio Settings -&gt; Language &amp; Frameworks -&gt; Android SDK -&gt; SDK Platforms -&gt; Check the row with API Level 34.</p></li>
-<li><p>Android Studio Settings -&gt; Language &amp; Frameworks -&gt; Android SDK -&gt; SDK Tools -&gt; Check NDK (Side by side) row.</p></li>
+<li><p>How to prepare Llama models, build the ExecuTorch library, and model inferencing across delegates</p></li>
+<li><p>Expose the ExecuTorch library via JNI layer</p></li>
+<li><p>Familiarity with current ExecuTorch app-facing capabilities</p></li>
 </ul>
-</li>
-<li><p>Alternatively, you can follow <a class="reference external" href="https://github.com/pytorch/executorch/blob/856e085b9344c8b0bf220a97976140a5b76356aa/examples/demo-apps/android/LlamaDemo/SDK.md">this guide</a> to set up Java/SDK/NDK with CLI.</p></li>
-<li><p>Supported Host OS: CentOS, macOS Sonoma on Apple Silicon.</p></li>
+<p>The goal is for you to see the type of support ExecuTorch provides and feel comfortable with leveraging it for your use cases.</p>
+</div>
+<div class="section" id="supporting-models">
+<h2>Supporting Models<a class="headerlink" href="#supporting-models" title="Permalink to this heading">¶</a></h2>
+<p>As a whole, the models that this app supports are (varies by delegate):</p>
+<ul class="simple">
+<li><p>Llama 3.1 8B</p></li>
+<li><p>Llama 3 8B</p></li>
+<li><p>Llama 2 7B</p></li>
+<li><p>LLaVA-1.5 vision model (only XNNPACK)</p></li>
 </ul>
-<p>Note: This demo app and tutorial has only been validated with arm64-v8a <a class="reference external" href="https://developer.android.com/ndk/guides/abis">ABI</a>, with NDK 25.0.8775105.</p>
 </div>
-<div class="section" id="getting-models">
-<h2>Getting models<a class="headerlink" href="#getting-models" title="Permalink to this heading">¶</a></h2>
-<p>Please refer to the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/models/llama2/README.md">ExecuTorch Llama2 docs</a> to export the model.</p>
-<p>After you export the model and generate tokenizer.bin, push them device:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>adb<span class="w"> </span>shell<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/data/local/tmp/llama
-adb<span class="w"> </span>push<span class="w"> </span>llama2.pte<span class="w"> </span>/data/local/tmp/llama
-adb<span class="w"> </span>push<span class="w"> </span>tokenizer.bin<span class="w"> </span>/data/local/tmp/llama
-</pre></div>
+<div class="section" id="building-the-apk">
+<h2>Building the APK<a class="headerlink" href="#building-the-apk" title="Permalink to this heading">¶</a></h2>
+<p>First it’s important to note that currently ExecuTorch provides support across 3 delegates. Once you identify the delegate of your choice, select the README link to get a complete end-to-end instructions for environment set-up to exporting the models to build ExecuTorch libraries and apps to run on device:</p>
+<table class="colwidths-auto docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Delegate</p></th>
+<th class="head"><p>Resource</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>XNNPACK (CPU-based library)</p></td>
+<td><p><span class="xref myst">link</span></p></td>
+</tr>
+<tr class="row-odd"><td><p>QNN (Qualcomm AI Accelerators)</p></td>
+<td><p>Coming soon</p></td>
+</tr>
+<tr class="row-even"><td><p>MediaTek (MediaTek AI Accelerators)</p></td>
+<td><p><span class="xref myst">link</span></p></td>
+</tr>
+</tbody>
+</table>
 </div>
-<p>Note: The demo app searches in <code class="docutils literal notranslate"><span class="pre">/data/local/tmp/llama</span></code> for .pte and .bin files as LLAMA model and tokenizer.</p>
-</div>
-<div class="section" id="build-library">
-<h2>Build library<a class="headerlink" href="#build-library" title="Permalink to this heading">¶</a></h2>
-<p>For the demo app to build, we need to build the ExecuTorch AAR library first.</p>
-<p>The AAR library contains the required Java package and the corresponding JNI
-library for using ExecuTorch in your Android app.</p>
-<div class="section" id="alternative-1-use-prebuilt-aar-library-recommended">
-<h3>Alternative 1: Use prebuilt AAR library (recommended)<a class="headerlink" href="#alternative-1-use-prebuilt-aar-library-recommended" title="Permalink to this heading">¶</a></h3>
-<ol class="arabic simple">
-<li><p>Open a terminal window and navigate to the root directory of the <code class="docutils literal notranslate"><span class="pre">executorch</span></code>.</p></li>
-<li><p>Run the following command to download the prebuilt library:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>bash<span class="w"> </span>examples/demo-apps/android/LlamaDemo/download_prebuilt_lib.sh
-</pre></div>
-</div>
-<p>The prebuilt AAR library contains the Java library and the JNI binding for
-NativePeer.java and ExecuTorch native library, including core ExecuTorch
-runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels,
-and Quantized kernels. It comes with two ABI variants, arm64-v8a and x86_64.</p>
-<p>If you want to use the prebuilt library for your own app, please refer to
-<span class="xref myst">Using Android prebuilt libraries (AAR)</span> for
-tutorial.</p>
-<p>If you need to use other dependencies (like tokenizer), please refer to
-Alternative 2: Build from local machine option.</p>
-</div>
-<div class="section" id="alternative-2-build-from-local-machine">
-<h3>Alternative 2: Build from local machine<a class="headerlink" href="#alternative-2-build-from-local-machine" title="Permalink to this heading">¶</a></h3>
-<ol class="arabic simple">
-<li><p>Open a terminal window and navigate to the root directory of the <code class="docutils literal notranslate"><span class="pre">executorch</span></code>.</p></li>
-<li><p>Set the following environment variables:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path_to_android_ndk&gt;
-<span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABI</span><span class="o">=</span>arm64-v8a
-</pre></div>
-</div>
-<p>Note: <code class="docutils literal notranslate"><span class="pre">&lt;path_to_android_ndk&gt;</span></code> is the root for the NDK, which is usually under
-<code class="docutils literal notranslate"><span class="pre">~/Library/Android/sdk/ndk/XX.Y.ZZZZZ</span></code> for macOS, and contains NOTICE and README.md.
-We use <code class="docutils literal notranslate"><span class="pre">&lt;path_to_android_ndk&gt;/build/cmake/android.toolchain.cmake</span></code> for CMake to cross-compile.</p>
-<ol class="arabic simple" start="3">
-<li><p>Build the Android Java extension code:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">pushd</span><span class="w"> </span>extension/android
-./gradlew<span class="w"> </span>build
-<span class="nb">popd</span>
-</pre></div>
-</div>
-<ol class="arabic simple" start="4">
-<li><p>Run the following command set up the required JNI library:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">pushd</span><span class="w"> </span>examples/demo-apps/android/LlamaDemo
-./gradlew<span class="w"> </span>:app:setup
-<span class="nb">popd</span>
-</pre></div>
-</div>
-<p>This is running the shell script <span class="xref myst">setup.sh</span> which configures the required core ExecuTorch, LLAMA2, and Android libraries, builds them, and copy to jniLibs.</p>
-</div>
-</div>
-<div class="section" id="build-apk">
-<h2>Build APK<a class="headerlink" href="#build-apk" title="Permalink to this heading">¶</a></h2>
-<div class="section" id="alternative-1-android-studio-recommended">
-<h3>Alternative 1: Android Studio (Recommended)<a class="headerlink" href="#alternative-1-android-studio-recommended" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="how-to-use-the-app">
+<h2>How to Use the App<a class="headerlink" href="#how-to-use-the-app" title="Permalink to this heading">¶</a></h2>
+<p>This section will provide the main steps to use the app, along with a code snippet of the ExecuTorch API.</p>
+<p>For loading the app, development, and running on device we recommend Android Studio:</p>
 <ol class="arabic simple">
 <li><p>Open Android Studio and select “Open an existing Android Studio project” to open examples/demo-apps/android/LlamaDemo.</p></li>
 <li><p>Run the app (^R). This builds and launches the app on the phone.</p></li>
 </ol>
+<div class="section" id="opening-the-app">
+<h3>Opening the App<a class="headerlink" href="#opening-the-app" title="Permalink to this heading">¶</a></h3>
+<p>Below are the UI features for the app.</p>
+<p>Select the settings widget to get started with picking a model, its parameters and any prompts.</p>
+<p align="center">
+<img src="docs/screenshots/opening_the_app_details.png" width=800>
+</p>
 </div>
-<div class="section" id="alternative-2-command-line">
-<h3>Alternative 2: Command line<a class="headerlink" href="#alternative-2-command-line" title="Permalink to this heading">¶</a></h3>
-<p>Without Android Studio UI, we can run gradle directly to build the app. We need to set up the Android SDK path and invoke gradle.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_HOME</span><span class="o">=</span>&lt;path_to_android_sdk_home&gt;
-<span class="nb">pushd</span><span class="w"> </span>examples/demo-apps/android/LlamaDemo
-./gradlew<span class="w"> </span>:app:installDebug
-<span class="nb">popd</span>
+<div class="section" id="select-models-and-parameters">
+<h3>Select Models and Parameters<a class="headerlink" href="#select-models-and-parameters" title="Permalink to this heading">¶</a></h3>
+<p>Once you’ve selected the model, tokenizer, and model type you are ready to click on “Load Model” to have the app load the model and go back to the main Chat activity.</p>
+<p align="center">
+      <img src="docs/screenshots/settings_menu.png" width=300>
+</p>
+<p>Optional Parameters:</p>
+<ul class="simple">
+<li><p>Temperature: Defaulted to 0, you can adjust the temperature for the model as well. The model will reload upon any adjustments.</p></li>
+<li><p>System Prompt: Without any formatting, you can enter in a system prompt. For example, “you are a travel assistant” or “give me a response in a few sentences”.</p></li>
+<li><p>User Prompt: More for the advanced user, if you would like to manually input a prompt then you can do so by modifying the <code class="docutils literal notranslate"><span class="pre">{{user</span> <span class="pre">prompt}}</span></code>. You can also modify the special tokens as well. Once changed then go back to the main Chat activity to send.</p></li>
+</ul>
+<blockquote>
+<div><p>[!TIP]
+Helpful ExecuTorch API in app</p>
+</div></blockquote>
+<div class="highlight-none notranslate highlight-java"><div class="highlight"><pre><span></span><span class="c1">// Upon returning to the Main Chat Activity</span>
+<span class="n">mModule</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">LlamaModule</span><span class="p">(</span>
+<span class="w">            </span><span class="n">ModelUtils</span><span class="p">.</span><span class="na">getModelCategory</span><span class="p">(</span><span class="n">mCurrentSettingsFields</span><span class="p">.</span><span class="na">getModelType</span><span class="p">()),</span>
+<span class="w">            </span><span class="n">modelPath</span><span class="p">,</span>
+<span class="w">            </span><span class="n">tokenizerPath</span><span class="p">,</span>
+<span class="w">            </span><span class="n">temperature</span><span class="p">);</span>
+<span class="kt">int</span><span class="w"> </span><span class="n">loadResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">mModule</span><span class="p">.</span><span class="na">load</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>On the phone or emulator, you can try running the model:
-<img src="../_static/img/android_llama_app.png" alt="Android LLaMA App" /><br></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">modelCategory</span></code>: Indicate whether it’s a text-only or vision model</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">modePath</span></code>: path to the .pte file</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tokenizerPath</span></code>: path to the tokenizer .bin file</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">temperature</span></code>: model parameter to adjust the randomness of the model’s output</p></li>
+</ul>
+</div>
+<div class="section" id="user-prompt">
+<h3>User Prompt<a class="headerlink" href="#user-prompt" title="Permalink to this heading">¶</a></h3>
+<p>Once model is successfully loaded then enter any prompt and click the send (i.e. generate) button to send it to the model.</p>
+<p align="center">
+<img src="docs/screenshots/load_complete_and_start_prompt.png" width=300>
+</p>
+<p>You can provide it more follow-up questions as well.</p>
+<p align="center">
+<img src="docs/screenshots/chat.png" width=300>
+</p>
+<blockquote>
+<div><p>[!TIP]
+Helpful ExecuTorch API in app</p>
+</div></blockquote>
+<div class="highlight-none notranslate highlight-java"><div class="highlight"><pre><span></span><span class="n">mModule</span><span class="p">.</span><span class="na">generate</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span><span class="n">sequence_length</span><span class="p">,</span><span class="w"> </span><span class="n">MainActivity</span><span class="p">.</span><span class="na">this</span><span class="p">);</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">prompt</span></code>: User formatted prompt</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sequence_length</span></code>: Number of tokens to generate in response to a prompt</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">MainActivity.this</span></code>: Indicate that the callback functions (OnResult(), OnStats()) are present in this class.</p></li>
+</ul>
+<p>[<em>LLaVA-1.5: Only for XNNPACK delegate</em>]</p>
+<p>For LLaVA-1.5 implementation, select the exported LLaVA .pte and tokenizer file in the Settings menu and load the model. After this you can send an image from your gallery or take a live picture along with a text prompt to the model.</p>
+<p align="center">
+<img src="docs/screenshots/llava_example.png" width=300>
+</p>
+</div>
+<div class="section" id="output-generated">
+<h3>Output Generated<a class="headerlink" href="#output-generated" title="Permalink to this heading">¶</a></h3>
+<p>To show completion of the follow-up question, here is the complete detailed response from the model.</p>
+<p align="center">
+<img src="docs/screenshots/chat_response.png" width=300>
+</p>
+<blockquote>
+<div><p>[!TIP]
+Helpful ExecuTorch API in app</p>
+</div></blockquote>
+<p>Ensure you have the following functions in your callback class that you provided in the <code class="docutils literal notranslate"><span class="pre">mModule.generate()</span></code>. For this example, it is <code class="docutils literal notranslate"><span class="pre">MainActivity.this</span></code>.</p>
+<div class="highlight-none notranslate highlight-java"><div class="highlight"><pre><span></span><span class="w">  </span><span class="nd">@Override</span>
+<span class="w">  </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">onResult</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">result</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">//...result contains token from response</span>
+<span class="w">    </span><span class="c1">//.. onResult will continue to be invoked until response is complete</span>
+<span class="w">  </span><span class="p">}</span>
+
+<span class="w">  </span><span class="nd">@Override</span>
+<span class="w">  </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">onStats</span><span class="p">(</span><span class="kt">float</span><span class="w"> </span><span class="n">tps</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">//...tps (tokens per second) stats is provided by framework</span>
+<span class="w">  </span><span class="p">}</span>
+</pre></div>
 </div>
 </div>
-<div class="section" id="takeaways">
-<h2>Takeaways<a class="headerlink" href="#takeaways" title="Permalink to this heading">¶</a></h2>
-<p>Through this tutorial we’ve learnt how to build the ExecuTorch LLAMA library, and expose it to JNI layer to build the Android app.</p>
 </div>
 <div class="section" id="reporting-issues">
 <h2>Reporting Issues<a class="headerlink" href="#reporting-issues" title="Permalink to this heading">¶</a></h2>
@@ -626,20 +660,17 @@ We use <code class="docutils literal notranslate"><span class="pre">&lt;path_to_
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Building ExecuTorch LLaMA Android Demo App</a><ul>
-<li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
-<li><a class="reference internal" href="#getting-models">Getting models</a></li>
-<li><a class="reference internal" href="#build-library">Build library</a><ul>
-<li><a class="reference internal" href="#alternative-1-use-prebuilt-aar-library-recommended">Alternative 1: Use prebuilt AAR library (recommended)</a></li>
-<li><a class="reference internal" href="#alternative-2-build-from-local-machine">Alternative 2: Build from local machine</a></li>
+<li><a class="reference internal" href="#">ExecuTorch Llama Android Demo App</a><ul>
+<li><a class="reference internal" href="#key-concepts">Key Concepts</a></li>
+<li><a class="reference internal" href="#supporting-models">Supporting Models</a></li>
+<li><a class="reference internal" href="#building-the-apk">Building the APK</a></li>
+<li><a class="reference internal" href="#how-to-use-the-app">How to Use the App</a><ul>
+<li><a class="reference internal" href="#opening-the-app">Opening the App</a></li>
+<li><a class="reference internal" href="#select-models-and-parameters">Select Models and Parameters</a></li>
+<li><a class="reference internal" href="#user-prompt">User Prompt</a></li>
+<li><a class="reference internal" href="#output-generated">Output Generated</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#build-apk">Build APK</a><ul>
-<li><a class="reference internal" href="#alternative-1-android-studio-recommended">Alternative 1: Android Studio (Recommended)</a></li>
-<li><a class="reference internal" href="#alternative-2-command-line">Alternative 2: Command line</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#takeaways">Takeaways</a></li>
 <li><a class="reference internal" href="#reporting-issues">Reporting Issues</a></li>
 </ul>
 </li>
