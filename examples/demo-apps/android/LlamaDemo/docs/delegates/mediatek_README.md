@@ -9,7 +9,7 @@ Verified on MacOS, Linux CentOS (model export), Python 3.10, Android NDK 25.0.87
 Phone verified: MediaTek Dimensity 9300 (D9300) chip.
 
 ## Prerequisites
-* Download and link the Buck2 build, Android NDK, and MediaTek Executorch Libraries from the MediaTek Backend Readme ([link](https://github.com/pytorch/executorch/tree/main/backends/mediatek/scripts#prerequisites)).
+* Download and link the Buck2 build, Android NDK, and MediaTek ExecuTorch Libraries from the MediaTek Backend Readme ([link](https://github.com/pytorch/executorch/tree/main/backends/mediatek/scripts#prerequisites)).
 * MediaTek Dimensity 9300 (D9300) chip device
 * Desired Llama 3 model weights. You can download them on HuggingFace [Example](https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct)).
 * `libneuronusdk_adapter.mtk.so`,  `libneuron_buffer_allocator.so`, and `.whl` files  (will be available soon by MediaTek)
