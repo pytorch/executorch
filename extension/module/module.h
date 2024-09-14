@@ -301,6 +301,62 @@ class Module {
   }
 
   /**
+   * Sets a single input value for a specific method.
+   *
+   * @param[in] method_name The name of the method.
+   * @param[in] input_value The EValue to set as the method input.
+   * @param[in] input_index Zero-based index of the input to set.
+   *
+   * @returns An Error to indicate success or failure.
+   */
+  ET_NODISCARD
+  runtime::Error set_input(
+      const std::string& method_name,
+      const runtime::EValue& input_value,
+      size_t input_index);
+
+  /**
+   * Sets a single input value for the "forward" method.
+   *
+   * @param[in] input_value The EValue to set as the method input.
+   * @param[in] input_index Zero-based index of the input to set.
+   *
+   * @returns An Error to indicate success or failure.
+   */
+  ET_NODISCARD
+  inline runtime::Error set_input(
+      const runtime::EValue& input_value,
+      size_t input_index) {
+    return set_input("forward", input_value, input_index);
+  }
+
+  /**
+   * Sets all input values for a specific method.
+   *
+   * @param[in] method_name The name of the method.
+   * @param[in] input_values A vector of EValues to set as the method inputs.
+   *
+   * @returns An Error to indicate success or failure.
+   */
+  ET_NODISCARD
+  runtime::Error set_inputs(
+      const std::string& method_name,
+      const std::vector<runtime::EValue>& input_values);
+
+  /**
+   * Sets all input values for the "forward" method.
+   *
+   * @param[in] input_values A vector of EValues to set as the method inputs.
+   *
+   * @returns An Error to indicate success or failure.
+   */
+  ET_NODISCARD
+  inline runtime::Error set_inputs(
+      const std::vector<runtime::EValue>& input_values) {
+    return set_inputs("forward", input_values);
+  }
+
+  /**
    * Retrieves the EventTracer instance being used by the Module.
    * EventTracer is used for tracking and logging events during the execution
    * of methods.
@@ -332,6 +388,7 @@ class Module {
     std::unique_ptr<runtime::HierarchicalAllocator> planned_memory;
     std::unique_ptr<runtime::MemoryManager> memory_manager;
     std::unique_ptr<runtime::Method> method;
+    std::vector<runtime::EValue> inputs;
   };
 
  private:
