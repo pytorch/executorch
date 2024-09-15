@@ -29,7 +29,7 @@ jobs:
         with:
           s3-bucket: gha-artifacts
           s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/artifact
+            ${{ github.repository }}/${{ github.run_id }}/artifacts
           retention-days: 1
           if-no-files-found: error
           path: examples/demo-apps/apple_ios/default-ios-device-farm-appium-test-spec.yml
@@ -46,7 +46,7 @@ jobs:
       models: stories110M
       devices: apple_iphone_15
       delegates: xnnpack
-      test_spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/default-ios-device-farm-appium-test-spec.yml
+      test_spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/default-ios-device-farm-appium-test-spec.yml
 
   upload-apple-test-spec:
     needs: validate-apple-test-spec
