@@ -13,28 +13,33 @@
 #include <executorch/extension/llm/runner/image_prefiller.h>
 #include <executorch/extension/tensor/tensor.h>
 
-namespace torch::executor {
+namespace example {
 
-class LlavaImagePrefiller : public ImagePrefiller {
+class LlavaImagePrefiller
+    : public ::executorch::extension::llm::ImagePrefiller {
  public:
-  LlavaImagePrefiller(Module* module) : ImagePrefiller(module){};
+  LlavaImagePrefiller(::executorch::extension::Module* module)
+      : ImagePrefiller(module){};
   /**
    * Prefill an LLM Module with the given image input.
    * @param image The image input to LLaVa.
    * @param start_pos The starting position in KV cache of the input in the LLM
    * @return logits of the image prefill.
    */
-  inline Result<exec_aten::Tensor> prefill(Image& image, int64_t& start_pos)
-      override {
+  inline ::executorch::runtime::Result<exec_aten::Tensor> prefill(
+      ::executorch::extension::llm::Image& image,
+      int64_t& start_pos) override {
     auto image_tensor = executorch::extension::from_blob(
-        image.data.data(), {3, image.height, image.width}, ScalarType::Byte);
+        image.data.data(),
+        {3, image.height, image.width},
+        ::executorch::aten::ScalarType::Byte);
     // Run image encoder
     auto image_encoder_outputs =
         ET_UNWRAP(module_->execute(kImageEncoderMethod, image_tensor));
 
     // inputs:[start_pos, embeds]
-    auto start_pos_tensor =
-        executorch::extension::from_blob(&start_pos, {1}, ScalarType::Long);
+    auto start_pos_tensor = executorch::extension::from_blob(
+        &start_pos, {1}, ::executorch::aten::ScalarType::Long);
 
     // Run text model
     auto outputs_res = ET_UNWRAP(module_->execute(
@@ -54,13 +59,13 @@ class LlavaImagePrefiller : public ImagePrefiller {
    * Load the Module for image prefill purpose.
    * @return The error code.
    */
-  inline Error load() override {
+  inline ::executorch::runtime::Error load() override {
     if (is_method_loaded()) {
-      return Error::Ok;
+      return ::executorch::runtime::Error::Ok;
     }
     ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kImageEncoderMethod));
     ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kTextModelMethod));
-    return Error::Ok;
+    return ::executorch::runtime::Error::Ok;
   }
 
   /**
@@ -68,9 +73,9 @@ class LlavaImagePrefiller : public ImagePrefiller {
    * @return True if the Module is loaded, false otherwise.
    */
   inline bool is_method_loaded() override {
-    Result<std::unordered_set<std::string>> methods_res =
+    ::executorch::runtime::Result<std::unordered_set<std::string>> methods_res =
         module_->method_names();
-    if (methods_res.error() != Error::Ok) {
+    if (methods_res.error() != ::executorch::runtime::Error::Ok) {
       ET_CHECK_MSG(false, "Failed to get method names");
     }
     std::unordered_set<std::string> methods = methods_res.get();
@@ -95,4 +100,4 @@ class LlavaImagePrefiller : public ImagePrefiller {
   inline static const std::string kTextModelMethod = "text_model";
 };
 
-} // namespace torch::executor
+} // namespace example

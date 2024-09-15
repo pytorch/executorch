@@ -74,9 +74,9 @@ jobs:
           # Separate default values from the workflow dispatch. To ensure defaults are accessible
           # during scheduled runs and to provide flexibility for different defaults between
           # on-demand and periodic benchmarking.
-          CRON_DEFAULT_MODELS: "stories110M"
+          CRON_DEFAULT_MODELS: "stories110M,mv3,ic4,resnet50,edsr,mobilebert,w2l"
           CRON_DEFAULT_DEVICES: "apple_iphone_15"
-          CRON_DEFAULT_DELEGATES: "xnnpack"
+          CRON_DEFAULT_DELEGATES: "xnnpack,coreml"
         run: |
           set -ex
           MODELS="${{ inputs.models }}"
@@ -124,11 +124,13 @@ jobs:
           delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
       fail-fast: false
     with:
-      runner: macos-latest-xlarge
+      # NB: Need to use our AWS MacOS runner to upload large models to S3
+      runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'true'
       timeout: 60
       upload-artifact: ios-models
+      upload-artifact-to-s3: true
       script: |
         set -eux
 
@@ -175,34 +177,6 @@ jobs:
             bash .ci/scripts/test_model.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
         fi
         echo "::endgroup::"
-
-  upload-models:
-    needs: export-models
-    runs-on: linux.2xlarge
-    if: always()  # Continue this job regardless of previous job outcome
-    steps:
-      - name: Download the models from GitHub
-        uses: actions/download-artifact@v3
-        with:
-          # The name here needs to match the name of the upload-artifact parameter
-          name: ios-models
-          path: ${{ runner.temp }}/artifacts/
-
-      - name: Verify the models
-        shell: bash
-        working-directory: ${{ runner.temp }}/artifacts/
-        run: |
-          ls -lah ./
-
-      - name: Upload the models to S3
-        uses: seemethere/upload-artifact-s3@v5
-        with:
-          s3-bucket: gha-artifacts
-          s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/artifact
-          retention-days: 1
-          if-no-files-found: ignore
-          path: ${{ runner.temp }}/artifacts/
 
   build-benchmark-app:
     name: build-benchmark-app
@@ -297,7 +271,7 @@ jobs:
         with:
           s3-bucket: gha-artifacts
           s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/artifact
+            ${{ github.repository }}/${{ github.run_id }}/artifacts
           retention-days: 14
           if-no-files-found: ignore
           path: ${{ runner.temp }}/artifacts/
@@ -306,7 +280,7 @@ jobs:
     needs:
       - set-parameters
       - upload-benchmark-app
-      - upload-models
+      - export-models
     permissions:
       id-token: write
       contents: read
@@ -326,7 +300,7 @@ jobs:
       project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
       device-pool-arn: ${{ matrix.device }}
       # Uploaded to S3 from the previous job
-      ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/Benchmark.ipa
-      ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/Benchmark.xctestrun.zip
+      ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/Benchmark.ipa
+      ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/Benchmark.xctestrun.zip
       test-spec: ${{ inputs.test_spec || 'https://ossci-ios.s3.amazonaws.com/executorch/default-ios-device-farm-appium-test-spec.yml' }}
-      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/${{ matrix.model }}_${{ matrix.delegate }}/model.zip
+      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/model.zip

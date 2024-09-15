@@ -116,25 +116,31 @@ void add_matmul_naive_texture3d_node(
       : "matmul_naive";
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
-  add_memory_layout_suffix(kernel_name, graph.memory_layout_of(mat1));
-  add_memory_layout_suffix(kernel_name, graph.memory_layout_of(mat2));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
+  utils::uvec3 global_wg_size = graph.logical_extents_of(out);
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      global_wg_size,
+      graph.create_local_wg_size(global_wg_size),
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
        {{mat1, mat2}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {
-          graph.texture_limits_ubo(out),
+          graph.sizes_ubo(out),
+          graph.logical_limits_ubo(out),
+          graph.axis_map_ubo(out),
           graph.sizes_ubo(mat1),
+          graph.axis_map_ubo(mat1),
+          graph.sizes_ubo(mat2),
+          graph.axis_map_ubo(mat2),
       },
       // Specialization Constants
-      {},
+      {graph.packed_dim_whcn_idx_of(out),
+       graph.packed_dim_whcn_idx_of(mat1),
+       graph.packed_dim_whcn_idx_of(mat2)},
       // Resizing Logic
       resize_matmul_node,
       {mat2_is_transposed}));
@@ -189,11 +195,11 @@ void add_matmul_optimized_node(
   // element in the tile, which will be [W=x*(2 or 4), H=y*4, C=z*(1 or 4), N=0]
   utils::uvec3 global_size;
   if (mat1_sizes.at(mat1_dims - 2) < 8) {
-    // Use `mapped_extents` instead of `image_extents` because the workgroup
+    // Use `logical_extents` instead of `image_extents` because the workgroup
     // axes need to correspond to tensor dimensions.
-    global_size = utils::divup_vec(graph.mapped_extents_of(out), {4, 2, 1});
+    global_size = utils::divup_vec(graph.logical_extents_of(out), {4, 2, 1});
   } else {
-    global_size = utils::divup_vec(graph.mapped_extents_of(out), {4, 4, 1});
+    global_size = utils::divup_vec(graph.logical_extents_of(out), {4, 4, 1});
   }
 
   utils::uvec3 local_size = adaptive_work_group_size(global_size);
@@ -209,11 +215,11 @@ void add_matmul_optimized_node(
       // Shader params buffers
       {
           graph.sizes_ubo(out),
-          graph.axis_mapping_ubo(out),
+          graph.axis_map_ubo(out),
           graph.sizes_ubo(mat1_W_packed),
-          graph.axis_mapping_ubo(mat1_W_packed),
+          graph.axis_map_ubo(mat1_W_packed),
           graph.sizes_ubo(mat2_packed),
-          graph.axis_mapping_ubo(mat2_packed),
+          graph.axis_map_ubo(mat2_packed),
       },
       // Specialization Constants
       {graph.packed_dim_whcn_idx_of(out)},

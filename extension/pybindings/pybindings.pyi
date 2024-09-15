@@ -7,7 +7,17 @@
 # pyre-strict
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from executorch.exir._warnings import experimental
+
+@experimental("This API is experimental and subject to change without notice.")
 class ExecuTorchModule:
+    """ExecuTorchModule is a Python wrapper around a C++ ExecuTorch program.
+
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def __call__(self, inputs: Any) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
@@ -34,12 +44,26 @@ class ExecuTorchModule:
         self, path: str, debug_buffer_path: Optional[str] = None
     ) -> None: ...
 
-class BundledModule: ...
+@experimental("This API is experimental and subject to change without notice.")
+class BundledModule:
+    """
+    .. warning::
 
+        This API is experimental and subject to change without notice.
+    """
+
+    ...
+
+@experimental("This API is experimental and subject to change without notice.")
 def _load_for_executorch(
     path: str, enable_etdump: bool = False, debug_buffer_size: int = 0
 ) -> ExecuTorchModule:
     """Load an ExecuTorch Program from a file.
+
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+
     Args:
         path: File path to the ExecuTorch program as a string.
         enable_etdump: If true, enables an ETDump which can store profiling information.
@@ -53,23 +77,75 @@ def _load_for_executorch(
     """
     ...
 
+@experimental("This API is experimental and subject to change without notice.")
 def _load_for_executorch_from_buffer(
     buffer: bytes, enable_etdump: bool = False, debug_buffer_size: int = 0
 ) -> ExecuTorchModule:
-    """Same as _load_for_executorch, but takes a byte buffer instead of a file path."""
+    """Same as _load_for_executorch, but takes a byte buffer instead of a file path.
+
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
     ...
 
+@experimental("This API is experimental and subject to change without notice.")
 def _load_for_executorch_from_bundled_program(
     module: BundledModule, enable_etdump: bool = False, debug_buffer_size: int = 0
 ) -> ExecuTorchModule:
     """Same as _load_for_executorch, but takes a bundled program instead of a file path.
-    See https://pytorch.org/executorch/stable/sdk-bundled-io.html for documentation."""
+
+    See https://pytorch.org/executorch/stable/sdk-bundled-io.html for documentation.
+
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
     ...
 
+@experimental("This API is experimental and subject to change without notice.")
 def _load_bundled_program_from_buffer(
     buffer: bytes, non_const_pool_size: int = ...
-) -> BundledModule: ...
-def _get_operator_names() -> List[str]: ...
-def _create_profile_block(name: str) -> None: ...
-def _dump_profile_results() -> bytes: ...
-def _reset_profile_results() -> None: ...
+) -> BundledModule:
+    """
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+    ...
+
+@experimental("This API is experimental and subject to change without notice.")
+def _get_operator_names() -> List[str]:
+    """
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+    ...
+
+@experimental("This API is experimental and subject to change without notice.")
+def _create_profile_block(name: str) -> None:
+    """
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+    ...
+
+@experimental("This API is experimental and subject to change without notice.")
+def _dump_profile_results() -> bytes:
+    """
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+    ...
+
+@experimental("This API is experimental and subject to change without notice.")
+def _reset_profile_results() -> None:
+    """
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+    ...
