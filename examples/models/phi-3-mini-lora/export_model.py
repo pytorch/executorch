@@ -28,11 +28,13 @@ class TrainingModule(torch.nn.Module):
         self.model = model
         self.loss = loss
 
-    def forward(self, input):
+    def forward(self, input: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         # Output is of the shape (seq_len, vocab_size).
-        output = self.model(input)
-        target = zeros((1, vocab_size), dtype=long)
-        return self.loss(output, target)
+        logits = self.model(input)
+        logits = logits[..., :-1, :].contiguous()
+        labels = labels[..., 1:].contiguous()
+        logits = logits.transpose(1, 2)
+        return self.loss(logits, labels)
 
 
 @no_grad()
@@ -47,7 +49,11 @@ def export_phi3_mini_lora(model) -> None:
     model.eval()
     # 1. torch.export: Defines the program with the ATen operator set.
     print("Exporting to aten dialect")
-    example_args = (randint(0, 100, (1, 100), dtype=long),)
+    batch_size = 1
+    vocab_size = 100
+    seq_len = 10
+    tokens = randint(0, vocab_size, (batch_size, seq_len), dtype=long)
+    example_args = (tokens,)
     with sdpa_kernel([SDPBackend.MATH]):
         aten_dialect: ExportedProgram = export(model, example_args)
 
@@ -80,7 +86,12 @@ def export_phi3_mini_lora_training(model) -> None:
     print("Exporting phi3-mini with LoRA for training")
     # 1. torch.export: Defines the program with the ATen operator set.
     print("Exporting to aten dialect")
-    example_args = (randint(0, 100, (1, 100), dtype=long),)
+    batch_size = 1
+    vocab_size = 100
+    seq_len = 10
+    tokens = randint(0, vocab_size, (batch_size, seq_len), dtype=long)
+    labels = tokens
+    example_args = (tokens, labels)
     with sdpa_kernel([SDPBackend.MATH]):
         exported_graph: ExportedProgram = export(model, example_args)
         print("Creating a joint forward-backwards graph for training")
