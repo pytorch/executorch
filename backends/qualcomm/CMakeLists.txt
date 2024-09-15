@@ -181,7 +181,7 @@ target_link_libraries(
 )
 target_link_libraries(
   qnn_executorch_backend PRIVATE qnn_executorch_header qnn_schema qnn_manager
-                                 executorch_no_prim_ops qcir_utils
+                                 executorch_no_prim_ops qcir_utils extension_tensor
 )
 set_target_properties(
   qnn_executorch_backend PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
@@ -246,6 +246,7 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
             qnn_executorch_header
             executorch
             qcir_utils
+            extension_tensor
   )
   target_link_libraries(
     PyQnnWrapperAdaptor PRIVATE pybind11::module pybind11::lto wrappers
