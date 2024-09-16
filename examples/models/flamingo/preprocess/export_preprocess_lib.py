@@ -11,7 +11,7 @@ from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.program._program import ExecutorchProgramManager
 
-from executorch.extension.llm.custom_ops import preprocess_custom_ops  # noqa
+from executorch.extension.llm.custom_ops import op_tile_crop_aot  # noqa
 
 from torch.export import Dim, ExportedProgram
 from torchtune.models.clip.inference._transform import _CLIPImageTransform
