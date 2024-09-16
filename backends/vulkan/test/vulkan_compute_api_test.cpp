@@ -728,8 +728,6 @@ TEST_F(VulkanComputeAPITest, tensor_no_copy_transpose_test) {
     // Extract the copy tensor; should contain the data of the original tensor
     extract_vtensor(out, data_out);
 
-    // EXPECT_TRUE(data_out.size() == ref_out.size());
-
     for (size_t i = 0; i < ref_out.size(); ++i) {
       EXPECT_TRUE(check_close(data_out[i], ref_out[i]));
     }

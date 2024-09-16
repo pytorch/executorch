@@ -25,7 +25,6 @@
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
-#include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
 
 #include <gflags/gflags.h>
@@ -40,10 +39,6 @@ DEFINE_string(
     model_path,
     "model.pte",
     "Model serialized in flatbuffer format.");
-DEFINE_string(
-    prof_result_path,
-    "prof_result.bin",
-    "Executorch profiler output path.");
 DEFINE_string(
     output_folder_path,
     "outputs",
@@ -60,6 +55,22 @@ DEFINE_string(
     etdump_path,
     "etdump.etdp",
     "If etdump generation is enabled an etdump will be written out to this path");
+
+DEFINE_bool(
+    dump_intermediate_outputs,
+    false,
+    "Dump intermediate outputs to etdump file.");
+
+DEFINE_string(
+    debug_output_path,
+    "debug_output.bin",
+    "Path to dump debug outputs to.");
+
+DEFINE_int32(
+    debug_buffer_size,
+    20000000, // 20MB
+    "Size of the debug buffer in bytes to allocate for intermediate outputs and program outputs logging.");
+
 using namespace torch::executor;
 using torch::executor::MemoryAllocator;
 using torch::executor::util::FileDataLoader;
@@ -168,7 +179,6 @@ int main(int argc, char** argv) {
   // In this example we use a statically allocated memory pool.
   MemoryAllocator method_allocator{
       MemoryAllocator(sizeof(method_allocator_pool), method_allocator_pool)};
-  method_allocator.enable_profiling("method allocator");
 
   // The memory-planned buffers will back the mutable tensors used by the
   // method. The sizes of these buffers were determined ahead of time during the
@@ -210,6 +220,15 @@ int main(int argc, char** argv) {
       method_name,
       method.error());
   ET_LOG(Info, "Method loaded.");
+
+  void* debug_buffer;
+  if (FLAGS_dump_intermediate_outputs) {
+    debug_buffer = malloc(FLAGS_debug_buffer_size);
+    Span<uint8_t> buffer((uint8_t*)debug_buffer, FLAGS_debug_buffer_size);
+    etdump_gen.set_debug_buffer(buffer);
+    etdump_gen.set_event_tracer_debug_level(
+        EventTracerDebugLogLevel::kIntermediateOutputs);
+  }
 
   // Prepare the inputs.
   // Allocate data memory for inputs and outputs
@@ -386,14 +405,6 @@ int main(int argc, char** argv) {
         fout.close();
       }
 
-      // Dump the profiling data to the specified file.
-      torch::executor::prof_result_t prof_result;
-      EXECUTORCH_DUMP_PROFILE_RESULTS(&prof_result);
-      if (prof_result.num_bytes != 0) {
-        FILE* ptr = fopen(FLAGS_prof_result_path.c_str(), "w+");
-        fwrite(prof_result.prof_data, 1, prof_result.num_bytes, ptr);
-        fclose(ptr);
-      }
       ++inference_index;
     }
     ET_LOG(
@@ -434,6 +445,18 @@ int main(int argc, char** argv) {
     fwrite((uint8_t*)result.buf, 1, result.size, f);
     fclose(f);
     free(result.buf);
+  }
+
+  if (FLAGS_dump_intermediate_outputs) {
+    ET_LOG(
+        Info,
+        "Write debug output binary to %s, Size = %zu",
+        FLAGS_debug_output_path.c_str(),
+        FLAGS_debug_buffer_size);
+    FILE* f = fopen(FLAGS_debug_output_path.c_str(), "w+");
+    fwrite((uint8_t*)debug_buffer, 1, FLAGS_debug_buffer_size, f);
+    fclose(f);
+    free(debug_buffer);
   }
 
   return 0;
