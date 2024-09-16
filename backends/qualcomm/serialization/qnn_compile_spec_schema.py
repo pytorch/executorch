@@ -129,7 +129,7 @@ class QnnExecuTorchOptions:
     library_path: str = ""
     log_level: QnnExecuTorchLogLevel = QnnExecuTorchLogLevel.kLogOff
     online_prepare: bool = False
-    tensor_dump_output_path: str = ""
+    dump_intermediate_outputs: bool = False
     profile_level: QnnExecuTorchProfileLevel = QnnExecuTorchProfileLevel.kProfileOff
     shared_buffer: bool = False
     is_from_context_binary: bool = False
