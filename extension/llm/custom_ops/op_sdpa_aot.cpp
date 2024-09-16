@@ -50,6 +50,26 @@ Tensor& sdpa_with_kv_cache_out_no_context(
       output);
 }
 
+Tensor& sdpa_with_attn_bias_out_no_context(
+    const Tensor& q_projected,
+    const Tensor& k_projected,
+    const Tensor& v_projected,
+    const optional<Tensor> attn_bias,
+    const double dropout_p,
+    const optional<double> scale,
+    Tensor& output) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::native::sdpa_with_attn_bias_out(
+      context,
+      q_projected,
+      k_projected,
+      v_projected,
+      attn_bias,
+      dropout_p,
+      scale,
+      output);
+}
+
 at::Tensor sdpa_with_kv_cache_aten(
     const at::Tensor& q_projected,
     const at::Tensor& k_projected,
@@ -82,6 +102,19 @@ at::Tensor sdpa_with_kv_cache_aten(
   return output;
 }
 
+at::Tensor sdpa_with_attn_bias_aten(
+    const at::Tensor& q_projected,
+    const at::Tensor& k_projected,
+    const at::Tensor& v_projected,
+    const c10::optional<at::Tensor> attn_bias,
+    const double dropout_p,
+    const c10::optional<double> scale) {
+  auto output = at::empty_like(q_projected);
+  WRAP_TO_ATEN(sdpa_with_attn_bias_out_no_context, 6)
+  (q_projected, k_projected, v_projected, attn_bias, dropout_p, scale, output);
+  return output;
+}
+
 } // namespace native
 } // namespace executor
 } // namespace torch
@@ -95,6 +128,12 @@ TORCH_LIBRARY(llama, m) {
       "sdpa_with_kv_cache.out(Tensor query, Tensor key, Tensor value, Tensor(a!) key_cache, "
       "Tensor(b!) value_cache, SymInt start_pos, SymInt seq_len, Tensor? attn_mask=None, "
       "float drpout_p=0.0, bool is_causal=False, float? scale=None, *, Tensor(c!) out) -> Tensor(c!)");
+  m.def(
+      "sdpa_with_attn_bias(Tensor query, Tensor key, Tensor value, Tensor? attn_bias=None, "
+      "float dropout_p=0.0, float? scale=None) -> Tensor");
+  m.def(
+      "sdpa_with_attn_bias.out(Tensor query, Tensor key, Tensor value, Tensor? attn_bias=None, "
+      "float dropout_p=0.0, float? scale=None, *, Tensor(c!) out) -> Tensor(c!)");
 }
 
 TORCH_LIBRARY_IMPL(llama, CompositeExplicitAutograd, m) {
@@ -104,4 +143,10 @@ TORCH_LIBRARY_IMPL(llama, CompositeExplicitAutograd, m) {
       "sdpa_with_kv_cache.out",
       WRAP_TO_ATEN(
           torch::executor::native::sdpa_with_kv_cache_out_no_context, 11));
+  m.impl(
+      "sdpa_with_attn_bias", torch::executor::native::sdpa_with_attn_bias_aten);
+  m.impl(
+      "sdpa_with_attn_bias.out",
+      WRAP_TO_ATEN(
+          torch::executor::native::sdpa_with_attn_bias_out_no_context, 6));
 }

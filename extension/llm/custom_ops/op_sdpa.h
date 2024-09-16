@@ -31,6 +31,17 @@ Tensor& sdpa_with_kv_cache_out(
     const optional<double> scale,
     Tensor& output);
 
+Tensor& sdpa_with_attn_bias_out(
+    RuntimeContext& ctx,
+    const Tensor& q_projected,
+    const Tensor& k_projected,
+    const Tensor& v_projected,
+    const optional<Tensor>& attn_bias,
+    const double dropout_p,
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const optional<double> scale,
+    Tensor& output);
+
 Tensor& flash_attention_kernel_out(
     KernelRuntimeContext& ctx,
     const Tensor& query,
