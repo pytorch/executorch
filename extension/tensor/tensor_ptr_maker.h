@@ -421,10 +421,8 @@ inline TensorPtr full(
  */
 inline TensorPtr scalar_tensor(
     exec_aten::Scalar value,
-    exec_aten::ScalarType type = exec_aten::ScalarType::Float,
-    exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
-  return full({}, value, type, dynamism);
+    exec_aten::ScalarType type = exec_aten::ScalarType::Float) {
+  return full({}, value, type);
 }
 
 /**

@@ -87,7 +87,7 @@ TensorImplPtr make_tensor_impl_ptr(
  * @return A TensorImplPtr that manages the newly created TensorImpl.
  */
 template <typename T = float>
-TensorImplPtr make_tensor_impl_ptr(
+inline TensorImplPtr make_tensor_impl_ptr(
     std::vector<exec_aten::SizesType> sizes,
     std::vector<T> data,
     std::vector<exec_aten::DimOrderType> dim_order = {},
@@ -123,23 +123,13 @@ TensorImplPtr make_tensor_impl_ptr(
  * @return A TensorImplPtr that manages the newly created TensorImpl.
  */
 template <typename T = float>
-TensorImplPtr make_tensor_impl_ptr(
+inline TensorImplPtr make_tensor_impl_ptr(
     std::vector<T> data,
     exec_aten::TensorShapeDynamism dynamism =
         exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
-  constexpr exec_aten::ScalarType scalar_type =
-      runtime::CppTypeToScalarType<T>::value;
   std::vector<exec_aten::SizesType> sizes{exec_aten::SizesType(data.size())};
-  const auto raw_data_ptr = data.data();
-  auto data_ptr = std::make_shared<std::vector<T>>(std::move(data));
   return make_tensor_impl_ptr(
-      scalar_type,
-      std::move(sizes),
-      raw_data_ptr,
-      {0},
-      {1},
-      dynamism,
-      [data_ptr = std::move(data_ptr)](void*) {});
+      std::move(sizes), std::move(data), {0}, {1}, dynamism);
 }
 
 /**
