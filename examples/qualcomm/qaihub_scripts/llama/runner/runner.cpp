@@ -66,7 +66,7 @@ Runner::Runner(
 
 // load tokenizer
 #if defined(QAIHUB_LLAMA3_RUNNER)
-  tokenizer_ = get_tiktoken_for_llama();
+  tokenizer_ = example::get_tiktoken_for_llama();
   tokenizer_->load(tokenizer_path_);
   eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
   version_ = LlamaVersion::kLlama3;
@@ -177,8 +177,7 @@ Error Runner::generate(
       output_tensors.emplace_back(io_mem_->get_output_tensors(i));
       for (size_t j = 0; j < output_tensors[i].size(); ++j) {
         ET_CHECK_MSG(
-            modules_[i]->set_output_data_ptr(output_tensors[i][j], j) ==
-                Error::Ok,
+            modules_[i]->set_output(output_tensors[i][j], j) == Error::Ok,
             "failed to set output tensor for module %d's %zu'th output",
             i,
             j);

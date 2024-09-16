@@ -69,7 +69,7 @@ int32_t main(int32_t argc, char** argv) {
   }
 #endif
   // create llama runner
-  ::torch::executor::Runner runner(model_path, tokenizer_path, temperature);
+  example::Runner runner(model_path, tokenizer_path, temperature);
 
   // generate
   runner.generate(prompt, seq_len);
