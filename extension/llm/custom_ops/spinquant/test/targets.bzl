@@ -9,7 +9,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "fast_hadamard_transform_test_impl",
         srcs = ["fast_hadamard_transform_test_impl.cpp"],
-        headers = [
+        exported_headers = [
             "fast_hadamard_transform_special_unstrided_cpu.h",
             "fast_hadamard_transform_test_impl.h",
         ],
