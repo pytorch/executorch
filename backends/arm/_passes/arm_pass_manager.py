@@ -19,6 +19,7 @@ from executorch.backends.arm._passes.convert_split_to_slice import (
     ConvertSplitToSlicePass,
 )
 from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
+from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
 from executorch.backends.arm._passes.insert_squeeze_after_sum_pass import (
     InsertSqueezeAfterSumPass,
 )
@@ -49,6 +50,7 @@ class ArmPassManager(PassManager):
         self.add_pass(RemoveClonePass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(ConvertMeanDimToAveragePool())
+        self.add_pass(DecomposeMeanDimPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(InsertSqueezeAfterSumPass())
         self.add_pass(ConvertSplitToSlicePass())
@@ -63,4 +65,5 @@ class ArmPassManager(PassManager):
     def transform_for_annotation_pipeline(self, graph_module: torch.fx.GraphModule):
         self.add_pass(DecomposeDivPass())
         self.add_pass(ScalarsToAttributePass())
+        self.add_pass(DecomposeMeanDimPass())
         return self._transform(graph_module)

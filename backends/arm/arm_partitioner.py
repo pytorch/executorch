@@ -85,10 +85,8 @@ class TOSASupportedOperators(OperatorSupportBase):
 
     def is_node_supported_custom(self, node: torch.fx.Node) -> bool:
         if node.target == exir_ops.edge.aten.mean.dim:
-            dim = node.args[1]
-            keep_dim = node.args[2]
-            if dim != [-1, -2] or keep_dim is False:
-                return False
+            keep_dim = node.args[2] if len(node.args) > 2 else False
+            return keep_dim
         return True
 
 

@@ -20,7 +20,6 @@ from . import (  # noqa
     op_get_item,
     op_hardtanh,
     op_log,
-    op_mean_dim,
     op_mm,
     op_mul,
     op_permute,
