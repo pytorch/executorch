@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>ExecuTorch API Life Cycle and Deprecation Policy &mdash; ExecuTorch main documentation</title>
+  <title>Developer Tools Usage Tutorial &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,8 +42,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Export IR Specification" href="ir-exir.html" />
-    <link rel="prev" title="ExecuTorch Runtime API Reference" href="executorch-runtime-api-reference.html" />
+    <link rel="next" title="Contributing to ExecuTorch" href="contributing.html" />
+    <link rel="prev" title="Developer Tools Delegate Integration" href="sdk-delegate-integration.html" />
 
 
   <!-- Google Tag Manager -->
@@ -336,10 +336,10 @@
 <li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
-<ul class="current">
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
@@ -380,7 +380,7 @@
 <li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debug Backend Delegate</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
@@ -389,7 +389,7 @@
 <li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
@@ -434,13 +434,13 @@
       </li>
 
         
-      <li>ExecuTorch API Life Cycle and Deprecation Policy</li>
+      <li>Developer Tools Usage Tutorial</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/api-life-cycle.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/devtools-tutorial.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -472,212 +472,9 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="executorch-api-life-cycle-and-deprecation-policy">
-<h1>ExecuTorch API Life Cycle and Deprecation Policy<a class="headerlink" href="#executorch-api-life-cycle-and-deprecation-policy" title="Permalink to this heading">¶</a></h1>
-<div class="section" id="api-life-cycle">
-<h2>API Life Cycle<a class="headerlink" href="#api-life-cycle" title="Permalink to this heading">¶</a></h2>
-<p><img alt="name" src="_images/api_life_cycle.png" /></p>
-<p>Each API of ExecuTorch falls into one of the following life cycle states:</p>
-<p><em>Experimental</em></p>
-<ul class="simple">
-<li><p>APIs in this stage are under active development and may change or be removed
-at any time. That said, the expectation is that we will eventually promote it
-to <em>Stable</em>, unless sufficient negative signals have been collected from the
-community or better alternatives have been found.</p></li>
-<li><p><em>Experimental</em> APIs will be clearly marked (see the “How to Mark API State”
-section below).</p></li>
-<li><p><em>Experimental</em> APIs may be changed or removed without notice, and developers
-should expect no stability guarantees.</p></li>
-</ul>
-<p><em>Stable</em></p>
-<ul class="simple">
-<li><p>APIs are considered to be <em>Stable</em> if they are not marked as <em>Experimental</em> or
-<em>Deprecated.</em></p></li>
-<li><p>APIs in this stage have been thoroughly tested and are considered ready for
-production use.</p></li>
-<li><p>The recommended best practice is to not deprecate stable APIs. When writing an
-API, write it in such a way that it doesn’t need to be deprecated in the
-future.</p></li>
-<li><p><em>Stable</em> APIs can be changed, but not in a breaking way. If breaking changes
-have to be made, <em>Stable</em> APIs will always transition to <em>Deprecated</em> before
-being broken/removed from the library.</p></li>
-</ul>
-<p><em>Deprecated</em></p>
-<ul class="simple">
-<li><p>APIs in this stage are no longer recommended for use and will be removed in a
-future version of ExecuTorch.</p></li>
-<li><p><em>Deprecated</em> APIs will be clearly marked (see the “How to Mark API State”
-section below).</p></li>
-<li><p><em>Deprecated</em> APIs will remain functional for at least the <em>deprecation period</em>
-(see the “Deprecation Period” section below) to allow developers time to
-migrate to alternative APIs.</p></li>
-</ul>
-<p><em>Deleted</em></p>
-<ul class="simple">
-<li><p>APIs whose removal are made permanent. Cleaned up from both code and
-documentation.</p></li>
-</ul>
-</div>
-<div class="section" id="deprecation-policy">
-<h2>Deprecation Policy<a class="headerlink" href="#deprecation-policy" title="Permalink to this heading">¶</a></h2>
-<p>Follow these steps to deprecate and remove an API:</p>
-<ol class="arabic simple">
-<li><p>Discuss the change and collect initial feedback.</p></li>
-<li><p>Clearly mark the API deprecated in code and documentation (See “How to Mark
-API State” below).</p></li>
-<li><p>Listen to user feedback after the first release that deprecates the API.
-Users who weren’t involved in the original discussion may have good arguments
-for not deprecating or removing the API.</p></li>
-<li><p>Once the deprecation period has passed, the API may be removed (See
-“Deprecation Period” below). Be sure to also remove references from the
-documentation.</p></li>
-</ol>
-<p>We also use deprecation as a way to make breaking changes to an existing
-interface: for example, if adding a non-optional parameter to a method. To do
-this without breaking existing users:</p>
-<ol class="arabic simple">
-<li><p>In a single commit:</p>
-<ul class="simple">
-<li><p>Create a new API that meets the new requirements.</p></li>
-<li><p>Deprecate the old API and recommend that users move to the new API.</p></li>
-</ul>
-</li>
-<li><p>Migrate use cases from the old API to the new API.</p></li>
-<li><p>Delete the old API after the deprecation period.</p></li>
-</ol>
-</div>
-<div class="section" id="how-to-mark-api-state">
-<h2>How to Mark API State<a class="headerlink" href="#how-to-mark-api-state" title="Permalink to this heading">¶</a></h2>
-<p>When possible, the ExecuTorch code uses language-standard ways to annotate API
-lifecycle state in the code. This makes it easier for IDEs and other tools to
-communicate state to developers.</p>
-<table>
-  <tr>
-   <td><strong>Language</strong>
-   </td>
-   <td><strong>Code</strong>
-   </td>
-   <td><strong>Documentation</strong>
-   </td>
-  </tr>
-  <tr>
-   <td>Python
-   </td>
-   <td>
-<p>Use the
-<a href="https://github.com/pytorch/executorch/blob/main/exir/_warnings.py">executorch.exir._warnings.deprecated</a>
-decorator.</p>
-<p>
-Use the
-<a href="https://github.com/pytorch/executorch/blob/main/exir/_warnings.py">executorch.exir._warnings.experimental</a>
-decorator.
-   </td>
-   <td>
-<p>Use <code>.. warning::</code> in the docstrings of deprecated and experimental
-APIs. See
-<a href="https://github.com/pytorch/pytorch/blob/cd8bbdc71a0258292381a7d54c8b353988d02ff4/torch/nn/utils/stateless.py#L170">example
-usage</a>.</p>
-</ul>
-   </td>
-  </tr>
-  <tr>
-   <td>C++
-   </td>
-   <td>
-<p>Use the <code>ET_DEPRECATED</code> annotation macro. See <a href="https://github.com/pytorch/executorch/blob/8e0f856ee269b319ac4195509cf31e3f548aa0e8/runtime/executor/program.h#L81">example usage</a>.</p>
-<p>
-<p>
-Use the <code>ET_EXPERIMENTAL</code> annotation macro.
-</ul>
-   </td>
-   <td>
-<p>Start Doxygen comments with <code>DEPRECATED:</code> See
-<a href="https://github.com/pytorch/executorch/blob/9d859653ae916d0a72f6b2b5c5925bed38832140/runtime/executor/program.h#L139">example
-usage</a>.</p>
-<p>
-<p>
-Start Doxygen comments with <code>EXPERIMENTAL:</code>.
-   </td>
-  </tr>
-  <tr>
-   <td>Java
-   </td>
-   <td>
-<p>Use <a href="https://docs.oracle.com/javase/9/docs/api/java/lang/Deprecated.html">java.lang.Deprecated</a>.</p>
-<p>
-<p>
-<p>Use <a href="https://cs.android.com/androidx/platform/frameworks/support/+/androidx-main:docs/api_guidelines/annotations.md">androidx.annotation.RequiresOptIn</a>.</p>
-   </td>
-   <td>
-<p>
-<pre><code>/**
-* @deprecated Use {@link #newMethod()} instead.
-*/
-</code></pre>
-<p>
-<pre><code>/**
-* Warning: This API is experimental.
-*/</code></pre>
-   </td>
-  </tr>
-  <tr>
-   <td>Objective-C
-   </td>
-   <td>
-<p>
-<code>__attribute__((deprecated("Use newMethod instead")));</code>
-<p>
-<p>
-<code>__attribute__((deprecated("This API is experimental and may change without notice.")));</code>
-   </td>
-   <td>
-<p>
-<pre><code>
-/**
-* @deprecated Use `newMethod` instead.
-*/
-</code></pre>
-<p>
-<pre><code>
-/**
-* @experimental This API is experimental.
-*/</code></pre>
-<p>
-   </td>
-  </tr>
-  <tr>
-   <td>Swift
-   </td>
-   <td>
-<p>
-<code>@available(*, deprecated, message: "Use newMethod instead")</code>
-<p>
-<p>
-<code>@available(*, message: "This API is experimental")</code>
-   </td>
-   <td>
-<p>
-<code>/// - Warning: Deprecated. Use `newMethod()` instead.</code>
-<p>
-<code>/// - Warning: This API is experimental.</code>
-   </td>
-  </tr>
-</table>
-<p>The annotations would trigger static and/or runtime warning that contains at
-least these information:</p>
-<ol class="arabic simple">
-<li><p>Clearly point to the non-deprecated alternative to migrate to, or be clear if
-there is no alternative;</p></li>
-<li><p>Specify the earliest version in which the API may actually be removed (See
-“Deprecation Period” below).</p></li>
-</ol>
-</div>
-<div class="section" id="deprecation-period">
-<h2>Deprecation Period<a class="headerlink" href="#deprecation-period" title="Permalink to this heading">¶</a></h2>
-<p>Here we recommend waiting for at least 2 minor releases before the removal. For
-example, if a function is marked as <em>deprecated</em> in release 1.3.x, then it can
-be <em>deleted</em> in 1.5.x or later.</p>
-</div>
+  <div class="section" id="developer-tools-usage-tutorial">
+<h1>Developer Tools Usage Tutorial<a class="headerlink" href="#developer-tools-usage-tutorial" title="Permalink to this heading">¶</a></h1>
+<p>Please refer to the <a class="reference internal" href="tutorials/devtools-integration-tutorial.html"><span class="doc std std-doc">Developer Tools tutorial</span></a> for a walkthrough on how to profile a model in ExecuTorch using the Developer Tools.</p>
 </div>
 
 
@@ -688,10 +485,10 @@ be <em>deleted</em> in 1.5.x or later.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="ir-exir.html" class="btn btn-neutral float-right" title="Export IR Specification" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="contributing.html" class="btn btn-neutral float-right" title="Contributing to ExecuTorch" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="executorch-runtime-api-reference.html" class="btn btn-neutral" title="ExecuTorch Runtime API Reference" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="sdk-delegate-integration.html" class="btn btn-neutral" title="Developer Tools Delegate Integration" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -725,13 +522,7 @@ be <em>deleted</em> in 1.5.x or later.</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">ExecuTorch API Life Cycle and Deprecation Policy</a><ul>
-<li><a class="reference internal" href="#api-life-cycle">API Life Cycle</a></li>
-<li><a class="reference internal" href="#deprecation-policy">Deprecation Policy</a></li>
-<li><a class="reference internal" href="#how-to-mark-api-state">How to Mark API State</a></li>
-<li><a class="reference internal" href="#deprecation-period">Deprecation Period</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#">Developer Tools Usage Tutorial</a></li>
 </ul>
 
             </div>
