@@ -612,6 +612,19 @@ git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w
 </div>
 <p>After setting up your environment, you are ready to convert your PyTorch programs
 to ExecuTorch.</p>
+<blockquote>
+<div><p><strong><em>NOTE:</em></strong>  Cleaning the build system</p>
+<p>When fetching a new version of the upstream repo (via <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">fetch</span></code> or <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">pull</span></code>) it is a good idea to clean the old build artifacts. The build system
+does not currently adapt well to changes in build dependencies.</p>
+<p>You should also update and pull the submodules again, in case their versions
+have changed.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># From the root of the executorch repo:</span>
+rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span>pip-out
+git<span class="w"> </span>submodule<span class="w"> </span>sync
+git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init
+</pre></div>
+</div>
+</div></blockquote>
 </div>
 </div>
 <div class="section" id="create-an-executorch-program">
@@ -669,13 +682,27 @@ to ExecuTorch.</p>
 <div class="section" id="build-tooling-setup">
 <h3>Build Tooling Setup<a class="headerlink" href="#build-tooling-setup" title="Permalink to this heading">¶</a></h3>
 <p>The ExecuTorch repo uses CMake to build its C++ code. Here, we’ll configure it to build the <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> tool to run it on our desktop OS.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Clean and configure the CMake build system. Compiled programs will appear in the executorch/cmake-out directory we create here.</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Clean and configure the CMake build system. Compiled programs will</span>
+<span class="c1"># appear in the executorch/cmake-out directory we create here.</span>
 <span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
 
 <span class="c1"># Build the executor_runner target</span>
 cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>--target<span class="w"> </span>executor_runner<span class="w"> </span>-j9
 </pre></div>
 </div>
+<blockquote>
+<div><p><strong><em>NOTE:</em></strong>  Cleaning the build system</p>
+<p>When fetching a new version of the upstream repo (via <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">fetch</span></code> or <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">pull</span></code>) it is a good idea to clean the old build artifacts. The build system
+does not currently adapt well to changes in build dependencies.</p>
+<p>You should also update and pull the submodules again, in case their versions
+have changed.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># From the root of the executorch repo:</span>
+rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span>pip-out
+git<span class="w"> </span>submodule<span class="w"> </span>sync
+git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init
+</pre></div>
+</div>
+</div></blockquote>
 </div>
 <div class="section" id="run-your-program">
 <h3>Run Your Program<a class="headerlink" href="#run-your-program" title="Permalink to this heading">¶</a></h3>
