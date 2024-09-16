@@ -214,7 +214,7 @@ def main():
         buck_args = ["--target-platforms"]
         buck_args.append(args.target_platforms)
     for name, target in graph.by_name.items():
-        target_to_srcs[name] = sorted(target.get_sources(graph, runner))
+        target_to_srcs[name] = sorted(target.get_sources(graph, runner, buck_args))
 
     # Generate the requested format.
     output: bytes
