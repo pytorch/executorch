@@ -1,5 +1,7 @@
 ## Summary
-In this example, we export to ExecuTorch a model ([phi-3-mini](https://github.com/pytorch/executorch/tree/main/examples/models/phi-3-mini)) appended with attention and mlp LoRA layers. The model is exported to ExecuTorch for both inference and training. Note: the exported training model can only train at the moment.
+In this example, we showcase how to export a model ([phi-3-mini](https://github.com/pytorch/executorch/tree/main/examples/models/phi-3-mini)) appended with LoRA layers to ExecuTorch. The model is exported to ExecuTorch for both inference and training.
+
+To see how you can use the model exported for training in a fully involved finetuning loop, please see our example on [LLM PTE Fintetuning](https://github.com/pytorch/executorch/tree/main/examples/llm_pte_finetuning).
 
 ## Instructions
 ### Step 1: [Optional] Install ExecuTorch dependencies
