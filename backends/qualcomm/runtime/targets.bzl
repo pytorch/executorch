@@ -63,5 +63,6 @@ def define_common_targets():
             "//executorch/backends/qualcomm/aot/wrappers:wrappers",
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
+            "//executorch/extension/tensor:tensor",
         ],
     )

@@ -1,65 +1,71 @@
-# Building ExecuTorch Llama and Llava iOS Demo App
+# ExecuTorch Llama iOS Demo App
 
-This app demonstrates the use of the LLM chat app demonstrating local inference use case with ExecuTorch, using [Llama 3.1](https://github.com/meta-llama/llama-models) for text only chat and [Llava](https://github.com/haotian-liu/LLaVA) for image and text chat.
+We’re excited to share that the newly revamped iOS demo app is live and includes many new updates to provide a more intuitive and smoother user experience with a chat use case! The primary goal of this app is to showcase how easily ExecuTorch can be integrated into an iOS demo app and how to exercise the many features ExecuTorch and Llama models have to offer.
 
-## Prerequisites
-* [Xcode 15](https://developer.apple.com/xcode)
-* [iOS 17 SDK](https://developer.apple.com/ios)
-* Set up your ExecuTorch repo and environment if you haven’t done so by following the [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup) to set up the repo and dev environment:
+This app serves as a valuable resource to inspire your creativity and provide foundational code that you can customize and adapt for your particular use case.
 
-```bash
-git clone https://github.com/pytorch/executorch.git --recursive && cd executorch
-```
+Please dive in and start exploring our demo app today! We look forward to any feedback and are excited to see your innovative ideas.
 
-Then create a virtual or conda environment using either
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-```
-or
-```bash
-conda create -n executorch python=3.10
-conda activate executorch
-```
+## Key Concepts
+From this demo app, you will learn many key concepts such as:
+* How to prepare Llama models, build the ExecuTorch library, and perform model inference across delegates
+* Expose the ExecuTorch library via Swift Package Manager
+* Familiarity with current ExecuTorch app-facing capabilities
 
-After that, run:
-```bash
-./install_requirements.sh --pybind coreml mps xnnpack
-./backends/apple/coreml/scripts/install_requirements.sh
-./backends/apple/mps/install_requirements.sh
-```
+The goal is for you to see the type of support ExecuTorch provides and feel comfortable with leveraging it for your use cases.
 
-## Exporting models
-Please refer to the [ExecuTorch Llama2 docs](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/README.md) to export the Llama 3.1 model.
+## Supported Models
 
-## Run the App
+As a whole, the models that this app supports are (varies by delegate):
+* Llama 3.1 8B
+* Llama 3 8B
+* Llama 2 7B
+* Llava 1.5 (only XNNPACK)
 
-1. Open the [project](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/apple_ios/LLaMA/LLaMA.xcodeproj) in Xcode.
-2. Run the app (cmd+R).
-3. In app UI pick a model and tokenizer to use, type a prompt and tap the arrow buton.
+## Building the application
+First it’s important to note that currently ExecuTorch provides support across several delegates. Once you identify the delegate of your choice, select the README link to get a complete end-to-end instructions for environment set-up to export the models to build ExecuTorch libraries and apps to run on device:
+
+| Delegate                       | Resource                           |
+| ------------------------------ | ---------------------------------  |
+| XNNPACK (CPU-based library)    | [link](docs/delegates/xnnpack_README.md)|
+| MPS (Metal Performance Shader) | [link](docs/delegates/mps_README.md)    |
+
+## How to Use the App
+This section will provide the main steps to use the app, along with a code snippet of the ExecuTorch API.
 
 ```{note}
 ExecuTorch runtime is distributed as a Swift package providing some .xcframework as prebuilt binary targets.
-Xcode will dowload and cache the package on the first run, which will take some time.
+Xcode will download and cache the package on the first run, which will take some time.
 ```
+
+* Open XCode and select "Open an existing project" to open `examples/demo-apps/apple_ios/LLama`.
+* Ensure that the ExecuTorch package dependencies are installed correctly.
+* Run the app. This builds and launches the app on the phone.
+* In app UI pick a model and tokenizer to use, type a prompt and tap the arrow buton
+
 
 ## Copy the model to Simulator
 
-1. Drag and drop the Llama 3.1 and Llava models and tokenizer files onto the Simulator window and save them somewhere inside the iLLaMA folder.
-2. Pick the files in the app dialog, type a prompt and click the arrow-up button.
+* Drag&drop the model and tokenizer files onto the Simulator window and save them somewhere inside the iLLaMA folder.
+* Pick the files in the app dialog, type a prompt and click the arrow-up button.
 
 ## Copy the model to Device
 
-1. Wire-connect the device and open the contents in Finder.
-2. Navigate to the Files tab and drag and drop the models and tokenizer files onto the iLLaMA folder.
-3. Wait until the files are copied.
+* Wire-connect the device and open the contents in Finder.
+* Navigate to the Files tab and drag&drop the model and tokenizer files onto the iLLaMA folder.
+* Wait until the files are copied.
 
-Click the image below to see a demo video of the app running Llama 3.1 and Llava on an iPhone 15 Pro device:
+If the app successfully run on your device, you should see something like below:
 
-<a href="https://drive.google.com/file/d/1yQ7UoB79vMEBuBaoYvO53dosYTjpOZhd/view?usp=sharing">
-  <img src="llama31.png" width="350" alt="iOS app running Llama 3.1">
-</a> <a href="https://drive.google.com/file/d/1yQ7UoB79vMEBuBaoYvO53dosYTjpOZhd/view?usp=sharing">
-  <img src="llava.png" width="350" alt="iOS app running Llava">
-</a>
+<p align="center">
+<img src="./docs/screenshots/ios_demo_app.jpg" alt="iOS LLaMA App" width="300">
+</p>
+
+For Llava 1.5 models, you can select and image (via image/camera selector button) before typing prompt and send button.
+
+<p align="center">
+<img src="./docs/screenshots/ios_demo_app_llava.jpg" alt="iOS LLaMA App" width="300">
+</p>
 
 ## Reporting Issues
 If you encountered any bugs or issues following this tutorial please file a bug/issue here on [Github](https://github.com/pytorch/executorch/issues/new).
