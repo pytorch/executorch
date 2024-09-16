@@ -377,3 +377,19 @@ TEST_F(TensorImplPtrTest, TensorImplUint8BufferTooLarge) {
   EXPECT_EQ(tensor_impl->strides()[0], 2);
   EXPECT_EQ(tensor_impl->strides()[1], 1);
 }
+
+TEST_F(TensorImplPtrTest, StridesAndDimOrderMustMatchSizes) {
+  float data[12] = {0};
+  ET_EXPECT_DEATH(
+      {
+        auto _ = make_tensor_impl_ptr(
+            exec_aten::ScalarType::Float, {3, 4}, data, {}, {1});
+      },
+      "");
+  ET_EXPECT_DEATH(
+      {
+        auto _ = make_tensor_impl_ptr(
+            exec_aten::ScalarType::Float, {3, 4}, data, {0}, {4, 1});
+      },
+      "");
+}
