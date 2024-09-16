@@ -101,8 +101,8 @@ TORCH_URL = "https://download.pytorch.org/whl/test/cpu"
 
 # pip packages needed by exir.
 EXIR_REQUIREMENTS = [
-    f"torch==2.5.0",
-    f"torchvision==0.20.0",  # For testing.
+    "torch==2.5.0",
+    "torchvision==0.20.0",  # For testing.
     "typing-extensions",
 ]
 
@@ -121,7 +121,7 @@ DEVEL_REQUIREMENTS = [
 # TODO: Make each example publish its own requirements.txt
 EXAMPLES_REQUIREMENTS = [
     "timm==1.0.7",
-    f"torchaudio==2.5.0",
+    "torchaudio==2.5.0",
     "torchsr==1.0.4",
     "transformers==4.42.4",
 ]
