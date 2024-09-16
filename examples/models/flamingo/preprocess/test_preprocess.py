@@ -37,7 +37,11 @@ from torchtune.modules.transforms.vision_utils.get_inscribed_size import (
 )
 from torchvision.transforms.v2 import functional as F
 
-from .export_preprocess_lib import export_preprocess, lower_to_executorch_preprocess
+from .export_preprocess_lib import (
+    export_preprocess,
+    get_example_inputs,
+    lower_to_executorch_preprocess,
+)
 
 
 @dataclass
@@ -206,6 +210,11 @@ class TestImageTransform(unittest.TestCase):
         executorch_model = lower_to_executorch_preprocess(exported_model)
         executorch_module = _load_for_executorch_from_buffer(executorch_model.buffer)
 
+        aoti_path = torch._inductor.aot_compile(
+            exported_model.module(),
+            get_example_inputs(),
+        )
+
         # Prepare image input.
         image = (
             np.random.randint(0, 256, np.prod(image_size))
@@ -266,3 +275,9 @@ class TestImageTransform(unittest.TestCase):
         )
         self.assertTrue(torch.allclose(reference_image, et_image))
         self.assertEqual(reference_ar, et_ar.tolist())
+
+        # Run aoti model and check it matches reference model.
+        aoti_model = torch._export.aot_load(aoti_path, "cpu")
+        aoti_image, aoti_ar = aoti_model(image_tensor, inscribed_size, best_resolution)
+        self.assertTrue(torch.allclose(reference_image, aoti_image))
+        self.assertEqual(reference_ar, aoti_ar.tolist())
