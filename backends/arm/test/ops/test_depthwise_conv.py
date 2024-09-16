@@ -131,11 +131,6 @@ testsuite_u55.remove(("two_dw_conv2d", two_dw_conv2d))
 # Fails when enabling CompileSpec.set_quantize_io(True). MLETORCH-191.
 testsuite_u55.remove(("3x3_1x3x256x256_gp3_st1", dw_conv2d_3x3_1x3x256x256_gp3_st1))
 
-# Add failing test (set_quantize_io=True) temporarily to investigate
-testsuite_u55.append(
-    ("3x3_1x3x256x256_gp3_st1", dw_conv2d_3x3_1x3x256x256_gp3_st1, True)
-)
-
 
 class TestDepthwiseConv2D(unittest.TestCase):
     """Tests Conv2D where groups == in_channels and out_channels = K * in_channels. This
