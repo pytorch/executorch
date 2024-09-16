@@ -68,7 +68,7 @@ class TestQNNFloatingPointOperator(TestQNN):
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
-            tensor_dump_output_path="",
+            dump_intermediate_outputs=TestQNN.dump_intermediate_outputs,
             profile=TestQNN.enable_profile,
             shared_buffer=TestQNN.shared_buffer,
         )
@@ -490,7 +490,7 @@ class TestQNNFloatingPointModel(TestQNN):
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
-            tensor_dump_output_path="",
+            dump_intermediate_outputs=TestQNN.dump_intermediate_outputs,
             profile=TestQNN.enable_profile,
             shared_buffer=TestQNN.shared_buffer,
         )
@@ -604,7 +604,7 @@ class TestQNNQuantizedOperator(TestQNN):
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
-            tensor_dump_output_path="",
+            dump_intermediate_outputs=TestQNN.dump_intermediate_outputs,
             profile=TestQNN.enable_profile,
             shared_buffer=TestQNN.shared_buffer,
         )
@@ -1121,7 +1121,7 @@ class TestQNNQuantizedModel(TestQNN):
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
-            tensor_dump_output_path="",
+            dump_intermediate_outputs=TestQNN.dump_intermediate_outputs,
             profile=TestQNN.enable_profile,
             shared_buffer=TestQNN.shared_buffer,
         )
@@ -1287,6 +1287,22 @@ class TestQNNFloatingPointUtils(TestQNN):
             saver=False,
         )
 
+    def test_qnn_backend_dump_intermediate_outputs(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=True)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
+            dump_intermediate_outputs=True,
+        )
+        module = Relu()  # noqa: F405
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+            expected_intermediate_events=3,
+        )
+
     def test_qnn_backend_skip_node_id(self):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
@@ -1440,6 +1456,23 @@ class TestQNNQuantizedUtils(TestQNN):
             backend_options=backend_options,
             debug=False,
             saver=False,
+        )
+
+    def test_qnn_backend_dump_intermediate_outputs(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
+            dump_intermediate_outputs=True,
+        )
+        module = Relu()  # noqa: F405
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+            expected_intermediate_events=5,
         )
 
     def test_qnn_backend_skip_node_id_partitioner(self):
@@ -2720,6 +2753,7 @@ def setup_environment():
     TestQNN.oss_repo = args.oss_repo
     TestQNN.shared_buffer = args.shared_buffer
     TestQNN.enable_x86_64 = args.enable_x86_64
+    TestQNN.dump_intermediate_outputs = args.dump_intermediate_outputs
     return sys.argv[:1] + ns_args
 
 

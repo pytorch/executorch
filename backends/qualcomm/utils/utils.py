@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
+import warnings
 from collections import OrderedDict
 from typing import Callable, Dict, List, Tuple
 
@@ -734,7 +735,7 @@ def generate_qnn_executorch_compiler_spec(
     debug: bool = False,
     saver: bool = False,
     online_prepare: bool = False,
-    tensor_dump_output_path: str = "",
+    dump_intermediate_outputs: bool = False,
     profile: bool = False,
     shared_buffer: bool = False,
     is_from_context_binary: bool = False,
@@ -756,10 +757,8 @@ def generate_qnn_executorch_compiler_spec(
         saver: Instead of compiling the model, run QNN Saver. Please check
             documents of Qualcomm AI Engine Direct SDK. This feature is usually
             for debugging purpose.
-        tensor_dump_output_path: If a path is given, Delegate would write
-            outputs of each OP there in runtime. In ALL cases,
-            we don't recommend to set this option. This option exist just
-            for debugging some accuracy issues.
+        dump_intermediate_outputs: If tensor dump is enabled, all intermediate tensors output will be dumped.
+            This option exists for debugging accuracy issues
         profile: Enable profile the performance of per operator.
             Note that for now only support kProfileDetailed to
             profile the performance of each operator with cycle unit.
@@ -777,6 +776,13 @@ def generate_qnn_executorch_compiler_spec(
     if soc_model not in _supported_soc_models:
         raise ValueError(f"unknown SoC model for QNN: {soc_model}")
 
+    if profile and dump_intermediate_outputs:
+        warnings.warn(
+            "It is not recommended to turn on both profiling and dump_intermediate_outputs the same time"
+            ", because dump_intermediate_outputs will cause performance drop.",
+            stacklevel=1,
+        )
+
     qnn_executorch_options = QnnExecuTorchOptions(
         _soc_info_table[soc_model], backend_options
     )
@@ -787,11 +793,10 @@ def generate_qnn_executorch_compiler_spec(
         else QnnExecuTorchLogLevel.kLogLevelWarn
     )
 
+    qnn_executorch_options.dump_intermediate_outputs = dump_intermediate_outputs
+
     if saver:
         qnn_executorch_options.library_path = "libQnnSaver.so"
-
-    if len(tensor_dump_output_path.strip()) != 0:
-        qnn_executorch_options.tensor_dump_output_path = tensor_dump_output_path
 
     if profile:
         qnn_executorch_options.profile_level = (

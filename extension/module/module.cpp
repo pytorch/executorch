@@ -154,6 +154,7 @@ runtime::Error Module::load_method(
         temp_allocator_.get());
     method_holder.method = ET_UNWRAP_UNIQUE(program_->load_method(
         method_name.c_str(), method_holder.memory_manager.get(), tracer));
+    method_holder.inputs.resize(method_holder.method->inputs_size());
     methods_.emplace(method_name, std::move(method_holder));
   }
   return runtime::Error::Ok;
@@ -167,12 +168,22 @@ runtime::Result<runtime::MethodMeta> Module::method_meta(
 
 runtime::Result<std::vector<runtime::EValue>> Module::execute(
     const std::string& method_name,
-    const std::vector<runtime::EValue>& input) {
+    const std::vector<runtime::EValue>& input_values) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
   auto& method = methods_.at(method_name).method;
+  auto& inputs = methods_.at(method_name).inputs;
 
+  for (size_t i = 0; i < input_values.size(); ++i) {
+    if (!input_values[i].isNone()) {
+      inputs[i] = input_values[i];
+    }
+  }
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    ET_CHECK_OR_RETURN_ERROR(
+        !inputs[i].isNone(), InvalidArgument, "input %zu is none", i);
+  }
   ET_CHECK_OK_OR_RETURN_ERROR(method->set_inputs(
-      exec_aten::ArrayRef<runtime::EValue>(input.data(), input.size())));
+      exec_aten::ArrayRef<runtime::EValue>(inputs.data(), inputs.size())));
   ET_CHECK_OK_OR_RETURN_ERROR(method->execute());
 
   const auto outputs_size = method->outputs_size();
@@ -183,13 +194,42 @@ runtime::Result<std::vector<runtime::EValue>> Module::execute(
   return outputs;
 }
 
-runtime::Error Module::set_output_data_ptr(
-    runtime::EValue output_value,
-    size_t output_index,
-    const std::string& method_name) {
+runtime::Error Module::set_input(
+    const std::string& method_name,
+    const runtime::EValue& input_value,
+    size_t input_index) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
-  auto& output_tensor = output_value.toTensor();
+  methods_.at(method_name).inputs.at(input_index) = input_value;
+  return runtime::Error::Ok;
+}
+
+runtime::Error Module::set_inputs(
+    const std::string& method_name,
+    const std::vector<runtime::EValue>& input_values) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  auto& inputs = methods_.at(method_name).inputs;
+  ET_CHECK_OR_RETURN_ERROR(
+      inputs.size() == input_values.size(),
+      InvalidArgument,
+      "input size: %zu does not match method input size: %zu",
+      input_values.size(),
+      inputs.size());
+  inputs = input_values;
+  return runtime::Error::Ok;
+}
+
+runtime::Error Module::set_output(
+    const std::string& method_name,
+    runtime::EValue output_value,
+    size_t output_index) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
   auto& method = methods_.at(method_name).method;
+  ET_CHECK_OR_RETURN_ERROR(
+      output_value.isTensor(),
+      InvalidArgument,
+      "output type: %zu is not tensor",
+      (size_t)output_value.tag);
+  const auto& output_tensor = output_value.toTensor();
   return method->set_output_data_ptr(
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
 }

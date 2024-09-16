@@ -24,8 +24,7 @@
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
 
-namespace torch::executor {
-using Stats = ::executorch::llm::Stats;
+namespace example {
 
 class Runner {
  public:
@@ -35,12 +34,13 @@ class Runner {
       const float temperature = 0.8f);
 
   bool is_loaded() const;
-  Error load();
-  Error generate(
+  ::executorch::runtime::Error load();
+  ::executorch::runtime::Error generate(
       const std::string& prompt,
       int32_t seq_len = 128,
       std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const Stats&)> stats_callback = {},
+      std::function<void(const ::executorch::extension::llm::Stats&)>
+          stats_callback = {},
       bool echo = true);
   void stop();
 
@@ -49,16 +49,18 @@ class Runner {
   bool shouldStop_{false};
 
   // model
-  std::unique_ptr<Module> module_;
+  std::unique_ptr<::executorch::extension::Module> module_;
   std::string tokenizer_path_;
-  std::unique_ptr<Tokenizer> tokenizer_;
+  std::unique_ptr<::executorch::extension::llm::Tokenizer> tokenizer_;
   std::unordered_map<std::string, int64_t> metadata_;
-  std::unique_ptr<TextDecoderRunner> text_decoder_runner_;
-  std::unique_ptr<TextPrefiller> text_prefiller_;
-  std::unique_ptr<TextTokenGenerator> text_token_generator_;
+  std::unique_ptr<::executorch::extension::llm::TextDecoderRunner>
+      text_decoder_runner_;
+  std::unique_ptr<::executorch::extension::llm::TextPrefiller> text_prefiller_;
+  std::unique_ptr<::executorch::extension::llm::TextTokenGenerator>
+      text_token_generator_;
 
   // stats
-  Stats stats_;
+  ::executorch::extension::llm::Stats stats_;
 };
 
-} // namespace torch::executor
+} // namespace example
