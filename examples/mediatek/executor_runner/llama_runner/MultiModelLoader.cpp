@@ -21,20 +21,28 @@ namespace torch::executor {
 template <typename IdType>
 void MultiModelLoader<IdType>::LoadModels() {
   // Init empty model instance map
+  ET_LOG(Info, "cmodi LoadModels() 1");
   for (const auto& [id, _] : mModelPathMap) {
     ET_CHECK_MSG(
         !HasModel(id),
         "Model is already initialized before calling LoadModels.");
+    ET_LOG(Info, "cmodi LoadModels() 2");
     mModelInstanceMap[id] = nullptr;
   }
   const size_t numModels = mModelPathMap.size();
+  ET_LOG(Info, "cmodi LoadModels() 3");
   if (!AllowModelsCoexist()) {
+    ET_LOG(Info, "cmodi LoadModels() 4");
     SelectModel(mDefaultModelId);
+    ET_LOG(Info, "cmodi LoadModels() 5");
     ET_CHECK_MSG(
         GetModelInstance() == nullptr,
         "Model is already initialized before calling LoadModels.");
+    ET_LOG(Info, "cmodi LoadModels() 6");
     void* instance = CreateModelInstance(mModelPathMap[mDefaultModelId]);
+    ET_LOG(Info, "cmodi LoadModels() 7");
     SetModelInstance(instance);
+    ET_LOG(Info, "cmodi LoadModels() 8");
     ET_LOG(
         Debug,
         "LoadModels(): Loaded single exclusive model (Total=%zu)",
@@ -42,14 +50,20 @@ void MultiModelLoader<IdType>::LoadModels() {
     return;
   }
   for (const auto& [id, modelPath] : mModelPathMap) {
+    ET_LOG(Info, "cmodi LoadModels() 9");
     SelectModel(id);
+    ET_LOG(Info, "cmodi LoadModels() 10");
     ET_CHECK_MSG(
         GetModelInstance() == nullptr,
         "Model is already initialized before calling LoadModels.");
+    ET_LOG(Info, "cmodi LoadModels() 11");
     void* instance = CreateModelInstance(modelPath);
+    ET_LOG(Info, "cmodi LoadModels() 12");
     SetModelInstance(instance);
+    ET_LOG(Info, "cmodi LoadModels() 13");
   }
   SelectModel(mDefaultModelId); // Select the default instance
+  ET_LOG(Info, "cmodi LoadModels() 14");
   ET_LOG(Debug, "LoadModels(): Loaded multiple models (Total=%zu)", numModels);
 }
 

@@ -83,9 +83,10 @@ MTKLlamaRunner::MTKLlamaRunner(
   const float temperature)
   : modeloptions_(get_model_options()),
     modelpaths_(get_model_paths()) {
+  runtime_init();
   ET_LOG(
         Info,
-        "Creating MTK Llama runner. Current it will self-load .pte, .bin, and .so files.");
+        "Creating MTK Llama runner. Current it will self-load .pte, .bin, and .so files. Initiated runtime_init().");
 }
 
 Error MTKLlamaRunner::load() {
