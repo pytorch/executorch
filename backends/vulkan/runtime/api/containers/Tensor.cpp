@@ -436,17 +436,6 @@ size_t vTensor::staging_buffer_numel() const {
   return padded_numel_;
 }
 
-VmaAllocationCreateInfo vTensor::get_allocation_create_info() const {
-  switch (storage_type()) {
-    case utils::kBuffer:
-      return storage_.buffer_.allocation_create_info();
-    case utils::kTexture2D:
-    case utils::kTexture3D:
-      return storage_.image_.allocation_create_info();
-  }
-  return {};
-}
-
 VkMemoryRequirements vTensor::get_memory_requirements() const {
   switch (storage_type()) {
     case utils::kBuffer:

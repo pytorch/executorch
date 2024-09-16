@@ -114,13 +114,7 @@ class VulkanBuffer final {
     return memory_.allocation;
   }
 
-  inline VmaAllocationInfo allocation_info() const {
-    return memory_.allocation_info;
-  }
-
-  inline VmaAllocationCreateInfo allocation_create_info() const {
-    return VmaAllocationCreateInfo(memory_.create_info);
-  }
+  VmaAllocationInfo allocation_info() const;
 
   inline VkBuffer handle() const {
     return handle_;
