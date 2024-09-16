@@ -13,7 +13,7 @@ Using the ExecuTorch Developer Tools to Profile a Model
 """
 
 ######################################################################
-# The `ExecuTorch Developer Tools <../sdk-overview.html>`__ is a set of tools designed to
+# The `ExecuTorch Developer Tools <../devtools-overview.html>`__ is a set of tools designed to
 # provide users with the ability to profile, debug, and visualize ExecuTorch
 # models.
 #
@@ -294,7 +294,7 @@ print(inspector.find_total_for_module("L__self___conv2"))
 # Links Mentioned
 # ^^^^^^^^^^^^^^^
 #
-# - `ExecuTorch Developer Tools Overview <../sdk-overview.html>`__
+# - `ExecuTorch Developer Tools Overview <../devtools-overview.html>`__
 # - `ETRecord <../sdk-etrecord.html>`__
 # - `ETDump <../sdk-etdump.html>`__
 # - `Inspector <../sdk-inspector.html>`__
