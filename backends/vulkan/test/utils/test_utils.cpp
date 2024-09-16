@@ -314,6 +314,44 @@ void record_reference_matmul(
       mat2.strides_ubo());
 }
 
+void record_matmul_texture3d(
+    api::Context* context,
+    api::vTensor& out,
+    api::vTensor& mat1,
+    api::vTensor& mat2) {
+  std::string kernel_name = "matmul_naive";
+  kernel_name.reserve(kShaderNameReserve);
+  add_storage_type_suffix(kernel_name, out.storage_type());
+  add_dtype_suffix(kernel_name, out.dtype());
+
+  utils::uvec3 global_wg_size = out.logical_extents();
+
+  vkapi::PipelineBarrier pipeline_barrier{};
+  api::context()->submit_compute_job(
+      VK_KERNEL_FROM_STR(kernel_name),
+      pipeline_barrier,
+      global_wg_size,
+      {8, 8, 1},
+      {out.packed_dim_whcn_idx(),
+       mat1.packed_dim_whcn_idx(),
+       mat2.packed_dim_whcn_idx()},
+      VK_NULL_HANDLE,
+      0,
+      out.image(
+          pipeline_barrier,
+          vkapi::PipelineStage::COMPUTE,
+          vkapi::MemoryAccessType::WRITE),
+      mat1.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
+      mat2.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
+      out.sizes_ubo(),
+      out.logical_limits_ubo(),
+      out.axis_map_ubo(),
+      mat1.sizes_ubo(),
+      mat1.axis_map_ubo(),
+      mat2.sizes_ubo(),
+      mat2.axis_map_ubo());
+}
+
 //
 // Input & Output Utilities
 //
