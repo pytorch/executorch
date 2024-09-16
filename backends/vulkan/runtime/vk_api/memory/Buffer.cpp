@@ -58,8 +58,6 @@ VulkanBuffer::VulkanBuffer(
       nullptr, // pQueueFamilyIndices
   };
 
-  memory_.create_info = allocation_create_info;
-
   if (allocate_memory) {
     VK_CHECK(vmaCreateBuffer(
         allocator_,
@@ -67,7 +65,7 @@ VulkanBuffer::VulkanBuffer(
         &allocation_create_info,
         &handle_,
         &(memory_.allocation),
-        &(memory_.allocation_info)));
+        nullptr));
   } else {
     VmaAllocatorInfo allocator_info{};
     vmaGetAllocatorInfo(allocator_, &allocator_info);
@@ -135,6 +133,12 @@ VulkanBuffer::~VulkanBuffer() {
     // memory
     memory_.allocation = VK_NULL_HANDLE;
   }
+}
+
+VmaAllocationInfo VulkanBuffer::allocation_info() const {
+  VmaAllocationInfo info;
+  vmaGetAllocationInfo(allocator_, memory_.allocation, &info);
+  return info;
 }
 
 VkMemoryRequirements VulkanBuffer::get_memory_requirements() const {

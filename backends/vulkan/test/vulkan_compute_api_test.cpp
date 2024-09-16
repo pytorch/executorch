@@ -1066,11 +1066,11 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
   // can alert ourselves to any significant changes in the sizes of these
   // objects by checking the `sizeof()` the class against some loose thresholds.
 
-  // Current known size on 64 bit system: 2064 B
-  EXPECT_TRUE(sizeof(vTensor) < 2200);
-  // Current known size on 64 bit system: 2080 B
-  EXPECT_TRUE(sizeof(Value) < 2200);
-  // Current known size on 64 bit system: 240 B
+  // Current known size on 64 bit system: 1040 B
+  EXPECT_TRUE(sizeof(vTensor) < 1200);
+  // Current known size on 64 bit system: 1056 B
+  EXPECT_TRUE(sizeof(Value) < 1200);
+  // Current known size on 64 bit system: 120 B
   EXPECT_TRUE(sizeof(StagingBuffer) < 500);
   // Current known size on 64 bit system: 384 B
   EXPECT_TRUE(sizeof(ComputeGraph) < 500);

@@ -495,8 +495,10 @@ void submit_to_gpu() {
 }
 
 vkapi::Allocation allocate_memory_for(const api::vTensor& vten) {
+  VmaAllocationCreateInfo alloc_create_info =
+      api::context()->adapter_ptr()->vma().gpuonly_resource_create_info();
   return api::context()->adapter_ptr()->vma().create_allocation(
-      vten.get_memory_requirements(), vten.get_allocation_create_info());
+      vten.get_memory_requirements(), alloc_create_info);
 }
 
 VmaTotalStatistics get_vma_stats() {
