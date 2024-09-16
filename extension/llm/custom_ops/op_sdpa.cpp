@@ -953,6 +953,82 @@ Tensor& sdpa_with_kv_cache_out(
       });
   return output;
 }
+
+Tensor& sdpa_with_attn_bias_out(
+    RuntimeContext& ctx,
+    const Tensor& q_projected,
+    const Tensor& k_projected,
+    const Tensor& v_projected,
+    const optional<Tensor>& attn_bias,
+    const double dropout_p,
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const optional<double> scale,
+    Tensor& output) {
+  (void)ctx;
+
+  ET_CHECK_MSG(q_projected.dim() == 4, "query must be a 4D tensor");
+
+  auto q_seq_len = q_projected.size(1);
+
+  // Is this true?
+  // Cant do this as is because the expectation of this kernel is
+  // that q, k, v are [B, num heads, seq length, head dim]
+  // and the cache is [B, max seq len, num heads, head dim]
+  // and q, k, v are all [B, seq length, num heads, head dim]
+
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(output, q_projected.sizes()) == Error::Ok,
+      InvalidArgument,
+      output);
+
+  // TODO(task): replace the template param selection logic
+  // with whatever apprpriately makes more sense for
+  ET_SWITCH_FLOAT_TYPES(
+      q_projected.scalar_type(), ctx, "flash_attention_with_bias", CTYPE, [&] {
+        // TODO we need to re-evaluate this for ARM CPUs
+        // And there can be many so instead of templatizing
+        // we might consider another appraoch
+        if (q_seq_len >= 768) {
+          cpu_flash_attention<CTYPE, 256, 512>(
+              output,
+              q_projected,
+              k_projected,
+              v_projected,
+              dropout_p,
+              false, // is_causal
+              attn_bias,
+              scale,
+              true, // is_with_kv_cache
+              0); // start_pos
+        } else if (q_seq_len >= 192) {
+          cpu_flash_attention<CTYPE, 64, 512>(
+              output,
+              q_projected,
+              k_projected,
+              v_projected,
+              dropout_p,
+              false, // is_causal
+              attn_bias,
+              scale,
+              true, // is_with_kv_cache
+              0); // start_pos
+        } else {
+          cpu_flash_attention<CTYPE, 32, 512>(
+              output,
+              q_projected,
+              k_projected,
+              v_projected,
+              dropout_p,
+              false, // is_causal
+              attn_bias,
+              scale,
+              true, // is_with_kv_cache
+              0); // start_pos
+        }
+      });
+  return output;
+}
 } // namespace native
 } // namespace executor
 } // namespace torch
