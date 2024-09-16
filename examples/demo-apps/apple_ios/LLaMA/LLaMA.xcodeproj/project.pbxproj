@@ -56,6 +56,7 @@
 		03D03DAB2C7823830088D6A7 /* text_decoder_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D03DA92C7823830088D6A7 /* text_decoder_runner.cpp */; };
 		03D03DAC2C7823830088D6A7 /* text_decoder_runner.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D03DAA2C7823830088D6A7 /* text_decoder_runner.h */; };
 		03DDA0FB2BD6368100D234B3 /* base64.h in Headers */ = {isa = PBXBuildFile; fileRef = 03DDA0FA2BD6368100D234B3 /* base64.h */; };
+		26A6A4282C8A3769005A761E /* ImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26A6A4272C8A3769005A761E /* ImagePicker.swift */; };
 		84DD94742C8105EB00C765A6 /* LLaMAPerfBenchmarkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84DD94732C8105EB00C765A6 /* LLaMAPerfBenchmarkApp.swift */; };
 		84DD94812C81060E00C765A6 /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD94802C81060E00C765A6 /* backend_coreml */; };
 		84DD94832C81060E00C765A6 /* backend_coreml_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD94822C81060E00C765A6 /* backend_coreml_debug */; };
@@ -162,6 +163,7 @@
 		03D03DA92C7823830088D6A7 /* text_decoder_runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = text_decoder_runner.cpp; sourceTree = "<group>"; };
 		03D03DAA2C7823830088D6A7 /* text_decoder_runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = text_decoder_runner.h; sourceTree = "<group>"; };
 		03DDA0FA2BD6368100D234B3 /* base64.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = base64.h; path = ../../../../extension/llm/tokenizer/base64.h; sourceTree = "<group>"; };
+		26A6A4272C8A3769005A761E /* ImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePicker.swift; sourceTree = "<group>"; };
 		84DD94712C8105EB00C765A6 /* LLaMAPerfBenchmark.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LLaMAPerfBenchmark.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		84DD94732C8105EB00C765A6 /* LLaMAPerfBenchmarkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLaMAPerfBenchmarkApp.swift; sourceTree = "<group>"; };
 		84DD94A72C8107AB00C765A6 /* LLaMAPerfBenchmark.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LLaMAPerfBenchmark.entitlements; sourceTree = "<group>"; };
@@ -253,6 +255,7 @@
 				0324D6862BAACB6900DEF36F /* MessageView.swift */,
 				0324D6872BAACB6900DEF36F /* ResourceManager.swift */,
 				0324D6882BAACB6900DEF36F /* ResourceMonitor.swift */,
+				26A6A4272C8A3769005A761E /* ImagePicker.swift */,
 			);
 			path = Application;
 			sourceTree = "<group>";
@@ -645,6 +648,7 @@
 				0324D6922BAACB6900DEF36F /* ResourceManager.swift in Sources */,
 				0324D68C2BAACB6900DEF36F /* ContentView.swift in Sources */,
 				0324D6902BAACB6900DEF36F /* MessageListView.swift in Sources */,
+				26A6A4282C8A3769005A761E /* ImagePicker.swift in Sources */,
 				0324D6912BAACB6900DEF36F /* MessageView.swift in Sources */,
 				0324D68B2BAACB6900DEF36F /* App.swift in Sources */,
 			);

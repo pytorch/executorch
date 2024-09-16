@@ -105,6 +105,7 @@ jobs:
           # Mapping devices to their corresponding device-pool-arn
           declare -A DEVICE_POOL_ARNS
           DEVICE_POOL_ARNS[samsung_galaxy_s22]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa"
+          DEVICE_POOL_ARNS[samsung_galaxy_s24]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/98f8788c-2e25-4a3c-8bb2-0d1e8897c0db"
 
           # Resolve device names with their corresponding ARNs
           if [[ ! $(echo "$DEVICES" | jq empty 2>/dev/null) ]]; then
@@ -139,6 +140,7 @@ jobs:
       submodules: 'true'
       timeout: 60
       upload-artifact: android-models
+      upload-artifact-to-s3: true
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         echo "::group::Setting up dev environment"
@@ -174,43 +176,10 @@ jobs:
         fi
         echo "::endgroup::"
 
-  # Upload models to S3. The artifacts are needed not only by the device farm but also TorchChat
-  upload-models:
-    needs: export-models
-    runs-on: linux.2xlarge
-    if: always()  # Continue this job regardless of previous job outcome
-    steps:
-      - name: Download the models from GitHub
-        uses: actions/download-artifact@v3
-        with:
-          # The name here needs to match the name of the upload-artifact parameter
-          name: android-models
-          path: ${{ runner.temp }}/artifacts/
-
-      - name: Verify the models
-        shell: bash
-        working-directory: ${{ runner.temp }}/artifacts/
-        run: |
-          ls -lah ./
-
-      - name: Upload the models to S3
-        uses: seemethere/upload-artifact-s3@v5
-        with:
-          s3-bucket: gha-artifacts
-          s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/artifact
-          retention-days: 1
-          if-no-files-found: ignore
-          path: ${{ runner.temp }}/artifacts/
-
   build-llm-demo:
     name: build-llm-demo
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     needs: set-parameters
-    strategy:
-      matrix:
-          delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
-      fail-fast: false
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
@@ -218,6 +187,7 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       upload-artifact: android-apps
+      upload-artifact-to-s3: true
       script: |
         set -eux
 
@@ -233,34 +203,6 @@ jobs:
         export ANDROID_ABIS="arm64-v8a"
         PYTHON_EXECUTABLE=python EXECUTORCH_BUILD_QNN=ON QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728 bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
 
-  # Upload artifacts to S3. The artifacts are needed not only by the device farm but also TorchChat
-  upload-android-apps:
-    needs: build-llm-demo
-    runs-on: linux.2xlarge
-    steps:
-      - name: Download the apps from GitHub
-        uses: actions/download-artifact@v3
-        with:
-          # The name here needs to match the name of the upload-artifact parameter
-          name: android-apps
-          path: ${{ runner.temp }}/artifacts/
-
-      - name: Verify the apps
-        shell: bash
-        working-directory: ${{ runner.temp }}/artifacts/
-        run: |
-          ls -lah ./
-
-      - name: Upload the apps to S3
-        uses: seemethere/upload-artifact-s3@v5
-        with:
-          s3-bucket: gha-artifacts
-          s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/artifact
-          retention-days: 14
-          if-no-files-found: ignore
-          path: ${{ runner.temp }}/artifacts/
-
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   benchmark-on-device:
     permissions:
@@ -269,8 +211,8 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
     needs:
       - set-parameters
-      - upload-models
-      - upload-android-apps
+      - build-llm-demo
+      - export-models
     strategy:
       matrix:
         model: ${{ fromJson(needs.set-parameters.outputs.models) }}
@@ -288,9 +230,9 @@ jobs:
       # Unlike models there are limited numbers of build flavor for apps, and the model controls whether it should build with bpe/tiktoken tokenizer.
       # It's okay to build all possible apps with all possible flavors in job "build-llm-demo". However, in this job, once a model is given, there is only
       # one app+flavor that could load and run the model.
-      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/minibench/app-debug.apk
-      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/minibench/app-debug-androidTest.apk
+      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug.apk
+      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug-androidTest.apk
       # NB: Need to set the default spec here so that it works for periodic too
       test-spec: ${{ inputs.test_spec || 'https://ossci-android.s3.amazonaws.com/executorch/android-llm-device-farm-test-spec.yml' }}
       # Uploaded to S3 from the previous job
-      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/${{ matrix.model }}_${{ matrix.delegate }}/model.zip
+      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/model.zip
