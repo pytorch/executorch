@@ -196,7 +196,7 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Developer Tools
    :hidden:
 
-   sdk-overview
+   devtools-overview
    sdk-bundled-io
    sdk-etrecord
    sdk-etdump
