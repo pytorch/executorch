@@ -147,7 +147,7 @@ class ExportedModule:
             for method in methods:
                 method_name_to_dynamic_shapes[method] = trace_dynamic_shapes
 
-        memory_planning_pass = MemoryPlanningPass("greedy")
+        memory_planning_pass = MemoryPlanningPass()
         if hasattr(eager_module, "get_memory_planning_pass"):
             memory_planning_pass = eager_module.get_memory_planning_pass()
 

@@ -156,8 +156,11 @@ def define_libs():
                     ],
                 ),
             ],
-            fbobjc_compiler_flags = [
-                "-march=armv8+bf16",
+            fbobjc_platform_compiler_flags = [
+                (
+                    ".*arm64.*",
+                    ["-march=armv8+bf16"],
+                ),
             ],
             fbobjc_exported_preprocessor_flags = [
                 "-DET_BUILD_WITH_BLAS",

@@ -329,15 +329,41 @@ TEST_F(VulkanComputeAPITest, vec_test) {
     ASSERT_TRUE(uv4[3] == 88);
   }
 
-
-  // Test setting uvec3 from ivec3
+  // Test copy from same type
   {
-    utils::uvec3 uv3 = make_temp_ivec3(4, 5, 10);
-    ASSERT_TRUE(uv3[0] == 4);
-    ASSERT_TRUE(uv3[1] == 5);
-    ASSERT_TRUE(uv3[2] == 10);
+    utils::ivec3 v{5, 6, 8};
+    utils::ivec3 v2 = v;
+
+    ASSERT_TRUE(v2[0] == 5);
+    ASSERT_TRUE(v2[1] == 6);
+    ASSERT_TRUE(v2[2] == 8);
   }
 
+  // Test copy from different type
+  {
+    utils::uvec3 v{5, 6, 8};
+    utils::ivec3 v2 = v;
+
+    ASSERT_TRUE(v2[0] == 5);
+    ASSERT_TRUE(v2[1] == 6);
+    ASSERT_TRUE(v2[2] == 8);
+  }
+
+  // Test construction from temporary vec
+  {
+    utils::uvec3 v{make_temp_ivec3(4, 5, 10)};
+    ASSERT_TRUE(v[0] == 4);
+    ASSERT_TRUE(v[1] == 5);
+    ASSERT_TRUE(v[2] == 10);
+  }
+
+  // Test initalization from temporary vec
+  {
+    utils::uvec3 v = make_temp_ivec3(4, 5, 10);
+    ASSERT_TRUE(v[0] == 4);
+    ASSERT_TRUE(v[1] == 5);
+    ASSERT_TRUE(v[2] == 10);
+  }
 }
 
 TEST_F(VulkanComputeAPITest, retrieve_custom_shader_test) {
@@ -1417,6 +1443,7 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
 TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   GraphConfig config;
   ComputeGraph graph(config);
+  size_t expected_vma_allocation_count = 0;
 
   std::vector<int64_t> size_big = {12, 64, 64};
   std::vector<int64_t> size_small = {12, 64, 64};
@@ -1435,7 +1462,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   // +2: t.sizes_ubo() for each staging shader
   // +2: t.axis_map_ubo() for each staging shader
   // +2: staging buffer for each input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 6);
+  expected_vma_allocation_count += 6;
+  EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   ValueRef c = graph.add_tensor(
       size_big,
@@ -1445,16 +1473,22 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   auto addFn = VK_GET_OP_FN("aten.add.Tensor");
   addFn(graph, {a.value, b.value, kDummyValueRef, c});
 
+  // +2: alpha UBO, broadcast UBO for arithmetic shader
+  // +1: t.sizes_ubo() for arithmetic shader output c
+  // +1: t.axis_map_ubo() for arithmetic shader output c
+  expected_vma_allocation_count += 4;
+  EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
+
   IOValueRef d = graph.add_input_tensor(
       size_small,
       vkapi::kFloat,
       /*shared_object_idx = */ 2);
 
-  // +2: alpha UBO, broadcast UBO for arithmetic shader
   // +1: t.sizes_ubo() uniform buffer for staging shader
   // +1: t.axis_map_ubo() uniform buffer for staging shader
   // +1: staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 12);
+  expected_vma_allocation_count += 3;
+  EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   ValueRef e = graph.add_tensor(
       size_big,
@@ -1464,21 +1498,26 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   auto mulFn = VK_GET_OP_FN("aten.mul.Tensor");
   mulFn(graph, {c, d.value, e});
 
+  // +2: alpha UBO, broadcast UBO for arithmetic shader
+  // +1: t.sizes_ubo() for arithmetic shader output e
+  // +1: t.axis_map_ubo() for arithmetic shader output e
+  expected_vma_allocation_count += 4;
+  EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
+
   IOValueRef out = {};
   out.value = e;
   out.staging = graph.set_output_tensor(out.value);
 
-  // +2: alpha UBO, broadcast UBO for arithmetic shader
-  // +1: t.sizes_ubo() for staging shader
-  // +1: t.axis_map_ubo() for staging shader
-  // +1 staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 17);
+  // +1: staging buffer for the output tensor
+  expected_vma_allocation_count += 1;
+  EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   graph.prepare();
   graph.encode_execute();
 
   // +3: shared memory allocations for tensors
-  EXPECT_TRUE(get_vma_allocation_count() == 20);
+  expected_vma_allocation_count += 3;
+  EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   // Run graph
 
