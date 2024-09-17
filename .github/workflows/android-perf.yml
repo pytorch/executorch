@@ -220,6 +220,8 @@ jobs:
         device: ${{ fromJson(needs.set-parameters.outputs.devices) }}
       fail-fast: false
     with:
+      # Due to scheduling a job may be pushed beyond the default 60m threshold
+      timeout: 120
       device-type: android
       runner: linux.2xlarge
       test-infra-ref: ''

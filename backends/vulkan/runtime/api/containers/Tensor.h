@@ -531,6 +531,11 @@ class vTensor final {
   void virtual_resize(const std::vector<int64_t>& new_sizes);
 
   /*
+   * Transpose the tensor in-place by updating its metadata.
+   */
+  void virtual_transpose(const int64_t dim0, const int64_t dim1);
+
+  /*
    * Discard the underlying VkImage or VkBuffer and re-allocate based on new
    * tensor sizes
    */

@@ -11,7 +11,7 @@ from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.program._program import ExecutorchProgramManager
 
-from executorch.extension.llm.custom_ops import preprocess_custom_ops  # noqa
+from executorch.extension.llm.custom_ops import op_tile_crop_aot  # noqa
 
 from torch.export import Dim, ExportedProgram
 from torchtune.models.clip.inference._transform import _CLIPImageTransform
@@ -43,6 +43,7 @@ def export_preprocess(
     max_num_tiles: int = 4,
     tile_size: int = 224,
     antialias: bool = False,
+    pad_max_tiles: bool = True,
 ) -> ExportedProgram:
 
     # Instantiate eager model.
@@ -53,6 +54,7 @@ def export_preprocess(
         max_num_tiles=max_num_tiles,
         tile_size=tile_size,
         antialias=antialias,
+        pad_max_tiles=pad_max_tiles,
     )
 
     # Replace non-exportable ops with custom ops.
