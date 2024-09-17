@@ -183,7 +183,7 @@ Result<OpFunction> get_op_function_from_registry(
     return registered_kernels[fallback_idx].op_;
   }
   ET_LOG(Error, "kernel '%s' not found.", name);
-  ET_LOG_TENSOR_META(meta_list);
+  // ET_LOG_TENSOR_META(meta_list);
   return Error::OperatorMissing;
 }
 

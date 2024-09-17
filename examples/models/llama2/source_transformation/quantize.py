@@ -72,11 +72,15 @@ def quantize(
         # Check for required args
         if group_size is None:
             raise Exception("For 8da4w quantization, group size must be specified.")
-        from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
+        from torchao.quantization.quant_api import (
+            Int8DynActInt4WeightQuantizer,
+            Int8DynActInt8WeightQuantizer,
+        )
 
         model = Int8DynActInt4WeightQuantizer(
             precision=torch_dtype, groupsize=group_size
         ).quantize(model)
+        model = Int8DynActInt8WeightQuantizer(precision=torch_dtype).quantize(model)
         if verbose:
             print("quantized model:", model)
         return model
@@ -375,7 +379,7 @@ class WeightOnlyInt8Linear(torch.nn.Module):
         self.register_buffer("scales", torch.ones(out_features, dtype=torch.bfloat16))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return F.linear(input, self.weight.to(dtype=input.dtype)) * self.scales
+        return F.linear(input, self.weight) * self.scales
         # return F.linear(input, self.weight.to(dtype=input.dtype)) * se...
 
 

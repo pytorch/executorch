@@ -202,6 +202,8 @@ class QuantParams:
                     scale_tensor.ndim == 2
                 ), "Weight scale must be 2D for per_channel_group [de]quant node, got {scale.ndim}D"
                 axis = 0  # axis is ignored for groupwise quantization
+            else:
+                scale = torch.squeeze(scale)
 
         check_or_raise(
             bool(
