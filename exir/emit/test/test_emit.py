@@ -1649,3 +1649,23 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(
             pte_data.execution_plan, model.executorch_program.execution_plan
         )
+
+    def test_mutate_input_tensor(self) -> None:
+        class MutateInputTensorModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x.add_(1)
+
+        model = to_edge(
+            export(MutateInputTensorModule(), (torch.zeros(1),))
+        ).to_executorch(
+            config=ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            )
+        )
+        executorch_model = _load_for_executorch_from_buffer(model.buffer)
+        input = torch.zeros(1)
+        executorch_model(input)
+        self.assertEqual(input, torch.ones(1))

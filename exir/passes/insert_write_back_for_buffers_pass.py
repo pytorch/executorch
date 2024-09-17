@@ -15,6 +15,7 @@ from torch.export.exported_program import (
     OutputKind,
     OutputSpec,
 )
+from torch.export.graph_signature import TensorArgument
 from torch.utils import _pytree as pytree
 
 
@@ -73,20 +74,21 @@ def insert_write_back_for_buffers_pass(
     ep: ExportedProgram,
 ) -> Tuple[torch.fx.GraphModule, ExportGraphSignature]:
     gm: torch.fx.GraphModule = ep.graph_module
-    lifted_inputs: List[Optional[str]] = [
-        (
-            in_spec.target
-            if in_spec.kind
-            in (
-                InputKind.BUFFER,
-                InputKind.CONSTANT_TENSOR,
-                InputKind.PARAMETER,
-                InputKind.CUSTOM_OBJ,
-            )
-            else None
-        )
-        for in_spec in ep.graph_signature.input_specs
-    ]
+    lifted_inputs: List[Optional[str]] = []
+    for in_spec in ep.graph_signature.input_specs:
+        if in_spec.kind in (
+            InputKind.BUFFER,
+            InputKind.CONSTANT_TENSOR,
+            InputKind.PARAMETER,
+            InputKind.CUSTOM_OBJ,
+        ):
+            lifted_inputs.append(in_spec.target)
+        elif in_spec.kind is InputKind.USER_INPUT and isinstance(
+            in_spec.arg, TensorArgument
+        ):
+            lifted_inputs.append(in_spec.arg.name)
+        else:
+            lifted_inputs.append(None)
 
     input_name_to_node: Dict[str, torch.fx.Node] = {}
 
@@ -101,7 +103,8 @@ def insert_write_back_for_buffers_pass(
     mutated_outputs: List[Optional[str]] = [
         (
             out_spec.target
-            if out_spec.kind in (OutputKind.BUFFER_MUTATION,)
+            if out_spec.kind
+            in (OutputKind.BUFFER_MUTATION, OutputKind.USER_INPUT_MUTATION)
             and out_spec.arg.name
             not in {
                 val.name for val in input_name_to_node.values()
@@ -121,7 +124,10 @@ def insert_write_back_for_buffers_pass(
     new_output_specs: List[OutputSpec] = []
     i = 0
     for output_spec in ep.graph_signature.output_specs:
-        if output_spec.kind == OutputKind.BUFFER_MUTATION:
+        if output_spec.kind in (
+            OutputKind.BUFFER_MUTATION,
+            OutputKind.USER_INPUT_MUTATION,
+        ):
             output_spec.arg.name = buffer_output_nodes[i].name
             i += 1
         new_output_specs.append(output_spec)
