@@ -10,18 +10,19 @@ import argparse
 from typing import Optional, Union
 
 import torch
-from executorch.examples.models.llama2.evaluate import EagerEvalWrapper, evaluate_model
 from executorch.examples.models.llama2.export_llama_lib import (
     get_quantizer_and_quant_params,
 )
 from executorch.examples.models.llama2.tokenizer.tiktoken import Tokenizer as Tiktoken
 
-from executorch.extension.llm.export import LLMEdgeManager
+from executorch.extension.llm.export.builder import LLMEdgeManager
 from executorch.extension.llm.tokenizer.tokenizer import (
     Tokenizer as SentencePieceTokenizer,
 )
 from executorch.extension.llm.tokenizer.utils import get_tokenizer
 from lm_eval.api.model import LM
+
+from .evaluate.eager_eval import EagerEvalWrapper, evaluate_model
 
 from .export_llama_lib import (
     _prepare_for_llama_export,
