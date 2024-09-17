@@ -459,10 +459,10 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             verbose=args.verbose,
             max_seq_len=args.max_seq_length,
             metadata_str=args.metadata,
+            dtype_override=dtype_override,
             args=args,
         )
         .set_output_dir(output_dir_path)
-        .to_dtype(dtype_override)
         .source_transform(_get_source_transforms(modelname, dtype_override, args))
     )
 
@@ -683,6 +683,7 @@ def _load_llama_model(
     verbose: bool = False,
     max_seq_len: int = 128,
     metadata_str: Optional[str] = None,
+    dtype_override: Optional[DType] = None,
     args,
 ) -> "LLMEdgeManager":
     """
@@ -711,23 +712,32 @@ def _load_llama_model(
         enable_dynamic_shape=enable_dynamic_shape,
         args=args,
     )
-    state_dict = model.state_dict()
-    dtype = state_dict[next(iter(state_dict))].dtype
-    assert dtype in [
-        torch.bfloat16,
-        torch.float16,
-        torch.float32,
-    ], f"Only support bfloat16, fp16 or fp32 got {dtype}"
-    logging.info(f"Loaded model with dtype={dtype}")
-
-    if dtype == torch.bfloat16:
-        dtype = DType.bf16
-    elif dtype == torch.float16:
-        dtype = DType.fp16
-    elif dtype == torch.float32:
-        dtype = DType.fp32
+    if dtype_override:
+        assert isinstance(
+            dtype_override, DType
+        ), "Override dtype needs to be of type <DType>"
+        torch_dtype = dtype_override.to_torch_dtype()
+        logging.info(f"model.to {torch_dtype}")
+        model = model.to(dtype=torch_dtype)
+        dtype = dtype_override
     else:
-        raise ValueError(f"Unsupported dtype {dtype}")
+        state_dict = model.state_dict()
+        dtype = state_dict[next(iter(state_dict))].dtype
+        assert dtype in [
+            torch.bfloat16,
+            torch.float16,
+            torch.float32,
+        ], f"Only support bfloat16, fp16 or fp32 got {dtype}"
+        logging.info(f"Loaded model with dtype={dtype}")
+
+        if dtype == torch.bfloat16:
+            dtype = DType.bf16
+        elif dtype == torch.float16:
+            dtype = DType.fp16
+        elif dtype == torch.float32:
+            dtype = DType.fp32
+        else:
+            raise ValueError(f"Unsupported dtype {dtype}")
 
     return LLMEdgeManager(
         model=model,
@@ -772,7 +782,7 @@ def _get_source_transforms(  # noqa
         # transform. However, we will still need to apply
         # transformations that change the model structure to
         # match the checkpoint format.
-        # transform_for_spinquant() will apply these transformations
+        # transform_linear_for_spinquant() will apply these transformations
         # later in model.py file.
         elif args.use_spin_quant == "cuda":
             from .source_transformation.spin_quant import (
@@ -787,7 +797,9 @@ def _get_source_transforms(  # noqa
 
             transforms.append(inject_fast_hadamard_transform_native_for_spin_quant)
 
-    if args.embedding_quantize:
+    # For SpinQuant, the checkpoints are already quantized aka the embedding have
+    # corresponding scales value, So that means, we don't need to apply quantization transform.
+    if args.embedding_quantize and args.use_spin_quant is None:
         modelname = f"{modelname}_e"
         transforms.append(get_quant_embedding_transform(args))
 

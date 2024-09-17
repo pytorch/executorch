@@ -114,22 +114,6 @@ class LLMEdgeManager:
         self.output_dir = output_dir
         return self
 
-    def to_dtype(self, dtype_override: Optional[DType]) -> "LLMEdgeManager":
-        """
-        Convert the model to the specified dtype.
-        Args:
-            dtype_override (Optional[DType]): Override the dtype of the model.
-        """
-        assert not dtype_override or isinstance(
-            dtype_override, DType
-        ), "Override dtype needs to be of type <DType>"
-        if dtype_override is not None and dtype_override != self.dtype:
-            torch_dtype = dtype_override.to_torch_dtype()
-            logging.info(f"model.to {torch_dtype}")
-            self.model = self.model.to(dtype=torch_dtype)
-            self.dtype = dtype_override
-        return self
-
     def source_transform(
         self, transforms: List[Callable[[torch.nn.Module], torch.nn.Module]]
     ) -> "LLMEdgeManager":

@@ -192,7 +192,7 @@ the checkpoint format to avoid generating faulty models.
             ), "dtype_override must be specified"
             from .source_transformation.spin_quant import (
                 sanitize_checkpoint_from_spinquant,
-                transform_for_spinquant,
+                transform_linear_for_spinquant,
             )
 
             mapping = {
@@ -201,7 +201,7 @@ the checkpoint format to avoid generating faulty models.
                 "bf16": torch.bfloat16,
             }
 
-            self.model_ = transform_for_spinquant(
+            self.model_ = transform_linear_for_spinquant(
                 self.model_,
                 checkpoint,
                 self.args.group_size,
@@ -209,9 +209,37 @@ the checkpoint format to avoid generating faulty models.
                 mapping[self.args.dtype_override],
             )
 
+            embedding_bit_width, embedding_group_size = None, None
+            if hasattr(self.args, "embedding_quantize"):
+                embedding_bit_width, embedding_group_size = (
+                    self.args.embedding_quantize.split(",")
+                )
+                from .source_transformation.spin_quant import (
+                    transform_embedding_for_spinquant,
+                )
+
+                if (
+                    embedding_group_size == "none"
+                    or embedding_group_size == "None"
+                    or embedding_group_size == "0"
+                ):
+                    embedding_group_size = None
+                else:
+                    embedding_group_size = int(embedding_group_size)
+
+                self.model_ = transform_embedding_for_spinquant(
+                    self.model_,
+                    checkpoint,
+                    mapping[self.args.dtype_override],
+                    int(embedding_bit_width),
+                    embedding_group_size,
+                )
+
             sanitize_checkpoint_from_spinquant(
-                checkpoint,
-                self.args.group_size,
+                module=self.model_,
+                checkpoint=checkpoint,
+                linear_group_size=self.args.group_size,
+                embedding_group_size=embedding_group_size,
             )
 
         # assign=True: load params/buffers by assignment instead of performing an in-place copy.
