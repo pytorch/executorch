@@ -32,7 +32,6 @@ The `MemoryPlanningPass` exposes the option to not memory plan program inputs an
 program = edge_program.to_executorch(
             exir.ExecutorchBackendConfig(
                 memory_planning_pass=MemoryPlanningPass(
-                    memory_planning_algo="greedy",
                     alloc_graph_input=False, # Inputs will not be memory planned, the data_ptr for input tensors after model load will be nullptr
                     alloc_graph_output=True, # Outputs will be memory planned, the data_ptr for input tensors after model load will be in the `planned_memory`.
                 )
@@ -77,7 +76,7 @@ Then later when lowering to ExecuTorch you can use your custom plan in the follo
 program = edge_program.to_executorch(
             exir.ExecutorchBackendConfig(
                 memory_planning_pass=CustomPoolMemoryPlanningPass(
-                    memory_planning_algo="greedy",
+                    memory_planning_algo=greedy,
                 )
             )
         )

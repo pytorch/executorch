@@ -1116,7 +1116,7 @@ backend-specific memory planning pass if it exists. More information on
 writing a custom memory planning pass can be found
 `here <../compiler-memory-planning.html>`__
 
-.. GENERATED FROM PYTHON SOURCE LINES 519-537
+.. GENERATED FROM PYTHON SOURCE LINES 519-535
 
 .. code-block:: default
 
@@ -1127,9 +1127,7 @@ writing a custom memory planning pass can be found
     executorch_program: ExecutorchProgramManager = edge_program.to_executorch(
         ExecutorchBackendConfig(
             passes=[],  # User-defined passes
-            memory_planning_pass=MemoryPlanningPass(
-                "greedy"
-            ),  # Default memory planning pass
+            memory_planning_pass=MemoryPlanningPass(),  # Default memory planning pass
         )
     )
 
@@ -1188,7 +1186,7 @@ writing a custom memory planning pass can be found
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 538-554
+.. GENERATED FROM PYTHON SOURCE LINES 536-552
 
 Notice that in the graph we now see operators like ``torch.ops.aten.sub.out``
 and ``torch.ops.aten.div.out`` rather than ``torch.ops.aten.sub.Tensor`` and
@@ -1207,7 +1205,7 @@ We also insert ``alloc`` nodes into the graph containing calls to a special
 needed to allocate each tensor output by the out-variant operator.
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 556-563
+.. GENERATED FROM PYTHON SOURCE LINES 554-561
 
 Saving to a File
 ----------------
@@ -1217,7 +1215,7 @@ to be run.
 
 Here is an example for an entire end-to-end workflow:
 
-.. GENERATED FROM PYTHON SOURCE LINES 563-595
+.. GENERATED FROM PYTHON SOURCE LINES 561-593
 
 .. code-block:: default
 
@@ -1260,7 +1258,7 @@ Here is an example for an entire end-to-end workflow:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 596-611
+.. GENERATED FROM PYTHON SOURCE LINES 594-609
 
 Conclusion
 ----------
@@ -1281,7 +1279,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.488 seconds)
+   **Total running time of the script:** (0 minutes 1.568 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
