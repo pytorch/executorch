@@ -184,11 +184,18 @@ function(extract_sources sources_file)
       set(executorch_root ${CMAKE_CURRENT_SOURCE_DIR})
     endif()
 
+    if(ANDROID_ABI)
+      if("${ANDROID_ABI}" STREQUAL "arm64-v8a")
+        set(target_platforms_arg "--target-platforms=shim//:android-arm64")
+      else()
+        message(FATAL_ERROR "Unsupported ANDROID_ABI setting ${ANDROID_ABI}. Please add it here!")
+      endif()
+    endif()
     execute_process(
       COMMAND
         ${PYTHON_EXECUTABLE} ${executorch_root}/build/extract_sources.py
         --config=${executorch_root}/build/cmake_deps.toml --out=${sources_file}
-        --buck2=${BUCK2}
+        --buck2=${BUCK2} ${target_platforms_arg}
       OUTPUT_VARIABLE gen_srcs_output
       ERROR_VARIABLE gen_srcs_error
       RESULT_VARIABLE gen_srcs_exit_code
