@@ -25,7 +25,7 @@ concurrency:
 jobs:
   build-llm-demo:
     name: build-llm-demo
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.5
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
@@ -56,7 +56,7 @@ jobs:
       API_LEVEL: 34
     steps:
       - name: Setup SSH (Click me for login details)
-        uses: pytorch/test-infra/.github/actions/setup-ssh@main
+        uses: pytorch/test-infra/.github/actions/setup-ssh@release/2.5
         with:
           github-secret: ${{ secrets.GITHUB_TOKEN }}
           instructions: |
@@ -67,7 +67,7 @@ jobs:
           submodules: false
 
       - name: Setup conda
-        uses: pytorch/test-infra/.github/actions/setup-miniconda@main
+        uses: pytorch/test-infra/.github/actions/setup-miniconda@release/2.5
         with:
           python-version: '3.10'
 
