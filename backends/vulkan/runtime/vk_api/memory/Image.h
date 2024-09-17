@@ -169,10 +169,6 @@ class VulkanImage final {
     return memory_.allocation;
   }
 
-  inline VmaAllocationCreateInfo allocation_create_info() const {
-    return VmaAllocationCreateInfo(memory_.create_info);
-  }
-
   inline VkFormat format() const {
     return image_properties_.image_format;
   }

@@ -46,9 +46,12 @@ def define_common_targets():
         runtime.cxx_library(
             name = "custom_ops_aot_lib" + mkl_dep,
             srcs = [
-                "op_sdpa_aot.cpp",
                 "op_fast_hadamard_transform_aten.cpp",
+                "op_sdpa_aot.cpp",
+                "op_tile_crop.cpp",
+                "op_tile_crop_aot.cpp",
             ],
+            headers = ["op_tile_crop.h"],
             compiler_flags = ["-Wno-global-constructors"],
             visibility = [
                 "//executorch/...",
