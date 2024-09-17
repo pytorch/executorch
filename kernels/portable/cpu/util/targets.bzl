@@ -249,5 +249,9 @@ def define_common_targets():
                 "//executorch/runtime/core/exec_aten/util:tensor_util{}".format(suffix),
             ],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
-            visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
+            visibility = [
+                "//executorch/extension/llm/custom_ops/...",
+                "//executorch/kernels/portable/cpu/...",
+                "//executorch/kernels/quantized/...",
+            ],
         )

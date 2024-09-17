@@ -16,7 +16,7 @@ namespace torch {
 namespace executor {
 
 namespace native {
-
+namespace {
 Tensor& sdpa_with_kv_cache_out_no_context(
     const Tensor& q_projected,
     const Tensor& k_projected,
@@ -81,12 +81,12 @@ at::Tensor sdpa_with_kv_cache_aten(
    output);
   return output;
 }
-
+} // namespace
 } // namespace native
 } // namespace executor
 } // namespace torch
 
-TORCH_LIBRARY(llama, m) {
+TORCH_LIBRARY_FRAGMENT(llama, m) {
   m.def(
       "sdpa_with_kv_cache(Tensor query, Tensor key, Tensor value, Tensor(a!) key_cache, "
       "Tensor(b!) value_cache, SymInt start_pos, SymInt seq_len, Tensor? attn_mask=None, "
