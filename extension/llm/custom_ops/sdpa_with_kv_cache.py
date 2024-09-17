@@ -20,6 +20,8 @@ from torch.library import impl
 try:
     op = torch.ops.llama.sdpa_with_kv_cache.default
     assert op is not None
+    op2 = torch.ops.llama.fast_hadamard_transform.default
+    assert op2 is not None
 except:
     libs = list(Path(__file__).parent.resolve().glob("libcustom_ops_aot_lib.*"))
     assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
@@ -27,6 +29,8 @@ except:
     torch.ops.load_library(libs[0])
     op = torch.ops.llama.sdpa_with_kv_cache.default
     assert op is not None
+    op2 = torch.ops.llama.fast_hadamard_transform.default
+    assert op2 is not None
 
 custom_ops_lib = torch.library.Library("llama", "IMPL")
 
@@ -126,3 +130,11 @@ def sdpa_with_kv_cache_meta(
     )
 
     return torch.empty_like(query)
+
+
+@impl(custom_ops_lib, "fast_hadamard_transform", "Meta")
+def fast_hadamard_transform_meta(mat):
+    # assert(mat.strides[-1] == 1, "input matrix must be contiguous in the last dimension!")
+    # assert(mat.shape[-1] == 128 or mat.shape[-1] == 14336, "unexpected input size for llama3 demo!")
+    # assert(mat.is_contiguous(), "input matrix must be contiguous currently!")
+    return torch.empty_like(mat)
