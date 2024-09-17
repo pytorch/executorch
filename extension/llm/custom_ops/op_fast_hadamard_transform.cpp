@@ -34,6 +34,18 @@ Tensor& fast_hadamard_transform_out(
     return out;
   }
 
+  ET_KERNEL_CHECK(
+      ctx,
+      is_contiguous_dim_order(mat.dim_order().data(), mat.dim()),
+      InvalidArgument,
+      out);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      is_contiguous_dim_order(out.dim_order().data(), out.dim()),
+      InvalidArgument,
+      out);
+
   ET_KERNEL_CHECK_MSG(
       ctx,
       mat.strides().back() == 1,
