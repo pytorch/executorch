@@ -300,26 +300,44 @@ TEST_F(VulkanComputeAPITest, virtual_transpose_test) {
   }
 }
 
-TEST_F(VulkanComputeAPITest, vec_test) {
-  utils::vec3 v3({1, 2, 3});
-  ASSERT_TRUE(v3[0] == 1);
-  ASSERT_TRUE(v3[1] == 2);
-  ASSERT_TRUE(v3[2] == 3);
-  v3 = {4, 5, 6};
-  ASSERT_TRUE(v3[0] == 4);
-  ASSERT_TRUE(v3[1] == 5);
-  ASSERT_TRUE(v3[2] == 6);
+utils::ivec3 make_temp_ivec3(int x, int y, int z) {
+  return utils::ivec3{x, y, z};
+}
 
-  utils::uvec4 uv4({4, 3, 2, 1});
-  ASSERT_TRUE(uv4[0] == 4);
-  ASSERT_TRUE(uv4[1] == 3);
-  ASSERT_TRUE(uv4[2] == 2);
-  ASSERT_TRUE(uv4[3] == 1);
-  uv4 = {11, 13, 12, 88};
-  ASSERT_TRUE(uv4[0] == 11);
-  ASSERT_TRUE(uv4[1] == 13);
-  ASSERT_TRUE(uv4[2] == 12);
-  ASSERT_TRUE(uv4[3] == 88);
+TEST_F(VulkanComputeAPITest, vec_test) {
+  {
+    utils::vec3 v3({1, 2, 3});
+    ASSERT_TRUE(v3[0] == 1);
+    ASSERT_TRUE(v3[1] == 2);
+    ASSERT_TRUE(v3[2] == 3);
+    v3 = {4, 5, 6};
+    ASSERT_TRUE(v3[0] == 4);
+    ASSERT_TRUE(v3[1] == 5);
+    ASSERT_TRUE(v3[2] == 6);
+  }
+
+  {
+    utils::uvec4 uv4({4, 3, 2, 1});
+    ASSERT_TRUE(uv4[0] == 4);
+    ASSERT_TRUE(uv4[1] == 3);
+    ASSERT_TRUE(uv4[2] == 2);
+    ASSERT_TRUE(uv4[3] == 1);
+    uv4 = {11, 13, 12, 88};
+    ASSERT_TRUE(uv4[0] == 11);
+    ASSERT_TRUE(uv4[1] == 13);
+    ASSERT_TRUE(uv4[2] == 12);
+    ASSERT_TRUE(uv4[3] == 88);
+  }
+
+
+  // Test setting uvec3 from ivec3
+  {
+    utils::uvec3 uv3 = make_temp_ivec3(4, 5, 10);
+    ASSERT_TRUE(uv3[0] == 4);
+    ASSERT_TRUE(uv3[1] == 5);
+    ASSERT_TRUE(uv3[2] == 10);
+  }
+
 }
 
 TEST_F(VulkanComputeAPITest, retrieve_custom_shader_test) {

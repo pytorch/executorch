@@ -247,6 +247,27 @@ struct vec final {
     VK_CHECK_COND(i >= 0 && i < N, "Index out of bounds!");
     return data[i];
   }
+
+  // Assignment operator to 
+  template <typename OtherType>
+  typename std::enable_if<!std::is_same<Type, OtherType>::value, void>::type
+  operator=(const vec<OtherType, N>& other) {
+    for (int i = 0; i < N; ++i) {
+      data[i] = safe_downcast<Type>(other[i]);
+    }
+  }
+
+  template <
+      typename OtherType,
+      typename std::enable_if<!std::is_same<Type, OtherType>::value, int>::
+          type = 0>
+  operator vec<OtherType, N>() const {
+    vec<OtherType, N> result;
+    for (int i = 0; i < N; ++i) {
+      result.data[i] = safe_downcast<Type>(data[i]);
+    }
+    return result;
+  }
 };
 
 } // namespace detail
