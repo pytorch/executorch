@@ -713,7 +713,7 @@ class TestPasses(unittest.TestCase):
         self.assertIsNotNone(new_gm_res)
         new_gm = new_gm_res.graph_module
 
-        new_gm_res = MemoryPlanningPass("greedy")(new_gm)
+        new_gm_res = MemoryPlanningPass()(new_gm)
         self.assertIsNotNone(new_gm_res)
         new_gm = new_gm_res.graph_module
 

@@ -326,7 +326,7 @@ class LoweredBackendModule(torch.nn.Module):
             verifiers=[lowered_exported_program.verifier],
         )
         if memory_planning is None:
-            memory_planning = MemoryPlanningPass("greedy")
+            memory_planning = MemoryPlanningPass()
         exported_program = _transform(exported_program, SpecPropPass(), memory_planning)
         emitted_program = emit_program(
             exported_program, emit_stacktrace=emit_stacktrace
