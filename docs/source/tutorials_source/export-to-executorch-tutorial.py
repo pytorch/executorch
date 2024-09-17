@@ -523,9 +523,7 @@ from executorch.exir.passes import MemoryPlanningPass
 executorch_program: ExecutorchProgramManager = edge_program.to_executorch(
     ExecutorchBackendConfig(
         passes=[],  # User-defined passes
-        memory_planning_pass=MemoryPlanningPass(
-            "greedy"
-        ),  # Default memory planning pass
+        memory_planning_pass=MemoryPlanningPass(),  # Default memory planning pass
     )
 )
 

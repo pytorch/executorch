@@ -285,7 +285,6 @@ def build_executorch_binary(
         # Therefore, won't want to pre-allocate
         # by memory manager in runtime.
         memory_planning_pass=MemoryPlanningPass(
-            memory_planning_algo="greedy",
             alloc_graph_input=not shared_buffer,
             alloc_graph_output=not shared_buffer,
         ),
