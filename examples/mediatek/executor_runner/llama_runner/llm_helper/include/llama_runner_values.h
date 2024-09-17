@@ -21,7 +21,7 @@ namespace torch::executor {
 
   // Paths
   const std::string TOKENIZER_PATH="/data/local/tmp/et-mtk/llama3/tokenizer.model";
-  const std::string TOKEN_EMBEDDING_PATH="/data/local/tmp/et-mtk/llama3/embedding_llama3_8b_instruct_fp32.bin";
+  const std::string TOKEN_EMBEDDING_PATH="/data/local/tmp/et-mtk/llama3/embedding_llama3-8b-instruct_fp32.bin";
 
   // Comma-Separated Paths
   const std::string PROMPT_MODEL_PATHS="/data/local/tmp/et-mtk/llama3/llama3-8B-instruct_A16W4_4_chunks_128t512c_0.pte,/data/local/tmp/et-mtk/llama3/llama3-8B-instruct_A16W4_4_chunks_128t512c_1.pte,/data/local/tmp/et-mtk/llama3/llama3-8B-instruct_A16W4_4_chunks_128t512c_2.pte,/data/local/tmp/et-mtk/llama3/llama3-8B-instruct_A16W4_4_chunks_128t512c_3.pte,";

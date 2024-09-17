@@ -36,6 +36,14 @@
             android:name="libcdsprpc.so"
             android:required="false" />
 
+        <uses-native-library
+            android:name="libneuronusdk_adapter.mtk.so"
+            android:required="false" />
+
+        <uses-native-library
+            android:name="libapuwareutils_v2.mtk.so"
+            android:required="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
