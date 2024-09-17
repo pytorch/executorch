@@ -148,8 +148,15 @@ models = {
 }
 
 targets = [
-    "ethos-u85-128",
+    "ethos-u55-32",
+    "ethos-u55-64",
     "ethos-u55-128",
+    "ethos-u55-256",
+    "ethos-u85-128",
+    "ethos-u85-256",
+    "ethos-u85-512",
+    "ethos-u85-1024",
+    "ethos-u85-2048",
     "TOSA",
 ]
 
@@ -160,11 +167,11 @@ def get_compile_spec(target: str, intermediates: bool) -> ArmCompileSpecBuilder:
         spec_builder = (
             ArmCompileSpecBuilder().tosa_compile_spec().set_permute_memory_format(True)
         )
-    elif target == "ethos-u55-128":
+    elif "ethos-u55" in target:
         spec_builder = (
             ArmCompileSpecBuilder()
             .ethosu_compile_spec(
-                "ethos-u55-128",
+                target,
                 system_config="Ethos_U55_High_End_Embedded",
                 memory_mode="Shared_Sram",
                 extra_flags="--debug-force-regor --output-format=raw",
@@ -172,11 +179,11 @@ def get_compile_spec(target: str, intermediates: bool) -> ArmCompileSpecBuilder:
             .set_permute_memory_format(args.model_name in MODEL_NAME_TO_MODEL.keys())
             .set_quantize_io(True)
         )
-    elif target == "ethos-u85-128":
+    elif "ethos-u85" in target:
         spec_builder = (
             ArmCompileSpecBuilder()
             .ethosu_compile_spec(
-                "ethos-u85-128",
+                target,
                 system_config="Ethos_U85_SYS_DRAM_Mid",
                 memory_mode="Shared_Sram",
                 extra_flags="--output-format=raw",
@@ -323,7 +330,9 @@ if __name__ == "__main__":
 
     model_name = os.path.basename(os.path.splitext(args.model_name)[0])
     output_name = f"{model_name}" + (
-        f"_arm_delegate_{args.target}" if args.delegate is True else ""
+        f"_arm_delegate_{args.target}"
+        if args.delegate is True
+        else f"_arm_{args.target}"
     )
 
     if args.output is not None:
