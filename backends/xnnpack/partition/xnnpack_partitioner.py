@@ -117,3 +117,13 @@ class XnnpackFloatingPointPartitioner(XnnpackPartitioner):
 class XnnpackQuantizedPartitioner(XnnpackPartitioner):
     def __init__(self):
         super().__init__(config_precisions=ConfigPrecisionType.STATIC_QUANT)
+
+
+class XnnpackLinearOnlyPartitioner(XnnpackPartitioner):
+    def __init__(self):
+        from executorch.backends.xnnpack.partition.config.gemm_configs import (
+            AddmmConfig,
+            LinearConfig,
+        )
+
+        super().__init__(configs=[AddmmConfig, LinearConfig], per_op_mode=True)

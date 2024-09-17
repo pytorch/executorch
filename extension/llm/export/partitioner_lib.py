@@ -19,6 +19,14 @@ def get_xnnpack_partitioner():
     return XnnpackDynamicallyQuantizedPartitioner()
 
 
+def get_xnnpack_partitioner_fp32_linear():
+    from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+        XnnpackLinearOnlyPartitioner,
+    )
+
+    return XnnpackLinearOnlyPartitioner()
+
+
 def get_vulkan_partitioner(
     dtype_override: Optional[str] = None, quantization_mode: Optional[str] = None
 ):

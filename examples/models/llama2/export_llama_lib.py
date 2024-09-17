@@ -34,6 +34,7 @@ from executorch.extension.llm.export.partitioner_lib import (
     get_qnn_partitioner,
     get_vulkan_partitioner,
     get_xnnpack_partitioner,
+    get_xnnpack_partitioner_fp32_linear,
 )
 
 from executorch.extension.llm.export.quantizer_lib import (
@@ -523,6 +524,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
     if args.xnnpack:
         partitioners.append(get_xnnpack_partitioner())
+        partitioners.append(get_xnnpack_partitioner_fp32_linear())
         modelname = f"xnnpack_{modelname}"
 
     if args.vulkan:
