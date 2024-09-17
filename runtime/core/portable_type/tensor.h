@@ -85,6 +85,10 @@ class Tensor {
     return impl_->scalar_type();
   }
 
+  inline ScalarType dtype() const {
+    return scalar_type();
+  }
+
   /// Returns the size in bytes of one element of the tensor.
   ssize_t element_size() const {
     return impl_->element_size();
