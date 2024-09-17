@@ -114,12 +114,6 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
         "hardshrink");                                                   \
   }
 
-#define DEFINE_HARDSWISH_FN(op_name)                                     \
-  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
-    return add_unary_op_node(                                            \
-        graph, args[0], kDummyFloat, kDummyFloat, args[1], #op_name);    \
-  }
-
 void gelu(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // args[1] is the `approximate` string
   // https://fburl.com/code/9omngmyo
@@ -140,7 +134,8 @@ DEFINE_CLAMP_FN(clamp);
 DEFINE_CLAMP_FN(hardtanh);
 DEFINE_RELU_FN(relu);
 DEFINE_HARDSHRINK_FN(hardshrink);
-DEFINE_HARDSWISH_FN(hardswish);
+DEFINE_ACTIVATION_FN(hardswish);
+DEFINE_ACTIVATION_FN(hardsigmoid);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
@@ -157,6 +152,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.tanh.default, tanh);
   VK_REGISTER_OP(aten.hardshrink.default, hardshrink);
   VK_REGISTER_OP(aten.hardswish.default, hardswish);
+  VK_REGISTER_OP(aten.hardsigmoid.default, hardsigmoid);
 }
 
 } // namespace vkcompute
