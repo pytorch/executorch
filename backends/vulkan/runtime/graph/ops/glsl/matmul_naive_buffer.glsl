@@ -42,9 +42,9 @@ void main() {
     return;
   }
 
-  int mat1_id = to_buffer_id(
+  int mat1_id = tidx_to_bufi(
       ivec4(0, out_idx.y, out_idx.z, out_idx.w), mat1_strides);
-  int mat2_id = to_buffer_id(
+  int mat2_id = tidx_to_bufi(
       ivec4(out_idx.x, 0, out_idx.z, out_idx.w), mat2_strides);
 
   T sum = T(0.0);
@@ -55,6 +55,6 @@ void main() {
     mat2_id += mat2_strides.y;
   }
 
-  const int out_id = to_buffer_id(out_idx, out_strides);
+  const int out_id = tidx_to_bufi(out_idx, out_strides);
   t_out[out_id] = T(sum);
 }

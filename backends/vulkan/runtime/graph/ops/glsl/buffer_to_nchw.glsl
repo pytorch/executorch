@@ -28,8 +28,8 @@ void main() {
     return;
   }
 
-  ivec4 t_in_idx = from_nchw_buffer_i(out_id, in_sizes);
-  const int in_id = to_buffer_id(t_in_idx, in_strides);
+  ivec4 t_in_idx = nchwi_to_tidx(out_id, in_sizes);
+  const int in_id = tidx_to_bufi(t_in_idx, in_strides);
 
   nchw_buf[out_id] = t_in[in_id];
 }

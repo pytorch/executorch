@@ -74,20 +74,20 @@ void main() {
 
       for (int kb = 0; kb < k_block; kb++) {
         scale_pos.x = kb;
-        const int scale_id = to_buffer_id(scale_pos, scales_strides);
+        const int scale_id = tidx_to_bufi(scale_pos, scales_strides);
         const float scale = float(t_scales_and_zeros[scale_id]);
 
         zero_pos.x = kb;
-        const int zero_id = to_buffer_id(zero_pos, scales_strides);
+        const int zero_id = tidx_to_bufi(zero_pos, scales_strides);
         const float zero = float(t_scales_and_zeros[zero_id]) - scale * 8.0;
 
         for(uint idx = 0; idx < group_size && k < K; idx++, k++) {
           mat1_pos.x = k;
-          const int mat1_id = to_buffer_id(mat1_pos, mat1_strides);
+          const int mat1_id = tidx_to_bufi(mat1_pos, mat1_strides);
           const float mat1_val = float(t_mat1[mat1_id]);
 
           mat2_pos.x = k / 2;
-          const int mat2_id = to_buffer_id(mat2_pos, mat2_strides);
+          const int mat2_id = tidx_to_bufi(mat2_pos, mat2_strides);
           // Bitwise op treats sign bit from int8 as a value bit instead,
           // since there is no uint8_t datatype
           uint mat2_val = (t_mat2[mat2_id] & 0xFF);
@@ -97,7 +97,7 @@ void main() {
         }
       }
 
-      const int out_id = to_buffer_id(out_pos, out_strides);
+      const int out_id = tidx_to_bufi(out_pos, out_strides);
       t_out[out_id] = FLOAT_T(rc);
 
     #else // Using texture

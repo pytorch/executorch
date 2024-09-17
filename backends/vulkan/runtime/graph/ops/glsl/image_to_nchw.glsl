@@ -31,7 +31,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 layout(constant_id = 3) const int packed_dim = C_DIM;
 
 void write_out_texel(VEC4_T texel, ivec4 tensor_idx) {
-  const ivec4 buf_indices = get_texel_nchw_buffer_ixs(
+  const ivec4 buf_indices = tidx_to_nchw_ixs(
       tensor_idx,
       sizes,
       packed_dim);
@@ -51,13 +51,13 @@ void write_out_texel(VEC4_T texel, ivec4 tensor_idx) {
 }
 
 void main() {
-  const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 tensor_idx = to_tensor_idx(pos, sizes, axis_map, packed_dim);
+  const ivec3 lpos = ivec3(gl_GlobalInvocationID);
+  const ivec4 tidx = lpos_to_tidx(lpos, sizes, axis_map, packed_dim);
 
-  if (any(greaterThanEqual(tensor_idx, sizes))) {
+  if (any(greaterThanEqual(tidx, sizes))) {
     return;
   }
 
-  const VEC4_T intex = load_texel(t_in, pos);
-  write_out_texel(intex, tensor_idx);
+  const VEC4_T intex = load_texel(t_in, lpos_to_pos(lpos, axis_map));
+  write_out_texel(intex, tidx);
 }

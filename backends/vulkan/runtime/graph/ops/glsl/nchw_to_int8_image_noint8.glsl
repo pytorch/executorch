@@ -36,7 +36,7 @@ int extend_sign(int x) {
 }
 
 ivec4 read_texel(ivec4 tensor_idx) {
-  const ivec4 buf_indices = get_texel_nchw_buffer_ixs(
+  const ivec4 buf_indices = tidx_to_nchw_ixs(
       tensor_idx, sizes, packed_dim);
 
   int shift = (1 << 8) - 1;
