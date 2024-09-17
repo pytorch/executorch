@@ -31,6 +31,12 @@ We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/l
 
 Note that groupsize less than 128 was not enabled, since such models were still too large. This is because our current efforts have focused on enabling FP32 and support for FP16 is under way. What this implies for model size is that 1) embedding table is in FP32 and 2) quantized weights scales are FP32.
 
+### SpinQuant (Optional)
+
+To improve accuracy, we can use [SpinQuant](https://github.com/facebookresearch/SpinQuant/tree/main), a post-training quantization (PTQ) technique that generates new quantized weights. In the standard PTQ process, quantization may lead to a decrease in accuracy when there are outliers. The SpinQuant method takes the original weights and produces optimized quantized weights with minimal outliers, resulting in higher accuracy. This can be achieved without any finetuning of the weights and only requires 100 iterations on a single A100 node.
+
+SpinQuant can generate quantized weights that are [compatible with ExecuTorch](https://github.com/facebookresearch/SpinQuant/tree/main?tab=readme-ov-file#3-export-to-executorch), specifically, it can be integrated with the existing optimized XNNPACK kernels (aka group-wise 4bit weight and 8bit dynamic activation). This allows developers to benefit from the higher accuracy of SpinQuant while also taking advantage of the strong performance of ExecuTorch acceleration. We are currently working on enabling SpinQuant for the Llama3.1 8B model on ExecuTorch.
+
 ## Enablement
 
 We have verified running Llama 2 7B [mobile applications](#step-6-build-mobile-apps) efficiently on select devices including the iPhone 15 Pro, iPhone 15 Pro Max, Samsung Galaxy S22 and S24, and OnePlus 12.
@@ -131,6 +137,8 @@ You can export and run the original Llama 3 8B instruct model.
     ```
 
     Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `--embedding-quantize 4,32` as shown above to further reduce the model size.
+
+3. SpinQuant [Optional]. If you want to improve accuracy, you can use [SpinQuant](https://github.com/facebookresearch/SpinQuant). Namely, (1) you can generate a new checkpoint via `31_optimize_rotation_executorch.sh` and `32_eval_ptq_executorch.sh` commands in [SpinQuant repo](https://github.com/facebookresearch/SpinQuant/tree/main?tab=readme-ov-file#3-export-to-executorch) (2) pass in an extra `--use_spin_quant native` argument in `export_llama` script above.
 
 ### Option D: Download models from Hugging Face and convert from safetensor format to state dict
 

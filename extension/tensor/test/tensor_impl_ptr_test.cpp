@@ -25,8 +25,7 @@ class TensorImplPtrTest : public ::testing::Test {
 
 TEST_F(TensorImplPtrTest, ScalarTensorCreation) {
   float scalar_data = 3.14f;
-  auto tensor_impl =
-      make_tensor_impl_ptr(exec_aten::ScalarType::Float, {}, &scalar_data);
+  auto tensor_impl = make_tensor_impl_ptr({}, &scalar_data);
 
   EXPECT_EQ(tensor_impl->numel(), 1);
   EXPECT_EQ(tensor_impl->dim(), 0);
@@ -48,8 +47,7 @@ TEST_F(TensorImplPtrTest, ScalarTensorOwningData) {
 
 TEST_F(TensorImplPtrTest, TensorImplCreation) {
   float data[20] = {2};
-  auto tensor_impl = make_tensor_impl_ptr(
-      exec_aten::ScalarType::Float, {4, 5}, data, {0, 1}, {5, 1});
+  auto tensor_impl = make_tensor_impl_ptr({4, 5}, data, {0, 1}, {5, 1});
 
   EXPECT_EQ(tensor_impl->dim(), 2);
   EXPECT_EQ(tensor_impl->size(0), 4);
@@ -63,8 +61,7 @@ TEST_F(TensorImplPtrTest, TensorImplCreation) {
 
 TEST_F(TensorImplPtrTest, TensorImplSharedOwnership) {
   float data[20] = {2};
-  auto tensor_impl1 =
-      make_tensor_impl_ptr(exec_aten::ScalarType::Float, {4, 5}, data);
+  auto tensor_impl1 = make_tensor_impl_ptr({4, 5}, data);
   auto tensor_impl2 = tensor_impl1;
 
   EXPECT_EQ(tensor_impl1.get(), tensor_impl2.get());
@@ -77,8 +74,7 @@ TEST_F(TensorImplPtrTest, TensorImplSharedOwnership) {
 
 TEST_F(TensorImplPtrTest, TensorImplInferredDimOrderAndStrides) {
   float data[12] = {0};
-  auto tensor_impl = make_tensor_impl_ptr(
-      exec_aten::ScalarType::Float, {3, 4}, data, {}, {4, 1});
+  auto tensor_impl = make_tensor_impl_ptr({3, 4}, data, {}, {4, 1});
 
   EXPECT_EQ(tensor_impl->dim(), 2);
   EXPECT_EQ(tensor_impl->size(0), 3);
@@ -90,8 +86,7 @@ TEST_F(TensorImplPtrTest, TensorImplInferredDimOrderAndStrides) {
 
 TEST_F(TensorImplPtrTest, TensorImplInferredDimOrderCustomStrides) {
   float data[12] = {0};
-  auto tensor_impl = make_tensor_impl_ptr(
-      exec_aten::ScalarType::Float, {3, 4}, data, {}, {1, 3});
+  auto tensor_impl = make_tensor_impl_ptr({3, 4}, data, {}, {1, 3});
 
   EXPECT_EQ(tensor_impl->dim(), 2);
   EXPECT_EQ(tensor_impl->size(0), 3);
@@ -102,8 +97,7 @@ TEST_F(TensorImplPtrTest, TensorImplInferredDimOrderCustomStrides) {
 
 TEST_F(TensorImplPtrTest, TensorImplDefaultDimOrderAndStrides) {
   float data[24] = {0};
-  auto tensor_impl =
-      make_tensor_impl_ptr(exec_aten::ScalarType::Float, {2, 3, 4}, data);
+  auto tensor_impl = make_tensor_impl_ptr({2, 3, 4}, data);
 
   EXPECT_EQ(tensor_impl->dim(), 3);
   EXPECT_EQ(tensor_impl->size(0), 2);
@@ -117,17 +111,12 @@ TEST_F(TensorImplPtrTest, TensorImplDefaultDimOrderAndStrides) {
 TEST_F(TensorImplPtrTest, TensorImplMismatchStridesAndDimOrder) {
   float data[12] = {0};
   ET_EXPECT_DEATH(
-      {
-        auto _ = make_tensor_impl_ptr(
-            exec_aten::ScalarType::Float, {3, 4}, data, {1, 0}, {1, 4});
-      },
-      "");
+      { auto _ = make_tensor_impl_ptr({3, 4}, data, {1, 0}, {1, 4}); }, "");
 }
 
 TEST_F(TensorImplPtrTest, TensorImplCustomDimOrderAndStrides) {
   float data[12] = {0};
-  auto tensor_impl = make_tensor_impl_ptr(
-      exec_aten::ScalarType::Float, {3, 4}, data, {1, 0}, {1, 3});
+  auto tensor_impl = make_tensor_impl_ptr({3, 4}, data, {1, 0}, {1, 3});
 
   EXPECT_EQ(tensor_impl->dim(), 2);
   EXPECT_EQ(tensor_impl->size(0), 3);
@@ -140,16 +129,14 @@ TEST_F(TensorImplPtrTest, TensorImplInvalidDimOrder) {
   ET_EXPECT_DEATH(
       {
         float data[20] = {2};
-        auto _ = make_tensor_impl_ptr(
-            exec_aten::ScalarType::Float, {4, 5}, data, {2, 1});
+        auto _ = make_tensor_impl_ptr({4, 5}, data, {2, 1}, {1, 4});
       },
       "");
 }
 
 TEST_F(TensorImplPtrTest, TensorImplCustomDeleter) {
   float data[20] = {4};
-  auto tensor_impl =
-      make_tensor_impl_ptr(exec_aten::ScalarType::Float, {4, 5}, data);
+  auto tensor_impl = make_tensor_impl_ptr({4, 5}, data);
 
   TensorImplPtr copied_tensor_impl = tensor_impl;
   EXPECT_EQ(tensor_impl.use_count(), copied_tensor_impl.use_count());
@@ -163,11 +150,11 @@ TEST_F(TensorImplPtrTest, TensorImplDataDeleterReleasesCapturedSharedPtr) {
   std::shared_ptr<float[]> data_ptr(
       new float[10], [](float* ptr) { delete[] ptr; });
   auto tensor_impl = make_tensor_impl_ptr(
-      exec_aten::ScalarType::Float,
       {4, 5},
       data_ptr.get(),
       {},
       {},
+      exec_aten::ScalarType::Float,
       exec_aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [data_ptr, &deleter_called](void*) mutable { deleter_called = true; });
 
@@ -275,8 +262,7 @@ TEST_F(TensorImplPtrTest, TensorImplAmbiguityWithMixedVectors) {
 
 TEST_F(TensorImplPtrTest, SharedDataManagement) {
   auto data = std::make_shared<std::vector<float>>(100, 1.0f);
-  auto tensor_impl1 = make_tensor_impl_ptr(
-      exec_aten::ScalarType::Float, {10, 10}, data->data());
+  auto tensor_impl1 = make_tensor_impl_ptr({10, 10}, data->data());
   auto tensor_impl2 = tensor_impl1;
 
   EXPECT_EQ(tensor_impl1.get(), tensor_impl2.get());
@@ -298,11 +284,11 @@ TEST_F(TensorImplPtrTest, CustomDeleterWithSharedData) {
   bool deleter_called = false;
   {
     auto tensor_impl = make_tensor_impl_ptr(
-        exec_aten::ScalarType::Float,
         {10, 10},
         data->data(),
         {},
         {},
+        exec_aten::ScalarType::Float,
         exec_aten::TensorShapeDynamism::DYNAMIC_BOUND,
         [data, &deleter_called](void*) mutable {
           deleter_called = true;
@@ -339,8 +325,7 @@ TEST_F(TensorImplPtrTest, TensorImplUint8BufferWithFloatScalarType) {
   float_data[2] = 3.0f;
   float_data[3] = 4.0f;
 
-  auto tensor_impl = make_tensor_impl_ptr(
-      exec_aten::ScalarType::Float, {2, 2}, std::move(data));
+  auto tensor_impl = make_tensor_impl_ptr({2, 2}, std::move(data));
 
   EXPECT_EQ(tensor_impl->dim(), 2);
   EXPECT_EQ(tensor_impl->size(0), 2);
@@ -358,22 +343,26 @@ TEST_F(TensorImplPtrTest, TensorImplUint8BufferTooSmallExpectDeath) {
   std::vector<uint8_t> data(
       2 * exec_aten::elementSize(exec_aten::ScalarType::Float));
   ET_EXPECT_DEATH(
-      {
-        auto tensor_impl = make_tensor_impl_ptr(
-            exec_aten::ScalarType::Float, {2, 2}, std::move(data));
-      },
+      { auto tensor_impl = make_tensor_impl_ptr({2, 2}, std::move(data)); },
       "");
 }
 
 TEST_F(TensorImplPtrTest, TensorImplUint8BufferTooLarge) {
   std::vector<uint8_t> data(
       4 * exec_aten::elementSize(exec_aten::ScalarType::Float));
-  auto tensor_impl = make_tensor_impl_ptr(
-      exec_aten::ScalarType::Float, {2, 2}, std::move(data));
+  auto tensor_impl = make_tensor_impl_ptr({2, 2}, std::move(data));
 
   EXPECT_EQ(tensor_impl->dim(), 2);
   EXPECT_EQ(tensor_impl->size(0), 2);
   EXPECT_EQ(tensor_impl->size(1), 2);
   EXPECT_EQ(tensor_impl->strides()[0], 2);
   EXPECT_EQ(tensor_impl->strides()[1], 1);
+}
+
+TEST_F(TensorImplPtrTest, StridesAndDimOrderMustMatchSizes) {
+  float data[12] = {0};
+  ET_EXPECT_DEATH(
+      { auto _ = make_tensor_impl_ptr({3, 4}, data, {}, {1}); }, "");
+  ET_EXPECT_DEATH(
+      { auto _ = make_tensor_impl_ptr({3, 4}, data, {0}, {4, 1}); }, "");
 }

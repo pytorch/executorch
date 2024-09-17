@@ -28,7 +28,6 @@ struct SharedObject {
   explicit SharedObject() = default;
 
   VkMemoryRequirements aggregate_memory_requirements;
-  VmaAllocationCreateInfo aggregate_create_info;
   std::vector<ValueRef> users;
   vkapi::Allocation allocation;
 
