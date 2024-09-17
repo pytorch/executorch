@@ -159,8 +159,6 @@ VulkanImage::VulkanImage(
       layout_, // initialLayout
   };
 
-  memory_.create_info = allocation_create_info;
-
   if (allocate_memory) {
     VK_CHECK(vmaCreateImage(
         allocator_,

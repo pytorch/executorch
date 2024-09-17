@@ -121,6 +121,12 @@ void record_reference_matmul(
     api::vTensor& mat1,
     api::vTensor& mat2);
 
+void record_matmul_texture3d(
+    api::Context* context,
+    api::vTensor& out,
+    api::vTensor& mat1,
+    api::vTensor& mat2);
+
 //
 // Input & Output Utilities
 //
