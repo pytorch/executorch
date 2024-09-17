@@ -159,8 +159,6 @@ inline TensorImplPtr make_tensor_impl_ptr(
         exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   ET_CHECK_MSG(type == deduced_type, "Type does not match the deduced type.");
   std::vector<exec_aten::SizesType> sizes{exec_aten::SizesType(data.size())};
-  const auto raw_data_ptr = data.data();
-  auto data_ptr = std::make_shared<std::vector<T>>(std::move(data));
   return make_tensor_impl_ptr(
       std::move(sizes), std::move(data), {0}, {1}, type, dynamism);
 }

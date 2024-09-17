@@ -1,5 +1,6 @@
 load("@fbsource//tools/build_defs:default_platform_defs.bzl", "DEVSERVER_PLATFORM_REGEX")
 load("@fbsource//tools/build_defs:fb_native_wrapper.bzl", "fb_native")
+load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 # Because vec exists as a collection of header files, compile and preprocessor
@@ -109,6 +110,8 @@ def define_libs():
         ],
     )
 
+    LIBBLAS_DEPS = [third_party_dep("cpuinfo")]
+
     for libblas_name, mkl_dep in [("libblas", "fbsource//third-party/mkl:mkl_lp64_omp"), ("libblas_mkl_noomp", "fbsource//third-party/mkl:mkl")]:
         runtime.cxx_library(
             name = libblas_name,
@@ -129,6 +132,14 @@ def define_libs():
                 ] if not runtime.is_oss else [],
                 "DEFAULT": [],
             }),
+            fbandroid_platform_compiler_flags = [
+                (
+                    "^android-arm64.*$",
+                    [
+                        "-march=armv8+bf16",
+                    ],
+                ),
+            ],
             fbandroid_platform_preprocessor_flags = [
                 (
                     "^android-arm64.*$",
@@ -145,6 +156,9 @@ def define_libs():
                     ],
                 ),
             ],
+            fbobjc_compiler_flags = [
+                "-march=armv8+bf16",
+            ],
             fbobjc_exported_preprocessor_flags = [
                 "-DET_BUILD_WITH_BLAS",
                 "-DET_BUILD_FOR_APPLE",
@@ -155,7 +169,7 @@ def define_libs():
             deps = select({
                 ":linux-x86_64": [mkl_dep] if not runtime.is_oss else [],
                 "DEFAULT": [],
-            }),
+            }) + LIBBLAS_DEPS,
             exported_deps = [
                 "//executorch/extension/parallel:thread_parallel",
                 "//executorch/kernels/optimized:libutils",

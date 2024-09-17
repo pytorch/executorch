@@ -97,12 +97,12 @@ if os.name == "nt":
 NIGHTLY_VERSION = "dev20240901"
 
 # The pip repository that hosts nightly torch packages.
-TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
+TORCH_URL = "https://download.pytorch.org/whl/test/cpu"
 
 # pip packages needed by exir.
 EXIR_REQUIREMENTS = [
-    f"torch==2.5.0.{NIGHTLY_VERSION}",
-    f"torchvision==0.20.0.{NIGHTLY_VERSION}",  # For testing.
+    "torch==2.5.0",
+    "torchvision==0.20.0",  # For testing.
     "typing-extensions",
 ]
 
@@ -121,7 +121,7 @@ DEVEL_REQUIREMENTS = [
 # TODO: Make each example publish its own requirements.txt
 EXAMPLES_REQUIREMENTS = [
     "timm==1.0.7",
-    f"torchaudio==2.5.0.{NIGHTLY_VERSION}",
+    "torchaudio==2.5.0",
     "torchsr==1.0.4",
     "transformers==4.42.4",
 ]
@@ -140,7 +140,7 @@ subprocess.run(
         "install",
         *REQUIREMENTS_TO_INSTALL,
         "--extra-index-url",
-        TORCH_NIGHTLY_URL,
+        TORCH_URL,
     ],
     check=True,
 )
@@ -167,7 +167,7 @@ subprocess.run(
         "--no-build-isolation",
         "-v",
         "--extra-index-url",
-        TORCH_NIGHTLY_URL,
+        TORCH_URL,
     ],
     check=True,
 )

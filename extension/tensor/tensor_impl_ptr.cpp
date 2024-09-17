@@ -62,6 +62,13 @@ TensorImplPtr make_tensor_impl_ptr(
     exec_aten::TensorShapeDynamism dynamism,
     std::function<void(void*)> deleter) {
   const auto dim = sizes.size();
+  ET_CHECK_MSG(
+      dim_order.empty() || dim_order.size() == dim,
+      "dim_order size must match sizes or be empty.");
+  ET_CHECK_MSG(
+      strides.empty() || strides.size() == dim,
+      "strides size must match sizes or be empty.");
+
   if (dim_order.empty()) {
     dim_order.resize(dim);
     std::iota(dim_order.begin(), dim_order.end(), 0);
@@ -89,7 +96,7 @@ TensorImplPtr make_tensor_impl_ptr(
       data,
       dim_order.data(),
       strides.data(),
-      dynamism);
+      dim > 0 ? dynamism : exec_aten::TensorShapeDynamism::STATIC);
   return TensorImplPtr(
       tensor_impl.release(),
       TensorImplPtrDeleter{
