@@ -396,30 +396,6 @@ bool vTensorStorage::is_copy_of(const vTensorStorage& other) const {
   return image_.is_copy_of(other.image_);
 }
 
-void vTensorStorage::discard_and_reallocate(
-    const std::vector<int64_t>& padded_sizes,
-    const std::vector<int64_t>& axis_map,
-    const utils::GPUMemoryLayout gpu_memory_layout,
-    const vkapi::ScalarType dtype) {
-  const bool image_owns_memory = image_.owns_memory();
-  const bool buffer_owns_memory = buffer_.owns_memory();
-
-  flush();
-
-  image_extents_ =
-      calculate_image_extents(padded_sizes, axis_map, gpu_memory_layout);
-  image_ = allocate_image(
-      context_,
-      image_extents_,
-      storage_type_,
-      to_vkformat(dtype),
-      image_owns_memory);
-
-  buffer_length_ = utils::multiply_integers(padded_sizes);
-  buffer_ = allocate_buffer(
-      context_, buffer_length_, storage_type_, dtype, buffer_owns_memory);
-}
-
 //
 // vTensor
 //
@@ -803,16 +779,6 @@ void vTensor::virtual_transpose(const int64_t dim0, const int64_t dim1) {
     }
   }
   update_metadata();
-}
-
-void vTensor::reallocate(const std::vector<int64_t>& new_sizes) {
-  sizes_ = new_sizes;
-  update_metadata();
-  storage_.discard_and_reallocate(
-      calculate_padded_sizes(new_sizes, memory_layout_),
-      axis_map_,
-      memory_layout_,
-      dtype_);
 }
 
 } // namespace api
