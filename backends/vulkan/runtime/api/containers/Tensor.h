@@ -157,12 +157,6 @@ class vTensorStorage final {
    * Used for checking if this vTensorStorage is a copy of another instance
    */
   bool is_copy_of(const vTensorStorage& other) const;
-
-  void discard_and_reallocate(
-      const std::vector<int64_t>& padded_sizes,
-      const std::vector<int64_t>& axis_map,
-      const utils::GPUMemoryLayout gpu_memory_layout,
-      const vkapi::ScalarType dtype);
 };
 
 class vTensor final {
@@ -534,12 +528,6 @@ class vTensor final {
    * Transpose the tensor in-place by updating its metadata.
    */
   void virtual_transpose(const int64_t dim0, const int64_t dim1);
-
-  /*
-   * Discard the underlying VkImage or VkBuffer and re-allocate based on new
-   * tensor sizes
-   */
-  void reallocate(const std::vector<int64_t>& new_sizes);
 
   /*
    * Check if this vTensor instance is a view of another vTensor instance

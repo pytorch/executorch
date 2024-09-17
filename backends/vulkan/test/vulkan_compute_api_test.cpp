@@ -940,64 +940,6 @@ TEST_F(VulkanComputeAPITest, use_non_bound_textures_fails) {
   EXPECT_THROW(fill_vtensor(a, data_a), vkapi::Error);
 }
 
-TEST_F(VulkanComputeAPITest, tensor_reallocation_test) {
-  std::vector<int64_t> sizes = {4, 4, 1};
-  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
-  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
-  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
-
-  execute_and_check_add(a, b, c, 3.0f, 5.0f);
-
-  // Redo with new sizes
-  std::vector<int64_t> new_sizes = {4, 6, 3};
-  a.reallocate(new_sizes);
-  b.reallocate(new_sizes);
-  c.reallocate(new_sizes);
-
-  // Flush everything
-  context()->flush();
-
-  execute_and_check_add(a, b, c, 12.0f, 10.0f);
-}
-
-TEST_F(
-    VulkanComputeAPITest,
-    tensor_reallocation_with_deferred_allocation_test) {
-  std::vector<int64_t> sizes = {8, 8, 8};
-  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
-  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
-  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
-
-  vkapi::Allocation a_mem = allocate_memory_for(a);
-  a.image().bind_allocation(a_mem);
-  vkapi::Allocation b_mem = allocate_memory_for(b);
-  b.image().bind_allocation(b_mem);
-  vkapi::Allocation c_mem = allocate_memory_for(c);
-  c.image().bind_allocation(c_mem);
-
-  execute_and_check_add(a, b, c, 4.0f, 8.0f);
-
-  std::vector<std::vector<int64_t>> new_sizes_list = {
-      {4, 3, 5}, {4, 1, 7}, {8, 3, 2}, {8, 7, 2}};
-
-  for (auto& new_sizes : new_sizes_list) {
-    // Redo with new sizes
-    a.reallocate(new_sizes);
-    b.reallocate(new_sizes);
-    c.reallocate(new_sizes);
-
-    // Flush everything
-    context()->flush();
-
-    a.image().bind_allocation(a_mem);
-    b.image().bind_allocation(b_mem);
-    c.image().bind_allocation(c_mem);
-
-    execute_and_check_add(
-        a, b, c, float(new_sizes[1] + 4.5f), float(new_sizes[2] + 13.0f));
-  }
-}
-
 TEST_F(VulkanComputeAPITest, texture_virtual_resize) {
   context()->set_cmd(/*reusable = */ true);
   std::vector<int64_t> sizes = {8, 12, 12};
