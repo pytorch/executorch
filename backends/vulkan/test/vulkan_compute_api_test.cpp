@@ -1341,7 +1341,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
       // Inputs and Outputs
       {{out.value, vkapi::MemoryAccessType::WRITE}},
       // Shader params buffers
-      {graph.texture_limits_ubo(a.value),
+      {graph.logical_limits_ubo(a.value),
        graph.get_or_create_int_param_buffer(scalar)},
       // Specialization Constants
       {},
@@ -2273,7 +2273,7 @@ void run_from_gpu_test(
     context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
-        vten.image_extents(),
+        vten.logical_limits(),
         {4, 4, 4},
         {vten.packed_dim_whcn_idx(), offset},
         VK_NULL_HANDLE,

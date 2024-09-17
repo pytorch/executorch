@@ -276,9 +276,7 @@ class vTensor final {
   // Contains the number of elements in the tensor according to the padded
   // sizes.
   size_t padded_numel_;
-  // See the comments documenting image_extents() for more context.
-  TextureLimits texture_limits_;
-  // See the comments documenting logical_extents() for more context.
+  // See the comments documenting logical_limits() for more context.
   TextureLimits logical_limits_;
 
   /*
@@ -294,7 +292,6 @@ class vTensor final {
   ParamsBuffer strides_uniform_;
   ParamsBuffer numel_uniform_;
   ParamsBuffer axis_map_uniform_;
-  ParamsBuffer texture_limits_uniform_;
   ParamsBuffer logical_limits_uniform_;
 
   vTensorStorage storage_;
@@ -342,28 +339,30 @@ class vTensor final {
     return storage_.storage_type_ == utils::kBuffer;
   }
 
-  /*
-   * Returns the raw image extents of the underlying image texture used to store
-   * the tensor's data. Note that due to axis mapping, the X, Y, and Z extents
-   * may not correspond to the width, height, or channels dimension of the
-   * tensor.
-   */
-  inline const utils::uvec3& image_extents() const {
-    return storage_.image_extents_;
-  }
-
  private:
-  void update_logical_limits();
+  void set_logical_limits(const utils::uvec3& image_extents);
 
  public:
   /*
-   * Returns the image extents of the underlying image texture, but re-ordered
-   * such that the first element is the extent of the axis used to represent the
-   * tensor's width dimension, the second element is the extent of the axis used
-   * to represent the tensor's height dimension, and the third element is the
-   * extent of the axis used to represent the tensor's channels dimension.
+   * The logical limits of the tensor are derived from the image extents of the
+   * image texture used to store the tensor, but with two key differences.
+   *
+   * First, the image extents are permuted according to the axis map. This
+   * makes it so that the first element of the logical limit is the limit of the
+   * texture axis corresponding to the width dimension of the tensor, the next
+   * element is the limit of the texture axis corresponding to the height
+   * dimension and the last element is the limit of the texture axis that
+   * corresponds to the channels dimension of the tensor.
+   *
+   * Second, the logical limits may use smaller extents than the actual image
+   * extents of the image texture. This is due to dynamic shape; if the tensor's
+   * `virtual_resize()` function is called, then the logical limits will reflect
+   * the extents that would be needed to support a tensor with the updated sizes
+   * instead of the original sizes.
    */
-  utils::uvec3 logical_extents() const;
+  inline const utils::ivec3& logical_limits() const {
+    return logical_limits_.limits;
+  }
 
   /*
    * Extract an `vkapi::ScalarType` from the TensorOptions member
@@ -430,18 +429,9 @@ class vTensor final {
   const vkapi::BufferBindInfo axis_map_ubo();
 
   /*
-   * Returns a GPU buffer containing the virtual image extents of the tensor.
-   * Since a tensor can be resized with the virtual_resize() function, this
-   * GPU buffer contains the image extents of the tensor calculated using the
-   * virtual_resize() function. This allows shaders to exit early if they are
-   * working outside the limits of the texture.
-   */
-  const vkapi::BufferBindInfo texture_limits_ubo();
-
-  /*
    * Returns a GPU buffer containing the logical image extents of the tensor.
-   * It contains the same data as texture_limits_ubo(), but with the data
-   * re-ordered. See the comments for logical_extents() for more context.
+   * It contains the same data as logical_limits_ubo(), but with the data
+   * re-ordered. See the comments for logical_limits() for more context.
    */
   const vkapi::BufferBindInfo logical_limits_ubo();
 
@@ -449,10 +439,6 @@ class vTensor final {
    * Returns the number of elements in the buffer used to store the tensor.
    */
   const vkapi::BufferBindInfo numel_ubo();
-
-  inline const utils::ivec3 texture_limits() const {
-    return texture_limits_.limits;
-  }
 
   inline size_t numel() const {
     return numel_;

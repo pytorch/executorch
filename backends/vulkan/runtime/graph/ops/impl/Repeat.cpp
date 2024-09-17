@@ -130,7 +130,7 @@ void add_repeat_node(
   // After expanding a dimension, we will update the "running_range" since we
   // will need to copy the "expanded" area.
 
-  utils::ivec3 running_range = t_in->texture_limits();
+  utils::ivec3 running_range = t_in->logical_limits();
 
   const std::vector<int64_t>& in_sizes = t_in->sizes();
 
