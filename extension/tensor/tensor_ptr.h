@@ -171,13 +171,18 @@ inline TensorPtr make_tensor_ptr(
  *
  * This template overload is specialized for cases where the tensor data is
  * provided as a vector. The scalar type is automatically deduced from the
- * vector's data type.
+ * vector's data type. If the specified `type` differs from the deduced type of
+ * the vector's elements, and casting is allowed, the data will be cast to the
+ * specified `type`. This allows for flexible creation of tensors with data
+ * vectors of one type and a different scalar type.
  *
  * @tparam T The C++ type of the tensor elements, deduced from the vector.
  * @param sizes A vector specifying the size of each dimension.
  * @param data A vector containing the tensor's data.
  * @param dim_order A vector specifying the order of dimensions.
  * @param strides A vector specifying the strides of each dimension.
+ * @param type The scalar type of the tensor elements. If it differs from the
+ * deduced type, the data will be cast to this type if allowed.
  * @param dynamism Specifies the mutability of the tensor's shape.
  * @return A TensorPtr that manages the newly created TensorImpl.
  */
@@ -202,10 +207,15 @@ TensorPtr make_tensor_ptr(
  *
  * This template overload is specialized for cases where the tensor data is
  * provided as a vector. The scalar type is automatically deduced from the
- * vector's data type.
+ * vector's data type. If the specified `type` differs from the deduced type of
+ * the vector's elements, and casting is allowed, the data will be cast to the
+ * specified `type`. This allows for flexible creation of tensors with data
+ * vectors of one type and a different scalar type.
  *
  * @tparam T The C++ type of the tensor elements, deduced from the vector.
  * @param data A vector containing the tensor's data.
+ * @param type The scalar type of the tensor elements. If it differs from the
+ * deduced type, the data will be cast to this type if allowed.
  * @param dynamism Specifies the mutability of the tensor's shape.
  * @return A TensorPtr that manages the newly created TensorImpl.
  */
@@ -214,7 +224,49 @@ TensorPtr make_tensor_ptr(
     std::vector<T> data,
     exec_aten::TensorShapeDynamism dynamism =
         exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
-  return make_tensor_ptr(make_tensor_impl_ptr(std::move(data), dynamism));
+  return make_tensor_ptr(make_tensor_impl_ptr(std::move(data), type, dynamism));
+}
+
+/**
+ * Creates a TensorPtr that manages a Tensor with the specified properties.
+ *
+ * This template overload is specialized for cases where the tensor data is
+ * provided as an initializer list. The scalar type is automatically deduced
+ * from the initializer list's data type. If the specified `type` differs from
+ * the deduced type of the initializer list's elements, and casting is allowed,
+ * the data will be cast to the specified `type`. This allows for flexible
+ * creation of tensors with data vectors of one type and a different scalar
+ * type.
+ *
+ * @tparam T The C++ type of the tensor elements, deduced from the initializer
+ * list.
+ * @param sizes A vector specifying the size of each dimension.
+ * @param list An initializer list containing the tensor's data.
+ * @param dim_order A vector specifying the order of dimensions.
+ * @param strides A vector specifying the strides of each dimension.
+ * @param type The scalar type of the tensor elements. If it differs from the
+ * deduced type, the data will be cast to this type if allowed.
+ * @param dynamism Specifies the mutability of the tensor's shape.
+ * @return A TensorPtr that manages the newly created TensorImpl.
+ */
+template <
+    typename T = float,
+    exec_aten::ScalarType deduced_type = runtime::CppTypeToScalarType<T>::value>
+inline TensorPtr make_tensor_ptr(
+    std::vector<exec_aten::SizesType> sizes,
+    std::initializer_list<T> list,
+    std::vector<exec_aten::DimOrderType> dim_order = {},
+    std::vector<exec_aten::StridesType> strides = {},
+    exec_aten::ScalarType type = deduced_type,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  return make_tensor_ptr(make_tensor_impl_ptr(
+      std::move(sizes),
+      std::move(list),
+      std::move(dim_order),
+      std::move(strides),
+      type,
+      dynamism));
 }
 
 /**
@@ -222,11 +274,17 @@ TensorPtr make_tensor_ptr(
  *
  * This template overload allows creating a Tensor from an initializer list
  * of data. The scalar type is automatically deduced from the type of the
- * initializer list's elements.
+ * initializer list's elements. If the specified `type` differs from
+ * the deduced type of the initializer list's elements, and casting is allowed,
+ * the data will be cast to the specified `type`. This allows for flexible
+ * creation of tensors with data vectors of one type and a different scalar
+ * type.
  *
  * @tparam T The C++ type of the tensor elements, deduced from the initializer
  * list.
- * @param data An initializer list containing the tensor's data.
+ * @param list An initializer list containing the tensor's data.
+ * @param type The scalar type of the tensor elements. If it differs from the
+ * deduced type, the data will be cast to this type if allowed.
  * @param dynamism Specifies the mutability of the tensor's shape.
  * @return A TensorPtr that manages the newly created TensorImpl.
  */
