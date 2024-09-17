@@ -1,0 +1,40 @@
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets()
+
+python_library(
+    name = "model",
+    srcs = ["model.py"],
+    visibility = [],  # Private
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+python_library(
+    name = "export_model_lib",
+    srcs = ["export_model_lib.py"],
+    visibility = [],
+    deps = [
+        ":model",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)
+
+python_binary(
+    name = "export_model",
+    main_function = ".export_model.main",
+    main_src = "export_model.py",
+    deps = [
+        ":export_model_lib",
+        "//caffe2:torch",
+    ],
+)

@@ -55,15 +55,10 @@ struct Allocation final {
 
   ~Allocation();
 
-  VkMemoryRequirements memory_requirements;
-  // The properties this allocation was created with
-  VmaAllocationCreateInfo create_info;
   // The allocator object this was allocated from
   VmaAllocator allocator;
   // Handles to the allocated memory
   VmaAllocation allocation;
-  // Information about the allocated memory
-  VmaAllocationInfo allocation_info;
 
  private:
   // Indicates whether this class instance is a copy of another class instance,

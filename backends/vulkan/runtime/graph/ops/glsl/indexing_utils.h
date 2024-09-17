@@ -270,7 +270,7 @@ ivec3 to_texture_pos(
 
   // Adjust batch dim if needed
   if (sizes.w > 1) {
-    pos[axis_map[axis_map[3]]] += idx.w * sizes.w;
+    pos[axis_map[axis_map.w]] += idx.w * sizes[axis_map.w];
   }
 
   // Adjust packed dim. Moving 1 texel unit along the packed dim traverses 4
@@ -317,7 +317,7 @@ ivec4 to_texture_elem_pos(
 
   // Adjust batch dim if needed
   if (sizes.w > 1) {
-    pos[axis_map[axis_map[3]]] += idx.w * sizes.w;
+    pos[axis_map[axis_map.w]] += idx.w * sizes[axis_map.w];
   }
 
   // Adjust packed dim. Moving 1 texel unit along the packed dim traverses 4
