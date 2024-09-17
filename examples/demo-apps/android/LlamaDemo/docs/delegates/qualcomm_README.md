@@ -221,7 +221,7 @@ popd
 If the app successfully run on your device, you should see something like below:
 
 <p align="center">
-<img src="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/_static/img/opening_the_app_details.png" width=800>
+<img src="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/screenshots/opening_the_app_details.png" width=800>
 </p>
 
 ## Reporting Issues
