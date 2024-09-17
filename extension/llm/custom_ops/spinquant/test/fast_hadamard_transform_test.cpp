@@ -7,72 +7,30 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <cmath>
-#include <iostream>
-#include <random>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 
 #include <executorch/extension/llm/custom_ops/spinquant/fast_hadamard_transform.h>
-#include <executorch/extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h>
-#include <executorch/extension/llm/custom_ops/spinquant/third-party/FFHT/dumb_fht.h>
+#include <executorch/extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_test_impl.h>
 
-namespace {
-void reference_fht_impl(float* buf, int n) {
-  dumb_fht(buf, std::log2<int>(n));
-  const auto root_n = std::sqrt(n);
-  for (int ii = 0; ii < n; ++ii) {
-    buf[ii] /= root_n;
-  }
-}
-
-// Alternate implementation of fast_hadamard_transform_28N to mutation
-// test against. Benchmarking suggests this one is slower, which is
-// why it's in the test and the strided implementation is in the
-// header.
-template <typename T>
-void fast_hadamard_transform_28N_with_transpose(T* vec, int log2_vec_size) {
-  const int vec_size = (1 << log2_vec_size);
-  for (int ii = 0; ii < 28; ++ii) {
-    executorch::fast_hadamard_transform(&vec[ii * vec_size], log2_vec_size);
-  }
-  std::unique_ptr<T[]> transposed = std::make_unique<T[]>(28 * vec_size);
-  for (int ii = 0; ii < 28; ++ii) {
-    for (int jj = 0; jj < vec_size; ++jj) {
-      transposed[jj * 28 + ii] = vec[ii * vec_size + jj];
-    }
-  }
-  for (int ii = 0; ii < vec_size; ++ii) {
-    hadamard_mult_28(&transposed[ii * 28]);
-  }
-  for (int jj = 0; jj < vec_size; ++jj) {
-    for (int ii = 0; ii < 28; ++ii) {
-      vec[ii * vec_size + jj] = transposed[jj * 28 + ii];
-    }
-  }
-}
-
-std::vector<float> randomFloats(int howMany) {
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::normal_distribution<float> dist;
-  std::vector<float> data(howMany);
-  for (int ii = 0; ii < data.size(); ++ii) {
-    data[ii] = dist(gen);
-  }
-  return data;
-}
-} // namespace
+using executorch::runtime::testing::fast_hadamard_transform_28N_with_transpose;
+using executorch::runtime::testing::random_floats;
+using executorch::runtime::testing::reference_fht_impl;
 
 TEST(FastHadamardTransformTest, SingleElement) {
   // FHT of a single element is a no-op.
-  float data[1] = {42};
-  executorch::fast_hadamard_transform(data, 0);
+  std::array<float, 1> data = {{42}};
+  executorch::fast_hadamard_transform(data.data(), 0);
   EXPECT_EQ(data[0], 42);
 }
 
 TEST(FastHadamardTransformTest, LargerInput) {
-  std::vector<float> data = randomFloats(4096);
+  std::vector<float> data = random_floats(4096);
 
   auto expected = data;
   reference_fht_impl(expected.data(), expected.size());
@@ -86,7 +44,7 @@ TEST(FastHadamardTransformTest, LargerInput) {
 }
 
 TEST(FastHadamardTransform28NTest, Basic) {
-  std::vector<float> data = randomFloats(1024 * 28);
+  std::vector<float> data = random_floats(1024 * 28);
 
   auto expected = data;
   fast_hadamard_transform_28N_with_transpose(expected.data(), 10);
@@ -150,7 +108,7 @@ std::vector<float> dequantize(const std::vector<T>& data, float scale) {
 #define EXPECT_CLOSE(a, b) EXPECT_CLOSE_IMPL(a, b, 2e-4, 1e-4)
 
 void testQuantizedFastHadamardTransform(int logN) {
-  std::vector<float> data = randomFloats(1 << logN);
+  std::vector<float> data = random_floats(1 << logN);
 
   auto [qdata, scale] = quantize<int16_t>(data);
 
@@ -179,7 +137,7 @@ TEST(QuantizedFastHadamardTransformTest, OddLogN) {
 }
 
 TEST(QuantizedFastHadamardTransform28NTest, Basic) {
-  std::vector<float> data = randomFloats(1024 * 28);
+  std::vector<float> data = random_floats(1024 * 28);
 
   auto [qdata, scale] = quantize<int16_t>(data);
 
@@ -192,8 +150,6 @@ TEST(QuantizedFastHadamardTransform28NTest, Basic) {
       actual.data(), 10);
 
   for (int ii = 0; ii < expected.size(); ++ii) {
-    std::cerr << "element " << ii << ": actual: " << actual[ii]
-              << ", expected: " << expected[ii] << std::endl;
     EXPECT_CLOSE(
         dequantize(actual[ii], scale), dequantize(expected[ii], scale));
   }
