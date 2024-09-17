@@ -781,7 +781,11 @@ def _get_source_transforms(  # noqa
 
             transforms.append(inject_fast_hadamard_transform_cuda_for_spin_quant)
         elif args.use_spin_quant == "native":
-            raise NotImplementedError("native SpinQuant is not implemented yet.")
+            from .source_transformation.spin_quant import (
+                inject_fast_hadamard_transform_native_for_spin_quant,
+            )
+
+            transforms.append(inject_fast_hadamard_transform_native_for_spin_quant)
 
     if args.embedding_quantize:
         modelname = f"{modelname}_e"
