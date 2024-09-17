@@ -43,6 +43,7 @@ def export_preprocess(
     max_num_tiles: int = 4,
     tile_size: int = 224,
     antialias: bool = False,
+    pad_max_tiles: bool = True,
 ) -> ExportedProgram:
 
     # Instantiate eager model.
@@ -53,6 +54,7 @@ def export_preprocess(
         max_num_tiles=max_num_tiles,
         tile_size=tile_size,
         antialias=antialias,
+        pad_max_tiles=pad_max_tiles,
     )
 
     # Replace non-exportable ops with custom ops.
