@@ -54,14 +54,21 @@ struct TensorImplPtrDeleter final {
 } // namespace
 
 TensorImplPtr make_tensor_impl_ptr(
-    exec_aten::ScalarType type,
     std::vector<exec_aten::SizesType> sizes,
     void* data,
     std::vector<exec_aten::DimOrderType> dim_order,
     std::vector<exec_aten::StridesType> strides,
+    exec_aten::ScalarType type,
     exec_aten::TensorShapeDynamism dynamism,
     std::function<void(void*)> deleter) {
   const auto dim = sizes.size();
+  ET_CHECK_MSG(
+      dim_order.empty() || dim_order.size() == dim,
+      "dim_order size must match sizes or be empty.");
+  ET_CHECK_MSG(
+      strides.empty() || strides.size() == dim,
+      "strides size must match sizes or be empty.");
+
   if (dim_order.empty()) {
     dim_order.resize(dim);
     std::iota(dim_order.begin(), dim_order.end(), 0);
@@ -89,7 +96,7 @@ TensorImplPtr make_tensor_impl_ptr(
       data,
       dim_order.data(),
       strides.data(),
-      dynamism);
+      dim > 0 ? dynamism : exec_aten::TensorShapeDynamism::STATIC);
   return TensorImplPtr(
       tensor_impl.release(),
       TensorImplPtrDeleter{
@@ -122,24 +129,24 @@ TensorImplPtr make_tensor_impl_ptr(
 }
 
 TensorImplPtr make_tensor_impl_ptr(
-    exec_aten::ScalarType scalar_type,
     std::vector<exec_aten::SizesType> sizes,
     std::vector<uint8_t> data,
     std::vector<exec_aten::DimOrderType> dim_order,
     std::vector<exec_aten::StridesType> strides,
+    exec_aten::ScalarType type,
     exec_aten::TensorShapeDynamism dynamism) {
   ET_CHECK_MSG(
       data.size() >= exec_aten::compute_numel(sizes.data(), sizes.size()) *
-              exec_aten::elementSize(scalar_type),
+              exec_aten::elementSize(type),
       "Data size is smaller than required by sizes and scalar type.");
   auto raw_data_ptr = data.data();
   auto data_ptr = std::make_shared<std::vector<uint8_t>>(std::move(data));
   return make_tensor_impl_ptr(
-      scalar_type,
       std::move(sizes),
       raw_data_ptr,
       std::move(dim_order),
       std::move(strides),
+      type,
       dynamism,
       [data_ptr = std::move(data_ptr)](void*) {});
 }
