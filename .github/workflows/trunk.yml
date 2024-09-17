@@ -38,7 +38,7 @@ jobs:
 
   test-models-macos:
     name: test-models-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.5
     needs: gather-models
     strategy:
       matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
@@ -63,7 +63,7 @@ jobs:
 
   test-custom-ops-macos:
     name: test-custom-ops-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.5
     strategy:
       matrix:
         include:
@@ -85,7 +85,7 @@ jobs:
 
   test-selective-build-macos:
     name: test-selective-build-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.5
     strategy:
       matrix:
         include:
@@ -107,7 +107,7 @@ jobs:
 
   test-demo-backend-delegation:
     name: test-demo-backend-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.5
     strategy:
       matrix:
         include:
@@ -131,7 +131,7 @@ jobs:
 
   test-arm-backend-delegation:
     name: test-arm-backend-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.5
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-arm-sdk
@@ -156,7 +156,7 @@ jobs:
 
   test-arm-reference-delegation:
     name: test-arm-reference-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.5
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-arm-sdk
@@ -177,7 +177,7 @@ jobs:
 
   test-coreml-delegate:
     name: test-coreml-delegate
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.5
     with:
       runner: macos-13-xlarge
       python-version: '3.11'
@@ -195,7 +195,7 @@ jobs:
 
   test-pybind-build-macos:
     name: test-pybind-build-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.5
     strategy:
       matrix:
         include:
@@ -219,7 +219,7 @@ jobs:
 
   test-llama-runner-macos:
     name: test-llama-runner-mac
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.5
     strategy:
       matrix:
         dtype: [fp32]
@@ -273,7 +273,7 @@ jobs:
   # # TODO(jackzhxng): Runner consistently runs out of memory before test finishes. Try to find a more powerful runner.
   # test-llava-runner-macos:
   #   name: test-llava-runner-macos
-  #   uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+  #   uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.5
   #   strategy:
   #     fail-fast: false
   #   with:
@@ -301,7 +301,7 @@ jobs:
 
   test-qnn-model:
     name: test-qnn-model
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.5
     strategy:
       matrix:
         dtype: [fp32]
@@ -324,7 +324,7 @@ jobs:
 
   test-coreml-model:
     name: test-coreml-model
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.5
     strategy:
       fail-fast: false
     with:
@@ -354,7 +354,7 @@ jobs:
 
   test-huggingface-transformers:
     name: test-huggingface-transformers
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.5
     secrets: inherit
     strategy:
       matrix:

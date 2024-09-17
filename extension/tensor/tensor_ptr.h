@@ -293,7 +293,19 @@ TensorPtr make_tensor_ptr(
     std::initializer_list<T> data,
     exec_aten::TensorShapeDynamism dynamism =
         exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
-  return make_tensor_ptr(std::vector<T>(data), dynamism);
+  return make_tensor_ptr(make_tensor_impl_ptr(std::vector<T>(data), dynamism));
+}
+
+/**
+ * Creates a TensorPtr that manages a Tensor with a single scalar value.
+ *
+ * @tparam T The C++ type of the scalar value.
+ * @param value The scalar value to be used for the Tensor.
+ * @return A TensorPtr that manages the newly created TensorImpl.
+ */
+template <typename T>
+TensorPtr make_tensor_ptr(T value) {
+  return make_tensor_ptr(make_tensor_impl_ptr({}, std::vector<T>{value}));
 }
 
 /**

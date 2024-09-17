@@ -178,7 +178,7 @@ TensorImplPtr make_tensor_impl_ptr(
  * @return A TensorImplPtr that manages the newly created TensorImpl.
  */
 template <typename T = float>
-TensorImplPtr make_tensor_impl_ptr(
+inline TensorImplPtr make_tensor_impl_ptr(
     std::vector<T> data,
     exec_aten::TensorShapeDynamism dynamism =
         exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
