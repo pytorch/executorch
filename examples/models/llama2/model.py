@@ -201,6 +201,21 @@ the checkpoint format to avoid generating faulty models.
                 "bf16": torch.bfloat16,
             }
 
+            # Transform the output layer first if needed.
+            if (
+                hasattr(self.args, "quantize_output_per_channel")
+                and self.args.quantize_output_per_channel
+            ):
+                from .source_transformation.spin_quant import (
+                    transform_output_linear_for_spinquant,
+                )
+
+                self.model_ = transform_output_linear_for_spinquant(
+                    module=self.model_,
+                    checkpoint=checkpoint,
+                    dtype=mapping[self.args.dtype_override],
+                )
+
             self.model_ = transform_linear_for_spinquant(
                 self.model_,
                 checkpoint,

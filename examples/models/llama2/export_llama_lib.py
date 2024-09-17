@@ -370,6 +370,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         choices=["cuda", "native"],
         help="Use SpinQuant for better quantization performance. Only support cuda and native.",
     )
+
+    parser.add_argument(
+        "--quantize_output_per_channel",
+        default=False,
+        action="store_true",
+        help="When SpinQuant is used, optionally quantize the output layer per channel.",
+    )
     return parser
 
 
