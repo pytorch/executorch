@@ -57,7 +57,7 @@ class VulkanBackend(BackendDetails):
             MeanToSumDiv(),
             SpecPropPass(),
             ConstraintBasedSymShapeEvalPass(),
-            MemoryPlanningPass("greedy"),
+            MemoryPlanningPass(),
         ]
 
         new_gm = program.graph_module
