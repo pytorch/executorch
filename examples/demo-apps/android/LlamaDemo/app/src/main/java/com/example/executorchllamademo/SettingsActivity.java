@@ -46,6 +46,8 @@ public class SettingsActivity extends AppCompatActivity {
 
   private DemoSharedPreferences mDemoSharedPreferences;
   public static double TEMPERATURE_MIN_VALUE = 0.0;
+  public static String MODEL_PATH="/data/local/tmp/et-mtk/llama3";
+  //public static String MODEL_PATH="/data/local/tmp/llama";
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -286,7 +288,7 @@ public class SettingsActivity extends AppCompatActivity {
   }
 
   private void setupModelSelectorDialog() {
-    String[] pteFiles = listLocalFile("/data/local/tmp/llama/", ".pte");
+    String[] pteFiles = listLocalFile(MODEL_PATH, ".pte");
     AlertDialog.Builder modelPathBuilder = new AlertDialog.Builder(this);
     modelPathBuilder.setTitle("Select model path");
 
@@ -342,7 +344,7 @@ public class SettingsActivity extends AppCompatActivity {
   }
 
   private void setupTokenizerSelectorDialog() {
-    String[] binFiles = listLocalFile("/data/local/tmp/llama/", ".bin");
+    String[] binFiles = listLocalFile(MODEL_PATH, ".bin");
     String[] tokenizerFiles = new String[binFiles.length];
     System.arraycopy(binFiles, 0, tokenizerFiles, 0, binFiles.length);
     AlertDialog.Builder tokenizerPathBuilder = new AlertDialog.Builder(this);

@@ -486,18 +486,22 @@ Method& ModelChunk::GetModelMethod() {
 
 // Override the virtual functions
 void* ModelChunk::CreateModelInstance(const std::string& modelPath) {
+  ET_LOG(Info, "cmodi in CreateModelInstance");
   auto modelInstance = new ModelInstance;
+  ET_LOG(Info, "cmodi 100");
 
   // Create a loader to get the data of the program file. There are other
   // DataLoaders that use mmap() or point to data that's already in memory, and
   // users can create their own DataLoaders to load from arbitrary sources.
   Result<FileDataLoader> loader = FileDataLoader::from(modelPath.c_str());
+  ET_LOG(Info, "cmodi 101");
   ET_CHECK_MSG(
       loader.ok(), "FileDataLoader::from() failed: 0x%" PRIx32, loader.error());
 
   // Parse the program file. This is immutable, and can also be reused between
   // multiple execution invocations across multiple threads.
   Result<Program> program_loaded = Program::load(&loader.get());
+  ET_LOG(Info, "cmodi 102");
   if (!program_loaded.ok()) {
     ET_LOG(Error, "Failed to parse model file %s", modelPath.c_str());
     return nullptr;
@@ -508,12 +512,15 @@ void* ModelChunk::CreateModelInstance(const std::string& modelPath) {
   // methods.
   modelInstance->program =
       std::make_unique<Program>(std::move(program_loaded.get()));
+  ET_LOG(Info, "cmodi 103");
   auto& program = modelInstance->program;
+  ET_LOG(Info, "cmodi 104");
 
   // Use the first method in the program.
   const char* method_name = nullptr;
   {
     const auto method_name_result = program->get_method_name(0);
+    ET_LOG(Info, "cmodi 105");
     ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
     method_name = *method_name_result;
   }
@@ -530,11 +537,14 @@ void* ModelChunk::CreateModelInstance(const std::string& modelPath) {
   modelInstance->method_allocator_pool.resize(kMethodAllocatorPoolSize);
   modelInstance->method_allocator = std::make_unique<MemoryAllocator>(
       kMethodAllocatorPoolSize, modelInstance->method_allocator_pool.data());
+  ET_LOG(Info, "cmodi 106");
   auto& method_allocator = modelInstance->method_allocator;
   method_allocator->enable_profiling("method allocator");
 
   auto& planned_buffers = modelInstance->planned_buffers; // Owns the memory
   auto& planned_spans = modelInstance->planned_spans; // Passed to the allocator
+
+  ET_LOG(Info, "cmodi 107");
 
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
@@ -545,22 +555,28 @@ void* ModelChunk::CreateModelInstance(const std::string& modelPath) {
     planned_buffers.push_back(std::make_unique<uint8_t[]>(buffer_size));
     planned_spans.push_back({planned_buffers.back().get(), buffer_size});
   }
+  ET_LOG(Info, "cmodi 108");
   modelInstance->planned_memory = std::make_unique<HierarchicalAllocator>(
       Span<Span<uint8_t>>{planned_spans.data(), planned_spans.size()});
   auto& planned_memory = modelInstance->planned_memory;
 
+  ET_LOG(Info, "cmodi 109");
   // Assemble all of the allocators into the MemoryManager that the Executor
   // will use.
   auto& neuron_allocator = GET_NEURON_ALLOCATOR;
+  ET_LOG(Info, "cmodi 110");
   modelInstance->memory_manager = std::make_unique<MemoryManager>(
       method_allocator.get(),
       planned_memory.get(),
       dynamic_cast<MemoryAllocator*>(&neuron_allocator));
+  ET_LOG(Info, "cmodi 111");
   auto& memory_manager = modelInstance->memory_manager;
+  ET_LOG(Info, "cmodi 112");
 
   ET_LOG(Debug, "Begin loading method %s", method_name);
   Result<Method> method =
       program->load_method(method_name, memory_manager.get());
+  ET_LOG(Info, "cmodi 113");
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
@@ -569,6 +585,7 @@ void* ModelChunk::CreateModelInstance(const std::string& modelPath) {
   ET_LOG(Debug, "Method loaded.");
 
   modelInstance->method = std::make_unique<Method>(std::move(method.get()));
+  ET_LOG(Info, "cmodi 114");
   return modelInstance;
 }
 
