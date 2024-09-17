@@ -104,11 +104,11 @@ def get_ops_count(graph_module: torch.fx.GraphModule) -> Dict[str, int]:
             ):
                 continue
             # If the op is already present, increment the count
-            if get_edge_overload_packet(node.target).__name__ in freq:
-                freq[get_edge_overload_packet(node.target).__name__] += 1
+            if node.target._name in freq:
+                freq[node.target._name] += 1
             # else, add a new entry
             else:
-                freq[get_edge_overload_packet(node.target).__name__] = 1
+                freq[node.target._name] = 1
     return freq
 
 
