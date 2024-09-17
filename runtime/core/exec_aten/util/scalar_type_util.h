@@ -1013,6 +1013,7 @@ inline ::executorch::aten::ScalarType promoteTypes(
   [&] {                                              \
     const auto& _st = TYPE;                          \
     constexpr const char* et_switch_name = NAME;     \
+    (void)et_switch_name; /* Suppress unused var */  \
     switch (_st) {                                   \
       __VA_ARGS__                                    \
       default:                                       \

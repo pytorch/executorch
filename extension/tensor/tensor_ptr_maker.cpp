@@ -105,11 +105,11 @@ TensorPtr empty_strided(
       exec_aten::compute_numel(sizes.data(), sizes.size()) *
       exec_aten::elementSize(type));
   return make_tensor_ptr(
-      type,
       std::move(sizes),
       std::move(data),
       {},
       std::move(strides),
+      type,
       dynamism);
 }
 

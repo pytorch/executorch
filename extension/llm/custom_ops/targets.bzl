@@ -35,7 +35,10 @@ def define_common_targets():
             name = "custom_ops_aot_lib" + mkl_dep,
             srcs = [
                 "op_sdpa_aot.cpp",
+                "op_tile_crop_aot.cpp",
+                "op_tile_crop.cpp",
             ],
+            headers = ["op_tile_crop.h"],
             visibility = [
                 "//executorch/...",
                 "@EXECUTORCH_CLIENTS",
