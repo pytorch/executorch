@@ -204,6 +204,16 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(add_module, sample_inputs)
 
+        sample_inputs = (
+            torch.rand(size=(4, 5, 2, 3), dtype=torch.float32),
+            torch.rand(size=(4, 5, 2, 3), dtype=torch.float32),
+            torch.rand(
+                size=(2, 3), dtype=torch.float32
+            ),  # test broadcasting on packed dim
+        )
+
+        self.lower_module_and_test_output(add_module, sample_inputs)
+
     def test_vulkan_backend_add_int(self):
         class AddIntModule(torch.nn.Module):
             def __init__(self):
