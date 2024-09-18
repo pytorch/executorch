@@ -18,7 +18,7 @@ float hardswish(float x) {
 
 vec4 hardswish(vec4 tex) {
   return vec4(
-      hardswish(tex.x), hardswish(tex.y), hardswish(tex.z), hardswish(tex.z));
+      hardswish(tex.x), hardswish(tex.y), hardswish(tex.z), hardswish(tex.w));
 }
 
 float hardshrink(float x, float lambda, float neg_lambda) {
