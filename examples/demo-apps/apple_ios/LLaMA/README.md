@@ -33,16 +33,40 @@ First it’s important to note that currently ExecuTorch provides support across
 ## How to Use the App
 This section will provide the main steps to use the app, along with a code snippet of the ExecuTorch API.
 
-```{note}
+### Swift Package Manager
+
 ExecuTorch runtime is distributed as a Swift package providing some .xcframework as prebuilt binary targets.
 Xcode will download and cache the package on the first run, which will take some time.
+
+Note: If you're running into any issues related to package dependencies, quit Xcode entirely, delete the whole executorch repo, clean the caches by running the command below in terminal and clone the repo again.
+
+```rm -rf \
+  ~/Library/org.swift.swiftpm \
+  ~/Library/Caches/org.swift.swiftpm \
+  ~/Library/Caches/com.apple.dt.Xcode \
+  ~/Library/Developer/Xcode/DerivedData
 ```
 
+Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.
+
+Note: To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the executorch_debug framework. For optimal performance, always link against the Release version of the deliverables (those without the _debug suffix), which have all logging overhead removed.
+
+For more details integrating and Running ExecuTorch on Apple Platforms, checkout this [link](https://pytorch.org/executorch/main/apple-runtime.html).
+
+### XCode
 * Open XCode and select "Open an existing project" to open `examples/demo-apps/apple_ios/LLama`.
-* Ensure that the ExecuTorch package dependencies are installed correctly.
+* Ensure that the ExecuTorch package dependencies are installed correctly, then select which ExecuTorch framework should link against which target.
+
+<p align="center">
+<img src="docs/screenshots/ios_demo_app_swift_pm.png" alt="iOS LLaMA App Swift PM" width="600">
+</p>
+
+<p align="center">
+<img src="docs/screenshots/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" width="600">
+</p>
+
 * Run the app. This builds and launches the app on the phone.
 * In app UI pick a model and tokenizer to use, type a prompt and tap the arrow buton
-
 
 ## Copy the model to Simulator
 
