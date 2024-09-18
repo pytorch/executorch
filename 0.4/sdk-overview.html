@@ -41,8 +41,6 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Bundled Program – a Tool for ExecuTorch Model Validation" href="sdk-bundled-io.html" />
-    <link rel="prev" title="Debug Backend Delegate" href="debug-backend-delegate.html" />
 
 
   <!-- Google Tag Manager -->
@@ -317,7 +315,7 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
@@ -379,8 +377,8 @@
 <li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debug Backend Delegate</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
-<ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Introduction to the ExecuTorch Developer Tools</a></li>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
@@ -388,7 +386,7 @@
 <li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-tutorial.html">Developer Tools Usage Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
@@ -473,52 +471,7 @@
               
   <div class="section" id="introduction-to-the-executorch-developer-tools">
 <h1>Introduction to the ExecuTorch Developer Tools<a class="headerlink" href="#introduction-to-the-executorch-developer-tools" title="Permalink to this heading">¶</a></h1>
-<p>ExecuTorch has been designed with <a class="reference internal" href="intro-overview.html"><span class="doc std std-doc">productivity</span></a> as one of its core objectives and the ExecuTorch Developer Tools enable this through the comprehensive suite of tools it provides users to help them profile, debug, and visualize models that they have onboarded onto ExecuTorch.</p>
-<p>All the components of the Developer Tools have been designed from the ground up with deep integration in both the export process and the runtime. This enables us to provide unique features such as linking back operator execution in the runtime to the line of code in the original eager model that this operator originated from.</p>
-<div class="section" id="developer-tools-features">
-<h2>Developer Tools Features<a class="headerlink" href="#developer-tools-features" title="Permalink to this heading">¶</a></h2>
-<p>The ExecuTorch Developer Tools support the following features:</p>
-<ul class="simple">
-<li><p><strong>BundledProgram</strong> is a utility tool for exporting the model bundled with a sample set of (representative) inputs and expected outputs, so that during runtime users can validate that the actual output is in fact the same as the expected output.</p></li>
-<li><p><strong>Profiling</strong> models with operator level breakdown of performance stats</p>
-<ul>
-<li><p>Linking back operator performance stats to source code and module hierarchy</p></li>
-<li><p>Model loading and execution time</p></li>
-</ul>
-</li>
-<li><p><strong>Delegate Integration</strong> - Surfacing performance details from delegate backends</p>
-<ul>
-<li><p>Link back delegate operator execution to the nodes they represent in the edge dialect graph (and subsequently linking back to source code and module hierarchy)</p></li>
-</ul>
-</li>
-<li><p><strong>Debugging</strong> - Intermediate outputs and output quality analysis</p></li>
-<li><p><strong>Visualization</strong> - Coming soon</p></li>
-</ul>
-</div>
-<div class="section" id="fundamental-components-of-the-developer-tools">
-<h2>Fundamental components of the Developer Tools<a class="headerlink" href="#fundamental-components-of-the-developer-tools" title="Permalink to this heading">¶</a></h2>
-<p>In order to fully understand and leverage the power of the Developer Tools in this section, the fundamental components that power the Developer Tools will be detailed.</p>
-<div class="section" id="etrecord">
-<h3>ETRecord<a class="headerlink" href="#etrecord" title="Permalink to this heading">¶</a></h3>
-<p>ETRecord (ExecuTorch Record) is an artifact generated during the export process that stores the graphs and other metadata that is critical for the Developer Tools to be able to link back the performance/debug data sourced from the runtime to the source code of the eager model.</p>
-<p>To draw a rough equivalence to conventional software development ETRecord can be considered as the binary built with debug symbols that is used for debugging in GNU Project debugger (gdb).</p>
-<p>More details are available in the <a class="reference internal" href="sdk-etrecord.html"><span class="doc std std-doc">ETRecord documentation</span></a> on how to generate and store an ETRecord.</p>
-</div>
-<div class="section" id="etdump">
-<h3>ETDump<a class="headerlink" href="#etdump" title="Permalink to this heading">¶</a></h3>
-<p>ETDump (ExecuTorch Dump) is the binary blob that is generated by the runtime after running a model. Similarly as above, to draw a rough equivalence to conventional software development, ETDump can be considered as the coredump of ExecuTorch, but in this case within ETDump we store all the performance and debug data that was generated by the runtime during model execution.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>If you only care about looking at the raw performance data without linking back to source code and other extensive features, an ETDump alone will be enough to leverage the basic features of the Developer Tools. For the full experience, it is recommended that the users also generate an ETRecord.</p>
-</div>
-<p>More details are available in the <a class="reference internal" href="sdk-etdump.html"><span class="doc std std-doc">ETDump documentation</span></a> on how to generate and store an ETDump from the runtime.</p>
-</div>
-<div class="section" id="inspector-apis">
-<h3>Inspector APIs<a class="headerlink" href="#inspector-apis" title="Permalink to this heading">¶</a></h3>
-<p>The Inspector Python APIs are the main user enrty point into the Developer Tools. They join the data sourced from ETDump and ETRecord to give users access to all the performance and debug data sourced from the runtime along with linkage back to eager model source code and module hierarchy in an easy to use API.</p>
-<p>More details are available in the <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API documentation</span></a> on how to use the Inspector APIs.</p>
-</div>
-</div>
+<p>Please update your link to <a class="reference external" href="https://pytorch.org/executorch/main/devtools-overview.html">https://pytorch.org/executorch/main/devtools-overview.html</a>. This URL will be deleted after v0.4.0.</p>
 </div>
 
 
@@ -526,15 +479,6 @@
              
             </div>
             <footer>
-  
-    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
-      
-        <a href="sdk-bundled-io.html" class="btn btn-neutral float-right" title="Bundled Program – a Tool for ExecuTorch Model Validation" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
-      
-      
-        <a href="debug-backend-delegate.html" class="btn btn-neutral" title="Debug Backend Delegate" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
-      
-    </div>
   
 
   
@@ -566,16 +510,7 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Introduction to the ExecuTorch Developer Tools</a><ul>
-<li><a class="reference internal" href="#developer-tools-features">Developer Tools Features</a></li>
-<li><a class="reference internal" href="#fundamental-components-of-the-developer-tools">Fundamental components of the Developer Tools</a><ul>
-<li><a class="reference internal" href="#etrecord">ETRecord</a></li>
-<li><a class="reference internal" href="#etdump">ETDump</a></li>
-<li><a class="reference internal" href="#inspector-apis">Inspector APIs</a></li>
-</ul>
-</li>
-</ul>
-</li>
+<li><a class="reference internal" href="#">Introduction to the ExecuTorch Developer Tools</a></li>
 </ul>
 
             </div>

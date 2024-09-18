@@ -317,7 +317,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../tutorials/sdk-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
@@ -390,7 +390,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
@@ -398,7 +398,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-tutorial.html">Developer Tools Usage Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
@@ -522,7 +522,7 @@ conda</label><div class="sd-tab-content docutils">
 
 <span class="c1"># Clone the ExecuTorch repository and submodules.</span>
 <span class="n">mkdir</span> <span class="n">third</span><span class="o">-</span><span class="n">party</span>
-<span class="n">git</span> <span class="n">clone</span> <span class="o">-</span><span class="n">b</span> <span class="n">release</span><span class="o">/</span><span class="mf">0.2</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">github</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">pytorch</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">git</span> <span class="n">third</span><span class="o">-</span><span class="n">party</span><span class="o">/</span><span class="n">executorch</span>
+<span class="n">git</span> <span class="n">clone</span> <span class="o">-</span><span class="n">b</span> <span class="n">release</span><span class="o">/</span><span class="mf">0.4</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">github</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">pytorch</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">git</span> <span class="n">third</span><span class="o">-</span><span class="n">party</span><span class="o">/</span><span class="n">executorch</span>
 <span class="n">cd</span> <span class="n">third</span><span class="o">-</span><span class="n">party</span><span class="o">/</span><span class="n">executorch</span>
 <span class="n">git</span> <span class="n">submodule</span> <span class="n">update</span> <span class="o">--</span><span class="n">init</span>
 
@@ -556,7 +556,7 @@ See the pyenv-virtualenv installation guide above on how to add this to your .ba
 
 <span class="c1"># Clone the ExecuTorch repository and submodules.</span>
 <span class="n">mkdir</span> <span class="n">third</span><span class="o">-</span><span class="n">party</span>
-<span class="n">git</span> <span class="n">clone</span> <span class="o">-</span><span class="n">b</span> <span class="n">release</span><span class="o">/</span><span class="mf">0.2</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">github</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">pytorch</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">git</span> <span class="n">third</span><span class="o">-</span><span class="n">party</span><span class="o">/</span><span class="n">executorch</span>
+<span class="n">git</span> <span class="n">clone</span> <span class="o">-</span><span class="n">b</span> <span class="n">release</span><span class="o">/</span><span class="mf">0.4</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">github</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">pytorch</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">git</span> <span class="n">third</span><span class="o">-</span><span class="n">party</span><span class="o">/</span><span class="n">executorch</span>
 <span class="n">cd</span> <span class="n">third</span><span class="o">-</span><span class="n">party</span><span class="o">/</span><span class="n">executorch</span>
 <span class="n">git</span> <span class="n">submodule</span> <span class="n">update</span> <span class="o">--</span><span class="n">init</span>
 

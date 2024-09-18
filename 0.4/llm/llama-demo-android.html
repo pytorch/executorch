@@ -315,7 +315,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../tutorials/sdk-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
@@ -378,7 +378,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
@@ -386,7 +386,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-tutorial.html">Developer Tools Usage Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
@@ -508,7 +508,7 @@
 <td><p><span class="xref myst">link</span></p></td>
 </tr>
 <tr class="row-odd"><td><p>QNN (Qualcomm AI Accelerators)</p></td>
-<td><p>Coming soon</p></td>
+<td><p><span class="xref myst">link</span></p></td>
 </tr>
 <tr class="row-even"><td><p>MediaTek (MediaTek AI Accelerators)</p></td>
 <td><p><span class="xref myst">link</span></p></td>
@@ -529,14 +529,14 @@
 <p>Below are the UI features for the app.</p>
 <p>Select the settings widget to get started with picking a model, its parameters and any prompts.</p>
 <p align="center">
-<img src="docs/screenshots/opening_the_app_details.png" width=800>
+<img src="../_static/img/opening_the_app_details.png" width=800>
 </p>
 </div>
 <div class="section" id="select-models-and-parameters">
 <h3>Select Models and Parameters<a class="headerlink" href="#select-models-and-parameters" title="Permalink to this heading">¶</a></h3>
 <p>Once you’ve selected the model, tokenizer, and model type you are ready to click on “Load Model” to have the app load the model and go back to the main Chat activity.</p>
 <p align="center">
-      <img src="docs/screenshots/settings_menu.png" width=300>
+      <img src="../_static/img/settings_menu.png" width=300>
 </p>
 <p>Optional Parameters:</p>
 <ul class="simple">
@@ -568,11 +568,11 @@ Helpful ExecuTorch API in app</p>
 <h3>User Prompt<a class="headerlink" href="#user-prompt" title="Permalink to this heading">¶</a></h3>
 <p>Once model is successfully loaded then enter any prompt and click the send (i.e. generate) button to send it to the model.</p>
 <p align="center">
-<img src="docs/screenshots/load_complete_and_start_prompt.png" width=300>
+<img src="../_static/img/load_complete_and_start_prompt.png" width=300>
 </p>
 <p>You can provide it more follow-up questions as well.</p>
 <p align="center">
-<img src="docs/screenshots/chat.png" width=300>
+<img src="../_static/img/chat.png" width=300>
 </p>
 <blockquote>
 <div><p>[!TIP]
@@ -589,14 +589,14 @@ Helpful ExecuTorch API in app</p>
 <p>[<em>LLaVA-1.5: Only for XNNPACK delegate</em>]</p>
 <p>For LLaVA-1.5 implementation, select the exported LLaVA .pte and tokenizer file in the Settings menu and load the model. After this you can send an image from your gallery or take a live picture along with a text prompt to the model.</p>
 <p align="center">
-<img src="docs/screenshots/llava_example.png" width=300>
+<img src="../_static/img/llava_example.png" width=300>
 </p>
 </div>
 <div class="section" id="output-generated">
 <h3>Output Generated<a class="headerlink" href="#output-generated" title="Permalink to this heading">¶</a></h3>
 <p>To show completion of the follow-up question, here is the complete detailed response from the model.</p>
 <p align="center">
-<img src="docs/screenshots/chat_response.png" width=300>
+<img src="../_static/img/chat_response.png" width=300>
 </p>
 <blockquote>
 <div><p>[!TIP]
