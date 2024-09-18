@@ -91,7 +91,7 @@ void add_native_layer_norm_node(
 
   std::vector<int64_t> in_sizes = t_input->sizes();
 
-  utils::uvec3 global_size = t_mean->image_extents();
+  utils::uvec3 global_size = t_mean->logical_limits();
   utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   std::string kernel_name("native_layer_norm");
@@ -109,7 +109,7 @@ void add_native_layer_norm_node(
         vkapi::MemoryAccessType::WRITE},
        {{arg_in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->texture_limits_ubo(),
+      {t_out->logical_limits_ubo(),
        t_out->sizes_ubo(),
        graph.create_params_buffer(epsilon)},
       // Specialization Constants

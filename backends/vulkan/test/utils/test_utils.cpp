@@ -77,8 +77,8 @@ void record_nchw_to_image_op(
       get_nchw_to_tensor_shader(
           v_dst, context->adapter_ptr()->has_full_int8_buffers_support()),
       pipeline_barrier,
-      v_dst.image_extents(),
-      adaptive_work_group_size(v_dst.image_extents()),
+      v_dst.logical_limits(),
+      adaptive_work_group_size(v_dst.logical_limits()),
       specialization_constants,
       VK_NULL_HANDLE,
       0,
@@ -102,8 +102,8 @@ void record_image_to_nchw_op(
   context->submit_compute_job(
       get_tensor_to_nchw_shader(v_src),
       pipeline_barrier,
-      v_src.image_extents(),
-      adaptive_work_group_size(v_src.image_extents()),
+      v_src.logical_limits(),
+      adaptive_work_group_size(v_src.logical_limits()),
       specialization_constants,
       VK_NULL_HANDLE,
       0,
@@ -160,8 +160,8 @@ void record_conv2d_prepack_weights_op(
   context->submit_compute_job(
       shader,
       pipeline_barrier,
-      v_dst.image_extents(),
-      adaptive_work_group_size(v_dst.image_extents()),
+      v_dst.logical_limits(),
+      adaptive_work_group_size(v_dst.logical_limits()),
       specialization_constants,
       VK_NULL_HANDLE,
       0,
@@ -188,8 +188,8 @@ void record_binary_op(
   context->submit_compute_job(
       VK_KERNEL_FROM_STR(kernel_name),
       pipeline_barrier,
-      v_dst.image_extents(),
-      adaptive_work_group_size(v_dst.image_extents()),
+      v_dst.logical_limits(),
+      adaptive_work_group_size(v_dst.logical_limits()),
       specialization_constants,
       VK_NULL_HANDLE,
       0,
@@ -326,7 +326,7 @@ void record_matmul_texture3d(
   add_storage_type_suffix(kernel_name, out.storage_type());
   add_dtype_suffix(kernel_name, out.dtype());
 
-  utils::uvec3 global_wg_size = out.logical_extents();
+  utils::uvec3 global_wg_size = out.logical_limits();
 
   vkapi::PipelineBarrier pipeline_barrier{};
   api::context()->submit_compute_job(
