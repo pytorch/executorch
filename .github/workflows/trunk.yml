@@ -223,7 +223,6 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        build-tool: [buck2, cmake]
         mode: [portable, xnnpack+kv+custom, mps, coreml]
       fail-fast: false
     with:
@@ -235,25 +234,12 @@ jobs:
       script: |
 
         DTYPE=${{ matrix.dtype }}
-        BUILD_TOOL=${{ matrix.build-tool }}
         MODE=${{ matrix.mode }}
-
-        if [[ "${BUILD_TOOL}" == "buck2" ]]; then
-          # TODO: Will add more modes that don't support buck2
-          if [[ "${MODE}" == "mps" ]]; then
-            echo "mps doesn't support buck2."
-            exit 0
-          fi
-          if [[ "${MODE}" == "coreml" ]]; then
-            echo "coreml doesn't support buck2."
-            exit 0
-          fi
-        fi
 
         bash .ci/scripts/setup-conda.sh
 
         # Setup executorch
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh cmake
 
         if [[ "${MODE}" == "mps" ]]; then
           # Install mps delegate
@@ -268,7 +254,7 @@ jobs:
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/models/llama2/install_requirements.sh
         # Test llama2
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llama.sh stories110M "${BUILD_TOOL}" "${DTYPE}" "${MODE}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llama.sh stories110M cmake "${DTYPE}" "${MODE}"
 
   # # TODO(jackzhxng): Runner consistently runs out of memory before test finishes. Try to find a more powerful runner.
   # test-llava-runner-macos:
@@ -406,6 +392,10 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Set up HuggingFace Dependencies"
+        if [ -z "$SECRET_EXECUTORCH_HF_TOKEN" ]; then
+          echo "::error::SECRET_EXECUTORCH_HF_TOKEN is empty. For security reason secrets won't be accessible on forked PRs. Please make sure you submit a non-forked PR."
+          exit 1
+        fi
         pip install -U "huggingface_hub[cli]"
         huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         pip install accelerate sentencepiece

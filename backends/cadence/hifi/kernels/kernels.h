@@ -8,12 +8,9 @@
 
 #pragma once
 
-#include "inttypes.h"
-#include "stddef.h"
-#include "xa_type_def.h"
-
-/* For NNLIB APIs */
-#include "xa_nnlib_kernels_api.h"
+#include <inttypes.h>
+#include <stddef.h>
+#include <xa_type_def.h>
 
 namespace impl {
 namespace HiFi {

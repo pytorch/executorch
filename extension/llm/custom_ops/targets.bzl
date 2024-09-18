@@ -9,8 +9,16 @@ def define_common_targets():
     for mkl_dep in ["", "_mkl_noomp"]:
         runtime.cxx_library(
             name = "custom_ops" + mkl_dep,
-            srcs = ["op_sdpa.cpp", "op_fallback.cpp"],
-            exported_headers = ["op_sdpa.h", "op_fallback.h"],
+            srcs = [
+                "op_fallback.cpp",
+                "op_fast_hadamard_transform.cpp",
+                "op_sdpa.cpp",
+            ],
+            exported_headers = [
+                "op_fallback.h",
+                "op_fast_hadamard_transform.h",
+                "op_sdpa.h",
+            ],
             exported_deps = [
                 "//executorch/runtime/kernel:kernel_includes",
                 "//executorch/kernels/portable/cpu:scalar_utils",
@@ -19,6 +27,10 @@ def define_common_targets():
                 "//executorch/extension/kernel_util:kernel_util",
                 "//executorch/extension/parallel:thread_parallel",
                 "//executorch/extension/threadpool:threadpool",
+            ],
+            deps = [
+                "//executorch/kernels/portable/cpu/util:reduce_util",
+                "//executorch/extension/llm/custom_ops/spinquant:fast_hadamard_transform",
             ],
             compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"],
             visibility = [
@@ -34,11 +46,13 @@ def define_common_targets():
         runtime.cxx_library(
             name = "custom_ops_aot_lib" + mkl_dep,
             srcs = [
+                "op_fast_hadamard_transform_aten.cpp",
                 "op_sdpa_aot.cpp",
-                "op_tile_crop_aot.cpp",
                 "op_tile_crop.cpp",
+                "op_tile_crop_aot.cpp",
             ],
             headers = ["op_tile_crop.h"],
+            compiler_flags = ["-Wno-global-constructors"],
             visibility = [
                 "//executorch/...",
                 "@EXECUTORCH_CLIENTS",

@@ -48,7 +48,12 @@ void add_embedding_node(
       graph.create_local_wg_size(out),
       {{out, vkapi::MemoryAccessType::WRITE},
        {{in, weight}, vkapi::MemoryAccessType::READ}},
-      {t_out->sizes_ubo()}));
+      {
+          t_out->sizes_ubo(),
+          t_out->axis_map_ubo(),
+          t_in->axis_map_ubo(),
+          t_weight->axis_map_ubo(),
+      }));
 }
 
 void embedding(ComputeGraph& graph, const std::vector<ValueRef>& args) {

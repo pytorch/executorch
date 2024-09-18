@@ -85,8 +85,11 @@ void add_binary_op_node(
        {{arg1, arg2}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {t_out->sizes_ubo(),
+       t_out->axis_map_ubo(),
        t_in1->sizes_ubo(),
+       t_in1->axis_map_ubo(),
        t_in2->sizes_ubo(),
+       t_in2->axis_map_ubo(),
        graph.create_params_buffer(broadcast_params),
        graph.create_params_buffer(alpha_val)},
       // Specialization Constants
