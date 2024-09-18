@@ -35,9 +35,9 @@ int extend_sign(int x) {
   return x;
 }
 
-ivec4 read_texel(ivec4 tensor_idx) {
-  const ivec4 buf_indices = get_texel_nchw_buffer_ixs(
-      tensor_idx, sizes, packed_dim);
+ivec4 read_texel(ivec4 tidx) {
+  const ivec4 buf_indices = tidx_to_nchwi(
+      tidx, sizes, packed_dim);
 
   int shift = (1 << 8) - 1;
   ivec4 masks;
@@ -52,7 +52,7 @@ ivec4 read_texel(ivec4 tensor_idx) {
   ivec4 out_tex = ivec4(0);
 
   [[unroll]] for (int i = 0; i < 4; ++i) {
-    if (tensor_idx[packed_dim] + i < sizes[packed_dim]) {
+    if (tidx[packed_dim] + i < sizes[packed_dim]) {
       int in_texel = nchw_in[buf_indices[i] / 4];
       int extracted_val = (in_texel & masks[i]) >> (8 * (buf_indices[i] % 4));
       extracted_val = extend_sign(extracted_val);
@@ -64,12 +64,12 @@ ivec4 read_texel(ivec4 tensor_idx) {
 }
 
 void main() {
-  const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 tensor_idx = to_tensor_idx(pos, sizes, axis_map, packed_dim);
+  const ivec3 lpos = ivec3(gl_GlobalInvocationID);
+  const ivec4 tidx = lpos_to_tidx(lpos, sizes, axis_map.w, packed_dim);
 
-  if (any(greaterThanEqual(tensor_idx, sizes))) {
+  if (any(greaterThanEqual(tidx, sizes))) {
     return;
   }
 
-  write_texel(t_out, pos, read_texel(tensor_idx));
+  write_texel(t_out, lpos_to_pos(lpos, axis_map), read_texel(tidx));
 }

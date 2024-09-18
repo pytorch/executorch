@@ -30,34 +30,34 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 layout(constant_id = 3) const int packed_dim = C_DIM;
 
-VEC4_T read_texel(ivec4 tensor_idx) {
-  const ivec4 buf_indices = get_texel_nchw_buffer_ixs(
-      tensor_idx,
+VEC4_T read_texel(ivec4 tidx) {
+  const ivec4 buf_indices = tidx_to_nchwi(
+      tidx,
       sizes,
       packed_dim);
 
   VEC4_T texel = VEC4_T(0);
-  if (tensor_idx[packed_dim] < sizes[packed_dim]) {
+  if (tidx[packed_dim] < sizes[packed_dim]) {
     texel.x = SCALAR_T(nchw_in[buf_indices.x]);
   }
-  if (tensor_idx[packed_dim] + 1 < sizes[packed_dim]) {
+  if (tidx[packed_dim] + 1 < sizes[packed_dim]) {
     texel.y = SCALAR_T(nchw_in[buf_indices.y]);
   }
-  if (tensor_idx[packed_dim] + 2 < sizes[packed_dim]) {
+  if (tidx[packed_dim] + 2 < sizes[packed_dim]) {
     texel.z = SCALAR_T(nchw_in[buf_indices.z]);
   }
-  if (tensor_idx[packed_dim] + 3 < sizes[packed_dim]) {
+  if (tidx[packed_dim] + 3 < sizes[packed_dim]) {
     texel.w = SCALAR_T(nchw_in[buf_indices.w]);
   }
   return texel;
 }
 
 void main() {
-  const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 tensor_idx = to_tensor_idx(pos, sizes, axis_map, packed_dim);
-  if (any(greaterThanEqual(tensor_idx, sizes))) {
+  const ivec3 lpos = ivec3(gl_GlobalInvocationID);
+  const ivec4 tidx = lpos_to_tidx(lpos, sizes, axis_map.w, packed_dim);
+  if (any(greaterThanEqual(tidx, sizes))) {
     return;
   }
 
-  write_texel(t_out, pos, read_texel(tensor_idx));
+  write_texel(t_out, lpos_to_pos(lpos, axis_map), read_texel(tidx));
 }
