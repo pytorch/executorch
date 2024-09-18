@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import warnings
 from typing import cast, Dict, List
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -42,8 +43,9 @@ class MaxPool2d(NodeVisitor):
             if user.target.__name__ == "getitem":
                 getitem_index = user.args[1]
                 if getitem_index != 0:
-                    print(
-                        f"Expected second argument of getitem node for {node.target.__name__ } to be 0, got {getitem_index}"
+                    warnings.warn(
+                        f"[QNN Delegate Op Builder]: Expected second argument of getitem node for {node.target.__name__ } to be 0, got {getitem_index}",
+                        stacklevel=1,
                     )
                     return
 
@@ -78,8 +80,9 @@ class MaxPool2d(NodeVisitor):
         if len(node.args) > 4:
             dilation = cast(List[int], node.args[4])
             if not (dilation == 1 or dilation == [1, 1]):
-                print(
-                    f"Not support dilation argument for max pool2d, but got {dilation}"
+                warnings.warn(
+                    f"[QNN Delegate Op Builder]: Not support dilation argument for max pool2d, but got {dilation}",
+                    stacklevel=1,
                 )
                 return
 

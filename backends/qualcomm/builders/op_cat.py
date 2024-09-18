@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import warnings
 from typing import cast, Dict, List
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -43,8 +44,9 @@ class Cat(NodeVisitor):
             )
 
         if len(list_of_tensors) != len(list_of_tensor_wrappers):
-            print(
-                "The number or input tensors is not equal to the number of input tensor wrappers."
+            warnings.warn(
+                "[QNN Delegate Op Builder]: The number or input tensors is not equal to the number of input tensor wrappers.",
+                stacklevel=1,
             )
             return
 

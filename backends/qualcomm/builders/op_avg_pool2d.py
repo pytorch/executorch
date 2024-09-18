@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import warnings
 from typing import cast, Dict, List
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -85,7 +86,10 @@ class AvgPool2d(NodeVisitor):
         if len(node.args) > 6:
             divisor_override = cast(int, node.args[6])
         if divisor_override != pooling_region:
-            print("Not support divisor_override which is not equal to pooling region.")
+            warnings.warn(
+                "[QNN Delegate Op Builder]: Not support divisor_override which is not equal to pooling region.",
+                stacklevel=1,
+            )
             return
 
         avg_pool2d_op = PyQnnWrapper.PyQnnOpWrapper(
