@@ -60,7 +60,7 @@ Note that since Llama3's vocabulary size is 4x that of Llama2, we had to quantiz
 |OnePlus 12 | 10.85 tokens/second | 11.02 tokens/second |
 
 ### Llama3.1
-> :warning: **use the main branch**: Llama3.1 is supported on the ExecuTorch main branch (not release 0.3).
+Llama3.1 is supported on the ExecuTorch main branch and release/0.4
 
 # Instructions
 
@@ -111,7 +111,7 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     ```
 3. Export model and generate `.pte` file.
     ```
-    python -m examples.models.llama2.export_llama -c stories110M.pt -p params.json -X
+    python -m examples.models.llama2.export_llama -c stories110M.pt -p params.json -X -kv
     ```
 4. Create tokenizer.bin.
 
