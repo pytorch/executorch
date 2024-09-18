@@ -17,17 +17,13 @@
  *
  * pos   - ivec3 texel position, used to fetch from an image texture via the
  *         texelFetch(image, pos, lod) GLSL function.
- * texi  - ivec4 texel element position. It is the same as pos, except with an
+ * posi  - ivec4 texel element position. It is the same as pos, except with an
  *         additional component of the index of an element within the texel.
- *
  * lpos  - ivec3 logical position, listed in WHC order. This is a permutation of
  *         texture position based on a tensor's axis_map. lpos.x is the position
  *         component that corresponds to the tensor's width dimension, lpos.y is
  *         the position component that corresponds to the tensor's height dim,
  *         and so on.
- * ltexi - ivec4 logical texel element position. It is the same as lpos, except
- *         with an additional component similar to texi.
- *
  *
  * bufi  - int index into a GPU buffer that backs a tensor.
  * nchwi - int index into a staging buffer for a tensor. The data in the
@@ -138,12 +134,9 @@ ivec4 lpos_to_tidx(
   // Moving 1 texel along the packed dim traverses 4 tensor elements
   lpos[packed_dim] *= 4;
 
-  // w index is just a placeholder, which will be adjusted later
-  ivec4 tidx = lpos.xyzz;
+  ivec4 tidx = ivec4(lpos, 0);
 
-  if (sizes.w == 1) {
-    tidx.w = 0;
-  } else {
+  if (sizes.w > 1) {
     tidx.w = tidx[batch_inner_dim] / sizes[batch_inner_dim];
     tidx[batch_inner_dim] %= sizes[batch_inner_dim];
   }
@@ -160,8 +153,10 @@ ivec3 tidx_to_lpos(
 
   ivec3 lpos = tidx.xyz;
 
-  // Adjust batch inner dim by batch index
-  lpos[batch_inner_dim] += tidx.w * sizes[batch_inner_dim];
+  // Adjust batch inner dim by batch index if needed
+  if (sizes.w > 1) {
+    lpos[batch_inner_dim] += tidx.w * sizes[batch_inner_dim];
+  }
   // Fast division by 4, since moving 1 texel along the packed dim traverses 4
   // tensor elements.
   lpos[packed_dim] >>= 2;
@@ -181,15 +176,17 @@ ivec3 tidx_to_pos(
     pos[axis_map[dim]] = tidx[dim];
   }
 
-  // Adjust batch inner dim by batch index
-  pos[axis_map[axis_map.w]] += tidx.w * sizes[axis_map.w];
+  // Adjust batch inner dim by batch index if needed
+  if (sizes.w > 1) {
+    pos[axis_map[axis_map.w]] += tidx.w * sizes[axis_map.w];
+  }
   // Fast division by 4, since moving 1 texel along the packed dim traverses 4
   // tensor elements.
   pos[axis_map[packed_dim]] >>= 2;
   return pos;
 }
 
-ivec4 tidx_to_texi(
+ivec4 tidx_to_posi(
     ivec4 tidx,
     ivec4 sizes,
     const ivec4 axis_map,
