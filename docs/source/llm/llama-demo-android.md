@@ -28,9 +28,9 @@ First it’s important to note that currently ExecuTorch provides support across
 
 | Delegate      | Resource |
 | ------------- | ------------- |
-| XNNPACK (CPU-based library)  | [link](docs/delegates/xnnpack_README.md) |
-| QNN (Qualcomm AI Accelerators)  | [link](docs/delegates/qualcomm_README.md) |
-| MediaTek (MediaTek AI Accelerators)  | [link](docs/delegates/mediatek_README.md)  |
+| XNNPACK (CPU-based library)  | [link](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/xnnpack_README.md) |
+| QNN (Qualcomm AI Accelerators)  | [link](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/qualcomm_README.md) |
+| MediaTek (MediaTek AI Accelerators)  | [link](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/mediatek_README.md)  |
 
 ## How to Use the App
 
