@@ -71,9 +71,24 @@ DEFINE_int32(
     20000000, // 20MB
     "Size of the debug buffer in bytes to allocate for intermediate outputs and program outputs logging.");
 
-using namespace torch::executor;
-using torch::executor::MemoryAllocator;
-using torch::executor::util::FileDataLoader;
+using executorch::aten::Tensor;
+using executorch::aten::TensorImpl;
+using executorch::etdump::ETDumpGen;
+using executorch::etdump::ETDumpResult;
+using executorch::extension::FileDataLoader;
+using executorch::extension::prepare_input_tensors;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::EventTracerDebugLogLevel;
+using executorch::runtime::HierarchicalAllocator;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::MemoryManager;
+using executorch::runtime::Method;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::Span;
+using executorch::runtime::TensorInfo;
 
 class CustomMemory {
  public:
@@ -112,7 +127,7 @@ class CustomMemory {
 };
 
 int main(int argc, char** argv) {
-  runtime_init();
+  executorch::runtime::runtime_init();
 
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
@@ -211,7 +226,7 @@ int main(int argc, char** argv) {
   // the method can mutate the memory-planned buffers, so the method should only
   // be used by a single thread at at time, but it can be reused.
   //
-  torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();
+  ETDumpGen etdump_gen;
   Result<Method> method =
       program->load_method(method_name, &memory_manager, &etdump_gen);
   ET_CHECK_MSG(
@@ -261,7 +276,7 @@ int main(int argc, char** argv) {
   }
   for (int output_index = 0; output_index < method->outputs_size();
        ++output_index) {
-    const exec_aten::Tensor& t = method->get_output(output_index).toTensor();
+    const Tensor& t = method->get_output(output_index).toTensor();
     out_custom_mem.push_back(
         std::make_unique<CustomMemory>(FLAGS_shared_buffer));
     std::unique_ptr<CustomMemory>& custom_mem_ptr = out_custom_mem.back();
@@ -415,7 +430,7 @@ int main(int argc, char** argv) {
         elapsed_time / inference_index);
   } else {
     // if no input is provided, fill the inputs with default values
-    auto inputs = util::prepare_input_tensors(*method);
+    auto inputs = prepare_input_tensors(*method);
     ET_CHECK_MSG(
         inputs.ok(),
         "Could not prepare inputs: 0x%" PRIx32,
@@ -434,7 +449,7 @@ int main(int argc, char** argv) {
 
   // Dump the etdump data containing profiling/debugging data to the specified
   // file.
-  etdump_result result = etdump_gen.get_etdump_data();
+  ETDumpResult result = etdump_gen.get_etdump_data();
   if (result.buf != nullptr && result.size > 0) {
     ET_LOG(
         Info,
@@ -452,7 +467,7 @@ int main(int argc, char** argv) {
         Info,
         "Write debug output binary to %s, Size = %zu",
         FLAGS_debug_output_path.c_str(),
-        FLAGS_debug_buffer_size);
+        (size_t)FLAGS_debug_buffer_size);
     FILE* f = fopen(FLAGS_debug_output_path.c_str(), "w+");
     fwrite((uint8_t*)debug_buffer, 1, FLAGS_debug_buffer_size, f);
     fclose(f);
