@@ -36,7 +36,7 @@ int extend_sign(int x) {
 }
 
 ivec4 read_texel(ivec4 tensor_idx) {
-  const ivec4 buf_indices = tidx_to_nchw_ixs(
+  const ivec4 buf_indices = tidx_to_nchwi(
       tensor_idx, sizes, packed_dim);
 
   int shift = (1 << 8) - 1;
@@ -64,12 +64,12 @@ ivec4 read_texel(ivec4 tensor_idx) {
 }
 
 void main() {
-  const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 tensor_idx = to_tensor_idx(pos, sizes, axis_map, packed_dim);
+  const ivec3 lpos = ivec3(gl_GlobalInvocationID);
+  const ivec4 tensor_idx = lpos_to_tidx(lpos, sizes, axis_map.w, packed_dim);
 
   if (any(greaterThanEqual(tensor_idx, sizes))) {
     return;
   }
 
-  write_texel(t_out, pos, read_texel(tensor_idx));
+  write_texel(t_out, lpos_to_pos(lpos, axis_map), read_texel(tensor_idx));
 }

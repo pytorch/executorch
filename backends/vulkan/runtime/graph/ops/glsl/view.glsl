@@ -39,7 +39,7 @@ void main() {
   // Assume there is a virtual continous buffer in nchw format. From the output
   // pos, we first calculate the index in the virual buffer, and then calculate
   // the input position from the indx.
-  const ivec4 buf_indices = tidx_to_nchw_ixs(out_tensor_idx, out_sizes, out_packed_dim);
+  const ivec4 buf_indices = tidx_to_nchwi(out_tensor_idx, out_sizes, out_packed_dim);
 
   VEC4_T value = VEC4_T(0);
   // Need to look up the 4 values in the output texel separately.

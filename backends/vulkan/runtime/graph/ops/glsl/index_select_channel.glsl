@@ -34,7 +34,7 @@ void main() {
   }
 
   const ivec4 idx = to_tensor_idx(out_pos, out_sizes, packed_dim);
-  const ivec4 buffer_ixs = tidx_to_nchw_ixs(idx, out_sizes, packed_dim);
+  const ivec4 buffer_ixs = tidx_to_nchwi(idx, out_sizes, packed_dim);
 
   VEC4_T out_texel;
   for (int i = 0; i < 4; ++i) {

@@ -254,7 +254,7 @@ struct vec final {
           !std::is_same<Type, OtherType>::value &&
               std::is_integral<OtherType>::value,
           int>::type = 0>
-  vec(const vec<OtherType, N>& other) {
+  /* implicit */ vec(const vec<OtherType, N>& other) {
     for (int i = 0; i < N; ++i) {
       data[i] = safe_downcast<Type>(other[i]);
     }

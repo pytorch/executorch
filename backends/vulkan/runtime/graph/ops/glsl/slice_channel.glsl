@@ -43,7 +43,7 @@ void main() {
   // we calculate the source whcn-coordinate amended with offset-ed channel
   // value.  Then we calculate the actual texture position from the
   // whcn-coordinate.
-  const ivec4 buf_indices = tidx_to_nchw_ixs(idx, out_sizes, packed_dim);
+  const ivec4 buf_indices = tidx_to_nchwi(idx, out_sizes, packed_dim);
 
   vec4 outex;
   for (int i=0;i<4;i++) {

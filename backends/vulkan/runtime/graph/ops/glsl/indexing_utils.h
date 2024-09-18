@@ -13,25 +13,33 @@
  * The functions defined in this header file use the following shorthand to
  * represent tensor related data structures.
  *
- * pos   - ivec3 texture position, used to fetch from an image texture via the
+ * tidx  - ivec4 tensor indices, listed in WHCN order.
+ *
+ * pos   - ivec3 texel position, used to fetch from an image texture via the
  *         texelFetch(image, pos, lod) GLSL function.
+ * texi  - ivec4 texel element position. It is the same as pos, except with an
+ *         additional component of the index of an element within the texel.
+ *
  * lpos  - ivec3 logical position, listed in WHC order. This is a permutation of
  *         texture position based on a tensor's axis_map. lpos.x is the position
  *         component that corresponds to the tensor's width dimension, lpos.y is
  *         the position component that corresponds to the tensor's height dim,
  *         and so on.
- * tidx  - ivec4 tensor indices, listed in WHCN order.
- * bufi  - scalar index into a GPU buffer that backs a tensor.
- * nchwi - scalar index into a staging buffer for a tensor. The data in the
+ * ltexi - ivec4 logical texel element position. It is the same as lpos, except
+ *         with an additional component similar to texi.
+ *
+ *
+ * bufi  - int index into a GPU buffer that backs a tensor.
+ * nchwi - int index into a staging buffer for a tensor. The data in the
  *         staging buffer is stored in contiguous data layout, irrespective of
  *         the tensor's strides.
  */
 
-// Width Dim Index, assuming (W, H, C, N) order
+// Width Dim Index, assuming WHCN order
 #define W_DIM 0
-// Height, assuming (W, H, C, N) order
+// Height, assuming WHCN order
 #define H_DIM 1
-// Channels, assuming (W, H, C, N) order
+// Channels, assuming WHCN order
 #define C_DIM 2
 
 /*
@@ -69,10 +77,7 @@ int find_packed_dim(const ivec4 strides) {
  * corresponds to the provided tensor index. Since the texel have 4 elements,
  * 4 buffer indices will be retrieved.
  */
-ivec4 tidx_to_nchw_ixs(
-    const ivec4 tidx,
-    const ivec4 sizes,
-    const int packed_dim) {
+ivec4 tidx_to_nchwi(const ivec4 tidx, const ivec4 sizes, const int packed_dim) {
   ivec4 strides =
       ivec4(1, sizes.x, sizes.x * sizes.y, sizes.x * sizes.y * sizes.z);
 
@@ -98,24 +103,24 @@ int tidx_to_nchwi(const ivec4 tidx, const ivec4 sizes) {
 // TODO(ssjia): make this function use dim order so that it can work with any
 // dim order. Currently it assumes that the dim order is contiguous, except for
 // the packed dim.
-ivec4 bufi_to_tidx(int buffer_id, const ivec4 strides, const int packed_dim) {
+ivec4 bufi_to_tidx(int bufi, const ivec4 strides, const int packed_dim) {
   ivec4 idx;
   for (int i = 3; i >= 0; i--) {
     if (i != packed_dim) {
-      idx[i] = buffer_id / strides[i];
-      buffer_id %= strides[i];
+      idx[i] = bufi / strides[i];
+      bufi %= strides[i];
     }
   }
-  idx[packed_dim] = buffer_id;
+  idx[packed_dim] = bufi;
   return idx;
 }
 
 // Convenience overload of the above function, which will determine the packed
 // dim from the strides automatically so it doesn't have to be passed in as a
 // function argument.
-ivec4 bufi_to_tidx(const int buffer_id, const ivec4 strides) {
+ivec4 bufi_to_tidx(const int bufi, const ivec4 strides) {
   int packed_dim = find_packed_dim(strides);
-  return bufi_to_tidx(buffer_id, strides, packed_dim);
+  return bufi_to_tidx(bufi, strides, packed_dim);
 }
 
 int tidx_to_bufi(const ivec4 tidx, ivec4 strides) {
@@ -124,46 +129,39 @@ int tidx_to_bufi(const ivec4 tidx, ivec4 strides) {
 }
 
 ivec4 lpos_to_tidx(
-    const ivec3 lpos,
-    const ivec4 sizes,
-    const ivec4 axis_map,
+    ivec3 lpos,
+    ivec4 sizes,
+    const int batch_inner_dim,
     const int packed_dim) {
-  int batch_inner_dim = axis_map.w;
-  int batch_inner_dim_size = batch_inner_dim == packed_dim
-      ? alignup4(sizes[batch_inner_dim])
-      : sizes[batch_inner_dim];
+  // Align packed dim to next multiple of 4 to account for texel padding
+  sizes[packed_dim] = alignup4(sizes[packed_dim]);
+  // Moving 1 texel along the packed dim traverses 4 tensor elements
+  lpos[packed_dim] *= 4;
 
   // w index is just a placeholder, which will be adjusted later
-  ivec4 tidx = lpos.xyzx;
-  // Traversing one texel in the packed dimension traveres 4 tensor elements in
-  // that dimension
-  tidx[packed_dim] *= 4;
+  ivec4 tidx = lpos.xyzz;
 
   if (sizes.w == 1) {
     tidx.w = 0;
   } else {
-    tidx.w = tidx[batch_inner_dim] / batch_inner_dim_size;
-    tidx[batch_inner_dim] %= batch_inner_dim_size;
+    tidx.w = tidx[batch_inner_dim] / sizes[batch_inner_dim];
+    tidx[batch_inner_dim] %= sizes[batch_inner_dim];
   }
   return tidx;
 }
 
 ivec3 tidx_to_lpos(
-    const ivec4 tidx,
-    const ivec4 sizes,
-    const ivec4 axis_map,
+    ivec4 tidx,
+    ivec4 sizes,
+    const int batch_inner_dim,
     const int packed_dim) {
-  int batch_inner_dim = axis_map.w;
-  int batch_inner_dim_size = batch_inner_dim == packed_dim
-      ? alignup4(sizes[batch_inner_dim])
-      : sizes[batch_inner_dim];
+  // Align packed dim to next multiple of 4 to account for texel padding
+  sizes[packed_dim] = alignup4(sizes[packed_dim]);
 
   ivec3 lpos = tidx.xyz;
 
-  // Adjust batch dim if needed
-  if (sizes.w > 1) {
-    lpos[batch_inner_dim] += tidx.w * batch_inner_dim_size;
-  }
+  // Adjust batch inner dim by batch index
+  lpos[batch_inner_dim] += tidx.w * sizes[batch_inner_dim];
   // Fast division by 4, since moving 1 texel along the packed dim traverses 4
   // tensor elements.
   lpos[packed_dim] >>= 2;
@@ -171,28 +169,33 @@ ivec3 tidx_to_lpos(
 }
 
 ivec3 tidx_to_pos(
-    const ivec4 tidx,
-    const ivec4 sizes,
+    ivec4 tidx,
+    ivec4 sizes,
     const ivec4 axis_map,
     const int packed_dim) {
-  int batch_inner_dim = axis_map.w;
-  int batch_inner_dim_size = batch_inner_dim == packed_dim
-      ? alignup4(sizes[batch_inner_dim])
-      : sizes[batch_inner_dim];
+  // Align packed dim to next multiple of 4 to account for texel padding
+  sizes[packed_dim] = alignup4(sizes[packed_dim]);
 
   ivec3 pos;
   for (int dim = 0; dim < 3; ++dim) {
     pos[axis_map[dim]] = tidx[dim];
   }
 
-  // Adjust batch dim if needed
-  if (sizes.w > 1) {
-    pos[axis_map[batch_inner_dim]] += tidx.w * batch_inner_dim_size;
-  }
+  // Adjust batch inner dim by batch index
+  pos[axis_map[axis_map.w]] += tidx.w * sizes[axis_map.w];
   // Fast division by 4, since moving 1 texel along the packed dim traverses 4
   // tensor elements.
   pos[axis_map[packed_dim]] >>= 2;
   return pos;
+}
+
+ivec4 tidx_to_texi(
+    ivec4 tidx,
+    ivec4 sizes,
+    const ivec4 axis_map,
+    const int packed_dim) {
+  return ivec4(
+      tidx_to_pos(tidx, sizes, axis_map, packed_dim), tidx[packed_dim] % 4);
 }
 
 ivec3 lpos_to_pos(const ivec3 lpos, const ivec4 axis_map) {
@@ -288,42 +291,6 @@ ivec4 to_tensor_idx(ivec3 pos, ivec4 sizes, int packed_dim) {
 }
 
 /*
- * Derive (w,h,c,n) tensor indices from (x,y,z) texture position using axis
- * mapping.
- */
-ivec4 to_tensor_idx(
-    ivec3 pos,
-    ivec4 sizes,
-    const ivec4 axis_map,
-    const int packed_dim) {
-  // Align packed dim to next multiple of 4 to account for texel padding
-  sizes[packed_dim] = alignup4(sizes[packed_dim]);
-
-  // Packed dim contains 4 elements per texel, so moving 1 unit traverses 4
-  // elements in the tensor.
-  pos[axis_map[packed_dim]] *= 4;
-
-  ivec4 tensor_idx;
-  for (int dim = 0; dim < 3; ++dim) {
-    tensor_idx[dim] = pos[axis_map[dim]];
-  }
-
-  // Early return if batch is 1. Batch index will be 0.
-  if (sizes.w == 1) {
-    tensor_idx.w = 0;
-    return tensor_idx;
-  }
-
-  // Else, adjust the dim that's concatenated with batch. Note that the axis
-  // mapping for the batch dim indicates WHCN dim index of the dim that it is
-  // concatenated with, not a texture axis.
-  tensor_idx.w = tensor_idx[axis_map[3]] / sizes[axis_map[3]];
-  tensor_idx[axis_map[3]] %= sizes[axis_map[3]];
-
-  return tensor_idx;
-}
-
-/*
  * Input: (w, h, c, n) tensor index, (W, H, C, N) sizes of a tensor, which dim
  *        is packed along a texel
  * Returns: the (x, y, z) texture position containing element of the tensor at
@@ -336,34 +303,6 @@ ivec3 to_texture_pos(ivec4 idx, ivec4 sizes, int packed_dim) {
   ivec3 pos = idx.xyz;
   pos[BATCH_AXIS] += idx.w * sizes[BATCH_AXIS];
   pos[packed_dim] /= 4;
-  return pos;
-}
-
-/*
- * Derive (x,y,z) texture position from (w,h,c,n) tensor indices using axis
- * mapping.
- */
-ivec3 to_texture_pos(
-    const ivec4 idx,
-    ivec4 sizes,
-    const ivec4 axis_map,
-    const int packed_dim) {
-  // Align packed dim to next multiple of 4 to account for texel padding
-  sizes[packed_dim] = alignup4(sizes[packed_dim]);
-
-  ivec3 pos;
-  for (int dim = 0; dim < 3; ++dim) {
-    pos[axis_map[dim]] = idx[dim];
-  }
-
-  // Adjust batch dim if needed
-  if (sizes.w > 1) {
-    pos[axis_map[axis_map.w]] += idx.w * sizes[axis_map.w];
-  }
-
-  // Adjust packed dim. Moving 1 texel unit along the packed dim traverses 4
-  // tensor elements in that dim.
-  pos[axis_map[packed_dim]] /= 4;
   return pos;
 }
 
@@ -383,51 +322,6 @@ ivec4 to_texture_elem_pos(ivec4 idx, ivec4 sizes, int packed_dim) {
   pos[BATCH_AXIS] += idx.w * sizes[BATCH_AXIS];
   pos[packed_dim] /= 4;
   pos.w = idx[packed_dim] % 4;
-  return pos;
-}
-
-/*
- * Derive (x,y,z,i) texel element position from the (w,h,c,n) tensor index using
- * the axis mapping.
- */
-ivec4 to_texture_elem_pos(
-    const ivec4 idx,
-    ivec4 sizes,
-    const ivec4 axis_map,
-    const int packed_dim) {
-  // Align packed dim to next multiple of 4 to account for texel padding
-  sizes[packed_dim] = alignup4(sizes[packed_dim]);
-
-  ivec4 pos;
-  for (int dim = 0; dim < 3; ++dim) {
-    pos[axis_map[dim]] = idx[dim];
-  }
-
-  // Adjust batch dim if needed
-  if (sizes.w > 1) {
-    pos[axis_map[axis_map.w]] += idx.w * sizes[axis_map.w];
-  }
-
-  // Adjust packed dim. Moving 1 texel unit along the packed dim traverses 4
-  // tensor elements in that dim.
-  pos[axis_map[packed_dim]] /= 4;
-  pos.w = idx[packed_dim] % 4;
-  return pos;
-}
-
-//
-// Convert between physical texture position and logical tensor position
-//
-
-/*
- * Derive (x,y,z) physical texture position from (w,h,d) logical texture
- * position using the axis mapping.
- */
-ivec3 to_texture_pos(const ivec3 logical_pos, const ivec4 axis_map) {
-  ivec3 pos;
-  pos[axis_map.x] = logical_pos.x;
-  pos[axis_map.y] = logical_pos.y;
-  pos[axis_map.z] = logical_pos.z;
   return pos;
 }
 
