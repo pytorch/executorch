@@ -27,8 +27,8 @@ First it’s important to note that currently ExecuTorch provides support across
 
 | Delegate                       | Resource                           |
 | ------------------------------ | ---------------------------------  |
-| XNNPACK (CPU-based library)    | [link](docs/delegates/xnnpack_README.md)|
-| MPS (Metal Performance Shader) | [link](docs/delegates/mps_README.md)    |
+| XNNPACK (CPU-based library)    | [link](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/apple_ios/LLaMA/docs/delegates/xnnpack_README.md)|
+| MPS (Metal Performance Shader) | [link](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/apple_ios/LLaMA/docs/delegates/mps_README.md)    |
 
 ## How to Use the App
 This section will provide the main steps to use the app, along with a code snippet of the ExecuTorch API.
