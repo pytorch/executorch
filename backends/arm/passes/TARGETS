@@ -5,8 +5,13 @@ python_library(
     srcs = glob(["*.py"]),
     typing = True,
     deps = [
+        "//caffe2:torch",
+        "//executorch/backends/arm:tosa_mapping",
         "//executorch/backends/arm:tosa_quant_utils",
         "//executorch/backends/arm:tosa_utils",
-        "//executorch/exir:lib",
+        "//executorch/exir:pass_base",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir/dialects:lib",
     ],
 )
