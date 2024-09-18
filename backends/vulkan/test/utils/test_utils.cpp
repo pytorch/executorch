@@ -15,6 +15,8 @@
 #include <cassert>
 #include <random>
 
+using namespace vkcompute;
+
 //
 // Operator Recording Functions
 //
