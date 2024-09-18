@@ -33,7 +33,7 @@ def define_common_targets():
 
     runtime.python_library(
         name = "export_model_lib",
-        srcs = ["export_model_lib.py", "export_model.py"],
+        srcs = ["export_model.py"],
         visibility = [],
         deps = [
             ":model",
