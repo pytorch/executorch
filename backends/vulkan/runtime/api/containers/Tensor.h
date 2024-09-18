@@ -429,9 +429,8 @@ class vTensor final {
   const vkapi::BufferBindInfo axis_map_ubo();
 
   /*
-   * Returns a GPU buffer containing the logical image extents of the tensor.
-   * It contains the same data as logical_limits_ubo(), but with the data
-   * re-ordered. See the comments for logical_limits() for more context.
+   * Returns a GPU buffer containing the logical limits of the tensor. See the
+   * comments for logical_limits() for more context.
    */
   const vkapi::BufferBindInfo logical_limits_ubo();
 

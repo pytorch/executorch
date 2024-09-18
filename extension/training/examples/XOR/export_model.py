@@ -8,9 +8,14 @@
 
 import argparse
 
-import torch
+import os
 
-from .export_model_lib import export_model
+import torch
+from executorch.exir import to_edge
+
+from executorch.extension.training.examples.XOR.model import Net, TrainingNet
+from torch.export._trace import _export
+from torch.export.experimental import _export_forward_backward
 
 
 def main() -> None:
@@ -26,7 +31,27 @@ def main() -> None:
         help="Path to the directory to write xor.pte files to",
     )
     args = parser.parse_args()
-    export_model(args.outdir)
+
+    net = TrainingNet(Net())
+    x = torch.randn(1, 2)
+
+    # Captures the forward graph. The graph will look similar to the model definition now.
+    # Will move to export_for_training soon which is the api planned to be supported in the long term.
+    ep = _export(net, (x, torch.ones(1, dtype=torch.int64)), pre_dispatch=True)
+    # Captures the backward graph. The exported_program now contains the joint forward and backward graph.
+    ep = _export_forward_backward(ep)
+    # Lower the graph to edge dialect.
+    ep = to_edge(ep)
+    # Lower the graph to executorch.
+    ep = ep.to_executorch()
+
+    # Write out the .pte file.
+    os.makedirs(args.outdir, exist_ok=True)
+    outfile = os.path.join(args.outdir, "xor.pte")
+    with open(outfile, "wb") as fp:
+        fp.write(
+            ep.buffer,
+        )
 
 
 if __name__ == "__main__":
