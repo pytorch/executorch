@@ -30,3 +30,15 @@ vec4 hardshrink(vec4 tex, float lambda, float neg_lambda) {
       (vec4(greaterThan(tex, vec4(lambda))) +
        vec4(lessThan(tex, vec4(neg_lambda))));
 }
+
+float hardsigmoid(float x) {
+  return mix(float(x >= 0.0), x / 6 + 0.5, float(abs(x) <= 3.0));
+}
+
+vec4 hardsigmoid(vec4 tex) {
+  return vec4(
+      hardsigmoid(tex.x),
+      hardsigmoid(tex.y),
+      hardsigmoid(tex.z),
+      hardsigmoid(tex.w));
+}

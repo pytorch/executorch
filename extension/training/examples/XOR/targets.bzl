@@ -21,3 +21,31 @@ def define_common_targets():
         external_deps = ["gflags"],
         define_static_target = True,
     )
+
+    runtime.python_library(
+        name = "model",
+        srcs = ["model.py"],
+        visibility = [],  # Private
+        deps = [
+            "//caffe2:torch",
+        ],
+    )
+
+    runtime.python_library(
+        name = "export_model_lib",
+        srcs = ["export_model_lib.py", "export_model.py"],
+        visibility = [],
+        deps = [
+            ":model",
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+        ],
+    )
+
+    runtime.python_binary(
+        name = "export_model",
+        main_module = "executorch.extension.training.examples.XOR.export_model",
+        deps = [
+            ":export_model_lib",
+        ],
+    )

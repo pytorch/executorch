@@ -68,6 +68,9 @@ function(executorch_print_configuration_summary)
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TENSOR      : "
                  "${EXECUTORCH_BUILD_EXTENSION_TENSOR}"
   )
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TRAINING      : "
+                 "${EXECUTORCH_BUILD_EXTENSION_TRAINING}"
+  )
   message(
     STATUS
       "  EXECUTORCH_BUILD_FLATC                 : ${EXECUTORCH_BUILD_FLATC}"
@@ -187,6 +190,8 @@ function(extract_sources sources_file)
     if(ANDROID_ABI)
       if("${ANDROID_ABI}" STREQUAL "arm64-v8a")
         set(target_platforms_arg "--target-platforms=shim//:android-arm64")
+      elseif("${ANDROID_ABI}" STREQUAL "x86_64")
+        set(target_platforms_arg "--target-platforms=shim//:android-x86_64")
       else()
         message(FATAL_ERROR "Unsupported ANDROID_ABI setting ${ANDROID_ABI}. Please add it here!")
       endif()
