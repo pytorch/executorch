@@ -85,7 +85,7 @@ void add_sum_dim_node(
       {{out, vkapi::MemoryAccessType::WRITE},
        {arg, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->texture_limits_ubo(),
+      {t_out->logical_limits_ubo(),
        graph.create_params_buffer(dim + 4 - in_dim),
        graph.create_params_buffer(dim_size),
        graph.create_params_buffer(int(ceil(channel / 4.0)))},

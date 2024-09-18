@@ -103,7 +103,7 @@ void add_addmm_naive_node(
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  utils::uvec3 global_wg_size = graph.logical_extents_of(out);
+  utils::uvec3 global_wg_size = graph.logical_limits_of(out);
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
@@ -182,7 +182,7 @@ void add_addmm_optimized_node(
 
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  utils::uvec3 global_size;
+  utils::uvec3 global_size = graph.logical_limits_of(out);
 
   // Each thread computes a W=(2/4) x H=4 x C=(1/4) output tile. Therefore, the
   // total number of threads is W/(2 or 4) x H/4 x C/1. Since the out tensor is
@@ -193,9 +193,9 @@ void add_addmm_optimized_node(
   if (mat1_sizes.at(mat1_dims - 2) < 8) {
     // Use `logical_extents` instead of `image_extents` because the workgroup
     // axes need to correspond to tensor dimensions.
-    global_size = utils::divup_vec(graph.logical_extents_of(out), {4, 2, 1});
+    global_size = utils::divup_vec(global_size, {4, 2, 1});
   } else {
-    global_size = utils::divup_vec(graph.logical_extents_of(out), {4, 4, 1});
+    global_size = utils::divup_vec(global_size, {4, 4, 1});
   }
   utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
