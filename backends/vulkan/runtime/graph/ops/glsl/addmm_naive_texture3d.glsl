@@ -24,7 +24,7 @@ ${layout_declare_tensor(B, "r", "mat2_tensor", DTYPE, "texture3d")}
 $if HAS_BIAS:
   ${layout_declare_tensor(B, "r", "bias_tensor", DTYPE, "texture3d")}
 ${layout_declare_ubo(B, "ivec4", "out_sizes")}
-${layout_declare_ubo(B, "ivec3", "out_logical_limits")}
+${layout_declare_ubo(B, "ivec3", "out_limits")}
 ${layout_declare_ubo(B, "ivec4", "out_axis_map")}
 ${layout_declare_ubo(B, "ivec4", "mat1_sizes")}
 ${layout_declare_ubo(B, "ivec4", "mat1_axis_map")}
@@ -145,7 +145,7 @@ vec4 matmul_naive_k_dim_packed_row_dim_packed(const ivec3 out_lpos) {
 
 void main() {
   const ivec3 out_lpos = ivec3(gl_GlobalInvocationID);
-  if (any(greaterThanEqual(out_lpos, out_logical_limits))) {
+  if (any(greaterThanEqual(out_lpos, out_limits))) {
     return;
   }
 

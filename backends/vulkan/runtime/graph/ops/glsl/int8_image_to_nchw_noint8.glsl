@@ -41,9 +41,9 @@ void main() {
   int in_buf_idx = 4 * out_buf_idx;
 
   [[unroll]] for (int i = 0; i < 4; ++i) {
-    const ivec4 tensor_idx = nchwi_to_tidx(in_buf_idx, tensor_sizes);
+    const ivec4 tidx = nchwi_to_tidx(in_buf_idx, tensor_sizes);
     const ivec4 texture_pos = to_texture_elem_pos(
-        tensor_idx, tensor_sizes, packed_dim);
+        tidx, tensor_sizes, packed_dim);
     values[i] = load_texel(t_in, texture_pos.xyz)[texture_pos.w];
     in_buf_idx++;
   }
