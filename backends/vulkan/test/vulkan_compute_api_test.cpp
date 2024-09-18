@@ -25,6 +25,7 @@
 
 #include <executorch/backends/vulkan/test/utils/test_utils.h>
 
+using namespace vkcompute;
 using namespace vkcompute::api;
 
 std::vector<float>
