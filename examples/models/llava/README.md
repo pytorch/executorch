@@ -9,6 +9,15 @@ Tokenizer, image encoder, and the pretrained text model, which is based on Meta
 [Llama2-7b](https://llama.meta.com/llama2/), is loaded from Llava
 huggingface page [llava-hf/llava-1.5-7b-hf](https://huggingface.co/llava-hf/llava-1.5-7b-hf) .
 
+
+<p align="center">
+      <img src="./llava_via_xnnpack.gif" width=300>
+      <br>
+      <em>
+      Running Llava1.5 7B on Android phone
+      </em>
+</p>
+
 ## What is LLaVA?
 
 [LLaVA](https://llava-vl.github.io/) is a novel end-to-end trained large
