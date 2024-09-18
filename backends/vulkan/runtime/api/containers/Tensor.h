@@ -26,7 +26,7 @@ namespace api {
  */
 std::vector<int64_t> calculate_dim_order(
     const size_t ndim,
-    const utils::GPUMemoryLayout memory_layout);
+    const int32_t packed_dim_whcn_idx);
 
 /*
  * Given the sizes of a tensor and the dim order of the tensor (both in NCHW)
@@ -57,7 +57,7 @@ std::vector<int64_t> unsqueeze_strides(
  */
 std::vector<int64_t> calculate_padded_sizes(
     const std::vector<int64_t>& sizes,
-    const utils::GPUMemoryLayout memory_layout);
+    const int32_t memory_layout);
 
 /*
  * Calculate the image extents required of a texture backed tensor.
@@ -65,7 +65,7 @@ std::vector<int64_t> calculate_padded_sizes(
 utils::uvec3 calculate_image_extents(
     const std::vector<int64_t>& padded_sizes,
     const std::vector<int64_t>& axis_map,
-    const utils::GPUMemoryLayout memory_layout);
+    const int32_t packed_dim_whcn_idx);
 
 struct LastAccess {
   vkapi::PipelineStageFlags stage;
@@ -89,8 +89,8 @@ class vTensorStorage final {
   vTensorStorage(
       Context* context,
       const utils::StorageType storage_type,
-      const utils::GPUMemoryLayout gpu_memory_layout,
       const std::vector<int64_t>& axis_map,
+      const int32_t packed_dim_whcn_idx,
       const std::vector<int64_t>& padded_sizes,
       const vkapi::ScalarType dtype,
       const bool allocate_memory = true);
@@ -221,13 +221,14 @@ class vTensor final {
 
   // Whether the tensor has elements of type float, int, etc.
   vkapi::ScalarType dtype_;
-  // Describes which dimension is "tightly packed". For texture backed tensors,
-  // this describes which dimension is packed along a texel. For buffer backed
-  // tensors, this describes which dimension has a stride of 1 (i.e. is last in
-  // the dim order).
-  utils::GPUMemoryLayout memory_layout_;
   // sizes of the tensor in NCHW dimension order
   std::vector<int64_t> sizes_;
+  // Describes which dimension is "tightly packed" using WHCN index (i.e. 0 for
+  // width, 1 for height, etc.). For texture backed tensors, this describes
+  // which dimension is packed along a texel. For buffer backed tensors, this
+  // describes which dimension has a stride of 1 (i.e. is last in the dim
+  // order).
+  int32_t packed_dim_whcn_idx_;
 
   /*
    * "Layout" metadata. These describe with further detail how tensor data is
@@ -371,12 +372,18 @@ class vTensor final {
     return dtype_;
   }
 
-  inline utils::GPUMemoryLayout gpu_memory_layout() const {
-    return memory_layout_;
-  }
+  /*
+   * Provide a "best guess" of a memory layout that can be used to construct a
+   * tensor with similar layout metadata (i.e. strides, axis_map, etc.) as this
+   * tensor. In some scenarios, the exact layout of the tensor may not be able
+   * to be replicated due to calling `virtual_*()` functions after construction;
+   * however, this function will provide a memory layout that will produce the
+   * same `packed_dim_whcn_idx` as this tensor.
+   */
+  utils::GPUMemoryLayout estimate_memory_layout() const;
 
   inline int32_t packed_dim_whcn_idx() const {
-    return static_cast<int32_t>(memory_layout_);
+    return packed_dim_whcn_idx_;
   }
 
   inline const std::vector<int64_t>& sizes() const {
@@ -496,6 +503,9 @@ class vTensor final {
    *
    * This function can only be used for buffer-backed tensors, since texture
    * backed buffers cannot change dimensionality or memory layout.
+   *
+   * TODO(ssjia): delete this API. prefer functions such as virtual_transpose
+   * instead.
    */
   void virtual_reconfigure(
       const std::vector<int64_t>& new_sizes,

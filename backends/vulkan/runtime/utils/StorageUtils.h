@@ -8,7 +8,19 @@
 
 #pragma once
 
+#include <ostream>
+
 namespace vkcompute {
+
+// Convenience constexpr to attach semantic names to WHCN dimension index
+namespace WHCN {
+
+constexpr int32_t kWidthDim = 0;
+constexpr int32_t kHeightDim = 1;
+constexpr int32_t kChannelsDim = 2;
+
+} // namespace WHCN
+
 namespace utils {
 
 //
@@ -72,6 +84,37 @@ static constexpr GPUMemoryLayout kChannelsPacked =
 template <typename T>
 T to_packed_dim_nchw_offset(const GPUMemoryLayout layout) {
   return static_cast<T>(layout) + 1;
+}
+
+template <typename T>
+T to_packed_dim_whcn_idx(const GPUMemoryLayout layout) {
+  switch (layout) {
+    case kWidthPacked:
+      return 0;
+    case kHeightPacked:
+      return 1;
+    case kChannelsPacked:
+      return 2;
+  };
+  // Should be unreachable
+  return 0;
+}
+
+inline std::ostream& operator<<(
+    std::ostream& os,
+    const GPUMemoryLayout layout) {
+  switch (layout) {
+    case kWidthPacked:
+      os << "TENSOR_WIDTH_PACKED";
+      break;
+    case kHeightPacked:
+      os << "TENSOR_HEIGHT_PACKED";
+      break;
+    case kChannelsPacked:
+      os << "TENSOR_CHANNELS_PACKED";
+      break;
+  }
+  return os;
 }
 
 } // namespace utils

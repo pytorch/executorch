@@ -45,28 +45,26 @@ bool check_same_sizes_at(
   return utils::val_at(d1, t1.sizes()) == utils::val_at(d2, t2.sizes());
 }
 
-bool check_memory_layout_is(
-    const api::vTensor& t,
-    utils::GPUMemoryLayout layout) {
-  return t.gpu_memory_layout() == layout;
+bool check_packed_dim_is(const api::vTensor& t, const int32_t packed_dim) {
+  return t.packed_dim_whcn_idx() == packed_dim;
 }
 
 bool check_same_ndim(const api::vTensor& t1, const api::vTensor& t2) {
   return t1.sizes().size() == t2.sizes().size();
 }
 
-bool check_same_memory_layout(const api::vTensor& t1, const api::vTensor& t2) {
-  return t1.gpu_memory_layout() == t2.gpu_memory_layout();
+bool check_same_packed_dim(const api::vTensor& t1, const api::vTensor& t2) {
+  return t1.packed_dim_whcn_idx() == t2.packed_dim_whcn_idx();
 }
 
-bool check_same_memory_layout(
+bool check_same_packed_dim(
     const api::vTensor& t1,
     const api::vTensor& t2,
     const api::vTensor& t3) {
-  if (t1.gpu_memory_layout() != t2.gpu_memory_layout()) {
+  if (t1.packed_dim_whcn_idx() != t2.packed_dim_whcn_idx()) {
     return false;
   }
-  return (t1.gpu_memory_layout() == t3.gpu_memory_layout());
+  return (t1.packed_dim_whcn_idx() == t3.packed_dim_whcn_idx());
 }
 
 //
@@ -78,13 +76,15 @@ bool is_packed_dim_broadcasted(
     const api::vTensor& rcvr) {
   // We assume that the tensors are broadcastable. If values aren't equal at
   // some index, then the value of rcvr is 1 and hence should be broadcasted.
-  switch (sndr.gpu_memory_layout()) {
-    case utils::kChannelsPacked:
+  switch (sndr.packed_dim_whcn_idx()) {
+    case WHCN::kChannelsDim:
       return utils::val_at(-3, sndr.sizes()) > utils::val_at(-3, rcvr.sizes());
-    case utils::kHeightPacked:
+    case WHCN::kHeightDim:
       return utils::val_at(-2, sndr.sizes()) > utils::val_at(-2, rcvr.sizes());
-    case utils::kWidthPacked:
+    case WHCN::kWidthDim:
       return utils::val_at(-1, sndr.sizes()) > utils::val_at(-1, rcvr.sizes());
+    default:
+      VK_THROW("Invalid packed dim");
   }
 }
 
