@@ -87,3 +87,13 @@ You should get a response like:
 ```
 When visiting a place like this, ...
 ```
+
+### Build Mobile apps
+
+#### Android
+
+We can run LLAVA using the LLAMA Demo Apps. Please refer to [this tutorial](https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android/LlamaDemo) to for full instructions on building the Android LLAMA Demo App.
+
+### iOS
+
+We can run LLAVA using the LLAMA Demo Apps. Please refer to [this tutorial](https://github.com/pytorch/executorch/tree/main/examples/demo-apps/apple_ios/LLaMA) to for full instructions on building the iOS LLAMA Demo App.

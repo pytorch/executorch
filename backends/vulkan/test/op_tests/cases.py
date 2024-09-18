@@ -879,6 +879,7 @@ def get_softmax_inputs():
         "aten.neg.default",
         "aten.cos.default",
         "aten.hardswish.default",
+        "aten.hardsigmoid.default",
     ]
 )
 def get_unary_ops_inputs():

@@ -210,6 +210,34 @@ deps = [
   "executorch",
   "executorch_no_prim_ops",
 ]
+
+[targets.extension_training]
+buck_targets = [
+  "//extension/training/module:training_module",
+  "//extension/training/optimizer:sgd",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch_no_prim_ops",
+]
+
+[targets.train_xor]
+buck_targets = [
+  "//extension/training/examples/XOR:train_xor",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  "^codegen",
+]
+deps = [
+  "executorch",
+  "executorch_no_prim_ops",
+  "portable_kernels",
+]
 # ---------------------------------- extension end ----------------------------------
 # ---------------------------------- binary start ----------------------------------
 

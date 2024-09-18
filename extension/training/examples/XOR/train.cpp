@@ -54,16 +54,16 @@ int main(int argc, char** argv) {
       data_set;
   data_set.push_back( // XOR(1, 1) = 0
       {executorch::extension::make_tensor_ptr<float>({1, 2}, {1, 1}),
-       executorch::extension::make_tensor_ptr<long>({1}, {0})});
+       executorch::extension::make_tensor_ptr<int64_t>({1}, {0})});
   data_set.push_back( // XOR(0, 0) = 0
       {executorch::extension::make_tensor_ptr<float>({1, 2}, {0, 0}),
-       executorch::extension::make_tensor_ptr<long>({1}, {0})});
+       executorch::extension::make_tensor_ptr<int64_t>({1}, {0})});
   data_set.push_back( // XOR(1, 0) = 1
       {executorch::extension::make_tensor_ptr<float>({1, 2}, {1, 0}),
-       executorch::extension::make_tensor_ptr<long>({1}, {1})});
+       executorch::extension::make_tensor_ptr<int64_t>({1}, {1})});
   data_set.push_back( // XOR(0, 1) = 1
       {executorch::extension::make_tensor_ptr<float>({1, 2}, {0, 1}),
-       executorch::extension::make_tensor_ptr<long>({1}, {1})});
+       executorch::extension::make_tensor_ptr<int64_t>({1}, {1})});
 
   // Create optimizer.
   // Get the params and names
