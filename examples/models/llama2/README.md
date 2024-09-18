@@ -19,6 +19,14 @@ Please note that the models are subject to the [Llama 2 Acceptable Use Policy](h
 
 Since Llama 2 7B or Llama 3 8B model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized model.
 
+<p align="center">
+      <img src="./llama_via_xnnpack.gif" width=300>
+      <br>
+      <em>
+      Running Llama3.1 8B on Android phone
+      </em>
+</p>
+
 ## Quantization:
 We employed 4-bit groupwise per token dynamic quantization of all the linear layers of the model. Dynamic quantization refers to quantizating activations dynamically, such that quantization parameters for activations are calculated, from min/max range, at runtime. Here we quantized activations with 8bits (signed integer). Furthermore, weights are statically quantized. In our case weights were per-channel groupwise quantized with 4bit signed integer. For more information refer to this [page](https://github.com/pytorch/ao).
 
