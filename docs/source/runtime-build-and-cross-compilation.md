@@ -111,7 +111,7 @@ Output 0: tensor(sizes=[1], [2.])
 
 ## Cross compilation
 
-Follwing are instruction on how to perform cross compilation for Android and iOS.
+Following are instruction on how to perform cross compilation for Android and iOS.
 
 ### Android
 - Prerequisite: [Android NDK](https://developer.android.com/ndk), choose one of the following:
