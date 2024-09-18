@@ -44,7 +44,7 @@ Follow the [Setting Up ExecuTorch](https://pytorch.org/executorch/stable/getting
 tutorial to configure the basic environment:
 
 ```bash
-git clone https://github.com/pytorch/executorch.git -b release/0.3 --recursive
+git clone https://github.com/pytorch/executorch.git -b release/0.4 --recursive
 cd executorch
 
 python3 -m venv .venv && source .venv/bin/activate

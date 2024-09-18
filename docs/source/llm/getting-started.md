@@ -43,7 +43,7 @@ cd et-nanogpt
 
 # Clone the ExecuTorch repository and submodules.
 mkdir third-party
-git clone -b release/0.2 https://github.com/pytorch/executorch.git third-party/executorch
+git clone -b release/0.4 https://github.com/pytorch/executorch.git third-party/executorch
 cd third-party/executorch
 git submodule update --init
 
@@ -77,7 +77,7 @@ pyenv activate executorch
 
 # Clone the ExecuTorch repository and submodules.
 mkdir third-party
-git clone -b release/0.2 https://github.com/pytorch/executorch.git third-party/executorch
+git clone -b release/0.4 https://github.com/pytorch/executorch.git third-party/executorch
 cd third-party/executorch
 git submodule update --init
 
