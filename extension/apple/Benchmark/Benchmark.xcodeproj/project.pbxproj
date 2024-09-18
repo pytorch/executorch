@@ -24,6 +24,7 @@
 		03ED6D152C8AAFFF00F2D6EE /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D142C8AAFFF00F2D6EE /* Metal.framework */; };
 		03ED6D172C8AB00500F2D6EE /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D162C8AB00500F2D6EE /* CoreML.framework */; };
 		03ED6D192C8AB00A00F2D6EE /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D182C8AB00A00F2D6EE /* Accelerate.framework */; };
+		8493389C2C9918950071ABAD /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8493389B2C9918950071ABAD /* UIKit.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -59,6 +60,7 @@
 		03ED6D142C8AAFFF00F2D6EE /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/Metal.framework; sourceTree = DEVELOPER_DIR; };
 		03ED6D162C8AB00500F2D6EE /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/CoreML.framework; sourceTree = DEVELOPER_DIR; };
 		03ED6D182C8AB00A00F2D6EE /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/Accelerate.framework; sourceTree = DEVELOPER_DIR; };
+		8493389B2C9918950071ABAD /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/UIKit.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -77,6 +79,7 @@
 				03ED6D172C8AB00500F2D6EE /* CoreML.framework in Frameworks */,
 				03ED6D152C8AAFFF00F2D6EE /* Metal.framework in Frameworks */,
 				03ED6D132C8AAFF700F2D6EE /* MetalPerformanceShaders.framework in Frameworks */,
+				8493389C2C9918950071ABAD /* UIKit.framework in Frameworks */,
 				03ED6D112C8AAFF200F2D6EE /* MetalPerformanceShadersGraph.framework in Frameworks */,
 				03ED6D0F2C8AAFE900F2D6EE /* libsqlite3.0.tbd in Frameworks */,
 				03DD00A92C8FE44600FE4619 /* backend_coreml.xcframework in Frameworks */,
@@ -135,6 +138,7 @@
 		03ED6CEB2C8AAF5300F2D6EE /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				8493389B2C9918950071ABAD /* UIKit.framework */,
 				03ED6D182C8AB00A00F2D6EE /* Accelerate.framework */,
 				03ED6D162C8AB00500F2D6EE /* CoreML.framework */,
 				03ED6D142C8AAFFF00F2D6EE /* Metal.framework */,
