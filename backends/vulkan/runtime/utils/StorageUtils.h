@@ -48,20 +48,42 @@ static constexpr StorageType kTexture3D = StorageType::TEXTURE_3D;
 static constexpr StorageType kTexture2D = StorageType::TEXTURE_2D;
 
 /*
- * The enum below is used to describe how tensor data is laid out when stored in
- * GPU memory; specifically, it indicates how tensor data is packed along a
- * texel (i.e. a vector of 4 scalar values).
+ * A tensor's memory layout is defined in one of two ways:
  *
- * Each enum entry indicates which tensor dimension is packed along a texel, and
- * it's value is set to the index of that dimension in WHCN dimension order. For
- * instance, the width dimension corresponds to index 0, so the
- * TENSOR_WIDTH_PACKED enum entry is set to 0.
+ * 1. If it's a buffer backed tensor, the memory layout is defined by its
+ *    `dim_order`, and by extension its `strides`.
+ * 2. If it's a texture backed tensor, the memory layout is defined by the
+ *    combination of its `axis_map` and its `packed_dim`.
  *
- * When interpreted as an integer, the enum value can be used as a dim index
- * representing the packed dimension. This is used in shaders to resolve tensor
- * indexing calculations.
+ * Providing explicit memory layout metadata upon tensor construction is not
+ * very convenient from an API perspective, so the `GPUMemoryLayout` serves as
+ * an abstraction that is used to determine how to initialize a tensor's layout
+ * metadata based on the developer's intent. A `GPUMemoryLayout` is provided to
+ * the constructor of `vTensor`, which will use it to determine how to set its
+ * `dim_order` if it's a buffer backed tensor, or how to set its `axis_map` and
+ * `packed_dim` if it's a texture backed tensor.
+ *
+ * Note that GPUMemoryLayout is not stored as a tensor property, as it does not
+ * have any meaning after the vTensor is constructed. After construction,
+ * methods such as `virtual_transpose()` may be used to modify the tensor's
+ * layout metadata that cannot be represented by any `GPUMemoryLayout` entry.
+ * Nonetheless, a "best guess" of the closest memory layout can be produced via
+ * the `estimate_memory_layout()` API of `vTensor`.
+ *
+ * Currently, only 3 memory layouts are provided, but more will be added in the
+ * future that will enable different functionality such as minimizing texture
+ * memory footprint.
  */
 enum class GPUMemoryLayout : uint8_t {
+  /*
+   * The below memory layouts will produce a `vTensor` with the following
+   * properties:
+   *
+   * 1. For buffer backed tensors, the `dim_order` will be the same as a
+   *    contiguous dim order, but with the specified dim last in the dim order.
+   * 2. For texture backed tensors, the packed dim will be the specified dim.
+   *    The axis map will be `{0, 1, 2, 2}`.
+   */
   TENSOR_WIDTH_PACKED = 0u,
   TENSOR_HEIGHT_PACKED = 1u,
   TENSOR_CHANNELS_PACKED = 2u,
@@ -75,16 +97,6 @@ static constexpr GPUMemoryLayout kHeightPacked =
 
 static constexpr GPUMemoryLayout kChannelsPacked =
     GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
-
-/*
- * Given a GPUMemoryLayout, return an offset that can be used to determine the
- * index of the dimension that is packed along texels, assuming NCHW dimension
- * order. The index of the packed dimension will be ndim - offset.
- */
-template <typename T>
-T to_packed_dim_nchw_offset(const GPUMemoryLayout layout) {
-  return static_cast<T>(layout) + 1;
-}
 
 template <typename T>
 T to_packed_dim_whcn_idx(const GPUMemoryLayout layout) {
