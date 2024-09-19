@@ -103,6 +103,10 @@ if(TARGET pthreadpool)
   )
 endif()
 
+if(EXECUTORCH_JNI_CUSTOM_LIBRARY)
+  list(APPEND link_libraries ${EXECUTORCH_JNI_CUSTOM_LIBRARY})
+  target_link_libraries(executorch_jni -Wl,--whole-archive ${EXECUTORCH_JNI_CUSTOM_LIBRARY} -Wl,--no-whole-archive)
+endif()
 
 if(EXECUTORCH_BUILD_LLAMA_JNI)
   target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp)
