@@ -112,7 +112,7 @@ Error Runner::load() {
     } else {
       ET_LOG(
           Info,
-          "Methond %s not found, using the default value %" PRId64,
+          "Method %s not found, using the default value %" PRId64,
           method_name.c_str(),
           value);
     }
