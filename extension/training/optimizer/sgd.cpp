@@ -7,20 +7,48 @@
  */
 
 #include <executorch/extension/training/optimizer/sgd.h>
-#include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 
 #include <executorch/runtime/core/error.h>
-#include <executorch/runtime/kernel/kernel_runtime_context.h>
 
 using exec_aten::Tensor;
 using exec_aten::TensorImpl;
 using ::executorch::runtime::Error;
-using ::executorch::runtime::KernelRuntimeContext;
 
 namespace executorch {
 namespace extension {
 namespace training {
 namespace optimizer {
+
+namespace {
+void add_out_hack(
+    const Tensor& a,
+    const Tensor& b,
+    const double alpha,
+    Tensor& out) {
+  auto a_ptr = a.const_data_ptr<float>();
+  auto b_ptr = b.const_data_ptr<float>();
+  auto out_ptr = out.mutable_data_ptr<float>();
+  for (size_t i = 0; i < a.numel(); ++i) {
+    out_ptr[i] = a_ptr[i] + b_ptr[i] * alpha;
+  }
+}
+
+void mul_out_hack(const Tensor& a, const double alpha, Tensor& out) {
+  auto a_ptr = a.const_data_ptr<float>();
+  auto out_ptr = out.mutable_data_ptr<float>();
+  for (size_t i = 0; i < a.numel(); ++i) {
+    out_ptr[i] = a_ptr[i] * alpha;
+  }
+}
+
+void clone_out_hack(const Tensor& a, Tensor& out) {
+  auto a_ptr = a.const_data_ptr<float>();
+  auto out_ptr = out.mutable_data_ptr<float>();
+  for (size_t i = 0; i < a.numel(); ++i) {
+    out_ptr[i] = a_ptr[i];
+  }
+}
+} // namespace
 
 bool SGDParamGroup::has_options() const {
   return options_ != nullptr;
@@ -55,7 +83,6 @@ void SGD::add_param_group(const SGDParamGroup& param_group) {
 
 Error SGD::step(const std::map<exec_aten::string_view, exec_aten::Tensor>&
                     named_gradients) {
-  KernelRuntimeContext context;
   for (auto& group : param_groups_) {
     auto& options = static_cast<SGDOptions&>(group.options());
     auto weight_decay = options.weight_decay();
@@ -73,10 +100,7 @@ Error SGD::step(const std::map<exec_aten::string_view, exec_aten::Tensor>&
         auto p = param_iter->second;
         if (weight_decay != 0) {
           // uses weight_decay specified and adds it to the gradient
-          torch::executor::aten::add_outf(context, d_p, p, weight_decay, d_p);
-          if (context.failure_state() != Error::Ok) {
-            return context.failure_state();
-          }
+          add_out_hack(d_p, p, weight_decay, d_p);
         }
         if (momentum != 0) {
           Tensor buf(nullptr);
@@ -100,11 +124,7 @@ Error SGD::step(const std::map<exec_aten::string_view, exec_aten::Tensor>&
                 const_cast<TensorImpl::DimOrderType*>(d_p.dim_order().data()));
             buf = Tensor(buf_impl);
 #endif
-            torch::executor::aten::clone_outf(
-                context, d_p, exec_aten::MemoryFormat::Contiguous, buf);
-            if (context.failure_state() != Error::Ok) {
-              return context.failure_state();
-            }
+            clone_out_hack(d_p, buf);
 
             // save the state of the momentum buffer to be reused in later
             // epochs
@@ -115,31 +135,18 @@ Error SGD::step(const std::map<exec_aten::string_view, exec_aten::Tensor>&
                       .momentum_buffer();
 
             // update the momentum buffer and apply dampening
-            torch::executor::aten::mul_outf(context, buf, momentum, buf);
-            if (context.failure_state() != Error::Ok) {
-              return context.failure_state();
-            }
-            torch::executor::aten::add_outf(
-                context, buf, d_p, 1 - dampening, buf);
-            if (context.failure_state() != Error::Ok) {
-              return context.failure_state();
-            }
+            mul_out_hack(buf, momentum, buf);
+            add_out_hack(buf, d_p, 1 - dampening, buf);
           }
           if (nesterov) {
             // apply nesterov momentum
-            torch::executor::aten::add_outf(context, d_p, buf, momentum, d_p);
-            if (context.failure_state() != Error::Ok) {
-              return context.failure_state();
-            }
+            add_out_hack(d_p, buf, momentum, d_p);
           } else {
             d_p = buf;
           }
         }
         // update the parameter using the gradient and learning rate
-        torch::executor::aten::add_outf(context, p, d_p, -1 * options.lr(), p);
-        if (context.failure_state() != Error::Ok) {
-          return context.failure_state();
-        }
+        add_out_hack(p, d_p, -1 * options.lr(), p);
       }
     }
   }

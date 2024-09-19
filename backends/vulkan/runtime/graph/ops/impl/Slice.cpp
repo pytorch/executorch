@@ -123,7 +123,7 @@ void add_slice_tensor_out_node(
     kernel_name.reserve(kShaderNameReserve);
     add_dtype_suffix(kernel_name, *t_out);
 
-    utils::uvec3 global_size = t_out->image_extents();
+    utils::uvec3 global_size = t_out->logical_limits();
     utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
     const struct Block final {

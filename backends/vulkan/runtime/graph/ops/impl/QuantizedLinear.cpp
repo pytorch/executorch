@@ -94,7 +94,7 @@ void add_q_8w_linear_node(
          graph.strides_ubo(q_mat2),
          graph.strides_ubo(scales)});
   } else {
-    ubos.append({graph.texture_limits_ubo(out), graph.sizes_ubo(mat1)});
+    ubos.append({graph.logical_limits_ubo(out), graph.sizes_ubo(mat1)});
   }
 
   graph.execute_nodes().emplace_back(new ExecuteNode(

@@ -428,7 +428,7 @@ utils::uvec3 ComputeGraph::create_global_wg_size(const ValueRef idx) {
   if (is_buffer_storage(idx)) {
     return {uint32_t(numel_of(idx)), 1u, 1u};
   }
-  return image_extents_of(idx);
+  return logical_limits_of(idx);
 }
 
 utils::uvec3 ComputeGraph::create_local_wg_size(

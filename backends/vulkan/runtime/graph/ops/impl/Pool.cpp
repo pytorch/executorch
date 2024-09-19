@@ -79,7 +79,7 @@ void add_max_pool2d_node(
 
   check_pool2d_args(*t_in, *t_out);
 
-  utils::uvec3 global_size = t_out->image_extents();
+  utils::uvec3 global_size = t_out->logical_limits();
   utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   std::string kernel_name("max_pool2d");
@@ -103,7 +103,7 @@ void add_max_pool2d_node(
        {arg, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {
-          t_out->texture_limits_ubo(),
+          t_out->logical_limits_ubo(),
           t_in->sizes_ubo(),
           graph.create_params_buffer(kernel_params),
       },
@@ -155,7 +155,7 @@ void add_avg_pool2d_node(
 
   check_pool2d_args(*t_in, *t_out);
 
-  utils::uvec3 global_size = t_out->image_extents();
+  utils::uvec3 global_size = t_out->logical_limits();
   utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   std::string kernel_name("avg_pool2d");
@@ -176,7 +176,7 @@ void add_avg_pool2d_node(
       {{out, vkapi::MemoryAccessType::WRITE},
        {arg, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->texture_limits_ubo(),
+      {t_out->logical_limits_ubo(),
        t_in->sizes_ubo(),
        graph.create_params_buffer(kernel_params),
        graph.create_params_buffer(divisor_params)},

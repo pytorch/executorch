@@ -46,7 +46,7 @@ void add_unary_op_node(
   if (graph.is_buffer_storage(out)) {
     ubos.append({graph.numel_ubo(out)});
   } else {
-    ubos.append({graph.texture_limits_ubo(out)});
+    ubos.append({graph.logical_limits_ubo(out)});
   }
   ubos.append(
       {graph.create_params_buffer(min), graph.create_params_buffer(max)});

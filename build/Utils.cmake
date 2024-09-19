@@ -68,6 +68,9 @@ function(executorch_print_configuration_summary)
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TENSOR      : "
                  "${EXECUTORCH_BUILD_EXTENSION_TENSOR}"
   )
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TRAINING      : "
+                 "${EXECUTORCH_BUILD_EXTENSION_TRAINING}"
+  )
   message(
     STATUS
       "  EXECUTORCH_BUILD_FLATC                 : ${EXECUTORCH_BUILD_FLATC}"

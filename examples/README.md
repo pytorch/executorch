@@ -35,6 +35,10 @@ A user's journey may commence by exploring the demos located in the [`portable/`
 
 [This page](./models/llama2/README.md) demonstrates how to run Llama 2 7B and Llama 3 8B models on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on Android and iOS mobile phones.
 
+## Demo of Llava1.5 7B
+
+[This page](./models/llava/README.md) demonstrates how to run [Llava 1.5 7B](https://github.com/haotian-liu/LLaVA) model on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on Android and iOS mobile phones.
+
 ## Demo of Selective Build
 
 To understand how to deploy the ExecuTorch runtime with optimization for binary size, explore the demos available in the [`selective_build/`](./selective_build) directory. These demos are specifically designed to illustrate the [Selective Build](../docs/source/kernel-library-selective_build.md), offering insights into reducing the binary size while maintaining efficiency.
