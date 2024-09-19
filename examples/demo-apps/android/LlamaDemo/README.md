@@ -46,7 +46,7 @@ Below are the UI features for the app.
 
 Select the settings widget to get started with picking a model, its parameters and any prompts.
 <p align="center">
-<img src="docs/screenshots/opening_the_app_details.png" width=800>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/opening_the_app_details.png" width=800>
 </p>
 
 
@@ -55,7 +55,7 @@ Select the settings widget to get started with picking a model, its parameters a
 
 Once you've selected the model, tokenizer, and model type you are ready to click on "Load Model" to have the app load the model and go back to the main Chat activity.
 <p align="center">
-      <img src="docs/screenshots/settings_menu.png" width=300>
+      <img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/settings_menu.png" width=300>
 </p>
 
 
@@ -87,12 +87,12 @@ int loadResult = mModule.load();
 ### User Prompt
 Once model is successfully loaded then enter any prompt and click the send (i.e. generate) button to send it to the model.
 <p align="center">
-<img src="docs/screenshots/load_complete_and_start_prompt.png" width=300>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/load_complete_and_start_prompt.png" width=300>
 </p>
 
 You can provide it more follow-up questions as well.
 <p align="center">
-<img src="docs/screenshots/chat.png" width=300>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/chat.png" width=300>
 </p>
 
 > [!TIP]
@@ -109,14 +109,14 @@ mModule.generate(prompt,sequence_length, MainActivity.this);
 For LLaVA-1.5 implementation, select the exported LLaVA .pte and tokenizer file in the Settings menu and load the model. After this you can send an image from your gallery or take a live picture along with a text prompt to the model.
 
 <p align="center">
-<img src="docs/screenshots/llava_example.png" width=300>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/llava_example.png" width=300>
 </p>
 
 
 ### Output Generated
 To show completion of the follow-up question, here is the complete detailed response from the model.
 <p align="center">
-<img src="docs/screenshots/chat_response.png" width=300>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/chat_response.png" width=300>
 </p>
 
 > [!TIP]
