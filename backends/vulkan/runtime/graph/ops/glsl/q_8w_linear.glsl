@@ -8,6 +8,8 @@
 
 #version 450 core
 
+#extension GL_EXT_control_flow_attributes : require
+
 #define PRECISION ${PRECISION}
 
 #define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
