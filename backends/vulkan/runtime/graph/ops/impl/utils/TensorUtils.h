@@ -34,13 +34,11 @@ bool check_same_sizes_at(
     const api::vTensor& t2,
     int64_t d2);
 
-bool check_memory_layout_is(
-    const api::vTensor& t,
-    utils::GPUMemoryLayout layout);
+bool check_packed_dim_is(const api::vTensor& t, const int32_t packed_dim);
 
-bool check_same_memory_layout(const api::vTensor& t1, const api::vTensor& t2);
+bool check_same_packed_dim(const api::vTensor& t1, const api::vTensor& t2);
 
-bool check_same_memory_layout(
+bool check_same_packed_dim(
     const api::vTensor& t1,
     const api::vTensor& t2,
     const api::vTensor& t3);

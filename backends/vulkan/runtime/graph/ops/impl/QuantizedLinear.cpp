@@ -30,7 +30,8 @@ void check_qlinear_args(
   VK_CHECK_COND(qmat2_sizes.size() == 2);
   VK_CHECK_COND(scales_sizes.size() == 1);
 
-  VK_CHECK_COND(graph.memory_layout_of(mat1) == graph.memory_layout_of(out));
+  VK_CHECK_COND(
+      graph.packed_dim_whcn_idx_of(mat1) == graph.packed_dim_whcn_idx_of(out));
 
   VK_CHECK_COND(
       utils::val_at(-1, mat1_sizes) == utils::val_at(-1, qmat2_sizes));
@@ -78,8 +79,8 @@ void add_q_8w_linear_node(
 
   std::string kernel_name = "q_8w_linear";
   kernel_name.reserve(kShaderNameReserve);
-  add_memory_layout_suffix(kernel_name, graph.memory_layout_of(mat1));
-  add_memory_layout_suffix(kernel_name, graph.memory_layout_of(q_mat2));
+  add_packed_dim_suffix(kernel_name, graph.packed_dim_whcn_idx_of(mat1));
+  add_packed_dim_suffix(kernel_name, graph.packed_dim_whcn_idx_of(q_mat2));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
 
