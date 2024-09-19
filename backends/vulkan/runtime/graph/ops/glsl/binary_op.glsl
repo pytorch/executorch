@@ -65,7 +65,9 @@ void main() {
     other_texel = other_texel.xxxx;
   }
 
-  imageStore(t_out,
-    tidx_to_pos(tidx, out_sizes, out_axis_map, packed_dim),
-    VEC4_T(op(in_texel, other_texel, alpha)));
+  write_texel_lpos(
+    t_out,
+    lpos,
+    VEC4_T(op(in_texel, other_texel, alpha)),
+    out_axis_map);
 }
