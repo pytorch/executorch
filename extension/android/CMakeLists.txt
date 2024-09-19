@@ -30,6 +30,8 @@ set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
 target_link_options_shared_lib(executorch)
 
+add_library(executorch_jni SHARED jni/jni_layer.cpp)
+
 set(link_libraries)
 list(
   APPEND
@@ -101,7 +103,6 @@ if(TARGET pthreadpool)
   )
 endif()
 
-add_library(executorch_jni SHARED jni/jni_layer.cpp)
 
 if(EXECUTORCH_BUILD_LLAMA_JNI)
   target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp)
