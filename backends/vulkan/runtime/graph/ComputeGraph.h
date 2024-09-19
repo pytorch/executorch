@@ -307,8 +307,9 @@ class ComputeGraph final {
         .is_view_of(values_.at(base).toConstTensor());
   }
 
-  inline utils::GPUMemoryLayout memory_layout_of(const ValueRef idx) const {
-    return values_.at(idx).toConstTensor().gpu_memory_layout();
+  inline utils::GPUMemoryLayout estimate_memory_layout_of(
+      const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().estimate_memory_layout();
   }
 
   inline int32_t packed_dim_whcn_idx_of(const ValueRef idx) const {

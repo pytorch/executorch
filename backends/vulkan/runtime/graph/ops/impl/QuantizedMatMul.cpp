@@ -30,15 +30,15 @@ void check_q_matmul_args(
   VK_CHECK_COND(mat1_sizes.size() == 2);
   VK_CHECK_COND(mat1_sizes.size() == mat2_sizes.size());
 
-  VK_CHECK_COND(graph.memory_layout_of(mat1) == utils::kWidthPacked);
-  VK_CHECK_COND(graph.memory_layout_of(mat2_data) == utils::kWidthPacked);
-  VK_CHECK_COND(
-      graph.memory_layout_of(scales_and_zeros) == utils::kWidthPacked);
+  using namespace WHCN;
+  VK_CHECK_COND(graph.packed_dim_whcn_idx_of(mat1) == kWidthDim);
+  VK_CHECK_COND(graph.packed_dim_whcn_idx_of(mat2_data) == kWidthDim);
+  VK_CHECK_COND(graph.packed_dim_whcn_idx_of(scales_and_zeros) == kWidthDim);
 
   if (graph.storage_type_of(out) == utils::kBuffer) {
-    VK_CHECK_COND(graph.memory_layout_of(out) == utils::kWidthPacked);
+    VK_CHECK_COND(graph.packed_dim_whcn_idx_of(out) == kWidthDim);
   } else {
-    VK_CHECK_COND(graph.memory_layout_of(out) == utils::kChannelsPacked);
+    VK_CHECK_COND(graph.packed_dim_whcn_idx_of(out) == kChannelsDim);
   }
 
   const int mat1_K = utils::val_at(-1, mat1_sizes);
