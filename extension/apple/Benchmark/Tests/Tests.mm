@@ -8,7 +8,9 @@
 
 #import <XCTest/XCTest.h>
 
+#import <UIKit/UIDevice.h>
 #import <objc/runtime.h>
+#import <sys/utsname.h>
 
 #import <executorch/extension/module/module.h>
 #import <executorch/extension/tensor/tensor.h>
@@ -17,14 +19,32 @@ using namespace ::executorch::extension;
 using namespace ::executorch::runtime;
 
 @interface Tests : XCTestCase
+
 @end
 
 @implementation Tests
+
++ (NSString *)getDeviceInfo {
+  NSString *device = [[UIDevice currentDevice] model];
+
+  // i.e. iPhone15
+  struct utsname systemInfo;
+  uname(&systemInfo);
+  NSString *name = [NSString stringWithCString:systemInfo.machine
+                                      encoding:NSUTF8StringEncoding];
+
+  NSString *systemName = [[UIDevice currentDevice] systemName];
+  NSString *systemVersion = [[UIDevice currentDevice] systemVersion];
+  return [NSString
+      stringWithFormat:@"%@_%@_%@_%@", device, name, systemName, systemVersion];
+}
 
 + (void)initialize {
   if (self != [self class]) {
     return;
   }
+  NSString *deviceInfo = [Tests getDeviceInfo];
+
   for (NSBundle *bundle in @[
          [NSBundle mainBundle],
          [NSBundle bundleForClass:[self class]],
@@ -51,8 +71,11 @@ using namespace ::executorch::runtime;
         NSString *modelName =
             modelPath.lastPathComponent.stringByDeletingPathExtension;
 
-        SEL testLoadSelector = NSSelectorFromString([NSString
-            stringWithFormat:@"test_load_%@_%@", directoryName, modelName]);
+        SEL testLoadSelector = NSSelectorFromString(
+            [NSString stringWithFormat:@"test_load_%@_%@_%@",
+                                       directoryName,
+                                       modelName,
+                                       deviceInfo]);
         IMP testLoadImplementation = imp_implementationWithBlock(^(id _self) {
           auto __block module = std::make_unique<Module>(modelPath.UTF8String);
           [_self measureWithMetrics:@[
@@ -68,8 +91,11 @@ using namespace ::executorch::runtime;
         class_addMethod(
             [self class], testLoadSelector, testLoadImplementation, "v@:");
 
-        SEL testForwardSelector = NSSelectorFromString([NSString
-            stringWithFormat:@"test_forward_%@_%@", directoryName, modelName]);
+        SEL testForwardSelector = NSSelectorFromString(
+            [NSString stringWithFormat:@"test_forward_%@_%@_%@",
+                                       directoryName,
+                                       modelName,
+                                       deviceInfo]);
         IMP testForwardImplementation = imp_implementationWithBlock(^(
             id _self) {
           auto __block module = std::make_unique<Module>(modelPath.UTF8String);

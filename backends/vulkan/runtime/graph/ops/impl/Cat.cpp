@@ -40,7 +40,7 @@ void add_cat_default_node(
 
     for (ValueRef input_ref : *input_list) {
       vTensorPtr t_in = graph.get_tensor(input_ref);
-      utils::ivec3 range = t_in->texture_limits();
+      utils::ivec3 range = t_in->logical_limits();
       add_copy_offset_node(
           graph, input_ref, range, src_offset, dst_offset, out);
       dst_offset[0] += range[0];
@@ -52,7 +52,7 @@ void add_cat_default_node(
 
     for (ValueRef input_ref : *input_list) {
       vTensorPtr t_in = graph.get_tensor(input_ref);
-      utils::ivec3 range = t_in->texture_limits();
+      utils::ivec3 range = t_in->logical_limits();
       add_copy_offset_node(
           graph, input_ref, range, src_offset, dst_offset, out);
       dst_offset[1] += range[1];
@@ -63,7 +63,7 @@ void add_cat_default_node(
 
     for (ValueRef input_ref : *input_list) {
       vTensorPtr t_in = graph.get_tensor(input_ref);
-      utils::ivec3 range = t_in->texture_limits();
+      utils::ivec3 range = t_in->logical_limits();
       add_copy_offset_node(
           graph, input_ref, range, src_offset, dst_offset, out);
       dst_offset[2] += range[2];

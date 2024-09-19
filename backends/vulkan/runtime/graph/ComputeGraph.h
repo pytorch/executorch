@@ -284,12 +284,8 @@ class ComputeGraph final {
 
   vkapi::ScalarType dtype_of(const ValueRef idx) const;
 
-  inline utils::uvec3 image_extents_of(const ValueRef idx) const {
-    return values_.at(idx).toConstTensor().image_extents();
-  }
-
-  inline utils::uvec3 logical_extents_of(const ValueRef idx) const {
-    return values_.at(idx).toConstTensor().logical_extents();
+  inline const utils::ivec3& logical_limits_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().logical_limits();
   }
 
   inline int32_t numel_of(const ValueRef idx) const {
@@ -333,10 +329,6 @@ class ComputeGraph final {
 
   inline vkapi::BufferBindInfo axis_map_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().axis_map_ubo();
-  }
-
-  inline vkapi::BufferBindInfo texture_limits_ubo(const ValueRef idx) {
-    return values_.at(idx).toTensor().texture_limits_ubo();
   }
 
   inline vkapi::BufferBindInfo logical_limits_ubo(const ValueRef idx) {
