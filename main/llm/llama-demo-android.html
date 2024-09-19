@@ -42,6 +42,8 @@
   <link rel="stylesheet" href="../_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html" />
+    <link rel="prev" title="Getting Started with LLMs via ExecuTorch" href="getting-started.html" />
 
 
   <!-- Google Tag Manager -->
@@ -330,8 +332,18 @@
 <li class="toctree-l1"><a class="reference internal" href="../build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">ExecuTorch Llama Android Demo App</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#key-concepts">Key Concepts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#supporting-models">Supporting Models</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#building-the-apk">Building the APK</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#how-to-use-the-app">How to Use the App</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#reporting-issues">Reporting Issues</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html">Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llama-demo-ios.html">ExecuTorch Llama iOS Demo App</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -506,13 +518,13 @@
 </thead>
 <tbody>
 <tr class="row-even"><td><p>XNNPACK (CPU-based library)</p></td>
-<td><p><span class="xref myst">link</span></p></td>
+<td><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/xnnpack_README.md">link</a></p></td>
 </tr>
 <tr class="row-odd"><td><p>QNN (Qualcomm AI Accelerators)</p></td>
-<td><p><span class="xref myst">link</span></p></td>
+<td><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/qualcomm_README.md">link</a></p></td>
 </tr>
 <tr class="row-even"><td><p>MediaTek (MediaTek AI Accelerators)</p></td>
-<td><p><span class="xref myst">link</span></p></td>
+<td><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/mediatek_README.md">link</a></p></td>
 </tr>
 </tbody>
 </table>
@@ -530,14 +542,14 @@
 <p>Below are the UI features for the app.</p>
 <p>Select the settings widget to get started with picking a model, its parameters and any prompts.</p>
 <p align="center">
-<img src="../_static/img/opening_the_app_details.png" width=800>
+<img src="https://github.com/pytorch/executorch/blob/main/docs/source/_static/img/opening_the_app_details.png" width=800>
 </p>
 </div>
 <div class="section" id="select-models-and-parameters">
 <h3>Select Models and Parameters<a class="headerlink" href="#select-models-and-parameters" title="Permalink to this heading">¶</a></h3>
 <p>Once you’ve selected the model, tokenizer, and model type you are ready to click on “Load Model” to have the app load the model and go back to the main Chat activity.</p>
 <p align="center">
-      <img src="../_static/img/settings_menu.png" width=300>
+      <img src="https://github.com/pytorch/executorch/blob/main/docs/source/_static/img/settings_menu.png" width=300>
 </p>
 <p>Optional Parameters:</p>
 <ul class="simple">
@@ -569,11 +581,11 @@ Helpful ExecuTorch API in app</p>
 <h3>User Prompt<a class="headerlink" href="#user-prompt" title="Permalink to this heading">¶</a></h3>
 <p>Once model is successfully loaded then enter any prompt and click the send (i.e. generate) button to send it to the model.</p>
 <p align="center">
-<img src="../_static/img/load_complete_and_start_prompt.png" width=300>
+<img src="https://github.com/pytorch/executorch/blob/main/docs/source/_static/img/load_complete_and_start_prompt.png" width=300>
 </p>
 <p>You can provide it more follow-up questions as well.</p>
 <p align="center">
-<img src="../_static/img/chat.png" width=300>
+<img src="https://github.com/pytorch/executorch/blob/main/docs/source/_static/img/chat.png" width=300>
 </p>
 <blockquote>
 <div><p>[!TIP]
@@ -590,14 +602,14 @@ Helpful ExecuTorch API in app</p>
 <p>[<em>LLaVA-1.5: Only for XNNPACK delegate</em>]</p>
 <p>For LLaVA-1.5 implementation, select the exported LLaVA .pte and tokenizer file in the Settings menu and load the model. After this you can send an image from your gallery or take a live picture along with a text prompt to the model.</p>
 <p align="center">
-<img src="../_static/img/llava_example.png" width=300>
+<img src="https://github.com/pytorch/executorch/blob/main/docs/source/_static/img/llava_example.png" width=300>
 </p>
 </div>
 <div class="section" id="output-generated">
 <h3>Output Generated<a class="headerlink" href="#output-generated" title="Permalink to this heading">¶</a></h3>
 <p>To show completion of the follow-up question, here is the complete detailed response from the model.</p>
 <p align="center">
-<img src="../_static/img/chat_response.png" width=300>
+<img src="https://github.com/pytorch/executorch/blob/main/docs/source/_static/img/chat_response.png" width=300>
 </p>
 <blockquote>
 <div><p>[!TIP]
@@ -629,6 +641,15 @@ Helpful ExecuTorch API in app</p>
              
             </div>
             <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="build-run-llama3-qualcomm-ai-engine-direct-backend.html" class="btn btn-neutral float-right" title="Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="getting-started.html" class="btn btn-neutral" title="Getting Started with LLMs via ExecuTorch" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
   
 
   

@@ -42,6 +42,8 @@
   <link rel="stylesheet" href="../_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Export to ExecuTorch API Reference" href="../export-to-executorch-api-reference.html" />
+    <link rel="prev" title="Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html" />
 
 
   <!-- Google Tag Manager -->
@@ -330,8 +332,20 @@
 <li class="toctree-l1"><a class="reference internal" href="../build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llama-demo-android.html">ExecuTorch Llama Android Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html">Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">ExecuTorch Llama iOS Demo App</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#key-concepts">Key Concepts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#supported-models">Supported Models</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#building-the-application">Building the application</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#how-to-use-the-app">How to Use the App</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#copy-the-model-to-simulator">Copy the model to Simulator</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#copy-the-model-to-device">Copy the model to Device</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#reporting-issues">Reporting Issues</a></li>
+</ul>
+</li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -506,10 +520,10 @@
 </thead>
 <tbody>
 <tr class="row-even"><td><p>XNNPACK (CPU-based library)</p></td>
-<td><p><span class="xref myst">link</span></p></td>
+<td><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/apple_ios/LLaMA/docs/delegates/xnnpack_README.md">link</a></p></td>
 </tr>
 <tr class="row-odd"><td><p>MPS (Metal Performance Shader)</p></td>
-<td><p><span class="xref myst">link</span></p></td>
+<td><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/apple_ios/LLaMA/docs/delegates/mps_README.md">link</a></p></td>
 </tr>
 </tbody>
 </table>
@@ -539,10 +553,10 @@ Xcode will download and cache the package on the first run, which will take some
 <li><p>Ensure that the ExecuTorch package dependencies are installed correctly, then select which ExecuTorch framework should link against which target.</p></li>
 </ul>
 <p align="center">
-<img src="docs/screenshots/ios_demo_app_swift_pm.png" alt="iOS LLaMA App Swift PM" width="600">
+<img src="https://github.com/pytorch/executorch/blob/main/docs/source/_static/img/ios_demo_app_swift_pm.png" alt="iOS LLaMA App Swift PM" width="600">
 </p>
 <p align="center">
-<img src="docs/screenshots/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" width="600">
+<img src="https://github.com/pytorch/executorch/blob/main/docs/source/_static/img/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" width="600">
 </p>
 <ul class="simple">
 <li><p>Run the app. This builds and launches the app on the phone.</p></li>
@@ -566,11 +580,11 @@ Xcode will download and cache the package on the first run, which will take some
 </ul>
 <p>If the app successfully run on your device, you should see something like below:</p>
 <p align="center">
-<img src="./docs/screenshots/ios_demo_app.jpg" alt="iOS LLaMA App" width="300">
+<img src="https://github.com/pytorch/executorch/blob/main/docs/source/_static/img/ios_demo_app.jpg" alt="iOS LLaMA App" width="300">
 </p>
 <p>For Llava 1.5 models, you can select and image (via image/camera selector button) before typing prompt and send button.</p>
 <p align="center">
-<img src="./docs/screenshots/ios_demo_app_llava.jpg" alt="iOS LLaMA App" width="300">
+<img src="https://github.com/pytorch/executorch/blob/main/docs/source/_static/img/ios_demo_app_llava.jpg" alt="iOS LLaMA App" width="300">
 </p>
 </div>
 <div class="section" id="reporting-issues">
@@ -584,6 +598,15 @@ Xcode will download and cache the package on the first run, which will take some
              
             </div>
             <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="../export-to-executorch-api-reference.html" class="btn btn-neutral float-right" title="Export to ExecuTorch API Reference" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="build-run-llama3-qualcomm-ai-engine-direct-backend.html" class="btn btn-neutral" title="Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
   
 
   
