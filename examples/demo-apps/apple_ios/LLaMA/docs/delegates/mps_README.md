@@ -80,7 +80,8 @@ Open the project in Xcode.In Xcode, go to `File > Add Package Dependencies`. Pas
 
 Note: If you're running into any issues related to package dependencies, quit Xcode entirely, delete the whole executorch repo, clean the caches by running the command below in terminal and clone the repo again.
 
-```rm -rf \
+```
+rm -rf \
   ~/Library/org.swift.swiftpm \
   ~/Library/Caches/org.swift.swiftpm \
   ~/Library/Caches/com.apple.dt.Xcode \
