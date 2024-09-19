@@ -87,7 +87,7 @@ T to_packed_dim_nchw_offset(const GPUMemoryLayout layout) {
 }
 
 template <typename T>
-T to_packed_dim_whcn_idx(const GPUMemoryLayout layout) {
+T to_packed_dim(const GPUMemoryLayout layout) {
   switch (layout) {
     case kWidthPacked:
       return 0;

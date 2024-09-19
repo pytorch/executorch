@@ -26,7 +26,7 @@ namespace api {
  */
 std::vector<int64_t> calculate_dim_order(
     const size_t ndim,
-    const int32_t packed_dim_whcn_idx);
+    const int32_t packed_dim);
 
 /*
  * Given the sizes of a tensor and the dim order of the tensor (both in NCHW)
@@ -57,7 +57,7 @@ std::vector<int64_t> unsqueeze_strides(
  */
 std::vector<int64_t> calculate_padded_sizes(
     const std::vector<int64_t>& sizes,
-    const int32_t packed_dim_whcn_idx);
+    const int32_t packed_dim);
 
 /*
  * Calculate the image extents required of a texture backed tensor.
@@ -65,7 +65,7 @@ std::vector<int64_t> calculate_padded_sizes(
 utils::uvec3 calculate_image_extents(
     const std::vector<int64_t>& padded_sizes,
     const std::vector<int64_t>& axis_map,
-    const int32_t packed_dim_whcn_idx);
+    const int32_t packed_dim);
 
 struct LastAccess {
   vkapi::PipelineStageFlags stage;
@@ -90,7 +90,7 @@ class vTensorStorage final {
       Context* context,
       const utils::StorageType storage_type,
       const std::vector<int64_t>& axis_map,
-      const int32_t packed_dim_whcn_idx,
+      const int32_t packed_dim,
       const std::vector<int64_t>& padded_sizes,
       const vkapi::ScalarType dtype,
       const bool allocate_memory = true);
@@ -228,7 +228,7 @@ class vTensor final {
   // which dimension is packed along a texel. For buffer backed tensors, this
   // describes which dimension has a stride of 1 (i.e. is last in the dim
   // order).
-  int32_t packed_dim_whcn_idx_;
+  int32_t packed_dim_;
 
   /*
    * "Layout" metadata. These describe with further detail how tensor data is
@@ -378,12 +378,12 @@ class vTensor final {
    * tensor. In some scenarios, the exact layout of the tensor may not be able
    * to be replicated due to calling `virtual_*()` functions after construction;
    * however, this function will provide a memory layout that will produce the
-   * same `packed_dim_whcn_idx` as this tensor.
+   * same `packed_dim` as this tensor.
    */
   utils::GPUMemoryLayout estimate_memory_layout() const;
 
-  inline int32_t packed_dim_whcn_idx() const {
-    return packed_dim_whcn_idx_;
+  inline int32_t packed_dim() const {
+    return packed_dim_;
   }
 
   inline const std::vector<int64_t>& sizes() const {

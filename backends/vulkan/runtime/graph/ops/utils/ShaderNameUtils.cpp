@@ -88,7 +88,7 @@ void add_packed_dim_suffix(std::string& kernel_name, const int32_t packed_dim) {
 void add_packed_dim_suffix(
     std::string& kernel_name,
     const api::vTensor& tensor) {
-  return add_packed_dim_suffix(kernel_name, tensor.packed_dim_whcn_idx());
+  return add_packed_dim_suffix(kernel_name, tensor.packed_dim());
 }
 
 } // namespace vkcompute

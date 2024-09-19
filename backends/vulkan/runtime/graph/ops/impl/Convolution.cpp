@@ -108,7 +108,7 @@ ValueRef prepack_biases(
       v,
       {t->sizes_ubo(), t->axis_map_ubo()},
       // Specialization constants
-      {SV(t->packed_dim_whcn_idx())}));
+      {SV(t->packed_dim())}));
 
   return v;
 }
@@ -216,7 +216,7 @@ ValueRef prepack_weights(
        graph.create_params_buffer(
            utils::make_ivec4(original_sizes, /*reverse = */ true))},
       // Specialization constants
-      {SV(t->packed_dim_whcn_idx())}));
+      {SV(t->packed_dim())}));
 
   return v;
 }
