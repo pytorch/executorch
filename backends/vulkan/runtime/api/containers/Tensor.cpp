@@ -21,7 +21,8 @@ std::vector<int64_t> calculate_dim_order(
     return {0};
   }
   std::vector<int64_t> dim_order(ndim);
-  int64_t last_dim = ndim - 1 - packed_dim;
+  // Explicitly convert ndim to signed to prevent underflow
+  int64_t last_dim = int64_t(ndim) - 1 - packed_dim;
 
   int64_t cur_dim = 0;
   for (int d = 0; d < ndim; ++d) {
