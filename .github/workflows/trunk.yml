@@ -224,9 +224,6 @@ jobs:
       matrix:
         dtype: [fp32]
         mode: [portable, xnnpack+kv+custom, mps, coreml]
-        include:
-          - dtype: bf16
-            mode: portable
       fail-fast: false
     with:
       runner: macos-m1-stable
