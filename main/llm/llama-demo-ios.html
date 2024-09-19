@@ -536,10 +536,11 @@
 <p>ExecuTorch runtime is distributed as a Swift package providing some .xcframework as prebuilt binary targets.
 Xcode will download and cache the package on the first run, which will take some time.</p>
 <p>Note: If you’re running into any issues related to package dependencies, quit Xcode entirely, delete the whole executorch repo, clean the caches by running the command below in terminal and clone the repo again.</p>
-<div class="highlight-none notranslate highlight-rm"><div class="highlight"><pre><span></span>  ~/Library/org.swift.swiftpm \
-  ~/Library/Caches/org.swift.swiftpm \
-  ~/Library/Caches/com.apple.dt.Xcode \
-  ~/Library/Developer/Xcode/DerivedData
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">rm</span> <span class="o">-</span><span class="n">rf</span> \
+  <span class="o">~/</span><span class="n">Library</span><span class="o">/</span><span class="n">org</span><span class="o">.</span><span class="n">swift</span><span class="o">.</span><span class="n">swiftpm</span> \
+  <span class="o">~/</span><span class="n">Library</span><span class="o">/</span><span class="n">Caches</span><span class="o">/</span><span class="n">org</span><span class="o">.</span><span class="n">swift</span><span class="o">.</span><span class="n">swiftpm</span> \
+  <span class="o">~/</span><span class="n">Library</span><span class="o">/</span><span class="n">Caches</span><span class="o">/</span><span class="n">com</span><span class="o">.</span><span class="n">apple</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">Xcode</span> \
+  <span class="o">~/</span><span class="n">Library</span><span class="o">/</span><span class="n">Developer</span><span class="o">/</span><span class="n">Xcode</span><span class="o">/</span><span class="n">DerivedData</span>
 </pre></div>
 </div>
 <p>Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.</p>
