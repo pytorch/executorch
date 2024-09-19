@@ -58,11 +58,11 @@ For more details integrating and Running ExecuTorch on Apple Platforms, checkout
 * Ensure that the ExecuTorch package dependencies are installed correctly, then select which ExecuTorch framework should link against which target.
 
 <p align="center">
-<img src="https://github.com/pytorch/executorch/blob/main/docs/source/_static/img/ios_demo_app_swift_pm.png" alt="iOS LLaMA App Swift PM" width="600">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_swift_pm.png" alt="iOS LLaMA App Swift PM" width="600">
 </p>
 
 <p align="center">
-<img src="https://github.com/pytorch/executorch/blob/main/docs/source/_static/img/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" width="600">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" width="600">
 </p>
 
 * Run the app. This builds and launches the app on the phone.
@@ -82,13 +82,13 @@ For more details integrating and Running ExecuTorch on Apple Platforms, checkout
 If the app successfully run on your device, you should see something like below:
 
 <p align="center">
-<img src="https://github.com/pytorch/executorch/blob/main/docs/source/_static/img/ios_demo_app.jpg" alt="iOS LLaMA App" width="300">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app.jpg" alt="iOS LLaMA App" width="300">
 </p>
 
 For Llava 1.5 models, you can select and image (via image/camera selector button) before typing prompt and send button.
 
 <p align="center">
-<img src="https://github.com/pytorch/executorch/blob/main/docs/source/_static/img/ios_demo_app_llava.jpg" alt="iOS LLaMA App" width="300">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_llava.jpg" alt="iOS LLaMA App" width="300">
 </p>
 
 ## Reporting Issues
