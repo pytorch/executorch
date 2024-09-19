@@ -57,7 +57,7 @@ std::vector<int64_t> unsqueeze_strides(
  */
 std::vector<int64_t> calculate_padded_sizes(
     const std::vector<int64_t>& sizes,
-    const int32_t memory_layout);
+    const int32_t packed_dim_whcn_idx);
 
 /*
  * Calculate the image extents required of a texture backed tensor.
