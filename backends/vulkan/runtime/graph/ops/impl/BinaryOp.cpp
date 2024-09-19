@@ -93,7 +93,7 @@ void add_binary_op_node(
        graph.create_params_buffer(broadcast_params),
        graph.create_params_buffer(alpha_val)},
       // Specialization Constants
-      {SV(t_out->packed_dim_whcn_idx())},
+      {SV(t_out->packed_dim())},
       // Resizing Logic
       resize_binary_op_node,
       {}));

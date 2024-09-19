@@ -46,7 +46,7 @@ bool check_same_sizes_at(
 }
 
 bool check_packed_dim_is(const api::vTensor& t, const int32_t packed_dim) {
-  return t.packed_dim_whcn_idx() == packed_dim;
+  return t.packed_dim() == packed_dim;
 }
 
 bool check_same_ndim(const api::vTensor& t1, const api::vTensor& t2) {
@@ -54,17 +54,17 @@ bool check_same_ndim(const api::vTensor& t1, const api::vTensor& t2) {
 }
 
 bool check_same_packed_dim(const api::vTensor& t1, const api::vTensor& t2) {
-  return t1.packed_dim_whcn_idx() == t2.packed_dim_whcn_idx();
+  return t1.packed_dim() == t2.packed_dim();
 }
 
 bool check_same_packed_dim(
     const api::vTensor& t1,
     const api::vTensor& t2,
     const api::vTensor& t3) {
-  if (t1.packed_dim_whcn_idx() != t2.packed_dim_whcn_idx()) {
+  if (t1.packed_dim() != t2.packed_dim()) {
     return false;
   }
-  return (t1.packed_dim_whcn_idx() == t3.packed_dim_whcn_idx());
+  return (t1.packed_dim() == t3.packed_dim());
 }
 
 //
@@ -76,7 +76,7 @@ bool is_packed_dim_broadcasted(
     const api::vTensor& rcvr) {
   // We assume that the tensors are broadcastable. If values aren't equal at
   // some index, then the value of rcvr is 1 and hence should be broadcasted.
-  switch (sndr.packed_dim_whcn_idx()) {
+  switch (sndr.packed_dim()) {
     case WHCN::kChannelsDim:
       return utils::val_at(-3, sndr.sizes()) > utils::val_at(-3, rcvr.sizes());
     case WHCN::kHeightDim:

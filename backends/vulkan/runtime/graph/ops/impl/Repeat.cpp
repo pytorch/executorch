@@ -108,7 +108,7 @@ void add_repeat_channel_node(
       // Parameter buffers
       {graph.create_params_buffer(repeat_channel_args)},
       // Specialization Constants
-      {SV(t_out->packed_dim_whcn_idx())}));
+      {SV(t_out->packed_dim())}));
 }
 
 void add_repeat_node(
