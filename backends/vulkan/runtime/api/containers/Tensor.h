@@ -378,7 +378,7 @@ class vTensor final {
    * tensor. In some scenarios, the exact layout of the tensor may not be able
    * to be replicated due to calling `virtual_*()` functions after construction;
    * however, this function will provide a memory layout that will produce the
-   * same `packed_dim` as this tensor.
+   * same `packed_dim_` as this tensor.
    */
   utils::GPUMemoryLayout estimate_memory_layout() const;
 
