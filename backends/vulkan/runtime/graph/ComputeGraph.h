@@ -312,8 +312,8 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().estimate_memory_layout();
   }
 
-  inline int32_t packed_dim_whcn_idx_of(const ValueRef idx) const {
-    return values_.at(idx).toConstTensor().packed_dim_whcn_idx();
+  inline int32_t packed_dim_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().packed_dim();
   }
 
   inline vkapi::BufferBindInfo sizes_ubo(const ValueRef idx) {

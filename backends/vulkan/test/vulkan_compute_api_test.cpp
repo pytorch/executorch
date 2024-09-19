@@ -296,7 +296,7 @@ TEST_F(VulkanComputeAPITest, virtual_transpose_test) {
       a_texture.virtual_transpose(dim0, dim1);
       EXPECT_TRUE(a_texture.sizes() == expected_sizes);
       EXPECT_TRUE(a_texture.axis_map() == expected_axis_map);
-      EXPECT_TRUE(a_texture.packed_dim_whcn_idx() == expected_packed_dim);
+      EXPECT_TRUE(a_texture.packed_dim() == expected_packed_dim);
     }
   }
 }
@@ -753,7 +753,7 @@ TEST_F(VulkanComputeAPITest, tensor_no_copy_transpose_test) {
     // Update sizes and strides of mat2_t to be that of a transposed tensor
     mat2_t.virtual_transpose(0, 1);
 
-    EXPECT_TRUE(mat2_t.packed_dim_whcn_idx() == WHCN::kHeightDim);
+    EXPECT_TRUE(mat2_t.packed_dim() == WHCN::kHeightDim);
 
     std::vector<float> mat2_t_data = transpose_matrix(mat2_data, N, K);
     std::vector<float> ref_out =
@@ -2276,7 +2276,7 @@ void run_from_gpu_test(
         pipeline_barrier,
         vten.logical_limits(),
         {4, 4, 4},
-        {vten.packed_dim_whcn_idx(), offset},
+        {vten.packed_dim(), offset},
         VK_NULL_HANDLE,
         0,
         vten.image(

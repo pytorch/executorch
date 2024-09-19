@@ -31,14 +31,14 @@ void check_q_matmul_args(
   VK_CHECK_COND(mat1_sizes.size() == mat2_sizes.size());
 
   using namespace WHCN;
-  VK_CHECK_COND(graph.packed_dim_whcn_idx_of(mat1) == kWidthDim);
-  VK_CHECK_COND(graph.packed_dim_whcn_idx_of(mat2_data) == kWidthDim);
-  VK_CHECK_COND(graph.packed_dim_whcn_idx_of(scales_and_zeros) == kWidthDim);
+  VK_CHECK_COND(graph.packed_dim_of(mat1) == kWidthDim);
+  VK_CHECK_COND(graph.packed_dim_of(mat2_data) == kWidthDim);
+  VK_CHECK_COND(graph.packed_dim_of(scales_and_zeros) == kWidthDim);
 
   if (graph.storage_type_of(out) == utils::kBuffer) {
-    VK_CHECK_COND(graph.packed_dim_whcn_idx_of(out) == kWidthDim);
+    VK_CHECK_COND(graph.packed_dim_of(out) == kWidthDim);
   } else {
-    VK_CHECK_COND(graph.packed_dim_whcn_idx_of(out) == kChannelsDim);
+    VK_CHECK_COND(graph.packed_dim_of(out) == kChannelsDim);
   }
 
   const int mat1_K = utils::val_at(-1, mat1_sizes);
