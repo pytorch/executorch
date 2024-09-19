@@ -64,7 +64,7 @@ void add_softmax_node(
       {{out, vkapi::MemoryAccessType::WRITE},
        {in_arg, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->texture_limits_ubo(),
+      {t_out->logical_limits_ubo(),
        t_in->sizes_ubo(),
        graph.create_params_buffer(utils::make_ivec2({in_dim, softmax_dim}))},
       // Specialization Constants

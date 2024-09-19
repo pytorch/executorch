@@ -19,6 +19,14 @@ Please note that the models are subject to the [Llama 2 Acceptable Use Policy](h
 
 Since Llama 2 7B or Llama 3 8B model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized model.
 
+<p align="center">
+      <img src="./llama_via_xnnpack.gif" width=300>
+      <br>
+      <em>
+      Running Llama3.1 8B on Android phone
+      </em>
+</p>
+
 ## Quantization:
 We employed 4-bit groupwise per token dynamic quantization of all the linear layers of the model. Dynamic quantization refers to quantizating activations dynamically, such that quantization parameters for activations are calculated, from min/max range, at runtime. Here we quantized activations with 8bits (signed integer). Furthermore, weights are statically quantized. In our case weights were per-channel groupwise quantized with 4bit signed integer. For more information refer to this [page](https://github.com/pytorch/ao).
 
@@ -66,7 +74,7 @@ Note that since Llama3's vocabulary size is 4x that of Llama2, we had to quantiz
 |OnePlus 12 | 10.85 tokens/second | 11.02 tokens/second |
 
 ### Llama3.1
-> :warning: **use the main branch**: Llama3.1 is supported on the ExecuTorch main branch (not release 0.3).
+Llama3.1 is supported on the ExecuTorch main branch and release/0.4
 
 # Instructions
 
@@ -117,7 +125,7 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     ```
 3. Export model and generate `.pte` file.
     ```
-    python -m examples.models.llama2.export_llama -c stories110M.pt -p params.json -X
+    python -m examples.models.llama2.export_llama -c stories110M.pt -p params.json -X -kv
     ```
 4. Create tokenizer.bin.
 

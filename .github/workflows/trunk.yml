@@ -224,6 +224,9 @@ jobs:
       matrix:
         dtype: [fp32]
         mode: [portable, xnnpack+kv+custom, mps, coreml]
+        include:
+          - dtype: bf16
+            mode: portable
       fail-fast: false
     with:
       runner: macos-m1-stable
@@ -392,6 +395,10 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Set up HuggingFace Dependencies"
+        if [ -z "$SECRET_EXECUTORCH_HF_TOKEN" ]; then
+          echo "::error::SECRET_EXECUTORCH_HF_TOKEN is empty. For security reason secrets won't be accessible on forked PRs. Please make sure you submit a non-forked PR."
+          exit 1
+        fi
         pip install -U "huggingface_hub[cli]"
         huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         pip install accelerate sentencepiece

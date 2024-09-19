@@ -112,7 +112,7 @@ void add_select_int_node(
       {{out, vkapi::MemoryAccessType::WRITE},
        {in, vkapi::MemoryAccessType::READ}},
       // Parameter buffers
-      {t_out->texture_limits_ubo(),
+      {t_out->logical_limits_ubo(),
        t_out->sizes_ubo(),
        // TODO: num_batches and num_texel_per_batch are provided by
        // t_out->sizes. Can change the following to reduce params

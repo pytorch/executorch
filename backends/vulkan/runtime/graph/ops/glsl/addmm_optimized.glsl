@@ -158,7 +158,7 @@ FloatMatrix matmul_partial(const ivec4 out_idx_tl) {
 //
 
 void write_results_C_packed(const ivec4 out_idx_tl, FloatMatrix results) {
-  ivec3 out_pos = to_texture_pos(
+  ivec3 out_pos = tidx_to_pos(
       out_idx_tl, out_sizes, out_axis_map, out_packed_dim);
 
   for (int tile_c = 0;

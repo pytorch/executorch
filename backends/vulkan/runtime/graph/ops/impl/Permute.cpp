@@ -90,7 +90,7 @@ void add_permute_node(
       graph.create_local_wg_size(out),
       {{out, vkapi::MemoryAccessType::WRITE},
        {in, vkapi::MemoryAccessType::READ}},
-      {t_out->texture_limits_ubo(),
+      {t_out->logical_limits_ubo(),
        t_out->sizes_ubo(),
        graph.create_params_buffer(params)},
       // Specialization Constants

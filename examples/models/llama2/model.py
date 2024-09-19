@@ -63,6 +63,7 @@ class Llama2Model(EagerModelBase):
         self.use_sdpa_with_kv_cache_op = kwargs.get("use_sdpa_with_kv_cache", False)
         self.generate_full_logits = kwargs.get("generate_full_logits", False)
         self.enable_dynamic_shape = kwargs.get("enable_dynamic_shape", False)
+        self.output_prune_map_path = kwargs.get("output_prune_map_path", None)
 
         self.max_seq_len = kwargs.get("max_seq_len", 128)
         self.args = kwargs.get("args", None)
@@ -141,6 +142,12 @@ the checkpoint format to avoid generating faulty models.
                 )
         with open(params_path, "r") as f:
             params = json.loads(f.read())
+        output_prune_map = None
+        if self.output_prune_map_path is not None:
+            with open(self.output_prune_map_path, "r") as f:
+                output_prune_map = json.load(f)
+            # change keys from string to int (json only supports string keys)
+            output_prune_map = {int(k): v for (k, v) in output_prune_map.items()}
         max_seq_len = self.max_seq_len
         max_batch_size = 1
         model_args: ModelArgs = ModelArgs(
@@ -149,6 +156,7 @@ the checkpoint format to avoid generating faulty models.
             use_kv_cache=self.use_kv_cache,
             use_sdpa_with_kv_cache_op=self.use_sdpa_with_kv_cache_op,
             generate_full_logits=self.generate_full_logits,
+            output_prune_map=output_prune_map,
             enable_dynamic_shape=self.enable_dynamic_shape,
             **params,
         )
@@ -229,6 +237,12 @@ the checkpoint format to avoid generating faulty models.
             print("============= unexpected keys ================")
             print(unexpected)
             print("============= /unexpected ================")
+
+        # prune the output layer if output_prune_map is provided
+        if output_prune_map is not None:
+            from .source_transformation.prune_output import prune_output_vocab
+
+            self.model_ = prune_output_vocab(self.model_, output_prune_map)
 
     def get_eager_model(self):
         if self.dtype:

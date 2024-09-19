@@ -65,3 +65,12 @@ execution_platform(
     use_windows_path_separators = host_info().os.is_windows,
     visibility = ["PUBLIC"],
 )
+
+execution_platform(
+    name = "android-x86_64",
+    cpu_configuration = "prelude//cpu:x86_64",
+    os_configuration = "prelude//os:android",
+    # REVIEW: not sure if this is correct
+    use_windows_path_separators = host_info().os.is_windows,
+    visibility = ["PUBLIC"],
+)
