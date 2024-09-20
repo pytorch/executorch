@@ -180,27 +180,26 @@ TEST_F(VulkanComputeAPITest, empty_init_shader_info_test) {
 
 TEST_F(VulkanComputeAPITest, calculate_dim_order_test) {
   // ndim, GPUMemoryLayout, expected dim order pairs
-  std::vector<std::tuple<size_t, utils::GPUMemoryLayout, std::vector<int64_t>>>
-      test_cases = {
-          {1, utils::kWidthPacked, {0}},
-          {1, utils::kHeightPacked, {0}},
-          {1, utils::kChannelsPacked, {0}},
-          {2, utils::kWidthPacked, {0, 1}},
-          {2, utils::kHeightPacked, {1, 0}},
-          {2, utils::kChannelsPacked, {0, 1}},
-          {3, utils::kWidthPacked, {0, 1, 2}},
-          {3, utils::kHeightPacked, {0, 2, 1}},
-          {3, utils::kChannelsPacked, {1, 2, 0}},
-          {4, utils::kWidthPacked, {0, 1, 2, 3}},
-          {4, utils::kHeightPacked, {0, 1, 3, 2}},
-          {4, utils::kChannelsPacked, {0, 2, 3, 1}},
-      };
+  std::vector<std::tuple<size_t, int32_t, std::vector<int64_t>>> test_cases = {
+      {1, WHCN::kWidthDim, {0}},
+      {1, WHCN::kHeightDim, {0}},
+      {1, WHCN::kChannelsDim, {0}},
+      {2, WHCN::kWidthDim, {0, 1}},
+      {2, WHCN::kHeightDim, {1, 0}},
+      {2, WHCN::kChannelsDim, {0, 1}},
+      {3, WHCN::kWidthDim, {0, 1, 2}},
+      {3, WHCN::kHeightDim, {0, 2, 1}},
+      {3, WHCN::kChannelsDim, {1, 2, 0}},
+      {4, WHCN::kWidthDim, {0, 1, 2, 3}},
+      {4, WHCN::kHeightDim, {0, 1, 3, 2}},
+      {4, WHCN::kChannelsDim, {0, 2, 3, 1}},
+  };
 
   for (const auto& test_case : test_cases) {
     const size_t& ndim = std::get<0>(test_case);
-    const utils::GPUMemoryLayout& layout = std::get<1>(test_case);
+    const int32_t packed_dim = std::get<1>(test_case);
     const auto& expected_dim_order = std::get<2>(test_case);
-    std::vector<int64_t> dim_order = calculate_dim_order(ndim, layout);
+    std::vector<int64_t> dim_order = calculate_dim_order(ndim, packed_dim);
 
     ASSERT_TRUE(dim_order == expected_dim_order);
   }
@@ -222,8 +221,9 @@ TEST_F(VulkanComputeAPITest, calculate_tensor_strides_test) {
     for (const auto& layout :
          {utils::kWidthPacked, utils::kHeightPacked, utils::kChannelsPacked}) {
       {
+        const int32_t packed_dim = static_cast<int32_t>(layout);
         std::vector<int64_t> dim_order =
-            calculate_dim_order(sizes.size(), layout);
+            calculate_dim_order(sizes.size(), packed_dim);
         std::vector<int64_t> strides = calculate_strides(sizes, dim_order);
         std::vector<int64_t> ref_strides = get_reference_strides(sizes, layout);
         ASSERT_TRUE(strides == ref_strides);
@@ -296,7 +296,7 @@ TEST_F(VulkanComputeAPITest, virtual_transpose_test) {
       a_texture.virtual_transpose(dim0, dim1);
       EXPECT_TRUE(a_texture.sizes() == expected_sizes);
       EXPECT_TRUE(a_texture.axis_map() == expected_axis_map);
-      EXPECT_TRUE(a_texture.packed_dim_whcn_idx() == expected_packed_dim);
+      EXPECT_TRUE(a_texture.packed_dim() == expected_packed_dim);
     }
   }
 }
@@ -753,7 +753,7 @@ TEST_F(VulkanComputeAPITest, tensor_no_copy_transpose_test) {
     // Update sizes and strides of mat2_t to be that of a transposed tensor
     mat2_t.virtual_transpose(0, 1);
 
-    EXPECT_TRUE(mat2_t.gpu_memory_layout() == utils::kHeightPacked);
+    EXPECT_TRUE(mat2_t.packed_dim() == WHCN::kHeightDim);
 
     std::vector<float> mat2_t_data = transpose_matrix(mat2_data, N, K);
     std::vector<float> ref_out =
@@ -2276,7 +2276,7 @@ void run_from_gpu_test(
         pipeline_barrier,
         vten.logical_limits(),
         {4, 4, 4},
-        {vten.packed_dim_whcn_idx(), offset},
+        {vten.packed_dim(), offset},
         VK_NULL_HANDLE,
         0,
         vten.image(

@@ -39,13 +39,13 @@ void main() {
   // Consider optimizing via W-packing format for t_in and t_weight.
   for (int i = 0; i < 4; ++i) {
     // Read input tensor for embedding index.
-    const ivec3 in_pos = lpos_to_pos(ivec3(out_tidx.y, out_tidx.z * 4 + i, out_tidx.w / 4), in_axis_map);
-    const int in_texel_elem = load_texel(t_in, in_pos)[out_tidx.w % 4];
+    const ivec3 in_lpos = ivec3(out_tidx.y, out_tidx.z * 4 + i, out_tidx.w / 4);
+    const int in_texel_elem = load_texel_lpos(t_in, in_lpos, in_axis_map)[out_tidx.w % 4];
 
     // Read weight tensor for embedding.
-    const ivec3 weight_pos = lpos_to_pos(ivec3(out_tidx.x, in_texel_elem, 0), weight_axis_map);
-    out_texel[i] = load_texel(t_weight, weight_pos).x;
+    const ivec3 weight_lpos = ivec3(out_tidx.x, in_texel_elem, 0);
+    out_texel[i] = load_texel_lpos(t_weight, weight_lpos, weight_axis_map).x;
   }
 
-  imageStore(t_out, lpos_to_pos(out_lpos, out_axis_map), out_texel);
+  write_texel_lpos(t_out, out_lpos, out_texel, out_axis_map);
 }
