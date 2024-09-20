@@ -9,4 +9,6 @@ set -x
 
 pip install transformers==4.44.2
 
+pip install sentencepiece
+
 pip list
