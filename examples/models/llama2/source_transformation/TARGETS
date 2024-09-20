@@ -18,6 +18,9 @@ runtime.python_test(
     srcs = [
         "test_quantized_kv_cache.py",
     ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:update_quantized_cache_aot_lib",
+    ],
     deps = [
         ":quantized_kv_cache",
         "//caffe2:torch",
