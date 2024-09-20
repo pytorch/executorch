@@ -77,13 +77,16 @@ run_and_verify() {
         exit 1
     fi
 
-    RUNTIME_ARGS="--model_path=phi-3-mini.pte \
-        --tokenizer_path=tokenizer.bin \
-        --prompt=\"<|system|>You are a helpful assistant.<|end|><|user|>What is the capital of France?<|end|><|assistant|>\" \
-        --temperature=0 \
-        --seq_len=128"
-
-    ${BUILD_DIR}/${MODEL_DIR}/phi_3_mini_runner ${RUNTIME_ARGS} > result.txt
+    ${BUILD_DIR}/${MODEL_DIR}/phi_3_mini_runner \
+    --model_path=phi-3-mini.pte \
+    --tokenizer_path=tokenizer.bin \
+    --seq_len=128 \
+    --temperature=0 \
+    --prompt="<|system|>
+You are a helpful assistant.<|end|>
+<|user|>
+What is the capital of France?<|end|>
+<|assistant|>" > result.txt
 
     # verify result.txt
     RESULT=$(cat result.txt)
