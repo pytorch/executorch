@@ -6,13 +6,21 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <algorithm>
 #include <fstream>
 
 #include <executorch/examples/qualcomm/qaihub_scripts/llama/runner/io_memory.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
-namespace torch {
-namespace executor {
+using executorch::aten::Tensor;
+using executorch::aten::TensorImpl;
+using executorch::extension::Module;
+using executorch::runtime::Error;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Result;
+using executorch::runtime::TensorInfo;
+
+namespace example {
 
 Memory::Memory(
     const std::vector<std::string>& pos_embs_path,
@@ -476,7 +484,7 @@ void KVCachedMemory::update_io(
 ThreadPool::ThreadPool() : stop_(false) {
   size_t hc = (std::thread::hardware_concurrency() + 3) / 4;
   // maximum number should be divisible by head dimension which equals to 32
-  num_workers_ = min(32, hc * 4);
+  num_workers_ = std::min<size_t>(32, hc * 4);
   for (size_t i = 0; i < num_workers_; ++i) {
     threads_.emplace_back([this]() {
       while (1) {
@@ -520,5 +528,4 @@ size_t ThreadPool::num_workers() {
   return num_workers_;
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace example

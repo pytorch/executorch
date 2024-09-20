@@ -117,6 +117,9 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    llm/getting-started
+   llm/llama-demo-android
+   llm/build-run-llama3-qualcomm-ai-engine-direct-backend
+   llm/llama-demo-ios
 
 .. toctree::
    :glob:
