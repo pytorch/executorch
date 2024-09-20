@@ -78,6 +78,22 @@ The prebuilt ExecuTorch runtime, backend, and kernels are available as a Swift P
 ### Xcode
 Open the project in Xcode.In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the ExecuTorch repo into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version, e.g., “0.3.0”, or just use the “latest” branch name for the latest stable build.
 
+Note: If you're running into any issues related to package dependencies, quit Xcode entirely, delete the whole executorch repo, clean the caches by running the command below in terminal and clone the repo again.
+
+```
+rm -rf \
+  ~/Library/org.swift.swiftpm \
+  ~/Library/Caches/org.swift.swiftpm \
+  ~/Library/Caches/com.apple.dt.Xcode \
+  ~/Library/Developer/Xcode/DerivedData
+```
+
+Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.
+
+Note: To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the executorch_debug framework. For optimal performance, always link against the Release version of the deliverables (those without the _debug suffix), which have all logging overhead removed.
+
+For more details integrating and Running ExecuTorch on Apple Platforms, checkout this [link](https://pytorch.org/executorch/main/apple-runtime.html).
+
 <p align="center">
 <img src="../screenshots/ios_demo_app_swift_pm.png" alt="iOS LLaMA App Swift PM" width="600">
 </p>

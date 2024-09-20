@@ -36,6 +36,15 @@ This section will provide the main steps to use the app, along with a code snipp
 ```{note}
 ExecuTorch runtime is distributed as a Swift package providing some .xcframework as prebuilt binary targets.
 Xcode will download and cache the package on the first run, which will take some time.
+
+Note: If you're running into any issues related to package dependencies, quit Xcode entirely, delete the whole executorch repo, clean the caches by running the command below in terminal and clone the repo again.
+
+```
+rm -rf \
+  ~/Library/org.swift.swiftpm \
+  ~/Library/Caches/org.swift.swiftpm \
+  ~/Library/Caches/com.apple.dt.Xcode \
+  ~/Library/Developer/Xcode/DerivedData
 ```
 
 * Open XCode and select "Open an existing project" to open `examples/demo-apps/apple_ios/LLama`.
