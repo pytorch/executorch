@@ -1,0 +1,26 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+runtime.python_library(
+    name = "quantized_kv_cache",
+    srcs = [
+        "quantized_kv_cache.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.llama2.source_transformation",
+    visibility = ["//executorch/..."],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_test(
+    name = "quantized_kv_cache_test",
+    srcs = [
+        "test_quantized_kv_cache.py",
+    ],
+    deps = [
+        ":quantized_kv_cache",
+        "//caffe2:torch",
+        "//executorch/examples/models/llama2:llama_transformer",
+    ],
+)

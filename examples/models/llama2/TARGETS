@@ -73,6 +73,7 @@ runtime.python_library(
         "source_transformation/apply_spin_quant_r1_r2.py",
         "source_transformation/prune_output.py",
         "source_transformation/quantize.py",
+        "source_transformation/quantized_kv_cache.py",
         "source_transformation/rms_norm.py",
         "source_transformation/rope.py",
         "source_transformation/sdpa.py",
