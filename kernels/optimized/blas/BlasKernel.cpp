@@ -52,7 +52,7 @@ static_assert(
     kF32ElementsPerIteration / kF32ElementsPerRegister);
 static_assert(kF32RegistersPerIteration == 1 << kF32RegistersPerIterationShift);
 
-static inline double reduce(float32x4_t x[kF32RegistersPerIteration]) {
+static inline float reduce(float32x4_t x[kF32RegistersPerIteration]) {
   int offset = kF32RegistersPerIteration;
   utils::ForcedUnroll<kF32RegistersPerIterationShift>{}(
       [&offset, &x](auto idx) ET_INLINE_ATTRIBUTE {
