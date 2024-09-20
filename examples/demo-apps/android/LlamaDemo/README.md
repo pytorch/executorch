@@ -46,11 +46,7 @@ Below are the UI features for the app.
 
 Select the settings widget to get started with picking a model, its parameters and any prompts.
 <p align="center">
-<<<<<<< HEAD
 <img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/opening_the_app_details.png" width=800>
-=======
-<img src="https://github.com/pytorch/executorch/blob/main/docs/source/_static/img/opening_the_app_details.png" width=800>
->>>>>>> origin/release/0.4
 </p>
 
 
