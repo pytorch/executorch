@@ -49,8 +49,8 @@ void resize_native_layer_norm_node(
 }
 
 void check_args(const api::vTensor& in, const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
+  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
 }
 
 void add_native_layer_norm_node(
@@ -76,10 +76,10 @@ void add_native_layer_norm_node(
   }
 
   ValueRef arg_in = prepack_if_tensor_ref(graph, in);
-  ValueRef arg_weight =
-      prepack_if_tensor_ref(graph, weight, graph.memory_layout_of(arg_in));
-  ValueRef arg_bias =
-      prepack_if_tensor_ref(graph, bias, graph.memory_layout_of(arg_in));
+  ValueRef arg_weight = prepack_if_tensor_ref(
+      graph, weight, graph.estimate_memory_layout_of(arg_in));
+  ValueRef arg_bias = prepack_if_tensor_ref(
+      graph, bias, graph.estimate_memory_layout_of(arg_in));
 
   const auto out_val = graph.get_value_list(out);
   vTensorPtr t_out = graph.get_tensor(out_val->at(0));
