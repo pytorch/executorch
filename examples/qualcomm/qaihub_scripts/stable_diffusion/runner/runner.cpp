@@ -22,10 +22,15 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/platform/log.h>
 
-using namespace ::executorch::extension;
+using executorch::extension::from_blob;
+using executorch::extension::Module;
+using executorch::extension::TensorPtr;
+using executorch::extension::llm::time_in_ms;
+using executorch::runtime::Error;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Result;
 
-namespace torch {
-namespace executor {
+namespace example {
 
 Runner::Runner(
     const std::vector<std::string>& models_path,
@@ -88,11 +93,11 @@ Error Runner::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
-  stats_.model_load_start_ms = util::time_in_ms();
+  stats_.model_load_start_ms = time_in_ms();
   for (auto& module : modules_) {
     ET_CHECK_OK_OR_RETURN_ERROR(module->load_method("forward"));
   }
-  stats_.model_load_end_ms = util::time_in_ms();
+  stats_.model_load_end_ms = time_in_ms();
   return Error::Ok;
 }
 
@@ -119,7 +124,7 @@ Error Runner::parse_input_list(std::string& path) {
 
 Error Runner::init_tokenizer(const std::string& vocab_json_path) {
   ET_LOG(Info, "Loading Tokenizer from json");
-  stats_.tokenizer_load_start_ms = util::time_in_ms();
+  stats_.tokenizer_load_start_ms = time_in_ms();
   std::ifstream fin(vocab_json_path);
   auto update_map = [this](std::string& target, std::regex& re) {
     std::smatch sm;
@@ -159,7 +164,7 @@ Error Runner::init_tokenizer(const std::string& vocab_json_path) {
     std::string target = text.substr(pos);
     update_map(target, re_pattern);
   }
-  stats_.tokenizer_load_end_ms = util::time_in_ms();
+  stats_.tokenizer_load_end_ms = time_in_ms();
   return Error::Ok;
 }
 
@@ -338,15 +343,15 @@ void Runner::step(
 
 Error Runner::generate(std::string prompt) {
   ET_LOG(Info, "Start generating");
-  stats_.generate_start_ms = util::time_in_ms();
+  stats_.generate_start_ms = time_in_ms();
 
   // Start tokenize
-  stats_.tokenizer_parsing_start_ms = util::time_in_ms();
+  stats_.tokenizer_parsing_start_ms = time_in_ms();
   std::vector<int32_t> cond_tokens = tokenize(prompt);
   cond_tokens.resize(max_tokens_);
   std::vector<int32_t> uncond_tokens = tokenize("");
   uncond_tokens.resize(max_tokens_);
-  stats_.tokenizer_parsing_end_ms = util::time_in_ms();
+  stats_.tokenizer_parsing_end_ms = time_in_ms();
 
   std::vector<Result<MethodMeta>> method_metas = get_methods_meta();
 
@@ -374,13 +379,13 @@ Error Runner::generate(std::string prompt) {
       {1, 77, 1024},
       encoder_method_meta.output_tensor_meta(0)->scalar_type());
   modules_[0]->set_output(cond_emb_tensor);
-  long encoder_start = util::time_in_ms();
+  long encoder_start = time_in_ms();
   auto cond_res = modules_[0]->forward(cond_tokens_tensor);
-  stats_.text_encoder_execution_time += (util::time_in_ms() - encoder_start);
+  stats_.text_encoder_execution_time += (time_in_ms() - encoder_start);
   modules_[0]->set_output(uncond_emb_tensor);
-  encoder_start = util::time_in_ms();
+  encoder_start = time_in_ms();
   auto uncond_res = modules_[0]->forward(uncond_tokens_tensor);
-  stats_.text_encoder_execution_time += (util::time_in_ms() - encoder_start);
+  stats_.text_encoder_execution_time += (time_in_ms() - encoder_start);
 
   // Initialize unet parameters
   MethodMeta unet_method_meta = method_metas[1].get();
@@ -451,7 +456,7 @@ Error Runner::generate(std::string prompt) {
 
   // Execute unet
   for (int step_index = 0; step_index < num_time_steps_; step_index++) {
-    long start_post_process = util::time_in_ms();
+    long start_post_process = time_in_ms();
     scale_model_input(latent, fp_latent_model_input, sigmas[step_index]);
 
     quant_tensor(
@@ -461,24 +466,24 @@ Error Runner::generate(std::string prompt) {
         unet_input_latent_offset_);
 
     stats_.unet_aggregate_post_processing_time +=
-        (util::time_in_ms() - start_post_process);
+        (time_in_ms() - start_post_process);
     modules_[1]->set_output(noise_pred_text_tensor);
-    long start_unet_execution = util::time_in_ms();
+    long start_unet_execution = time_in_ms();
     auto cond_res = modules_[1]->forward(
         {latent_tensor, time_emb_tensors[step_index], cond_emb_tensor});
     stats_.unet_aggregate_execution_time +=
-        (util::time_in_ms() - start_unet_execution);
+        (time_in_ms() - start_unet_execution);
     modules_[1]->set_output(noise_pred_uncond_tensor);
-    start_unet_execution = util::time_in_ms();
+    start_unet_execution = time_in_ms();
     auto uncond_res = modules_[1]->forward(
         {latent_tensor,
          time_emb_tensors[step_index],
          uncond_emb_tensor}); // results in noise_pred_uncond_vec
     stats_.unet_aggregate_execution_time +=
-        (util::time_in_ms() - start_unet_execution);
+        (time_in_ms() - start_unet_execution);
 
     // start unet post processing
-    start_post_process = util::time_in_ms();
+    start_post_process = time_in_ms();
 
     dequant_tensor(
         noise_pred_text,
@@ -497,7 +502,7 @@ Error Runner::generate(std::string prompt) {
     }
     step(fp_noise_pred_text, sigmas, latent, prev_sample, step_index);
     stats_.unet_aggregate_post_processing_time +=
-        (util::time_in_ms() - start_post_process);
+        (time_in_ms() - start_post_process);
   }
 
   // Start VAE
@@ -520,10 +525,10 @@ Error Runner::generate(std::string prompt) {
   quant_tensor(latent, vae_input, vae_input_scale_, vae_input_offset_);
 
   modules_[2]->set_output(output_tensor);
-  long start_vae_execution = util::time_in_ms();
+  long start_vae_execution = time_in_ms();
   auto vae_res = modules_[2]->forward(vae_input_tensor);
-  stats_.vae_execution_time = (util::time_in_ms() - start_vae_execution);
-  stats_.generate_end_ms = util::time_in_ms();
+  stats_.vae_execution_time = (time_in_ms() - start_vae_execution);
+  stats_.generate_end_ms = time_in_ms();
 
   // Dequant uint16 output to fp32 output
   dequant_tensor(q_out, out, vae_output_scale_, vae_output_offset_);
@@ -605,5 +610,4 @@ Error Runner::print_performance() {
   return Error::Ok;
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace example

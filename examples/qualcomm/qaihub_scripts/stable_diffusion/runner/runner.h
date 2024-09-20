@@ -17,8 +17,7 @@
 
 #include <executorch/extension/module/module.h>
 
-namespace torch {
-namespace executor {
+namespace example {
 
 class Runner {
  public:
@@ -77,9 +76,9 @@ class Runner {
   };
 
   bool is_loaded() const;
-  Error load();
-  Error init_tokenizer(const std::string& vocab_json_path);
-  Error print_performance();
+  executorch::runtime::Error load();
+  executorch::runtime::Error init_tokenizer(const std::string& vocab_json_path);
+  executorch::runtime::Error print_performance();
   std::vector<int> tokenize(std::string prompt);
   std::vector<float> gen_latent_from_file();
   std::vector<float> gen_random_latent(float sigma);
@@ -89,15 +88,16 @@ class Runner {
       std::vector<float>& sample,
       std::vector<float>& prev_sample,
       int step_index);
-  std::vector<Result<MethodMeta>> get_methods_meta();
+  std::vector<executorch::runtime::Result<executorch::runtime::MethodMeta>>
+  get_methods_meta();
   std::vector<float> get_time_steps();
   std::vector<float> get_sigmas(const std::vector<float>& time_steps);
   void scale_model_input(
       const std::vector<float>& vec,
       std::vector<float>& latent_model_input,
       float sigma);
-  Error parse_input_list(std::string& path);
-  Error generate(std::string prompt);
+  executorch::runtime::Error parse_input_list(std::string& path);
+  executorch::runtime::Error generate(std::string prompt);
   void quant_tensor(
       const std::vector<float>& fp_vec,
       std::vector<uint16_t>& quant_vec,
@@ -111,7 +111,7 @@ class Runner {
 
  private:
   Stats stats_;
-  std::vector<std::unique_ptr<Module>> modules_;
+  std::vector<std::unique_ptr<executorch::extension::Module>> modules_;
   std::vector<std::vector<uint16_t>> time_emb_list_;
   std::unordered_map<std::string, int32_t> vocab_to_token_map_;
 
@@ -137,5 +137,4 @@ class Runner {
   const bool fix_latents_ = false;
 };
 
-} // namespace executor
-} // namespace torch
+} // namespace example
