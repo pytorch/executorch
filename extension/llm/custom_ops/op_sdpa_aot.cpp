@@ -9,6 +9,7 @@
 #include <executorch/extension/aten_util/make_aten_functor_from_et_functor.h>
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 #include <executorch/extension/llm/custom_ops/op_sdpa.h>
+#include <executorch/extension/llm/custom_ops/op_update_quantized_cache.h>
 
 #include <torch/library.h>
 
@@ -16,7 +17,6 @@ namespace torch {
 namespace executor {
 
 namespace native {
-namespace {
 Tensor& sdpa_with_kv_cache_out_no_context(
     const Tensor& q_projected,
     const Tensor& k_projected,
@@ -81,7 +81,27 @@ at::Tensor sdpa_with_kv_cache_aten(
    output);
   return output;
 }
-} // namespace
+
+Tensor& update_quantized_cache_out_no_context(
+    const Tensor& value,
+    Tensor& cache,
+    const int64_t start_pos,
+    Tensor& output) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::native::update_quantized_cache_out(
+      context, value, cache, start_pos, output);
+}
+
+at::Tensor update_quantized_cache_aten(
+    const at::Tensor& value,
+    at::Tensor& cache,
+    const int64_t start_pos) {
+  auto output = at::empty({1});
+  WRAP_TO_ATEN(update_quantized_cache_out_no_context, 3)
+  (value, cache, start_pos, output);
+  return output;
+}
+
 } // namespace native
 } // namespace executor
 } // namespace torch
@@ -95,6 +115,12 @@ TORCH_LIBRARY_FRAGMENT(llama, m) {
       "sdpa_with_kv_cache.out(Tensor query, Tensor key, Tensor value, Tensor(a!) key_cache, "
       "Tensor(b!) value_cache, SymInt start_pos, SymInt seq_len, Tensor? attn_mask=None, "
       "float drpout_p=0.0, bool is_causal=False, float? scale=None, *, Tensor(c!) out) -> Tensor(c!)");
+  m.def(
+      "update_quantized_cache(Tensor value, Tensor(a!) cache, "
+      "SymInt start_pos) -> Tensor");
+  m.def(
+      "update_quantized_cache.out(Tensor value, Tensor(a!) cache, "
+      "SymInt start_pos, *, Tensor(b!) out) -> Tensor(b!)");
 }
 
 TORCH_LIBRARY_IMPL(llama, CompositeExplicitAutograd, m) {
@@ -104,4 +130,15 @@ TORCH_LIBRARY_IMPL(llama, CompositeExplicitAutograd, m) {
       "sdpa_with_kv_cache.out",
       WRAP_TO_ATEN(
           torch::executor::native::sdpa_with_kv_cache_out_no_context, 11));
+}
+
+// TODO: Rename this file to op_custom_ops_aot.cpp
+TORCH_LIBRARY_IMPL(llama, CompositeExplicitAutograd, m) {
+  m.impl(
+      "update_quantized_cache",
+      torch::executor::native::update_quantized_cache_aten);
+  m.impl(
+      "update_quantized_cache.out",
+      WRAP_TO_ATEN(
+          torch::executor::native::update_quantized_cache_out_no_context, 3));
 }
