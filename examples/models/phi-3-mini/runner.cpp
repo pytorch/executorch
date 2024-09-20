@@ -15,6 +15,12 @@
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/log.h>
 
+using executorch::aten::ScalarType;
+using executorch::extension::Module;
+using executorch::extension::llm::BPETokenizer;
+using executorch::extension::llm::Sampler;
+using executorch::runtime::Error;
+
 namespace example {
 
 #define SAMPLER_TOP 0.9f
