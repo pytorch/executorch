@@ -70,8 +70,7 @@ void record_nchw_to_image_op(
     vkapi::VulkanBuffer& src_buffer,
     api::vTensor& v_dst) {
   vkapi::PipelineBarrier pipeline_barrier{};
-  vkapi::SpecVarList specialization_constants = {
-      SV(v_dst.packed_dim_whcn_idx())};
+  vkapi::SpecVarList specialization_constants = {SV(v_dst.packed_dim())};
 
   context->submit_compute_job(
       get_nchw_to_tensor_shader(
@@ -96,8 +95,7 @@ void record_image_to_nchw_op(
     api::vTensor& v_src,
     vkapi::VulkanBuffer& dst_buffer) {
   vkapi::PipelineBarrier pipeline_barrier{};
-  vkapi::SpecVarList specialization_constants = {
-      SV(v_src.packed_dim_whcn_idx())};
+  vkapi::SpecVarList specialization_constants = {SV(v_src.packed_dim())};
 
   context->submit_compute_job(
       get_tensor_to_nchw_shader(v_src),
@@ -125,7 +123,7 @@ void record_int8_image_to_nchw_noint8_op(
       pipeline_barrier,
       global_wg_size,
       adaptive_work_group_size(global_wg_size),
-      {v_src.packed_dim_whcn_idx()},
+      {v_src.packed_dim()},
       VK_NULL_HANDLE,
       0,
       dst_buffer.buffer(),
@@ -334,9 +332,7 @@ void record_matmul_texture3d(
       pipeline_barrier,
       global_wg_size,
       {8, 8, 1},
-      {out.packed_dim_whcn_idx(),
-       mat1.packed_dim_whcn_idx(),
-       mat2.packed_dim_whcn_idx()},
+      {out.packed_dim(), mat1.packed_dim(), mat2.packed_dim()},
       VK_NULL_HANDLE,
       0,
       out.image(
