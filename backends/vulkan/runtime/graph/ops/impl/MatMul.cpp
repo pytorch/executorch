@@ -29,7 +29,7 @@ void check_matmul_args(
   VK_CHECK_COND(mat1_sizes.size() == 2 || mat1_sizes.size() == 3);
   VK_CHECK_COND(mat1_sizes.size() == mat2_sizes.size());
 
-  VK_CHECK_COND(graph.memory_layout_of(mat1) == graph.memory_layout_of(out));
+  VK_CHECK_COND(graph.packed_dim_of(mat1) == graph.packed_dim_of(out));
 
   VK_CHECK_COND(utils::val_at(-1, mat1_sizes) == utils::val_at(-2, mat2_sizes));
 }
@@ -138,9 +138,9 @@ void add_matmul_naive_texture3d_node(
           graph.axis_map_ubo(mat2),
       },
       // Specialization Constants
-      {graph.packed_dim_whcn_idx_of(out),
-       graph.packed_dim_whcn_idx_of(mat1),
-       graph.packed_dim_whcn_idx_of(mat2)},
+      {graph.packed_dim_of(out),
+       graph.packed_dim_of(mat1),
+       graph.packed_dim_of(mat2)},
       // Resizing Logic
       resize_matmul_node,
       {mat2_is_transposed}));
@@ -165,7 +165,7 @@ void add_matmul_optimized_node(
   ValueRef mat2_packed = mat2;
   const utils::GPUMemoryLayout mat2_layout =
       mat2_is_transposed_val ? utils::kWidthPacked : utils::kHeightPacked;
-  if (graph.memory_layout_of(mat2) != mat2_layout) {
+  if (graph.estimate_memory_layout_of(mat2) != mat2_layout) {
     mat2_packed = graph.add_tensor_like(mat2, mat2_layout);
     viewFn(graph, {mat2, graph.add_none(), mat2_packed});
   }
@@ -222,7 +222,7 @@ void add_matmul_optimized_node(
           graph.axis_map_ubo(mat2_packed),
       },
       // Specialization Constants
-      {graph.packed_dim_whcn_idx_of(out)},
+      {graph.packed_dim_of(out)},
       // Resizing Logic
       resize_matmul_node,
       {mat2_is_transposed}));
@@ -237,9 +237,9 @@ void add_matmul_node(
   if (graph.is_buffer_storage(out)) {
     add_matmul_naive_buffer_node(
         graph, mat1, mat2_data, out, mat2_is_transposed);
-  } else if (graph.memory_layout_of(mat1) == utils::kChannelsPacked) {
+  } else if (graph.packed_dim_of(mat1) == WHCN::kChannelsDim) {
     add_matmul_optimized_node(graph, mat1, mat2_data, out, mat2_is_transposed);
-  } else if (graph.memory_layout_of(mat1) == utils::kWidthPacked) {
+  } else if (graph.packed_dim_of(mat1) == WHCN::kWidthDim) {
     add_matmul_naive_texture3d_node(
         graph, mat1, mat2_data, out, mat2_is_transposed);
   } else {

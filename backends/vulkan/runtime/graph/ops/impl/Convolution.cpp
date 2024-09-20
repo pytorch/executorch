@@ -108,7 +108,7 @@ ValueRef prepack_biases(
       v,
       {t->sizes_ubo(), t->axis_map_ubo()},
       // Specialization constants
-      {SV(t->packed_dim_whcn_idx())}));
+      {SV(t->packed_dim())}));
 
   return v;
 }
@@ -216,14 +216,14 @@ ValueRef prepack_weights(
        graph.create_params_buffer(
            utils::make_ivec4(original_sizes, /*reverse = */ true))},
       // Specialization constants
-      {SV(t->packed_dim_whcn_idx())}));
+      {SV(t->packed_dim())}));
 
   return v;
 }
 
 void check_conv_args(const api::vTensor& in, const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
+  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
 }
 
 struct Conv2dParams final {

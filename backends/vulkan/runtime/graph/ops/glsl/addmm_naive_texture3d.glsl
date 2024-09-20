@@ -170,5 +170,5 @@ void main() {
   texel = beta * bias_texel + alpha * texel;
 #endif // HAS_BIAS
 
-  imageStore(out_tensor, lpos_to_pos(out_lpos, out_axis_map), texel);
+  write_texel_lpos(out_tensor, out_lpos, texel, out_axis_map);
 }
