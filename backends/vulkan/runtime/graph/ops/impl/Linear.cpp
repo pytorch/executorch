@@ -36,7 +36,7 @@ void check_addmm_args(
   VK_CHECK_COND(mat1_sizes.size() == 2 || mat1_sizes.size() == 3);
   VK_CHECK_COND(mat1_sizes.size() == mat2_sizes.size());
 
-  VK_CHECK_COND(graph.memory_layout_of(mat1) == graph.memory_layout_of(out));
+  VK_CHECK_COND(graph.packed_dim_of(mat1) == graph.packed_dim_of(out));
 
   VK_CHECK_COND(utils::val_at(-1, mat1_sizes) == utils::val_at(-2, mat2_sizes));
 
@@ -126,10 +126,10 @@ void add_addmm_naive_node(
           graph.create_params_buffer(params),
       },
       // Specialization Constants
-      {graph.packed_dim_whcn_idx_of(out),
-       graph.packed_dim_whcn_idx_of(mat1),
-       graph.packed_dim_whcn_idx_of(mat2),
-       graph.packed_dim_whcn_idx_of(self)},
+      {graph.packed_dim_of(out),
+       graph.packed_dim_of(mat1),
+       graph.packed_dim_of(mat2),
+       graph.packed_dim_of(self)},
       // Resizing Logic
       resize_addmm_node,
       {mat2_is_transposed}));
@@ -160,7 +160,7 @@ void add_addmm_optimized_node(
   ValueRef mat2_packed = mat2;
   const utils::GPUMemoryLayout mat2_layout =
       mat2_is_transposed_val ? utils::kWidthPacked : utils::kHeightPacked;
-  if (graph.memory_layout_of(mat2) != mat2_layout) {
+  if (graph.estimate_memory_layout_of(mat2) != mat2_layout) {
     mat2_packed = graph.add_tensor_like(mat2, mat2_layout);
     viewFn(graph, {mat2, graph.add_none(), mat2_packed});
   }
@@ -220,7 +220,7 @@ void add_addmm_optimized_node(
           graph.create_params_buffer(params),
       },
       // Specialization Constants
-      {graph.packed_dim_whcn_idx_of(out)},
+      {graph.packed_dim_of(out)},
       // Resizing Logic
       resize_addmm_node,
       {mat2_is_transposed}));
@@ -246,10 +246,10 @@ void add_addmm_node(
   }
 
   Params params = {alpha_val, beta_val};
-  if (graph.memory_layout_of(mat1) == utils::kChannelsPacked) {
+  if (graph.packed_dim_of(mat1) == WHCN::kChannelsDim) {
     add_addmm_optimized_node(
         graph, self, mat1, mat2, beta, alpha, out, params, mat2_is_transposed);
-  } else if (graph.memory_layout_of(mat1) == utils::kWidthPacked) {
+  } else if (graph.packed_dim_of(mat1) == WHCN::kWidthDim) {
     add_addmm_naive_node(
         graph, self, mat1, mat2, beta, alpha, out, params, mat2_is_transposed);
   } else {

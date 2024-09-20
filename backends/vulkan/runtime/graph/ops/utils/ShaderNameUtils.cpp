@@ -69,28 +69,26 @@ void add_ndim_suffix(std::string& kernel_name, const api::vTensor& tensor) {
   }
 }
 
-void add_memory_layout_suffix(
-    std::string& kernel_name,
-    utils::GPUMemoryLayout layout) {
-  switch (layout) {
-    case utils::kChannelsPacked:
-      kernel_name += "_C_packed";
-      break;
-    case utils::kHeightPacked:
-      kernel_name += "_H_packed";
-      break;
-    case utils::kWidthPacked:
+void add_packed_dim_suffix(std::string& kernel_name, const int32_t packed_dim) {
+  switch (packed_dim) {
+    case WHCN::kWidthDim:
       kernel_name += "_W_packed";
       break;
-    default:
+    case WHCN::kHeightDim:
+      kernel_name += "_H_packed";
       break;
+    case WHCN::kChannelsDim:
+      kernel_name += "_C_packed";
+      break;
+    default:
+      VK_THROW("Invalid packed dim!");
   }
 }
 
-void add_memory_layout_suffix(
+void add_packed_dim_suffix(
     std::string& kernel_name,
     const api::vTensor& tensor) {
-  return add_memory_layout_suffix(kernel_name, tensor.gpu_memory_layout());
+  return add_packed_dim_suffix(kernel_name, tensor.packed_dim());
 }
 
 } // namespace vkcompute
