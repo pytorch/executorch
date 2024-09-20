@@ -39,8 +39,6 @@ cmake_install_executorch_libraries() {
 }
 
 cmake_build_phi_3_mini() {
-  python_lib=$($PYTHON_EXECUTABLE -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')
-
   cmake -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
       -DCMAKE_INSTALL_PREFIX=${BUILD_DIR} \
       -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
