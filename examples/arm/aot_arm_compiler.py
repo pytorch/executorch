@@ -182,6 +182,7 @@ def get_compile_spec(target: str, intermediates: bool) -> ArmCompileSpecBuilder:
                 extra_flags="--output-format=raw",
             )
             .set_permute_memory_format(True)
+            .set_quantize_io(True)
         )
 
     if intermediates is not None:
