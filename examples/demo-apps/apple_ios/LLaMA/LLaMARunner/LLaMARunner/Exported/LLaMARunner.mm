@@ -12,7 +12,8 @@
 #import <executorch/examples/models/llama2/runner/runner.h>
 #import <executorch/examples/models/llava/runner/llava_runner.h>
 
-using namespace ::torch::executor;
+using executorch::runtime::Error;
+using executorch::extension::llm::Image;
 
 NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
 NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
