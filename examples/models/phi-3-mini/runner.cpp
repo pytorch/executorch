@@ -48,17 +48,8 @@ void Runner::generate(const std::string& prompt, std::size_t max_seq_len) {
   ET_CHECK_MSG(
       encode_res.error() == Error::Ok, "Failed to encode %s", prompt.c_str());
   auto input_tokens = encode_res.get();
-
-  std::cout << "Prefilling tokens ..." << std::endl;
-  for (auto token : input_tokens) {
-    std::cout << token << " ";
-  }
-  std::cout << std::endl;
-  std::cout.flush();
   auto prev_token = input_tokens.back();
   auto current_token = prefill(input_tokens);
-
-  std::cout << "Generating tokens ..." << std::endl;
   std::cout << tokenizer_->decode(prev_token, current_token).get();
   std::cout.flush();
 
