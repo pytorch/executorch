@@ -21,7 +21,7 @@ void check_binary_op_args(
     const api::vTensor& self,
     const api::vTensor& other,
     const api::vTensor& out) {
-  VK_CHECK_COND(check_same_memory_layout(self, other, out));
+  VK_CHECK_COND(check_same_packed_dim(self, other, out));
   std::vector<int64_t> broadcasted_sizes =
       calculate_broadcasted_output_size(self, other);
   VK_CHECK_COND(out.sizes() == broadcasted_sizes);
@@ -53,7 +53,7 @@ void add_binary_op_node(
     const std::string& op_name) {
   ValueRef arg1 = prepack_if_tensor_ref(graph, in1);
   ValueRef arg2 =
-      prepack_if_tensor_ref(graph, in2, graph.memory_layout_of(arg1));
+      prepack_if_tensor_ref(graph, in2, graph.estimate_memory_layout_of(arg1));
 
   vTensorPtr t_in1 = graph.get_tensor(arg1);
   vTensorPtr t_in2 = graph.get_tensor(arg2);
@@ -93,7 +93,7 @@ void add_binary_op_node(
        graph.create_params_buffer(broadcast_params),
        graph.create_params_buffer(alpha_val)},
       // Specialization Constants
-      {SV(t_out->packed_dim_whcn_idx())},
+      {SV(t_out->packed_dim())},
       // Resizing Logic
       resize_binary_op_node,
       {}));
