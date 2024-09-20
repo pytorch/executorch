@@ -173,10 +173,19 @@ static executorch::runtime::Kernel make_boxed_kernel(
 } // namespace extension
 } // namespace executorch
 
-#define EXECUTORCH_LIBRARY(ns, op_name, func)                    \
-  static auto res_##ns = ::executorch::runtime::register_kernel( \
-      ::executorch::extension::make_boxed_kernel(                \
-          #ns "::" op_name, EXECUTORCH_FN(func)))
+// Inspired from C10_CONCATENATE
+#define ET_CONCATENATE_IMPL(s1, s2) s1##s2
+#define ET_CONCATENATE(s1, s2) ET_CONCATENATE_IMPL(s1, s2)
+#define ET_UID __LINE__
+
+#define EXECUTORCH_LIBRARY(ns, op_name, func) \
+  _EXECUTORCH_LIBRARY_IMPL(ns, op_name, func, ET_UID)
+
+#define _EXECUTORCH_LIBRARY_IMPL(ns, op_name, func, uid) \
+  static auto ET_CONCATENATE(res_##ns##_, uid) =         \
+      ::executorch::runtime::register_kernels(           \
+          ::executorch::extension::make_boxed_kernel(    \
+              #ns "::" op_name, EXECUTORCH_FN(func)))
 
 namespace torch {
 namespace executor {
