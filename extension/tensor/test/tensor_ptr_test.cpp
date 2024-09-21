@@ -478,6 +478,17 @@ TEST_F(TensorPtrTest, CloneTensorPtrFromTensorPtrInt64) {
   EXPECT_EQ(cloned_tensor->scalar_type(), exec_aten::ScalarType::Long);
 }
 
+TEST_F(TensorPtrTest, CloneTensorPtrFromTensorPtrNull) {
+  auto tensor = make_tensor_ptr({2, 2}, nullptr);
+  auto cloned_tensor = clone_tensor_ptr(tensor);
+
+  EXPECT_EQ(cloned_tensor->dim(), tensor->dim());
+  EXPECT_EQ(cloned_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(cloned_tensor->size(1), tensor->size(1));
+  EXPECT_EQ(cloned_tensor->const_data_ptr(), tensor->const_data_ptr());
+  EXPECT_EQ(cloned_tensor->const_data_ptr(), nullptr);
+}
+
 TEST_F(TensorPtrTest, TensorDataCastingFromIntToFloat) {
   std::vector<int32_t> int_data = {1, 2, 3, 4, 5, 6};
   auto tensor = make_tensor_ptr(
