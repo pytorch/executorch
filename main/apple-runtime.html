@@ -493,6 +493,21 @@
 <p><strong>Note:</strong> To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the <code class="docutils literal notranslate"><span class="pre">executorch_debug</span></code> framework. For optimal performance, always link against the Release version of the deliverables (those without the <code class="docutils literal notranslate"><span class="pre">_debug</span></code> suffix), which have all logging overhead removed.</p>
 <div class="section" id="integration">
 <h2>Integration<a class="headerlink" href="#integration" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="setup">
+<h3>Setup<a class="headerlink" href="#setup" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="cmake">
+<h4>CMake<a class="headerlink" href="#cmake" title="Permalink to this heading">¶</a></h4>
+<p>Building the Xcode project requires CMake. Installing via homebrew does not
+typically work; instead, install the packaged application and commandline tools
+globally:</p>
+<ol class="arabic simple">
+<li><p>Download the macOS <code class="docutils literal notranslate"><span class="pre">.dmg</span></code> installer from https://cmake.org/download</p></li>
+<li><p>Open the <code class="docutils literal notranslate"><span class="pre">.dmg</span></code></p></li>
+<li><p>Drag the CMake app to the <code class="docutils literal notranslate"><span class="pre">/Applications</span></code> folder</p></li>
+<li><p>In a terminal, install the command line tools: <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">/Applications/CMake.app/Contents/bin/cmake-gui</span> <span class="pre">--install</span></code></p></li>
+</ol>
+</div>
+</div>
 <div class="section" id="swift-package-manager">
 <h3>Swift Package Manager<a class="headerlink" href="#swift-package-manager" title="Permalink to this heading">¶</a></h3>
 <p>The prebuilt ExecuTorch runtime, backend, and kernels are available as a <a class="reference external" href="https://www.swift.org/documentation/package-manager/">Swift PM</a> package.</p>
@@ -785,6 +800,10 @@ Copy them to your project and link them against your targets.</p>
               <ul>
 <li><a class="reference internal" href="#">Integrating and Running ExecuTorch on Apple Platforms</a><ul>
 <li><a class="reference internal" href="#integration">Integration</a><ul>
+<li><a class="reference internal" href="#setup">Setup</a><ul>
+<li><a class="reference internal" href="#cmake">CMake</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#swift-package-manager">Swift Package Manager</a><ul>
 <li><a class="reference internal" href="#xcode">Xcode</a></li>
 <li><a class="reference internal" href="#cli">CLI</a></li>
