@@ -7,11 +7,12 @@ import logging
 
 from collections import Counter
 from pprint import pformat
-from typing import Any, List, Literal, Optional, Tuple, Union
+from typing import Any, Iterable, List, Literal, Optional, Tuple, Union
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
 import numpy as np
+import serializer.tosa_serializer as ts
 
 import torch.fx
 
@@ -30,20 +31,29 @@ from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
     RunnerUtil,
 )
+from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 
 from executorch.backends.xnnpack.test.tester import Tester
+from executorch.devtools.backend_debug import get_delegation_info
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+
 from executorch.exir.lowered_backend_module import LoweredBackendModule
+from tabulate import tabulate
+from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
 from torch.fx import Graph
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class Partition(tester.Partition):
     def dump_artifact(self, path_to_dump: Optional[str]):
         super().dump_artifact(path_to_dump)
+
+        output = "Formated Graph Signature:\n"
+        output += _format_export_graph_signature(
+            self.artifact.exported_program().graph_signature
+        )
 
         def get_output_format(lowered_module) -> str | None:
             for spec in lowered_module.compile_specs:
@@ -51,7 +61,6 @@ class Partition(tester.Partition):
                     return spec.value.decode()
             return None
 
-        output = ""
         for node in self.graph_module.graph.nodes:
             if node.op == "get_attr" and node.name.startswith("lowered_module_"):
                 lowered_module = getattr(self.graph_module, node.name)
@@ -258,7 +267,9 @@ class ArmTester(Tester):
             reference_stage = self.stages[self.stage_name(InitialModel)]
             quantization_scale = None
 
-        print(f"Comparing Stage {test_stage} with Stage {reference_stage}")
+        logger.info(
+            f"Comparing Stage '{self.stage_name(test_stage)}' with Stage '{self.stage_name(reference_stage)}'"
+        )
         is_nhwc = is_permute_memory(self.compile_spec)
 
         # Loop inputs and compare reference stage with the compared stage.
@@ -284,7 +295,8 @@ class ArmTester(Tester):
                 generated_input.shape if hasattr(generated_input, "shape") else (1,)
                 for generated_input in reference_input
             ]
-            print(f"Run {run_iteration} with input shapes: {input_shapes}")
+            input_shape_str = ", ".join([str(list(i)) for i in input_shapes])
+            logger.info(f"Run #{run_iteration}, input shapes: {input_shape_str}")
 
             reference_output = reference_stage.run_artifact(reference_input)
             test_output = tuple(test_stage.run_artifact(test_input))
@@ -319,32 +331,85 @@ class ArmTester(Tester):
 
         return graph
 
-    def dump_operator_distribution(self, path_to_dump: Optional[str] = None):
-        """Dump a dictionary with {operator: operator count} for the operators in the
-        graph of the current stage.
+    def dump_operator_distribution(
+        self, path_to_dump: Optional[str] = None, print_table: bool = True
+    ):
+        """Dump the distribution of operators in the current stage.
+        In the partition stage, additional information is included such as the number of
+        delegates and the distribution of TOSA operators.
+        Set parameter print_table to False to dump in a parseable format.
+
 
         Returns self for daisy-chaining.
         """
-        graph = self.get_graph(self.cur)
-        op_dist = _get_operator_distribution(graph)
-        to_print = self.cur + " operators: " + _format_dict(dict(op_dist)) + "\n"
+        line = "#" * 10
+        to_print = f"{line} {self.cur.capitalize()} Operator Distribution {line}\n"
 
-        if self.cur == self.stage_name(tester.Partition):
-            to_print += _get_tosa_operator_distribution(
-                self.get_artifact(self.cur).exported_program().graph_module
+        if self.cur == self.stage_name(tester.Partition) and print_table:
+            graph_module = self.get_artifact().exported_program().graph_module
+            if print_table:
+                delegation_info = get_delegation_info(graph_module)
+                op_dist = delegation_info.get_operator_delegation_dataframe()
+            else:
+                op_dist = dict(_get_operator_distribution(graph_module.graph))
+            to_print += _format_dict(op_dist, print_table)
+            to_print += "\n" + _get_tosa_operator_distribution(
+                graph_module, print_table
             )
+            to_print += "\n"
+            to_print += delegation_info.get_summary()
+        else:
+            graph = self.get_graph(self.cur)
+            op_dist = dict(_get_operator_distribution(graph))
+            if print_table:
+                op_dist = {
+                    "Operator": list(op_dist),
+                    "Count": [op_dist[key] for key in op_dist],
+                }
+            to_print += _format_dict(op_dist, print_table) + "\n"
+
         _dump_str(to_print, path_to_dump)
+
         return self
 
-    def dump_dtype_distribution(self, path_to_dump: Optional[str] = None):
-        """Dump a dictionary with {dtype: dtype count} for the dtypes of the nodes in the
-        graph of the current stage.
+    def dump_dtype_distribution(
+        self, path_to_dump: Optional[str] = None, print_table: bool = True
+    ):
+        """Dump a the distributions of dtypes of nodes and placeholders in the current stage.
+        Set parameter print_table to False to dump in a parseable format.
 
         Returns self for daisy-chaining.
         """
+
+        line = "#" * 10
+        to_print = (
+            f"{line} {self.cur.capitalize()} Placeholder Dtype Distribution {line}\n"
+        )
+
         graph = self.get_graph(self.cur)
-        op_dist = _get_dtype_distribution(graph)
-        to_print = self.cur + " placeholder data types: " + _format_dict(op_dist) + "\n"
+        dtype_dist_placeholders, dtype_dirst_tensors = _get_dtype_distribution(graph)
+        all_dtypes = set(dtype_dist_placeholders.keys()) | set(
+            dtype_dirst_tensors.keys()
+        )
+        if print_table:
+            dtype_dist = {
+                "Dtype": all_dtypes,
+                "Placeholder Count": [
+                    (
+                        dtype_dist_placeholders[key]
+                        if key in dtype_dist_placeholders
+                        else 0
+                    )
+                    for key in all_dtypes
+                ],
+                "Tensor Count": [
+                    (dtype_dirst_tensors[key] if key in dtype_dirst_tensors else 0)
+                    for key in all_dtypes
+                ],
+            }
+        else:
+            dtype_dist = dict(dtype_dist_placeholders + dtype_dirst_tensors)
+        to_print += _format_dict(dtype_dist, print_table) + "\n"
         _dump_str(to_print, path_to_dump)
         return self
 
@@ -422,17 +487,20 @@ class ArmTester(Tester):
             raise e
 
 
-def _get_dtype_distribution(graph: Graph) -> dict:
-    """Counts the occurences of placeholder data types in a graph.
-    The result is a dict {'data type':'number of placeholders'}
+def _get_dtype_distribution(graph: Graph) -> tuple[dict, dict]:
+    """Counts the occurences of placeholder and call_function dtypes in a graph.
+    The result is a tuple of Counters (placeholder_distribution, call_function_distribution)
     """
-    return Counter(
-        [
-            node.meta["val"].dtype
-            for node in list(graph.nodes)
-            if node.op == "placeholder"
-        ]
-    )
+    placeholder_dtypes = []
+    call_function_dtypes = []
+    for node in graph.nodes:
+        if node.op == "placeholder":
+            placeholder_dtypes.append(str(node.meta["val"].dtype))
+        if node.op == "call_function":
+            if "val" in node.meta:
+                dtype, _, _ = extract_tensor_meta(node.meta)
+                call_function_dtypes.append(ts.DTypeNames[dtype])
+    return Counter(placeholder_dtypes), Counter(call_function_dtypes)
 
 
 def _get_operator_distribution(graph: Graph) -> dict[str, int]:
@@ -444,7 +512,25 @@ def _get_operator_distribution(graph: Graph) -> dict[str, int]:
     )
 
 
-def _get_tosa_operator_distribution(graph_module: torch.fx.GraphModule) -> str:
+def _format_export_graph_signature(signature: ExportGraphSignature) -> str:
+    def specs_dict(specs: list[InputSpec | OutputSpec], title: str):
+        _dict: dict[str, list] = {title: [], "arg": [], "kind": [], "target": []}
+        for i, spec in enumerate(specs):
+            _dict[title].append(i)
+            _dict["arg"].append(spec.arg)
+            _dict["kind"].append(spec.kind)
+            _dict["target"].append(spec.target if spec.target else "-")
+        return _dict
+
+    input_dict = specs_dict(signature.input_specs, "Inputs")
+    output_dict = specs_dict(signature.output_specs, "Outputs")
+
+    return f"{_format_dict(input_dict)}\n{_format_dict(output_dict)}"
+
+
+def _get_tosa_operator_distribution(
+    graph_module: torch.fx.GraphModule, print_table=False
+) -> str:
     """Counts the occurences of operator names of all lowered modules containing
     a TOSA flatbuffer.
     The result is a string with the operator distribution or an error message.
@@ -471,7 +557,12 @@ def _get_tosa_operator_distribution(graph_module: torch.fx.GraphModule) -> str:
         id += 1
     if id == 0:
         return "No delegate with name 'lowered_module_0 found in graph module."
-    return "TOSA operators: " + _format_dict(dict(Counter(op_list)))
+    op_dist = dict(Counter(op_list))
+    op_dist = {
+        "Operator": list(op_dist.keys()),
+        "Count": [item[1] for item in op_dist.items()],
+    }
+    return "TOSA operators:\n" + _format_dict(dict(op_dist), print_table)
 
 
 def _dump_str(to_print: str, path_to_dump: Optional[str] = None):
@@ -479,8 +570,13 @@ def _dump_str(to_print: str, path_to_dump: Optional[str] = None):
         with open(path_to_dump, "a") as fp:
             fp.write(to_print)
     else:
-        print(to_print)
+        logger.info(to_print)
 
 
-def _format_dict(to_print: dict) -> str:
-    return pformat(to_print, compact=True, indent=1)
+def _format_dict(to_print: dict, print_table: bool = True) -> str:
+    if isinstance(list(to_print.items())[0], Iterable) and print_table:
+        return tabulate(
+            to_print, headers="keys", tablefmt="fancy_grid", maxcolwidths=35
+        )
+    else:
+        return pformat(to_print, compact=True, indent=1)

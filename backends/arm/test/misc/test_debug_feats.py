@@ -151,6 +151,30 @@ def test_dump_ops_and_dtypes():
     # Just test that there are no execptions.
 
 
+def test_dump_ops_and_dtypes_parseable():
+    model = Linear(20, 30)
+    (
+        ArmTester(
+            model,
+            example_inputs=model.get_inputs(),
+            compile_spec=common.get_tosa_compile_spec(),
+        )
+        .quantize()
+        .dump_dtype_distribution(print_table=False)
+        .dump_operator_distribution(print_table=False)
+        .export()
+        .dump_dtype_distribution(print_table=False)
+        .dump_operator_distribution(print_table=False)
+        .to_edge()
+        .dump_dtype_distribution(print_table=False)
+        .dump_operator_distribution(print_table=False)
+        .partition()
+        .dump_dtype_distribution(print_table=False)
+        .dump_operator_distribution(print_table=False)
+    )
+    # Just test that there are no execptions.
+
+
 class TestCollateTosaTests(unittest.TestCase):
     """Tests the collation of TOSA tests through setting the environment variable TOSA_TESTCASE_BASE_PATH."""
 
@@ -187,7 +211,8 @@ class TestCollateTosaTests(unittest.TestCase):
         shutil.rmtree("test_collate_tosa_tests", ignore_errors=True)
 
 
-def test_dump_tosa_ops(capsys):
+def test_dump_tosa_ops(caplog):
+    caplog.set_level(logging.INFO)
     model = Linear(20, 30)
     (
         ArmTester(
@@ -201,12 +226,12 @@ def test_dump_tosa_ops(capsys):
         .partition()
         .dump_operator_distribution()
     )
-    captured = capsys.readouterr()
-    assert "Partition operators:" in captured.out
-    assert "TOSA operators:" in captured.out
+    assert "TOSA operators:" in caplog.text
 
 
-def test_fail_dump_tosa_ops(capsys):
+def test_fail_dump_tosa_ops(caplog):
+    caplog.set_level(logging.INFO)
+
     class Add(torch.nn.Module):
         def forward(self, x):
             return x + x
@@ -221,6 +246,4 @@ def test_fail_dump_tosa_ops(capsys):
         .partition()
         .dump_operator_distribution()
     )
-    captured = capsys.readouterr()
-    assert "Partition operators:" in captured.out
-    assert "Can not get operator distribution for Vela command stream." in captured.out
+    assert "Can not get operator distribution for Vela command stream." in caplog.text
