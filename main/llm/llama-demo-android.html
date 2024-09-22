@@ -557,10 +557,8 @@
 <li><p>System Prompt: Without any formatting, you can enter in a system prompt. For example, “you are a travel assistant” or “give me a response in a few sentences”.</p></li>
 <li><p>User Prompt: More for the advanced user, if you would like to manually input a prompt then you can do so by modifying the <code class="docutils literal notranslate"><span class="pre">{{user</span> <span class="pre">prompt}}</span></code>. You can also modify the special tokens as well. Once changed then go back to the main Chat activity to send.</p></li>
 </ul>
-<blockquote>
-<div><p>[!TIP]
-Helpful ExecuTorch API in app</p>
-</div></blockquote>
+<div class="section" id="executorch-app-api">
+<h4>ExecuTorch App API<a class="headerlink" href="#executorch-app-api" title="Permalink to this heading">¶</a></h4>
 <div class="highlight-none notranslate highlight-java"><div class="highlight"><pre><span></span><span class="c1">// Upon returning to the Main Chat Activity</span>
 <span class="n">mModule</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">LlamaModule</span><span class="p">(</span>
 <span class="w">            </span><span class="n">ModelUtils</span><span class="p">.</span><span class="na">getModelCategory</span><span class="p">(</span><span class="n">mCurrentSettingsFields</span><span class="p">.</span><span class="na">getModelType</span><span class="p">()),</span>
@@ -577,6 +575,7 @@ Helpful ExecuTorch API in app</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">temperature</span></code>: model parameter to adjust the randomness of the model’s output</p></li>
 </ul>
 </div>
+</div>
 <div class="section" id="user-prompt">
 <h3>User Prompt<a class="headerlink" href="#user-prompt" title="Permalink to this heading">¶</a></h3>
 <p>Once model is successfully loaded then enter any prompt and click the send (i.e. generate) button to send it to the model.</p>
@@ -587,10 +586,8 @@ Helpful ExecuTorch API in app</p>
 <p align="center">
 <img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/chat.png" width=300>
 </p>
-<blockquote>
-<div><p>[!TIP]
-Helpful ExecuTorch API in app</p>
-</div></blockquote>
+<div class="section" id="id1">
+<h4>ExecuTorch App API<a class="headerlink" href="#id1" title="Permalink to this heading">¶</a></h4>
 <div class="highlight-none notranslate highlight-java"><div class="highlight"><pre><span></span><span class="n">mModule</span><span class="p">.</span><span class="na">generate</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span><span class="n">sequence_length</span><span class="p">,</span><span class="w"> </span><span class="n">MainActivity</span><span class="p">.</span><span class="na">this</span><span class="p">);</span>
 </pre></div>
 </div>
@@ -605,16 +602,15 @@ Helpful ExecuTorch API in app</p>
 <img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/llava_example.png" width=300>
 </p>
 </div>
+</div>
 <div class="section" id="output-generated">
 <h3>Output Generated<a class="headerlink" href="#output-generated" title="Permalink to this heading">¶</a></h3>
 <p>To show completion of the follow-up question, here is the complete detailed response from the model.</p>
 <p align="center">
 <img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/chat_response.png" width=300>
 </p>
-<blockquote>
-<div><p>[!TIP]
-Helpful ExecuTorch API in app</p>
-</div></blockquote>
+<div class="section" id="id2">
+<h4>ExecuTorch App API<a class="headerlink" href="#id2" title="Permalink to this heading">¶</a></h4>
 <p>Ensure you have the following functions in your callback class that you provided in the <code class="docutils literal notranslate"><span class="pre">mModule.generate()</span></code>. For this example, it is <code class="docutils literal notranslate"><span class="pre">MainActivity.this</span></code>.</p>
 <div class="highlight-none notranslate highlight-java"><div class="highlight"><pre><span></span><span class="w">  </span><span class="nd">@Override</span>
 <span class="w">  </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">onResult</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">result</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
@@ -627,6 +623,7 @@ Helpful ExecuTorch API in app</p>
 <span class="w">    </span><span class="c1">//...tps (tokens per second) stats is provided by framework</span>
 <span class="w">  </span><span class="p">}</span>
 </pre></div>
+</div>
 </div>
 </div>
 </div>
@@ -687,9 +684,18 @@ Helpful ExecuTorch API in app</p>
 <li><a class="reference internal" href="#building-the-apk">Building the APK</a></li>
 <li><a class="reference internal" href="#how-to-use-the-app">How to Use the App</a><ul>
 <li><a class="reference internal" href="#opening-the-app">Opening the App</a></li>
-<li><a class="reference internal" href="#select-models-and-parameters">Select Models and Parameters</a></li>
-<li><a class="reference internal" href="#user-prompt">User Prompt</a></li>
-<li><a class="reference internal" href="#output-generated">Output Generated</a></li>
+<li><a class="reference internal" href="#select-models-and-parameters">Select Models and Parameters</a><ul>
+<li><a class="reference internal" href="#executorch-app-api">ExecuTorch App API</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#user-prompt">User Prompt</a><ul>
+<li><a class="reference internal" href="#id1">ExecuTorch App API</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#output-generated">Output Generated</a><ul>
+<li><a class="reference internal" href="#id2">ExecuTorch App API</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li><a class="reference internal" href="#reporting-issues">Reporting Issues</a></li>
