@@ -262,7 +262,9 @@ class ComputeGraphGen:
         else:
             return f"{cpp_type} {ref.name};\n"
 
-    def create_value_for(self, ref: ValueRefList, include_declarations: bool = True) -> str:  # noqa: C901
+    def create_value_for(
+        self, ref: ValueRefList, include_declarations: bool = True
+    ) -> str:  # noqa: C901
         if isinstance(ref, list):
             ret_str = ""
             for r in ref:

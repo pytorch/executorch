@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace torch::executor {
+namespace example {
 namespace llm_helper {
 
 class RotaryEmbeddingMasterLut {
@@ -77,4 +77,4 @@ class RotaryEmbeddingMasterLut {
 };
 
 } // namespace llm_helper
-} // namespace torch::executor
+} // namespace example
