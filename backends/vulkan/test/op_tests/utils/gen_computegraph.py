@@ -228,11 +228,12 @@ class ComputeGraphGen:
         func_call = f"ATEN_FN({self.f_sig.name()})({exprs});"
         return func_call
 
-    def create_out_src(self) -> str:
+    def create_out_src(self, include_declarations: bool = True) -> str:
+        cpp_type = self.out.cpp_type if include_declarations else ""
         if Variant.function in self.f.variants:
-            return f"{self.out.cpp_type} out = " + self.create_aten_fn_call() + "\n"
+            return f"{cpp_type} out = " + self.create_aten_fn_call() + "\n"
         else:
-            return f"{self.out.cpp_type} out = " + self.create_aten_method_call() + "\n"
+            return f"{cpp_type} out = " + self.create_aten_method_call() + "\n"
 
     ## Graph code generation utils
 
@@ -242,7 +243,26 @@ class ComputeGraphGen:
         else:
             return ref.supports_prepack and self.should_prepack
 
-    def create_value_for(self, ref: ValueRefList) -> str:  # noqa: C901
+    def create_value_decl_for(self, ref: ValueRefList) -> str:  # noqa: C901
+        if isinstance(ref, list):
+            ret_str = ""
+            for r in ref:
+                ret_str += self.create_value_decl_for(r)
+            return ret_str
+
+        cpp_type = "IOValueRef" if (ref.is_in or ref.requires_prepack) else "ValueRef"
+        if ref.src_cpp_type == AT_TENSOR_LIST:
+            ret_str = f"std::vector<IOValueRef> {ref.name}_io_value_refs;\n"
+            ret_str += f"std::vector<ValueRef> {ref.name}_value_refs;\n"
+            return ret_str
+        elif ref.src_cpp_type == TENSOR_VECTOR:
+            ret_str = f"std::vector<IOValueRef> {ref.io_value_list_name};\n"
+            ret_str += f"std::vector<ValueRef> {ref.value_list_name};\n"
+            return ret_str
+        else:
+            return f"{cpp_type} {ref.name};\n"
+
+    def create_value_for(self, ref: ValueRefList, include_declarations: bool = True) -> str:  # noqa: C901
         if isinstance(ref, list):
             ret_str = ""
             for r in ref:
@@ -252,9 +272,16 @@ class ComputeGraphGen:
         prepack = self.prepack_ref(ref)
 
         cpp_type = "IOValueRef" if (ref.is_in and not prepack) else "ValueRef"
+        if not include_declarations:
+            cpp_type = ""
 
         if ref.src_cpp_type == OPT_AT_TENSOR:
             ret_str = f"{cpp_type} {ref.name} = "
+            if prepack:
+                ret_str = ""
+                if include_declarations:
+                    ret_str += f"IOValueRef {ref.name};\n"
+                ret_str += f"{ref.name}.value = "
             ret_str += f"!{ref.src_cpp_name}.has_value() ? "
             ret_str += f"{self.graph}{self.dot}add_none() : "
             if not prepack:
@@ -291,11 +318,13 @@ class ComputeGraphGen:
             # each tensor, to facilate staging. On the other hand, we will
             # use the .value tensor to create a ValueList, which will be passed
             # to the corresponding ops.
-            ret_str = f"std::vector<IOValueRef> {ref.name}_io_value_refs;\n"
-            ret_str += f"std::vector<ValueRef> {ref.name}_value_refs;\n"
+            ret_str = ""
+            if include_declarations:
+                ret_str += f"std::vector<IOValueRef> {ref.name}_io_value_refs;\n"
+                ret_str += f"std::vector<ValueRef> {ref.name}_value_refs;\n"
             ret_str += f"for (int i=0; i < {ref.src_cpp_name}.size(); i++) {{\n"
             ret_str += (
-                f"  {cpp_type} io_value_ref = {self.graph}{self.dot}add_input_tensor(\n"
+                f"  IOValueRef io_value_ref = {self.graph}{self.dot}add_input_tensor(\n"
             )
             ret_str += f"      {ref.src_cpp_name}[i].sizes().vec(),\n"
             ret_str += (
@@ -307,9 +336,11 @@ class ComputeGraphGen:
             ret_str += f"ValueRef {ref.name} = {self.graph}{self.dot}add_value_list(std::move({ref.name}_value_refs));\n"
             return ret_str
         elif ref.src_cpp_type == TENSOR_VECTOR:
-            ret_str = f"""
-std::vector<IOValueRef> {ref.io_value_list_name};
-std::vector<ValueRef> {ref.value_list_name};
+            ret_str = ""
+            if include_declarations:
+                ret_str += f"std::vector<IOValueRef> {ref.io_value_list_name};\n"
+                ret_str += f"std::vector<ValueRef> {ref.value_list_name};\n"
+            ret_str += f"""
 for (int i=0; i<out.size(); i++) {{
     const at::Tensor& cur = out[i];
     IOValueRef io_value_ref;
@@ -323,6 +354,12 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
             return ret_str
 
         ret_str = f"{cpp_type} {ref.name} = {self.graph}{self.dot}"
+        if prepack:
+            ret_str = ""
+            if include_declarations:
+                ret_str = f"IOValueRef {ref.name};\n"
+            ret_str += f"{ref.name}.value = {self.graph}{self.dot}"
+
         if ref.src_cpp_type == AT_TENSOR and not prepack:
             ret_str += "add_input_tensor(" if ref.is_in else "add_tensor("
             ret_str += f"{ref.src_cpp_name}.sizes().vec(), "
@@ -374,14 +411,29 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
             else:
                 op_create_code += (
                     f"{ref.name}.value, "
-                    if (ref.is_in and not self.prepack_ref(ref)) or ref.is_out
+                    if ref.is_in or ref.requires_prepack or ref.is_out
                     else f"{ref.name}, "
                 )
+                # op_create_code += f"{ref.name}, "
 
         op_create_code += "out_ref});\n"
         return op_create_code
 
-    def set_output(self, ref: ValueRefList) -> str:
+    def gen_output_staging_valueref_decl(self, ref: ValueRefList) -> str:
+        if isinstance(ref, list):
+            ret_str = ""
+            for r in ref[:-1]:
+                ret_str += self.gen_output_staging_valueref_decl(r)
+            return ret_str
+        elif ref.src_cpp_type == TENSOR_VECTOR:
+            assert ref.is_out
+            ret_str = ""
+            return ret_str
+
+        assert ref.src_cpp_type == AT_TENSOR and ref.is_out
+        return f"ValueRef {ref.name}_staging;\n"
+
+    def set_output(self, ref: ValueRefList, include_declarations: bool = True) -> str:
         if isinstance(ref, list):
             ret_str = ""
             for r in ref[:-1]:
@@ -398,7 +450,8 @@ for (int i=0; i<out.size(); i++) {{
             return ret_str
 
         assert ref.src_cpp_type == AT_TENSOR and ref.is_out
-        ret_str = f"ValueRef {ref.name}_staging = {self.graph}{self.dot}"
+        cpptype = "ValueRef" if include_declarations else ""
+        ret_str = f"{cpptype} {ref.name}_staging = {self.graph}{self.dot}"
         ret_str += f"set_output_tensor({ref.name});\n"
         return ret_str
 
@@ -516,15 +569,28 @@ for (int i=0; i<out.size(); i++) {{
 
     ## Top level code generation
 
-    def gen_graph_build_code(self) -> str:
-        graph_build = self.create_out_src()
+    def gen_arg_valueref_decls(self) -> str:
+        ret_str = ""
         for aten_arg in self.args:
-            graph_build += self.create_value_for(self.refs[aten_arg.name])
+            ref = self.refs[aten_arg.name]
+            ret_str += self.create_value_decl_for(ref)
 
-        graph_build += self.create_value_for(self.refs["out"])
+        ret_str += self.create_value_decl_for(self.refs["out"])
+        ret_str += f"{self.out.cpp_type} out;\n"
+        ret_str += self.gen_output_staging_valueref_decl(self.refs["out"])
+        return ret_str
+
+    def gen_graph_build_code(self, include_declarations: bool = True) -> str:
+        graph_build = self.create_out_src(include_declarations)
+        for aten_arg in self.args:
+            graph_build += self.create_value_for(
+                self.refs[aten_arg.name], include_declarations
+            )
+
+        graph_build += self.create_value_for(self.refs["out"], include_declarations)
         graph_build += self.create_op_call()
 
-        graph_build += self.set_output(self.refs["out"])
+        graph_build += self.set_output(self.refs["out"], include_declarations)
 
         graph_build += f"{self.graph}{self.dot}prepare();\n"
         graph_build += f"{self.graph}{self.dot}encode_prepack();\n"
@@ -534,7 +600,7 @@ for (int i=0; i<out.size(); i++) {{
         graph_build += "\n"
         return graph_build
 
-    def gen_graph_exec_code(self) -> str:
+    def gen_graph_exec_code(self, check_output=True) -> str:
         graph_exec = ""
         for aten_arg in self.args:
             ref = self.refs[aten_arg.name]
@@ -547,26 +613,27 @@ for (int i=0; i<out.size(); i++) {{
 
         graph_exec += self.declare_vk_out_for(self.refs["out"])
         graph_exec += self.copy_from_staging(self.refs["out"])
-        graph_exec += self.check_graph_out(self.refs["out"])
+        if check_output:
+            graph_exec += self.check_graph_out(self.refs["out"])
 
         graph_exec = re.sub(r"^", "  ", graph_exec, flags=re.M)
         graph_exec = "{\n" + graph_exec + "\n}"
 
         return graph_exec
 
-    def gen_conditional_skips(self) -> str:
+    def gen_conditional_skips(self, skip_str: str = "GTEST_SKIP();") -> str:
         fp16_skip = f"if (!{self.graph}{self.dot}context()->adapter_ptr()->has_full_float16_buffers_support()) {{\n"
-        fp16_skip += "  GTEST_SKIP();\n"
+        fp16_skip += f"  {skip_str}\n"
         fp16_skip += "}"
         fp16_skip = re.sub(r"^", "  ", fp16_skip, flags=re.M) + "\n"
 
         int8_skip = f"if (!{self.graph}{self.dot}context()->adapter_ptr()->has_full_int8_buffers_support()) {{\n"
-        int8_skip += "  GTEST_SKIP();\n"
+        int8_skip += f"  {skip_str};\n"
         int8_skip += "}\n"
 
         skips = ""
 
-        skips = "if (test_dtype == at::kHalf) {\n"
+        skips += "if (test_dtype == at::kHalf) {\n"
         skips += fp16_skip
         skips += "}\n"
 
@@ -595,3 +662,33 @@ for (int i=0; i<out.size(); i++) {{
         op_check_fn += "\n  }"
 
         return op_check_fn
+
+    def gen_build_graph_fn(self, include_declarations: bool = False) -> str:
+        op_name = self.f.func.name.unambiguous_name()
+        op_build_graph_fn = self.gen_decl(f"build_graph_{op_name}") + " {\n"
+        if self.should_prepack:
+            op_build_graph_fn = (
+                self.gen_decl(f"prepacked_build_graph_{op_name}") + " {\n"
+            )
+
+        op_build_graph_fn_body = ""
+        op_build_graph_fn_body += self.gen_graph_build_code(include_declarations)
+
+        op_build_graph_fn += op_build_graph_fn_body
+        op_build_graph_fn += "\n  }"
+        return op_build_graph_fn
+
+    def gen_op_exec_graph_fn(self) -> str:
+        op_name = self.f.func.name.unambiguous_name()
+        op_benchmark_fn = self.gen_decl(f"benchmark_{op_name}") + " {\n"
+        if self.should_prepack:
+            op_benchmark_fn = self.gen_decl(f"prepacked_benchmark_{op_name}") + " {\n"
+
+        op_benchmark_fn_body = ""
+        op_benchmark_fn_body += self.gen_graph_exec_code(False)
+
+        op_benchmark_fn_body = re.sub(r"^", "    ", op_benchmark_fn_body, flags=re.M)
+
+        op_benchmark_fn += op_benchmark_fn_body
+        op_benchmark_fn += "\n  }"
+        return op_benchmark_fn
