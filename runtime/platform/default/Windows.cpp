@@ -33,8 +33,6 @@
 
 #include <executorch/runtime/platform/compiler.h>
 
-#define SHARED_MEMORY_NAME "torch_executor_platform_init_time"
-
 // The FILE* to write logs to.
 #define ET_LOG_OUTPUT_FILE stderr
 
@@ -68,16 +66,15 @@
 
 #endif // NDEBUG
 
-#pragma data_seg(".shared") // Start of shared data segment
+#pragma data_seg(".SS_DLLMAIN")
 
 /// Start time of the system (used to zero the system timestamp).
-static std::chrono::time_point<std::chrono::steady_clock> systemStartTime;
+static std::chrono::time_point<std::chrono::steady_clock> systemStartTime ET_SHARED;
 
 /// Flag set to true if the PAL has been successfully initialized.
-static bool initialized = false;
+static bool initialized ET_SHARED = false;
 
-#pragma data_seg() // End of shared data segment
-#pragma comment(linker, "/SECTION:.shared,RWS") // Make the shared data segment read-write-shared
+#pragma data_seg()
 
 /**
  * Initialize the platform abstraction layer.
