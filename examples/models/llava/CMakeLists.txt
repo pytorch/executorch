@@ -22,7 +22,7 @@ project(llava)
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 
 # This is a temporary hack to get around Torch dep so we can test this on android
-option(LLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE "Hack option to feed dummy image to remove torch.load dep" OFF)
+option(BUILD_LLAVA_RUNNER_WITHOUT_TORCH "Build Llava runner without torch dep" OFF)
 
 include(CMakeDependentOption)
 #
@@ -74,10 +74,9 @@ set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
 find_package(gflags REQUIRED)
 
 # Avoid torch dep from torch.load()-ing the image.
-# This is a temporary hack.
-if(LLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE)
-  add_definitions(-DLLAVA_NO_TORCH_DUMMY_IMAGE=1)
-  message("Buidling the runner without Torch, feeding a dummy image!")
+# Use a CSV formatted image instead
+if(BUILD_LLAVA_RUNNER_WITHOUT_TORCH)
+  add_definitions(-DBUILD_LLAVA_RUNNER_WITHOUT_TORCH=1)
 else()
   find_package(Torch CONFIG REQUIRED)
 endif()
@@ -106,7 +105,7 @@ endif()
 add_subdirectory(runner)
 
 set(LINK_LIBS gflags)
-if(NOT LLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE)
+if(NOT BUILD_LLAVA_RUNNER_WITHOUT_TORCH)
   list(APPEND LINK_LIBS torch)
 endif()
 set(link_libraries ${LINK_LIBS})
