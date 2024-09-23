@@ -91,6 +91,13 @@ jobs:
         dtype: [fp32]
         build-tool: [buck2, cmake]
         mode: [portable, xnnpack+custom, xnnpack+custom+qe]
+        include:
+          - dtype: bf16
+            build-tool: cmake
+            mode: portable
+          - dtype: bf16
+            build-tool: buck2
+            mode: portable
       fail-fast: false
     with:
       runner: linux.2xlarge

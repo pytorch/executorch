@@ -74,31 +74,31 @@ void main() {
 
       for (int kb = 0; kb < k_block; kb++) {
         scale_pos.x = kb;
-        const int scale_id = to_buffer_id(scale_pos, scales_strides);
-        const float scale = float(t_scales_and_zeros[scale_id]);
+        const int scale_bufi = tidx_to_bufi(scale_pos, scales_strides);
+        const float scale = float(t_scales_and_zeros[scale_bufi]);
 
         zero_pos.x = kb;
-        const int zero_id = to_buffer_id(zero_pos, scales_strides);
-        const float zero = float(t_scales_and_zeros[zero_id]) - scale * 8.0;
+        const int zero_bufi = tidx_to_bufi(zero_pos, scales_strides);
+        const float zero = float(t_scales_and_zeros[zero_bufi]) - scale * 8.0;
 
         for(uint idx = 0; idx < group_size && k < K; idx++, k++) {
           mat1_pos.x = k;
-          const int mat1_id = to_buffer_id(mat1_pos, mat1_strides);
-          const float mat1_val = float(t_mat1[mat1_id]);
+          const int mat1_bufi = tidx_to_bufi(mat1_pos, mat1_strides);
+          const float mat1_val = float(t_mat1[mat1_bufi]);
 
           mat2_pos.x = k / 2;
-          const int mat2_id = to_buffer_id(mat2_pos, mat2_strides);
+          const int mat2_bufi = tidx_to_bufi(mat2_pos, mat2_strides);
           // Bitwise op treats sign bit from int8 as a value bit instead,
           // since there is no uint8_t datatype
-          uint mat2_val = (t_mat2[mat2_id] & 0xFF);
+          uint mat2_val = (t_mat2[mat2_bufi] & 0xFF);
           mat2_val = (k & 1) == 0 ? mat2_val & mask : (mat2_val >> 4);
 
           rc += mat1_val * (scale * float(mat2_val) + zero);
         }
       }
 
-      const int out_id = to_buffer_id(out_pos, out_strides);
-      t_out[out_id] = FLOAT_T(rc);
+      const int out_bufi = tidx_to_bufi(out_pos, out_strides);
+      t_out[out_bufi] = FLOAT_T(rc);
 
     #else // Using texture
       const uint texel_group_size = group_size / FOUR;

@@ -45,10 +45,23 @@ char* model_pte = nullptr;
 #include "model_pte.h"
 #endif
 
-using namespace exec_aten;
-using namespace std;
-using torch::executor::Error;
-using torch::executor::Result;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::aten::TensorImpl;
+using executorch::extension::BufferCleanup;
+using executorch::extension::BufferDataLoader;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::HierarchicalAllocator;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::MemoryManager;
+using executorch::runtime::Method;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::Span;
+using executorch::runtime::Tag;
+using executorch::runtime::TensorInfo;
 
 #define METHOD_ALLOCATOR_POOL_SIZE (70 * 1024 * 1024)
 unsigned char __attribute__((
@@ -86,20 +99,21 @@ void et_pal_emit_log_message(
 }
 
 namespace {
-using namespace torch::executor;
 
-Result<util::BufferCleanup> prepare_input_tensors(
+Result<BufferCleanup> prepare_input_tensors(
     Method& method,
-    torch::executor::MemoryAllocator& allocator,
+    MemoryAllocator& allocator,
     std::vector<std::pair<char*, size_t>>& input_buffers) {
   MethodMeta method_meta = method.method_meta();
   size_t num_inputs = method_meta.num_inputs();
   size_t num_allocated = 0;
 
+#ifdef SEMIHOSTING
   ET_CHECK_OR_RETURN_ERROR(
       input_buffers.size() > 0 && num_inputs == input_buffers.size(),
       InvalidArgument,
       "Wrong number of inputs allocated compared to method");
+#endif
 
   void** inputs =
       static_cast<void**>(allocator.allocate(num_inputs * sizeof(void*)));
@@ -173,18 +187,18 @@ Result<util::BufferCleanup> prepare_input_tensors(
       ET_LOG(
           Error, "Failed to prepare input %zu: 0x%" PRIx32, i, (uint32_t)err);
       // The BufferCleanup will free the inputs when it goes out of scope.
-      util::BufferCleanup cleanup({inputs, num_allocated});
+      BufferCleanup cleanup({inputs, num_allocated});
       return err;
     }
   }
-  return util::BufferCleanup({inputs, num_allocated});
+  return BufferCleanup({inputs, num_allocated});
 }
 
 #ifdef SEMIHOSTING
 
 std::pair<char*, size_t> read_binary_file(
     const char* filename,
-    torch::executor::MemoryAllocator& allocator) {
+    MemoryAllocator& allocator) {
   FILE* fp = fopen(filename, "rb");
   if (!fp) {
     ET_LOG(
@@ -236,13 +250,13 @@ int main(int argc, const char* argv[]) {
   (void)argv;
 #endif
 
-  torch::executor::runtime_init();
+  executorch::runtime::runtime_init();
   std::vector<std::pair<char*, size_t>> input_buffers;
   size_t pte_size = sizeof(model_pte);
 
 #ifdef SEMIHOSTING
   const char* output_basename = nullptr;
-  torch::executor::MemoryAllocator input_allocator(
+  MemoryAllocator input_allocator(
       input_allocation_pool_size, input_allocation_pool);
 
   /* parse input parameters */
@@ -275,10 +289,9 @@ int main(int argc, const char* argv[]) {
   }
 #endif
   ET_LOG(Info, "Model in %p %c", model_pte, model_pte[0]);
-  auto loader = torch::executor::util::BufferDataLoader(model_pte, pte_size);
+  auto loader = BufferDataLoader(model_pte, pte_size);
   ET_LOG(Info, "Model PTE file loaded. Size: %lu bytes.", pte_size);
-  Result<torch::executor::Program> program =
-      torch::executor::Program::load(&loader);
+  Result<Program> program = Program::load(&loader);
   if (!program.ok()) {
     ET_LOG(
         Info,
@@ -297,8 +310,7 @@ int main(int argc, const char* argv[]) {
   }
   ET_LOG(Info, "Running method %s", method_name);
 
-  Result<torch::executor::MethodMeta> method_meta =
-      program->method_meta(method_name);
+  Result<MethodMeta> method_meta = program->method_meta(method_name);
   if (!method_meta.ok()) {
     ET_LOG(
         Info,
@@ -307,13 +319,11 @@ int main(int argc, const char* argv[]) {
         (unsigned int)method_meta.error());
   }
 
-  torch::executor::MemoryAllocator method_allocator{
-      torch::executor::MemoryAllocator(
-          METHOD_ALLOCATOR_POOL_SIZE, method_allocation_pool)};
+  MemoryAllocator method_allocator(
+      METHOD_ALLOCATOR_POOL_SIZE, method_allocation_pool);
 
   std::vector<uint8_t*> planned_buffers; // Owns the memory
-  std::vector<torch::executor::Span<uint8_t>>
-      planned_spans; // Passed to the allocator
+  std::vector<Span<uint8_t>> planned_spans; // Passed to the allocator
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
 
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
@@ -328,17 +338,16 @@ int main(int argc, const char* argv[]) {
     planned_spans.push_back({planned_buffers.back(), buffer_size});
   }
 
-  torch::executor::HierarchicalAllocator planned_memory(
+  HierarchicalAllocator planned_memory(
       {planned_spans.data(), planned_spans.size()});
 
-  torch::executor::MemoryAllocator temp_allocator(
+  MemoryAllocator temp_allocator(
       temp_allocation_pool_size, temp_allocation_pool);
 
-  torch::executor::MemoryManager memory_manager(
+  MemoryManager memory_manager(
       &method_allocator, &planned_memory, &temp_allocator);
 
-  Result<torch::executor::Method> method =
-      program->load_method(method_name, &memory_manager);
+  Result<Method> method = program->load_method(method_name, &memory_manager);
   if (!method.ok()) {
     ET_LOG(
         Info,
@@ -377,7 +386,7 @@ int main(int argc, const char* argv[]) {
     ET_LOG(Info, "Model executed successfully.");
   }
 
-  std::vector<torch::executor::EValue> outputs(method->outputs_size());
+  std::vector<EValue> outputs(method->outputs_size());
   ET_LOG(Info, "%zu outputs: ", outputs.size());
   status = method->get_outputs(outputs.data(), outputs.size());
   ET_CHECK(status == Error::Ok);

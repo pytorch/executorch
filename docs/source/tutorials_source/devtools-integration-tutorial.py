@@ -196,6 +196,7 @@ inspector_patch_print = patch.object(Inspector, "print_data_tabular", return_val
 inspector_patch.start()
 inspector_patch_print.start()
 # sphinx_gallery_end_ignore
+etrecord_path = "etrecord.bin"
 etdump_path = "etdump.etdp"
 inspector = Inspector(etdump_path=etdump_path, etrecord=etrecord_path)
 # sphinx_gallery_start_ignore

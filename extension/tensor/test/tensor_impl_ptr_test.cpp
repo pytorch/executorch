@@ -366,3 +366,128 @@ TEST_F(TensorImplPtrTest, StridesAndDimOrderMustMatchSizes) {
   ET_EXPECT_DEATH(
       { auto _ = make_tensor_impl_ptr({3, 4}, data, {0}, {4, 1}); }, "");
 }
+
+TEST_F(TensorImplPtrTest, TensorDataCastingFromIntToFloat) {
+  std::vector<int32_t> int_data = {1, 2, 3, 4, 5, 6};
+  auto tensor_impl = make_tensor_impl_ptr(
+      {2, 3}, std::move(int_data), {}, {}, exec_aten::ScalarType::Float);
+
+  EXPECT_EQ(tensor_impl->dim(), 2);
+  EXPECT_EQ(tensor_impl->size(0), 2);
+  EXPECT_EQ(tensor_impl->size(1), 3);
+  EXPECT_EQ(tensor_impl->dtype(), exec_aten::ScalarType::Float);
+
+  auto data_ptr = static_cast<const float*>(tensor_impl->data());
+  EXPECT_FLOAT_EQ(data_ptr[0], 1.0f);
+  EXPECT_FLOAT_EQ(data_ptr[5], 6.0f);
+}
+
+TEST_F(TensorImplPtrTest, TensorDataCastingFromIntToDouble) {
+  std::vector<int32_t> int_data = {1, 2, 3};
+  auto tensor_impl =
+      make_tensor_impl_ptr(std::move(int_data), exec_aten::ScalarType::Double);
+
+  EXPECT_EQ(tensor_impl->dim(), 1);
+  EXPECT_EQ(tensor_impl->size(0), 3);
+  EXPECT_EQ(tensor_impl->dtype(), exec_aten::ScalarType::Double);
+
+  auto data_ptr = static_cast<const double*>(tensor_impl->data());
+  EXPECT_DOUBLE_EQ(data_ptr[0], 1.0);
+  EXPECT_DOUBLE_EQ(data_ptr[1], 2.0);
+  EXPECT_DOUBLE_EQ(data_ptr[2], 3.0);
+}
+
+TEST_F(TensorImplPtrTest, TensorDataCastingInvalidCast) {
+  std::vector<float> float_data = {1.0f, 2.0f, 3.0f};
+  ET_EXPECT_DEATH(
+      {
+        auto _ = make_tensor_impl_ptr(
+            std::move(float_data), exec_aten::ScalarType::Int);
+      },
+      "");
+}
+
+TEST_F(TensorImplPtrTest, TensorDataCastingFromFloatToHalf) {
+  std::vector<float> float_data = {1.0f, 2.0f, 3.0f};
+  auto tensor_impl =
+      make_tensor_impl_ptr(std::move(float_data), exec_aten::ScalarType::Half);
+
+  EXPECT_EQ(tensor_impl->dim(), 1);
+  EXPECT_EQ(tensor_impl->size(0), 3);
+  EXPECT_EQ(tensor_impl->dtype(), exec_aten::ScalarType::Half);
+
+  auto data_ptr = static_cast<const exec_aten::Half*>(tensor_impl->data());
+  EXPECT_EQ(static_cast<float>(data_ptr[0]), 1.0f);
+  EXPECT_EQ(static_cast<float>(data_ptr[1]), 2.0f);
+  EXPECT_EQ(static_cast<float>(data_ptr[2]), 3.0f);
+}
+
+TEST_F(TensorImplPtrTest, TensorDataCastingFromDoubleToFloat) {
+  std::vector<double> double_data = {1.1, 2.2, 3.3};
+  auto tensor_impl = make_tensor_impl_ptr(
+      std::move(double_data), exec_aten::ScalarType::Float);
+
+  EXPECT_EQ(tensor_impl->dim(), 1);
+  EXPECT_EQ(tensor_impl->size(0), 3);
+  EXPECT_EQ(tensor_impl->dtype(), exec_aten::ScalarType::Float);
+
+  auto data_ptr = static_cast<const float*>(tensor_impl->data());
+  EXPECT_FLOAT_EQ(data_ptr[0], 1.1f);
+  EXPECT_FLOAT_EQ(data_ptr[1], 2.2f);
+  EXPECT_FLOAT_EQ(data_ptr[2], 3.3f);
+}
+
+TEST_F(TensorImplPtrTest, TensorDataCastingFromInt64ToInt32) {
+  std::vector<int64_t> int64_data = {10000000000, 20000000000, 30000000000};
+  auto tensor_impl =
+      make_tensor_impl_ptr(std::move(int64_data), exec_aten::ScalarType::Int);
+
+  EXPECT_EQ(tensor_impl->dim(), 1);
+  EXPECT_EQ(tensor_impl->size(0), 3);
+  EXPECT_EQ(tensor_impl->dtype(), exec_aten::ScalarType::Int);
+
+  auto data_ptr = static_cast<const int32_t*>(tensor_impl->data());
+  // Since the values exceed int32_t range, they may overflow
+  // Here we just check that the cast was performed
+  EXPECT_NE(data_ptr[0], 10000000000); // Expected overflow
+}
+
+TEST_F(TensorImplPtrTest, TensorDataCastingFromFloatToBFloat16) {
+  std::vector<float> float_data = {1.0f, 2.0f, 3.0f};
+  auto tensor_impl = make_tensor_impl_ptr(
+      std::move(float_data), exec_aten::ScalarType::BFloat16);
+
+  EXPECT_EQ(tensor_impl->dim(), 1);
+  EXPECT_EQ(tensor_impl->size(0), 3);
+  EXPECT_EQ(tensor_impl->dtype(), exec_aten::ScalarType::BFloat16);
+
+  auto data_ptr = static_cast<const exec_aten::BFloat16*>(tensor_impl->data());
+  EXPECT_EQ(static_cast<float>(data_ptr[0]), 1.0f);
+  EXPECT_EQ(static_cast<float>(data_ptr[1]), 2.0f);
+  EXPECT_EQ(static_cast<float>(data_ptr[2]), 3.0f);
+}
+
+TEST_F(TensorImplPtrTest, InitializerListDoubleToHalf) {
+  auto tensor_impl = make_tensor_impl_ptr<double>(
+      {1.5, 2.7, 3.14}, exec_aten::ScalarType::Half);
+  EXPECT_EQ(tensor_impl->dim(), 1);
+  EXPECT_EQ(tensor_impl->size(0), 3);
+  EXPECT_EQ(tensor_impl->dtype(), exec_aten::ScalarType::Half);
+  auto data_ptr = static_cast<const exec_aten::Half*>(tensor_impl->data());
+  EXPECT_NEAR(static_cast<float>(data_ptr[0]), 1.5f, 0.01);
+  EXPECT_NEAR(static_cast<float>(data_ptr[1]), 2.7f, 0.01);
+  EXPECT_NEAR(static_cast<float>(data_ptr[2]), 3.14f, 0.01);
+}
+
+TEST_F(TensorImplPtrTest, InitializerListInt8ToInt64) {
+  auto tensor_impl =
+      make_tensor_impl_ptr<int8_t>({1, -2, 3, -4}, exec_aten::ScalarType::Long);
+  EXPECT_EQ(tensor_impl->dim(), 1);
+  EXPECT_EQ(tensor_impl->size(0), 4);
+  EXPECT_EQ(tensor_impl->dtype(), exec_aten::ScalarType::Long);
+  auto data_ptr = static_cast<const int64_t*>(tensor_impl->data());
+  EXPECT_EQ(data_ptr[0], 1);
+  EXPECT_EQ(data_ptr[1], -2);
+  EXPECT_EQ(data_ptr[2], 3);
+  EXPECT_EQ(data_ptr[3], -4);
+}

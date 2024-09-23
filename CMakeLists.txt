@@ -183,6 +183,8 @@ option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
 
 option(EXECUTORCH_BUILD_EXTENSION_TENSOR "Build the Tensor extension" OFF)
 
+option(EXECUTORCH_BUILD_EXTENSION_TRAINING "Build the training extension" OFF)
+
 option(EXECUTORCH_BUILD_GTESTS "Build googletest based test binaries" OFF)
 
 option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
@@ -634,6 +636,10 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/training)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)

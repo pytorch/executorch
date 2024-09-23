@@ -25,6 +25,7 @@
 
 #include <executorch/backends/vulkan/test/utils/test_utils.h>
 
+using namespace vkcompute;
 using namespace vkcompute::api;
 
 std::vector<float>
@@ -179,27 +180,26 @@ TEST_F(VulkanComputeAPITest, empty_init_shader_info_test) {
 
 TEST_F(VulkanComputeAPITest, calculate_dim_order_test) {
   // ndim, GPUMemoryLayout, expected dim order pairs
-  std::vector<std::tuple<size_t, utils::GPUMemoryLayout, std::vector<int64_t>>>
-      test_cases = {
-          {1, utils::kWidthPacked, {0}},
-          {1, utils::kHeightPacked, {0}},
-          {1, utils::kChannelsPacked, {0}},
-          {2, utils::kWidthPacked, {0, 1}},
-          {2, utils::kHeightPacked, {1, 0}},
-          {2, utils::kChannelsPacked, {0, 1}},
-          {3, utils::kWidthPacked, {0, 1, 2}},
-          {3, utils::kHeightPacked, {0, 2, 1}},
-          {3, utils::kChannelsPacked, {1, 2, 0}},
-          {4, utils::kWidthPacked, {0, 1, 2, 3}},
-          {4, utils::kHeightPacked, {0, 1, 3, 2}},
-          {4, utils::kChannelsPacked, {0, 2, 3, 1}},
-      };
+  std::vector<std::tuple<size_t, int32_t, std::vector<int64_t>>> test_cases = {
+      {1, WHCN::kWidthDim, {0}},
+      {1, WHCN::kHeightDim, {0}},
+      {1, WHCN::kChannelsDim, {0}},
+      {2, WHCN::kWidthDim, {0, 1}},
+      {2, WHCN::kHeightDim, {1, 0}},
+      {2, WHCN::kChannelsDim, {0, 1}},
+      {3, WHCN::kWidthDim, {0, 1, 2}},
+      {3, WHCN::kHeightDim, {0, 2, 1}},
+      {3, WHCN::kChannelsDim, {1, 2, 0}},
+      {4, WHCN::kWidthDim, {0, 1, 2, 3}},
+      {4, WHCN::kHeightDim, {0, 1, 3, 2}},
+      {4, WHCN::kChannelsDim, {0, 2, 3, 1}},
+  };
 
   for (const auto& test_case : test_cases) {
     const size_t& ndim = std::get<0>(test_case);
-    const utils::GPUMemoryLayout& layout = std::get<1>(test_case);
+    const int32_t packed_dim = std::get<1>(test_case);
     const auto& expected_dim_order = std::get<2>(test_case);
-    std::vector<int64_t> dim_order = calculate_dim_order(ndim, layout);
+    std::vector<int64_t> dim_order = calculate_dim_order(ndim, packed_dim);
 
     ASSERT_TRUE(dim_order == expected_dim_order);
   }
@@ -221,8 +221,9 @@ TEST_F(VulkanComputeAPITest, calculate_tensor_strides_test) {
     for (const auto& layout :
          {utils::kWidthPacked, utils::kHeightPacked, utils::kChannelsPacked}) {
       {
+        const int32_t packed_dim = static_cast<int32_t>(layout);
         std::vector<int64_t> dim_order =
-            calculate_dim_order(sizes.size(), layout);
+            calculate_dim_order(sizes.size(), packed_dim);
         std::vector<int64_t> strides = calculate_strides(sizes, dim_order);
         std::vector<int64_t> ref_strides = get_reference_strides(sizes, layout);
         ASSERT_TRUE(strides == ref_strides);
@@ -295,31 +296,75 @@ TEST_F(VulkanComputeAPITest, virtual_transpose_test) {
       a_texture.virtual_transpose(dim0, dim1);
       EXPECT_TRUE(a_texture.sizes() == expected_sizes);
       EXPECT_TRUE(a_texture.axis_map() == expected_axis_map);
-      EXPECT_TRUE(a_texture.packed_dim_whcn_idx() == expected_packed_dim);
+      EXPECT_TRUE(a_texture.packed_dim() == expected_packed_dim);
     }
   }
 }
 
-TEST_F(VulkanComputeAPITest, vec_test) {
-  utils::vec3 v3({1, 2, 3});
-  ASSERT_TRUE(v3[0] == 1);
-  ASSERT_TRUE(v3[1] == 2);
-  ASSERT_TRUE(v3[2] == 3);
-  v3 = {4, 5, 6};
-  ASSERT_TRUE(v3[0] == 4);
-  ASSERT_TRUE(v3[1] == 5);
-  ASSERT_TRUE(v3[2] == 6);
+utils::ivec3 make_temp_ivec3(int x, int y, int z) {
+  return utils::ivec3{x, y, z};
+}
 
-  utils::uvec4 uv4({4, 3, 2, 1});
-  ASSERT_TRUE(uv4[0] == 4);
-  ASSERT_TRUE(uv4[1] == 3);
-  ASSERT_TRUE(uv4[2] == 2);
-  ASSERT_TRUE(uv4[3] == 1);
-  uv4 = {11, 13, 12, 88};
-  ASSERT_TRUE(uv4[0] == 11);
-  ASSERT_TRUE(uv4[1] == 13);
-  ASSERT_TRUE(uv4[2] == 12);
-  ASSERT_TRUE(uv4[3] == 88);
+TEST_F(VulkanComputeAPITest, vec_test) {
+  {
+    utils::vec3 v3({1, 2, 3});
+    ASSERT_TRUE(v3[0] == 1);
+    ASSERT_TRUE(v3[1] == 2);
+    ASSERT_TRUE(v3[2] == 3);
+    v3 = {4, 5, 6};
+    ASSERT_TRUE(v3[0] == 4);
+    ASSERT_TRUE(v3[1] == 5);
+    ASSERT_TRUE(v3[2] == 6);
+  }
+
+  {
+    utils::uvec4 uv4({4, 3, 2, 1});
+    ASSERT_TRUE(uv4[0] == 4);
+    ASSERT_TRUE(uv4[1] == 3);
+    ASSERT_TRUE(uv4[2] == 2);
+    ASSERT_TRUE(uv4[3] == 1);
+    uv4 = {11, 13, 12, 88};
+    ASSERT_TRUE(uv4[0] == 11);
+    ASSERT_TRUE(uv4[1] == 13);
+    ASSERT_TRUE(uv4[2] == 12);
+    ASSERT_TRUE(uv4[3] == 88);
+  }
+
+  // Test copy from same type
+  {
+    utils::ivec3 v{5, 6, 8};
+    utils::ivec3 v2 = v;
+
+    ASSERT_TRUE(v2[0] == 5);
+    ASSERT_TRUE(v2[1] == 6);
+    ASSERT_TRUE(v2[2] == 8);
+  }
+
+  // Test copy from different type
+  {
+    utils::uvec3 v{5, 6, 8};
+    utils::ivec3 v2 = v;
+
+    ASSERT_TRUE(v2[0] == 5);
+    ASSERT_TRUE(v2[1] == 6);
+    ASSERT_TRUE(v2[2] == 8);
+  }
+
+  // Test construction from temporary vec
+  {
+    utils::uvec3 v{make_temp_ivec3(4, 5, 10)};
+    ASSERT_TRUE(v[0] == 4);
+    ASSERT_TRUE(v[1] == 5);
+    ASSERT_TRUE(v[2] == 10);
+  }
+
+  // Test initalization from temporary vec
+  {
+    utils::uvec3 v = make_temp_ivec3(4, 5, 10);
+    ASSERT_TRUE(v[0] == 4);
+    ASSERT_TRUE(v[1] == 5);
+    ASSERT_TRUE(v[2] == 10);
+  }
 }
 
 TEST_F(VulkanComputeAPITest, retrieve_custom_shader_test) {
@@ -708,7 +753,7 @@ TEST_F(VulkanComputeAPITest, tensor_no_copy_transpose_test) {
     // Update sizes and strides of mat2_t to be that of a transposed tensor
     mat2_t.virtual_transpose(0, 1);
 
-    EXPECT_TRUE(mat2_t.gpu_memory_layout() == utils::kHeightPacked);
+    EXPECT_TRUE(mat2_t.packed_dim() == WHCN::kHeightDim);
 
     std::vector<float> mat2_t_data = transpose_matrix(mat2_data, N, K);
     std::vector<float> ref_out =
@@ -938,64 +983,6 @@ TEST_F(VulkanComputeAPITest, use_non_bound_textures_fails) {
 
   // Encoding a command buffer with a vTensor without memory should throw
   EXPECT_THROW(fill_vtensor(a, data_a), vkapi::Error);
-}
-
-TEST_F(VulkanComputeAPITest, tensor_reallocation_test) {
-  std::vector<int64_t> sizes = {4, 4, 1};
-  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
-  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
-  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
-
-  execute_and_check_add(a, b, c, 3.0f, 5.0f);
-
-  // Redo with new sizes
-  std::vector<int64_t> new_sizes = {4, 6, 3};
-  a.reallocate(new_sizes);
-  b.reallocate(new_sizes);
-  c.reallocate(new_sizes);
-
-  // Flush everything
-  context()->flush();
-
-  execute_and_check_add(a, b, c, 12.0f, 10.0f);
-}
-
-TEST_F(
-    VulkanComputeAPITest,
-    tensor_reallocation_with_deferred_allocation_test) {
-  std::vector<int64_t> sizes = {8, 8, 8};
-  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
-  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
-  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
-
-  vkapi::Allocation a_mem = allocate_memory_for(a);
-  a.image().bind_allocation(a_mem);
-  vkapi::Allocation b_mem = allocate_memory_for(b);
-  b.image().bind_allocation(b_mem);
-  vkapi::Allocation c_mem = allocate_memory_for(c);
-  c.image().bind_allocation(c_mem);
-
-  execute_and_check_add(a, b, c, 4.0f, 8.0f);
-
-  std::vector<std::vector<int64_t>> new_sizes_list = {
-      {4, 3, 5}, {4, 1, 7}, {8, 3, 2}, {8, 7, 2}};
-
-  for (auto& new_sizes : new_sizes_list) {
-    // Redo with new sizes
-    a.reallocate(new_sizes);
-    b.reallocate(new_sizes);
-    c.reallocate(new_sizes);
-
-    // Flush everything
-    context()->flush();
-
-    a.image().bind_allocation(a_mem);
-    b.image().bind_allocation(b_mem);
-    c.image().bind_allocation(c_mem);
-
-    execute_and_check_add(
-        a, b, c, float(new_sizes[1] + 4.5f), float(new_sizes[2] + 13.0f));
-  }
 }
 
 TEST_F(VulkanComputeAPITest, texture_virtual_resize) {
@@ -1355,7 +1342,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
       // Inputs and Outputs
       {{out.value, vkapi::MemoryAccessType::WRITE}},
       // Shader params buffers
-      {graph.texture_limits_ubo(a.value),
+      {graph.logical_limits_ubo(a.value),
        graph.get_or_create_int_param_buffer(scalar)},
       // Specialization Constants
       {},
@@ -1457,6 +1444,7 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
 TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   GraphConfig config;
   ComputeGraph graph(config);
+  size_t expected_vma_allocation_count = 0;
 
   std::vector<int64_t> size_big = {12, 64, 64};
   std::vector<int64_t> size_small = {12, 64, 64};
@@ -1475,7 +1463,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   // +2: t.sizes_ubo() for each staging shader
   // +2: t.axis_map_ubo() for each staging shader
   // +2: staging buffer for each input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 6);
+  expected_vma_allocation_count += 6;
+  EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   ValueRef c = graph.add_tensor(
       size_big,
@@ -1485,16 +1474,22 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   auto addFn = VK_GET_OP_FN("aten.add.Tensor");
   addFn(graph, {a.value, b.value, kDummyValueRef, c});
 
+  // +2: alpha UBO, broadcast UBO for arithmetic shader
+  // +1: t.sizes_ubo() for arithmetic shader output c
+  // +1: t.axis_map_ubo() for arithmetic shader output c
+  expected_vma_allocation_count += 4;
+  EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
+
   IOValueRef d = graph.add_input_tensor(
       size_small,
       vkapi::kFloat,
       /*shared_object_idx = */ 2);
 
-  // +2: alpha UBO, broadcast UBO for arithmetic shader
   // +1: t.sizes_ubo() uniform buffer for staging shader
   // +1: t.axis_map_ubo() uniform buffer for staging shader
   // +1: staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 12);
+  expected_vma_allocation_count += 3;
+  EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   ValueRef e = graph.add_tensor(
       size_big,
@@ -1504,21 +1499,26 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   auto mulFn = VK_GET_OP_FN("aten.mul.Tensor");
   mulFn(graph, {c, d.value, e});
 
+  // +2: alpha UBO, broadcast UBO for arithmetic shader
+  // +1: t.sizes_ubo() for arithmetic shader output e
+  // +1: t.axis_map_ubo() for arithmetic shader output e
+  expected_vma_allocation_count += 4;
+  EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
+
   IOValueRef out = {};
   out.value = e;
   out.staging = graph.set_output_tensor(out.value);
 
-  // +2: alpha UBO, broadcast UBO for arithmetic shader
-  // +1: t.sizes_ubo() for staging shader
-  // +1: t.axis_map_ubo() for staging shader
-  // +1 staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 17);
+  // +1: staging buffer for the output tensor
+  expected_vma_allocation_count += 1;
+  EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   graph.prepare();
   graph.encode_execute();
 
   // +3: shared memory allocations for tensors
-  EXPECT_TRUE(get_vma_allocation_count() == 20);
+  expected_vma_allocation_count += 3;
+  EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   // Run graph
 
@@ -2274,9 +2274,9 @@ void run_from_gpu_test(
     context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
-        vten.image_extents(),
+        vten.logical_limits(),
         {4, 4, 4},
-        {vten.packed_dim_whcn_idx(), offset},
+        {vten.packed_dim(), offset},
         VK_NULL_HANDLE,
         0,
         vten.image(

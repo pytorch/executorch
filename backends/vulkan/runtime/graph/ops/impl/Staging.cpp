@@ -45,7 +45,7 @@ void add_staging_to_tensor_node(
       // Parameter Buffers
       ubos,
       // Specialization Constants
-      {SV(graph.packed_dim_whcn_idx_of(out_tensor))},
+      {SV(graph.packed_dim_of(out_tensor))},
       // Resizing Logic
       nullptr,
       {}));
@@ -97,7 +97,7 @@ void add_tensor_to_staging_node(
       // Parameter Buffers
       ubos,
       // Specialization Constants
-      {SV(graph.packed_dim_whcn_idx_of(in_tensor))}));
+      {SV(graph.packed_dim_of(in_tensor))}));
 }
 
 ValueRef prepack(
@@ -127,7 +127,7 @@ ValueRef prepack(
       // Parameter Buffers
       ubos,
       // Specialization Constants
-      {SV(graph.packed_dim_whcn_idx_of(v))}));
+      {SV(graph.packed_dim_of(v))}));
 
   return v;
 }
