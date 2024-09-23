@@ -89,7 +89,7 @@ Tensor& index_Tensor_out(
   compute_dim_map(in, indices, dim_map, block_count == 1);
   compute_index_map(in, indices, ix_map);
 
-  ET_SWITCH_REALHB_TYPES(in_type, ctx, "index.Tensor_out", CTYPE, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, "index.Tensor_out", CTYPE, [&]() {
     const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
     CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
