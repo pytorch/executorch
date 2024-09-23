@@ -221,7 +221,7 @@ popd
 If the app successfully run on your device, you should see something like below:
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/opening_the_app_details.png" width=800px>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/opening_the_app_details.png" style="width:800px">
 </p>
 
 ## Reporting Issues
