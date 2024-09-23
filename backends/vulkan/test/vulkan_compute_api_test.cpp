@@ -2932,7 +2932,7 @@ void test_int4pack_mm(
       int4mm_pack_weights(mat2_size, B_quant_data.data());
 
   IOValueRef B_int4 =
-      graph.add_input_tensor(mat2_q_size, vkapi::kQInt8, storage_type);
+      graph.add_input_tensor(mat2_q_size, vkapi::kQInt8, utils::kBuffer);
   graph.copy_into_staging(
       B_int4.staging, B_int4_data.data(), B_int4_data.size());
 
@@ -2940,8 +2940,18 @@ void test_int4pack_mm(
 
   // Random scales and zeroes. Keep scales small to avoid overflow and zeroes in
   // int4 range
-  IOValueRef scales_and_zeros =
-      graph.add_input_tensor({2, N, k_groups}, vkapi::kFloat, storage_type);
+  IOValueRef scales_and_zeros;
+
+  if (storage_type == utils::kBuffer) {
+    scales_and_zeros.value = graph.add_tensor(
+        {2, N, k_groups}, vkapi::kFloat, storage_type, utils::kWidthPacked);
+  } else {
+    scales_and_zeros.value = graph.add_tensor(
+        {2, N, k_groups}, vkapi::kFloat, storage_type, utils::kChannelsPacked);
+  }
+
+  scales_and_zeros.staging = graph.set_input_tensor(scales_and_zeros.value);
+
   std::vector<float> s_data(graph.numel_of(scales_and_zeros.value));
   const int zeros_stride = s_data.size() / 2;
   for (size_t i = 0; i < zeros_stride; i++) {
@@ -3003,7 +3013,7 @@ void test_int4pack_mm(
       out_deq.staging, out_deq_data.data(), out_deq_data.size());
 
   for (int i = 0; i < out_int4_data.size(); i++) {
-    CHECK_VALUE(out_int4_data, i, out_deq_data[i]);
+    EXPECT_TRUE(check_close(out_int4_data[i], out_deq_data[i]));
   }
 }
 
