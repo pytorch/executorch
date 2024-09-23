@@ -139,7 +139,9 @@ Result<TensorInfo> MethodMeta::input_tensor_meta(size_t index) const {
       Span<const uint8_t>(
           tensor_value->dim_order()->data(), tensor_value->dim_order()->size()),
       static_cast<exec_aten::ScalarType>(tensor_value->scalar_type()),
-      tensor_value->allocation_info() != nullptr);
+      tensor_value->allocation_info() != nullptr ||
+          tensor_value->data_buffer_idx() !=
+              0); // Count constant returns as memory planned.
 }
 
 size_t MethodMeta::num_outputs() const {
@@ -170,15 +172,18 @@ Result<TensorInfo> MethodMeta::output_tensor_meta(size_t index) const {
       "Tag: %zu output: %zu is not Tensor",
       (size_t)tag.get(),
       index);
-  auto input_index = s_plan_->outputs()->Get(index);
-  auto tensor_value = s_plan_->values()->Get(input_index)->val_as_Tensor();
+  auto output_index = s_plan_->outputs()->Get(index);
+  auto tensor_value = s_plan_->values()->Get(output_index)->val_as_Tensor();
+
   return TensorInfo(
       Span<const int32_t>(
           tensor_value->sizes()->data(), tensor_value->sizes()->size()),
       Span<const uint8_t>(
           tensor_value->dim_order()->data(), tensor_value->dim_order()->size()),
       static_cast<exec_aten::ScalarType>(tensor_value->scalar_type()),
-      tensor_value->allocation_info() != nullptr);
+      tensor_value->allocation_info() != nullptr ||
+          tensor_value->data_buffer_idx() !=
+              0); // Count constant returns as memory planned.
 }
 
 size_t MethodMeta::num_memory_planned_buffers() const {
