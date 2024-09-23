@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
+
 #include <xa_nnlib_common.h>
 #include <xa_nnlib_common_macros.h>
 

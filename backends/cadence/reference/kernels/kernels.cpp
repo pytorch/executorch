@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/cadence/reference/kernels/kernels.h>
+
 #include <math.h>
 #include <algorithm>
 #include <cstring>
