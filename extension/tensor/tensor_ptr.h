@@ -397,34 +397,13 @@ inline TensorPtr make_tensor_ptr(
 /**
  * Creates a TensorPtr that manages a new Tensor with the same properties
  * as the given Tensor, but with a copy of the data owned by the returned
- * TensorPtr.
+ * TensorPtr, or nullptr if the original data is null.
  *
  * @param tensor The Tensor to clone.
  * @return A new TensorPtr that manages a Tensor with the same properties as the
  * original but with copied data.
  */
-inline TensorPtr clone_tensor_ptr(const exec_aten::Tensor& tensor) {
-  return make_tensor_ptr(make_tensor_impl_ptr(
-      std::vector<exec_aten::SizesType>(
-          tensor.sizes().begin(), tensor.sizes().end()),
-      std::vector<uint8_t>(
-          (uint8_t*)tensor.const_data_ptr(),
-          (uint8_t*)tensor.const_data_ptr() + tensor.nbytes()),
-#ifndef USE_ATEN_LIB
-      std::vector<exec_aten::DimOrderType>(
-          tensor.dim_order().begin(), tensor.dim_order().end()),
-      std::vector<exec_aten::StridesType>(
-          tensor.strides().begin(), tensor.strides().end()),
-      tensor.scalar_type(),
-      tensor.shape_dynamism()
-#else // USE_ATEN_LIB
-      {},
-      std::vector<exec_aten::StridesType>(
-          tensor.strides().begin(), tensor.strides().end()),
-      tensor.scalar_type()
-#endif // USE_ATEN_LIB
-          ));
-}
+TensorPtr clone_tensor_ptr(const exec_aten::Tensor& tensor);
 
 /**
  * Creates a new TensorPtr by cloning the given TensorPtr, copying the

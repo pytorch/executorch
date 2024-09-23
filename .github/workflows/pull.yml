@@ -414,7 +414,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
         # Test llama2
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh stories110M "${BUILD_TOOL}" "${DTYPE}" "${MODE}"
-  
+
   test-phi-3-mini-runner-linux:
     name: test-phi-3-mini-runner-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
@@ -430,14 +430,14 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-        
+
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
         # install pybind
         bash install_requirements.sh --pybind xnnpack
-        
+
         # install phi-3-mini requirements
         bash examples/models/phi-3-mini/install_requirements.sh
-        
+
         # run e2e (export, tokenizer and runner)
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_phi_3_mini.sh
