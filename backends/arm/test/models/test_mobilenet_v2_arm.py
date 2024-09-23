@@ -116,3 +116,4 @@ class TestMobileNetV2(unittest.TestCase):
             .check(list(self.operators_after_quantization))
             .partition()
             .to_executorch()
+        )
