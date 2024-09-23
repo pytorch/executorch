@@ -182,11 +182,7 @@ Result<FreeableBuffer> FileDataLoader::load(
     ET_UNUSED const DataLoader::SegmentInfo& segment_info) const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
-#ifdef _WIN32
-      fd_ != INVALID_HANDLE_VALUE,
-#else
-      fd_ >= 0,
-#endif
+      IS_VALID_FD(fd_),
       InvalidState,
       "Uninitialized");
   ET_CHECK_OR_RETURN_ERROR(
@@ -260,11 +256,7 @@ Result<FreeableBuffer> FileDataLoader::load(
 Result<size_t> FileDataLoader::size() const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
-#ifdef _WIN32
-      fd_ != INVALID_HANDLE_VALUE,
-#else
-      fd_ >= 0,
-#endif
+      IS_VALID_FD(fd_),
       InvalidState,
       "Uninitialized");
   return file_size_;
@@ -277,7 +269,7 @@ ET_NODISCARD Error FileDataLoader::load_into(
     void* buffer) const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
-      fd_ >= 0,
+      IS_VALID_FD(fd_),
       InvalidState,
       "Uninitialized");
   ET_CHECK_OR_RETURN_ERROR(
@@ -295,32 +287,32 @@ ET_NODISCARD Error FileDataLoader::load_into(
   size_t needed = size;
   uint8_t* buf = reinterpret_cast<uint8_t*>(buffer);
 
-  // Make a duplicate fd if pread() is not available and we have to seek().
-  // Cannot use the standard dup() or fcntl() calls because the returned
-  // duplicate will share the underlying file record and affect the original fd
-  // when seeking on multiple threads simultaneously.
-  const auto dup_fd = ET_HAVE_PREAD ? fd_ : ::open(file_name_, O_RDONLY);
-
 #ifdef _WIN32
+
   while (needed > 0) {
     const auto chunk_size = std::min<size_t>(
         needed, static_cast<size_t>(std::numeric_limits<int32_t>::max()));
     LARGE_INTEGER move;
     move.QuadPart = static_cast<LONGLONG>(offset);
-    if (!SetFilePointerEx(file_handle, move, nullptr, FILE_BEGIN)) {
-      std::cerr << "Failed to set file pointer: " << GetLastError() << std::endl;
+    if (!SetFilePointerEx(fd_, move, nullptr, FILE_BEGIN)) {
+      ET_LOG(
+          Error,
+          "Reading from %s: failed to set file pointer: %lx",
+          file_name_,
+          GetLastError());
       return Error::AccessFailed;
     }
     DWORD nread = 0;
-    if (!ReadFile(file_handle, buf, static_cast<DWORD>(chunk_size), &nread, nullptr)) {
+    if (!ReadFile(fd_, buf, static_cast<DWORD>(chunk_size), &nread, nullptr)) {
       DWORD error_code = GetLastError();
       if (error_code == ERROR_IO_PENDING) {
         continue;
       }
       ET_LOG(
           Error,
-          "Reading from %s: failed to read %zu bytes at offset %zu: %#x",
-          file_name,
+          "Reading from %s: failed to read %zu bytes at offset %lu: %lx",
+          file_name_,
+          chunk_size,
           offset,
           error_code);
       return Error::AccessFailed;
@@ -330,7 +322,7 @@ ET_NODISCARD Error FileDataLoader::load_into(
       ET_LOG(
           Error,
           "Reading from %s: EOF encountered unexpectedly at offset %zu",
-          file_name,
+          file_name_,
           offset);
       return Error::AccessFailed;
     }
@@ -339,7 +331,15 @@ ET_NODISCARD Error FileDataLoader::load_into(
     buf += nread;
     offset += nread;
   }
+
 #else
+
+  // Make a duplicate fd if pread() is not available and we have to seek().
+  // Cannot use the standard dup() or fcntl() calls because the returned
+  // duplicate will share the underlying file record and affect the original fd
+  // when seeking on multiple threads simultaneously.
+  const auto dup_fd = ET_HAVE_PREAD ? fd_ : ::open(file_name_, O_RDONLY);
+
   while (needed > 0) {
     // Reads on macOS will fail with EINVAL if size > INT32_MAX.
     const auto chunk_size = std::min<size_t>(
@@ -378,7 +378,9 @@ ET_NODISCARD Error FileDataLoader::load_into(
   if (!ET_HAVE_PREAD) {
     ::close(dup_fd);
   }
+
 #endif
+
   return Error::Ok;
 }
 

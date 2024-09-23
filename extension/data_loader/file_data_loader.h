@@ -12,9 +12,11 @@
 #include <windows.h>
 #define FD_TYPE HANDLE
 #define INVALID_FD INVALID_HANDLE_VALUE
+#define IS_VALID_FD(fd) (fd != INVALID_HANDLE_VALUE)
 #else
 #define FD_TYPE int
 #define INVALID_FD -1
+#define IS_VALID_FD(fd) (fd >= 0)
 #endif
 
 #include <cstddef>
@@ -68,7 +70,7 @@ class FileDataLoader final : public executorch::runtime::DataLoader {
     const_cast<const char*&>(rhs.file_name_) = nullptr;
     const_cast<size_t&>(rhs.file_size_) = 0;
     const_cast<size_t&>(rhs.alignment_) = 0;
-    const_cast<int&>(rhs.fd_) = INVALID_FD;
+    const_cast<FD_TYPE&>(rhs.fd_) = INVALID_FD;
   }
 
   ~FileDataLoader() override;

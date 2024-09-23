@@ -195,13 +195,20 @@ function(extract_sources sources_file)
       else()
         message(FATAL_ERROR "Unsupported ANDROID_ABI setting ${ANDROID_ABI}. Please add it here!")
       endif()
+    elseif("${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
+      set(fake_host_arg "--fake-host=windows")
+      if ("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "x86_64")
+        set(fake_arch_arg "--fake-arch=x8664")
+      elseif("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "aarch64" OR "${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "arm64")
+        set(fake_arch_arg "--fake-arch=aarch64")
+      endif()
     endif()
 
     execute_process(
       COMMAND
         ${PYTHON_EXECUTABLE} ${executorch_root}/build/extract_sources.py
         --config=${executorch_root}/build/cmake_deps.toml --out=${sources_file}
-        --buck2=${BUCK2} ${target_platforms_arg}
+        --buck2=${BUCK2} ${target_platforms_arg} ${fake_host_arg} ${fake_arch_arg}
       OUTPUT_VARIABLE gen_srcs_output
       ERROR_VARIABLE gen_srcs_error
       RESULT_VARIABLE gen_srcs_exit_code

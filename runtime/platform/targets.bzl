@@ -49,7 +49,7 @@ def define_common_targets():
         srcs = _select_pal({
             "minimal": ["default/minimal.cpp"],
             "posix": ["default/posix.cpp"],
-            "windows": ["target/Windows.cpp"],
+            "windows": ["default/Windows.cpp"],
         }),
         deps = [
             ":pal_interface",
