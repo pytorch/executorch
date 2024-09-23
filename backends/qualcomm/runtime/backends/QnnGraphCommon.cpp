@@ -82,7 +82,7 @@ Error QnnGraph::EnsureTensorInQnnGraph(
 
     int name_conflict_count = 0;
     while (error == QNN_TENSOR_ERROR_NAME_HASH_COLLISION) {
-      std::string old_name = tensor_wrapper->GetName();
+      const std::string& old_name = tensor_wrapper->GetName();
 
       std::string new_name =
           old_name + "_" + std::to_string(name_conflict_count);

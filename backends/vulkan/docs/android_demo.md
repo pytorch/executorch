@@ -65,7 +65,7 @@ echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps":
 Then, create a tokenizer binary file:
 
 ```shell
-python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+python -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 ```
 
 Finally, export the `stories110M.pt` file into an ExecuTorch program:
@@ -94,8 +94,9 @@ binary using the Android NDK toolchain.
   cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI=$ANDROID_ABI \
-    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
     -DEXECUTORCH_BUILD_VULKAN=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DPYTHON_EXECUTABLE=python \

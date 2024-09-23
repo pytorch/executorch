@@ -5,10 +5,11 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
+#import "ETCoreMLPair.h"
 #import <CoreML/CoreML.h>
-#import <ETCoreMLPair.h>
 #import <TargetConditionals.h>
 
+@class ETCoreMLAsset;
 @class ETCoreMLModel;
 @class ETCoreMLModelStructurePath;
 @class ETCoreMLOperationProfilingInfo;
@@ -30,14 +31,12 @@ __attribute__((objc_subclassing_restricted))
 
 /// Constructs an `ETCoreMLModelProfiler` instance.
 ///
-/// @param compiledModelAsset The compiled model asset (mlmodelc).
-/// @param outputNames The model output names.
+/// @param model The model.
 /// @param configuration The model configuration.
 /// @param error   On failure, error is filled with the failure information.
-- (nullable instancetype)initWithCompiledModelAsset:(ETCoreMLAsset*)compiledModelAsset
-                                        outputNames:(NSOrderedSet<NSString*>*)outputNames
-                                      configuration:(MLModelConfiguration*)configuration
-                                              error:(NSError* __autoreleasing*)error NS_DESIGNATED_INITIALIZER;
+- (nullable instancetype)initWithModel:(ETCoreMLModel*)model
+                         configuration:(MLModelConfiguration*)configuration
+                                 error:(NSError* __autoreleasing*)error NS_DESIGNATED_INITIALIZER;
 
 /// Returns profiling info of operations at the specified paths.
 ///

@@ -11,7 +11,7 @@ import os
 import re
 
 from enum import Enum
-from typing import Any, Optional, Sequence
+from typing import Any, List, Optional, Sequence
 
 from buck_util import Buck2Runner
 
@@ -97,12 +97,11 @@ class Target:
                 self._config[k] = v
 
     def get_sources(
-        self,
-        graph: "Graph",
-        runner: Buck2Runner,
-        platform: str = "default",
-        arch: str = "default"
+        self, graph: "Graph", runner: Buck2Runner, buck_args: Optional[List[str]]
     ) -> frozenset[str]:
+        if buck_args is None:
+            buck_args = []
+
         if self._state == Target._InitState.READY:
             return self._sources
         # Detect cycles.
@@ -119,7 +118,7 @@ class Target:
         )
 
         # Get the complete list of source files that this target depends on.
-        sources: set[str] = set(runner.run(["cquery", query, "--fake-host", platform, "--fake-arch", arch]))
+        sources: set[str] = set(runner.run(["cquery", query] + buck_args))
 
         # Keep entries that match all of the filters.
         filters = [re.compile(p) for p in self._config.get("filters", [])]
@@ -134,7 +133,9 @@ class Target:
         # its deps. Remove entries that are already covered by the transitive
         # set of dependencies.
         for dep in self._config.get("deps", []):
-            sources.difference_update(graph.by_name[dep].get_sources(graph, runner, platform, arch))
+            sources.difference_update(
+                graph.by_name[dep].get_sources(graph, runner, buck_args)
+            )
 
         self._sources = frozenset(sources)
         self._state = Target._InitState.READY
@@ -180,14 +181,7 @@ def parse_args() -> argparse.Namespace:
         help="Path to the file to generate.",
     )
     parser.add_argument(
-        "--platform",
-        default="default",
-        help="Target platform for the build system",
-    )
-    parser.add_argument(
-        "--arch",
-        default="default",
-        help="Target architecture for the build system",
+        "--target-platforms", help="--target-platforms to pass to buck cquery, if any."
     )
     return parser.parse_args()
 
@@ -215,8 +209,12 @@ def main():
     # Run the queries and get the lists of source files.
     target_to_srcs: dict[str, list[str]] = {}
     runner: Buck2Runner = Buck2Runner(args.buck2)
+    buck_args = []
+    if args.target_platforms:
+        buck_args = ["--target-platforms"]
+        buck_args.append(args.target_platforms)
     for name, target in graph.by_name.items():
-        target_to_srcs[name] = sorted(target.get_sources(graph, runner, args.platform, args.arch))
+        target_to_srcs[name] = sorted(target.get_sources(graph, runner, buck_args))
 
     # Generate the requested format.
     output: bytes

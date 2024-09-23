@@ -9,6 +9,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER, QCOM_DATA
 
 from .node_visitor import NodeVisitor, QNN_TENSOR_TYPE_MAP, register_node_visitor
 from .qnn_constants import OpPad, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -58,8 +59,8 @@ class Pad(NodeVisitor):
                 (np.array([(0, 0)] * zero_amounts), pad_amount)
             ).astype(np.uint32)
 
-        if "axis_order" in node.meta:
-            pad_amount = np.transpose(pad_amount, node.meta["axis_order"])
+        if QCOM_AXIS_ORDER in node.meta:
+            pad_amount = np.transpose(pad_amount, node.meta[QCOM_AXIS_ORDER])
         pad_amount_val = node.args[2]
 
         pad_op = PyQnnWrapper.PyQnnOpWrapper(
@@ -74,13 +75,13 @@ class Pad(NodeVisitor):
         pad_op.AddScalarParam(
             OpPad.param_scheme,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(OpPad.Scheme.CONSTANT)},
+            {QCOM_DATA: np.uint32(OpPad.Scheme.CONSTANT)},
         )
 
         pad_op.AddScalarParam(
             OpPad.param_pad_constant_value,
             QNN_TENSOR_TYPE_MAP[type(pad_amount_val)],
-            {"data": pad_amount_val},
+            {QCOM_DATA: pad_amount_val},
         )
 
         pad_op.AddTensorParam(

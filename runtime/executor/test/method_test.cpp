@@ -10,23 +10,24 @@
 #include <filesystem>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/executor/test/managed_memory_manager.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
-#include <executorch/util/util.h>
 #include <gtest/gtest.h>
 
 using namespace ::testing;
 using exec_aten::ArrayRef;
-using torch::executor::Error;
-using torch::executor::EValue;
-using torch::executor::Method;
-using torch::executor::Program;
-using torch::executor::Result;
-using torch::executor::testing::ManagedMemoryManager;
+using executorch::extension::prepare_input_tensors;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::Method;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
 
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024U;
@@ -52,17 +53,15 @@ class MethodTest : public ::testing::Test {
   }
 
   void SetUp() override {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     load_program(std::getenv("ET_MODULE_ADD_PATH"), "add");
     load_program(std::getenv("ET_MODULE_INDEX_PATH"), "index");
     load_program(
         std::getenv("ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH"), "cat");
+    load_program(std::getenv("ET_MODULE_LINEAR_PATH"), "linear");
     load_program(
-        std::getenv("ET_MODULE_LINEAR_CONSTANT_SEGMENT_PATH"),
-        "linear_constant_segment");
-    load_program(
-        std::getenv("ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH"),
+        std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH"),
         "linear_constant_buffer");
   }
 
@@ -80,8 +79,8 @@ TEST_F(MethodTest, MoveTest) {
   ASSERT_EQ(method.error(), Error::Ok);
 
   // Can execute the method.
-  exec_aten::ArrayRef<void*> inputs =
-      torch::executor::util::PrepareInputTensors(*method);
+  auto input_cleanup = prepare_input_tensors(*method);
+  ASSERT_EQ(input_cleanup.error(), Error::Ok);
   Error err = method->execute();
   ASSERT_EQ(err, Error::Ok);
 
@@ -95,8 +94,6 @@ TEST_F(MethodTest, MoveTest) {
   // Can execute the new method.
   err = new_method.execute();
   ASSERT_EQ(err, Error::Ok);
-
-  torch::executor::util::FreeInputs(inputs);
 }
 
 TEST_F(MethodTest, GetInputTests) {
@@ -173,8 +170,8 @@ TEST_F(MethodTest, SetPrimInputTest) {
   ASSERT_EQ(method.error(), Error::Ok);
 
   // Can execute the method.
-  exec_aten::ArrayRef<void*> inputs =
-      torch::executor::util::PrepareInputTensors(*method);
+  auto input_cleanup = prepare_input_tensors(*method);
+  ASSERT_EQ(input_cleanup.error(), Error::Ok);
 
   // The args to the method are x, y, alpha. x and y are tensors handled above
   // alpha is a prim.
@@ -189,8 +186,6 @@ TEST_F(MethodTest, SetPrimInputTest) {
 
   Error err = method->execute();
   EXPECT_EQ(err, Error::Ok);
-
-  torch::executor::util::FreeInputs(inputs);
 }
 
 TEST_F(MethodTest, MethodMetaTest) {
@@ -220,10 +215,10 @@ TEST_F(MethodTest, AliasedIOTest) {
   int32_t sizes[2] = {2, 4};
   uint8_t dim_order[2] = {0, 1};
   int32_t strides[2] = {4, 1};
-  torch::executor::TensorImpl impl(
-      torch::executor::ScalarType::Float, 2, sizes, buffer, dim_order, strides);
+  exec_aten::TensorImpl impl(
+      exec_aten::ScalarType::Float, 2, sizes, buffer, dim_order, strides);
 
-  auto input_err = method->set_input(EValue(torch::executor::Tensor(&impl)), 0);
+  auto input_err = method->set_input(EValue(exec_aten::Tensor(&impl)), 0);
   ASSERT_EQ(input_err, Error::Ok);
 
   auto output_err = method->set_output_data_ptr(buffer, sizeof(buffer), 0);
@@ -250,9 +245,9 @@ TEST_F(MethodTest, AliasedIOTest) {
 
   // Set the input again to update the size.
   sizes[0] = output.toTensor().sizes()[0];
-  torch::executor::TensorImpl impl_2(
-      torch::executor::ScalarType::Float, 2, sizes, buffer, dim_order, strides);
-  input_err = method->set_input(EValue(torch::executor::Tensor(&impl_2)), 0);
+  exec_aten::TensorImpl impl_2(
+      exec_aten::ScalarType::Float, 2, sizes, buffer, dim_order, strides);
+  input_err = method->set_input(EValue(exec_aten::Tensor(&impl_2)), 0);
   ASSERT_EQ(input_err, Error::Ok);
 
   // Execute the method again. Cat a 1x4 to a 3x4.
@@ -277,7 +272,7 @@ TEST_F(MethodTest, ConstantSegmentTest) {
   // Execute model with constants stored in segment.
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method =
-      programs_["linear_constant_segment"]->load_method("forward", &mmm.get());
+      programs_["linear"]->load_method("forward", &mmm.get());
   ASSERT_EQ(method.error(), Error::Ok);
 
   // Can execute the method.
@@ -297,28 +292,28 @@ TEST_F(MethodTest, ConstantBufferTest) {
   ASSERT_EQ(err, Error::Ok);
 }
 
-// TODO(T161163608): Test is disabled due to a resize bug in tensor_index_out of
-// the portable op lib
+/*
+ * TODO(T161163608): Test is disabled due to a resize bug in tensor_index_out of
+ * the portable op lib
 
-// TEST_F(MethodTest, OptionalTensorListDeserialization) {
-//   ManagedMemoryManager mmm(kDefaultNonConstMemBytes,
-//   kDefaultRuntimeMemBytes); Result<Method> method =
-//   index_program_->load_method("forward", &mmm.get());
-//   ASSERT_EQ(method.error(), Error::Ok);
+TEST_F(MethodTest, OptionalTensorListDeserialization) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes,
+  kDefaultRuntimeMemBytes); Result<Method> method =
+  index_program_->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
 
-//   // Can execute the method.
-//   exec_aten::ArrayRef<void*> inputs =
-//       torch::executor::util::PrepareInputTensors(*method);
-//   Error err = method->execute();
-//   ASSERT_EQ(err, Error::Ok);
+  // Can execute the method.
+  auto input_cleanup = prepare_input_tensors(*method);
+  ASSERT_EQ(input_cleanup.error(), Error::Ok);
+  Error err = method->execute();
+  ASSERT_EQ(err, Error::Ok);
 
-//   EXPECT_EQ(method->inputs_size(), 1);
+  EXPECT_EQ(method->inputs_size(), 1);
 
-//   auto outputs = method->get_output(0);
-//   EXPECT_EQ(outputs.toTensor().dim(), 3);
-//   EXPECT_EQ(outputs.toTensor().size(0), 5);
-//   EXPECT_EQ(outputs.toTensor().size(1), 2);
-//   EXPECT_EQ(outputs.toTensor().size(2), 10);
-
-//   torch::executor::util::FreeInputs(inputs);
-// }
+  auto outputs = method->get_output(0);
+  EXPECT_EQ(outputs.toTensor().dim(), 3);
+  EXPECT_EQ(outputs.toTensor().size(0), 5);
+  EXPECT_EQ(outputs.toTensor().size(1), 2);
+  EXPECT_EQ(outputs.toTensor().size(2), 10);
+}
+*/

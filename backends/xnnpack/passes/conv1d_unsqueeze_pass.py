@@ -94,6 +94,16 @@ class Conv1dUnsqueezePass(XNNPACKPass):
             ]
             self.exported_program.state_dict[buffer_name] = kernel_param_4d
             kernel_node.meta["val"] = kernel_param_4d.data.contiguous()
+        elif torch._export.utils.is_lifted_tensor_constant(
+            self.exported_program, kernel_node
+        ):
+            buffer_name = (
+                self.exported_program.graph_signature.inputs_to_lifted_tensor_constants[
+                    kernel_node.name
+                ]
+            )
+            self.exported_program.constants[buffer_name] = kernel_param_4d
+            kernel_node.meta["val"] = kernel_param_4d.data.contiguous()
         else:
             setattr(
                 kernel_node.graph.owning_module,
@@ -133,7 +143,7 @@ class Conv1dUnsqueezePass(XNNPACKPass):
                         node.args[4] + [0],  # padding
                         node.args[5] + [1],  # dilation
                         node.args[6],
-                        node.args[7],
+                        node.args[7] + [0],
                         node.args[8],
                     )
 

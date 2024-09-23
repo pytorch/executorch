@@ -11,8 +11,8 @@
 #include <executorch/examples/models/llama2/runner/runner.h>
 
 #if defined(ET_USE_THREADPOOL)
-#include <executorch/backends/xnnpack/threadpool/cpuinfo_utils.h>
-#include <executorch/backends/xnnpack/threadpool/threadpool.h>
+#include <executorch/extension/threadpool/cpuinfo_utils.h>
+#include <executorch/extension/threadpool/threadpool.h>
 #endif
 
 DEFINE_string(
@@ -69,7 +69,7 @@ int32_t main(int32_t argc, char** argv) {
   }
 #endif
   // create llama runner
-  ::torch::executor::Runner runner(model_path, tokenizer_path, temperature);
+  example::Runner runner(model_path, tokenizer_path, temperature);
 
   // generate
   runner.generate(prompt, seq_len);

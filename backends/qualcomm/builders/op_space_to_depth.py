@@ -10,6 +10,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpSpaceToDepth, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -70,7 +71,7 @@ class SpaceToDepthVisitor(NodeVisitor):
         space_to_depth_op.AddScalarParam(
             OpSpaceToDepth.param_mode,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(OpSpaceToDepth.Mode.CRD)},
+            {QCOM_DATA: np.uint32(OpSpaceToDepth.Mode.CRD)},
         )
 
         return space_to_depth_op

@@ -4,15 +4,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from typing import Callable, List, Optional
 
 import torch
 import torch.utils._pytree as pytree
+
+from executorch.exir._warnings import deprecated
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassBase, PassResult
 from executorch.exir.sym_util import eval_expr, eval_shape, eval_upper_bound
 from executorch.exir.tensor import TensorSpec
-from sympy import Integer
 from torch.fx import GraphModule
 
 upper_bound_shape_inference_table = {}
@@ -163,8 +166,21 @@ def index_Tensor(args, kwargs) -> List[Optional[int]]:  # noqa: C901
     return out_sizes
 
 
+@deprecated(
+    "`HintBasedSymShapeEvalPass` is deprecated "
+    "and will be removed in a future version of ExecuTorch. "
+    "Please use `ConstraintBasedSymShapeEvalPass` instead.",
+    category=FutureWarning,
+)
 class HintBasedSymShapeEvalPass(PassBase):
     """
+
+    .. warning::
+
+        'HintBasedSymShapeEvalPass` is deprecated
+        and will be removed in a future version of ExecuTorch.
+        Please use `ConstraintBasedSymShapeEvalPass` instead.
+
     If we enable dynamic shape tracing, a tensor's shape may become a symbolic
     formula. We should convert those symbolic formula to concrete value for
     static/upperbound tensors so we can properly do memory planning for them.
@@ -180,7 +196,7 @@ class HintBasedSymShapeEvalPass(PassBase):
 
     Warning: if you're using torch.export with constrain API, this method doesn't respect the input constraints.
 
-    Not inherit from ExportPass since we simply need a way to iterate thru
+    Not inherited from ExportPass since we simply need a way to iterate thru
     every node's output. PassBase is easier for that purpose.
     """
 
@@ -197,29 +213,38 @@ class HintBasedSymShapeEvalPass(PassBase):
                         if any(s is None for s in concrete_shape) or any(
                             s is None for s in concrete_spec
                         ):
+                            # None indicates unbacked symints, see: https://fburl.com/code/v7hj5zv6
+                            # Use value range to get the upper bounds of unbacked symints.
+                            from torch._guards import detect_fake_mode
 
-                            def get_val(arg):
-                                assert "val" in arg.meta and isinstance(
-                                    arg.meta["val"], torch.Tensor
-                                )
-                                return arg.meta["val"]
+                            fake_mode = detect_fake_mode(node.meta.get("val"))
+                            if fake_mode is not None:
+                                from torch.utils._sympy.numbers import int_oo
 
-                            # TODO (yidi): Replace with range based shape inference using var_to_range.
-                            concrete_shape = upper_bound_shape_inference_table[
-                                node.target
-                            ](*pytree.tree_map(get_val, (node.args, node.kwargs)))
+                                shape_env = fake_mode.shape_env
+                                for i, v in enumerate(spec.shape):
+                                    if concrete_shape[i] is None:
+                                        # get updated shape from var_to_range
+                                        _value_range = shape_env.var_to_range[
+                                            v._sympy_()  # pyre-fixme[16] Undefined attribute: `int` has no attribute `_sympy_`.
+                                        ]
+                                        # cannot handle unbounded, unbacked symints; add a range to bound it.
+                                        assert _value_range.upper is not int_oo
+                                        concrete_shape[i] = int(_value_range.upper)
+                                for i, v in enumerate(spec.stride):
+                                    if concrete_spec[i] is None:
+                                        _expr = (
+                                            v.node.expr  # pyre-fixme[16] Undefined attribute: `int` has no attribute `node`.
+                                        )
+                                        _value_range = v.node.shape_env.var_to_range
+                                        from torch.utils._sympy.value_ranges import (
+                                            bound_sympy,
+                                        )
 
-                            for sym_int, i in zip(spec.shape, concrete_shape):
-                                if isinstance(sym_int, torch.SymInt):
-                                    # We cache the symbolic ints' value as the concrete interger upper bounds.
-                                    # So that future use of the unbacked symbols will get a concrete value.
-                                    sym_int.node.shape_env.var_to_val[
-                                        sym_int.node._expr
-                                    ] = Integer(i)
-
-                            # spec.stride is guaranteed to use a subset of symbols in spec.shape, since
-                            # we cached the map between symbols and the concrete upper bounds. Can directly eval here.
-                            concrete_spec = eval_shape(spec.stride)
+                                        _bound_sympy = bound_sympy(_expr, _value_range)
+                                        # cannot handle unbounded, unbacked symints; add a range to bound it.
+                                        assert _bound_sympy.upper is not int_oo
+                                        concrete_spec[i] = int(_bound_sympy.upper)
 
                         assert all(isinstance(s, int) for s in concrete_shape) and all(
                             isinstance(s, int) for s in concrete_spec
@@ -235,7 +260,7 @@ class ConstraintBasedSymShapeEvalPass(PassBase):
     formula. We should convert those symbolic formula to concrete value for
     static/upperbound tensors so we can properly do memory planning for them.
 
-    Not inherit from ExportPass since we simply need a way to iterate thru
+    Not inherited from ExportPass since we simply need a way to iterate through
     every node's output. PassBase is easier for that purpose.
     """
 

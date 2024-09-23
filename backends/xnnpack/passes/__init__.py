@@ -27,6 +27,7 @@ from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
 from executorch.exir.pass_base import ExportPass
 
 from executorch.exir.passes.const_prop_pass import ConstPropPass
+from executorch.exir.passes.memory_format_ops_pass import DimOrderOpsRevertPass
 
 from executorch.exir.program._program import _transform
 from torch._export.pass_base import PassType
@@ -50,6 +51,8 @@ class XNNPACKPassManager:
         if not passes:
             # All the XNNPACK passes
             self.passes = [
+                # TODO - remove this pass once we have a better support for dim_order ops lowering
+                DimOrderOpsRevertPass,
                 ConvertToUpsampleBilinear2d,
                 ConvertToLinearPass,
                 ConvertToSDPAPass,

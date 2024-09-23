@@ -12,7 +12,7 @@ The PAL function declarations are in
 ## Overriding the default PAL
 
 The default PAL implementation is in
-[`executorch/runtime/platform/target/Posix.cpp`](https://github.com/pytorch/executorch/blob/main/runtime/platform/target/Posix.cpp).
+[`executorch/runtime/platform/default/posix.cpp`](https://github.com/pytorch/executorch/blob/main/runtime/platform/default/posix.cpp).
 It uses `std::chrono::steady_clock` for the time, prints log messages to
 `stderr`, and makes other default assumptions.
 
@@ -30,9 +30,9 @@ definitions in the link order.
 ## Minimal PAL
 
 If you run into build problems because your system doesn't support the functions
-called by `Posix.cpp`, you can instead use the no-op minimal PAL at
-[`executorch/runtime/platform/target/Minimal.cpp`](https://github.com/pytorch/executorch/blob/main/runtime/platform/target/Minimal.cpp)
-by building with the `buck2` flag `-c executorch.pal_default=minimal`. This will
-avoid calling `fprintf()`, `std::chrono::steady_clock`, and anything else that
-`Posix.cpp` uses. But since the `Minimal.cpp` `et_pal_*()` functions are no-ops,
+called by `posix.cpp`, you can instead use the no-op minimal PAL at
+[`executorch/runtime/platform/default/minimal.cpp`](https://github.com/pytorch/executorch/blob/main/runtime/platform/default/minimal.cpp)
+by passing `-DEXECUTORCH_PAL_DEFAULT=minimal` to `cmake`. This will avoid
+calling `fprintf()`, `std::chrono::steady_clock`, and anything else that
+`posix.cpp` uses. But since the `minimal.cpp` `et_pal_*()` functions are no-ops,
 you will need to override all of them.

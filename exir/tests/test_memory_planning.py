@@ -17,6 +17,8 @@ from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.exir.memory_planning import (
     filter_nodes,
     get_node_tensor_specs,
+    greedy,
+    naive,
     Verifier,
 )
 from executorch.exir.pass_base import PassResult
@@ -208,7 +210,7 @@ class MultiplePoolsToyModel(torch.nn.Module):
 
 def maketest(
     module_cls: Type[torch.nn.Module],
-    criteria: Optional[List[Tuple[str, bool]]] = None,
+    criteria: Optional[List[Tuple[Callable[..., List[int]], bool]]] = None,
     extra_check: Optional[Callable[..., None]] = None,
     use_functionalization: bool = True,
     alloc_graph_input: bool = True,
@@ -222,13 +224,15 @@ def maketest(
         if not criteria:
             criteria = [
                 # naive algorithm does not reuse tensor storages
-                ("naive", False),
+                (naive, False),
                 # greedy algorithm should reuse tensor storages in the testing model
-                ("greedy", True),
+                (greedy, True),
             ]
 
         for algo, expect_reuse in criteria:
-            print(f"algo {algo}, expect_reuse {expect_reuse}")
+            print(
+                f"algo {getattr(algo, '__name__', repr(algo))}, expect_reuse {expect_reuse}"
+            )
             eager_module = module_cls().eval()
             inputs = eager_module.get_random_inputs()
             graph_module = (
@@ -353,8 +357,8 @@ class TestMemoryPlanning(unittest.TestCase):
     test_return_two: Callable[..., None] = maketest(
         ModuleReturnTwo,
         criteria=[
-            ("naive", False),
-            ("greedy", True),
+            (naive, False),
+            (greedy, True),
         ],
     )
 
@@ -363,8 +367,8 @@ class TestMemoryPlanning(unittest.TestCase):
     test_list_arg: Callable[..., None] = maketest(
         ModuleListArg,
         criteria=[
-            ("naive", False),
-            ("greedy", True),
+            (naive, False),
+            (greedy, True),
         ],
         extra_check=ModuleListArg.extra_check,
     )
@@ -466,12 +470,12 @@ class TestMisc(unittest.TestCase):
     @parameterized.expand(
         [
             (
-                "naive",
+                naive,
                 [(1, 0), (3, 0), (1, 4), (3, 4), (1, 8)],
                 [0, 12, 0, 8],
             ),
             (
-                "greedy",
+                greedy,
                 [(1, 0), (3, 0), (1, 4), (3, 4), (1, 0)],
                 [0, 8, 0, 8],
             ),
@@ -479,7 +483,7 @@ class TestMisc(unittest.TestCase):
     )
     def test_multiple_pools(
         self,
-        algo: str,
+        algo: Callable[..., List[int]],
         expected_allocs: List[Tuple[int, int]],
         expected_bufsizes: List[int],
     ) -> None:
@@ -550,9 +554,7 @@ class TestMisc(unittest.TestCase):
 
         ep_no_input_planning = to_edge(export(model, inputs)).to_executorch(
             config=ExecutorchBackendConfig(
-                memory_planning_pass=MemoryPlanningPass(
-                    "greedy", alloc_graph_input=False
-                ),
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
             )
         )
@@ -572,9 +574,7 @@ class TestMisc(unittest.TestCase):
 
         ep_input_planning = to_edge(export(model, inputs)).to_executorch(
             config=ExecutorchBackendConfig(
-                memory_planning_pass=MemoryPlanningPass(
-                    "greedy", alloc_graph_input=True
-                ),
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=True),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
             )
         )

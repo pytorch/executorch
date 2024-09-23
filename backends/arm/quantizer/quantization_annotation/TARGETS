@@ -1,0 +1,12 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+python_library(
+    name = "quantization_annotation",
+    srcs = glob(["*.py"]),
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/arm/quantizer:arm_quantizer_utils",
+        "//executorch/backends/arm/quantizer:quantization_config",
+    ],
+)

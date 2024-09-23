@@ -44,6 +44,14 @@ function(generate_program_schema _schema_srcs _schema_name)
 
   add_library(${_schema_name} INTERFACE ${_schema_outputs})
   set_target_properties(${_schema_name} PROPERTIES LINKER_LANGUAGE CXX)
+
+  # exir lets users set the alignment of tensor data embedded in the flatbuffer,
+  # and some users need an alignment larger than the default, which is typically
+  # 32.
+  target_compile_definitions(
+    ${_schema_name} INTERFACE FLATBUFFERS_MAX_ALIGNMENT=1024
+  )
+
   target_include_directories(
     ${_schema_name}
     INTERFACE ${_program_schema__include_dir}

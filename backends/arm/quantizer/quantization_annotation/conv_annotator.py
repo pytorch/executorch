@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.f
 
+# pyre-unsafe
+
 from typing import Callable, List, Optional
 
 import torch
@@ -40,17 +42,17 @@ def _annotate_conv(
         input_qspec_map[weight] = quantization_config.get_weight_qspec()
 
         # adding weight node to the partition as well
-        partition = [conv_node, conv_node.args[1]]
+        partition_nodes = [conv_node, conv_node.args[1]]
 
         bias = conv_node.args[2] if len(conv_node.args) > 2 else None
         if isinstance(bias, Node):
             input_qspec_map[bias] = quantization_config.get_bias_qspec()
-            partition.append(bias)
+            partition_nodes.append(bias)
 
-        if arm_quantizer_utils.is_annotated(partition):
+        if arm_quantizer_utils.are_annotated(partition_nodes):
             continue
 
-        if filter_fn and any(not filter_fn(n) for n in partition):
+        if filter_fn and any(not filter_fn(n) for n in partition_nodes):
             continue
 
         conv_node.meta["quantization_annotation"] = QuantizationAnnotation(
@@ -58,6 +60,6 @@ def _annotate_conv(
             output_qspec=quantization_config.get_output_act_qspec(),
             _annotated=True,
         )
-        arm_quantizer_utils.mark_nodes_as_annotated(partition)
-        annotated_partitions.append(partition)
+        arm_quantizer_utils.mark_nodes_as_annotated(partition_nodes)
+        annotated_partitions.append(partition_nodes)
     return annotated_partitions

@@ -17,17 +17,18 @@
 #include <executorch/runtime/platform/runtime.h>
 
 using namespace ::testing;
-using torch::executor::Error;
-using torch::executor::FreeableBuffer;
-using torch::executor::Result;
-using torch::executor::util::SharedPtrDataLoader;
+using executorch::extension::SharedPtrDataLoader;
+using executorch::runtime::DataLoader;
+using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Result;
 
 class SharedPtrDataLoaderTest : public ::testing::Test {
  protected:
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
@@ -50,7 +51,11 @@ TEST_F(SharedPtrDataLoaderTest, InBoundsLoadsSucceed) {
 
   // Load the first bytes of the data.
   {
-    Result<FreeableBuffer> fb = sbdl.Load(/*offset=*/0, /*size=*/8);
+    Result<FreeableBuffer> fb = sbdl.load(
+        /*offset=*/0,
+        /*size=*/8,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_TRUE(fb.ok());
     EXPECT_EQ(fb->size(), 8);
     EXPECT_EQ(
@@ -72,7 +77,11 @@ TEST_F(SharedPtrDataLoaderTest, InBoundsLoadsSucceed) {
 
   // Load the last few bytes of the data, a different size than the first time.
   {
-    Result<FreeableBuffer> fb = sbdl.Load(/*offset=*/SIZE - 3, /*size=*/3);
+    Result<FreeableBuffer> fb = sbdl.load(
+        /*offset=*/SIZE - 3,
+        /*size=*/3,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_TRUE(fb.ok());
     EXPECT_EQ(fb->size(), 3);
     EXPECT_EQ(0, std::memcmp(fb->data(), "\xfd\xfe\xff", fb->size()));
@@ -80,7 +89,11 @@ TEST_F(SharedPtrDataLoaderTest, InBoundsLoadsSucceed) {
 
   // Loading all of the data succeeds.
   {
-    Result<FreeableBuffer> fb = sbdl.Load(/*offset=*/0, /*size=*/SIZE);
+    Result<FreeableBuffer> fb = sbdl.load(
+        /*offset=*/0,
+        /*size=*/SIZE,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_TRUE(fb.ok());
     EXPECT_EQ(fb->size(), SIZE);
     EXPECT_EQ(0, std::memcmp(fb->data(), data.get(), fb->size()));
@@ -88,7 +101,11 @@ TEST_F(SharedPtrDataLoaderTest, InBoundsLoadsSucceed) {
 
   // Loading zero-sized data succeeds, even at the end of the data.
   {
-    Result<FreeableBuffer> fb = sbdl.Load(/*offset=*/SIZE, /*size=*/0);
+    Result<FreeableBuffer> fb = sbdl.load(
+        /*offset=*/SIZE,
+        /*size=*/0,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_TRUE(fb.ok());
     EXPECT_EQ(fb->size(), 0);
   }
@@ -105,13 +122,21 @@ TEST_F(SharedPtrDataLoaderTest, OutOfBoundsLoadFails) {
 
   // Loading beyond the end of the data should fail.
   {
-    Result<FreeableBuffer> fb = sbdl.Load(/*offset=*/0, /*size=*/SIZE + 1);
+    Result<FreeableBuffer> fb = sbdl.load(
+        /*offset=*/0,
+        /*size=*/SIZE + 1,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_NE(fb.error(), Error::Ok);
   }
 
   // Loading zero bytes still fails if it's past the end of the data.
   {
-    Result<FreeableBuffer> fb = sbdl.Load(/*offset=*/SIZE + 1, /*size=*/0);
+    Result<FreeableBuffer> fb = sbdl.load(
+        /*offset=*/SIZE + 1,
+        /*size=*/0,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_NE(fb.error(), Error::Ok);
   }
 }

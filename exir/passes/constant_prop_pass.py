@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from collections import OrderedDict
 from typing import cast, Mapping, Optional
 
@@ -126,6 +128,10 @@ def get_propagated_const_tensor_dict(
             node.args,
             exported_program,
             const_node_to_tensor,
+        ) or not is_const(
+            node.kwargs,
+            exported_program,
+            const_node_to_tensor,
         ):
             continue
 
@@ -206,11 +212,11 @@ def erase_constant_node(
 ) -> None:
     # Remove corresponding tensor from param/constants dict.
     signature = exported_program.graph_signature
-    if name := signature.inputs_to_parameters.pop(node.name, None):
+    if name := signature.inputs_to_parameters.get(node.name, None):
         exported_program.state_dict.pop(name, None)
-    elif name := signature.inputs_to_lifted_tensor_constants.pop(node.name, None):
+    elif name := signature.inputs_to_lifted_tensor_constants.get(node.name, None):
         exported_program.constants.pop(name, None)
-    elif name := signature.inputs_to_buffers.pop(node.name, None):
+    elif name := signature.inputs_to_buffers.get(node.name, None):
         exported_program.constants.pop(name, None)
         exported_program.state_dict.pop(name, None)
 

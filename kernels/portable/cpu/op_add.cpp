@@ -67,7 +67,7 @@ struct AddInner<false, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT>
 } // namespace
 
 Tensor& add_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     const Scalar& alpha,
@@ -78,7 +78,13 @@ Tensor& add_out(
       InvalidArgument,
       out);
 
-  ET_KERNEL_CHECK(ctx, tensor_is_realhb_type(out), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      executorch::runtime::tensor_is_realhbbf16_type(out),
+      InvalidArgument,
+      out);
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
@@ -92,15 +98,15 @@ Tensor& add_out(
 
   constexpr auto name = "add.out";
 
-  ET_SWITCH_REALHB_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
-    ET_SWITCH_REALHB_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
+    ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
       using CTYPE_IN = typename torch::executor::
           promote_types<CTYPE_A, CTYPE_B, /*half_to_float*/ true>::type;
       ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
       CTYPE_IN alpha_val;
       utils::extract_scalar(alpha, &alpha_val);
 
-      ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
+      ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
         AddInner<
             can_cast<CTYPE_IN, CTYPE_OUT>::value,
             CTYPE_A,
@@ -115,7 +121,7 @@ Tensor& add_out(
 }
 
 Tensor& add_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     const Scalar& alpha,
@@ -130,7 +136,13 @@ Tensor& add_scalar_out(
       out,
       "Failed to resize output tensor.");
 
-  ET_KERNEL_CHECK(ctx, tensor_is_realhb_type(out), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      executorch::runtime::tensor_is_realhbbf16_type(out),
+      InvalidArgument,
+      out);
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);
@@ -149,7 +161,7 @@ Tensor& add_scalar_out(
 
   constexpr auto name = "add.Scalar_out";
 
-  ET_SWITCH_REALHB_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
     ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
       using CTYPE_IN = typename utils::promote_type_with_scalar_type<
           CTYPE_A,

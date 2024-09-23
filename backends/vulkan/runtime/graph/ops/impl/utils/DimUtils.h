@@ -31,8 +31,9 @@ constexpr DimIndex kHeight4D = DimIndex::DIM_2ND_LAST;
 constexpr DimIndex kChannel4D = DimIndex::DIM_3RD_LAST;
 constexpr DimIndex kBatch4D = DimIndex::DIM_4TH_LAST;
 
-inline DimIndex normalize_to_dim_index(const vTensor& v_in, int32_t dim) {
-  return static_cast<DimIndex>(dim - v_in.dim());
+inline DimIndex normalize_to_dim_index(const api::vTensor& v_in, int32_t dim) {
+  return dim < 0 ? static_cast<DimIndex>(dim)
+                 : static_cast<DimIndex>(dim - v_in.dim());
 }
 
 /*
@@ -74,7 +75,7 @@ inline int32_t dim_at(const std::vector<int64_t>& sizes, DimIndex dim_index) {
   // Recall that dim_index is a negative index.
   return dims < -dim_index
       ? 1
-      : api::utils::safe_downcast<int32_t>(sizes[dims + dim_index]);
+      : utils::safe_downcast<int32_t>(sizes[dims + dim_index]);
 }
 
 template <DimIndex DI>
@@ -83,11 +84,11 @@ int32_t dim_at(const std::vector<int64_t>& sizes) {
 }
 
 template <DimIndex DI>
-int32_t dim_at(const vTensor& v_in) {
+int32_t dim_at(const api::vTensor& v_in) {
   return dim_at(v_in.sizes(), DI);
 }
 
-inline int32_t dim_at(const vTensor& v_in, DimIndex dim_index) {
+inline int32_t dim_at(const api::vTensor& v_in, DimIndex dim_index) {
   return dim_at(v_in.sizes(), dim_index);
 }
 

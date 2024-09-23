@@ -10,6 +10,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_INSERTED_PERMUTE
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpTranspose, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -28,7 +29,7 @@ class TransposeVisitor(NodeVisitor):
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         input_node = node.args[0]
-        permute_node = input_node if "qnn_permute" in node.meta else node
+        permute_node = input_node if QCOM_INSERTED_PERMUTE in node.meta else node
         input_tensor = self.get_tensor(input_node, permute_node)
         input_tensor_wrapper = self.define_tensor(
             input_node,

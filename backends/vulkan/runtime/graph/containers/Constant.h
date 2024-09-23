@@ -21,12 +21,12 @@ namespace vkcompute {
  */
 struct TensorRef final {
   std::vector<int64_t> sizes;
-  api::ScalarType dtype;
+  vkapi::ScalarType dtype;
   const void* data;
 
   explicit TensorRef(
       const std::vector<int64_t>& t_sizes,
-      api::ScalarType t_dtype,
+      vkapi::ScalarType t_dtype,
       const void* const t_data);
 };
 

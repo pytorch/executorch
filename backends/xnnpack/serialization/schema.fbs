@@ -48,6 +48,7 @@ table PerChannelGroupQuant {
   scale:[float];
   channel_dim:int;
   group_size:int;
+  scale_bf16:[ushort];
 }
 
 table PerChannelQuant {
@@ -130,6 +131,7 @@ union XNodeUnion {
   XNNConcatenate4: _XNNCat,
   XNNStaticSlice,
   XNNScaledDotProductAttention,
+  XNNBatchMatrixMultiply: _XNNNode2x1,
 }
 
 union XValueUnion {

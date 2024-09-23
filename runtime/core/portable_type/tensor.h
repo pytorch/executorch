@@ -9,7 +9,6 @@
 #pragma once
 
 #include <executorch/runtime/platform/compiler.h>
-#include <sys/types.h> // TODO(T126923429): Include size_t, ssize_t
 
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 
@@ -86,6 +85,10 @@ class Tensor {
     return impl_->scalar_type();
   }
 
+  inline ScalarType dtype() const {
+    return scalar_type();
+  }
+
   /// Returns the size in bytes of one element of the tensor.
   ssize_t element_size() const {
     return impl_->element_size();
@@ -104,6 +107,11 @@ class Tensor {
   /// Returns the strides of the tensor at each dimension.
   const ArrayRef<StridesType> strides() const {
     return impl_->strides();
+  }
+
+  /// Returns the mutability of the shape of the tensor.
+  TensorShapeDynamism shape_dynamism() const {
+    return impl_->shape_dynamism();
   }
 
   /// Returns a pointer of type T to the constant underlying data blob.
@@ -130,12 +138,12 @@ class Tensor {
 
   /// DEPRECATED: Use const_data_ptr or mutable_data_ptr instead.
   template <typename T>
-  __ET_DEPRECATED inline T* data_ptr() const {
+  ET_DEPRECATED inline T* data_ptr() const {
     return impl_->mutable_data<T>();
   }
 
   /// DEPRECATED: Use const_data_ptr or mutable_data_ptr instead.
-  __ET_DEPRECATED inline void* data_ptr() const {
+  ET_DEPRECATED inline void* data_ptr() const {
     return impl_->mutable_data();
   }
 
@@ -145,7 +153,7 @@ class Tensor {
    * ptr. This api does not exist in at::Tensor so kernel developers should
    * avoid it.
    */
-  __ET_DEPRECATED void set_data(void* ptr) const {
+  ET_DEPRECATED void set_data(void* ptr) const {
     impl_->set_data(ptr);
   }
 

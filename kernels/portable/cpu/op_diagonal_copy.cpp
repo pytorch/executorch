@@ -62,7 +62,7 @@ void diagonal_copy_impl(
 } // namespace
 
 Tensor& diagonal_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t offset,
     int64_t dim1,
@@ -72,6 +72,11 @@ Tensor& diagonal_copy_out(
 
   ET_KERNEL_CHECK(
       ctx, check_diagonal_copy_args(in, dim1, dim2, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   if (dim1 < 0) {
     dim1 += nonzero_dim(in);

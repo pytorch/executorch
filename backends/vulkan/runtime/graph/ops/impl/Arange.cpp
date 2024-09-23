@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/api/Utils.h>
+#include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
@@ -33,7 +33,7 @@ void resize_arange_node(
   }
 
   std::vector<int64_t> out_sizes = {
-      api::utils::div_up(end_val - start_val, step_val)};
+      utils::div_up(end_val - start_val, step_val)};
 
   out->virtual_resize(out_sizes);
 }
@@ -84,21 +84,17 @@ void add_arange_node(
 
   vTensorPtr t_out = graph.get_tensor(out);
 
-  api::utils::uvec3 global_size = t_out->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   std::string kernel_name("arange");
   kernel_name.reserve(kShaderNameReserve);
-
   add_dtype_suffix(kernel_name, *t_out);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      graph.create_global_wg_size(out),
+      graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE}},
+      {{out, vkapi::MemoryAccessType::WRITE}},
       // Shader params buffers
       {t_out->sizes_ubo(),
        graph.create_params_buffer(start_val),

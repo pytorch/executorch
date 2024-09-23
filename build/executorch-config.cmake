@@ -43,12 +43,16 @@ set(lib_list
     bundled_program
     extension_data_loader
     ${FLATCCRT_LIB}
+    coremldelegate
     mpsdelegate
     qnn_executorch_backend
     portable_ops_lib
     extension_module
     extension_module_static
     extension_runner_util
+    extension_tensor
+    extension_threadpool
+    extension_training
     xnnpack_backend
     XNNPACK
     cpuinfo
@@ -61,6 +65,7 @@ set(lib_list
     optimized_native_cpu_ops_lib
     quantized_kernels
     quantized_ops_lib
+    quantized_ops_aot_lib
     custom_ops
 )
 foreach(lib ${lib_list})

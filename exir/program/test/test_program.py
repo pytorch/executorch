@@ -6,7 +6,7 @@
 
 # pye-strict
 
-import operator
+import copy
 import unittest
 from typing import Any, Dict
 
@@ -22,11 +22,13 @@ from executorch.exir.lowered_backend_module import get_lowered_submodules
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.program._program import (
-    _to_edge_transform_and_lower,
     EdgeProgramManager,
     ExecutorchProgramManager,
     to_edge,
+    to_edge_transform_and_lower,
+    to_edge_with_preserved_ops,
 )
+from executorch.exir.tracer import _default_decomposition_table
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 
 from executorch.extension.pybindings.portable_lib import (
@@ -36,6 +38,83 @@ from torch.export import Dim, export, ExportedProgram
 from torch.export._trace import _export
 
 from torch.library import impl, Library
+from torch.nn import functional as F
+
+
+class TestLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(32, 16, bias=True)
+
+    def forward(self, x):
+        return self.linear(x)
+
+    @classmethod
+    def _get_random_inputs(cls):
+        x = torch.rand(8, 32)
+        return (x,)
+
+
+class TestSDPA(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, query, key, value):
+        return torch.ops.aten.scaled_dot_product_attention.default(query, key, value)
+
+    @classmethod
+    def _get_random_inputs(cls):
+        d_k = 64
+        batch = 16
+        seq_len = 10
+        query = torch.rand(batch, seq_len, d_k)
+        key = torch.rand(batch, seq_len, d_k)
+        value = torch.rand(batch, seq_len, d_k)
+        return (query, key, value)
+
+
+class TestLinearSDPACombined(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(32, 16, bias=True)
+
+    def forward(self, x, query, key, value):
+        x = self.linear(x)
+        return (
+            x,
+            torch.ops.aten.scaled_dot_product_attention.default(query, key, value),
+        )
+
+    @classmethod
+    def _get_random_inputs(cls):
+        return TestLinear._get_random_inputs() + TestSDPA._get_random_inputs()
+
+
+class TestUpsample(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x = F.interpolate(x, scale_factor=2, mode="nearest")
+        return x
+
+    @classmethod
+    def _get_random_inputs(cls):
+        x = torch.randn(1, 1, 8, 8)
+        return (x,)
+
+
+class TestLSTM(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.lstm = torch.nn.LSTM(input_size=8, hidden_size=16, batch_first=True)
+
+    def forward(self, x):
+        return self.lstm(x)
+
+    @classmethod
+    def _get_random_inputs(cls):
+        return (torch.rand(1, 10, 8),)
 
 
 class WrapperModule(torch.nn.Module):
@@ -171,12 +250,10 @@ class TestProgramManagers(unittest.TestCase):
         def get_executorch_memory_planning_passes() -> Dict[str, MemoryPlanningPass]:
             return {
                 "forward": MemoryPlanningPass(
-                    memory_planning_algo="greedy",
                     alloc_graph_input=True,
                     alloc_graph_output=False,
                 ),
                 "foo": MemoryPlanningPass(
-                    memory_planning_algo="greedy",
                     alloc_graph_input=False,
                     alloc_graph_output=True,
                 ),
@@ -453,11 +530,14 @@ class TestProgramManagers(unittest.TestCase):
         )
         self.assertTrue(edge_manager.exported_program().dialect == "EDGE")
 
-    def _test_edge_dialect_verifier(self, callable, validate_ir=True):
+    def _test_edge_dialect_verifier(
+        self, callable, validate_ir=True, exception_list=None
+    ):
         from executorch.exir import EdgeCompileConfig
 
         edge_compile_config = EdgeCompileConfig(
             _check_ir_validity=validate_ir,
+            _core_aten_ops_exception_list=exception_list,
         )
         # pre-autograd export. eventually this will become torch.export
         one = torch.ones(1, dtype=torch.float)
@@ -473,91 +553,89 @@ class TestProgramManagers(unittest.TestCase):
         _ = to_edge(exported_foo, compile_config=edge_compile_config)
 
     def test_edge_dialect_custom_op(self):
+        # We shouldn't error out if there's a custom op in the graph.
         def _use_foo_add(a: torch.Tensor, b: torch.Tensor):
             return torch.ops.exir_program_test_op.foo(a, b)
 
         from torch._export.verifier import SpecViolationError
 
-        with self.assertRaises(SpecViolationError):
+        try:
+            # This should not raise error
             self._test_edge_dialect_verifier(_use_foo_add)
+            self._test_edge_dialect_verifier(_use_foo_add, False)
+        except SpecViolationError:
+            self.fail("Should not error out on custom op")
 
-        # This should not raise error
-        self._test_edge_dialect_verifier(_use_foo_add, False)
+    def get_num_nondecomposed_ops(self, ep, partitioner):
+        # count the number of aten ops that the partitioner can delegate
+        # we do this by running run_decompositions() with the preserved ops given
+        # to us by the partitioner. Then we count the number of preserved aten ops
+        # which pass the filter_ops fn given by the partitioner
+        reference_ep = copy.deepcopy(ep)
+        aten_ops_not_decomposed, filter_ops = partitioner.ops_to_not_decompose(ep)
+        reference_decomp_ep = reference_ep.run_decompositions(
+            decomp_table=_default_decomposition_table(),
+            _preserve_ops=tuple(aten_ops_not_decomposed),
+        )
+        num_non_decomposed_aten_ops = 0
+        for node in reference_decomp_ep.graph.nodes:
+            if (
+                node.op == "call_function"
+                and node.target in aten_ops_not_decomposed
+                and (filter_ops(node) if filter_ops else True)
+            ):
+                num_non_decomposed_aten_ops += 1
+        return num_non_decomposed_aten_ops
 
     def _test_model_with_non_decomp_partitioner(self, model: torch.nn.Module):
         # This is the pre-dispatch export that we will be switching to primarily
-        # in the near future. The input to _to_edge_transform_and_lower needs to
+        # in the near future. The input to to_edge_transform_and_lower needs to
         # be a graph generated by this pre dispatch export.
         ep = _export(model, model._get_random_inputs(), pre_dispatch=True)
-        edge = _to_edge_transform_and_lower(
+        non_decomp_partitioner = NonDecompTestPartitioner()
+
+        num_non_decomposed_aten_ops = self.get_num_nondecomposed_ops(
+            ep, non_decomp_partitioner
+        )
+
+        # run to_edge_trasnform_and_lower
+        edge = to_edge_transform_and_lower(
             ep,
             compile_config=EdgeCompileConfig(),
             partitioner=[NonDecompTestPartitioner()],
         )
+        # Check that non_decomposed_edge_ops are all consumed by the delegate
+        non_decomposed_edge_ops = (
+            non_decomp_partitioner.supported_non_decomposed_edge_ops
+        )
+        for node in edge.exported_program().graph.nodes:
+            if node.op == "call_function":
+                self.assertTrue(node.target not in non_decomposed_edge_ops)
+
+        # check that the number of call_delegate_nodes is equal to the number of
+        # non_decomposed_aten_ops we found above
+        num_call_delegates = 0
         for node in edge.exported_program().graph_module.graph.nodes:
             # There should only be a single call_function node in the graph
             # and that should be a call_delegate node.
-            if node.op == "call_function" and node.target != operator.getitem:
-                self.assertEqual(
-                    node.target, torch.ops.higher_order.executorch_call_delegate
-                )
+            if (
+                node.op == "call_function"
+                and node.target == torch.ops.higher_order.executorch_call_delegate
+            ):
+                num_call_delegates += 1
+
+        self.assertEqual(num_call_delegates, num_non_decomposed_aten_ops)
 
     def test_to_edge_transform_and_lower(self):
-        class TestLinear(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.linear = torch.nn.Linear(32, 16, bias=True)
-
-            def forward(self, x):
-                return self.linear(x)
-
-            @classmethod
-            def _get_random_inputs(cls):
-                x = torch.rand(8, 32)
-                return (x,)
-
-        class TestSDPA(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, query, key, value):
-                return torch.ops.aten.scaled_dot_product_attention.default(
-                    query, key, value
-                )
-
-            @classmethod
-            def _get_random_inputs(cls):
-                d_k = 64
-                batch = 16
-                seq_len = 10
-                query = torch.rand(batch, seq_len, d_k)
-                key = torch.rand(batch, seq_len, d_k)
-                value = torch.rand(batch, seq_len, d_k)
-                return (query, key, value)
-
-        class TestLinearSDPACombined(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.linear = torch.nn.Linear(32, 16, bias=True)
-
-            def forward(self, x, query, key, value):
-                x = self.linear(x)
-                return (
-                    x,
-                    torch.ops.aten.scaled_dot_product_attention.default(
-                        query, key, value
-                    ),
-                )
-
-            @classmethod
-            def _get_random_inputs(cls):
-                return TestLinear._get_random_inputs() + TestSDPA._get_random_inputs()
-
         self._test_model_with_non_decomp_partitioner(TestLinear())
 
         self._test_model_with_non_decomp_partitioner(TestSDPA())
 
         self._test_model_with_non_decomp_partitioner(TestLinearSDPACombined())
+
+        self._test_model_with_non_decomp_partitioner(TestUpsample())
+
+        self._test_model_with_non_decomp_partitioner(TestLSTM())
 
     def test_to_edge_transform_and_lower_with_exception(self):
         class TestLinear(torch.nn.Module):
@@ -576,7 +654,7 @@ class TestProgramManagers(unittest.TestCase):
 
         model = TestLinear()
         ep = _export(model, model._get_random_inputs(), pre_dispatch=True)
-        edge = _to_edge_transform_and_lower(
+        edge = to_edge_transform_and_lower(
             ep,
             compile_config=EdgeCompileConfig(),
             partitioner=[NonDecompTestPartitioner()],
@@ -604,4 +682,122 @@ class TestProgramManagers(unittest.TestCase):
                 edge.exported_program().graph_module, exir_ops.edge.aten.mm.default
             ),
             1,
+        )
+
+    def test_edge_dialect_non_core_aten_ops(self):
+        class LinalgNorm(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.linalg.norm(x)
+
+        from torch._export.verifier import SpecViolationError
+
+        input = torch.arange(9, dtype=torch.float) - 4
+        ep = torch.export.export(LinalgNorm(), (input,))
+
+        # aten::linalg_norm is not a core op, so it should error out
+        with self.assertRaises(SpecViolationError):
+            _ = to_edge(ep, compile_config=EdgeCompileConfig(_check_ir_validity=True))
+
+        # with exception list, it should not error out
+        try:
+            # This should not raise error
+            _ = to_edge(
+                ep,
+                compile_config=EdgeCompileConfig(
+                    _check_ir_validity=True,
+                    _core_aten_ops_exception_list=[
+                        torch.ops.aten.linalg_vector_norm.default
+                    ],
+                ),
+            )
+        except SpecViolationError:
+            self.fail("Should not error out on linalg_vector_norm op")
+
+    def _test_to_edge_with_preserved_ops(
+        self, program, preserved_ops, expected_preserved_ops
+    ):
+        edge = to_edge_with_preserved_ops(program, preserve_ops=preserved_ops)
+
+        def count_nodes(graph_module, target):
+            count = 0
+            for node in graph_module.graph.nodes:
+                if node.op == "call_function" and node.target in target:
+                    count += 1
+            return count
+
+        aten_ops_non_decomposed = count_nodes(
+            program.graph_module,
+            preserved_ops,
+        )
+
+        edge_ops_non_decomposed = count_nodes(
+            edge.exported_program().graph_module,
+            expected_preserved_ops,
+        )
+
+        self.assertEqual(aten_ops_non_decomposed, edge_ops_non_decomposed)
+
+    def test_to_edge_with_single_preserved_op(self):
+        model = TestLinear()
+        program = torch.export.export(model, model._get_random_inputs())
+
+        ops_not_to_decompose = [
+            torch.ops.aten.linear.default,
+        ]
+        expected_non_decomposed_edge_ops = [
+            exir_ops.edge.aten.linear.default,
+        ]
+
+        self._test_to_edge_with_preserved_ops(
+            program, ops_not_to_decompose, expected_non_decomposed_edge_ops
+        )
+
+    def test_to_edge_with_partial_ops_preserved(self):
+        model = TestLinearSDPACombined()
+        program = torch.export.export(model, model._get_random_inputs())
+
+        ops_not_to_decompose = [
+            torch.ops.aten.linear.default,
+        ]
+        expected_non_decomposed_edge_ops = [
+            exir_ops.edge.aten.linear.default,
+        ]
+
+        self._test_to_edge_with_preserved_ops(
+            program, ops_not_to_decompose, expected_non_decomposed_edge_ops
+        )
+
+    def test_to_edge_with_multiple_ops_preserved(self):
+        model = TestLinearSDPACombined()
+        program = torch.export.export(model, model._get_random_inputs())
+
+        ops_not_to_decompose = [
+            torch.ops.aten.linear.default,
+            torch.ops.aten.scaled_dot_product_attention.default,
+        ]
+        expected_non_decomposed_edge_ops = [
+            exir_ops.edge.aten.linear.default,
+            exir_ops.edge.aten.scaled_dot_product_attention.default,
+        ]
+
+        self._test_to_edge_with_preserved_ops(
+            program, ops_not_to_decompose, expected_non_decomposed_edge_ops
+        )
+
+    def test_to_edge_with_preserved_ops_not_in_model(self):
+        model = TestSDPA()
+        program = torch.export.export(model, model._get_random_inputs())
+
+        ops_not_to_decompose = [
+            torch.ops.aten.linear.default,
+        ]
+        expected_non_decomposed_edge_ops = [
+            exir_ops.edge.aten.linear.default,
+        ]
+
+        self._test_to_edge_with_preserved_ops(
+            program, ops_not_to_decompose, expected_non_decomposed_edge_ops
         )

@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -77,7 +78,7 @@ void _to_dim_order_copy_impl(const Tensor& self, Tensor& out) {
 // _to_dim_order_copy.out(Tensor self, *, bool non_blocking=False, int[]?
 // dim_order=None, Tensor(a!) out) -> Tensor(a!)
 Tensor& _to_dim_order_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     bool non_blocking,
     OptionalArrayRef<int64_t> dim_order,
@@ -96,11 +97,17 @@ Tensor& _to_dim_order_copy_out(
       out);
 
   ET_SWITCH_REALHB_TYPES(
-      self.scalar_type(), ctx, "_to_dim_order_copy_out", CTYPE_IN, [&] {
+      self.scalar_type(),
+      ctx,
+      "dim_order_ops::_to_dim_order_copy.out",
+      CTYPE_IN,
+      [&] {
         ET_SWITCH_REALHB_TYPES(
-            out.scalar_type(), ctx, "_to_dim_order_copy_out", CTYPE_OUT, [&] {
-              _to_dim_order_copy_impl<CTYPE_IN, CTYPE_OUT>(self, out);
-            });
+            out.scalar_type(),
+            ctx,
+            "dim_order_ops::_to_dim_order_copy.out",
+            CTYPE_OUT,
+            [&] { _to_dim_order_copy_impl<CTYPE_IN, CTYPE_OUT>(self, out); });
       });
 
   return out;
@@ -111,7 +118,7 @@ Tensor& _to_dim_order_copy_out(
     bool non_blocking,
     OptionalArrayRef<int64_t> dim_order,
     Tensor& out) {
-  exec_aten::RuntimeContext context{};
+  executorch::runtime::KernelRuntimeContext context{};
   return _to_dim_order_copy_out(context, self, non_blocking, dim_order, out);
 }
 

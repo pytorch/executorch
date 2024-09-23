@@ -8,6 +8,7 @@ from typing import Dict
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_ENCODING, QCOM_QUANT_ATTRS
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpQuantize, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -34,11 +35,11 @@ class QuantizeOpBase(NodeVisitor):
         )
         quant_input_tensors.append(inp_tensor_wrapper)
 
-        node.meta["quant_attrs"] = {"encoding": node.target}
+        node.meta[QCOM_QUANT_ATTRS] = {QCOM_ENCODING: node.target}
         arg_schemas = list(node.target._schema.arguments)[1:]
         for i, arg_schema in enumerate(arg_schemas):
             name = arg_schema.name
-            node.meta["quant_attrs"][name] = node.args[i + 1]
+            node.meta[QCOM_QUANT_ATTRS][name] = node.args[i + 1]
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(

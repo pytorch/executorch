@@ -1,6 +1,6 @@
 # Prerequisite | ETDump - ExecuTorch Dump
 
-ETDump (ExecuTorch Dump) is one of the core components of the ExecuTorch SDK experience. It is the mechanism through which all forms of profiling and debugging data is extracted from the runtime. Users can't parse ETDump directly; instead, they should pass it into the Inspector API, which deserializes the data, offering interfaces for flexible analysis and debugging.
+ETDump (ExecuTorch Dump) is one of the core components of the ExecuTorch Developer Tools. It is the mechanism through which all forms of profiling and debugging data is extracted from the runtime. Users can't parse ETDump directly; instead, they should pass it into the Inspector API, which deserializes the data, offering interfaces for flexible analysis and debugging.
 
 
 ## Generating an ETDump
@@ -9,7 +9,7 @@ Generating an ETDump is a relatively straightforward process. Users can follow t
 
 1. ***Include*** the ETDump header in your code.
 ```C++
-#include <executorch/sdk/etdump/etdump_flatcc.h>
+#include <executorch/devtools/etdump/etdump_flatcc.h>
 ```
 
 2. ***Create*** an Instance of the ETDumpGen class and pass it into the `load_method` call that is invoked in the runtime.

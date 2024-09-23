@@ -29,17 +29,18 @@ rm -rf "$CMAKE_BUILD_DIR_PATH"
 # Build executorch
 echo "ExecuTorch: Building executorch"
 cmake "$EXECUTORCH_ROOT_PATH" -B"$CMAKE_BUILD_DIR_PATH" \
+-DCMAKE_BUILD_TYPE=Release \
 -DCMAKE_TOOLCHAIN_FILE="$IOS_TOOLCHAIN_PATH" \
 -DPLATFORM=MAC_UNIVERSAL \
 -DDEPLOYMENT_TARGET=13.0 \
 -DFLATC_EXECUTABLE="$(which flatc)" \
 -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
 -DEXECUTORCH_BUILD_XNNPACK=OFF \
--DEXECUTORCH_BUILD_SDK=ON \
+-DEXECUTORCH_BUILD_DEVTOOLS=ON \
 -DEXECUTORCH_BUILD_COREML=ON \
--DCOREML_BUILD_EXECUTOR_RUNNER=ON \
 -Dprotobuf_BUILD_TESTS=OFF \
 -Dprotobuf_BUILD_EXAMPLES=OFF \
+-DCOREML_BUILD_EXECUTOR_RUNNER=ON \
 -DCMAKE_MACOSX_BUNDLE=OFF \
 
 cmake --build "$CMAKE_BUILD_DIR_PATH" -j9 -t coremldelegate
@@ -55,7 +56,7 @@ mkdir -p "$EXECUTORCH_INCLUDE_DIR_PATH"
 find extension \( -name "*.h" -o -name "*.hpp" \) -exec rsync -R '{}' "$EXECUTORCH_INCLUDE_DIR_PATH" \;
 find runtime \( -name "*.h" -o -name "*.hpp" \) -exec rsync -R '{}' "$EXECUTORCH_INCLUDE_DIR_PATH" \;
 find util \( -name "*.h" -o -name "*.hpp" \) -exec rsync -R '{}' "$EXECUTORCH_INCLUDE_DIR_PATH" \;
-find sdk \( -name "*.h" -o -name "*.hpp" \) -exec rsync -R '{}' "$EXECUTORCH_INCLUDE_DIR_PATH" \;
+find devtools \( -name "*.h" -o -name "*.hpp" \) -exec rsync -R '{}' "$EXECUTORCH_INCLUDE_DIR_PATH" \;
 cp -rf "$COREML_DIR_PATH/runtime/include/" "$INCLUDE_DIR_PATH"
 
 # Copy required libraries

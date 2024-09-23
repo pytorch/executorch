@@ -26,6 +26,10 @@ from executorch.exir.backend.test.demos.rpc.executor_backend_partitioner import 
 from executorch.exir.backend.test.demos.rpc.executor_backend_preprocess import (
     ExecutorBackend,
 )
+from executorch.exir.backend.test.op_partitioner_demo import (
+    AddAttributePartitionerDemo,
+    AllNodesPartitionerDemo,
+)
 from executorch.exir.backend.utils import get_delegates, tag_constant_data
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -35,9 +39,8 @@ from executorch.extension.pybindings.portable_lib import (  # @manual=//executor
     _load_for_executorch_from_buffer,
 )
 from executorch.extension.pytree import tree_flatten
-from torch._export import capture_pre_autograd_graph
-from torch._export.utils import is_buffer, is_param
-from torch.export import export
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
+from torch.export import export, export_for_training
 from torch.fx.passes.operator_support import any_chain
 
 
@@ -73,7 +76,7 @@ class TestPartitioner(unittest.TestCase):
 
         mlp = MLP()
         example_inputs = mlp.get_random_inputs()
-        model = capture_pre_autograd_graph(mlp, example_inputs)
+        model = export_for_training(mlp, example_inputs).module()
         aten = export(model, example_inputs)
         spec_key = "path"
         spec_value = "/a/b/c/d"
@@ -134,7 +137,7 @@ class TestPartitioner(unittest.TestCase):
 
         mlp = MLP()
         example_inputs = mlp.get_random_inputs()
-        model = capture_pre_autograd_graph(mlp, example_inputs)
+        model = export_for_training(mlp, example_inputs).module()
         aten = export(model, example_inputs)
         edge = exir.to_edge(aten)
 
@@ -174,7 +177,7 @@ class TestPartitioner(unittest.TestCase):
 
         mlp = MLP()
         example_inputs = mlp.get_random_inputs()
-        model = capture_pre_autograd_graph(mlp, example_inputs)
+        model = export_for_training(mlp, example_inputs).module()
         edge = exir.to_edge(export(model, example_inputs))
 
         with self.assertRaisesRegex(
@@ -226,7 +229,7 @@ class TestPartitioner(unittest.TestCase):
                     partition_tags=partition_tags,
                 )
 
-        model = capture_pre_autograd_graph(self.AddConst(), (torch.ones(2, 2),))
+        model = export_for_training(self.AddConst(), (torch.ones(2, 2),)).module()
         edge = exir.to_edge(export(model, (torch.ones(2, 2),)))
         delegated = edge.to_backend(PartitionerNoTagData())
 
@@ -235,7 +238,11 @@ class TestPartitioner(unittest.TestCase):
         self.assertEqual(
             len(owning_program.state_dict) + len(owning_program.constants), 3
         )
-        self.assertEqual(len(owning_program.graph_signature.buffers), 2)
+        self.assertEqual(
+            len(owning_program.graph_signature.buffers)
+            + len(owning_program.graph_signature.lifted_tensor_constants),
+            2,
+        )
         self.assertEqual(len(owning_program.graph_signature.parameters), 1)
 
         # Check Lowered Module Exported Program does not have any constant data
@@ -290,6 +297,7 @@ class TestPartitioner(unittest.TestCase):
                     if node.op == "placeholder" and (
                         is_param(edge_exported_program, node)
                         or is_buffer(edge_exported_program, node)
+                        or is_lifted_tensor_constant(edge_exported_program, node)
                     ):
                         delegation_tag = "tag0"
                         node.meta["delegation_tag"] = delegation_tag
@@ -300,7 +308,7 @@ class TestPartitioner(unittest.TestCase):
                     partition_tags=partition_tags,
                 )
 
-        model = capture_pre_autograd_graph(self.AddConst(), (torch.ones(2, 2),))
+        model = export_for_training(self.AddConst(), (torch.ones(2, 2),)).module()
         edge = exir.to_edge(export(model, (torch.ones(2, 2),)))
         delegated = edge.to_backend(PartitionerTagData())
 
@@ -324,7 +332,11 @@ class TestPartitioner(unittest.TestCase):
         )
         delegated_ep = lower_module.original_module
         self.assertEqual(len(delegated_ep.state_dict) + len(delegated_ep.constants), 3)
-        self.assertEqual(len(delegated_ep.graph_signature.buffers), 2)
+        self.assertEqual(
+            len(delegated_ep.graph_signature.buffers)
+            + len(delegated_ep.graph_signature.lifted_tensor_constants),
+            2,
+        )
         self.assertEqual(len(delegated_ep.graph_signature.parameters), 1)
 
         # check exported program is still runnable
@@ -371,7 +383,7 @@ class TestPartitioner(unittest.TestCase):
                     partition_tags=partition_tags,
                 )
 
-        model = capture_pre_autograd_graph(self.AddConst(), (torch.ones(2, 2),))
+        model = export_for_training(self.AddConst(), (torch.ones(2, 2),)).module()
         edge = exir.to_edge(export(model, (torch.ones(2, 2),)))
         delegated = edge.to_backend(PartitionerTagData())
 
@@ -380,7 +392,11 @@ class TestPartitioner(unittest.TestCase):
         self.assertEqual(
             len(owning_program.state_dict) + len(owning_program.constants), 2
         )
-        self.assertEqual(len(owning_program.graph_signature.buffers), 2)
+        self.assertEqual(
+            len(owning_program.graph_signature.buffers)
+            + len(owning_program.graph_signature.lifted_tensor_constants),
+            2,
+        )
         self.assertEqual(len(owning_program.graph_signature.parameters), 0)
 
         # Check Lowered Module Exported Program does not own any buffers
@@ -455,7 +471,7 @@ class TestPartitioner(unittest.TestCase):
                 )
 
         inputs = (torch.ones(2, 2),)
-        model = capture_pre_autograd_graph(ReuseConstData(), (torch.ones(2, 2),))
+        model = export_for_training(ReuseConstData(), (torch.ones(2, 2),)).module()
         edge = exir.to_edge(export(model, (torch.ones(2, 2),)))
         exec_prog = edge.to_backend(PartitionerTagData()).to_executorch()
         executorch_module = _load_for_executorch_from_buffer(exec_prog.buffer)
@@ -503,6 +519,7 @@ class TestPartitioner(unittest.TestCase):
                     if node.op == "placeholder" and (
                         is_param(edge_exported_program, node)
                         or is_buffer(edge_exported_program, node)
+                        or is_lifted_tensor_constant(edge_exported_program, node)
                     ):
                         delegation_tag = "tag0"
                         node.meta["delegation_tag"] = delegation_tag
@@ -514,14 +531,14 @@ class TestPartitioner(unittest.TestCase):
                     partition_tags=partition_tags,
                 )
 
-        model = capture_pre_autograd_graph(ReuseConstData(), (torch.ones(2, 2),))
+        model = export_for_training(ReuseConstData(), (torch.ones(2, 2),)).module()
         edge = exir.to_edge(export(model, (torch.ones(2, 2),)))
         with self.assertRaises(RuntimeError) as error:
             _ = edge.to_backend(PartitionerTagData())
 
-        self.assertEqual(
-            "constant data node (b_const) is tagged with (tag0) but has user (aten_sub_tensor) which has tag (None)",
-            str(error.exception),
+        self.assertTrue(
+            "is tagged with (tag0) but has user (aten_sub_tensor) which has tag (None)"
+            in str(error.exception),
         )
 
     def test_not_delegate_mutable_buffers(self) -> None:
@@ -605,3 +622,111 @@ class TestPartitioner(unittest.TestCase):
             and node.target == torch.ops.aten.copy_.default
         ]
         self.assertEqual(len(copy_node), 1)
+
+    def test_buffer_mutation1(self):
+        class TestModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("b", torch.ones(3, 3))
+
+            def forward(self, x):
+                self.b.add_(x)
+                return x + self.b
+
+        model_inputs = (torch.ones(3, 3),)
+        orig_res = TestModule()(*model_inputs)
+        edge_program = exir.to_edge(torch.export.export(TestModule(), model_inputs))
+        lowered = edge_program.to_backend(AddAttributePartitionerDemo())
+
+        self.assertTrue(
+            torch.allclose(lowered.exported_program().module()(*model_inputs), orig_res)
+        )
+
+        self.assertEqual(
+            len(lowered.exported_program().graph_signature.buffers_to_mutate),
+            0,
+        )
+        lowered_module_nodes = get_delegates(lowered.exported_program().graph)
+        self.assertEqual(len(lowered_module_nodes), 1)
+        lowered_module_node = lowered_module_nodes[0]
+
+        # get call delegate node
+        call_delegate_node = list(lowered_module_node.users.keys())[0]
+        self.assertEqual(len(call_delegate_node.args), 2)
+
+        lower_module = getattr(
+            lowered.exported_program().graph_module, lowered_module_node.name
+        )
+        delegated_ep = lower_module.original_module
+
+        self.assertEqual(len(delegated_ep.state_dict), 1)
+        self.assertEqual(len(delegated_ep.graph_signature.buffers_to_mutate), 1)
+        self.assertEqual(len(delegated_ep.graph_signature.buffers), 1)
+
+    def test_buffer_mutation_llama_repro(self):
+        SHAPE = (2, 3)
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("cache", torch.zeros(SHAPE, dtype=torch.float32))
+
+            def forward(self, q, k_val, input_pos):
+                q_T = q.transpose(0, 1)
+                k = torch.ops.aten.index_put_(self.cache, [input_pos, None], k_val)
+                attn = k.mm(q_T)
+                return attn
+
+        q = torch.rand(1, 3)
+        k = torch.rand(1, 3)
+        example_inputs = (q, k, torch.tensor([1, 1]))
+
+        model = Model()
+        model.eval()
+
+        exir_program_aten = torch.export.export(model, example_inputs)
+        exir_program_aten.module()(*example_inputs)
+        edge_program_manager = exir.to_edge(exir_program_aten)
+        lowered = edge_program_manager.to_backend(AllNodesPartitionerDemo())
+
+        self.assertEqual(
+            len(lowered.exported_program().graph_signature.buffers_to_mutate),
+            0,
+        )
+        lowered_module_nodes = get_delegates(lowered.exported_program().graph)
+        self.assertEqual(len(lowered_module_nodes), 1)
+        lowered_module_node = lowered_module_nodes[0]
+
+        # get call delegate node
+        call_delegate_node = list(lowered_module_node.users.keys())[0]
+        self.assertEqual(len(call_delegate_node.args), 4)
+
+        lower_module = getattr(
+            lowered.exported_program().graph_module, lowered_module_node.name
+        )
+        delegated_ep = lower_module.original_module
+
+        self.assertEqual(len(delegated_ep.state_dict), 1)
+        self.assertEqual(len(delegated_ep.graph_signature.buffers_to_mutate), 1)
+        self.assertEqual(len(delegated_ep.graph_signature.buffers), 1)
+
+    def test_buffer_mutation_unsupported(self):
+        SHAPE = (2, 3)
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state_1", torch.zeros(SHAPE, dtype=torch.float32))
+
+            def forward(self, x):
+                add = self.state_1.add_(x)
+                return add
+
+        model = Model()
+        model.eval()
+
+        example_inputs = (torch.randn(SHAPE),)
+        exir_program_aten = torch.export.export(model, example_inputs)
+        edge_program_manager = exir.to_edge(exir_program_aten)
+        with self.assertRaises(AssertionError):
+            edge_program_manager.to_backend(AddAttributePartitionerDemo())

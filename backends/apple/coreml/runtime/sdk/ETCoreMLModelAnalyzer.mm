@@ -5,22 +5,24 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import <ETCoreMLAsset.h>
-#import <ETCoreMLAssetManager.h>
-#import <ETCoreMLDefaultModelExecutor.h>
-#import <ETCoreMLLogging.h>
-#import <ETCoreMLModel.h>
-#import <ETCoreMLModelAnalyzer.h>
-#import <ETCoreMLModelLoader.h>
-#import <ETCoreMLModelStructurePath.h>
-#import <ETCoreMLModelDebugger.h>
-#import <ETCoreMLModelProfiler.h>
-#import <ETCoreMLStrings.h>
-#import <model_logging_options.h>
-#import <model_event_logger.h>
-#import <model_metadata.h>
-#import <model_package_info.h>
-#import <objc_safe_cast.h>
+#import "ETCoreMLModelAnalyzer.h"
+
+#import "ETCoreMLAsset.h"
+#import "ETCoreMLAssetManager.h"
+#import "ETCoreMLDefaultModelExecutor.h"
+#import "ETCoreMLLogging.h"
+#import "ETCoreMLModel.h"
+#import "ETCoreMLModelLoader.h"
+#import "ETCoreMLModelStructurePath.h"
+#import "ETCoreMLModelDebugInfo.h"
+#import "ETCoreMLModelDebugger.h"
+#import "ETCoreMLModelProfiler.h"
+#import "ETCoreMLStrings.h"
+#import "model_logging_options.h"
+#import "model_event_logger.h"
+#import "model_metadata.h"
+#import "model_package_info.h"
+#import "objc_safe_cast.h"
 
 namespace {
 using namespace executorchcoreml;
@@ -34,7 +36,7 @@ static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
 @property (strong, nonatomic, nullable) ETCoreMLModelProfiler *profiler;
 @property (strong, nonatomic, nullable) ETCoreMLModelDebugger *debugger;
 @property (strong, nonatomic, nullable) id<ETCoreMLModelExecutor> executor;
-@property (readonly, copy, nonatomic, nullable) NSDictionary<ETCoreMLModelStructurePath *, NSString *> *operationPathToDebugSymbolMap;
+@property (readonly, copy, nonatomic, nullable) ETCoreMLModelDebugInfo *modelDebugInfo;
 @property (readonly, strong, nonatomic) MLModelConfiguration *configuration;
 
 @end
@@ -43,8 +45,8 @@ static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
 
 - (nullable instancetype)initWithCompiledModelAsset:(ETCoreMLAsset *)compiledModelAsset
                                          modelAsset:(nullable ETCoreMLAsset *)modelAsset
+                                     modelDebugInfo:(nullable ETCoreMLModelDebugInfo *)modelDebugInfo
                                            metadata:(const executorchcoreml::ModelMetadata&)metadata
-                      operationPathToDebugSymbolMap:(nullable NSDictionary<ETCoreMLModelStructurePath *, NSString *> *)operationPathToDebugSymbolMap
                                       configuration:(MLModelConfiguration *)configuration
                                        assetManager:(ETCoreMLAssetManager *)assetManager
                                               error:(NSError * __autoreleasing *)error {
@@ -72,9 +74,9 @@ static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
     if (self) {
         _model = model;
         _modelAsset = modelAsset;
+        _modelDebugInfo = modelDebugInfo;
         _assetManager = assetManager;
         _configuration = configuration;
-        _operationPathToDebugSymbolMap = operationPathToDebugSymbolMap;
         _executor = [[ETCoreMLDefaultModelExecutor alloc] initWithModel:model];
     }
     
@@ -86,10 +88,9 @@ static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
                                                  eventLogger:(const executorchcoreml::ModelEventLogger *)eventLogger
                                                        error:(NSError * __autoreleasing *)error {
     if (self.profiler == nil) {
-        ETCoreMLModelProfiler *profiler = [[ETCoreMLModelProfiler alloc] initWithCompiledModelAsset:self.model.asset
-                                                                                        outputNames:self.model.orderedOutputNames
-                                                                                      configuration:self.configuration
-                                                                                              error:error];
+        ETCoreMLModelProfiler *profiler = [[ETCoreMLModelProfiler alloc] initWithModel:self.model
+                                                                         configuration:self.configuration
+                                                                                 error:error];
         self.profiler = profiler;
     }
        
@@ -113,7 +114,7 @@ static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
         return nil;
     }
     
-    eventLogger->log_profiling_infos(profilingInfos, self.operationPathToDebugSymbolMap);
+    eventLogger->log_profiling_infos(profilingInfos, self.modelDebugInfo.pathToDebugSymbolMap);
     return modelOutputs;
 }
 
@@ -131,6 +132,7 @@ static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
     
     if (!self.debugger) {
         self.debugger = [[ETCoreMLModelDebugger alloc] initWithModelAsset:self.modelAsset
+                                                           modelDebugInfo:self.modelDebugInfo
                                                               outputNames:self.model.orderedOutputNames
                                                             configuration:self.configuration
                                                              assetManager:self.assetManager
@@ -143,6 +145,7 @@ static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
     
     NSArray<MLMultiArray *> *modelOutputs = nil;
     NSArray<ETCoreMLModelStructurePath *> *operationPaths = self.debugger.operationPaths;
+    NSDictionary<ETCoreMLModelStructurePath *, NSString *> *operationPathToDebugSymbolMap = self.debugger.operationPathToDebugSymbolMap;
     NSInteger n = operationPaths.count/MAX_MODEL_OUTPUTS_COUNT + (operationPaths.count % MAX_MODEL_OUTPUTS_COUNT == 0 ? 0 : 1);
     for (NSInteger i = 0; i < n; i++) {
         @autoreleasepool {
@@ -157,7 +160,7 @@ static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
             }
             
             if (outputs.count > 0) {
-                eventLogger->log_intermediate_tensors(outputs, self.operationPathToDebugSymbolMap);
+                eventLogger->log_intermediate_tensors(outputs, operationPathToDebugSymbolMap);
             }
         }
     }

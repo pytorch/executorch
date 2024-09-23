@@ -13,7 +13,7 @@ examples
 ├── models                            # Contains a set of popular and representative PyTorch models
 ├── portable                          # Contains end-to-end demos for ExecuTorch in portable mode
 ├── selective_build                   # Contains demos of selective build for optimizing the binary size of the ExecuTorch runtime
-├── sdk                               # Contains demos of BundledProgram and ETDump
+├── devtools                          # Contains demos of BundledProgram and ETDump
 ├── demo-apps                         # Contains demo apps for Android and iOS
 ├── xnnpack                           # Contains end-to-end ExecuTorch demos with first-party optimization using XNNPACK
 ├── apple
@@ -35,13 +35,17 @@ A user's journey may commence by exploring the demos located in the [`portable/`
 
 [This page](./models/llama2/README.md) demonstrates how to run Llama 2 7B and Llama 3 8B models on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on Android and iOS mobile phones.
 
+## Demo of Llava1.5 7B
+
+[This page](./models/llava/README.md) demonstrates how to run [Llava 1.5 7B](https://github.com/haotian-liu/LLaVA) model on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on Android and iOS mobile phones.
+
 ## Demo of Selective Build
 
 To understand how to deploy the ExecuTorch runtime with optimization for binary size, explore the demos available in the [`selective_build/`](./selective_build) directory. These demos are specifically designed to illustrate the [Selective Build](../docs/source/kernel-library-selective_build.md), offering insights into reducing the binary size while maintaining efficiency.
 
-## Demo of ExecuTorch SDK
+## Demo of ExecuTorch Developer Tools
 
-You will find demos of [ExecuTorch SDK](./sdk/) in the [`sdk/`](./sdk/) directory. The examples focuses on exporting and executing BundledProgram for ExecuTorch model verification and ETDump for collecting profiling and debug data.
+You will find demos of [ExecuTorch Developer Tools](./devtools/) in the [`devtools/`](./devtools/) directory. The examples focuses on exporting and executing BundledProgram for ExecuTorch model verification and ETDump for collecting profiling and debug data.
 
 ## Demo Apps
 
@@ -63,9 +67,9 @@ The [`arm/`](./arm) directory contains scripts to help you run a PyTorch model o
 
 You will find demos of [ExecuTorch QNN Backend](./qualcomm) in the [`qualcomm/`](./qualcomm) directory.
 
-## Demo of ExecuTorch on Xtensa HiFi4 DSP
+## Demo of ExecuTorch on Cadence HiFi4 DSP
 
-The [`xtensa/`](./xtensa) directory hosts a demo that showcases the process of exporting and executing a model on Xtensa Hifi4 DSP. You can utilize [this tutorial](../docs/source/build-run-xtensa.md) to guide you in configuring the demo and running it.
+The [`Cadence/`](./cadence) directory hosts a demo that showcases the process of exporting and executing a model on Xtensa Hifi4 DSP. You can utilize [this tutorial](../docs/source/build-run-xtensa.md) to guide you in configuring the demo and running it.
 
 ## Dependencies
 

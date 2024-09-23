@@ -20,8 +20,8 @@
 using namespace ::testing;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
-using torch::executor::ArrayRef;
-using torch::executor::testing::TensorFactory;
+using executorch::runtime::ArrayRef;
+using executorch::runtime::testing::TensorFactory;
 
 TEST(BroadcastUtilTest, BroadcastTensor) {
   TensorFactory<ScalarType::Int> tf;
@@ -112,17 +112,17 @@ TEST(BroadcastUtilTest, GetBroadcastTargetSize) {
   Tensor a = tf.zeros({2, 1});
   Tensor b = tf.zeros({5, 1, 2});
 
-  get_broadcast_target_size(
+  executorch::runtime::Error err = get_broadcast_target_size(
       a,
       b,
       expected_output_size,
       torch::executor::kTensorDimensionLimit,
       &expected_output_dim);
+  EXPECT_EQ(err, torch::executor::Error::Ok);
 
   EXPECT_TRUE(
-      torch::executor::ArrayRef<Tensor::SizesType>(
-          expected_output_size, expected_output_dim)
-          .equals(torch::executor::ArrayRef<Tensor::SizesType>({5, 2, 2})));
+      ArrayRef<Tensor::SizesType>(expected_output_size, expected_output_dim)
+          .equals(ArrayRef<Tensor::SizesType>({5, 2, 2})));
 }
 
 size_t linearize_indexes(size_t* indexes, size_t indexes_len, const Tensor& t) {

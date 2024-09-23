@@ -24,13 +24,7 @@ class TestQuantizePerTensor(unittest.TestCase):
         (
             Tester(Quant(), inputs)
             .export()
-            .to_edge()
-            .check_count(
-                {
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 1
-                }
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -60,13 +54,7 @@ class TestQuantizePerTensor(unittest.TestCase):
         (
             Tester(Dequant(), inputs)
             .export()
-            .to_edge()
-            .check_count(
-                {
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 1
-                }
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [

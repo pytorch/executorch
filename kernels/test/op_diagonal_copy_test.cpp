@@ -27,7 +27,7 @@ Tensor& op_diagonal_copy_out(
     int64_t dim1,
     int64_t dim2,
     Tensor& out) {
-  exec_aten::RuntimeContext context{};
+  executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::aten::diagonal_copy_outf(
       context, input, offset, dim1, dim2, out);
 }

@@ -16,7 +16,7 @@ namespace native {
 
 using exec_aten::Tensor;
 
-Tensor& abs_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& abs_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape
@@ -28,6 +28,8 @@ Tensor& abs_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
       "Failed to resize output tensor.");
 
   ET_KERNEL_CHECK(ctx, tensors_have_same_dtype(in, out), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "abs.out", CTYPE, [&] {
     apply_unary_map_fn(

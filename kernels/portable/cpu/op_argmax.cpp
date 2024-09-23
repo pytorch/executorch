@@ -21,7 +21,7 @@ using exec_aten::optional;
 using exec_aten::Tensor;
 
 Tensor& argmax_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     optional<int64_t> dim,
     bool keepdim,
@@ -39,6 +39,9 @@ Tensor& argmax_out(
       resize_reduction_out(in, dim, keepdim, out) == Error::Ok,
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "argmax.out", CTYPE, [&] {
     long* out_data = out.mutable_data_ptr<long>();

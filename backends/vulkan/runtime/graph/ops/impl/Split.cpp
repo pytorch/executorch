@@ -25,7 +25,7 @@ void add_split_with_sizes_default_node(
     ValueRef out_list_ref) {
   vTensorPtr t_in = graph.get_tensor(in);
 
-  VK_CHECK_COND(check_memory_layout_is(*t_in, api::kChannelsPacked));
+  VK_CHECK_COND(check_packed_dim_is(*t_in, WHCN::kChannelsDim));
 
   ValueListPtr out_list = graph.get_value_list(out_list_ref);
 
@@ -38,44 +38,44 @@ void add_split_with_sizes_default_node(
     ValueRef out_ref = (*out_list)[split_idx];
 
     vTensorPtr t_out = graph.get_tensor(out_ref);
-    VK_CHECK_COND(check_memory_layout_is(*t_out, api::kChannelsPacked));
+    VK_CHECK_COND(check_packed_dim_is(*t_out, WHCN::kChannelsDim));
     VK_CHECK_COND(dim_at(*t_out, dim_index) == split_size);
   }
 
   if (dim_index == kWidth4D) {
-    api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
-    api::utils::ivec3 dst_offset = api::utils::make_ivec3({0, 0, 0}, false);
+    utils::ivec3 src_offset = utils::make_ivec3({0, 0, 0}, false);
+    utils::ivec3 dst_offset = utils::make_ivec3({0, 0, 0}, false);
 
     for (ValueRef out_ref : *out_list) {
       // Doesn't need to use split_size since we have already verified that the
       // output tensor's size matches with the split_size.
       vTensorPtr t_out = graph.get_tensor(out_ref);
-      api::utils::ivec3 range = t_out->texture_limits();
+      utils::ivec3 range = t_out->logical_limits();
       add_copy_offset_node(graph, in, range, src_offset, dst_offset, out_ref);
 
-      src_offset.data[0] += range.data[0];
+      src_offset[0] += range[0];
     }
   } else if (dim_index == kHeight4D) {
-    api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
-    api::utils::ivec3 dst_offset = api::utils::make_ivec3({0, 0, 0}, false);
+    utils::ivec3 src_offset = utils::make_ivec3({0, 0, 0}, false);
+    utils::ivec3 dst_offset = utils::make_ivec3({0, 0, 0}, false);
 
     for (ValueRef out_ref : *out_list) {
       vTensorPtr t_out = graph.get_tensor(out_ref);
-      api::utils::ivec3 range = t_out->texture_limits();
+      utils::ivec3 range = t_out->logical_limits();
       add_copy_offset_node(graph, in, range, src_offset, dst_offset, out_ref);
 
-      src_offset.data[1] += range.data[1];
+      src_offset[1] += range[1];
     }
   } else if (dim_index == kBatch4D) {
-    api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
-    api::utils::ivec3 dst_offset = api::utils::make_ivec3({0, 0, 0}, false);
+    utils::ivec3 src_offset = utils::make_ivec3({0, 0, 0}, false);
+    utils::ivec3 dst_offset = utils::make_ivec3({0, 0, 0}, false);
 
     for (ValueRef out_ref : *out_list) {
       vTensorPtr t_out = graph.get_tensor(out_ref);
-      api::utils::ivec3 range = t_out->texture_limits();
+      utils::ivec3 range = t_out->logical_limits();
       add_copy_offset_node(graph, in, range, src_offset, dst_offset, out_ref);
 
-      src_offset.data[2] += range.data[2];
+      src_offset[2] += range[2];
     }
   } else if (dim_index == kChannel4D) {
     int32_t src_offset = 0;

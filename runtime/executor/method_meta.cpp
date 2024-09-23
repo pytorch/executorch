@@ -15,8 +15,8 @@
 #include <executorch/runtime/executor/method_meta.h>
 #include <executorch/schema/program_generated.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 namespace {
 Result<Tag> get_tag(
@@ -59,7 +59,8 @@ size_t calculate_nbytes(
   for (ssize_t i = 0; i < sizes.size(); i++) {
     n *= sizes[i];
   }
-  return n * torch::executor::elementSize(scalar_type);
+  // Use the full namespace to disambiguate from c10::elementSize.
+  return n * executorch::runtime::elementSize(scalar_type);
 }
 
 } // namespace
@@ -67,10 +68,12 @@ size_t calculate_nbytes(
 TensorInfo::TensorInfo(
     Span<const int32_t> sizes,
     Span<const uint8_t> dim_order,
-    exec_aten::ScalarType scalar_type)
+    exec_aten::ScalarType scalar_type,
+    const bool is_memory_planned)
     : sizes_(sizes),
       dim_order_(dim_order),
       scalar_type_(scalar_type),
+      is_memory_planned_(is_memory_planned),
       nbytes_(calculate_nbytes(sizes_, scalar_type_)) {}
 
 Span<const int32_t> TensorInfo::sizes() const {
@@ -83,6 +86,10 @@ Span<const uint8_t> TensorInfo::dim_order() const {
 
 exec_aten::ScalarType TensorInfo::scalar_type() const {
   return scalar_type_;
+}
+
+bool TensorInfo::is_memory_planned() const {
+  return is_memory_planned_;
 }
 
 size_t TensorInfo::nbytes() const {
@@ -131,7 +138,8 @@ Result<TensorInfo> MethodMeta::input_tensor_meta(size_t index) const {
           tensor_value->sizes()->data(), tensor_value->sizes()->size()),
       Span<const uint8_t>(
           tensor_value->dim_order()->data(), tensor_value->dim_order()->size()),
-      static_cast<exec_aten::ScalarType>(tensor_value->scalar_type()));
+      static_cast<exec_aten::ScalarType>(tensor_value->scalar_type()),
+      tensor_value->allocation_info() != nullptr);
 }
 
 size_t MethodMeta::num_outputs() const {
@@ -169,7 +177,8 @@ Result<TensorInfo> MethodMeta::output_tensor_meta(size_t index) const {
           tensor_value->sizes()->data(), tensor_value->sizes()->size()),
       Span<const uint8_t>(
           tensor_value->dim_order()->data(), tensor_value->dim_order()->size()),
-      static_cast<exec_aten::ScalarType>(tensor_value->scalar_type()));
+      static_cast<exec_aten::ScalarType>(tensor_value->scalar_type()),
+      tensor_value->allocation_info() != nullptr);
 }
 
 size_t MethodMeta::num_memory_planned_buffers() const {
@@ -196,5 +205,5 @@ Result<int64_t> MethodMeta::memory_planned_buffer_size(size_t index) const {
   return s_plan_->non_const_buffer_sizes()->Get(index + 1);
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

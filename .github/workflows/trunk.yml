@@ -9,6 +9,7 @@ on:
       - ciflow/trunk/*
   pull_request:
     paths:
+      - .ci/docker/ci_commit_pins/pytorch.txt
       - .ci/scripts/**
   workflow_dispatch:
 
@@ -58,7 +59,7 @@ jobs:
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
         # Build and test xecutorch
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
 
   test-custom-ops-macos:
     name: test-custom-ops-macos
@@ -142,7 +143,6 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         source .ci/scripts/utils.sh
-        install_flatc_from_source
         install_executorch
 
         install_arm
@@ -168,7 +168,6 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         source .ci/scripts/utils.sh
-        install_flatc_from_source
         install_executorch
 
         install_arm
@@ -224,8 +223,10 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        build-tool: [buck2, cmake]
-        mode: [portable, xnnpack+kv+custom]
+        mode: [portable, xnnpack+kv+custom, mps, coreml]
+        include:
+          - dtype: bf16
+            mode: portable
       fail-fast: false
     with:
       runner: macos-m1-stable
@@ -234,16 +235,202 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
       script: |
-        bash .ci/scripts/setup-conda.sh
 
         DTYPE=${{ matrix.dtype }}
-        BUILD_TOOL=${{ matrix.build-tool }}
         MODE=${{ matrix.mode }}
 
+        bash .ci/scripts/setup-conda.sh
+
         # Setup executorch
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh cmake
+
+        if [[ "${MODE}" == "mps" ]]; then
+          # Install mps delegate
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/mps/install_requirements.sh
+          echo "Finishing installing mps."
+        elif [[ "${MODE}" == "coreml" ]]; then
+          # Install coreml delegate
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
+          echo "Finishing installing coreml."
+        fi
 
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/models/llama2/install_requirements.sh
         # Test llama2
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llama.sh stories110M.pt "${BUILD_TOOL}" "${DTYPE}" "${MODE}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llama.sh stories110M cmake "${DTYPE}" "${MODE}"
+
+  # # TODO(jackzhxng): Runner consistently runs out of memory before test finishes. Try to find a more powerful runner.
+  # test-llava-runner-macos:
+  #   name: test-llava-runner-macos
+  #   uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: macos-14-xlarge
+  #     python-version: '3.11'
+  #     submodules: 'true'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 900
+  #     script: |
+  #       BUILD_TOOL=cmake
+
+  #       bash .ci/scripts/setup-conda.sh
+  #       # Setup MacOS dependencies as there is no Docker support on MacOS atm
+  #       GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+
+  #       # install Llava requirements
+  #       ${CONDA_RUN} bash examples/models/llama2/install_requirements.sh
+  #       ${CONDA_RUN} bash examples/models/llava/install_requirements.sh
+
+  #       # run python unittest
+  #       ${CONDA_RUN} python -m unittest examples.models.llava.test.test_llava
+
+  #       # run e2e (export, tokenizer and runner)
+  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llava.sh Release
+
+  test-qnn-model:
+    name: test-qnn-model
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      matrix:
+        dtype: [fp32]
+        model: [dl3, mv3, mv2, ic4, ic3, vit]
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12-android
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 900
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
+
+  test-coreml-model:
+    name: test-coreml-model
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    strategy:
+      fail-fast: false
+    with:
+      runner: macos-m1-stable
+      python-version: '3.11'
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        BUILD_TOOL=cmake
+        BACKEND=coreml
+
+        bash .ci/scripts/setup-conda.sh
+
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
+        echo "Finishing installing coreml."
+
+        # Build and test coreml model
+        MODELS=(mv3 ic4 resnet50 edsr mobilebert w2l)
+        for MODEL_NAME in "${MODELS[@]}"; do
+          echo "::group::Exporting coreml model: $MODEL_NAME"
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
+          echo "::endgroup::"
+        done
+
+  test-huggingface-transformers:
+    name: test-huggingface-transformers
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    secrets: inherit
+    strategy:
+      matrix:
+        hf_model_repo: [google/gemma-2b]
+      fail-fast: false
+    with:
+      secrets-env: EXECUTORCH_HF_TOKEN
+      runner: linux.12xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        echo "::group::Set up ExecuTorch"
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
+
+        echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
+        rm -rf cmake-out
+        cmake \
+            -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+            -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+            -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+            -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+            -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+            -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+            -DEXECUTORCH_BUILD_XNNPACK=ON \
+            -DPYTHON_EXECUTABLE=python \
+            -Bcmake-out .
+        cmake --build cmake-out -j9 --target install --config Release
+
+        echo "Build llama runner"
+        dir="examples/models/llama2"
+        cmake \
+            -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+            -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+            -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+            -DEXECUTORCH_BUILD_XNNPACK=ON \
+            -DPYTHON_EXECUTABLE=python \
+            -Bcmake-out/${dir} \
+            ${dir}
+        cmake --build cmake-out/${dir} -j9 --config Release
+        echo "::endgroup::"
+
+        echo "::group::Set up HuggingFace Dependencies"
+        if [ -z "$SECRET_EXECUTORCH_HF_TOKEN" ]; then
+          echo "::error::SECRET_EXECUTORCH_HF_TOKEN is empty. For security reason secrets won't be accessible on forked PRs. Please make sure you submit a non-forked PR."
+          exit 1
+        fi
+        pip install -U "huggingface_hub[cli]"
+        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        pip install accelerate sentencepiece
+        # TODO(guangyang): Switch to use released transformers library after all required patches are included
+        pip install "git+https://github.com/huggingface/transformers.git@6cc4dfe3f1e8d421c6d6351388e06e9b123cbfe1"
+        pip list
+        echo "::endgroup::"
+
+        echo "::group::Export to ExecuTorch"
+        TOKENIZER_FILE=tokenizer.model
+        TOKENIZER_BIN_FILE=tokenizer.bin
+        ET_MODEL_NAME=et_model
+        # Fetch the file using a Python one-liner
+        DOWNLOADED_TOKENIZER_FILE_PATH=$(python -c "
+        from huggingface_hub import hf_hub_download
+        # Download the file from the Hugging Face Hub
+        downloaded_path = hf_hub_download(
+            repo_id='${{ matrix.hf_model_repo }}',
+            filename='${TOKENIZER_FILE}'
+        )
+        print(downloaded_path)
+        ")
+        if [ -f "$DOWNLOADED_TOKENIZER_FILE_PATH" ]; then
+            echo "${TOKENIZER_FILE} downloaded successfully at: $DOWNLOADED_TOKENIZER_FILE_PATH"
+            python -m extension.llm.tokenizer.tokenizer -t $DOWNLOADED_TOKENIZER_FILE_PATH -o ./${TOKENIZER_BIN_FILE}
+            ls ./tokenizer.bin
+        else
+            echo "Failed to download ${TOKENIZER_FILE} from ${{ matrix.hf_model_repo }}."
+            exit 1
+        fi
+
+        python -m extension.export_util.export_hf_model -hfm=${{ matrix.hf_model_repo }} -o ${ET_MODEL_NAME}
+
+        cmake-out/examples/models/llama2/llama_main --model_path=${ET_MODEL_NAME}.pte --tokenizer_path=${TOKENIZER_BIN_FILE} --prompt="My name is"
+        echo "::endgroup::"

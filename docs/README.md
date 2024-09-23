@@ -94,21 +94,18 @@ To build the documentation locally:
 
 You can use custom variables in your `.md` and `.rst` files. The variables take
 their values from the files listed in the `./.ci/docker/ci_commit_pins/`
-directory. For example, to insert a variable that specifies the latest Buck2
+directory. For example, to insert a variable that specifies the latest PyTorch
 version, use the following syntax:
 
 ```
-The current version of Buck2 is ${executorch_version:buck2}.
+The current version of PyTorch is ${executorch_version:pytorch}.
 ```
 
 This will result in the following output:
 
 <img src="./source/_static/img/s_custom_variables_extension.png" width="300">
 
-We have the following custom variables defined in this docset:
-
-- `${executorch_version:buck2}`
-- `${executorch_version:pytorch}`
+Right now we only support PyTorch version as custom variable, but will support others in the future.
 
 You can use the variables in both regular text and code blocks.
 

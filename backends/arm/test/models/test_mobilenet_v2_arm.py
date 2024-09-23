@@ -22,8 +22,9 @@ logger.setLevel(logging.INFO)
 
 
 class TestMobileNetV2(unittest.TestCase):
+    """Tests MobileNetV2."""
 
-    mv2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights)
+    mv2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT)
     mv2 = mv2.eval()
     normalize = transforms.Normalize(
         mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
@@ -60,7 +61,7 @@ class TestMobileNetV2(unittest.TestCase):
             .check(list(self.all_operators))
             .partition()
             .to_executorch()
-            .run_method_and_compare_outputs()
+            .run_method_and_compare_outputs(inputs=self.model_inputs)
         )
 
     def test_mv2_tosa_BI(self):
@@ -83,7 +84,7 @@ class TestMobileNetV2(unittest.TestCase):
         )
 
     def test_mv2_u55_BI(self):
-        (
+        tester = (
             ArmTester(
                 self.mv2,
                 example_inputs=self.model_inputs,
@@ -95,4 +96,9 @@ class TestMobileNetV2(unittest.TestCase):
             .check(list(self.operators_after_quantization))
             .partition()
             .to_executorch()
+            .serialize()
         )
+        if common.is_option_enabled("corstone300"):
+            tester.run_method_and_compare_outputs(
+                atol=1.0, qtol=1, inputs=self.model_inputs
+            )

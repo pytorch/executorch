@@ -18,18 +18,17 @@
 #include <sys/types.h>
 #endif
 
-namespace torch {
-namespace executor {
-namespace util {
+namespace executorch {
+namespace extension {
 
 /**
  * A DataLoader that loads segments from a file, allocating the memory
  * with `malloc()`.
  *
  * Note that this will keep the file open for the duration of its lifetime, to
- * avoid the overhead of opening it again for every Load() call.
+ * avoid the overhead of opening it again for every load() call.
  */
-class MmapDataLoader : public DataLoader {
+class MmapDataLoader final : public executorch::runtime::DataLoader {
  public:
   /**
    * Describes how and whether to lock loaded pages with `mlock()`.
@@ -53,24 +52,26 @@ class MmapDataLoader : public DataLoader {
    *
    * @param[in] file_name The path to the file to load from. The file will be
    *     kept open until the MmapDataLoader is destroyed, to avoid the
-   *     overhead of opening it again for every Load() call.
+   *     overhead of opening it again for every load() call.
    * @param[in] mlock_config How and whether to lock loaded pages with
    *     `mlock()`.
    */
-  static Result<MmapDataLoader> from(
+  static executorch::runtime::Result<MmapDataLoader> from(
       const char* file_name,
       MlockConfig mlock_config = MlockConfig::UseMlock);
 
   /// DEPRECATED: Use the lowercase `from()` instead.
-  __ET_DEPRECATED static Result<MmapDataLoader> From(
+  ET_DEPRECATED static executorch::runtime::Result<MmapDataLoader> From(
       const char* file_name,
       MlockConfig mlock_config = MlockConfig::UseMlock) {
     return from(file_name, mlock_config);
   }
 
   /// DEPRECATED: Use the version of `from()` that takes an MlockConfig.
-  __ET_DEPRECATED
-  static Result<MmapDataLoader> From(const char* file_name, bool use_mlock) {
+  ET_DEPRECATED
+  static executorch::runtime::Result<MmapDataLoader> From(
+      const char* file_name,
+      bool use_mlock) {
     MlockConfig mlock_config =
         use_mlock ? MlockConfig::UseMlock : MlockConfig::NoMlock;
     return from(file_name, mlock_config);
@@ -88,24 +89,27 @@ class MmapDataLoader : public DataLoader {
         fd_(rhs.fd_),
 #endif
         mlock_config_(rhs.mlock_config_) {
-    rhs.file_name_ = nullptr;
-    rhs.file_size_ = 0;
-    rhs.page_size_ = 0;
 #ifdef _WIN32
-    rhs.file_handle_ = INVALID_HANDLE_VALUE;
-    rhs.mapping_handle_ = nullptr;
+    const_cast<HANDLE&>(rhs.file_handle_) = INVALID_HANDLE_VALUE;
+    const_cast<HANDLE&>(rhs.mapping_handle_) = nullptr;
 #else
-    rhs.fd_ = -1;
+    const_cast<int&>(rhs.fd_) = -1;
 #endif
-    rhs.mlock_config_ = MlockConfig::NoMlock;
+    const_cast<const char*&>(rhs.file_name_) = nullptr;
+    const_cast<size_t&>(rhs.file_size_) = 0;
+    const_cast<size_t&>(rhs.page_size_) = 0;
+    const_cast<MlockConfig&>(rhs.mlock_config_) = MlockConfig::NoMlock;
   }
 
   ~MmapDataLoader() override;
 
-  __ET_NODISCARD Result<FreeableBuffer> Load(size_t offset, size_t size)
-      override;
+  ET_NODISCARD
+  executorch::runtime::Result<executorch::runtime::FreeableBuffer> load(
+      size_t offset,
+      size_t size,
+      const DataLoader::SegmentInfo& segment_info) const override;
 
-  __ET_NODISCARD Result<size_t> size() const override;
+  ET_NODISCARD executorch::runtime::Result<size_t> size() const override;
 
  private:
   MmapDataLoader(
@@ -136,17 +140,26 @@ class MmapDataLoader : public DataLoader {
   MmapDataLoader& operator=(MmapDataLoader&&) = delete;
 
   const char* file_name_; // String data is owned by the instance.
-  size_t file_size_;
-  size_t page_size_;
+  const size_t file_size_;
+  const size_t page_size_;
 #ifdef _WIN32
-  HANDLE file_handle_;
-  HANDLE mapping_handle_;
+  const HANDLE file_handle_;
+  const HANDLE mapping_handle_;
 #else
-  int fd_; // Owned by the instance.
+  const int fd_; // Owned by the instance.
 #endif
-  MlockConfig mlock_config_;
+  const MlockConfig mlock_config_;
 };
 
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace util {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::MmapDataLoader;
 } // namespace util
 } // namespace executor
 } // namespace torch

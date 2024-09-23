@@ -33,6 +33,7 @@ libexecutorch_no_prim_ops.a,\
 libextension_apple.a,\
 libextension_data_loader.a,\
 libextension_module.a,\
+libextension_tensor.a,\
 :$HEADERS_PATH"
 
 FRAMEWORK_BACKEND_COREML="backend_coreml:\
@@ -76,7 +77,7 @@ usage() {
   echo
   echo "Options:"
   echo "  --output=DIR         Output directory. Default: 'cmake-out'"
-  echo "  --Debug              Use Debug build mode. Default: 'Release'"
+  echo "  --Debug              Use Debug build mode. Default: Uses Release build mode."
   echo "  --toolchain=FILE     Cmake toolchain file. Default: '\$SOURCE_ROOT_DIR/third-party/ios-cmake/ios.toolchain.cmake'"
   echo "  --buck2=FILE         Buck2 executable path. Default: Path of buck2 found in the current \$PATH"
   echo "  --python=FILE        Python executable path. Default: Path of python3 found in the current \$PATH"
@@ -90,7 +91,7 @@ usage() {
   echo "  --xnnpack            Include this flag to build the XNNPACK backend."
   echo
   echo "Example:"
-  echo "  $0 /path/to/source/root --output=cmake-out --Release --toolchain=/path/to/cmake/toolchain --buck2=/path/to/buck2 --python=/path/to/python3 --coreml --mps --xnnpack"
+  echo "  $0 /path/to/source/root --output=cmake-out --toolchain=/path/to/cmake/toolchain --buck2=/path/to/buck2 --python=/path/to/python3 --coreml --mps --xnnpack"
   exit 0
 }
 
@@ -162,9 +163,11 @@ cmake_build() {
         -DEXECUTORCH_BUILD_COREML=$COREML \
         -DEXECUTORCH_BUILD_MPS=$MPS \
         -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
+        -DEXECUTORCH_XNNPACK_SHARED_WORKSPACE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_APPLE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM=$CUSTOM \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=$OPTIMIZED \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=$QUANTIZED \
@@ -188,6 +191,7 @@ mkdir -p "$HEADERS_PATH"
 
 "$SOURCE_ROOT_DIR"/build/print_exported_headers.py --buck2="$BUCK2" --targets \
   //extension/module: \
+  //extension/tensor: \
 | rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_PATH/executorch"
 
 cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.h "$HEADERS_PATH/executorch"

@@ -12,8 +12,8 @@
 
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * Represent a reference to an array (0 or more elements
@@ -93,5 +93,13 @@ class Span final {
   size_type length_;
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::Span;
 } // namespace executor
 } // namespace torch

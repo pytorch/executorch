@@ -1,104 +1,141 @@
-# Building ExecuTorch LLaMA Android Demo App
+# ExecuTorch Llama Android Demo App
 
-This app demonstrates the use of the LLaMA chat app demonstrating local inference use case with ExecuTorch.
+We’re excited to share that the newly revamped Android demo app is live and includes many new updates to provide a more intuitive and smoother user experience with a chat use case! The primary goal of this app is to showcase how easily ExecuTorch can be integrated into an Android demo app and how to exercise the many features ExecuTorch and Llama models have to offer.
 
-## Prerequisites
-* Set up your ExecuTorch repo and environment if you haven’t done so by following the [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup) to set up the repo and dev environment.
-* Install [Java 17 JDK](https://www.oracle.com/java/technologies/javase/jdk17-archive-downloads.html).
-* Install the [Android SDK API Level 34](https://developer.android.com/about/versions/14/setup-sdk) and
-  [Android NDK 25.0.8775105](https://developer.android.com/studio/projects/install-ndk).
- * If you have Android Studio set up, you can install them with
-   * Android Studio Settings -> Language & Frameworks -> Android SDK -> SDK Platforms -> Check the row with API Level 34.
-   * Android Studio Settings -> Language & Frameworks -> Android SDK -> SDK Tools -> Check NDK (Side by side) row.
- * Alternatively, you can follow [this guide](https://github.com/pytorch/executorch/blob/856e085b9344c8b0bf220a97976140a5b76356aa/examples/demo-apps/android/LlamaDemo/SDK.md) to set up Java/SDK/NDK with CLI.
-* Supported Host OS: CentOS, macOS Sonoma on Apple Silicon.
+This app serves as a valuable resource to inspire your creativity and provide foundational code that you can customize and adapt for your particular use case.
 
-Note: This demo app and tutorial has only been validated with arm64-v8a [ABI](https://developer.android.com/ndk/guides/abis), with NDK 25.0.8775105.
+Please dive in and start exploring our demo app today! We look forward to any feedback and are excited to see your innovative ideas.
 
-## Getting models
-Please refer to the [ExecuTorch Llama2 docs](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/README.md) to export the model.
 
-After you export the model and generate tokenizer.bin, push them device:
-```bash
-adb shell mkdir -p /data/local/tmp/llama
-adb push llama2.pte /data/local/tmp/llama
-adb push tokenizer.bin /data/local/tmp/llama
-```
+## Key Concepts
+From this demo app, you will learn many key concepts such as:
+* How to prepare Llama models, build the ExecuTorch library, and model inferencing across delegates
+* Expose the ExecuTorch library via JNI layer
+* Familiarity with current ExecuTorch app-facing capabilities
 
-Note: The demo app searches in `/data/local/tmp/llama` for .pte and .bin files as LLAMA model and tokenizer.
+The goal is for you to see the type of support ExecuTorch provides and feel comfortable with leveraging it for your use cases.
 
-## Build library
-For the demo app to build, we need to build the ExecuTorch AAR library first.
+## Supporting Models
+As a whole, the models that this app supports are (varies by delegate):
+* Llama 3.1 8B
+* Llama 3 8B
+* Llama 2 7B
+* LLaVA-1.5 vision model (only XNNPACK)
 
-The AAR library contains the required Java package and the corresponding JNI
-library for using ExecuTorch in your Android app.
 
-### Alternative 1: Use prebuilt AAR library (recommended)
+## Building the APK
+First it’s important to note that currently ExecuTorch provides support across 3 delegates. Once you identify the delegate of your choice, select the README link to get a complete end-to-end instructions for environment set-up to exporting the models to build ExecuTorch libraries and apps to run on device:
 
-1. Open a terminal window and navigate to the root directory of the `executorch`.
-2. Run the following command to download the prebuilt library:
-```bash
-bash examples/demo-apps/android/LlamaDemo/download_prebuilt_lib.sh
-```
+| Delegate      | Resource |
+| ------------- | ------------- |
+| XNNPACK (CPU-based library)  | [link](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/xnnpack_README.md) |
+| QNN (Qualcomm AI Accelerators)  | [link](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/qualcomm_README.md) |
+| MediaTek (MediaTek AI Accelerators)  | [link](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/mediatek_README.md)  |
 
-The prebuilt AAR library contains the Java library and the JNI binding for
-NativePeer.java and ExecuTorch native library, including core ExecuTorch
-runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels,
-and Quantized kernels. It comes with two ABI variants, arm64-v8a and x86_64.
+## How to Use the App
 
-If you want to use the prebuilt library for your own app, please refer to
-[Using Android prebuilt libraries (AAR)](./android-prebuilt-library.md) for
-tutorial.
+This section will provide the main steps to use the app, along with a code snippet of the ExecuTorch API.
 
-If you need to use other dependencies (like tokenizer), please refer to
-Alternative 2: Build from local machine option.
-
-### Alternative 2: Build from local machine
-1. Open a terminal window and navigate to the root directory of the `executorch`.
-2. Set the following environment variables:
-```bash
-export ANDROID_NDK=<path_to_android_ndk>
-export ANDROID_ABI=arm64-v8a
-```
-Note: `<path_to_android_ndk>` is the root for the NDK, which is usually under
-`~/Library/Android/sdk/ndk/XX.Y.ZZZZZ` for macOS, and contains NOTICE and README.md.
-We use `<path_to_android_ndk>/build/cmake/android.toolchain.cmake` for CMake to cross-compile.
-
-3. (Optional) If you need to use tiktoken as the tokenizer (for LLaMA3), set
-`EXECUTORCH_USE_TIKTOKEN=ON` and later CMake will use it as the tokenizer.
-If you need to run other models like LLaMA2, skip this skip.
-
-```bash
-export EXECUTORCH_USE_TIKTOKEN=ON # Only for LLaMA3
-```
-
-4. Run the following command set up the required JNI library:
-```bash
-pushd examples/demo-apps/android/LlamaDemo
-./gradlew :app:setup
-popd
-```
-This is running the shell script [setup.sh](./setup.sh) which configures the required core ExecuTorch, LLAMA2, and Android libraries, builds them, and copy to jniLibs.
-
-## Build APK
-### Alternative 1: Android Studio (Recommended)
+For loading the app, development, and running on device we recommend Android Studio:
 1. Open Android Studio and select "Open an existing Android Studio project" to open examples/demo-apps/android/LlamaDemo.
 2. Run the app (^R). This builds and launches the app on the phone.
 
-### Alternative 2: Command line
-Without Android Studio UI, we can run gradle directly to build the app. We need to set up the Android SDK path and invoke gradle.
-```bash
-export ANDROID_HOME=<path_to_android_sdk_home>
-pushd examples/demo-apps/android/LlamaDemo
-./gradlew :app:installDebug
-popd
+### Opening the App
+
+Below are the UI features for the app.
+
+Select the settings widget to get started with picking a model, its parameters and any prompts.
+<p align="center">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/opening_the_app_details.png" width=800>
+</p>
+
+
+
+### Select Models and Parameters
+
+Once you've selected the model, tokenizer, and model type you are ready to click on "Load Model" to have the app load the model and go back to the main Chat activity.
+<p align="center">
+      <img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/settings_menu.png" width=300>
+</p>
+
+
+
+Optional Parameters:
+* Temperature: Defaulted to 0, you can adjust the temperature for the model as well. The model will reload upon any adjustments.
+* System Prompt: Without any formatting, you can enter in a system prompt. For example, "you are a travel assistant" or "give me a response in a few sentences".
+* User Prompt: More for the advanced user, if you would like to manually input a prompt then you can do so by modifying the `{{user prompt}}`. You can also modify the special tokens as well. Once changed then go back to the main Chat activity to send.
+
+> [!TIP]
+> Helpful ExecuTorch API in app
+
+```java
+// Upon returning to the Main Chat Activity
+mModule = new LlamaModule(
+            ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType()),
+            modelPath,
+            tokenizerPath,
+            temperature);
+int loadResult = mModule.load();
 ```
 
-On the phone or emulator, you can try running the model:
-<img src="../_static/img/android_llama_app.png" alt="Android LLaMA App" /><br>
+* `modelCategory`: Indicate whether it’s a text-only or vision model
+* `modePath`: path to the .pte file
+* `tokenizerPath`: path to the tokenizer .bin file
+* `temperature`: model parameter to adjust the randomness of the model’s output
 
-## Takeaways
-Through this tutorial we've learnt how to build the ExecuTorch LLAMA library, and expose it to JNI layer to build the Android app.
+
+### User Prompt
+Once model is successfully loaded then enter any prompt and click the send (i.e. generate) button to send it to the model.
+<p align="center">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/load_complete_and_start_prompt.png" width=300>
+</p>
+
+You can provide it more follow-up questions as well.
+<p align="center">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/chat.png" width=300>
+</p>
+
+> [!TIP]
+> Helpful ExecuTorch API in app
+```java
+mModule.generate(prompt,sequence_length, MainActivity.this);
+```
+* `prompt`: User formatted prompt
+* `sequence_length`: Number of tokens to generate in response to a prompt
+* `MainActivity.this`: Indicate that the callback functions (OnResult(), OnStats()) are present in this class.
+
+[*LLaVA-1.5: Only for XNNPACK delegate*]
+
+For LLaVA-1.5 implementation, select the exported LLaVA .pte and tokenizer file in the Settings menu and load the model. After this you can send an image from your gallery or take a live picture along with a text prompt to the model.
+
+<p align="center">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/llava_example.png" width=300>
+</p>
+
+
+### Output Generated
+To show completion of the follow-up question, here is the complete detailed response from the model.
+<p align="center">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/chat_response.png" width=300>
+</p>
+
+> [!TIP]
+> Helpful ExecuTorch API in app
+
+Ensure you have the following functions in your callback class that you provided in the `mModule.generate()`. For this example, it is `MainActivity.this`.
+```java
+  @Override
+  public void onResult(String result) {
+    //...result contains token from response
+    //.. onResult will continue to be invoked until response is complete
+  }
+
+  @Override
+  public void onStats(float tps) {
+    //...tps (tokens per second) stats is provided by framework
+  }
+
+```
 
 ## Reporting Issues
 If you encountered any bugs or issues following this tutorial please file a bug/issue here on [Github](https://github.com/pytorch/executorch/issues/new).

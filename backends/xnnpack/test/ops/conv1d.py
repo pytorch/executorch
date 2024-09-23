@@ -7,9 +7,15 @@
 import unittest
 
 import torch
+from executorch.backends.xnnpack.partition.config.xnnpack_config import (
+    ConfigPrecisionType,
+)
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.test.test_xnnpack_utils import randomize_bn
 
-from executorch.backends.xnnpack.test.tester import Tester
+from executorch.backends.xnnpack.test.tester import RunPasses, Tester
+from executorch.backends.xnnpack.test.tester.tester import ToEdgeTransformAndLower
+from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 
 
 class TestConv1d(unittest.TestCase):
@@ -82,29 +88,33 @@ class TestConv1d(unittest.TestCase):
             return z
 
     def _test_conv1d(
-        self, module, inputs, conv_count, quantized=False, dynamic_shape=None
+        self,
+        module,
+        inputs,
+        conv_count,
+        quantized=False,
+        dynamic_shape=None,
+        passes=None,
+        stage=None,
+        skip_to_executorch=False,
     ):
-        (
+        tester = (
             (
                 Tester(module, inputs, dynamic_shape).quantize()
                 if quantized
                 else Tester(module, inputs)
             )
             .export()
-            .check_count({"torch.ops.aten.convolution.default": conv_count})
-            .to_edge()
-            .check_count(
-                {
-                    "executorch_exir_dialects_edge__ops_aten_convolution_default": conv_count
-                }
-            )
-            .partition()
+            .run_passes(passes)
+            .check_count({"torch.ops.aten.conv1d.default": conv_count})
+            .to_edge_transform_and_lower(stage)
             .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
         )
+        # For some tests we want to skip to_executorch because otherwise it will require the
+        # quantized operators to be loaded and we don't want to do that in the test.
+        if not skip_to_executorch:
+            tester.to_executorch().serialize().run_method_and_compare_outputs()
 
     def test_fp16_conv1d(self):
         inputs = (torch.randn(2, 2, 4).to(torch.float16),)
@@ -144,4 +154,22 @@ class TestConv1d(unittest.TestCase):
             2,
             quantized=True,
             dynamic_shape=dynamic_shapes,
+        )
+
+    def test_qs8_conv1d_with_floating_point_partitioner(self):
+        inputs = (torch.randn(2, 2, 4),)
+        dynamic_shapes = ({0: torch.export.Dim("batch", min=2, max=10)},)
+        self._test_conv1d(
+            self.Conv1d(),
+            inputs,
+            1,
+            quantized=True,
+            dynamic_shape=dynamic_shapes,
+            stage=ToEdgeTransformAndLower(
+                partitioners=[
+                    XnnpackPartitioner(config_precisions=ConfigPrecisionType.FP32)
+                ]
+            ),
+            passes=RunPasses(pass_functions=[constant_prop_pass]),
+            skip_to_executorch=True,
         )

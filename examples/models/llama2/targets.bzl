@@ -10,14 +10,15 @@ def define_common_targets():
                 srcs = [
                     "main.cpp",
                 ],
+                compiler_flags = ["-Wno-global-constructors"],
                 preprocessor_flags = [
                     "-DUSE_ATEN_LIB",
                 ] if aten else [],
                 deps = [
                     "//executorch/examples/models/llama2/runner:runner" + aten_suffix,
                     "//executorch/extension/evalue_util:print_evalue",
-                    "//executorch/backends/xnnpack/threadpool:threadpool",
-                    "//executorch/backends/xnnpack/threadpool:cpuinfo_utils",
+                    "//executorch/extension/threadpool:threadpool",
+                    "//executorch/extension/threadpool:cpuinfo_utils",
                 ],
                 external_deps = [
                     "gflags",

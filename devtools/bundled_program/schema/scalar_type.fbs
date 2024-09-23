@@ -1,0 +1,32 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+
+//
+// See README.md before modifying this file.
+//
+
+namespace executorch_flatbuffer;
+
+// The scalar data type.
+// Must match executorch/runtime/core/portable_type/tensor_impl.h
+enum ScalarType : byte {
+  BYTE = 0,
+  CHAR = 1,
+  SHORT = 2,
+  INT = 3,
+  LONG = 4,
+  HALF = 5,
+  FLOAT = 6,
+  DOUBLE = 7,
+  BOOL = 11,
+  // TODO(jakeszwe): Verify these are unused and then remove support
+  QINT8 = 12,
+  QUINT8 = 13,
+  QINT32 = 14,
+  QUINT4X2 = 16,
+  QUINT2X4 = 17,
+  // Types currently not implemented.
+  // COMPLEXHALF = 8,
+  // COMPLEXFLOAT = 9,
+  // COMPLEXDOUBLE = 10,
+  // BFLOAT16 = 15,
+}

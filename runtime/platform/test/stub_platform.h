@@ -37,13 +37,19 @@ class PlatformIntercept {
 
   /// Called when et_pal_emit_log_message() is called.
   virtual void emit_log_message(
-      __ET_UNUSED et_timestamp_t timestamp,
-      __ET_UNUSED et_pal_log_level_t level,
-      __ET_UNUSED const char* filename,
-      __ET_UNUSED const char* function,
-      __ET_UNUSED size_t line,
-      __ET_UNUSED const char* message,
-      __ET_UNUSED size_t length) {}
+      ET_UNUSED et_timestamp_t timestamp,
+      ET_UNUSED et_pal_log_level_t level,
+      ET_UNUSED const char* filename,
+      ET_UNUSED const char* function,
+      ET_UNUSED size_t line,
+      ET_UNUSED const char* message,
+      ET_UNUSED size_t length) {}
+
+  virtual void* allocate(ET_UNUSED size_t size) {
+    return nullptr;
+  }
+
+  virtual void free(ET_UNUSED void* ptr) {}
 
   virtual ~PlatformIntercept() = default;
 };

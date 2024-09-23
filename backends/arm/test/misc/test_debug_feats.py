@@ -41,6 +41,8 @@ class Linear(torch.nn.Module):
 
 
 class TestDumpPartitionedArtifact(unittest.TestCase):
+    """Tests dumping the partition artifact in ArmTester. Both to file and to stdout."""
+
     def _tosa_MI_pipeline(self, module: torch.nn.Module, dump_file=None):
         (
             ArmTester(
@@ -96,6 +98,8 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
 
 
 class TestNumericalDiffPrints(unittest.TestCase):
+    """Tests trigging the exception printout from the ArmTester's run and compare function."""
+
     def test_numerical_diff_prints(self):
         model = Linear(20, 30)
         tester = (
@@ -120,3 +124,28 @@ class TestNumericalDiffPrints(unittest.TestCase):
             pass  # Implicit pass test
         else:
             self.fail()
+
+
+class TestDumpOperatorsAndDtypes(unittest.TestCase):
+    def test_dump_ops_and_dtypes(self):
+        model = Linear(20, 30)
+        (
+            ArmTester(
+                model,
+                example_inputs=model.get_inputs(),
+                compile_spec=common.get_tosa_compile_spec(),
+            )
+            .quantize()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+            .export()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+            .to_edge()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+            .partition()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+        )
+        # Just test that there are no execeptions.

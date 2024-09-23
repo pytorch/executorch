@@ -102,7 +102,7 @@ class ComboConv2dMeandim(torch.nn.Module):
         return self.adaptive_avg_pool2d(x)
 
 
-class ComboConvBatchnormRelu(torch.nn.Module):
+class ComboConvBatchnormRelu6(torch.nn.Module):
     edge_op_list = [
         "executorch_exir_dialects_edge__ops_aten_convolution_default",
         "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
@@ -154,6 +154,8 @@ class ComboConvRelu6(torch.nn.Module):
 
 
 class TestConvCombos(unittest.TestCase):
+    """Tests conv combined with other ops."""
+
     def _test_conv_combo_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
@@ -169,7 +171,7 @@ class TestConvCombos(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(list(module.edge_op_list))
             .to_executorch()
-            .run_method_and_compare_outputs()
+            .run_method_and_compare_outputs(inputs=test_data)
         )
 
     def _test_conv_combo_tosa_BI_pipeline(
@@ -192,7 +194,9 @@ class TestConvCombos(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(list(module.edge_op_list))
             .to_executorch()
-            .run_method_and_compare_outputs(atol=atol, rtol=rtol, qtol=1)
+            .run_method_and_compare_outputs(
+                inputs=test_data, atol=atol, rtol=rtol, qtol=1
+            )
         )
 
     def _test_conv_combo_u55_BI_pipeline(
@@ -231,16 +235,16 @@ class TestConvCombos(unittest.TestCase):
     ##############################
     ## Conv + batch norm + relu ##
     ##############################
-    def test_conv_batchnorm_relu_tosa_MI(self):
-        model = ComboConvBatchnormRelu()
+    def test_conv_batchnorm_relu6_tosa_MI(self):
+        model = ComboConvBatchnormRelu6()
         self._test_conv_combo_tosa_MI_pipeline(model, model.get_inputs())
 
-    def test_conv_batchnorm_relu_tosa_BI(self):
-        model = ComboConvBatchnormRelu()
+    def test_conv_batchnorm_relu6_tosa_BI(self):
+        model = ComboConvBatchnormRelu6()
         self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())
 
-    def test_conv_batchnorm_relu_u55_BI(self):
-        model = ComboConvBatchnormRelu()
+    def test_conv_batchnorm_relu6_u55_BI(self):
+        model = ComboConvBatchnormRelu6()
         self._test_conv_combo_u55_BI_pipeline(model, model.get_inputs())
 
     ##################

@@ -30,14 +30,12 @@ void check_qlinear_args(
   VK_CHECK_COND(qmat2_sizes.size() == 2);
   VK_CHECK_COND(scales_sizes.size() == 1);
 
-  VK_CHECK_COND(graph.memory_layout_of(mat1) == graph.memory_layout_of(out));
+  VK_CHECK_COND(graph.packed_dim_of(mat1) == graph.packed_dim_of(out));
 
   VK_CHECK_COND(
-      api::utils::val_at(-1, mat1_sizes) ==
-      api::utils::val_at(-1, qmat2_sizes));
+      utils::val_at(-1, mat1_sizes) == utils::val_at(-1, qmat2_sizes));
   VK_CHECK_COND(
-      api::utils::val_at(-1, scales_sizes) ==
-      api::utils::val_at(-2, qmat2_sizes));
+      utils::val_at(-1, scales_sizes) == utils::val_at(-2, qmat2_sizes));
 }
 
 void resize_qlinear_node(
@@ -50,8 +48,8 @@ void resize_qlinear_node(
   vTensorPtr mat1 = graph->get_tensor(args[1].refs[0]);
   vTensorPtr qmat2 = graph->get_tensor(args[1].refs[1]);
 
-  const int out_cols = api::utils::val_at(-2, mat1->sizes());
-  const int out_rows = api::utils::val_at(-2, qmat2->sizes());
+  const int out_cols = utils::val_at(-2, mat1->sizes());
+  const int out_rows = utils::val_at(-2, qmat2->sizes());
 
   std::vector<int64_t> new_out_sizes(3);
   if (mat1->sizes().size() == 2) {
@@ -74,29 +72,29 @@ void add_q_8w_linear_node(
     const ValueRef scales_data,
     const ValueRef out) {
   ValueRef q_mat2 =
-      prepack_if_tensor_ref(graph, q_mat2_data, api::kWidthPacked);
+      prepack_if_tensor_ref(graph, q_mat2_data, utils::kWidthPacked);
   ValueRef scales =
-      prepack_if_tensor_ref(graph, scales_data, api::kWidthPacked);
+      prepack_if_tensor_ref(graph, scales_data, utils::kWidthPacked);
 
   std::string kernel_name = "q_8w_linear";
   kernel_name.reserve(kShaderNameReserve);
-  add_memory_layout_suffix(kernel_name, graph.memory_layout_of(mat1));
-  add_memory_layout_suffix(kernel_name, graph.memory_layout_of(q_mat2));
+  add_packed_dim_suffix(kernel_name, graph.packed_dim_of(mat1));
+  add_packed_dim_suffix(kernel_name, graph.packed_dim_of(q_mat2));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
 
-  api::ParamsBindList ubos({});
+  vkapi::ParamsBindList ubos({});
   if (graph.is_buffer_storage(out)) {
     ubos.append(
         {graph.sizes_ubo(out),
-         graph.ntexels_ubo(out),
+         graph.strides_ubo(out),
+         graph.numel_ubo(out),
          graph.sizes_ubo(mat1),
-         graph.texel_strides_ubo(out),
-         graph.texel_strides_ubo(mat1),
-         graph.texel_strides_ubo(q_mat2),
-         graph.texel_strides_ubo(scales)});
+         graph.strides_ubo(mat1),
+         graph.strides_ubo(q_mat2),
+         graph.strides_ubo(scales)});
   } else {
-    ubos.append({graph.texture_limits_ubo(out), graph.sizes_ubo(mat1)});
+    ubos.append({graph.logical_limits_ubo(out), graph.sizes_ubo(mat1)});
   }
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
@@ -105,8 +103,8 @@ void add_q_8w_linear_node(
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE},
-       {{mat1, q_mat2, scales}, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {{mat1, q_mat2, scales}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       ubos,
       // Specialization Constants

@@ -35,7 +35,8 @@ build_executorch() {
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
-    -DEXECUTORCH_BUILD_SDK=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+    -DEXECUTORCH_BUILD_DEVTOOLS=ON \
     -DEXECUTORCH_BUILD_VULKAN=$BUILD_VULKAN \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -Bcmake-out
@@ -52,29 +53,31 @@ build_gtest() {
 }
 
 export_test_model() {
-  python3 -m test.models.export_program --modules "ModuleAdd,ModuleAddHalf,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleLinear,ModuleMultipleEntry" --outdir "cmake-out" 2> /dev/null
+  python3 -m test.models.export_program --modules "ModuleAdd,ModuleAddHalf,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleLinear,ModuleMultipleEntry,ModuleSimpleTrain" --outdir "cmake-out" 2> /dev/null
   python3 -m test.models.export_delegated_program --modules "ModuleAddMul" --backend_id "StubBackend" --outdir "cmake-out" || true
 
+  DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH="$(realpath test/models/deprecated/ModuleLinear-no-constant-segment.pte)"
   ET_MODULE_ADD_HALF_PATH="$(realpath cmake-out/ModuleAddHalf.pte)"
   ET_MODULE_ADD_PATH="$(realpath cmake-out/ModuleAdd.pte)"
   ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH="$(realpath cmake-out/ModuleDynamicCatUnallocatedIO.pte)"
   ET_MODULE_INDEX_PATH="$(realpath cmake-out/ModuleIndex.pte)"
-  ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH="$(realpath cmake-out/ModuleLinear-no-constant-segment.pte)"
-  ET_MODULE_LINEAR_CONSTANT_SEGMENT_PATH="$(realpath cmake-out/ModuleLinear.pte)"
+  ET_MODULE_LINEAR_PATH="$(realpath cmake-out/ModuleLinear.pte)"
   ET_MODULE_MULTI_ENTRY_PATH="$(realpath cmake-out/ModuleMultipleEntry.pte)"
   ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH="$(realpath cmake-out/ModuleAddMul-nosegments-da1024.pte)"
   ET_MODULE_ADD_MUL_NOSEGMENTS_PATH="$(realpath cmake-out/ModuleAddMul-nosegments.pte)"
   ET_MODULE_ADD_MUL_PATH="$(realpath cmake-out/ModuleAddMul.pte)"
+  ET_MODULE_SIMPLE_TRAIN_PATH="$(realpath cmake-out/ModuleSimpleTrain.pte)"
+  export DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH
   export ET_MODULE_ADD_HALF_PATH
   export ET_MODULE_ADD_PATH
   export ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH
   export ET_MODULE_INDEX_PATH
-  export ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH
-  export ET_MODULE_LINEAR_CONSTANT_SEGMENT_PATH
+  export ET_MODULE_LINEAR_PATH
   export ET_MODULE_MULTI_ENTRY_PATH
   export ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH
   export ET_MODULE_ADD_MUL_NOSEGMENTS_PATH
   export ET_MODULE_ADD_MUL_PATH
+  export ET_MODULE_SIMPLE_TRAIN_PATH
 }
 
 build_and_run_test() {
@@ -87,8 +90,10 @@ build_and_run_test() {
     -Bcmake-out/"${test_dir}"
   cmake --build cmake-out/"${test_dir}" -j9
 
-  if [[ "$test_dir" =~ .*tokenizer.* ]]; then
+  if [[ "$test_dir" =~ .*examples/models/llama2/tokenizer.* ]]; then
     RESOURCES_PATH=$(realpath examples/models/llama2/tokenizer/test/resources)
+  elif [[ "$test_dir" =~ .*extension/llm/tokenizer.* ]]; then
+    RESOURCES_PATH=$(realpath extension/llm/tokenizer/test/resources)
   else
     RESOURCES_PATH=$(realpath extension/module/test/resources)
   fi
@@ -117,7 +122,7 @@ probe_tests() {
     kernels
     runtime
     schema
-    sdk
+    devtools
     test
   )
 

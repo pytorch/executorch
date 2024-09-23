@@ -10,10 +10,10 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/Context.h>
-#include <executorch/backends/vulkan/runtime/api/Tensor.h>
+#include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Constant.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/SymInt.h>
 #include <executorch/backends/vulkan/runtime/graph/containers/Types.h>
 
 namespace vkcompute {
@@ -29,6 +29,11 @@ inline bool is_valid(ValueRef value_ref) {
 struct IOValueRef {
   ValueRef value;
   ValueRef staging;
+
+  // Custom cast to ValueRef
+  operator ValueRef() const {
+    return value;
+  };
 };
 
 /*
@@ -53,8 +58,8 @@ struct Value final {
       bool as_bool;
     } u;
 
-    vTensor as_tensor;
-    api::StorageBuffer as_staging;
+    api::vTensor as_tensor;
+    api::StagingBuffer as_staging;
     TensorRef as_tensorref;
 
     std::vector<int64_t> as_int_list;
@@ -67,6 +72,8 @@ struct Value final {
     std::vector<ValueRef> as_value_list;
 
     std::string as_string;
+
+    SymInt as_symint;
 
     Payload() : u() {}
     // NOLINTNEXTLINE
@@ -106,9 +113,10 @@ struct Value final {
       CASE_MOVE_TRIVIALLY_COPYABLE_TYPE(TypeTag::DOUBLE, as_double);
       CASE_MOVE_TRIVIALLY_COPYABLE_TYPE(TypeTag::BOOL, as_bool);
       // Tensor and tensor adjacent types
-      CASE_MOVE_MOVEABLE_TYPE(TypeTag::TENSOR, vTensor, as_tensor, vTensor);
       CASE_MOVE_MOVEABLE_TYPE(
-          TypeTag::STAGING, api::StorageBuffer, as_staging, StorageBuffer);
+          TypeTag::TENSOR, api::vTensor, as_tensor, vTensor);
+      CASE_MOVE_MOVEABLE_TYPE(
+          TypeTag::STAGING, api::StagingBuffer, as_staging, StagingBuffer);
       CASE_MOVE_MOVEABLE_TYPE(
           TypeTag::TENSORREF, TensorRef, as_tensorref, TensorRef);
       // Scalar lists
@@ -123,6 +131,7 @@ struct Value final {
           TypeTag::VALUELIST, std::vector<ValueRef>, as_value_list, vector);
       CASE_MOVE_MOVEABLE_TYPE(
           TypeTag::STRING, std::string, as_string, basic_string);
+      CASE_MOVE_MOVEABLE_TYPE(TypeTag::SYMINT, SymInt, as_symint, SymInt);
 
       case TypeTag::NONE:
         clearToNone();
@@ -152,7 +161,7 @@ struct Value final {
         payload.as_tensor.~vTensor();
         break;
       case TypeTag::STAGING:
-        payload.as_staging.~StorageBuffer();
+        payload.as_staging.~StagingBuffer();
         break;
       case TypeTag::TENSORREF:
         payload.as_tensorref.~TensorRef();
@@ -171,6 +180,9 @@ struct Value final {
         break;
       case TypeTag::STRING:
         payload.as_string.~basic_string();
+        break;
+      case TypeTag::SYMINT:
+        payload.as_symint.~SymInt();
         break;
       // Manually list out the types so that if a type here is added later and
       // not handled the compiler can catch it.
@@ -240,10 +252,14 @@ struct Value final {
     return payload.member_name;                             \
   }
 
-  SUPPORT_TRIVIALLY_MOVEABLE_TYPE(vTensor, Tensor, TypeTag::TENSOR, as_tensor);
+  SUPPORT_TRIVIALLY_MOVEABLE_TYPE(
+      api::vTensor,
+      Tensor,
+      TypeTag::TENSOR,
+      as_tensor);
 
   SUPPORT_TRIVIALLY_MOVEABLE_TYPE(
-      api::StorageBuffer,
+      api::StagingBuffer,
       Staging,
       TypeTag::STAGING,
       as_staging);
@@ -283,6 +299,8 @@ struct Value final {
       String,
       TypeTag::STRING,
       as_string);
+
+  SUPPORT_TRIVIALLY_MOVEABLE_TYPE(SymInt, SymInt, TypeTag::SYMINT, as_symint);
 
 #undef SUPPORT_TRIVIALLY_COPYABLE_TYPE
 #undef SUPPORT_TRIVIALLY_MOVEABLE_TYPE

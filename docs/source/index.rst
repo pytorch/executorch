@@ -94,7 +94,7 @@ Topics in this section will help you get started with ExecuTorch.
    tutorials/export-to-executorch-tutorial
    running-a-model-cpp-tutorial
    extension-module
-   tutorials/sdk-integration-tutorial
+   tutorials/devtools-integration-tutorial
    apple-runtime
    demo-apps-ios
    demo-apps-android
@@ -117,6 +117,9 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    llm/getting-started
+   llm/llama-demo-android
+   llm/build-run-llama3-qualcomm-ai-engine-direct-backend
+   llm/llama-demo-ios
 
 .. toctree::
    :glob:
@@ -126,6 +129,7 @@ Topics in this section will help you get started with ExecuTorch.
 
    export-to-executorch-api-reference
    executorch-runtime-api-reference
+   api-life-cycle
 
 .. toctree::
    :glob:
@@ -192,10 +196,10 @@ Topics in this section will help you get started with ExecuTorch.
 .. toctree::
    :glob:
    :maxdepth: 1
-   :caption: SDK
+   :caption: Developer Tools
    :hidden:
 
-   sdk-overview
+   devtools-overview
    sdk-bundled-io
    sdk-etrecord
    sdk-etdump
@@ -203,7 +207,15 @@ Topics in this section will help you get started with ExecuTorch.
    sdk-debugging
    sdk-inspector
    sdk-delegate-integration
-   sdk-tutorial
+   devtools-tutorial
+
+.. toctree::
+   :glob:
+   :maxdepth: 1
+   :caption: Contributing
+   :hidden:
+
+   contributing
 
 Tutorials and Examples
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -235,11 +247,11 @@ ExecuTorch tutorials.
    :tags:
 
 .. customcarditem::
-   :header: Using the ExecuTorch SDK to Profile a Model
-   :card_description: A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.
+   :header: Using the ExecuTorch Developer Tools to Profile a Model
+   :card_description: A tutorial for using the ExecuTorch Developer Tools to profile and analyze a model with linkage back to source code.
    :image: _static/img/generic-pytorch-logo.png
-   :link: tutorials/sdk-integration-tutorial.html
-   :tags: SDK
+   :link: tutorials/devtools-integration-tutorial.html
+   :tags: devtools
 
 .. customcarditem::
    :header: Integrating and Running ExecuTorch on Apple Platforms

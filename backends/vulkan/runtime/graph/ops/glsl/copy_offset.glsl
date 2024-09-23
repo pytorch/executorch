@@ -10,19 +10,16 @@
 
 #define PRECISION ${PRECISION}
 
+#include "indexing_utils.h"
+
 layout(std430) buffer;
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
+${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 
-layout(set = 0, binding = 2) uniform PRECISION restrict CopyArgs {
-  ivec3 range;
-  int unused0;
-  ivec3 src_offset;
-  int unused1;
-  ivec3 dst_offset;
-  int unused2;
-};
+${layout_declare_ubo(B, "ivec3", "range", "ivec3", "src_offset", "ivec3", "dst_offset")}
+${layout_declare_ubo(B, "ivec4", "out_axis_map")}
+${layout_declare_ubo(B, "ivec4", "in_axis_map")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -36,5 +33,9 @@ void main() {
     return;
   }
 
-  imageStore(image_out, out_pos, texelFetch(image_in, in_pos, 0));
+  write_texel_lpos(
+    t_out,
+    out_pos,
+    load_texel_lpos(t_in, in_pos, in_axis_map),
+    out_axis_map);
 }

@@ -87,12 +87,8 @@ class TestStaticConstantPad(unittest.TestCase):
         (
             Tester(self.StaticConstantPadFunctional(), inputs)
             .export()
-            .check_count({"torch.ops.aten.constant_pad_nd.default": 8})
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default": 8}
-            )
-            .partition()
+            .check_count({"torch.ops.aten.pad.default": 8})
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 ["executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default"]
@@ -137,13 +133,9 @@ class TestStaticConstantPad(unittest.TestCase):
             Tester(Pad(), inputs)
             .quantize()
             .export()
-            .check_count({"torch.ops.aten.constant_pad_nd.default": 1})
+            .check_count({"torch.ops.aten.pad.default": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default": 1}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -162,13 +154,9 @@ class TestStaticConstantPad(unittest.TestCase):
             Tester(self.StaticConstantPad2d(), inputs)
             .quantize()
             .export()
-            .check_count({"torch.ops.aten.constant_pad_nd.default": 1})
+            .check_count({"torch.ops.aten.pad.default": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default": 1}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [

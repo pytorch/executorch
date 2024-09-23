@@ -37,12 +37,15 @@ def _get_bilinear_2d_graphs():
     ]
     for align_corners in [True, False]:
         for config in capture_configs:
-            edge = exir.capture(
-                bilinear2d(align_corners), sample_inputs, config
-            ).to_edge(
-                config=get_xnnpack_edge_compile_config(),
-            )
-            _bilinear2d_graphs[edge.exported_program.graph_module] = align_corners
+            for skip_dim_order_flag in [True, False]:
+                edge = exir.capture(
+                    bilinear2d(align_corners), sample_inputs, config
+                ).to_edge(
+                    config=get_xnnpack_edge_compile_config(
+                        skip_dim_order=skip_dim_order_flag
+                    )
+                )
+                _bilinear2d_graphs[edge.exported_program.graph_module] = align_corners
     return _bilinear2d_graphs
 
 

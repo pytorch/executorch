@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
 
 import json
 import os
@@ -51,31 +52,21 @@ class Llama2Model(EagerModelBase):
             ckpt_dir = Path(__file__).absolute().parent / "params"
 
         # Check if checkpoint_dir was provided for a sharded checkpoint.
-        checkpoint_dir = (
-            kwargs["checkpoint_dir"] if "checkpoint_dir" in kwargs else None
-        )
+        checkpoint_dir = kwargs.get("checkpoint_dir", None)
 
         # Use single checkpoint file.
-        checkpoint_path = (
-            kwargs["checkpoint"]
-            if "checkpoint" in kwargs
-            else ckpt_dir / "demo_rand_params.pth"
-        )
+        checkpoint_path = kwargs.get("checkpoint", ckpt_dir / "demo_rand_params.pth")
 
-        params_path = (
-            kwargs["params"] if "params" in kwargs else ckpt_dir / "demo_config.json"
-        )
+        params_path = kwargs.get("params", ckpt_dir / "demo_config.json")
 
-        self.use_kv_cache = (
-            kwargs["use_kv_cache"] if "use_kv_cache" in kwargs else False
-        )
-        self.use_sdpa_with_kv_cache_op = (
-            kwargs["use_sdpa_with_kv_cache"]
-            if "use_sdpa_with_kv_cache" in kwargs
-            else False
-        )
+        self.use_kv_cache = kwargs.get("use_kv_cache", False)
+        self.use_sdpa_with_kv_cache_op = kwargs.get("use_sdpa_with_kv_cache", False)
+        self.generate_full_logits = kwargs.get("generate_full_logits", False)
+        self.enable_dynamic_shape = kwargs.get("enable_dynamic_shape", False)
+        self.output_prune_map_path = kwargs.get("output_prune_map_path", None)
 
-        self.max_seq_len = kwargs["max_seq_len"] if "max_seq_len" in kwargs else 128
+        self.max_seq_len = kwargs.get("max_seq_len", 128)
+        self.args = kwargs.get("args", None)
         # The example is using a dummy small model with random weights for demo purpose only.
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model
         device = "cpu"
@@ -137,7 +128,8 @@ the checkpoint format to avoid generating faulty models.
         # get checkpoint dtype
         self.dtype = None
         if len(checkpoint) > 0:
-            first = checkpoint[next(iter(checkpoint))]
+            first_key = next(iter(checkpoint))
+            first = checkpoint[first_key]
             self.dtype = first.dtype
             mismatched_dtypes = [
                 (key, value.dtype)
@@ -146,10 +138,16 @@ the checkpoint format to avoid generating faulty models.
             ]
             if len(mismatched_dtypes) > 0:
                 print(
-                    f"Mixed dtype model. Dtype of {first.key}: {first.dtype}. Mismatches in the checkpoint: {mismatched_dtypes}"
+                    f"Mixed dtype model. Dtype of {first_key}: {first.dtype}. Mismatches in the checkpoint: {mismatched_dtypes}"
                 )
         with open(params_path, "r") as f:
             params = json.loads(f.read())
+        output_prune_map = None
+        if self.output_prune_map_path is not None:
+            with open(self.output_prune_map_path, "r") as f:
+                output_prune_map = json.load(f)
+            # change keys from string to int (json only supports string keys)
+            output_prune_map = {int(k): v for (k, v) in output_prune_map.items()}
         max_seq_len = self.max_seq_len
         max_batch_size = 1
         model_args: ModelArgs = ModelArgs(
@@ -157,6 +155,9 @@ the checkpoint format to avoid generating faulty models.
             max_batch_size=max_batch_size,
             use_kv_cache=self.use_kv_cache,
             use_sdpa_with_kv_cache_op=self.use_sdpa_with_kv_cache_op,
+            generate_full_logits=self.generate_full_logits,
+            output_prune_map=output_prune_map,
+            enable_dynamic_shape=self.enable_dynamic_shape,
             **params,
         )
         if kwargs.get("fairseq2", False):
@@ -188,15 +189,60 @@ the checkpoint format to avoid generating faulty models.
             self.model_ = Int8DynActInt4WeightQuantizer()._convert_for_runtime(
                 self.model_
             )
+        elif hasattr(self.args, "use_spin_quant") and self.args.use_spin_quant:
+            print("Using SPIN quantization.")
+            assert hasattr(self.args, "group_size"), "group_size must be specified"
+            assert hasattr(
+                self.args, "quantization_mode"
+            ), "quantization_mode must be specified"
+            assert hasattr(
+                self.args, "dtype_override"
+            ), "dtype_override must be specified"
+            from .source_transformation.spin_quant import (
+                sanitize_checkpoint_from_spinquant,
+                transform_for_spinquant,
+            )
+
+            mapping = {
+                "fp32": torch.float32,
+                "fp16": torch.float16,
+                "bf16": torch.bfloat16,
+            }
+
+            self.model_ = transform_for_spinquant(
+                self.model_,
+                checkpoint,
+                self.args.group_size,
+                self.args.quantization_mode,
+                mapping[self.args.dtype_override],
+            )
+
+            sanitize_checkpoint_from_spinquant(
+                checkpoint,
+                self.args.group_size,
+            )
 
         # assign=True: load params/buffers by assignment instead of performing an in-place copy.
         # Because we are using device="meta", tensors do not have memory associated with them
         # and an in-place copy is a no-op. Use assign=True in load_state_dict for this scenario.
-        self.model_.load_state_dict(
+        missing, unexpected = self.model_.load_state_dict(
             checkpoint,
             strict=False,
             assign=True,
         )  # self.model_ = Transformer(gptconf)
+        if kwargs.get("verbose", False):
+            print("============= missing keys ================")
+            print(missing)
+            print("============= /missing ================")
+            print("============= unexpected keys ================")
+            print(unexpected)
+            print("============= /unexpected ================")
+
+        # prune the output layer if output_prune_map is provided
+        if output_prune_map is not None:
+            from .source_transformation.prune_output import prune_output_vocab
+
+            self.model_ = prune_output_vocab(self.model_, output_prune_map)
 
     def get_eager_model(self):
         if self.dtype:
@@ -220,11 +266,17 @@ the checkpoint format to avoid generating faulty models.
 
     # assumption is the custom op doesnt support dynamic shape right now. It might but its untested so lets first get static shape working
     def get_example_inputs_kvcache_sdpa(self):
-        return (
-            torch.tensor(
-                [[1]], dtype=torch.long
-            ),  # tokens, with kv cache our input token length is always just 1 token.
-            torch.tensor(
-                [0], dtype=torch.long
-            ),  # start_pos, what token of output are we on.)
-        )
+        if self.enable_dynamic_shape:
+            return (
+                torch.tensor([[2, 3, 4]], dtype=torch.long),
+                torch.tensor([0], dtype=torch.long),
+            )
+        else:
+            return (
+                torch.tensor(
+                    [[1]], dtype=torch.long
+                ),  # tokens, with kv cache our input token length is always just 1 token.
+                torch.tensor(
+                    [0], dtype=torch.long
+                ),  # start_pos, what token of output are we on.
+            )

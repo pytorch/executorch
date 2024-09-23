@@ -64,7 +64,7 @@ constexpr size_t kTensorDimensionLimit = 16;
 //
 // The output of each iteration (copy_from) is copied into the copy_to tensor at
 // the specified index. This operator is supported in both ATen and lean modes.
-void et_copy_index(RuntimeContext& context, EValue** stack) {
+void et_copy_index(KernelRuntimeContext& context, EValue** stack) {
   (void)context;
   SizesType expected_output_size[kTensorDimensionLimit];
 
@@ -94,7 +94,8 @@ void et_copy_index(RuntimeContext& context, EValue** stack) {
     expected_output_size[i + 1] = copy_from.sizes()[i];
   }
 
-  if (copy_to.sizes()[0] != expected_output_size[0]) {
+  if (copy_to.sizes()[0] < expected_output_size[0]) {
+    // Resize `copy_to` to the expected output size.
     const void* data_ptr = copy_to.const_data_ptr();
     Error err =
         resize_tensor(copy_to, {expected_output_size, copy_to.sizes().size()});

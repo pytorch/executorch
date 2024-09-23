@@ -13,6 +13,7 @@
 #include <memory>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/executor/method.h>
@@ -22,22 +23,22 @@
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/util/util.h>
 
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::ArrayRef;
-using torch::executor::Error;
-using torch::executor::EValue;
-using torch::executor::FreeableBuffer;
-using torch::executor::Kernel;
-using torch::executor::KernelKey;
-using torch::executor::KernelRuntimeContext;
-using torch::executor::Method;
-using torch::executor::Program;
-using torch::executor::Result;
-using torch::executor::testing::ManagedMemoryManager;
+using executorch::runtime::ArrayRef;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Kernel;
+using executorch::runtime::KernelKey;
+using executorch::runtime::KernelRuntimeContext;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::Method;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
 
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024U;
@@ -59,10 +60,26 @@ struct KernelControl {
   // returning.
   Error fail_value = Error::Ok;
 
+  // If true, the kernel should allocate temporary memory.
+  bool allocate_temp_memory = false;
+
+  // If true, the kernel should simulate allocating temporary memory.
+  bool simulate_temp_memory_allocation = false;
+
+  // The size of the temporary memory to allocate.
+  int temp_memory_size = 0;
+
+  // The total size of all allocations.
+  int total_allocated_size = 0;
+
   void reset() {
     call_count = 0;
     call_context_fail = false;
     fail_value = Error::Ok;
+    allocate_temp_memory = false;
+    simulate_temp_memory_allocation = false;
+    temp_memory_size = 0;
+    total_allocated_size = 0;
   }
 
   /**
@@ -90,10 +107,11 @@ struct KernelControl {
     //     TensorMeta(ScalarType::Float, contiguous), // other
     //     TensorMeta(ScalarType::Float, contiguous), // out
     //     TensorMeta(ScalarType::Float, contiguous)}; // out (repeated)
-    KernelKey key = torch::executor::KernelKey("v1/6;0,1|6;0,1|6;0,1|6;0,1");
-    Kernel kernel = torch::executor::Kernel(
+    KernelKey key =
+        executorch::runtime::KernelKey("v1/6;0,1|6;0,1|6;0,1|6;0,1");
+    Kernel kernel = executorch::runtime::Kernel(
         "aten::add.out", key, KernelControl::kernel_hook);
-    Error err = torch::executor::register_kernels({kernel});
+    Error err = executorch::runtime::register_kernel(kernel);
     EXPECT_EQ(err, Error::Ok);
 
     registered_ = true;
@@ -110,11 +128,38 @@ struct KernelControl {
    */
   static void kernel_hook(
       KernelRuntimeContext& context,
-      __ET_UNUSED EValue** args) {
+      ET_UNUSED EValue** args) {
     auto* control = KernelControl::singleton();
     control->call_count++;
     if (control->call_context_fail) {
       context.fail(control->fail_value);
+    }
+
+    // Allocate temporary memory.
+    if (control->allocate_temp_memory) {
+      Result<void*> temp_mem_res =
+          context.allocate_temp(control->temp_memory_size);
+      if (temp_mem_res.ok()) {
+        control->total_allocated_size += control->temp_memory_size;
+        // We actually use the memory, to test default memory allocation was
+        // successful.
+        uint8_t* array = (uint8_t*)(temp_mem_res.get());
+        for (int i = 0; i < control->temp_memory_size; i++) {
+          array[i] = i % 256;
+        }
+      }
+    }
+
+    // Simulate allocating temporary memory. We use this, for testing that when
+    // a temp allocator is provided, the kernel will use it, instead of
+    // allocating memory with the default platform memory allocator.
+    // The provided TempMemoryAllocator class in this file, simulates allocating
+    // memory instead of actually allocating anything.
+    if (control->simulate_temp_memory_allocation) {
+      Result<void*> temp_mem_res =
+          context.allocate_temp(control->temp_memory_size);
+      control->total_allocated_size += control->temp_memory_size;
+      EXPECT_EQ(temp_mem_res.error(), Error::Ok);
     }
   }
 
@@ -125,10 +170,48 @@ struct KernelControl {
 bool KernelControl::registered_ = false;
 KernelControl KernelControl::singleton_;
 
+/**
+ * MemoryAllocator that keeps track of the number/sizes of its allocations,
+ * to test the case where the user provides a temp allocator.
+ */
+class TempMemoryAllocator final : public MemoryAllocator {
+ public:
+  TempMemoryAllocator() : MemoryAllocator(0, nullptr) {}
+
+  // The number of times allocate() has been called.
+  int number_of_allocations = 0;
+
+  // The number of times reset() has been called.
+  int number_of_resets = 0;
+
+  // The amount of memory currently allocated (should go to 0 when reset is
+  // called).
+  int currently_allocated_size = 0;
+
+  // The total size of all allocations.
+  int total_allocated_size = 0;
+
+  void* allocate(size_t size, ET_UNUSED size_t alignment = kDefaultAlignment)
+      override {
+    number_of_allocations += 1;
+    currently_allocated_size += size;
+    total_allocated_size += size;
+    // This is a simulation, we don't actually allocate memory. But we need to
+    // return a non-null pointer, so we return a bad, non-zero address that will
+    // crash if anyone tries to dereference it.
+    return (void*)1;
+  }
+
+  void reset() override {
+    number_of_resets += 1;
+    currently_allocated_size = 0;
+  }
+};
+
 class KernelIntegrationTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     // Register the controllable kernel hook.
     KernelControl::register_singleton();
@@ -151,18 +234,23 @@ class KernelIntegrationTest : public ::testing::Test {
 
     // Load the forward method.
     mmm_ = std::make_unique<ManagedMemoryManager>(
-        kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+        kDefaultNonConstMemBytes,
+        kDefaultRuntimeMemBytes,
+        temp_allocator_.get());
     Result<Method> method = program_->load_method("forward", &mmm_->get());
     ASSERT_EQ(method.error(), Error::Ok);
     method_ = std::make_unique<Method>(std::move(method.get()));
 
     // Set up its inputs.
-    inputs_ = torch::executor::util::PrepareInputTensors(*method_);
+    auto inputs_cleanup =
+        executorch::extension::prepare_input_tensors(*method_);
+    ASSERT_EQ(inputs_cleanup.error(), Error::Ok);
+    inputs_cleanup_ = std::make_unique<executorch::extension::BufferCleanup>(
+        std::move(*inputs_cleanup));
   }
 
   void TearDown() override {
-    torch::executor::util::FreeInputs(inputs_);
-    inputs_ = {};
+    inputs_cleanup_.reset();
   }
 
  private:
@@ -172,7 +260,7 @@ class KernelIntegrationTest : public ::testing::Test {
   // Must outlive method_
   std::unique_ptr<Program> program_;
   std::unique_ptr<ManagedMemoryManager> mmm_;
-  ArrayRef<void*> inputs_;
+  std::unique_ptr<executorch::extension::BufferCleanup> inputs_cleanup_;
 
  protected:
   // An executable method that will call the kernel associated with control_.
@@ -181,6 +269,19 @@ class KernelIntegrationTest : public ::testing::Test {
 
   // The KernelControl associated with method_.
   KernelControl* control_;
+
+  // The temp memory allocator provided by the user. By default, none is
+  // provided.
+  std::unique_ptr<TempMemoryAllocator> temp_allocator_ = nullptr;
+};
+
+class KernelTempMemoryAllocatorIntegrationTest : public KernelIntegrationTest {
+ protected:
+  void SetUp() override {
+    // Create a temp allocator for the test before calling the parent SetUp.
+    temp_allocator_ = std::make_unique<TempMemoryAllocator>();
+    KernelIntegrationTest::SetUp();
+  }
 };
 
 TEST_F(KernelIntegrationTest, KernelHookIsCalled) {
@@ -217,4 +318,64 @@ TEST_F(KernelIntegrationTest, FailurePropagates) {
   err = method_->execute();
   EXPECT_EQ(err, Error::Ok);
   EXPECT_EQ(control_->call_count, 3);
+}
+
+TEST_F(KernelIntegrationTest, DefaultPlatformMemoryAllocator) {
+  // Tell the kernel to allocate memory. Since no temp allocator is provided,
+  // this will allocate memory using the default platform memory allocator.
+  control_->allocate_temp_memory = true;
+
+  control_->temp_memory_size = 4;
+  // This is not a simulation. This actually allocates memory, using the
+  // default platform memory allocator.
+  Error err = method_->execute();
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(control_->call_count, 1);
+  EXPECT_EQ(control_->total_allocated_size, 4);
+
+  control_->temp_memory_size = 8;
+  // This is not a simulation. This actually allocates memory, using the
+  // default platform memory allocator.
+  err = method_->execute();
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(control_->call_count, 2);
+  EXPECT_EQ(control_->total_allocated_size, 12);
+}
+
+TEST_F(KernelTempMemoryAllocatorIntegrationTest, UsingTempMemoryAllocator) {
+  // In this test we provide a temp allocator to the method, and tell the kernel
+  // to allocate memory using it. We want to make sure that the kernel uses the
+  // temp allocator, and that the temp allocator is reset after the execution.
+  // Since we are testing that the kernel uses the temp allocator, and not the
+  // temp allocator itself, we don't need to test the actual allocation of
+  // memory. Therefore, we set simulate_temp_memory_allocation to true, so that
+  // the kernel will not actually allocate memory, but will instead simulate
+  // allocating memory.
+  // The provided TempMemoryAllocator, simulates allocating memory by increasing
+  // total_allocated_size and currently_allocated_size by the requested size.
+  // We simulate resetting the allocator by setting currently_allocated_size
+  // back to 0.
+  control_->simulate_temp_memory_allocation = true;
+
+  control_->temp_memory_size = 4;
+  Error err = method_->execute();
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(control_->call_count, 1);
+  EXPECT_EQ(control_->total_allocated_size, 4);
+  EXPECT_EQ(temp_allocator_->number_of_allocations, 1);
+  EXPECT_EQ(temp_allocator_->total_allocated_size, 4);
+  // The temp allocator should have been reset after the execution.
+  EXPECT_EQ(temp_allocator_->number_of_resets, 1);
+  EXPECT_EQ(temp_allocator_->currently_allocated_size, 0);
+
+  control_->temp_memory_size = 8;
+  err = method_->execute();
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(control_->call_count, 2);
+  EXPECT_EQ(control_->total_allocated_size, 12);
+  EXPECT_EQ(temp_allocator_->number_of_allocations, 2);
+  EXPECT_EQ(temp_allocator_->total_allocated_size, 12);
+  // The temp allocator should have been reset after the execution.
+  EXPECT_EQ(temp_allocator_->number_of_resets, 2);
+  EXPECT_EQ(temp_allocator_->currently_allocated_size, 0);
 }

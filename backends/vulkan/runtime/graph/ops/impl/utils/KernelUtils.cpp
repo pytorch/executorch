@@ -10,11 +10,11 @@
 
 namespace vkcompute {
 
-api::utils::ivec2 make_ivec2_from_list(ComputeGraph& graph, ValueRef vref) {
-  return api::utils::make_ivec2(*graph.get_int_list(vref), /*reverse = */ true);
+utils::ivec2 make_ivec2_from_list(ComputeGraph& graph, ValueRef vref) {
+  return utils::make_ivec2(*graph.get_int_list(vref), /*reverse = */ true);
 }
 
-api::utils::ivec2 make_ivec2_kernel_size(
+utils::ivec2 make_ivec2_kernel_size(
     ComputeGraph& graph,
     const ValueRef weight,
     const bool kernel_size_only) {
@@ -22,7 +22,7 @@ api::utils::ivec2 make_ivec2_kernel_size(
     return make_ivec2_from_list(graph, weight);
   } else {
     const auto weight_sizes = graph.get_tref(weight)->sizes;
-    return api::utils::make_ivec2({weight_sizes.at(3), weight_sizes.at(2)});
+    return utils::make_ivec2({weight_sizes.at(3), weight_sizes.at(2)});
   }
 }
 
@@ -74,10 +74,10 @@ int64_t calc_out_size(
 
 std::vector<int64_t> calc_out_sizes_hw(
     const std::vector<int64_t>& in_sizes,
-    const api::utils::ivec2& kernel_size,
-    const api::utils::ivec2& stride,
-    const api::utils::ivec2& padding,
-    const api::utils::ivec2& dilation,
+    const utils::ivec2& kernel_size,
+    const utils::ivec2& stride,
+    const utils::ivec2& padding,
+    const utils::ivec2& dilation,
     const bool ceil_mode) {
   const int64_t ndim = in_sizes.size();
   std::vector<int64_t> out_sizes(2);
@@ -85,18 +85,18 @@ std::vector<int64_t> calc_out_sizes_hw(
   // Height
   out_sizes.at(0) = calc_out_size(
       in_sizes.at(ndim - 2),
-      kernel_size.data[1],
-      stride.data[1],
-      padding.data[1],
-      dilation.data[1],
+      kernel_size[1],
+      stride[1],
+      padding[1],
+      dilation[1],
       ceil_mode);
   // Width
   out_sizes.at(1) = calc_out_size(
       in_sizes.at(ndim - 1),
-      kernel_size.data[0],
-      stride.data[0],
-      padding.data[0],
-      dilation.data[0],
+      kernel_size[0],
+      stride[0],
+      padding[0],
+      dilation[0],
       ceil_mode);
 
   return out_sizes;
@@ -117,30 +117,30 @@ int64_t calc_transpose_out_size(
 
 std::vector<int64_t> calc_transpose_out_sizes_hw(
     const std::vector<int64_t>& in_sizes,
-    const api::utils::ivec2& kernel_size,
-    const api::utils::ivec2& stride,
-    const api::utils::ivec2& padding,
-    const api::utils::ivec2& dilation,
-    const api::utils::ivec2& output_padding) {
+    const utils::ivec2& kernel_size,
+    const utils::ivec2& stride,
+    const utils::ivec2& padding,
+    const utils::ivec2& dilation,
+    const utils::ivec2& output_padding) {
   const int64_t ndim = in_sizes.size();
   std::vector<int64_t> out_sizes(2);
 
   // Height
   out_sizes.at(0) = calc_transpose_out_size(
       in_sizes.at(ndim - 2),
-      kernel_size.data[1],
-      stride.data[1],
-      padding.data[1],
-      dilation.data[1],
-      output_padding.data[1]);
+      kernel_size[1],
+      stride[1],
+      padding[1],
+      dilation[1],
+      output_padding[1]);
   // Width
   out_sizes.at(1) = calc_transpose_out_size(
       in_sizes.at(ndim - 1),
-      kernel_size.data[0],
-      stride.data[0],
-      padding.data[0],
-      dilation.data[0],
-      output_padding.data[0]);
+      kernel_size[0],
+      stride[0],
+      padding[0],
+      dilation[0],
+      output_padding[0]);
 
   return out_sizes;
 }
@@ -157,7 +157,7 @@ std::vector<int64_t> calc_out_sizes_hw(
   const auto stride = make_ivec2_from_list(graph, args[0]);
   const auto padding = make_ivec2_from_list(graph, args[1]);
   const auto dilation = args[2] == kDummyValueRef
-      ? api::utils::ivec2{1, 1}
+      ? utils::ivec2{1, 1}
       : make_ivec2_from_list(graph, args[2]);
 
   if (transposed) {

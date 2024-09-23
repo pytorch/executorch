@@ -66,6 +66,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (class, copy, readonly, nonatomic, nullable) NSString* debugInfoFileRelativePath;
 /// The debug symbol to operation path key name.
 @property (class, copy, readonly, nonatomic, nullable) NSString* debugSymbolToOperationPathKeyName;
+/// The debug symbol to handles key name.
+@property (class, copy, readonly, nonatomic, nullable) NSString* debugSymbolToHandlesKeyName;
 
 @end
 

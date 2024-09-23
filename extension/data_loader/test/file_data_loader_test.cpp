@@ -18,18 +18,19 @@
 #include <executorch/test/utils/alignment.h>
 
 using namespace ::testing;
-using torch::executor::Error;
-using torch::executor::FreeableBuffer;
-using torch::executor::Result;
-using torch::executor::testing::TempFile;
-using torch::executor::util::FileDataLoader;
+using executorch::extension::FileDataLoader;
+using executorch::extension::testing::TempFile;
+using executorch::runtime::DataLoader;
+using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Result;
 
 class FileDataLoaderTest : public ::testing::TestWithParam<size_t> {
  protected:
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 
   // The alignment in bytes that tests should use. The values are set by the
@@ -59,7 +60,10 @@ TEST_P(FileDataLoaderTest, InBoundsLoadsSucceed) {
 
   // Load the first bytes of the data.
   {
-    Result<FreeableBuffer> fb = fdl->Load(/*offset=*/0, /*size=*/8);
+    Result<FreeableBuffer> fb = fdl->load(
+        /*offset=*/0,
+        /*size=*/8,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(fb.error(), Error::Ok);
     EXPECT_ALIGNED(fb->data(), alignment());
     EXPECT_EQ(fb->size(), 8);
@@ -82,8 +86,10 @@ TEST_P(FileDataLoaderTest, InBoundsLoadsSucceed) {
 
   // Load the last few bytes of the data, a different size than the first time.
   {
-    Result<FreeableBuffer> fb =
-        fdl->Load(/*offset=*/sizeof(data) - 3, /*size=*/3);
+    Result<FreeableBuffer> fb = fdl->load(
+        /*offset=*/sizeof(data) - 3,
+        /*size=*/3,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(fb.error(), Error::Ok);
     EXPECT_ALIGNED(fb->data(), alignment());
     EXPECT_EQ(fb->size(), 3);
@@ -92,7 +98,10 @@ TEST_P(FileDataLoaderTest, InBoundsLoadsSucceed) {
 
   // Loading all of the data succeeds.
   {
-    Result<FreeableBuffer> fb = fdl->Load(/*offset=*/0, /*size=*/sizeof(data));
+    Result<FreeableBuffer> fb = fdl->load(
+        /*offset=*/0,
+        /*size=*/sizeof(data),
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(fb.error(), Error::Ok);
     EXPECT_ALIGNED(fb->data(), alignment());
     EXPECT_EQ(fb->size(), sizeof(data));
@@ -101,7 +110,10 @@ TEST_P(FileDataLoaderTest, InBoundsLoadsSucceed) {
 
   // Loading zero-sized data succeeds, even at the end of the data.
   {
-    Result<FreeableBuffer> fb = fdl->Load(/*offset=*/sizeof(data), /*size=*/0);
+    Result<FreeableBuffer> fb = fdl->load(
+        /*offset=*/sizeof(data),
+        /*size=*/0,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(fb.error(), Error::Ok);
     EXPECT_EQ(fb->size(), 0);
   }
@@ -118,15 +130,19 @@ TEST_P(FileDataLoaderTest, OutOfBoundsLoadFails) {
 
   // Loading beyond the end of the data should fail.
   {
-    Result<FreeableBuffer> fb =
-        fdl->Load(/*offset=*/0, /*size=*/sizeof(data) + 1);
+    Result<FreeableBuffer> fb = fdl->load(
+        /*offset=*/0,
+        /*size=*/sizeof(data) + 1,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_NE(fb.error(), Error::Ok);
   }
 
   // Loading zero bytes still fails if it's past the end of the data.
   {
-    Result<FreeableBuffer> fb =
-        fdl->Load(/*offset=*/sizeof(data) + 1, /*size=*/0);
+    Result<FreeableBuffer> fb = fdl->load(
+        /*offset=*/sizeof(data) + 1,
+        /*size=*/0,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_NE(fb.error(), Error::Ok);
   }
 }
@@ -172,12 +188,21 @@ TEST_P(FileDataLoaderTest, MoveCtor) {
   FileDataLoader fdl2(std::move(*fdl));
 
   // Old loader should now be invalid.
-  EXPECT_EQ(fdl->Load(0, 0).error(), Error::InvalidState);
+  EXPECT_EQ(
+      fdl->load(
+             0,
+             0,
+             DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program))
+          .error(),
+      Error::InvalidState);
   EXPECT_EQ(fdl->size().error(), Error::InvalidState);
 
   // New loader should point to the file.
   EXPECT_EQ(fdl2.size().get(), contents.size());
-  Result<FreeableBuffer> fb = fdl2.Load(/*offset=*/0, contents.size());
+  Result<FreeableBuffer> fb = fdl2.load(
+      /*offset=*/0,
+      contents.size(),
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   ASSERT_EQ(fb.error(), Error::Ok);
   EXPECT_ALIGNED(fb->data(), alignment());
   ASSERT_EQ(fb->size(), contents.size());

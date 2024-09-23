@@ -32,7 +32,7 @@ inline size_t _normalize_non_neg_d(ssize_t d, ssize_t in_dim) {
   return d;
 }
 
-__ET_NODISCARD bool check_dim_list_is_valid(
+ET_NODISCARD bool check_dim_list_is_valid(
     const exec_aten::Tensor& in,
     const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list) {
   if (dim_list.has_value() && dim_list.value().size() != 0) {

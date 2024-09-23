@@ -6,15 +6,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include "kernels.h"
-
 #include <algorithm>
 #include <cmath>
 #include <tuple>
 
 using Tensor = exec_aten::Tensor;
-using RuntimeContext = torch::executor::RuntimeContext;
+using executorch::runtime::KernelRuntimeContext;
 
 namespace impl {
 namespace HiFi {
@@ -76,9 +75,11 @@ void quantized_layer_norm_(
     for (size_t j = 0; j < last_dim; ++j) {
       // Since X is quantized, we dequantize it, compute fp32 result, and
       // quantize the result to an int8/uint8 value.
-      float val = kernels::dequantize<T>(x[j], input_scale, input_zero_point);
+      float val = impl::HiFi::kernels::dequantize<T>(
+          x[j], input_scale, input_zero_point);
       val = (val - mean) * inv_std * weight_data[j] + bias_data[j];
-      y[j] = kernels::quantize<T>(val, output_inv_scale, output_zero_point);
+      y[j] = impl::HiFi::kernels::quantize<T>(
+          val, output_inv_scale, output_zero_point);
     }
   }
 }
@@ -114,7 +115,7 @@ void quantized_layer_norm_(
 }
 
 void quantized_layer_norm_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& in_scale,
     const Tensor& in_zero_point,

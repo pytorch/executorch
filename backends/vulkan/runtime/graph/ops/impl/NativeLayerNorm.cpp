@@ -18,7 +18,7 @@
 namespace vkcompute {
 
 std::vector<int64_t> calc_out_mean_sizes(
-    vTensor& self,
+    api::vTensor& self,
     int64_t normalized_shape_dim) {
   std::vector<int64_t> output_size = self.sizes();
   int64_t self_dim = self.sizes().size();
@@ -48,9 +48,9 @@ void resize_native_layer_norm_node(
   rstd->virtual_resize(mean_size);
 }
 
-void check_args(const vTensor& in, const vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
+void check_args(const api::vTensor& in, const api::vTensor& out) {
+  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
 }
 
 void add_native_layer_norm_node(
@@ -76,10 +76,10 @@ void add_native_layer_norm_node(
   }
 
   ValueRef arg_in = prepack_if_tensor_ref(graph, in);
-  ValueRef arg_weight =
-      prepack_if_tensor_ref(graph, weight, graph.memory_layout_of(arg_in));
-  ValueRef arg_bias =
-      prepack_if_tensor_ref(graph, bias, graph.memory_layout_of(arg_in));
+  ValueRef arg_weight = prepack_if_tensor_ref(
+      graph, weight, graph.estimate_memory_layout_of(arg_in));
+  ValueRef arg_bias = prepack_if_tensor_ref(
+      graph, bias, graph.estimate_memory_layout_of(arg_in));
 
   const auto out_val = graph.get_value_list(out);
   vTensorPtr t_out = graph.get_tensor(out_val->at(0));
@@ -91,8 +91,8 @@ void add_native_layer_norm_node(
 
   std::vector<int64_t> in_sizes = t_input->sizes();
 
-  api::utils::uvec3 global_size = t_mean->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
+  utils::uvec3 global_size = t_mean->logical_limits();
+  utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   std::string kernel_name("native_layer_norm");
   kernel_name.reserve(kShaderNameReserve);
@@ -106,10 +106,10 @@ void add_native_layer_norm_node(
       local_size,
       // Inputs and Outputs
       {{{out_val->at(0), out_val->at(1), out_val->at(2)},
-        api::MemoryAccessType::WRITE},
-       {{arg_in, arg_weight, arg_bias}, api::MemoryAccessType::READ}},
+        vkapi::MemoryAccessType::WRITE},
+       {{arg_in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->texture_limits_ubo(),
+      {t_out->logical_limits_ubo(),
        t_out->sizes_ubo(),
        graph.create_params_buffer(epsilon)},
       // Specialization Constants

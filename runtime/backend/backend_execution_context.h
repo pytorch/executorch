@@ -11,8 +11,8 @@
 #include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/core/memory_allocator.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * BackendExecutionContext will be used to inject run time context.
@@ -45,10 +45,25 @@ class BackendExecutionContext final {
     return temp_allocator_->allocate(size, alignment);
   }
 
+  /**
+   * Returns the temp allocator. This allocator will be reset every instruction.
+   */
+  MemoryAllocator* get_temp_allocator() {
+    return temp_allocator_;
+  }
+
  private:
   EventTracer* event_tracer_ = nullptr;
   MemoryAllocator* temp_allocator_ = nullptr;
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::BackendExecutionContext;
 } // namespace executor
 } // namespace torch

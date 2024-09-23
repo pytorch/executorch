@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import itertools
 import operator
 from typing import Callable, List, Optional
@@ -12,10 +14,7 @@ import torch
 from executorch.backends.arm.quantizer import arm_quantizer_utils
 from executorch.backends.arm.quantizer.quantization_annotation import register_annotator
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
-from torch.ao.quantization.quantizer import (
-    QuantizationAnnotation,
-    SharedQuantizationSpec,
-)
+from torch.ao.quantization.quantizer import QuantizationAnnotation
 from torch.fx import Node
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
@@ -34,35 +33,16 @@ def _annotate_add(
     for add_partition in add_partitions:
         annotated_partitions.append(add_partition.nodes)
         add_node = add_partition.output_nodes[0]
-        if arm_quantizer_utils.is_annotated([add_node]):
+        if arm_quantizer_utils.is_annotated(add_node):
             continue
 
-        input_act0 = add_node.args[0]
-        input_act_qspec = quantization_config.get_input_act_qspec()
-        shared_with_input0_qspec = SharedQuantizationSpec((input_act0, add_node))
-
-        input_qspec_map = {}
-        if isinstance(input_act0, Node):
-            if arm_quantizer_utils.is_input_large_scalar(input_act0, gm):
-                continue
-            if arm_quantizer_utils.is_input_non_float_tensor(input_act0):
-                continue
-            input_qspec_map[input_act0] = input_act_qspec
-
-        input_act1 = add_node.args[1]
-        if isinstance(input_act1, Node):
-            if arm_quantizer_utils.is_input_large_scalar(input_act1, gm):
-                continue
-            if arm_quantizer_utils.is_input_non_float_tensor(input_act1):
-                continue
-            if input_act0 is not input_act1:
-                input_qspec_map[input_act1] = shared_with_input0_qspec
-            else:
-                input_qspec_map[input_act1] = input_act_qspec
-
-        add_node.meta["quantization_annotation"] = QuantizationAnnotation(
-            input_qspec_map=input_qspec_map,
-            output_qspec=shared_with_input0_qspec,
-            _annotated=True,
+        input_qspec_map, output_qspec = arm_quantizer_utils.get_shared_qspec(
+            add_node, gm, quantization_config
         )
+        if input_qspec_map is not None:
+            add_node.meta["quantization_annotation"] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=output_qspec,
+                _annotated=True,
+            )
     return annotated_partitions

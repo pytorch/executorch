@@ -32,9 +32,7 @@ class TestSub(unittest.TestCase):
             Tester(self.Sub(), inputs)
             .export()
             .check_count({"torch.ops.aten.sub.Tensor": 1})
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_sub_Tensor": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_sub_Tensor"])
             .to_executorch()
@@ -62,9 +60,7 @@ class TestSub(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.sub.Tensor": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_sub_Tensor": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -86,9 +82,7 @@ class TestSub(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.sub.Tensor": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_sub_Tensor": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -110,9 +104,7 @@ class TestSub(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.sub.Tensor": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_sub_Tensor": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -144,14 +136,7 @@ class TestSub(unittest.TestCase):
                 }
             )
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count(
-                {
-                    "executorch_exir_dialects_edge__ops_aten_sub_Tensor": 1,
-                    "executorch_exir_dialects_edge__ops_aten_relu_default": 1,
-                }
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [

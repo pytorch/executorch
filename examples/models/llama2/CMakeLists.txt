@@ -21,8 +21,6 @@ project(llama_runner)
 # Duplicating options as root CMakeLists.txt
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 
-option(EXECUTORCH_USE_TIKTOKEN "Use Tiktoken as a tokenizer" OFF)
-
 include(CMakeDependentOption)
 #
 # pthreadpool: build pthreadpool library. Disable on unsupported platforms
@@ -86,22 +84,14 @@ endif()
 
 # custom ops library
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  add_subdirectory(custom_ops)
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/custom_ops
+    ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/custom_ops
+  )
 endif()
 
 # llama_runner library
 add_subdirectory(runner)
-if(EXECUTORCH_USE_TIKTOKEN)
-  # find RE2 for tokenizer
-  set(ABSL_ENABLE_INSTALL ON)
-  set(ABSL_PROPAGATE_CXX_STD ON)
-  set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
-  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/abseil-cpp)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2)
-  set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
-  target_link_libraries(llama_runner PUBLIC re2::re2)
-endif()
 
 set(link_libraries gflags)
 set(_srcs main.cpp)
@@ -135,13 +125,7 @@ set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)
 # Extra compile option and include dir for pthreadpool
 if(EXECUTORCH_BUILD_PTHREADPOOL)
   list(APPEND _common_compile_options -DET_USE_THREADPOOL)
-  list(APPEND link_libraries pthreadpool)
-  # These 2 source files are included in xnnpack_backend
-  if(NOT TARGET xnnpack_backend)
-    list(APPEND _srcs ${XNNPACK_ROOT}/threadpool/threadpool.cpp
-         ${XNNPACK_ROOT}/threadpool/threadpool_guard.cpp
-    )
-  endif()
+  list(APPEND link_libraries extension_threadpool pthreadpool)
   list(APPEND _common_include_directories
        ${XNNPACK_ROOT}/third-party/pthreadpool/include
   )
@@ -149,8 +133,7 @@ endif()
 
 # Extra sources for cpuinfo
 if(EXECUTORCH_BUILD_CPUINFO)
-  list(APPEND link_libraries cpuinfo)
-  list(APPEND _srcs ${XNNPACK_ROOT}/threadpool/cpuinfo_utils.cpp)
+  list(APPEND link_libraries extension_threadpool cpuinfo)
   list(APPEND _common_include_directories
        ${XNNPACK_ROOT}/third-party/cpuinfo/include
   )
@@ -189,6 +172,20 @@ if(TARGET mpsdelegate)
   target_link_options_shared_lib(mpsdelegate)
 endif()
 
+if(TARGET coremldelegate)
+  find_library(SQLITE_LIBRARY sqlite3)
+  list(
+    APPEND
+    link_libraries
+    coremldelegate
+    sqlite3
+    "-framework Foundation"
+    "-framework CoreML"
+    "-framework Accelerate"
+  )
+  target_link_options_shared_lib(coremldelegate)
+endif()
+
 # This one is needed for cpuinfo where it uses android specific log lib
 if(ANDROID)
   list(APPEND link_libraries log)
@@ -196,7 +193,11 @@ endif()
 
 add_executable(llama_main ${_srcs})
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-  target_link_options(llama_main PRIVATE "LINKER:--gc-sections,-s")
+  if(APPLE)
+    target_link_options(llama_main PRIVATE "LINKER:-dead_strip")
+  else()
+    target_link_options(llama_main PRIVATE "LINKER:--gc-sections,-s")
+  endif()
 endif()
 
 target_include_directories(llama_main PUBLIC ${_common_include_directories})

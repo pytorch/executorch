@@ -19,13 +19,26 @@ Link your binary with the ExecuTorch runtime and any backends or kernels used by
 
 ## Integration
 
+### Setup
+
+#### CMake
+
+Building the Xcode project requires CMake. Installing via homebrew does not
+typically work; instead, install the packaged application and commandline tools
+globally:
+
+1. Download the macOS `.dmg` installer from https://cmake.org/download
+2. Open the `.dmg`
+3. Drag the CMake app to the `/Applications` folder
+4. In a terminal, install the command line tools: `sudo /Applications/CMake.app/Contents/bin/cmake-gui --install`
+
 ### Swift Package Manager
 
 The prebuilt ExecuTorch runtime, backend, and kernels are available as a [Swift PM](https://www.swift.org/documentation/package-manager/) package.
 
 #### Xcode
 
-In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version, e.g., "0.2.1", or just use the "latest" branch name for the latest stable build.
+In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version, e.g., "0.3.0", or just use the "latest" branch name for the latest stable build.
 
 ![](_static/img/swiftpm_xcode1.png)
 
@@ -54,7 +67,7 @@ let package = Package(
   ],
   dependencies: [
     // Use "latest" branch name for the latest stable build.
-    .package(url: "https://github.com/pytorch/executorch.git", .branch("0.2.1"))
+    .package(url: "https://github.com/pytorch/executorch.git", .branch("0.3.0"))
   ],
   targets: [
     .target(

@@ -17,9 +17,9 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
-#include <executorch/util/util.h>
 
 namespace torch {
 namespace executor {
@@ -35,7 +35,7 @@ namespace executor {
  * front-end before having the actual backend ready.
  */
 
-class ExecutorBackend final : public PyTorchBackendInterface {
+class ExecutorBackend final : public ::executorch::runtime::BackendInterface {
  public:
   ~ExecutorBackend() = default;
 
@@ -46,7 +46,7 @@ class ExecutorBackend final : public PyTorchBackendInterface {
   Result<DelegateHandle*> init(
       BackendInitContext& context,
       FreeableBuffer* processed,
-      __ET_UNUSED ArrayRef<CompileSpec> compile_specs) const override {
+      ET_UNUSED ArrayRef<CompileSpec> compile_specs) const override {
     // `processed` contains an executorch program. Wrap it in a DataLoader that
     // will return the data directly without copying it.
     MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
@@ -128,7 +128,7 @@ class ExecutorBackend final : public PyTorchBackendInterface {
   }
 
   Error execute(
-      __ET_UNUSED BackendExecutionContext& context,
+      ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
       EValue** args) const override {
     Method* client_method = static_cast<Method*>(handle);
@@ -142,9 +142,17 @@ class ExecutorBackend final : public PyTorchBackendInterface {
     // Execute client executor
     status = client_method->execute();
 
-    // Send the client executor output
-    status = client_method->get_outputs(
-        args[num_inputs], client_method->outputs_size());
+    auto output_sizes = client_method->outputs_size();
+    // Send the client executor output, we'd need to copy the data instead of
+    // assigning the Evalue pointer
+    for (int i = 0; i < output_sizes; i++) {
+      EValue output = client_method->get_output(i);
+      if (output.tag == Tag::Tensor) {
+        Tensor t_src = output.toTensor();
+        Tensor t_dst = args[num_inputs + i]->toTensor();
+        status = internal::copy_tensor_data(t_dst, t_src);
+      }
+    }
 
     return status;
   }

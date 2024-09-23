@@ -7,6 +7,7 @@
  */
 #pragma once
 #include <executorch/backends/qualcomm/aot/ir/qcir_utils.h>
+#include <executorch/backends/qualcomm/aot/python/PyQnnWrapperAdaptor.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
@@ -23,6 +24,7 @@ namespace executor {
 namespace qnn {
 class PyQnnManager {
  public:
+  // used for AoT compilation
   explicit PyQnnManager(const py::bytes& buffer)
       : qnn_executorch_option_ptr_(buffer),
         qnn_executorch_context_binary_(QNN_EXECUTORCH_CONTEXT_BINARY) {
@@ -30,6 +32,18 @@ class PyQnnManager {
     // parsers
     auto qnn_executorch_options = GetQnnExecuTorchOptions(
         qnn_executorch_option_ptr_.cast<std::string_view>().data());
+    qnn_manager_ = std::make_shared<QnnManager>(
+        qnn_executorch_options, qnn_executorch_context_binary_);
+  }
+  // used for loading context binary directly
+  explicit PyQnnManager(const py::bytes& buffer, const py::bytes& ctx_bin)
+      : qnn_executorch_option_ptr_(buffer) {
+    auto qnn_executorch_options = GetQnnExecuTorchOptions(
+        qnn_executorch_option_ptr_.cast<std::string_view>().data());
+
+    py::buffer_info info(py::buffer(ctx_bin).request());
+    qnn_executorch_context_binary_.buffer = static_cast<void*>(info.ptr);
+    qnn_executorch_context_binary_.nbytes = info.size * info.itemsize;
     qnn_manager_ = std::make_shared<QnnManager>(
         qnn_executorch_options, qnn_executorch_context_binary_);
   }
@@ -139,6 +153,28 @@ class PyQnnManager {
 
   bool IsTensorDump() {
     return qnn_manager_->IsTensorDump();
+  }
+
+  Error AllocateTensor() {
+    return qnn_manager_->AllocateTensor();
+  }
+
+  py::list GetGraphInputs() {
+    py::list ret;
+    for (const std::shared_ptr<TensorWrapper>& input :
+         qnn_manager_->GetGraphInputs()) {
+      ret.append(PyQnnTensorWrapper(input));
+    }
+    return ret;
+  }
+
+  py::list GetGraphOutputs() {
+    py::list ret;
+    for (const std::shared_ptr<TensorWrapper>& output :
+         qnn_manager_->GetGraphOutputs()) {
+      ret.append(PyQnnTensorWrapper(output));
+    }
+    return ret;
   }
 
  private:

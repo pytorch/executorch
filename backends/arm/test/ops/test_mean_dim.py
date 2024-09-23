@@ -40,6 +40,8 @@ test_data_suite = [
 
 
 class TestMeanDim(unittest.TestCase):
+    """Tests MeanDim, called AdaptiveAvgPool2d in Pytorch."""
+
     class MeanDim(torch.nn.Module):
         def __init__(self):
             super().__init__()
@@ -55,17 +57,17 @@ class TestMeanDim(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
-            .check(["torch.ops.aten.mean.dim"])
+            .check(["torch.ops.aten.adaptive_avg_pool2d.default"])
             .check_not(["torch.ops.quantized_decomposed"])
             .to_edge()
             .partition()
             .check_not(["executorch_exir_dialects_edge__ops_aten_mean_dim"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs()
+            .run_method_and_compare_outputs(inputs=test_data)
         )
 
     def _test_meandim_tosa_BI_pipeline(
@@ -75,18 +77,18 @@ class TestMeanDim(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize()
             .export()
-            .check_count({"torch.ops.aten.mean.dim": 1})
+            .check_count({"torch.ops.aten.adaptive_avg_pool2d.default": 1})
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
             .partition()
             .check_not(["executorch_exir_dialects_edge__ops_aten_mean_dim"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(qtol=1)
+            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
     def _test_meandim_tosa_u55_BI_pipeline(
@@ -96,15 +98,20 @@ class TestMeanDim(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=common.get_u55_compile_spec(),
             )
             .quantize()
             .export()
-            .check_count({"torch.ops.aten.mean.dim": 1})
+            .check_count({"torch.ops.aten.adaptive_avg_pool2d.default": 1})
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
             .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_mean_dim"])
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_mean_dim",
+                    "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default",
+                ]
+            )
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
         )

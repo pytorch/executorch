@@ -12,9 +12,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from sentencepiece import SentencePieceProcessor
+from executorch.extension.llm.export.builder import DType
 
-from ..builder import DType
+from sentencepiece import SentencePieceProcessor
 
 try:
     from fairseq2.nn.embedding import (
@@ -96,7 +96,7 @@ def quantize(
 
         try:
             # torchao 0.3+
-            from torchao._eval import InputRecorder
+            from torchao._eval import InputRecorder  # pyre-fixme[21]
         except ImportError:
             from torchao.quantization.GPTQ import InputRecorder  # pyre-ignore
 
@@ -110,7 +110,7 @@ def quantize(
         )
 
         inputs = (
-            InputRecorder(
+            InputRecorder(  # pyre-fixme[16]
                 tokenizer,
                 calibration_seq_length,
                 None,  # input_prep_func
@@ -399,6 +399,7 @@ def replace_embedding_weight_only_grouped_int8_per_channel(
                     vocab_size=child.weight.shape[0],
                     embedding_dim=child.weight.shape[1],
                     group_size=group_size,
+                    dtype=child.weight.dtype,
                     packed=packed,
                 ),
             )

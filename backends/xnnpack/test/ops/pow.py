@@ -25,11 +25,7 @@ class TestPow(unittest.TestCase):
             Tester(self.Pow(2), inputs)
             .export()
             .check_count({"torch.ops.aten.pow.Tensor_Scalar": 1})
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar": 1}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar"])
             .to_executorch()
@@ -58,10 +54,6 @@ class TestPow(unittest.TestCase):
             Tester(self.Pow(3), inputs)
             .export()
             .check_count({"torch.ops.aten.pow.Tensor_Scalar": 1})
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar": 1}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_not(["torch.ops.higher_order.executorch_call_delegate"])
         )

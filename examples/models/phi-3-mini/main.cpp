@@ -6,85 +6,45 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// main.cpp
+#include <gflags/gflags.h>
 
-#include <iostream>
+#include <executorch/examples/models/phi-3-mini/runner.h>
 
-#include <executorch/extension/module/module.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
+DEFINE_string(
+    model_path,
+    "phi-3-mini.pte",
+    "File path for model serialized in flatbuffer format.");
 
-#include "sentence_piece_tokenizer.h"
+DEFINE_string(tokenizer_path, "tokenizer.bin", "File path for tokenizer.");
 
-using namespace torch::executor;
+DEFINE_string(prompt, "Tell me a story", "Prompt.");
 
-// The value of the phi-3-mini `<|endoftext|>` token.
-#define ENDOFTEXT_TOKEN 32000
-#define VOCABULARY_SIZE 32064
+DEFINE_double(
+    temperature,
+    0.8f,
+    "Temperature; Default is 0.8f. 0 = greedy argmax sampling (deterministic). Lower temperature = more deterministic");
 
-// TODO(lunwenh): refactor and share with llama
-void generate(
-    Module& llm_model,
-    std::string& prompt,
-    SentencePieceTokenizer& tokenizer,
-    size_t max_output_length) {
-  // Convert the input text into a list of integers (tokens) that represents
-  // it, using the string-to-token mapping that the model was trained on.
-  // Each token is an integer that represents a word or part of a word.
-  std::vector<int64_t> input_tokens = tokenizer.encode(prompt);
+DEFINE_int32(
+    seq_len,
+    128,
+    "Total number of tokens to generate (prompt + output).");
 
-  std::cout << "Generating tokens ..." << std::endl;
+int main(int32_t argc, char** argv) {
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  std::vector<int64_t> output_tokens;
+  const char* model_path = FLAGS_model_path.c_str();
 
-  for (size_t i = 0; i < max_output_length; i++) {
-    ManagedTensor tensor_tokens(
-        input_tokens.data(),
-        {1, static_cast<int>(input_tokens.size())},
-        ScalarType::Long);
-    std::vector<EValue> inputs = {tensor_tokens.get_aliasing_tensor()};
+  const char* tokenizer_path = FLAGS_tokenizer_path.c_str();
 
-    Result<std::vector<EValue>> result_evalue = llm_model.forward(inputs);
+  const char* prompt = FLAGS_prompt.c_str();
 
-    const auto error = result_evalue.error();
-    Tensor logits_tensor = result_evalue.get()[0].toTensor();
-    const auto sentence_length = logits_tensor.size(1);
-    std::vector<float> logits(
-        logits_tensor.data_ptr<float>() +
-            (sentence_length - 1) * VOCABULARY_SIZE,
-        logits_tensor.data_ptr<float>() + sentence_length * VOCABULARY_SIZE);
+  double temperature = FLAGS_temperature;
 
-    // Sample the next token from the logits.
-    int64_t next_token =
-        std::max_element(logits.begin(), logits.end()) - logits.begin();
+  int32_t seq_len = FLAGS_seq_len;
 
-    std::cout << next_token << "\t";
-    std::cout.flush();
+  example::Runner runner(model_path, tokenizer_path, temperature);
 
-    // Break if we reached the end of the text.
-    if (next_token == ENDOFTEXT_TOKEN) {
-      break;
-    }
+  runner.generate(prompt, seq_len);
 
-    output_tokens.push_back(next_token);
-
-    // Update next input.
-    input_tokens.push_back(next_token);
-  }
-
-  std::cout << std::endl;
-  std::cout << tokenizer.decode(output_tokens) << std::endl;
-}
-
-int main() {
-  // Set up the prompt. This provides the seed text for the model to elaborate.
-  std::cout << "Enter model prompt: ";
-  std::string prompt;
-  std::getline(std::cin, prompt);
-
-  SentencePieceTokenizer tokenizer("tokenizer.model");
-
-  Module model("phi-3-mini.pte", Module::MlockConfig::UseMlockIgnoreErrors);
-
-  const auto max_output_tokens = 128;
-  generate(model, prompt, tokenizer, max_output_tokens);
+  return 0;
 }

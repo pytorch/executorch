@@ -28,7 +28,7 @@ namespace {
 
 template <typename CTYPE>
 void embedding_kernel(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& weight,
     const Tensor& indices,
     Tensor& out) {
@@ -37,7 +37,8 @@ void embedding_kernel(
   char* out_data = out.mutable_data_ptr<char>();
   const CTYPE* indices_ptr = indices.const_data_ptr<CTYPE>();
   ssize_t weight_height = weight.size(0);
-  for (int i = 0; i < indices.numel(); i++) {
+  const auto indices_numel = indices.numel();
+  for (int i = 0; i < indices_numel; i++) {
     // Ensure index is larger than 0 and smaller than weight.size(0)
     ET_KERNEL_CHECK_MSG(
         ctx,
@@ -70,7 +71,7 @@ void embedding_kernel(
 // embedding.out(Tensor weight, Tensor indices, int padding_idx=-1, bool
 // scale_grad_by_freq=False, bool sparse=False, *, Tensor(a!) out) -> Tensor(a!)
 Tensor& embedding_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& weight,
     const Tensor& indices,
     int64_t padding_idx,
@@ -100,6 +101,15 @@ Tensor& embedding_out(
       out.dim() - 1,
       out.size(1),
       weight.size(1));
+
+  ET_KERNEL_CHECK(
+      ctx,
+      tensors_have_same_dim_order(weight, indices, out),
+      InvalidArgument,
+      out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensor_is_default_dim_order(weight), InvalidArgument, out);
 
   ScalarType ix_type = indices.scalar_type();
   ET_CHECK_MSG(

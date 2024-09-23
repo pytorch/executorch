@@ -13,6 +13,11 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
+if(EXECUTORCH_BUILD_DEVTOOLS)
+  # protobuf requires frtti
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -frtti")
+endif()
+
 option(COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." OFF)
 
 # inmemoryfs sources
@@ -59,6 +64,7 @@ set(SDK_SOURCES
     runtime/sdk/ETCoreMLModelAnalyzer.mm
     runtime/sdk/ETCoreMLModelStructurePath.mm
     runtime/sdk/ETCoreMLOperationProfilingInfo.mm
+    runtime/sdk/ETCoreMLModelDebugInfo.mm
     runtime/sdk/ETCoreMLModelDebugger.mm
     runtime/sdk/ETCoreMLModelProfiler.mm
     runtime/sdk/ETCoreMLPair.mm
@@ -130,7 +136,7 @@ target_include_directories(
 target_include_directories(coremldelegate PRIVATE ${EXECUTORCH_ROOT}/..)
 target_link_libraries(coremldelegate PRIVATE executorch_no_prim_ops)
 
-if(EXECUTORCH_BUILD_SDK)
+if(EXECUTORCH_BUILD_DEVTOOLS)
   target_sources(coremldelegate PRIVATE ${SDK_SOURCES} ${PROTOBUF_SOURCES})
   target_include_directories(
     coremldelegate
@@ -141,6 +147,8 @@ if(EXECUTORCH_BUILD_SDK)
   add_subdirectory(
     ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/cmake
   )
+
+  target_link_options_shared_lib(libprotobuf-lite)
   target_link_libraries(coremldelegate PRIVATE libprotobuf-lite)
 endif()
 
@@ -166,7 +174,7 @@ endif()
 target_compile_options(coremldelegate PRIVATE "-fobjc-arc")
 target_compile_options(coremldelegate PRIVATE "-fno-exceptions")
 
-if(EXECUTORCH_BUILD_SDK)
+if(EXECUTORCH_BUILD_DEVTOOLS)
   target_compile_options(
     executorch_no_prim_ops PUBLIC -DET_EVENT_TRACER_ENABLED
   )
@@ -186,4 +194,11 @@ set(TARGET coremldelegate APPEND_STRING PROPERTY COMPILE_FLAGS
 
 set(TARGET coremldelegate APPEND_STRING PROPERTY COMPILE_FLAGS
            "-Wno-receiver-expr"
+)
+
+install(
+  TARGETS coremldelegate
+  DESTINATION lib
+  INCLUDES
+  DESTINATION ${_common_include_directories}
 )

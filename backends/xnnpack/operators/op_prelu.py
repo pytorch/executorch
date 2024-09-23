@@ -23,7 +23,7 @@ from executorch.backends.xnnpack.utils.utils import get_input_node
 
 @register_node_visitor
 class PReLUVisitor(NodeVisitor):
-    target = "aten._prelu_kernel.default"
+    target = "aten.prelu.default"
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

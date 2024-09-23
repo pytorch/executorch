@@ -51,7 +51,7 @@ class Tensor:
     dim_order: List[bytes]
     requires_grad: bool
     layout: int
-    constant_buffer_idx: int
+    data_buffer_idx: int
     allocation_info: Optional[AllocationDetails]
 
     # check schema.fbs for explanations
@@ -75,7 +75,23 @@ class Bool:
 
 @dataclass
 class Double:
-    double_val: float
+    double_val: Union[float, str]
+
+    def __init__(self, double_val: float) -> None:
+        if double_val == float("inf"):
+            self.double_val = "inf"
+        elif double_val == float("-inf"):
+            self.double_val = "-inf"
+        else:
+            self.double_val = double_val
+
+    def __post_init__(self) -> None:
+        if isinstance(self.double_val, str):
+            assert self.double_val in ["inf", "-inf"]
+        else:
+            assert isinstance(self.double_val, float)
+            assert not self.double_val == float("inf")
+            assert not self.double_val == float("-inf")
 
 
 @dataclass
@@ -265,3 +281,4 @@ class Program:
     backend_delegate_data: List[BackendDelegateInlineData]
     segments: List[DataSegment]
     constant_segment: SubsegmentOffsets
+    mutable_data_segments: Optional[List[SubsegmentOffsets]] = None

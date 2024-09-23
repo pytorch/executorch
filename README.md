@@ -10,15 +10,19 @@ Key value propositions of ExecuTorch are:
 - **Portability:** Compatibility with a wide variety of computing platforms,
   from high-end mobile phones to highly constrained embedded systems and
   microcontrollers.
-- **Productivity:** Enabling developers to use the same toolchains and SDK from
-  PyTorch model authoring and conversion, to debugging and deployment to a wide
-  variety of platforms.
+- **Productivity:** Enabling developers to use the same toolchains and Developer
+  Tools from PyTorch model authoring and conversion, to debugging and deployment
+  to a wide variety of platforms.
 - **Performance:** Providing end users with a seamless and high-performance
   experience due to a lightweight runtime and utilizing full hardware
   capabilities such as CPUs, NPUs, and DSPs.
 
 For a comprehensive technical overview of ExecuTorch and step-by-step tutorials,
 please visit our documentation website [for the latest release](https://pytorch.org/executorch/stable/index.html) (or the [main branch](https://pytorch.org/executorch/main/index.html)).
+
+Check out the [Getting Started](https://pytorch.org/executorch/stable/getting-started-setup.html#quick-setup-colab-jupyter-notebook-prototype) page for a quick spin.
+
+Check out the examples of [Llama](./examples/models/llama2/README.md), [Llava](./examples/models/llava/README.md) and [other models](./examples/README.md) running on edge devices using ExecuTorch.
 
 ## Feedback
 
@@ -30,6 +34,11 @@ repository](https://github.com/pytorch/executorch/issues) for bug reporting.
 
 We recommend using the latest release tag from the
 [Releases](https://github.com/pytorch/executorch/releases) page when developing.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details about issues, PRs, code
+style, CI jobs, and other development topics.
 
 ## Directory Structure
 
@@ -86,7 +95,7 @@ tools.
 ├── schema                          #  ExecuTorch PTE file format flatbuffer
 schemas.
 ├── scripts                         #  Utility scripts for size management, dependency management, etc.
-├── sdk                             #  Model profiling, debugging, and introspection.
+├── devtools                        #  Model profiling, debugging, and introspection.
 ├── shim                            #  Compatibility layer between OSS and Internal builds
 ├── test                            #  Broad scoped end-to-end tests.
 ├── third-party                     #  Third-party dependencies.

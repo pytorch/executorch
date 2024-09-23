@@ -15,22 +15,32 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using RuntimeContext = torch::executor::KernelRuntimeContext;
-using namespace torch::executor;
+using exec_aten::ArrayRef;
+using exec_aten::optional;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
+using exec_aten::TensorImpl;
+using executorch::runtime::BoxedEvalueList;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::get_op_function_from_registry;
+using executorch::runtime::KernelRuntimeContext;
+using executorch::runtime::registry_has_op_function;
 
-Tensor& my_op_out(RuntimeContext& ctx, const Tensor& a, Tensor& out) {
+Tensor& my_op_out(KernelRuntimeContext& ctx, const Tensor& a, Tensor& out) {
   (void)ctx;
   (void)a;
   return out;
 }
 
-Tensor& set_1_out(RuntimeContext& ctx, Tensor& out) {
+Tensor& set_1_out(KernelRuntimeContext& ctx, Tensor& out) {
   (void)ctx;
   out.mutable_data_ptr<int32_t>()[0] = 1;
   return out;
 }
 
-Tensor& add_tensor_out(RuntimeContext& ctx, ArrayRef<Tensor> a, Tensor& out) {
+Tensor&
+add_tensor_out(KernelRuntimeContext& ctx, ArrayRef<Tensor> a, Tensor& out) {
   (void)ctx;
   for (int i = 0; i < out.numel(); i++) {
     int sum = 0;
@@ -43,7 +53,7 @@ Tensor& add_tensor_out(RuntimeContext& ctx, ArrayRef<Tensor> a, Tensor& out) {
 }
 
 Tensor& add_optional_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     optional<int64_t> s1,
     optional<int64_t> s2,
     Tensor& out) {
@@ -58,7 +68,7 @@ Tensor& add_optional_scalar_out(
 }
 
 Tensor& add_optional_tensor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     ArrayRef<optional<Tensor>> a,
     Tensor& out) {
   (void)ctx;
@@ -82,12 +92,12 @@ class MakeBoxedFromUnboxedFunctorTest : public ::testing::Test {
 
 TEST_F(MakeBoxedFromUnboxedFunctorTest, Basic) {
   EXECUTORCH_LIBRARY(my_ns, "my_op.out", my_op_out);
-  EXPECT_TRUE(hasOpsFn("my_ns::my_op.out"));
+  EXPECT_TRUE(registry_has_op_function("my_ns::my_op.out"));
 }
 
 TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxLogicWorks) {
   EXECUTORCH_LIBRARY(my_ns, "set_1.out", set_1_out);
-  EXPECT_TRUE(hasOpsFn("my_ns::set_1.out"));
+  EXPECT_TRUE(registry_has_op_function("my_ns::set_1.out"));
 
   // prepare out tensor
   TensorImpl::SizesType sizes[1] = {5};
@@ -97,16 +107,17 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxLogicWorks) {
   auto a = Tensor(&a_impl);
 
   // get boxed callable
-  auto fn = getOpsFn("my_ns::set_1.out");
+  auto fn = get_op_function_from_registry("my_ns::set_1.out");
+  ASSERT_EQ(fn.error(), Error::Ok);
 
   // run it
-  RuntimeContext context;
+  KernelRuntimeContext context;
   EValue values[1];
   values[0] = a;
   EValue* stack[1];
   stack[0] = &values[0];
 
-  fn(context, stack);
+  (*fn)(context, stack);
 
   // check result
   EXPECT_EQ(a.const_data_ptr<int32_t>()[0], 1);
@@ -114,7 +125,7 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxLogicWorks) {
 
 TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxArrayRef) {
   EXECUTORCH_LIBRARY(my_ns, "add_tensor.out", add_tensor_out);
-  EXPECT_TRUE(hasOpsFn("my_ns::add_tensor.out"));
+  EXPECT_TRUE(registry_has_op_function("my_ns::add_tensor.out"));
 
   // prepare ArrayRef input.
   torch::executor::testing::TensorFactory<ScalarType::Int> tf;
@@ -126,13 +137,14 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxArrayRef) {
   // prepare out tensor.
   EValue out(tf.zeros({5}));
 
-  auto fn = getOpsFn("my_ns::add_tensor.out");
+  auto fn = get_op_function_from_registry("my_ns::add_tensor.out");
+  ASSERT_EQ(fn.error(), Error::Ok);
 
   // run it.
-  RuntimeContext context;
+  KernelRuntimeContext context;
   EValue values[2] = {boxed_array_ref, out};
   EValue* stack[2] = {&values[0], &values[1]};
-  fn(context, stack);
+  (*fn)(context, stack);
 
   // check result.
   for (int i = 0; i < 5; i++) {
@@ -142,7 +154,7 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxArrayRef) {
 
 TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxOptional) {
   EXECUTORCH_LIBRARY(my_ns, "add_optional_scalar.out", add_optional_scalar_out);
-  EXPECT_TRUE(hasOpsFn("my_ns::add_optional_scalar.out"));
+  EXPECT_TRUE(registry_has_op_function("my_ns::add_optional_scalar.out"));
 
   // prepare optional input.
   EValue scalar((int64_t)3);
@@ -151,13 +163,14 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxOptional) {
   // prepare out tensor.
   torch::executor::testing::TensorFactory<ScalarType::Int> tf;
   EValue out(tf.ones({1}));
-  auto fn = getOpsFn("my_ns::add_optional_scalar.out");
+  auto fn = get_op_function_from_registry("my_ns::add_optional_scalar.out");
+  ASSERT_EQ(fn.error(), Error::Ok);
 
   // run it.
-  RuntimeContext context;
+  KernelRuntimeContext context;
   EValue values[3] = {scalar, scalar_none, out};
   EValue* stack[3] = {&values[0], &values[1], &values[2]};
-  fn(context, stack);
+  (*fn)(context, stack);
 
   // check result.
   EXPECT_EQ(stack[2]->toTensor().const_data_ptr<int32_t>()[0], 4);
@@ -165,7 +178,7 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxOptional) {
 
 TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxOptionalArrayRef) {
   EXECUTORCH_LIBRARY(my_ns, "add_optional_tensor.out", add_optional_tensor_out);
-  EXPECT_TRUE(hasOpsFn("my_ns::add_optional_tensor.out"));
+  EXPECT_TRUE(registry_has_op_function("my_ns::add_optional_tensor.out"));
 
   // prepare optional tensors.
   torch::executor::testing::TensorFactory<ScalarType::Int> tf;
@@ -177,13 +190,14 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxOptionalArrayRef) {
 
   // prepare out tensor.
   EValue out(tf.zeros({5}));
-  auto fn = getOpsFn("my_ns::add_optional_tensor.out");
+  auto fn = get_op_function_from_registry("my_ns::add_optional_tensor.out");
+  ASSERT_EQ(fn.error(), Error::Ok);
 
   // run it.
-  RuntimeContext context;
+  KernelRuntimeContext context;
   EValue values[2] = {boxed_array_ref, out};
   EValue* stack[2] = {&values[0], &values[1]};
-  fn(context, stack);
+  (*fn)(context, stack);
 
   // check result.
   for (int i = 0; i < 5; i++) {

@@ -156,7 +156,7 @@ function run_fvp() {
     elf=$(find ${script_dir}/executor_runner -name "${elf_name}")
     [[ ! -f $elf ]] && { echo "[${FUNCNAME[0]}]: Unable to find executor_runner elf: ${elf}"; exit 1; }
     FVP_Corstone_SSE-300_Ethos-U55                          \
-        -C cpu0.CFGITCMSZ=11 \
+        -C cpu0.CFGITCMSZ=11                                \
         -C ethosu.num_macs=128                              \
         -C mps3_board.visualisation.disable-visualisation=1 \
         -C mps3_board.telnetterminal0.start_telnet=0        \

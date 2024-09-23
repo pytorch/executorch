@@ -19,7 +19,7 @@ using ScalarType = exec_aten::ScalarType;
 using Tensor = exec_aten::Tensor;
 
 Tensor& fill_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {
@@ -30,6 +30,9 @@ Tensor& fill_scalar_out(
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(ctx, a_type == out_type, InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
   // Resize for dynamic shape
   ET_KERNEL_CHECK_MSG(
@@ -58,7 +61,7 @@ Tensor& fill_scalar_out(
 }
 
 Tensor& fill_tensor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
@@ -66,6 +69,9 @@ Tensor& fill_tensor_out(
 
   // Assert `b` must be a scalar tensor.
   ET_KERNEL_CHECK(ctx, tensor_is_scalar(b), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();

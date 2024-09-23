@@ -27,8 +27,15 @@ void add_tensor_to_staging_node(
 ValueRef prepack_if_tensor_ref(
     ComputeGraph& graph,
     const ValueRef v,
-    const api::GPUMemoryLayout layout);
+    const utils::GPUMemoryLayout layout);
+
+ValueRef prepack_buffer_if_tensor_ref(
+    ComputeGraph& graph,
+    const ValueRef v,
+    const utils::GPUMemoryLayout layout);
 
 ValueRef prepack_if_tensor_ref(ComputeGraph& graph, const ValueRef v);
+
+ValueRef prepack_buffer_if_tensor_ref(ComputeGraph& graph, const ValueRef v);
 
 } // namespace vkcompute

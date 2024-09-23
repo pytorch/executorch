@@ -350,7 +350,7 @@ def copy_portable_header_files(name):
         default_outs = ["."],
     )
 
-def build_portable_lib(name, oplist_header_name):
+def build_portable_lib(name, oplist_header_name, feature = None):
     """Build portable lib from source. We build from source so that the generated header file, 
     selected_op_variants.h, can be used to selectively build the lib for different dtypes.
     """
@@ -400,6 +400,7 @@ def build_portable_lib(name, oplist_header_name):
         # via static initializers that run at program startup.
         # @lint-ignore BUCKLINT link_whole
         link_whole = True,
+        feature = feature,
     )
 
 def executorch_generated_lib(
@@ -421,7 +422,8 @@ def executorch_generated_lib(
         platforms = get_default_executorch_platforms(),
         compiler_flags = [],
         kernel_deps = [],
-        dtype_selective_build = False):
+        dtype_selective_build = False,
+        feature = None):
     """Emits 0-3 C++ library targets (in fbcode or xplat) containing code to
     dispatch the operators specified in the provided yaml files.
 
@@ -469,6 +471,7 @@ def executorch_generated_lib(
         fbcode_deps: Additional fbcode deps, can be used to provide custom operator library.
         compiler_flags: compiler_flags args to runtime.cxx_library
         dtype_selective_build: In additional to operator selection, dtype selective build further selects the dtypes for each operator. Can be used with model or dict selective build APIs, where dtypes can be specified. Note: this is only available in xplat.
+        feature: Product-Feature Hierarchy (PFH). For internal use only, required for FoA in production. See: https://fburl.com/wiki/2wzjpyqy
     """
     if functions_yaml_target and aten_mode:
         fail("{} is providing functions_yaml_target in ATen mode, it will be ignored. `native_functions.yaml` will be the source of truth.".format(name))
@@ -560,7 +563,7 @@ def executorch_generated_lib(
 
         # Build portable lib.
         portable_lib_name = name + "_portable_lib"
-        build_portable_lib(portable_lib_name, oplist_header_name)
+        build_portable_lib(portable_lib_name, oplist_header_name, feature)
         portable_lib = [":{}".format(portable_lib_name)]
 
     # Exports headers that declare the function signatures of the C++ functions
@@ -583,6 +586,7 @@ def executorch_generated_lib(
                 "//executorch/codegen:macros",
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
             ],
+            feature = feature,
         )
 
     if name in libs:
@@ -624,6 +628,7 @@ def executorch_generated_lib(
             # of //executorch.
             _is_external_target = True,
             platforms = platforms,
+            feature = feature,
         )
 
     if custom_ops_yaml_target and custom_ops_requires_aot_registration:

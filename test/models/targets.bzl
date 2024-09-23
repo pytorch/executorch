@@ -22,9 +22,9 @@ def define_common_targets():
         deps = [
             ":linear_model",
             "//caffe2:torch",
-            "//executorch/sdk/bundled_program:config",
-            "//executorch/sdk:lib",
-            "//executorch/sdk/bundled_program/serialize:lib",
+            "//executorch/devtools/bundled_program:config",
+            "//executorch/devtools:lib",
+            "//executorch/devtools/bundled_program/serialize:lib",
             "//executorch/exir:lib",
             "//executorch/exir/_serialize:lib",
         ],
@@ -66,6 +66,7 @@ def define_common_targets():
         "ModuleMultipleEntry",
         "ModuleIndex",
         "ModuleDynamicCatUnallocatedIO",
+        "ModuleSimpleTrain",
     ]
 
     # Generates Executorch .pte program files for various modules at build time.

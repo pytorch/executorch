@@ -166,11 +166,11 @@ class Interpreter:
         tensors = []
         for elem in self.execution_plan.values:
             val = elem.val
-            if isinstance(val, Tensor) and val.constant_buffer_idx != 0:
+            if isinstance(val, Tensor) and val.data_buffer_idx != 0:
                 # load val into res
                 # pyre-fixme[16]
                 tensor = bindings.convert_to_tensor(
-                    self.data_buffers[val.constant_buffer_idx],
+                    self.data_buffers[val.data_buffer_idx],
                     val.scalar_type,
                     val.sizes,
                     stride_from_dim_order(val.sizes, val.dim_order),
@@ -239,7 +239,7 @@ class Interpreter:
                 tensor_list.append(self._value_list[i])
             self._value_list[idx] = tensor_list
         elif isinstance(val, Tensor):
-            if val.constant_buffer_idx == 0:
+            if val.data_buffer_idx == 0:
                 # TODO(zhengxu) Verify that argument is actually an out variant
                 self._value_list[idx] = torch.empty(
                     val.sizes, dtype=get_scalar_type(val.scalar_type)
@@ -248,7 +248,7 @@ class Interpreter:
                 # Constant Tensor conversion
                 # pyre-fixme [16]
                 tensor = bindings.convert_to_tensor(
-                    self.data_buffers[val.constant_buffer_idx],
+                    self.data_buffers[val.data_buffer_idx],
                     val.scalar_type,
                     val.sizes,
                     stride_from_dim_order(val.sizes, val.dim_order),

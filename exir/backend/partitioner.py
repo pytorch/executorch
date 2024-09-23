@@ -96,6 +96,7 @@ class Partitioner(ABC):
 
     def ops_to_not_decompose(
         self,
+        ep: ExportedProgram,
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
         """
         Returns a list of operator names that should not be decomposed. When these ops are

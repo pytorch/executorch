@@ -5,7 +5,7 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import <ETCoreMLPair.h>
+#import "ETCoreMLPair.h"
 
 @implementation ETCoreMLPair
 

@@ -36,6 +36,9 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         preprocessor_flags = [
+            # Enable workspace sharing across delegates
+            "-DENABLE_XNNPACK_SHARED_WORKSPACE",
+            # Uncomment to enable per operator timings
             # "-DENABLE_XNNPACK_PROFILING",
         ],
         exported_deps = [
@@ -44,7 +47,7 @@ def define_common_targets():
         deps = [
             third_party_dep("XNNPACK"),
             "//executorch/backends/xnnpack/serialization:xnnpack_flatbuffer_header",
-            "//executorch/backends/xnnpack/threadpool:threadpool",
+            "//executorch/extension/threadpool:threadpool",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
         # XnnpackBackend.cpp needs to compile with executor as whole

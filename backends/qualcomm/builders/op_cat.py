@@ -9,6 +9,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER, QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpConcat, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -64,8 +65,8 @@ class Cat(NodeVisitor):
         if axis < 0:
             axis += node.meta["val"].dim()
 
-        if "axis_order" in node.meta:
-            axis = node.meta["axis_order"].index(axis)
+        if QCOM_AXIS_ORDER in node.meta:
+            axis = node.meta[QCOM_AXIS_ORDER].index(axis)
 
         concat_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
@@ -78,7 +79,7 @@ class Cat(NodeVisitor):
         concat_op.AddScalarParam(
             OpConcat.param_axis,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(axis)},
+            {QCOM_DATA: np.uint32(axis)},
         )
 
         return concat_op

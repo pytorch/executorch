@@ -65,6 +65,12 @@ function(executorch_print_configuration_summary)
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL : "
                  "${EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL}"
   )
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TENSOR      : "
+                 "${EXECUTORCH_BUILD_EXTENSION_TENSOR}"
+  )
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TRAINING      : "
+                 "${EXECUTORCH_BUILD_EXTENSION_TRAINING}"
+  )
   message(
     STATUS
       "  EXECUTORCH_BUILD_FLATC                 : ${EXECUTORCH_BUILD_FLATC}"
@@ -97,7 +103,7 @@ function(executorch_print_configuration_summary)
                  "${EXECUTORCH_BUILD_KERNELS_QUANTIZED}"
   )
   message(
-    STATUS "  EXECUTORCH_BUILD_SDK                   : ${EXECUTORCH_BUILD_SDK}"
+    STATUS "  EXECUTORCH_BUILD_DEVTOOLS              : ${EXECUTORCH_BUILD_DEVTOOLS}"
   )
   message(
     STATUS
@@ -143,11 +149,21 @@ function(macos_kernel_link_options target_name)
   )
 endfunction()
 
+# Same as kernel_link_options but it's for MSVC linker
+function(msvc_kernel_link_options target_name)
+  target_link_options(
+    ${target_name} INTERFACE
+    "SHELL:LINKER:/WHOLEARCHIVE:$<TARGET_FILE:${target_name}>"
+  )
+endfunction()
+
 # Ensure that the load-time constructor functions run. By default, the linker
 # would remove them since there are no other references to them.
 function(target_link_options_shared_lib target_name)
   if(APPLE)
     macos_kernel_link_options(${target_name})
+  elseif(MSVC)
+    msvc_kernel_link_options(${target_name})
   else()
     kernel_link_options(${target_name})
   endif()
@@ -171,25 +187,21 @@ function(extract_sources sources_file)
       set(executorch_root ${CMAKE_CURRENT_SOURCE_DIR})
     endif()
 
-    set(TARGET_PLATFORM ${CMAKE_SYSTEM_NAME})
-    string(TOLOWER ${TARGET_PLATFORM} TARGET_PLATFORM)
-
-    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64" OR
-       CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
-      set(TARGET_ARCH "aarch64")
-    elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
-      set(TARGET_ARCH "x8664")
-    else()
-      set(TARGET_ARCH "default")
+    if(ANDROID_ABI)
+      if("${ANDROID_ABI}" STREQUAL "arm64-v8a")
+        set(target_platforms_arg "--target-platforms=shim//:android-arm64")
+      elseif("${ANDROID_ABI}" STREQUAL "x86_64")
+        set(target_platforms_arg "--target-platforms=shim//:android-x86_64")
+      else()
+        message(FATAL_ERROR "Unsupported ANDROID_ABI setting ${ANDROID_ABI}. Please add it here!")
+      endif()
     endif()
 
     execute_process(
       COMMAND
         ${PYTHON_EXECUTABLE} ${executorch_root}/build/extract_sources.py
         --config=${executorch_root}/build/cmake_deps.toml --out=${sources_file}
-        --buck2=${BUCK2}
-        --platform=${TARGET_PLATFORM}
-        --arch=${TARGET_ARCH}
+        --buck2=${BUCK2} ${target_platforms_arg}
       OUTPUT_VARIABLE gen_srcs_output
       ERROR_VARIABLE gen_srcs_error
       RESULT_VARIABLE gen_srcs_exit_code

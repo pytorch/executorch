@@ -6,7 +6,6 @@
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
-from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
 class RecomposePixelUnshuffle(ExportPass):
@@ -24,7 +23,7 @@ class RecomposePixelUnshuffle(ExportPass):
 
         self.quantization_capture = quantization_capture
         if quantization_capture:
-            self.reshape_target = torch.ops.aten.reshape.default
+            self.reshape_target = torch.ops.aten._unsafe_view.default
             self.permute_target = torch.ops.aten.permute.default
             self.view_target = torch.ops.aten.view.default
             self.op = torch.ops.aten.pixel_unshuffle.default
@@ -35,7 +34,13 @@ class RecomposePixelUnshuffle(ExportPass):
         for node in graph.nodes:
             if node.op == "call_function" and node.target == self.reshape_target:
                 with graph.inserting_after(node):
-                    premute_node = node.args[0]
+
+                    # Clone op still exists between permute and reshape_target during quantization,
+                    # so we need to check for args[0].args[0] to get permute node
+                    if self.quantization_capture:
+                        premute_node = node.args[0].args[0]
+                    else:
+                        premute_node = node.args[0]
                     if any(
                         [
                             len(node.args[1]) != 4,
@@ -78,28 +83,6 @@ class RecomposePixelUnshuffle(ExportPass):
                         user.replace_input_with(node, pixel_unshuffle_node)
                     # copy metadata
                     pixel_unshuffle_node.meta = node.meta
-
-        # decomposed core aten ops
-        if not self.quantization_capture:
-            partitions = get_source_partitions(graph, [torch.nn.PixelUnshuffle])
-            for _, src_partitions in partitions.items():
-                for src_partition in src_partitions:
-                    input_node = src_partition.input_nodes[0]
-                    output_node = src_partition.output_nodes[0]
-                    with graph.inserting_after(input_node):
-                        h_in_shape = input_node.meta["val"].shape[2]
-                        h_out_shape = output_node.meta["val"].shape[2]
-                        downscale_factor = h_in_shape / h_out_shape
-
-                        op = self.op
-                        pixel_unshuffle_node = graph.create_node(
-                            "call_function", op, (input_node, int(downscale_factor))
-                        )
-                        users = output_node.users.copy()
-                        for user in users:
-                            user.replace_input_with(output_node, pixel_unshuffle_node)
-                        # copy metadata
-                        pixel_unshuffle_node.meta = output_node.meta
 
         graph.eliminate_dead_code()
         graph_module.recompile()

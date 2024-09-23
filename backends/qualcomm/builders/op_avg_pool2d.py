@@ -9,6 +9,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpPoolAvg2d, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -132,12 +133,12 @@ class AvgPool2d(NodeVisitor):
         avg_pool2d_op.AddScalarParam(
             OpPoolAvg2d.param_rounding_mode,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(mode)},
+            {QCOM_DATA: np.uint32(mode)},
         )
         avg_pool2d_op.AddScalarParam(
             OpPoolAvg2d.param_count_pad_for_edges,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
-            {"data": count_include_pad},
+            {QCOM_DATA: count_include_pad},
         )
 
         return avg_pool2d_op

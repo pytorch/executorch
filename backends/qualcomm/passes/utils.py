@@ -6,6 +6,7 @@
 
 import torch
 from executorch.backends.qualcomm.builders.utils import get_parameter
+from executorch.backends.qualcomm.utils.constants import QCOM_ENCODING
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -40,5 +41,5 @@ def get_quant_attrs(
                 value = get_parameter(attr_n, edge_program)
         quant_attrs[quant_attr_keys[i - 1]] = value
 
-    quant_attrs["encoding"] = quant_node.target
+    quant_attrs[QCOM_ENCODING] = quant_node.target
     return quant_attrs

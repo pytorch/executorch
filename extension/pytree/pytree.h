@@ -19,8 +19,8 @@
 // NB: This is a local, pytree FunctionRef and not from the ExecuTorch runtime.
 #include <executorch/extension/pytree/function_ref.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace extension {
 namespace pytree {
 
 inline void pytree_assert(bool must_be_true) {
@@ -738,6 +738,18 @@ std::pair<arr<T*>, std::unique_ptr<TreeSpec<Aux>>> flatten(
       std::make_unique<TreeSpec<Aux>>(clone(tree, spec_leaves.get()))};
 }
 
+} // namespace pytree
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace pytree {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::pytree::Empty;
+using ::executorch::extension::pytree::from_str;
+using ::executorch::extension::pytree::TreeSpec;
 } // namespace pytree
 } // namespace executor
 } // namespace torch

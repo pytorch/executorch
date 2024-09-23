@@ -9,6 +9,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER, QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpLogSoftmax, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -52,8 +53,8 @@ class LogSoftmax(NodeVisitor):
         if dim < 0:
             dim = dim % len(input_tensor.shape)
 
-        if "axis_order" in node.meta:
-            dim = node.meta["axis_order"].index(dim)
+        if QCOM_AXIS_ORDER in node.meta:
+            dim = node.meta[QCOM_AXIS_ORDER].index(dim)
 
         # logsoftmax only supports last dimension for now, which is channel in QNN
         if dim != input_tensor.dim() - 1:
@@ -70,6 +71,6 @@ class LogSoftmax(NodeVisitor):
         log_softmax_op.AddScalarParam(
             OpLogSoftmax.param_axis,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(dim)},
+            {QCOM_DATA: np.uint32(dim)},
         )
         return log_softmax_op

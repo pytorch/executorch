@@ -23,6 +23,7 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/extension/memory_allocator:malloc_memory_allocator",
+                "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/extension/data_loader:mmap_data_loader",
             ],
             exported_deps = [

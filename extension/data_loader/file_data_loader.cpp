@@ -8,9 +8,11 @@
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstddef>
 #include <cstring>
+#include <limits>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -25,9 +27,23 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
 
-namespace torch {
-namespace executor {
-namespace util {
+// Some platforms (e.g. Xtensa) do not support pread() that we use to read the
+// file at different offsets simultaneously from multiple threads not affecting
+// each other. We list them below and use a workaround for them.
+#if defined(__xtensa__)
+#define ET_HAVE_PREAD 0
+#endif // defined(__xtensa__)
+
+#ifndef ET_HAVE_PREAD
+#define ET_HAVE_PREAD 1
+#endif // !ET_HAVE_PREAD
+
+using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Result;
+
+namespace executorch {
+namespace extension {
 
 namespace {
 
@@ -51,7 +67,6 @@ static uint8_t* align_pointer(void* ptr, size_t alignment) {
   addr = (addr | (alignment - 1)) + 1;
   return reinterpret_cast<uint8_t*>(addr);
 }
-
 } // namespace
 
 FileDataLoader::~FileDataLoader() {
@@ -154,14 +169,17 @@ namespace {
  * `context` is actually a ptrdiff_t value (not a pointer) that contains the
  * offset in bytes between `data` and the actual pointer to free.
  */
-void FreeSegment(void* context, void* data, __ET_UNUSED size_t size) {
+void FreeSegment(void* context, void* data, ET_UNUSED size_t size) {
   ptrdiff_t offset = reinterpret_cast<ptrdiff_t>(context);
   ET_DCHECK_MSG(offset >= 0, "Unexpected offset %ld", (long int)offset);
   std::free(static_cast<uint8_t*>(data) - offset);
 }
 } // namespace
 
-Result<FreeableBuffer> FileDataLoader::Load(size_t offset, size_t size) {
+Result<FreeableBuffer> FileDataLoader::load(
+    size_t offset,
+    size_t size,
+    ET_UNUSED const DataLoader::SegmentInfo& segment_info) const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
 #ifdef _WIN32
@@ -184,34 +202,6 @@ Result<FreeableBuffer> FileDataLoader::Load(size_t offset, size_t size) {
   if (size == 0) {
     return FreeableBuffer(nullptr, 0, /*free_fn=*/nullptr);
   }
-
-#ifdef _WIN32
-  // Seek to the right place in the file.
-  LARGE_INTEGER li;
-  li.QuadPart = offset;
-  if (!SetFilePointerEx(fd_, li, NULL, FILE_BEGIN)) {
-    ET_LOG(
-        Error,
-        "Seeking %s to offset %zu failed: %lu",
-        file_name_,
-        offset,
-        GetLastError());
-    return Error::AccessFailed;
-  }
-#else
-  // Seek to the right place in the file.
-  off_t seek_offset = ::lseek(fd_, offset, SEEK_SET);
-  if (seek_offset != offset) {
-    ET_LOG(
-        Error,
-        "Seeking %s to offset %zu returned %zd: %s",
-        file_name_,
-        offset,
-        (ssize_t)seek_offset,
-        strerror(errno));
-    return Error::AccessFailed;
-  }
-#endif
 
   // Allocate memory for the FreeableBuffer.
   size_t alloc_size = size;
@@ -244,61 +234,12 @@ Result<FreeableBuffer> FileDataLoader::Load(size_t offset, size_t size) {
       buffer,
       alloc_size);
 
-  // Read the data into the aligned address.
-  size_t needed = size;
-  uint8_t* buf = reinterpret_cast<uint8_t*>(aligned_buffer);
-#ifdef _WIN32
-  while (needed > 0) {
-    DWORD nread = 0;
-    if (!ReadFile(fd_, buf, static_cast<DWORD>(needed), &nread, NULL)) {
-      ET_LOG(
-          Error,
-          "Reading from %s: failed to read %zu bytes at offset %zu: %lu",
-          file_name_,
-          size,
-          offset,
-          GetLastError());
-      std::free(buffer);
-      return Error::AccessFailed;
-    }
-    if (nread == 0) {
-      ET_LOG(
-          Error,
-          "Reading from %s: failed to read %zu bytes at offset %zu: EOF",
-          file_name_,
-          size,
-          offset);
-      std::free(buffer);
-      return Error::AccessFailed;
-    }
-    needed -= nread;
-    buf += nread;
+  auto err = load_into(offset, size, segment_info, aligned_buffer);
+  if (err != Error::Ok) {
+    // Free `buffer`, which is what malloc() gave us, not `aligned_buffer`.
+    std::free(buffer);
+    return err;
   }
-#else
-  while (needed > 0) {
-    ssize_t nread = ::read(fd_, buf, needed);
-    if (nread < 0 && errno == EINTR) {
-      // Interrupted by a signal; zero bytes read.
-      continue;
-    }
-    if (nread <= 0) {
-      // nread == 0 means EOF, which we shouldn't see if we were able to read
-      // the full amount. nread < 0 means an error occurred.
-      ET_LOG(
-          Error,
-          "Reading from %s: failed to read %zu bytes at offset %zu: %s",
-          file_name_,
-          size,
-          offset,
-          nread == 0 ? "EOF" : strerror(errno));
-      // Free `buffer`, which is what malloc() gave us, not `aligned_buffer`.
-      std::free(buffer);
-      return Error::AccessFailed;
-    }
-    needed -= nread;
-    buf += nread;
-  }
-#endif
 
   // We can't naively free this pointer, since it may not be what malloc() gave
   // us. Pass the offset to the real buffer as context. This is the number of
@@ -329,6 +270,117 @@ Result<size_t> FileDataLoader::size() const {
   return file_size_;
 }
 
-} // namespace util
-} // namespace executor
-} // namespace torch
+ET_NODISCARD Error FileDataLoader::load_into(
+    size_t offset,
+    size_t size,
+    ET_UNUSED const SegmentInfo& segment_info,
+    void* buffer) const {
+  ET_CHECK_OR_RETURN_ERROR(
+      // Probably had its value moved to another instance.
+      fd_ >= 0,
+      InvalidState,
+      "Uninitialized");
+  ET_CHECK_OR_RETURN_ERROR(
+      offset + size <= file_size_,
+      InvalidArgument,
+      "File %s: offset %zu + size %zu > file_size_ %zu",
+      file_name_,
+      offset,
+      size,
+      file_size_);
+  ET_CHECK_OR_RETURN_ERROR(
+      buffer != nullptr, InvalidArgument, "Provided buffer cannot be null");
+
+  // Read the data into the aligned address.
+  size_t needed = size;
+  uint8_t* buf = reinterpret_cast<uint8_t*>(buffer);
+
+  // Make a duplicate fd if pread() is not available and we have to seek().
+  // Cannot use the standard dup() or fcntl() calls because the returned
+  // duplicate will share the underlying file record and affect the original fd
+  // when seeking on multiple threads simultaneously.
+  const auto dup_fd = ET_HAVE_PREAD ? fd_ : ::open(file_name_, O_RDONLY);
+
+#ifdef _WIN32
+  while (needed > 0) {
+    const auto chunk_size = std::min<size_t>(
+        needed, static_cast<size_t>(std::numeric_limits<int32_t>::max()));
+    LARGE_INTEGER move;
+    move.QuadPart = static_cast<LONGLONG>(offset);
+    if (!SetFilePointerEx(file_handle, move, nullptr, FILE_BEGIN)) {
+      std::cerr << "Failed to set file pointer: " << GetLastError() << std::endl;
+      return Error::AccessFailed;
+    }
+    DWORD nread = 0;
+    if (!ReadFile(file_handle, buf, static_cast<DWORD>(chunk_size), &nread, nullptr)) {
+      DWORD error_code = GetLastError();
+      if (error_code == ERROR_IO_PENDING) {
+        continue;
+      }
+      ET_LOG(
+          Error,
+          "Reading from %s: failed to read %zu bytes at offset %zu: %#x",
+          file_name,
+          offset,
+          error_code);
+      return Error::AccessFailed;
+    }
+
+    if (nread == 0) {
+      ET_LOG(
+          Error,
+          "Reading from %s: EOF encountered unexpectedly at offset %zu",
+          file_name,
+          offset);
+      return Error::AccessFailed;
+    }
+
+    needed -= nread;
+    buf += nread;
+    offset += nread;
+  }
+#else
+  while (needed > 0) {
+    // Reads on macOS will fail with EINVAL if size > INT32_MAX.
+    const auto chunk_size = std::min<size_t>(
+        needed, static_cast<size_t>(std::numeric_limits<int32_t>::max()));
+    const auto nread =
+#if ET_HAVE_PREAD
+        ::pread(dup_fd, buf, chunk_size, offset);
+#else
+        (::lseek(dup_fd, offset, SEEK_SET) == (off_t)-1)
+        ? -1
+        : ::read(dup_fd, buf, chunk_size);
+#endif
+    if (nread < 0 && errno == EINTR) {
+      // Interrupted by a signal; zero bytes read.
+      continue;
+    }
+    if (nread <= 0) {
+      // nread == 0 means EOF, which we shouldn't see if we were able to read
+      // the full amount. nread < 0 means an error occurred.
+      ET_LOG(
+          Error,
+          "Reading from %s: failed to read %zu bytes at offset %zu: %s",
+          file_name_,
+          size,
+          offset,
+          nread == 0 ? "EOF" : strerror(errno));
+      if (!ET_HAVE_PREAD) {
+        ::close(dup_fd);
+      }
+      return Error::AccessFailed;
+    }
+    needed -= nread;
+    buf += nread;
+    offset += nread;
+  }
+  if (!ET_HAVE_PREAD) {
+    ::close(dup_fd);
+  }
+#endif
+  return Error::Ok;
+}
+
+} // namespace extension
+} // namespace executorch

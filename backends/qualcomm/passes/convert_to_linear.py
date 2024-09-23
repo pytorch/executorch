@@ -7,6 +7,7 @@ from collections import Counter
 from typing import Callable, List
 
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
 from executorch.backends.transforms.addmm_mm_to_linear import (
     apply_addmm_mm_to_linear_transform,
 )
@@ -86,7 +87,7 @@ class ConvertToLinear(ExportPass):
 
         # qnn htp does not support keepdim, the view_copy(reshape) should exist for now
         if self._get_original_input(inputs, input_node).target in dq_ops:
-            input_node.meta["quant_attrs"] = get_quant_attrs(
+            input_node.meta[QCOM_QUANT_ATTRS] = get_quant_attrs(
                 gm, self._get_original_input(inputs, input_node).args[0]
             )
         args = [input_node, weight_node]
@@ -100,7 +101,7 @@ class ConvertToLinear(ExportPass):
             )
             linear_node.meta = fn_node.meta
             if list(output.users)[0].target in q_ops:
-                linear_node.meta["quant_attrs"] = get_quant_attrs(
+                linear_node.meta[QCOM_QUANT_ATTRS] = get_quant_attrs(
                     gm, list(output.users)[0]
                 )
             for user in fn_node.users.copy():
@@ -144,12 +145,12 @@ class ConvertToLinear(ExportPass):
                 unsqueeze_view_copy_node.meta = output.args[0].meta
                 for user in output_users:
                     user.replace_input_with(linear_node, unsqueeze_view_copy_node)
-            if "quant_attrs" in linear_node.meta:
-                squeeze_view_copy_node.meta["quant_attrs"] = linear_node.meta[
-                    "quant_attrs"
+            if QCOM_QUANT_ATTRS in linear_node.meta:
+                squeeze_view_copy_node.meta[QCOM_QUANT_ATTRS] = linear_node.meta[
+                    QCOM_QUANT_ATTRS
                 ]
-                unsqueeze_view_copy_node.meta["quant_attrs"] = linear_node.meta[
-                    "quant_attrs"
+                unsqueeze_view_copy_node.meta[QCOM_QUANT_ATTRS] = linear_node.meta[
+                    QCOM_QUANT_ATTRS
                 ]
 
     def _extract_mm_ops(self, partitioned_nodes: List[edge_op]) -> List[torch.fx.Node]:

@@ -8,9 +8,9 @@
 
 #pragma once
 
-#include "inttypes.h"
-#include "stddef.h"
-#include "xa_type_def.h"
+#include <inttypes.h>
+#include <stddef.h>
+#include <xa_type_def.h>
 
 namespace impl {
 namespace HiFi {

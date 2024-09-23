@@ -4,7 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import operator
+
+from executorch.backends.vulkan.passes.custom_ops_defs import (  # noqa
+    conv_with_clamp_op,
+    grid_priors_op,
+)
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -43,6 +50,7 @@ PRIM_OPS = [
 BINARY_OPS = [
     exir_ops.edge.aten.add.Tensor,
     exir_ops.edge.aten.sub.Tensor,
+    exir_ops.edge.aten.minimum.default,
     exir_ops.edge.aten.mul.Tensor,
     exir_ops.edge.aten.div.Tensor,
     exir_ops.edge.aten.div.Tensor_mode,
@@ -79,12 +87,14 @@ POOLING_OPS = [
 
 CONVOLUTION_OPS = [
     exir_ops.edge.aten.convolution.default,
+    exir_ops.edge.et_vk.conv_with_clamp.default,
 ]
 
 REDUCTION_OPS = [
+    exir_ops.edge.aten.mean.dim,
     exir_ops.edge.aten.sum.dim_IntList,
-    exir_ops.edge.aten._softmax.default,
     exir_ops.edge.aten._log_softmax.default,
+    exir_ops.edge.aten._softmax.default,
 ]
 
 NORMALIZATION_OPS = [
@@ -93,6 +103,7 @@ NORMALIZATION_OPS = [
 ]
 
 SHAPE_MANIPULATION_OPS = [
+    exir_ops.edge.aten.squeeze_copy.dims,
     exir_ops.edge.aten.unsqueeze_copy.default,
     exir_ops.edge.aten.view_copy.default,
     exir_ops.edge.aten.permute_copy.default,
@@ -116,12 +127,15 @@ ORCHESTRATION_OPS = [
 CREATION_OPS = [
     exir_ops.edge.aten.arange.start_step,
     exir_ops.edge.aten.clone.default,
+    exir_ops.edge.aten.constant_pad_nd.default,
     exir_ops.edge.aten.full.default,
     exir_ops.edge.aten.full_like.default,
     exir_ops.edge.aten.ones.default,
     exir_ops.edge.aten.ones_like.default,
+    exir_ops.edge.aten.upsample_nearest2d.vec,
     exir_ops.edge.aten.zeros.default,
     exir_ops.edge.aten.zeros_like.default,
+    exir_ops.edge.et_vk.grid_priors.default,
 ]
 
 

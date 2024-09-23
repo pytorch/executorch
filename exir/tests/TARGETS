@@ -102,6 +102,18 @@ python_unittest(
 )
 
 python_unittest(
+    name = "joint_graph",
+    srcs = [
+        "test_joint_graph.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+)
+
+python_unittest(
     name = "error",
     srcs = [
         "test_error.py",
@@ -198,6 +210,7 @@ python_unittest(
         "//executorch/exir/passes:debug_handle_generator_pass",
         "//executorch/exir/passes:insert_write_back_for_buffers_pass",
         "//executorch/exir/passes:lib",
+        "//executorch/exir/passes:memory_format_ops_pass",
         "//executorch/exir/passes:normalize_view_copy_base_pass",
         "//executorch/exir/passes:remove_graph_asserts_pass",
         "//executorch/exir/passes:remove_mixed_type_operators",
@@ -375,6 +388,11 @@ python_unittest(
     deps = [
         ":test_memory_format_ops_pass_utils",
         "//caffe2:torch",
+        "//executorch/exir:dim_order_utils",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/edge:lib",
         "//executorch/extension/pybindings:portable_lib",  # @manual
     ],
 )
@@ -388,6 +406,7 @@ python_library(
         "//caffe2:torch",
         "//executorch/exir:dim_order_utils",
         "//executorch/exir:lib",
+        "//executorch/exir/capture:config",
     ],
 )
 
@@ -414,5 +433,15 @@ python_unittest(
         "//executorch/exir:memory",
         "//executorch/exir/capture:config",
         "//executorch/exir/passes:lib",
+    ],
+)
+
+python_unittest(
+    name = "warnings",
+    srcs = [
+        "test_warnings.py",
+    ],
+    deps = [
+        "//executorch/exir:_warnings",
     ],
 )

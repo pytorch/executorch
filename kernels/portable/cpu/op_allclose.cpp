@@ -96,14 +96,17 @@ Tensor& allclose_out(
     const Tensor& other,
     double rtol,
     double atol,
-    __ET_UNUSED bool equal_nan,
-    __ET_UNUSED bool dummy_param,
+    ET_UNUSED bool equal_nan,
+    ET_UNUSED bool dummy_param,
     Tensor& out) {
   ET_CHECK_SAME_SHAPE_AND_DTYPE2(self, other);
   ET_CHECK_MSG(
       out.scalar_type() == ScalarType::Bool,
       "Out tensor must be type Bool; saw type %" PRId8,
       static_cast<int8_t>(out.scalar_type()));
+  ET_CHECK_MSG(
+      tensors_have_same_dim_order(self, other, out),
+      "self, other and out tensors should have same dim order");
   ET_CHECK_MSG(
       out.numel() == 1,
       "Out tensor must be a single element; saw %zu elements",
@@ -126,12 +129,12 @@ Tensor& allclose_out(
  * ExecuTorch runtime.
  */
 Tensor allclose_tensor(
-    __ET_UNUSED const Tensor& self,
-    __ET_UNUSED const Tensor& other,
-    __ET_UNUSED double rtol,
-    __ET_UNUSED double atol,
-    __ET_UNUSED bool equal_nan,
-    __ET_UNUSED bool dummy_param) {
+    ET_UNUSED const Tensor& self,
+    ET_UNUSED const Tensor& other,
+    ET_UNUSED double rtol,
+    ET_UNUSED double atol,
+    ET_UNUSED bool equal_nan,
+    ET_UNUSED bool dummy_param) {
 #ifdef USE_ATEN_LIB
   Tensor out =
       torch::tensor({false}, c10::TensorOptions(c10::ScalarType::Bool));
@@ -143,13 +146,13 @@ Tensor allclose_tensor(
 }
 
 Tensor& allclose_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     const Tensor& other,
     double rtol,
     double atol,
-    __ET_UNUSED bool equal_nan,
-    __ET_UNUSED bool dummy_param,
+    ET_UNUSED bool equal_nan,
+    ET_UNUSED bool dummy_param,
     Tensor& out) {
   (void)ctx;
   // TODO(larryliu): Add a context arg to the real op function and remove this
@@ -158,13 +161,13 @@ Tensor& allclose_out(
 }
 
 Tensor allclose_tensor(
-    __ET_UNUSED RuntimeContext& ctx,
-    __ET_UNUSED const Tensor& self,
-    __ET_UNUSED const Tensor& other,
-    __ET_UNUSED double rtol,
-    __ET_UNUSED double atol,
-    __ET_UNUSED bool equal_nan,
-    __ET_UNUSED bool dummy_param) {
+    ET_UNUSED KernelRuntimeContext& ctx,
+    ET_UNUSED const Tensor& self,
+    ET_UNUSED const Tensor& other,
+    ET_UNUSED double rtol,
+    ET_UNUSED double atol,
+    ET_UNUSED bool equal_nan,
+    ET_UNUSED bool dummy_param) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper
   ET_ASSERT_UNREACHABLE();

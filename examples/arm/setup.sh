@@ -91,6 +91,7 @@ fi
 ### Optional user args
 ########
 root_dir=${1:-"${script_dir}/ethos-u-scratch"}
+mkdir -p ${root_dir}
 root_dir=$(realpath ${root_dir})
 
 ########
@@ -215,7 +216,7 @@ function setup_vela() {
     if [[ ! -e ethos-u-vela ]]; then
         git clone https://review.mlplatform.org/ml/ethos-u/ethos-u-vela
         repo_dir="${root_dir}/ethos-u-vela"
-        base_rev=92240e7979018a197b42aab2da16dc002d86f224
+        base_rev=d362f5443f67b1e6213a9d8f124edff758efac96
         patch_repo
     fi
     cd "${root_dir}/ethos-u-vela"
@@ -246,7 +247,6 @@ fi
 cd "${script_dir}"
 
 # Setup the root dir
-mkdir -p "${root_dir}"
 cd "${root_dir}"
 echo "[main] Using root dir ${root_dir}"
 

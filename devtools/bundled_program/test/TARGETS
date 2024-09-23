@@ -1,0 +1,63 @@
+# @noautodeps
+
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "bundle_data",
+    srcs = [
+        "test_bundle_data.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program:core",
+        "//executorch/devtools/bundled_program/schema:bundled_program_schema_py",
+        "//executorch/devtools/bundled_program/util:test_util",
+        "//executorch/exir/_serialize:lib",
+    ],
+)
+
+python_unittest(
+    name = "config",
+    srcs = [
+        "test_config.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program/util:test_util",
+        "//executorch/extension/pytree:pylib",
+    ],
+)
+
+python_unittest(
+    name = "end2end",
+    srcs = [
+        "test_end2end.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program:core",
+        "//executorch/devtools/bundled_program/serialize:lib",
+        "//executorch/devtools/bundled_program/util:test_util",
+        "//executorch/exir:dynamic_shape",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir:print_program",
+        "//executorch/exir:tensor",
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir/emit:lib",
+        "//executorch/exir/passes:lib",
+        "//executorch/exir/tests:control_flow_models",
+        "//executorch/exir/tests:dynamic_shape_models",
+        "//executorch/exir/tests:models",
+        "//executorch/exir/tests:transformer",
+        "//executorch/extension/pybindings:portable_lib",
+        "//executorch/extension/pytree:pybindings",
+        "//executorch/kernels/portable:custom_ops_generated_lib",
+    ],
+)

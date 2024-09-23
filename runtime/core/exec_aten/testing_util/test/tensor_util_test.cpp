@@ -23,17 +23,18 @@
 using namespace ::testing;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
+using exec_aten::TensorImpl;
 using exec_aten::TensorList;
-using torch::executor::testing::IsCloseTo;
-using torch::executor::testing::IsDataCloseTo;
-using torch::executor::testing::IsDataEqualTo;
-using torch::executor::testing::IsEqualTo;
-using torch::executor::testing::IsListCloseTo;
-using torch::executor::testing::IsListEqualTo;
-using torch::executor::testing::tensor_data_is_close;
-using torch::executor::testing::tensor_lists_are_close;
-using torch::executor::testing::TensorFactory;
-using torch::executor::testing::tensors_are_close;
+using executorch::runtime::testing::IsCloseTo;
+using executorch::runtime::testing::IsDataCloseTo;
+using executorch::runtime::testing::IsDataEqualTo;
+using executorch::runtime::testing::IsEqualTo;
+using executorch::runtime::testing::IsListCloseTo;
+using executorch::runtime::testing::IsListEqualTo;
+using executorch::runtime::testing::tensor_data_is_close;
+using executorch::runtime::testing::tensor_lists_are_close;
+using executorch::runtime::testing::TensorFactory;
+using executorch::runtime::testing::tensors_are_close;
 
 // Exhaustively test all of our comparison functions every time. Also flip the
 // params around to demonstrate that the underlying checks are commutative.
@@ -824,6 +825,24 @@ TEST(TensorUtilTest, TensorStreamBool) {
   EXPECT_STREQ(
       out.str().c_str(),
       "ETensor(sizes={2, 2}, dtype=Bool, data={1, 0, 1, 0})");
+}
+
+TEST(TensorTest, TestZeroShapeTensorEquality) {
+  TensorImpl::SizesType sizes[2] = {2, 2};
+  TensorImpl::StridesType strides[2] = {2, 1};
+  TensorImpl::DimOrderType dim_order[2] = {0, 1};
+
+  TensorImpl t1(ScalarType::Float, 2, sizes, nullptr, dim_order, strides);
+  TensorImpl t2(ScalarType::Float, 2, sizes, nullptr, dim_order, strides);
+
+  ET_EXPECT_DEATH({ EXPECT_TENSOR_EQ(Tensor(&t1), Tensor(&t2)); }, "");
+
+  float data[] = {1.0, 2.0, 3.0, 4.0};
+
+  t1.set_data(data);
+  t2.set_data(data);
+
+  EXPECT_TENSOR_EQ(Tensor(&t1), Tensor(&t2));
 }
 
 #endif // !USE_ATEN_LIB

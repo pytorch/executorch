@@ -9,7 +9,7 @@ users ahead of time (when they export their model to run on ExecuTorch).
 To draw a rough equivalent to conventional software development,
 ``ETRecord`` can be considered as the binary built with debug symbols
 that is used for debugging in GNU Debugger (gdb). It is expected that
-the user will supply this to the ExecuTorch SDK tooling in order for
+the user will supply this to the ExecuTorch Developer Tools in order for
 them to debug and visualize their model.
 
 ``ETRecord`` contains numerous components such as:
@@ -31,7 +31,7 @@ they are interested in working with via our tooling.
 .. warning::
     Users should do a deepcopy of the output of ``to_edge()`` and pass in the deepcopy to the ``generate_etrecord`` API. This is needed because the subsequent call, ``to_executorch()``, does an in-place mutation and will lose debug data in the process.
 
-.. currentmodule:: executorch.sdk.etrecord._etrecord
+.. currentmodule:: executorch.devtools.etrecord._etrecord
 .. autofunction:: generate_etrecord
 
 Using an ``ETRecord``

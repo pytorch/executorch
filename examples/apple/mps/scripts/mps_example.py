@@ -14,6 +14,11 @@ from examples.apple.mps.scripts.bench_utils import bench_torch, compare_outputs
 from executorch import exir
 from executorch.backends.apple.mps import MPSBackend
 from executorch.backends.apple.mps.partition import MPSPartitioner
+from executorch.devtools import BundledProgram, generate_etrecord
+from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.devtools.bundled_program.serialize import (
+    serialize_from_bundled_program_to_flatbuffer,
+)
 
 from executorch.exir import (
     EdgeCompileConfig,
@@ -23,16 +28,10 @@ from executorch.exir import (
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
-from executorch.sdk import BundledProgram, generate_etrecord
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.serialize import (
-    serialize_from_bundled_program_to_flatbuffer,
-)
+from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 
 from ....models import MODEL_NAME_TO_MODEL
 from ....models.model_factory import EagerModelFactory
-
-from ....portable.utils import export_to_edge, save_pte_program
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -156,6 +155,8 @@ if __name__ == "__main__":
     model, example_inputs, _ = EagerModelFactory.create_model(**model_config)
 
     model = model.eval()
+
+    # Deep copy the model inputs to check against PyTorch forward pass
     if args.check_correctness or args.bench_pytorch:
         model_copy = copy.deepcopy(model)
         inputs_copy = []
@@ -182,9 +183,7 @@ if __name__ == "__main__":
         logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
         executorch_program = edge.to_executorch(
-            config=ExecutorchBackendConfig(
-                extract_delegate_segments=False, extract_constant_segment=False
-            )
+            config=ExecutorchBackendConfig(extract_delegate_segments=False)
         )
     else:
         lowered_module = to_backend(
@@ -194,11 +193,7 @@ if __name__ == "__main__":
             lowered_module,
             example_inputs,
             edge_compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
-        ).to_executorch(
-            config=ExecutorchBackendConfig(
-                extract_delegate_segments=False, extract_constant_segment=False
-            )
-        )
+        ).to_executorch(config=ExecutorchBackendConfig(extract_delegate_segments=False))
 
     model_name = f"{args.model_name}_mps"
 
@@ -229,4 +224,6 @@ if __name__ == "__main__":
         bench_torch(executorch_program, model_copy, example_inputs, model_name)
 
     if args.check_correctness:
-        compare_outputs(executorch_program, model_copy, inputs_copy, model_name)
+        compare_outputs(
+            executorch_program, model_copy, inputs_copy, model_name, args.use_fp16
+        )

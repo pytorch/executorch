@@ -35,7 +35,7 @@ bool is_out_of_bounds(CTYPE_VAL val) {
       val_cast > std::numeric_limits<CTYPE_OUT>::max();
 }
 
-__ET_NODISCARD bool check_bounds(
+ET_NODISCARD bool check_bounds(
     const Scalar& val_scalar,
     const torch::executor::native::ScalarType& val_type,
     const torch::executor::native::ScalarType& out_type,
@@ -69,7 +69,7 @@ __ET_NODISCARD bool check_bounds(
 } // namespace
 
 Tensor& clamp_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const exec_aten::optional<Scalar>& min_opt,
     const exec_aten::optional<Scalar>& max_opt,
@@ -82,6 +82,9 @@ Tensor& clamp_out(
       InvalidArgument,
       out,
       "Failed to resize output tensor.");
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   ScalarType in_type = in.scalar_type();
   ScalarType min_type = in_type;
@@ -162,7 +165,7 @@ Tensor& clamp_out(
 }
 
 Tensor& clamp_tensor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const exec_aten::optional<Tensor>& min_opt,
     const exec_aten::optional<Tensor>& max_opt,
@@ -181,6 +184,12 @@ Tensor& clamp_tensor_out(
 
   const Tensor& min = has_min ? min_opt.value() : in;
   const Tensor& max = has_max ? max_opt.value() : in;
+
+  ET_KERNEL_CHECK(
+      ctx,
+      tensors_have_same_dim_order(in, min, max, out),
+      InvalidArgument,
+      out);
 
   ET_KERNEL_CHECK(
       ctx,

@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import unittest
 
 import torch
@@ -47,7 +49,7 @@ class TestVerification(unittest.TestCase):
         for val_idx in range(len(test.execution_plan.values)):
             val = test.execution_plan.values[val_idx].val
             if not (
-                isinstance(val, Tensor) and val.constant_buffer_idx == 0
+                isinstance(val, Tensor) and val.data_buffer_idx == 0
             ) and not isinstance(val, TensorList):
                 test.load_value(val_idx)
         vlist = test.get_value_list()

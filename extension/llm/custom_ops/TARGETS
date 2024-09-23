@@ -1,0 +1,36 @@
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets()
+
+runtime.python_test(
+    name = "test_sdpa_with_kv_cache",
+    srcs = [
+        "test_sdpa_with_kv_cache.py",
+    ],
+    preload_deps = [
+        ":custom_ops_aot_lib_mkl_noomp",
+        ":custom_ops_aot_py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_test(
+    name = "test_preprocess_custom_ops",
+    srcs = [
+        "test_preprocess_custom_ops.py",
+    ],
+    preload_deps = [
+        ":preprocess_custom_ops_py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)

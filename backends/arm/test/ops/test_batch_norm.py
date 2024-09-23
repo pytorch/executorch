@@ -497,6 +497,8 @@ test_no_stats_data_suite = [
 
 
 class TestBatchNorm2d(unittest.TestCase):
+    """Tests BatchNorm2d."""
+
     class BatchNorm2d(torch.nn.Module):
         def __init__(
             self,
@@ -552,7 +554,7 @@ class TestBatchNorm2d(unittest.TestCase):
                 ]
             )
             .to_executorch()
-            .run_method_and_compare_outputs(test_data)
+            .run_method_and_compare_outputs(inputs=test_data)
         )
 
     def _test_batchnorm2d_no_stats_tosa_MI_pipeline(
@@ -581,7 +583,7 @@ class TestBatchNorm2d(unittest.TestCase):
                 ]
             )
             .to_executorch()
-            .run_method_and_compare_outputs(test_data)
+            .run_method_and_compare_outputs(inputs=test_data)
         )
 
     def _test_batchnorm2d_tosa_BI_pipeline(
@@ -613,7 +615,7 @@ class TestBatchNorm2d(unittest.TestCase):
                 ]
             )
             .to_executorch()
-            .run_method_and_compare_outputs(test_data)
+            .run_method_and_compare_outputs(inputs=test_data)
         )
 
     def _test_batchnorm2d_u55_BI_pipeline(

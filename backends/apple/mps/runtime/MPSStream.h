@@ -63,7 +63,7 @@ class MPSStream {
   MPSCommandBuffer* commandBuffer();
   id<MTLComputeCommandEncoder> commandEncoder();
   void endKernelCoalescing();
-  __ET_NODISCARD Error synchronize(SyncType syncType);
+  ET_NODISCARD Error synchronize(SyncType syncType);
   bool commitAndContinueEnabled();
   void copy(
       id<MTLBuffer> srcBuffer,

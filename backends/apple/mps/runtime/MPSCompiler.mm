@@ -32,7 +32,7 @@ namespace delegate {
 Builds the mps runtime object using the buffer pointer. The buffer pointer
 must be a valid pointer to the serialized mps object.
 */
-__ET_NODISCARD Error MPSCompiler::compileModel(
+ET_NODISCARD Error MPSCompiler::compileModel(
   const void* buffer_pointer,
   size_t num_bytes,
   MPSExecutor* executor,
@@ -43,7 +43,7 @@ __ET_NODISCARD Error MPSCompiler::compileModel(
   Error err = Error::Ok;
 
   std::unique_ptr<MPSGraphBuilder> mpsGraphBuilder(
-    new MPSGraphBuilder(buffer_pointer, executor->_mpsGraphTensorToId));
+    new MPSGraphBuilder(buffer_pointer, num_bytes, executor->_mpsGraphTensorToId));
   err = mpsGraphBuilder->compileModel();
   ET_CHECK_OR_RETURN_ERROR(
     err == Error::Ok, Internal, "Failed to construct the MPS graph object");

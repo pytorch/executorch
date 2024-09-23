@@ -52,9 +52,8 @@ enum QuantizeDef : byte {
 enum QuantizeType : byte {
     SCALE_OFFSET = 0,
     AXIS_SCALE_OFFSET,
-    // TODO: enable
-    //   QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET
-    //   QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET
+    BW_SCALE_OFFSET,
+    BW_AXIS_SCALE_OFFSET,
     UNDEFINED,
 }
 
@@ -66,7 +65,12 @@ struct ScaleOffset {
 table QuantizeParam {
     def: QuantizeDef;
     type: QuantizeType;
+    bitwidth: uint;
     axis: int;
+    // used by bitwidth quantization
+    scales: [float];
+    offsets: [int];
+    // used by general quantization
     data: [ScaleOffset];
 }
 

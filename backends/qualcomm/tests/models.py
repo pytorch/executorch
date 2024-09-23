@@ -29,7 +29,7 @@ class AddConstantLong(torch.nn.Module):
         super().__init__()
 
     def forward(self, x):
-        return 10.0 + x
+        return 10 + x
 
 
 class Arange(torch.nn.Module):
@@ -53,6 +53,16 @@ class AvgPoolModule(torch.nn.Module):
 
     def forward(self, x):
         return self.avgPool(x)
+
+
+class BatchNorm(torch.nn.Module):
+    def __init__(self, n_features):
+        super().__init__()
+        self.native_batchnorm = torch.nn.BatchNorm2d(n_features)
+        self.eval()
+
+    def forward(self, x):
+        return self.native_batchnorm(x)
 
 
 class Bmm(torch.nn.Module):
@@ -189,15 +199,28 @@ class CompositeDelegateModule(torch.nn.Module):
         return CompositeReferenceModule(self.modules)
 
 
+class ContextBinaryExample(torch.nn.Module):
+    def forward(self, x, y):
+        x = torch.nn.functional.relu(x)
+        y = torch.nn.functional.relu(y)
+        return x, y
+
+    def example_inputs(self):
+        return {
+            "x": torch.randn((1, 3, 3, 3)),
+            "y": torch.randn((2, 1, 5, 5)),
+        }
+
+
 class Conv1dSequential(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, bias=True):
         super().__init__()
         self.first = torch.nn.Conv1d(
             in_channels=1,
             out_channels=3,
             kernel_size=(3),
             padding=1,
-            bias=True,
+            bias=bias,
         )
 
         self.second = torch.nn.Conv1d(
@@ -205,7 +228,7 @@ class Conv1dSequential(torch.nn.Module):
             out_channels=2,
             kernel_size=(3),
             padding=1,
-            bias=True,
+            bias=bias,
         )
 
     def forward(self, x):
@@ -302,21 +325,21 @@ class Conv2dMaxPool2d(torch.nn.Module):
 
 
 class Conv2dSequential(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, bias=True):
         super().__init__()
         self.first = torch.nn.Conv2d(
             in_channels=1,
             out_channels=3,
             kernel_size=(3, 3),
             padding=1,
-            bias=True,
+            bias=bias,
         )
         self.second = torch.nn.Conv2d(
             in_channels=3,
             out_channels=2,
             kernel_size=(3, 3),
             padding=1,
-            bias=True,
+            bias=bias,
         )
 
     def forward(self, x):
@@ -324,14 +347,14 @@ class Conv2dSequential(torch.nn.Module):
 
 
 class Conv2dSingle(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, bias=True):
         super().__init__()
         self.conv = torch.nn.Conv2d(
             in_channels=1,
             out_channels=3,
             kernel_size=(3, 3),
             padding=1,
-            bias=True,
+            bias=bias,
         )
 
     def forward(self, x):
@@ -428,6 +451,29 @@ class HardTanh(torch.nn.Module):
 
     def forward(self, x):
         return self.hardtanh(x)
+
+
+class Index(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.idx0 = torch.tensor([[0, 1], [2, 3], [4, 5]])
+        self.idx1 = torch.tensor([[1, 2], [3, 4], [5, 6]])
+
+    def forward(self, x):
+        return x[self.idx0] + x[self.idx1]
+
+
+class IndexPut(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer(
+            "k_cache",
+            torch.zeros((1, 1024, 12, 64), dtype=torch.float32),
+        )
+
+    def forward(self, input_pos, k_val):
+        k_out = torch.ops.aten.index_put_(self.k_cache, [None, input_pos], k_val)
+        return k_out
 
 
 class LayerNorm(torch.nn.Module):
@@ -698,6 +744,16 @@ class ResizeNearest2D(torch.nn.Module):
         )
 
 
+class RmsNorm(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.eps = 1e-5
+        self.rms = torch.nn.RMSNorm([4], 1e-5)
+
+    def forward(self, x):
+        return self.rms(x)
+
+
 class Rsqrt(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -786,6 +842,20 @@ class SliceCopy(torch.nn.Module):
     def forward(self, x, y):
         seq_length = y.size()[1]
         return x[:, :seq_length] + self.position_ids[:, :seq_length]
+
+
+class SliceCopyWithStep(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.position_ids = torch.randn([1, 512])
+        self.step = 2
+
+    def forward(self, x, y):
+        seq_length = y.size()[1]
+        return (
+            x[:, : seq_length : self.step]
+            + self.position_ids[:, : seq_length : self.step]
+        )
 
 
 class Softmax(torch.nn.Module):

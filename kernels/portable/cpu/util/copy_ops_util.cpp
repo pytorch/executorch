@@ -95,6 +95,8 @@ bool check_cat_args(
     ET_LOG_AND_RETURN_IF_FALSE(
         canCast(tensors[i].scalar_type(), out.scalar_type()));
 
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dim_order(tensors[i], out));
+
     // Empty tensors have no shape constraints.
     if (tensors[i].numel() == 0) {
       continue;
@@ -325,6 +327,19 @@ bool check_pixel_shuffle_args(
   return true;
 }
 
+bool check_pixel_unshuffle_args(
+    const Tensor& in,
+    int64_t downscale_factor,
+    Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(in, 3));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(out, 3));
+  ET_LOG_AND_RETURN_IF_FALSE(downscale_factor > 0);
+  ET_LOG_AND_RETURN_IF_FALSE(in.size(in.dim() - 1) % downscale_factor == 0);
+  ET_LOG_AND_RETURN_IF_FALSE(in.size(in.dim() - 2) % downscale_factor == 0);
+  return true;
+}
+
 void get_pixel_shuffle_out_target_size(
     const Tensor& in,
     int64_t upscale_factor,
@@ -345,6 +360,29 @@ void get_pixel_shuffle_out_target_size(
   out_sizes[i] = in.size(i) * casted_upscale_factor;
   i++;
   out_sizes[i] = in.size(i) * casted_upscale_factor;
+}
+
+void get_pixel_unshuffle_out_target_size(
+    const Tensor& in,
+    int64_t downscale_factor,
+    exec_aten::SizesType* out_sizes,
+    size_t* out_ndim) {
+  *out_ndim = in.dim();
+  const exec_aten::SizesType casted_factor = downscale_factor;
+
+  size_t i = 0;
+  for (; i < in.dim() - 3; ++i) {
+    // Copy all leading dimensions in.
+    out_sizes[i] = in.size(i);
+  }
+  // The last 3 dimensions are (channel, height, width). Multiply channel by
+  // the downscale factor squared and divide the height and width by that
+  // factor.
+  out_sizes[i] = in.size(i) * (casted_factor * casted_factor);
+  i++;
+  out_sizes[i] = in.size(i) / casted_factor;
+  i++;
+  out_sizes[i] = in.size(i) / casted_factor;
 }
 
 bool check_select_copy_out_args(
@@ -373,33 +411,6 @@ void get_select_copy_out_target_size(
       out_sizes[d] = in.size(d + 1);
     }
   }
-}
-
-bool check_slice_copy_args(
-    const Tensor& in,
-    int64_t dim,
-    int64_t step,
-    Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(in.dim() > 0);
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      step > 0, "slice step must be greater than zero");
-  return true;
-}
-
-void get_slice_copy_out_target_size(
-    const Tensor& in,
-    int64_t dim,
-    int64_t num_values,
-    exec_aten::SizesType* out_sizes,
-    size_t* out_ndim) {
-  *out_ndim = in.dim();
-
-  for (size_t d = 0; d < in.dim(); ++d) {
-    out_sizes[d] = in.size(d);
-  }
-  out_sizes[dim] = num_values;
 }
 
 bool check_split_with_sizes_copy_args(

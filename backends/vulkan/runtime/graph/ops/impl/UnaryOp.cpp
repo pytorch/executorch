@@ -42,11 +42,11 @@ void add_unary_op_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
 
-  api::ParamsBindList ubos({});
+  vkapi::ParamsBindList ubos({});
   if (graph.is_buffer_storage(out)) {
-    ubos.append({graph.ntexels_ubo(out)});
+    ubos.append({graph.numel_ubo(out)});
   } else {
-    ubos.append({graph.texture_limits_ubo(out)});
+    ubos.append({graph.logical_limits_ubo(out)});
   }
   ubos.append(
       {graph.create_params_buffer(min), graph.create_params_buffer(max)});
@@ -57,7 +57,8 @@ void add_unary_op_node(
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE}, {in, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {in, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       ubos,
       // Specialization Constants
@@ -133,6 +134,8 @@ DEFINE_CLAMP_FN(clamp);
 DEFINE_CLAMP_FN(hardtanh);
 DEFINE_RELU_FN(relu);
 DEFINE_HARDSHRINK_FN(hardshrink);
+DEFINE_ACTIVATION_FN(hardswish);
+DEFINE_ACTIVATION_FN(hardsigmoid);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
@@ -148,6 +151,8 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.sqrt.default, sqrt);
   VK_REGISTER_OP(aten.tanh.default, tanh);
   VK_REGISTER_OP(aten.hardshrink.default, hardshrink);
+  VK_REGISTER_OP(aten.hardswish.default, hardswish);
+  VK_REGISTER_OP(aten.hardsigmoid.default, hardsigmoid);
 }
 
 } // namespace vkcompute

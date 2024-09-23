@@ -5,48 +5,46 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import unittest
 
 from typing import Tuple
 
 import torch
 from executorch.backends.arm.test import common
-
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir import EdgeCompileConfig
 from parameterized import parameterized
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
 
 class TestSimpleAdd(unittest.TestCase):
+    """Tests a single add op, x+x and x+y."""
+
     class Add(torch.nn.Module):
         test_parameters = [
-            (torch.ones(5),),
+            (torch.FloatTensor([1, 2, 3, 5, 7]),),
             (3 * torch.ones(8),),
             (10 * torch.randn(8),),
+            (torch.ones(1, 1, 4, 4),),
+            (torch.ones(1, 3, 4, 2),),
         ]
-
-        def __init__(self):
-            super().__init__()
-            self.permute_memory_to_nhwc = False
 
         def forward(self, x):
             return x + x
 
     class Add2(torch.nn.Module):
         test_parameters = [
-            (torch.ones(1, 1, 4, 4), torch.ones(1, 1, 4, 4)),
+            (
+                torch.FloatTensor([1, 2, 3, 5, 7]),
+                (torch.FloatTensor([2, 1, 2, 1, 10])),
+            ),
+            (torch.ones(1, 10, 4, 6), torch.ones(1, 10, 4, 6)),
             (torch.randn(1, 1, 4, 4), torch.ones(1, 1, 4, 1)),
-            (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1)),
+            (torch.randn(1, 3, 4, 4), torch.randn(1, 3, 4, 4)),
             (10000 * torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1)),
         ]
 
         def __init__(self):
             super().__init__()
-            self.permute_memory_to_nhwc = False
 
         def forward(self, x, y):
             return x + y
@@ -71,7 +69,7 @@ class TestSimpleAdd(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs()
+            .run_method_and_compare_outputs(inputs=test_data)
         )
 
     def _test_add_tosa_BI_pipeline(
@@ -91,27 +89,33 @@ class TestSimpleAdd(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(qtol=1)
+            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
     def _test_add_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
+        self,
+        module: torch.nn.Module,
+        test_data: Tuple[torch.Tensor],
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(),
+                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
             )
             .quantize()
             .export()
             .check_count({"torch.ops.aten.add.Tensor": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge(config=self._edge_compile_config)
+            .to_edge()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+
+        if common.is_option_enabled("corstone300"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(Add.test_parameters)
     def test_add_tosa_MI(self, test_data: torch.Tensor):

@@ -5,21 +5,23 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
+#import "ETCoreMLModelDebugger.h"
+
 #import <CoreML/CoreML.h>
-#import <ETCoreMLAsset.h>
-#import <ETCoreMLAssetManager.h>
-#import <ETCoreMLLogging.h>
-#import <ETCoreMLModelCompiler.h>
-#import <ETCoreMLModelStructurePath.h>
-#import <ETCoreMLPair.h>
-#import <ETCoreMLModelDebugger.h>
-#import <ETCoreMLStrings.h>
+#import "ETCoreMLAsset.h"
+#import "ETCoreMLAssetManager.h"
+#import "ETCoreMLLogging.h"
+#import "ETCoreMLModelCompiler.h"
+#import "ETCoreMLModelDebugInfo.h"
+#import "ETCoreMLModelStructurePath.h"
+#import "ETCoreMLPair.h"
+#import "ETCoreMLStrings.h"
 #import <format/MIL.pb.h>
 #import <format/Model.pb.h>
 #import <fstream>
 #import <iostream>
-#import <model_package_info.h>
-#import <objc_json_serde.h>
+#import "model_package_info.h"
+#import "objc_json_serde.h"
 #import <string>
 #import <unordered_map>
 
@@ -68,10 +70,6 @@ BOOL is_const_operation(const MILSpec::Operation& operation) {
     return operation.type() == "const";
 }
 
-BOOL is_cast_operation(const MILSpec::Operation& operation) {
-    return operation.type() == "cast";
-}
-
 BOOL is_datatype_supported_as_model_output(MILSpec::DataType datatype) {
     switch (datatype) {
         case MILSpec::DataType::INT32:
@@ -95,11 +93,7 @@ BOOL is_operation_output_supported_as_model_output(const MILSpec::Operation& ope
     if (is_const_operation(operation)) {
         return NO;
     }
-    
-    if (is_cast_operation(operation)) {
-        return NO;
-    }
-    
+
     return YES;
 }
 
@@ -316,7 +310,6 @@ NSURL * _Nullable get_compiled_model_url_with_intermediate_outputs(NSURL *model_
         return nil;
     }
     
-    // Compile the model.
     return [ETCoreMLModelCompiler compileModelAtURL:model_url
                                maxWaitTimeInSeconds:(5 * 60)
                                               error:error];
@@ -383,6 +376,108 @@ void set_intermediate_outputs(id<MLFeatureProvider> output_features,
         result[path] = multi_array;
     }
 }
+
+NSArray<ETCoreMLModelStructurePath *> *get_operation_dependencies(const MILSpec::Operation &operation,
+                                                                  ETCoreMLModelStructurePath *path,
+                                                                  NSSet<ETCoreMLModelStructurePath *> *paths) {
+    const auto& inputs = operation.inputs();
+    const auto cppPath = path.underlyingValue;
+    NSMutableArray<ETCoreMLModelStructurePath *> *deps = [NSMutableArray arrayWithCapacity:inputs.size()];
+    for (const auto& [_, arg] : inputs) {
+        const auto& bindings = arg.arguments();
+        for (const auto& binding : bindings) {
+            if (binding.has_value()) {
+                continue;
+            }
+
+            const auto& name = binding.name();
+            auto dep = cppPath;
+            dep.remove_last_component();
+            dep.append_component(Path::Program::Operation(name));
+            ETCoreMLModelStructurePath *path = [[ETCoreMLModelStructurePath alloc] initWithUnderlyingValue:dep];
+            if ([paths containsObject:path]) {
+                [deps addObject:path];
+            }
+        }
+    }
+
+    return deps;
+}
+
+NSDictionary<NSString *, NSArray<ETCoreMLModelStructurePath *> *> *get_debug_handle_to_operation_paths_map(ETCoreMLModelDebugInfo *debug_info) {
+    NSUInteger capacity = debug_info.pathToDebugHandlesMap.count;
+    NSMutableDictionary<NSString *, NSMutableArray<ETCoreMLModelStructurePath *> *> *result = [NSMutableDictionary dictionaryWithCapacity:capacity];
+    [debug_info.pathToDebugHandlesMap enumerateKeysAndObjectsUsingBlock:^(ETCoreMLModelStructurePath *path,
+                                                                          NSArray<NSString *> *debug_handles,
+                                                                          BOOL * _Nonnull __unused stop) {
+        for (NSString *debug_handle in debug_handles) {
+            NSMutableArray<ETCoreMLModelStructurePath *> *paths = result[debug_handle];
+            if (!paths) {
+                paths = [NSMutableArray array];
+                result[debug_handle] = paths;
+            }
+
+            [paths addObject:path];
+        }
+
+    }];
+
+    return result;
+}
+
+BOOL is_node_terminal_node(ETCoreMLModelStructurePath *node,
+                           NSArray<ETCoreMLModelStructurePath *> *nodes,
+                           NSDictionary<ETCoreMLModelStructurePath *, NSArray<ETCoreMLModelStructurePath *> *> *dependencies) {
+    NSMutableSet<ETCoreMLModelStructurePath *> *nodes_dependencies = [NSMutableSet set];
+    for (ETCoreMLModelStructurePath *current_node in nodes) {
+        if ([current_node isEqual:node]) {
+            continue;
+        }
+        NSArray<ETCoreMLModelStructurePath *> *node_dependencies = dependencies[current_node];
+        if (node_dependencies.count > 0) {
+            [nodes_dependencies addObjectsFromArray:node_dependencies];
+        }
+    }
+
+    return ![nodes_dependencies containsObject:node];
+}
+
+ETCoreMLModelStructurePath *_Nullable find_terminal_node_from_nodes(NSArray<ETCoreMLModelStructurePath *> *nodes,
+                                                                    NSDictionary<ETCoreMLModelStructurePath *, NSArray<ETCoreMLModelStructurePath *> *> *dependencies) {
+    if (nodes.count < 2) {
+        return nodes.firstObject;
+    }
+
+    for (ETCoreMLModelStructurePath *node in nodes) {
+        if (is_node_terminal_node(node, nodes, dependencies)) {
+            return node;
+        }
+    }
+
+    return nil;
+}
+
+NSDictionary<ETCoreMLModelStructurePath *, NSString *> *get_operation_path_to_debug_symbol_map(ETCoreMLModelDebugInfo *model_debug_info,
+                                                                                               NSDictionary<NSString *, NSArray<ETCoreMLModelStructurePath *> *> *debug_handle_to_operation_paths_map,
+                                                                                               NSDictionary<ETCoreMLModelStructurePath *, NSArray<ETCoreMLModelStructurePath *> *> *dependencies) {
+    // When decomposing an EXIR operation into a MIL graph, it is essential to report the output of the terminal node of the MIL graph.
+    // This output corresponds directly to the output of the original EXIR operation.
+    NSUInteger capacity = debug_handle_to_operation_paths_map.count;
+    NSMutableDictionary<ETCoreMLModelStructurePath *, NSString *> *operation_path_to_debug_symbol_map = [NSMutableDictionary dictionaryWithCapacity:capacity];
+    [debug_handle_to_operation_paths_map enumerateKeysAndObjectsUsingBlock:^(NSString *debug_handle,
+                                                                             NSArray<ETCoreMLModelStructurePath *> *operation_paths,
+                                                                             BOOL * __unused stop) {
+        ETCoreMLModelStructurePath *operation_path = find_terminal_node_from_nodes(operation_paths, dependencies);
+        NSString *debug_symbol = (operation_path != nil) ? model_debug_info.pathToDebugSymbolMap[operation_path] : nil;
+        if (debug_symbol) {
+            operation_path_to_debug_symbol_map[operation_path] = debug_symbol;
+        }
+
+    }];
+
+    return operation_path_to_debug_symbol_map;
+}
+
 }
 
 @interface ETCoreMLModelDebugger ()
@@ -390,6 +485,8 @@ void set_intermediate_outputs(id<MLFeatureProvider> output_features,
 @property (readonly, copy, nonatomic) NSOrderedSet<NSString *> *outputNames;
 /// The model asset.
 @property (readonly, copy, nonatomic) ETCoreMLAsset *modelAsset;
+/// The model debug info.
+@property (readonly, copy, nonatomic, nullable) ETCoreMLModelDebugInfo *modelDebugInfo;
 /// The asset manager.
 @property (readonly, copy, nonatomic) ETCoreMLAssetManager *assetManager;
 /// The model configuration.
@@ -404,6 +501,7 @@ void set_intermediate_outputs(id<MLFeatureProvider> output_features,
 }
 
 - (nullable instancetype)initWithModelAsset:(ETCoreMLAsset *)modelAsset
+                             modelDebugInfo:(nullable ETCoreMLModelDebugInfo *)modelDebugInfo
                                 outputNames:(NSOrderedSet<NSString *> *)outputNames
                               configuration:(MLModelConfiguration *)configuration
                                assetManager:(ETCoreMLAssetManager *)assetManager
@@ -422,15 +520,27 @@ void set_intermediate_outputs(id<MLFeatureProvider> output_features,
     if (!modelSpec) {
         return nil;
     }
-    
+
+    __block NSMutableDictionary<ETCoreMLModelStructurePath *, NSArray<ETCoreMLModelStructurePath *> *> *dependencies = [NSMutableDictionary dictionary];
     __block NSMutableArray<ETCoreMLModelStructurePath *> *operationPaths = [NSMutableArray array];
+    __block NSMutableSet<ETCoreMLModelStructurePath *> *allOperationPaths = [NSMutableSet set];
     visit_program_operation(*modelSpec, ^BOOL(const MILSpec::Operation &operation, ETCoreMLModelStructurePath *operationPath) {
+        dependencies[operationPath] = get_operation_dependencies(operation, operationPath, allOperationPaths);
+        [allOperationPaths addObject:operationPath];
         if (is_operation_output_supported_as_model_output(operation)) {
             [operationPaths addObject:operationPath];
         }
+
         return YES;
     });
-    
+
+
+    NSDictionary<NSString *, NSArray<ETCoreMLModelStructurePath *> *> *debugHandleToOperationPathsMap = get_debug_handle_to_operation_paths_map(modelDebugInfo);
+
+    NSDictionary<ETCoreMLModelStructurePath *, NSString *> *operationPathToDebugSymbolMap = get_operation_path_to_debug_symbol_map(modelDebugInfo,
+                                                                                                                                   debugHandleToOperationPathsMap,
+                                                                                                                                   dependencies);
+
     self = [super init];
     if (self) {
         _modelAsset = modelAsset;
@@ -440,6 +550,8 @@ void set_intermediate_outputs(id<MLFeatureProvider> output_features,
         _modelSpec = std::move(modelSpec);
         _modelSpecURL = modelSpecURL;
         _operationPaths = operationPaths;
+        _operationPathToDebugSymbolMap = operationPathToDebugSymbolMap;
+        _modelDebugInfo = modelDebugInfo;
     }
     
     return self;

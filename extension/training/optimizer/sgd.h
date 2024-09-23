@@ -18,25 +18,21 @@
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/span.h>
+#include <map>
 #include <memory>
 #include <unordered_map>
 #include <vector>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace extension {
 namespace training {
 namespace optimizer {
-
-using Tensor = exec_aten::Tensor;
-using TensorImpl = exec_aten::TensorImpl;
-using ScalarType = exec_aten::ScalarType;
 
 /**
  * SGD optimizer state. This keeps track of the state of a given parameter to
  * be used in later epochs.
  */
-class SGDParamState {
+class ET_EXPERIMENTAL SGDParamState {
  public:
   /**
    * Constructs a new SGD param state.
@@ -44,22 +40,22 @@ class SGDParamState {
    * @param[in] momentum_buffer A tensor that stores the momentum at the last
    * epoch.
    */
-  explicit SGDParamState(Tensor& momentum_buffer)
+  explicit SGDParamState(exec_aten::Tensor& momentum_buffer)
       : momentum_buffer_(momentum_buffer) {}
 
-  Tensor& momentum_buffer() {
+  exec_aten::Tensor& momentum_buffer() {
     return momentum_buffer_;
   }
 
  private:
-  Tensor momentum_buffer_;
+  exec_aten::Tensor momentum_buffer_;
 };
 
 /**
  * SGD optimizer options. This contains options for performing training on a
  * param group, such as the learning rate.
  */
-class SGDOptions {
+class ET_EXPERIMENTAL SGDOptions {
  public:
   /**
    * Constructs a new SGD optimizer options.
@@ -132,57 +128,47 @@ class SGDOptions {
  * SGD optimizer param group. This contains the parameters and
  * the SGDOptions associated to it.
  */
-class SGDParamGroup {
+class ET_EXPERIMENTAL SGDParamGroup {
  public:
   // NOTE: In order to store `SGDParamGroup` in a `std::vector`, it has
   // to be copy-constructible.
   SGDParamGroup(const SGDParamGroup& param_group)
-      : param_data_(param_group.param_data()),
-        param_names_(param_group.param_names()),
+      : named_parameters_(param_group.named_parameters()),
         options_(
             param_group.has_options() ? param_group.options().clone()
                                       : nullptr) {}
   SGDParamGroup& operator=(const SGDParamGroup& param_group) {
-    this->param_data_ = param_group.param_data();
-    this->param_names_ = param_group.param_names();
+    this->named_parameters_ = param_group.named_parameters_;
     this->options_ =
         param_group.has_options() ? param_group.options().clone() : nullptr;
     return *this;
   }
 
   /**
-   * This constructs a SGD param group. We expect that the two spans are of the
-   * same size, and that for a given param data, its index in param_data is the
-   * same as its param name in param_name.
+   * Constructs a SGD param group.
    *
-   * @param[in] param_names The names of the params for this group.
-   * @param[in] param_data The tensors representing the param data.
+   * @param[in] named_parameters The parameters to be optimized and their fully
+   * qualified names.
    */
   /* implicit */ SGDParamGroup(
-      Span<const char*> param_names,
-      Span<Tensor> param_data)
-      : param_data_(std::move(param_data)),
-        param_names_(std::move(param_names)) {}
+      const std::map<exec_aten::string_view, exec_aten::Tensor>&
+          named_parameters)
+      : named_parameters_(named_parameters) {}
   SGDParamGroup(
-      Span<const char*> param_names,
-      Span<Tensor> param_data,
+      const std::map<exec_aten::string_view, exec_aten::Tensor>&
+          named_parameters,
       std::unique_ptr<SGDOptions> options)
-      : param_data_(std::move(param_data)),
-        param_names_(std::move(param_names)),
-        options_(std::move(options)) {}
+      : named_parameters_(named_parameters), options_(std::move(options)) {}
 
   bool has_options() const;
   SGDOptions& options();
   const SGDOptions& options() const;
   void set_options(std::unique_ptr<SGDOptions> options);
-  Span<const char*> param_names();
-  const Span<const char*> param_names() const;
-  Span<Tensor> param_data();
-  const Span<Tensor> param_data() const;
+  const std::map<exec_aten::string_view, exec_aten::Tensor>& named_parameters()
+      const;
 
  private:
-  Span<Tensor> param_data_;
-  Span<const char*> param_names_;
+  std::map<exec_aten::string_view, exec_aten::Tensor> named_parameters_;
   std::unique_ptr<SGDOptions> options_;
 };
 
@@ -190,7 +176,7 @@ class SGDParamGroup {
  * SGD optimizer class. This is responsible for performing the optimization
  * step.
  */
-class SGD {
+class ET_EXPERIMENTAL SGD {
  public:
   explicit SGD(
       const std::vector<SGDParamGroup>& param_groups,
@@ -202,11 +188,10 @@ class SGD {
   }
 
   explicit SGD(
-      Span<const char*> param_names,
-      Span<Tensor> param_data,
+      const std::map<exec_aten::string_view, exec_aten::Tensor>&
+          named_parameters,
       SGDOptions defaults)
-      : SGD({SGDParamGroup(std::move(param_names), std::move(param_data))},
-            defaults) {}
+      : SGD({SGDParamGroup(named_parameters)}, defaults) {}
 
   // Adds the given param_group to the optimizer's param_group list.
   void add_param_group(const SGDParamGroup& param_group);
@@ -216,16 +201,12 @@ class SGD {
   /**
    * Performs the optimization step.
    *
-   * The two spans must be of the same size. It is expected that the gradient in
-   * 'gradient_data' at index 'i' represents the gradient calculated in the loss
-   * function for the parameter with the name in 'gradient_names' at index 'i'.
-   *
-   * @param[in] gradient_names The names of the params that matches the gradient
-   *   in 'gradient_data' at the same index.
-   * @param[in] gradient_data The gradient tensors to be used for optimization
-   *   step.
+   * @param[in] named_gradients The gradients of the tensors specified by the
+   * fully qualified name.
    */
-  Error step(Span<const char*> gradient_names, Span<Tensor> gradient_data);
+  ::executorch::runtime::Error step(
+      const std::map<exec_aten::string_view, exec_aten::Tensor>&
+          named_gradients);
 
  private:
   std::vector<SGDParamGroup> param_groups_;
@@ -235,5 +216,5 @@ class SGD {
 
 } // namespace optimizer
 } // namespace training
-} // namespace executor
-} // namespace torch
+} // namespace extension
+} // namespace executorch

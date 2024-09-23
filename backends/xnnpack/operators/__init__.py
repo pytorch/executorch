@@ -10,6 +10,7 @@ from . import (  # noqa
     op_add,
     op_addmm,
     op_avg_pooling2d,
+    op_bmm,
     op_cat,
     op_ceiling,
     op_clamp,

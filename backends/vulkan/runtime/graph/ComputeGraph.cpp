@@ -36,15 +36,82 @@ namespace vkcompute {
     graph_->values_in_use_--;                                             \
   }
 
-VALUE_PTR_CLASS_IMPL(vTensorPtr, vTensor, Tensor)
+VALUE_PTR_CLASS_IMPL(vTensorPtr, api::vTensor, Tensor)
 VALUE_PTR_CLASS_IMPL(TensorRefPtr, TensorRef, TensorRef)
-VALUE_PTR_CLASS_IMPL(StagingPtr, api::StorageBuffer, Staging)
+VALUE_PTR_CLASS_IMPL(StagingPtr, api::StagingBuffer, Staging)
 VALUE_PTR_CLASS_IMPL(IntListPtr, std::vector<int64_t>, IntList)
 VALUE_PTR_CLASS_IMPL(DoubleListPtr, std::vector<double>, DoubleList)
 VALUE_PTR_CLASS_IMPL(BoolListPtr, std::vector<bool>, BoolList)
 VALUE_PTR_CLASS_IMPL(ValueListPtr, std::vector<ValueRef>, ValueList)
+VALUE_PTR_CLASS_IMPL(SymIntPtr, SymInt, SymInt)
 
 #undef VALUE_PTR_CLASS_IMPL
+
+//
+// TmpTensor
+//
+
+TmpTensor::TmpTensor(
+    ComputeGraph* const graph_ptr,
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype,
+    const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout memory_layout)
+    : graph_p(graph_ptr),
+      sobj_idx(get_sobj_idx()),
+      vref(graph_p->add_tensor(
+          sizes,
+          dtype,
+          storage_type,
+          memory_layout,
+          sobj_idx)) {}
+
+TmpTensor::TmpTensor(
+    ComputeGraph* const graph_ptr,
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype,
+    const utils::StorageType storage_type)
+    : graph_p(graph_ptr),
+      sobj_idx(get_sobj_idx()),
+      vref(graph_p->add_tensor(sizes, dtype, storage_type, sobj_idx)) {}
+
+TmpTensor::TmpTensor(
+    ComputeGraph* const graph_ptr,
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype,
+    const utils::GPUMemoryLayout memory_layout)
+    : graph_p(graph_ptr),
+      sobj_idx(get_sobj_idx()),
+      vref(graph_p->add_tensor(sizes, dtype, memory_layout, sobj_idx)) {}
+
+TmpTensor::TmpTensor(
+    ComputeGraph* const graph_ptr,
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype)
+    : graph_p(graph_ptr),
+      sobj_idx(get_sobj_idx()),
+      vref(graph_p->add_tensor(sizes, dtype, sobj_idx)) {}
+
+TmpTensor::~TmpTensor() {
+  // Lifetime of this temporary tensor is expired; return the shared object to
+  // the pool, as long as the sobj index is valid
+  if (sobj_idx >= 0) {
+    graph_p->tmp_shared_object_idxs_.emplace(sobj_idx);
+  }
+}
+
+int64_t TmpTensor::get_sobj_idx() {
+  int64_t sobj_idx;
+  // If no available temporary shared objects, request a new one to be created
+  if (graph_p->tmp_shared_object_idxs_.empty()) {
+    sobj_idx = graph_p->shared_objects_.size();
+  } else {
+    // Get the first available shared object idx
+    sobj_idx = graph_p->tmp_shared_object_idxs_.top();
+    graph_p->tmp_shared_object_idxs_.pop();
+  }
+  return sobj_idx;
+}
 
 //
 // ComputeGraph
@@ -55,7 +122,7 @@ ComputeGraph::ComputeGraph(GraphConfig config)
       prepack_descriptor_counts_{},
       execute_descriptor_counts_{},
       context_{new api::Context(
-          api::runtime()->default_adapter_i(),
+          vkapi::runtime()->default_adapter_i(),
           config_.context_config)},
       shared_objects_{},
       values_{},
@@ -89,27 +156,27 @@ ComputeGraph::~ComputeGraph() {
   context_->flush();
 }
 
-api::StorageType ComputeGraph::suggested_storage_type() {
+utils::StorageType ComputeGraph::suggested_storage_type() {
   if (config_.enable_storage_type_override) {
     return config_.storage_type_override;
   }
-  return api::kTexture3D;
+  return utils::kTexture3D;
 }
 
-api::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
+utils::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
     const std::vector<int64_t>& sizes) {
   if (config_.enable_memory_layout_override) {
     return config_.memory_layout_override;
   }
   if (sizes.size() < 3) {
-    return api::kWidthPacked;
+    return utils::kWidthPacked;
   }
   // For 3 dimensional tensors that only have a channels dimension of 1, still
   // prefer width packed.
-  if (api::utils::val_at(-3, sizes) == 1) {
-    return api::kWidthPacked;
+  if (utils::val_at(-3, sizes) == 1) {
+    return utils::kWidthPacked;
   }
-  return api::kChannelsPacked;
+  return utils::kChannelsPacked;
 }
 
 void ComputeGraph::check_no_active_value_ptrs() {
@@ -131,7 +198,7 @@ std::vector<int64_t> ComputeGraph::sizes_of(const ValueRef idx) const {
   VK_THROW("Could not get sizes of value with type ", val.type());
 }
 
-api::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
+vkapi::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
   const Value& val = values_.at(idx);
   if (val.isTensor()) {
     return val.toConstTensor().dtype();
@@ -143,15 +210,15 @@ api::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
 
 ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
-    const api::ScalarType dtype,
-    const api::StorageType storage_type,
-    const api::GPUMemoryLayout memory_layout,
+    const vkapi::ScalarType dtype,
+    const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout memory_layout,
     const int64_t shared_object_idx) {
   bool allocate_memory = shared_object_idx < 0;
 
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
-  values_.emplace_back(vTensor(
+  values_.emplace_back(api::vTensor(
       context(), sizes, dtype, storage_type, memory_layout, allocate_memory));
 
   if (!allocate_memory) {
@@ -162,8 +229,8 @@ ValueRef ComputeGraph::add_tensor(
 
 ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
-    const api::ScalarType dtype,
-    const api::StorageType storage_type,
+    const vkapi::ScalarType dtype,
+    const utils::StorageType storage_type,
     const int64_t shared_object_idx) {
   return add_tensor(
       sizes,
@@ -175,8 +242,8 @@ ValueRef ComputeGraph::add_tensor(
 
 ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
-    const api::ScalarType dtype,
-    const api::GPUMemoryLayout memory_layout,
+    const vkapi::ScalarType dtype,
+    const utils::GPUMemoryLayout memory_layout,
     const int64_t shared_object_idx) {
   return add_tensor(
       sizes, dtype, suggested_storage_type(), memory_layout, shared_object_idx);
@@ -184,28 +251,46 @@ ValueRef ComputeGraph::add_tensor(
 
 ValueRef ComputeGraph::add_tensor_like(
     const ValueRef idx,
-    const api::StorageType storage_type,
-    const api::GPUMemoryLayout memory_layout) {
+    const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout memory_layout) {
   return add_tensor(sizes_of(idx), dtype_of(idx), storage_type, memory_layout);
 }
 
 ValueRef ComputeGraph::add_tensor_like(
     const ValueRef idx,
-    const api::GPUMemoryLayout memory_layout) {
+    const utils::GPUMemoryLayout memory_layout) {
   return add_tensor(sizes_of(idx), dtype_of(idx), memory_layout);
 }
 
 ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
-    const api::ScalarType dtype,
+    const vkapi::ScalarType dtype,
     const int64_t shared_object_idx) {
   return add_tensor(
       sizes, dtype, suggested_memory_layout(sizes), shared_object_idx);
 }
 
+ValueRef ComputeGraph::add_tensor_view(const ValueRef vref) {
+  const vTensorPtr t = get_tensor(vref);
+  ValueRef idx(static_cast<int>(values_.size()));
+  values_.emplace_back(api::vTensor(*t));
+  return idx;
+}
+
+ValueRef ComputeGraph::add_tensor_view(
+    const ValueRef vref,
+    const std::vector<int64_t>& sizes,
+    const std::vector<int64_t>& strides,
+    const size_t offset_numel) {
+  const vTensorPtr t = get_tensor(vref);
+  ValueRef idx(static_cast<int>(values_.size()));
+  values_.emplace_back(api::vTensor(*t, sizes, strides, offset_numel));
+  return idx;
+}
+
 ValueRef ComputeGraph::add_tensorref(
     const std::vector<int64_t>& sizes,
-    const api::ScalarType dtype,
+    const vkapi::ScalarType dtype,
     const void* const data) {
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
@@ -214,11 +299,11 @@ ValueRef ComputeGraph::add_tensorref(
 }
 
 ValueRef ComputeGraph::add_staging(
-    const api::ScalarType dtype,
+    const vkapi::ScalarType dtype,
     const size_t numel) {
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
-  values_.emplace_back(api::StorageBuffer(context(), dtype, numel));
+  values_.emplace_back(api::StagingBuffer(context(), dtype, numel));
   return idx;
 }
 
@@ -243,13 +328,22 @@ ValueRef ComputeGraph::add_string(std::string&& str) {
   return idx;
 }
 
+ValueRef ComputeGraph::add_symint(const int32_t val) {
+  ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
+  values_.emplace_back(SymInt(context(), val));
+  return idx;
+}
+
 ValueRef ComputeGraph::set_input_tensor(
     const ValueRef idx,
     const bool use_staging) {
   if (use_staging) {
-    api::ScalarType dtype = get_tensor(idx)->dtype();
-    size_t gpu_numel = get_tensor(idx)->gpu_numel();
-    ValueRef staging_idx = add_staging(dtype, gpu_numel);
+    vkapi::ScalarType dtype = get_tensor(idx)->dtype();
+    // For texture storage, the buffer size needs to account for the zero
+    // padding applied by unused texel elements.
+    size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
+    ValueRef staging_idx = add_staging(dtype, buf_numel);
     add_staging_to_tensor_node(*this, staging_idx, idx);
     inputs_.push_back({idx, staging_idx});
     return staging_idx;
@@ -262,13 +356,15 @@ ValueRef ComputeGraph::set_output_tensor(
     const ValueRef idx,
     const bool use_staging) {
   if (use_staging) {
-    api::ScalarType dtype = get_tensor(idx)->dtype();
-    size_t gpu_numel = get_tensor(idx)->gpu_numel();
-    ValueRef staging_idx = add_staging(dtype, gpu_numel);
+    vkapi::ScalarType dtype = get_tensor(idx)->dtype();
+    // For texture storage, the buffer size needs to account for the zero
+    // padding applied by unused texel elements.
+    size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
+    ValueRef staging_idx = add_staging(dtype, buf_numel);
     // We only run this when the tensor is non-empty.  When the underlying
-    // tensor is empty (e.g. gpu_numel == 0), we do not allocate a VkImage to
+    // tensor is empty (e.g. padded_numel == 0), we do not allocate a VkImage to
     // tensor, we will not be able to bind the node for execution.
-    if (gpu_numel > 0) {
+    if (buf_numel > 0) {
       add_tensor_to_staging_node(*this, idx, staging_idx);
     }
     outputs_.push_back({idx, staging_idx});
@@ -276,6 +372,22 @@ ValueRef ComputeGraph::set_output_tensor(
   }
   outputs_.push_back({idx, kDummyValueRef});
   return idx;
+}
+
+vkapi::BufferBindInfo ComputeGraph::get_or_create_int_param_buffer(
+    const ValueRef idx) {
+  if (values_.at(idx).isInt()) {
+    const int32_t val = extract_scalar<int32_t>(idx);
+    create_params_buffer(val);
+  } else if (values_.at(idx).isSymInt()) {
+    SymIntPtr symint = get_symint(idx);
+    return vkapi::BufferBindInfo(symint->gpu_buffer.buffer());
+  }
+  VK_THROW("Cannot create a int param buffer for the given value");
+}
+
+void ComputeGraph::set_symint(const ValueRef idx, const int32_t val) {
+  get_symint(idx)->set(val);
 }
 
 SharedObject& ComputeGraph::get_shared_object(const int64_t idx) {
@@ -286,9 +398,9 @@ SharedObject& ComputeGraph::get_shared_object(const int64_t idx) {
 }
 
 void ComputeGraph::update_descriptor_counts(
-    const api::ShaderInfo& shader_info,
+    const vkapi::ShaderInfo& shader_info,
     bool execute) {
-  api::DescriptorPoolConfig* config =
+  vkapi::DescriptorPoolConfig* config =
       execute ? &execute_descriptor_counts_ : &prepack_descriptor_counts_;
 
   config->descriptor_pool_max_sets += 1;
@@ -312,37 +424,41 @@ void ComputeGraph::update_descriptor_counts(
   }
 }
 
-api::utils::uvec3 ComputeGraph::create_global_wg_size(const ValueRef idx) {
+utils::uvec3 ComputeGraph::create_global_wg_size(const ValueRef idx) {
   if (is_buffer_storage(idx)) {
-    return {uint32_t(texel_numel_of(idx)), 1u, 1u};
+    return {uint32_t(numel_of(idx)), 1u, 1u};
   }
-  return image_extents_of(idx);
+  return logical_limits_of(idx);
 }
 
-api::utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {
-  if (is_buffer_storage(idx)) {
-    return {64u, 1u, 1u};
+utils::uvec3 ComputeGraph::create_local_wg_size(
+    const utils::uvec3 global_wg_size) {
+  if (config_.enable_local_wg_size_override) {
+    return config_.local_wg_size_override;
   }
 
-  const api::utils::uvec3 image_extents = image_extents_of(idx);
-  api::utils::uvec3 local_group_size = {4, 4, 4};
+  utils::uvec3 local_group_size = {4, 4, 4};
 
-  if (image_extents.data[2u] == 1) {
-    if (image_extents.data[1u] == 1) {
-      local_group_size.data[0u] = 64;
-      local_group_size.data[1u] = 1;
-      local_group_size.data[2u] = 1;
-    } else if (image_extents.data[1u] < 8) {
-      local_group_size.data[0u] = 16;
-      local_group_size.data[1u] = 4;
-      local_group_size.data[2u] = 1;
+  if (global_wg_size[2u] == 1) {
+    if (global_wg_size[1u] == 1) {
+      local_group_size[0u] = 64;
+      local_group_size[1u] = 1;
+      local_group_size[2u] = 1;
+    } else if (global_wg_size[1u] < 8) {
+      local_group_size[0u] = 16;
+      local_group_size[1u] = 4;
+      local_group_size[2u] = 1;
     } else {
-      local_group_size.data[0u] = 8;
-      local_group_size.data[1u] = 8;
-      local_group_size.data[2u] = 1;
+      local_group_size[0u] = 8;
+      local_group_size[1u] = 8;
+      local_group_size[2u] = 1;
     }
   }
   return local_group_size;
+}
+
+utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {
+  return create_local_wg_size(create_global_wg_size(idx));
 }
 
 void ComputeGraph::copy_into_staging(
@@ -350,8 +466,8 @@ void ComputeGraph::copy_into_staging(
     const void* data,
     const size_t numel) {
   StagingPtr staging = get_staging(idx);
-  size_t nbytes = numel * api::element_size(staging->dtype());
-  copy_ptr_to_staging(data, *staging, nbytes);
+  size_t nbytes = numel * vkapi::element_size(staging->dtype());
+  staging->copy_from(data, nbytes);
 }
 
 void ComputeGraph::copy_from_staging(
@@ -359,8 +475,8 @@ void ComputeGraph::copy_from_staging(
     void* data,
     const size_t numel) {
   StagingPtr staging = get_staging(idx);
-  size_t nbytes = numel * api::element_size(staging->dtype());
-  copy_staging_to_ptr(*staging, data, nbytes);
+  size_t nbytes = numel * vkapi::element_size(staging->dtype());
+  staging->copy_to(data, nbytes);
 }
 
 void ComputeGraph::prepare() {
@@ -372,7 +488,7 @@ void ComputeGraph::prepare() {
       config_.descriptor_pool_safety_factor))
 
   uint32_t max_sets = MERGE_FIELD(descriptor_pool_max_sets);
-  api::DescriptorPoolConfig config{
+  vkapi::DescriptorPoolConfig config{
       max_sets,
       std::max(MERGE_FIELD(descriptor_uniform_buffer_count), max_sets),
       std::max(MERGE_FIELD(descriptor_storage_buffer_count), max_sets),
@@ -399,7 +515,7 @@ void ComputeGraph::encode_prepack() {
 
 void ComputeGraph::prepack() const {
   // Submit and execute the command buffer
-  api::VulkanFence fence = context_->fences().get_fence();
+  vkapi::VulkanFence fence = context_->fences().get_fence();
   context_->submit_cmd_to_gpu(fence.get_submit_handle(), /*final_use = */ true);
   fence.wait();
 
@@ -423,7 +539,7 @@ void ComputeGraph::encode_execute() {
 }
 
 void ComputeGraph::execute() const {
-  api::VulkanFence fence = context_->fences().get_fence();
+  vkapi::VulkanFence fence = context_->fences().get_fence();
   context_->submit_cmd_to_gpu(fence.get_submit_handle());
   fence.wait();
 }

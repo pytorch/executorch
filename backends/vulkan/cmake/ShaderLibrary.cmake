@@ -50,8 +50,8 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
   execute_process(
     COMMAND
       "${PYTHON_EXECUTABLE}"
-      ${EXECUTORCH_ROOT}/backends/vulkan/runtime/api/gen_vulkan_spv.py
-      --glsl-path ${shaders_path} --output-path ${VULKAN_SHADERGEN_OUT_PATH}
+      ${EXECUTORCH_ROOT}/backends/vulkan/runtime/gen_vulkan_spv.py --glsl-path
+      ${shaders_path} --output-path ${VULKAN_SHADERGEN_OUT_PATH}
       --glslc-path=${GLSLC_PATH} --tmp-dir-path=${VULKAN_SHADERGEN_OUT_PATH}
       --env ${VULKAN_GEN_ARG_ENV}
     RESULT_VARIABLE error_code
@@ -87,7 +87,7 @@ macro(vulkan_shader_library shaders_path library_name)
   set(VULKAN_SHADERGEN_OUT_PATH ${CMAKE_BINARY_DIR}/${library_name})
 
   # execute_process( COMMAND "${PYTHON_EXECUTABLE}"
-  # ${EXECUTORCH_ROOT}/backends/vulkan/runtime/api/gen_vulkan_spv.py --glsl-path
+  # ${EXECUTORCH_ROOT}/backends/vulkan/runtime/gen_vulkan_spv.py --glsl-path
   # ${shaders_path} --output-path ${VULKAN_SHADERGEN_OUT_PATH}
   # --glslc-path=${GLSLC_PATH} --tmp-dir-path=${VULKAN_SHADERGEN_OUT_PATH} --env
   # ${VULKAN_GEN_ARG_ENV} RESULT_VARIABLE error_code ) set(ENV{PYTHONPATH}

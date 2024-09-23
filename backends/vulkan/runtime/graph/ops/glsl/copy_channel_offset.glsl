@@ -16,20 +16,20 @@ layout(std430) buffer;
 
 #include "indexing_utils.h"
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-layout(set = 0, binding = 1) uniform PRECISION sampler3D existing_out;
-layout(set = 0, binding = 2) uniform PRECISION sampler3D image_in;
+${layout_declare_tensor(0, "w", "t_out", DTYPE, STORAGE)}
+${layout_declare_tensor(1, "r", "existing_out", DTYPE, STORAGE)}
+${layout_declare_tensor(2, "r", "t_in", DTYPE, STORAGE)}
 
 layout(set = 0, binding = 3) uniform PRECISION restrict CopyArgs {
   ivec4 out_sizes;
   ivec4 in_sizes;
   // Analogus to range variable in copy. It defines the # of channel being
   // copied.
-  int channel_range;  
+  int channel_range;
   int src_channel_offset;
   int dst_channel_offset;
-  int unused; 
-  // Operates on (x, y, z) extents. 
+  int unused;
+  // Operates on (x, y, z) extents.
   ivec3 range;
   int unused1;
   ivec3 dst_offset;
@@ -69,10 +69,10 @@ void main() {
 
     // Readjust for the source offset.
     in_whcn.z = in_whcn.z + src_channel_offset;
-    
+
     ivec4 in_elem_pos = to_texture_elem_pos(in_whcn, in_sizes, packed_dim);
-    v[i] = VEC4_T(texelFetch(image_in, in_elem_pos.xyz, 0))[in_elem_pos.w];
+    v[i] = VEC4_T(texelFetch(t_in, in_elem_pos.xyz, 0))[in_elem_pos.w];
   }
 
-  imageStore(image_out, out_pos, v);
+  imageStore(t_out, out_pos, v);
 }

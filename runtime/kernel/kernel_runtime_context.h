@@ -14,8 +14,8 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * Runtime state and functionality for kernel implementations.
@@ -58,7 +58,7 @@ class KernelRuntimeContext {
   }
 
   /// Returns the current failure state.
-  __ET_NODISCARD Error failure_state() const {
+  ET_NODISCARD Error failure_state() const {
     return failure_state_;
   }
 
@@ -107,16 +107,25 @@ class KernelRuntimeContext {
   Error failure_state_ = Error::Ok;
 };
 
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch
 
-// TODO(T147221312): Remove these aliases once all code uses
-// KernelRuntimeContext.
-namespace exec_aten {
-using RuntimeContext = torch::executor::KernelRuntimeContext;
-} // namespace exec_aten
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
 namespace torch {
 namespace executor {
-using RuntimeContext = torch::executor::KernelRuntimeContext;
+/// DEPRECATED: Use ::executorch::runtime::KernelRuntimeContext instead.
+using ::executorch::runtime::KernelRuntimeContext;
+/// DEPRECATED: Use ::executorch::runtime::KernelRuntimeContext instead.
+using RuntimeContext = ::executorch::runtime::KernelRuntimeContext;
 } // namespace executor
 } // namespace torch
+namespace executorch {
+namespace aten {
+/// DEPRECATED: Use ::executorch::runtime::KernelRuntimeContext instead.
+using RuntimeContext = ::executorch::runtime::KernelRuntimeContext;
+} // namespace aten
+} // namespace executorch
+// DEPRECATED: The exec_aten:: namespace is deprecated. Use executorch::aten::
+// instead.
+namespace exec_aten = ::executorch::aten;

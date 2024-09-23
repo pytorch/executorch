@@ -10,43 +10,54 @@
 // The module takes in a string as input and emits a string as output.
 
 #include <executorch/examples/models/llama2/runner/runner.h>
-#if ET_USE_TIKTOKEN
-#include <executorch/examples/models/llama2/tokenizer/tiktoken.h>
-#else /* BPE */
-#include <executorch/examples/models/llama2/tokenizer/bpe_tokenizer.h>
-#endif /* ET_USE_TIKTOKEN*/
-#include <executorch/extension/evalue_util/print_evalue.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
 
 #include <ctime>
-#include <memory>
-#include <sstream>
 
-#ifdef USE_ATEN_LIB
-#include <torch/torch.h>
-#endif
+#include <executorch/extension/llm/runner/util.h>
 
-#include <executorch/examples/models/llama2/runner/util.h>
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
-#include <executorch/runtime/platform/log.h>
+#include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
+#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 
-namespace torch::executor {
+namespace example {
+
+using ::executorch::extension::Module;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::Result;
+
+namespace llm = ::executorch::extension::llm;
+
 namespace {
-static constexpr auto kTopp = 0.9f;
-void printReport(const Runner::Stats& stats);
-std::string statsToJsonString(const Runner::Stats& stats);
+static constexpr auto kAppendEosToPrompt = "append_eos_to_prompt";
+static constexpr auto kEnableDynamicShape = "enable_dynamic_shape";
+static constexpr auto kBosId = "get_bos_id";
+static constexpr auto kEosIds = "get_eos_ids";
+static constexpr auto kMaxSeqLen = "get_max_seq_len";
+static constexpr auto kNBos = "get_n_bos";
+static constexpr auto kNEos = "get_n_eos";
+static constexpr auto kVocabSize = "get_vocab_size";
+static constexpr auto kUseKVCache = "use_kv_cache";
+static constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
 } // namespace
 
 Runner::Runner(
     const std::string& model_path,
     const std::string& tokenizer_path,
     const float temperature)
-    : module_(std::make_unique<Module>(
-          model_path,
-          Module::MlockConfig::UseMlockIgnoreErrors)),
+    // NOTE: we observed ~2x loading performance increase on iPhone 15
+    // and a ~5% improvement on Galaxy S22 by switching to
+    // FileDataLoader instead of MmapDataLoader + UseMlockIgnoreErrors.
+    : temperature_(temperature),
+      module_(std::make_unique<Module>(model_path, Module::LoadMode::File)),
       tokenizer_path_(tokenizer_path),
-      temperature_(temperature) {
+      metadata_({
+          {kAppendEosToPrompt, false},
+          {kEnableDynamicShape, false},
+          {kMaxSeqLen, 128},
+          {kNBos, 1},
+          {kNEos, 1},
+          {kUseKVCache, true},
+          {kUseSDPAWithKVCache, false},
+      }) {
   ET_LOG(
       Info,
       "Creating LLaMa runner: model_path=%s, tokenizer_path=%s",
@@ -55,7 +66,8 @@ Runner::Runner(
 }
 
 bool Runner::is_loaded() const {
-  return module_->is_loaded() && tokenizer_ && sampler_;
+  return module_->is_loaded() && tokenizer_ && text_decoder_runner_ &&
+      text_prefiller_ && text_token_generator_;
 }
 
 Error Runner::load() {
@@ -63,173 +75,121 @@ Error Runner::load() {
     return Error::Ok;
   }
   ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("forward"));
-
-  // Read out metadata: vocab_size (expected by the model), BOS, EOS, n_BOS,
-  // n_EOS max_seq_len from the model
-  ET_LOG(Info, "Reading metadata from model");
-  const auto method_names = module_->method_names();
-  ET_CHECK_MSG(method_names.ok(), "Failed to read method names from model");
-  model_methods_ = method_names.get();
-  n_bos_ = getMetadataHelper<int64_t>("get_n_bos", 1);
-  n_eos_ = getMetadataHelper<int64_t>("get_n_eos", 1);
-  max_seq_len_ = getMetadataHelper<int64_t>("get_max_seq_len", 128);
-  use_kv_cache_ = getMetadataHelper("use_kv_cache", true);
-  use_sdpa_with_kv_cache_ = getMetadataHelper("use_sdpa_with_kv_cache", false);
-  append_eos_ = getMetadataHelper("append_eos_to_prompt", false);
-
-  // Load tokenizer
-#if ET_USE_TIKTOKEN
-  tokenizer_ = std::make_unique<Tiktoken>();
-#else
-  tokenizer_ = std::make_unique<BPETokenizer>();
-#endif
-  tokenizer_->load(tokenizer_path_);
-
-  vocab_size_ =
-      getMetadataHelper<int64_t>("get_vocab_size", tokenizer_->vocab_size());
-  bos_id_ = getMetadataHelper<int64_t>("get_bos_id", tokenizer_->bos_tok());
-  eos_id_ = getMetadataHelper<int64_t>("get_eos_id", tokenizer_->eos_tok());
-
-  // Create sampler
-  sampler_ = std::make_unique<Sampler>(
-      vocab_size_,
-      temperature_,
-      kTopp,
-      static_cast<unsigned long long>(std::time(nullptr)));
-
-  return Error::Ok;
-}
-
-template <typename T>
-T Runner::getMetadataHelper(const std::string& method_name, T default_val) {
-  T res = default_val;
-  if (model_methods_.count(method_name)) {
-    Result<std::vector<EValue>> outputs = module_->execute(method_name);
-    if (outputs.ok()) {
-      std::vector<EValue> outs = outputs.get();
-      if (outs.size() > 0) {
-        res = outs[0].to<T>();
-      }
-    }
-  } else {
+  // load tokenizer. Assuming tiktoken is the default tokenizer
+  tokenizer_ = nullptr;
+  tokenizer_ = get_tiktoken_for_llama();
+  Error err = tokenizer_->load(tokenizer_path_);
+  // Rely on tiktoken to throw error if the artifact is incompatible. Then we
+  // fallback to BPE tokenizer.
+  if (err == Error::InvalidArgument) {
     ET_LOG(
         Info,
-        "The model does not contain %s method, using default value %lld",
-        method_name.c_str(),
-        (long long)default_val);
+        "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
+        tokenizer_path_.c_str());
+    tokenizer_.reset();
+    tokenizer_ = std::make_unique<llm::BPETokenizer>();
+    tokenizer_->load(tokenizer_path_);
   }
-  ET_LOG(Info, "%s: %lld", method_name.c_str(), (long long)res);
-  return res;
-}
 
-template <typename T>
-int32_t Runner::logitsToToken(
-    const exec_aten::Tensor& logits_tensor,
-    int64_t pos,
-    T _) {
-  (void)_;
-  T* logits = logits_tensor.mutable_data_ptr<T>();
+  ET_LOG(Info, "Reading metadata from model");
 
-  // Since the logits are for all tokens, get the last token probabilities
-  T* logits_last = logits;
-  if (!use_kv_cache_) {
-    logits_last += pos * tokenizer_->vocab_size();
-  }
-  return sampler_->sample(logits_last);
-}
+  metadata_[kBosId] = tokenizer_->bos_tok();
+  auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
+      std::unordered_set<uint64_t>{tokenizer_->eos_tok()});
+  metadata_[kVocabSize] = tokenizer_->vocab_size();
 
-// Given an input token. Set up the inputs for the model and execute a single
-// step. Returning the logits tensor.
-Result<torch::executor::Tensor> Runner::run_model_step(
-    int64_t input_token,
-    ManagedTensor& managed_tokens,
-    ManagedTensor& managed_start_pos,
-    size_t max_seq_len) {
-  // ET_LOG(Info, "Input token %" PRIu64, input_token);
-  if (use_kv_cache_) {
-    std::vector<EValue> inputs;
-    auto tokens = managed_tokens.get_aliasing_tensor();
-    auto start_pos = managed_start_pos.get_aliasing_tensor();
+  const auto method_names =
+      ET_UNWRAP(module_->method_names(), "Failed reading method names");
 
-    // When using kv-cache our input is always 1 token, so just update to the
-    // latest.
-    tokens.mutable_data_ptr<int64_t>()[0] = input_token;
+  for (auto& pair : metadata_) {
+    const auto& method_name = pair.first;
+    auto& value = pair.second;
 
-    // inputs:[tokens, start_pos]
-    inputs.push_back(tokens);
-    inputs.push_back(start_pos);
-
-    Result<std::vector<EValue>> outputs_res = module_->forward(inputs);
-    ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
-    ET_CHECK_MSG(
-        outputs_res.get().size() == 1,
-        "More then one output returned from executing LLM.");
-    ET_CHECK_MSG(
-        outputs_res.get()[0].isTensor(),
-        "Non Tensor Output returned from executing LLM");
-
-    // Bump start_pos by 1
-    start_pos.mutable_data_ptr<int64_t>()[0]++;
-
-    // Return the logits tensor
-    return outputs_res.get()[0].toTensor();
-  } else { // no kv cache
-    std::vector<EValue> inputs;
-    auto tokens = managed_tokens.get_aliasing_tensor();
-    (void)managed_start_pos; // unused
-
-    // When not using kv-cache our input is the entire history of tokens we have
-    // seen, so resize input to be 1 larger and append the new token to the end.
-    // TODO does this work in ATen mode?
-    tokens.mutable_data_ptr<int64_t>()[tokens.size(1) - 1] = input_token;
-
-    // inputs:[tokens]
-    inputs.push_back(tokens);
-
-    Result<std::vector<EValue>> outputs_res = module_->forward(inputs);
-    ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
-    ET_CHECK_MSG(
-        outputs_res.get().size() == 1,
-        "More then one output returned from executing LLM.");
-    ET_CHECK_MSG(
-        outputs_res.get()[0].isTensor(),
-        "Non Tensor Output returned from executing LLM");
-
-    if (tokens.size(1) < max_seq_len) {
-      // Resize the tokens tensor to be 1 larger for next step.
-      managed_tokens.resize({1, static_cast<int>(tokens.size(1) + 1)});
+    if (method_names.count(method_name)) {
+      value = ET_UNWRAP(module_->get(method_name))
+                  .toScalar()
+                  .to<decltype(metadata_)::mapped_type>();
+    } else {
+      ET_LOG(
+          Info,
+          "Methond %s not found, using the default value %" PRId64,
+          method_name.c_str(),
+          value);
     }
-
-    // Return the logits tensor
-    return outputs_res.get()[0].toTensor();
+    ET_LOG(Info, "Metadata: %s = %" PRId64, method_name.c_str(), value);
   }
+  if (method_names.count(kEosIds)) {
+    eos_ids->clear();
+    for (const auto& eos_id : ET_UNWRAP(module_->execute(kEosIds))) {
+      auto value = eos_id.toScalar().to<int64_t>();
+      eos_ids->emplace(value);
+      ET_LOG(Info, "eos_id = %" PRId64, value);
+    }
+  }
+  text_decoder_runner_ = std::make_unique<llm::TextDecoderRunner>(
+      module_.get(),
+      metadata_.at(kUseKVCache),
+      metadata_.at(kVocabSize),
+      temperature_);
+  text_prefiller_ = std::make_unique<llm::TextPrefiller>(
+      text_decoder_runner_.get(),
+      metadata_.at(kUseKVCache),
+      metadata_.at(kEnableDynamicShape));
+
+  text_token_generator_ = std::make_unique<llm::TextTokenGenerator>(
+      tokenizer_.get(),
+      text_decoder_runner_.get(),
+      metadata_.at(kUseKVCache),
+      std::move(eos_ids),
+      &stats_);
+
+  return Error::Ok;
 }
 
 Error Runner::generate(
     const std::string& prompt,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback) {
+    std::function<void(const llm::Stats&)> stats_callback,
+    bool echo) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
   if (!is_loaded()) {
-    stats_.model_load_start_ms = util::time_in_ms();
+    stats_.model_load_start_ms = llm::time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
-    stats_.model_load_end_ms = util::time_in_ms();
+    stats_.model_load_end_ms = llm::time_in_ms();
   }
 
+  ET_LOG(
+      Info,
+      "RSS after loading model: %f MiB (0 if unsupported)",
+      llm::get_rss_bytes() / 1024.0 / 1024.0);
+
+  // Wrap the token_callback with print function
+  std::function<void(const std::string&)> wrapped_callback =
+      [token_callback](const std::string& piece) {
+        llm::safe_printf(piece.c_str());
+        fflush(stdout);
+        if (token_callback) {
+          token_callback(piece);
+        }
+      };
   // First token time only measures the time it takes to encode the prompt and
   // return a response token.
 
-  stats_.inference_start_ms = util::time_in_ms();
+  stats_.inference_start_ms = llm::time_in_ms();
   shouldStop_ = false;
 
   // Set the sequence length to the max seq length if not provided
-  seq_len = (seq_len > 0 && seq_len <= max_seq_len_) ? seq_len : max_seq_len_;
+  seq_len = (seq_len > 0 && seq_len <= metadata_.at(kMaxSeqLen))
+      ? seq_len
+      : metadata_.at(kMaxSeqLen);
 
-  Result<std::vector<uint64_t>> encode_res =
-      tokenizer_->encode(prompt, n_bos_, append_eos_ ? n_eos_ : 0);
+  Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(
+      prompt,
+      metadata_.at(kNBos),
+      metadata_.at(kAppendEosToPrompt) ? metadata_.at(kNEos) : 0);
 
   ET_CHECK_OK_OR_RETURN_ERROR(
       encode_res.error(), "Failed to encode prompt %s", prompt.c_str());
@@ -240,150 +200,58 @@ Error Runner::generate(
 
   ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");
   ET_CHECK_MSG(
-      num_prompt_tokens < max_seq_len_,
-      "Max seq length exceeded - please increase max seq len value in .../llama2/model.py");
-
+      num_prompt_tokens < metadata_.at(kMaxSeqLen),
+      "num_prompt_tokens %d >= max_seq_len_ %" PRId64
+      ", Max seq length exceeded - please increase max seq len value in .../llama2/model.py",
+      num_prompt_tokens,
+      metadata_.at(kMaxSeqLen));
   ET_CHECK_MSG(
       num_prompt_tokens < seq_len,
-      "Sequence length exceeded - please increase the seq_len value passed to generate()");
+      "num_prompt_tokens %d >= seq_len %d, Sequence length exceeded - please increase the seq_len value passed to generate()",
+      num_prompt_tokens,
+      seq_len);
+
+  // Prefill first
+  // Here feed all tokens to the model and get the next predicted token
+  // after the prompt. After that we will enter generate loop.
+
+  // print prompts
+  if (echo) {
+    wrapped_callback(prompt);
+  }
+  int64_t pos = 0;
+  auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos);
+  stats_.first_token_ms = llm::time_in_ms();
+  stats_.prompt_eval_end_ms = llm::time_in_ms();
+  ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
+  uint64_t cur_token = prefill_res.get();
+
+  // print the first token from prefill. No prev_token so use cur_token for it.
+  wrapped_callback(ET_UNWRAP(tokenizer_->decode(cur_token, cur_token)));
+  ET_LOG(
+      Info,
+      "RSS after prompt prefill: %f MiB (0 if unsupported)",
+      llm::get_rss_bytes() / 1024.0 / 1024.0);
 
   // start the main loop
-  int64_t pos = 0; // position in the sequence
+  prompt_tokens.push_back(cur_token);
+  int64_t num_generated_tokens = ET_UNWRAP(text_token_generator_->generate(
+      prompt_tokens, num_prompt_tokens, seq_len, wrapped_callback));
 
-  std::vector<int64_t> token_data; // allocate space for the tokens
-  std::vector<exec_aten::SizesType> token_shape = {1, seq_len};
-
-  std::vector<int64_t> start_pos_data; // allocate space for the tokens
-  std::vector<exec_aten::SizesType> start_pos_shape = {1};
-
-  if (use_kv_cache_) {
-    // hard code these to size 1 as kv cache is locked to static size right now.
-    token_data.resize(1);
-    token_shape[1] = 1;
-    start_pos_data.resize(1);
-    start_pos_data.push_back(0);
-  } else {
-    // reserve data for tokens, notice the size is still 0 but the capacity is
-    // seq_len.
-    token_data.resize(seq_len);
-  }
-
-  // initialize tensor wrappers
-  ManagedTensor tokens_managed(
-      token_data.data(), token_shape, ScalarType::Long);
-  // Create with the max shape to approapriately set the capacity of this
-  // tensor, then resize back to 1 for first input.
-  tokens_managed.resize({1, 1});
-
-  ManagedTensor start_pos_managed(
-      start_pos_data.data(), start_pos_shape, ScalarType::Long);
-
-  int64_t prev_token;
-  int64_t cur_token = prompt_tokens[0];
-
-  // If we arent using the kv cache then we can batch prefill the prompt
-  if (!use_kv_cache_) {
-    tokens_managed.resize({1, num_prompt_tokens});
-    for (int i = 0; i < num_prompt_tokens - 1; i++) {
-      tokens_managed.get_aliasing_tensor().mutable_data_ptr<int64_t>()[i] =
-          prompt_tokens[i];
-    }
-    // prefill tokens up to the last prompt token and then enter the loop with
-    // the last promp token as the current token.
-    cur_token = prompt_tokens[num_prompt_tokens - 1];
-    pos = num_prompt_tokens - 1;
-
-    // Print the prompt for consistent output between single token prefill and
-    // batch prefill.
-    uint64_t prev = prompt_tokens[0];
-    uint64_t cur;
-    for (int i = 1; i < num_prompt_tokens; i++) {
-      cur = prompt_tokens[i];
-      auto piece_res = tokenizer_->decode(prev, cur);
-      ET_CHECK_OK_OR_RETURN_ERROR(piece_res.error());
-      util::safe_printf(piece_res.get().c_str());
-      fflush(stdout);
-      prev = cur;
-    }
-  }
-
-  // Generate our tokens
-  while (pos < seq_len - 1) {
-    // Run the model
-    Result<torch::executor::Tensor> logits_res =
-        run_model_step(cur_token, tokens_managed, start_pos_managed, seq_len);
-
-    if (pos == num_prompt_tokens) {
-      stats_.first_token_ms = util::time_in_ms();
-    } else if (pos == num_prompt_tokens - 1) {
-      stats_.prompt_eval_end_ms = util::time_in_ms();
-    }
-
-    ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
-    exec_aten::Tensor& logits_tensor = logits_res.get();
-
-    prev_token = cur_token;
-
-    long sample_start_time_ms = util::time_in_ms();
-    switch (logits_tensor.scalar_type()) {
-      case ScalarType::Float: {
-        cur_token = logitsToToken<float>(logits_tensor, pos, 0);
-        break;
-      }
-      case ScalarType::Half: {
-        cur_token = logitsToToken<exec_aten::Half>(logits_tensor, pos, 0);
-        break;
-      }
-      default:
-        ET_CHECK_MSG(
-            false,
-            "Unsupported dtype output %hhd",
-            static_cast<int8_t>(logits_tensor.scalar_type()));
-    }
-    stats_.aggregate_sampling_time_ms +=
-        util::time_in_ms() - sample_start_time_ms;
-
-    // advance the state machine
-    if (pos < num_prompt_tokens - 1) {
-      // prefill, force the next token to be the next prompt token
-      cur_token = prompt_tokens[pos + 1];
-    }
-    pos++;
-
-    // print the token as string, decode it with the Tokenizer object
-    auto piece_res = tokenizer_->decode(prev_token, cur_token);
-    ET_CHECK(piece_res.ok());
-    const char* piece = piece_res.get().c_str();
-
-    // same as printf("%s", piece), but skips "unsafe" bytes
-    util::safe_printf(piece);
-    fflush(stdout);
-
-    if (token_callback) {
-      token_callback(piece);
-    }
-
-    if (shouldStop_) {
-      break;
-    }
-
-    // data-dependent terminating condition: we have n_eos_ number of EOS
-    if (pos >= num_prompt_tokens && cur_token == eos_id_) {
-      printf("\n");
-      ET_LOG(Info, "\nReached to the end of generation");
-      break;
-    }
-  }
-  stats_.inference_end_ms = util::time_in_ms();
+  stats_.inference_end_ms = llm::time_in_ms();
   printf("\n");
+  ET_LOG(
+      Info,
+      "RSS after finishing text generation: %f MiB (0 if unsupported)",
+      llm::get_rss_bytes() / 1024.0 / 1024.0);
 
-  if (pos == seq_len) {
+  if (num_prompt_tokens + num_generated_tokens == seq_len) {
     ET_LOG(Info, "Sequence length (%i tokens) reached!", seq_len);
   }
 
   stats_.num_prompt_tokens = num_prompt_tokens;
-  stats_.num_generated_tokens = pos - num_prompt_tokens;
-  printReport(stats_);
+  stats_.num_generated_tokens = num_generated_tokens;
+  ::executorch::llm::print_report(stats_);
   if (stats_callback) {
     stats_callback(stats_);
   }
@@ -391,93 +259,11 @@ Error Runner::generate(
   return Error::Ok;
 }
 
-namespace {
-void printReport(const Runner::Stats& stats) {
-  printf("PyTorchObserver %s\n", statsToJsonString(stats).c_str());
-
-  ET_LOG(
-      Info,
-      "\tPrompt Tokens: %" PRIu64 "    Generated Tokens: %" PRIu64,
-      stats.num_prompt_tokens,
-      stats.num_generated_tokens);
-
-  ET_LOG(
-      Info,
-      "\tModel Load Time:\t\t%f (seconds)",
-      ((double)(stats.model_load_end_ms - stats.model_load_start_ms) /
-       stats.SCALING_FACTOR_UNITS_PER_SECOND));
-  double inference_time_ms =
-      (double)(stats.inference_end_ms - stats.inference_start_ms);
-  ET_LOG(
-      Info,
-      "\tTotal inference time:\t\t%f (seconds)\t\t Rate: \t%f (tokens/second)",
-      inference_time_ms / stats.SCALING_FACTOR_UNITS_PER_SECOND,
-
-      (stats.num_generated_tokens) /
-          (double)(stats.inference_end_ms - stats.inference_start_ms) *
-          stats.SCALING_FACTOR_UNITS_PER_SECOND);
-  double prompt_eval_time =
-      (double)(stats.prompt_eval_end_ms - stats.inference_start_ms);
-  ET_LOG(
-      Info,
-      "\t\tPrompt evaluation:\t%f (seconds)\t\t Rate: \t%f (tokens/second)",
-      prompt_eval_time / stats.SCALING_FACTOR_UNITS_PER_SECOND,
-      (stats.num_prompt_tokens) / prompt_eval_time *
-          stats.SCALING_FACTOR_UNITS_PER_SECOND);
-
-  double eval_time =
-      (double)(stats.inference_end_ms - stats.prompt_eval_end_ms);
-  ET_LOG(
-      Info,
-      "\t\tGenerated %" PRIu64
-      " tokens:\t%f (seconds)\t\t Rate: \t%f (tokens/second)",
-      stats.num_generated_tokens,
-      eval_time / stats.SCALING_FACTOR_UNITS_PER_SECOND,
-      stats.num_generated_tokens / eval_time *
-          stats.SCALING_FACTOR_UNITS_PER_SECOND);
-
-  // Time to first token is measured from the start of inference, excluding
-  // model load time.
-  ET_LOG(
-      Info,
-      "\tTime to first generated token:\t%f (seconds)",
-      ((double)(stats.first_token_ms - stats.inference_start_ms) /
-       stats.SCALING_FACTOR_UNITS_PER_SECOND));
-
-  ET_LOG(
-      Info,
-      "\tSampling time over %" PRIu64 " tokens:\t%f (seconds)",
-      stats.num_prompt_tokens + stats.num_generated_tokens,
-      (double)stats.aggregate_sampling_time_ms /
-          stats.SCALING_FACTOR_UNITS_PER_SECOND);
-}
-
-std::string statsToJsonString(const Runner::Stats& stats) {
-  std::stringstream ss;
-  ss << "{\"prompt_tokens\":" << stats.num_prompt_tokens << ","
-     << "\"generated_tokens\":" << stats.num_generated_tokens << ","
-     << "\"model_load_start_ms\":" << stats.model_load_start_ms << ","
-     << "\"model_load_end_ms\":" << stats.model_load_end_ms << ","
-     << "\"inference_start_ms\":" << stats.inference_start_ms << ","
-     << "\"inference_end_ms\":" << stats.inference_end_ms << ","
-     << "\"prompt_eval_end_ms\":" << stats.prompt_eval_end_ms << ","
-     << "\"first_token_ms\":" << stats.first_token_ms << ","
-     << "\"aggregate_sampling_time_ms\":" << stats.aggregate_sampling_time_ms
-     << "," << "\"SCALING_FACTOR_UNITS_PER_SECOND\":"
-     << stats.SCALING_FACTOR_UNITS_PER_SECOND << "}";
-  return ss.str();
-}
-} // namespace
-
 void Runner::stop() {
-  shouldStop_ = true;
+  if (is_loaded()) {
+    text_token_generator_->stop();
+  } else {
+    ET_LOG(Error, "Token generator is not loaded, cannot stop");
+  }
 }
-
-// explicit instantiation of template methods
-template int64_t Runner::getMetadataHelper<int64_t>(
-    const std::string& method_name,
-    int64_t default_val);
-template bool Runner::getMetadataHelper<bool>(
-    const std::string& method_name,
-    bool default_val);
-} // namespace torch::executor
+} // namespace example

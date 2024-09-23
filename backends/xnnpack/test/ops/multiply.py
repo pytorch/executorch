@@ -36,9 +36,7 @@ class TestMul(unittest.TestCase):
             Tester(self.Mul(), inputs)
             .export()
             .check_count({"torch.ops.aten.mul.Tensor": 1})
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_mul_Tensor"])
             .to_executorch()
@@ -65,9 +63,7 @@ class TestMul(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.mul.Tensor": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -88,9 +84,7 @@ class TestMul(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.mul.Tensor": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -111,9 +105,7 @@ class TestMul(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.mul.Tensor": 3})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_mul_Tensor": 3})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -139,9 +131,7 @@ class TestMul(unittest.TestCase):
                 }
             )
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [

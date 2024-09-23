@@ -92,8 +92,8 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   include(${EXECUTORCH_SRCS_FILE})
   target_include_directories(
     bundled_program
-    INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/../../../sdk/include
-              ${CMAKE_CURRENT_BINARY_DIR}/../../../sdk/bundled_program
+    INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/../../../devtools/include
+              ${CMAKE_CURRENT_BINARY_DIR}/../../../devtools/bundled_program
               ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
               ${EXECUTORCH_ROOT}/third-party/flatcc/include
               ${_mps_schema_headers}
@@ -105,6 +105,10 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
     set(FLATCC_LIB flatccrt_d)
   else()
     set(FLATCC_LIB flatccrt)
+  endif()
+
+  if(CMAKE_BUILD_TYPE MATCHES "Debug")
+    target_link_options(mps_executor_runner PUBLIC -fsanitize=undefined)
   endif()
 
   target_link_libraries(

@@ -6,12 +6,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#pragma once
+
 #include <algorithm>
 #include <vector>
+
 class BasicSampler {
  public:
-  BasicSampler() {}
-  int64_t sample(std::vector<float> logits) {
+  int64_t sample(const std::vector<float>& logits) {
     // Find the token with the highest log probability.
     int64_t max_index =
         std::max_element(logits.begin(), logits.end()) - logits.begin();

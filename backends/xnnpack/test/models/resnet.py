@@ -39,8 +39,7 @@ class TestResNet18(unittest.TestCase):
     def _test_exported_resnet(self, tester):
         (
             tester.export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_convolution_default",

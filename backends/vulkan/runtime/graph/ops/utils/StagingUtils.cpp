@@ -13,104 +13,50 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 
-#include <cstring>
-
 namespace vkcompute {
 
-template <typename T>
-void memcpy_to_mapping_impl(
-    const void* src,
-    api::MemoryMap& dst_mapping,
-    const size_t nbytes) {
-  T* data_ptr = dst_mapping.template data<T>();
-  memcpy(data_ptr, reinterpret_cast<const T*>(src), nbytes);
-}
-
-template <typename T>
-void memcpy_from_mapping_impl(
-    api::MemoryMap& src_mapping,
-    void* dst,
-    const size_t nbytes) {
-  T* data_ptr = src_mapping.template data<T>();
-  memcpy(reinterpret_cast<T*>(dst), data_ptr, nbytes);
-}
-
-void memcpy_to_mapping(
-    const void* src,
-    api::MemoryMap& dst_mapping,
-    const size_t nbytes,
-    const api::ScalarType dtype) {
-#define DTYPE_CASE(ctype, vkformat, name)                    \
-  case api::ScalarType::name:                                \
-    memcpy_to_mapping_impl<ctype>(src, dst_mapping, nbytes); \
-    break;
-
-  switch (dtype) {
-    VK_FORALL_SCALAR_TYPES(DTYPE_CASE)
-    default:
-      VK_THROW("Unrecognized dtype!");
-  }
-#undef DTYPE_CASE
-}
-
-void memcpy_from_mapping(
-    api::MemoryMap& src_mapping,
-    void* dst,
-    const size_t nbytes,
-    const api::ScalarType dtype) {
-#define DTYPE_CASE(ctype, vkformat, name)                      \
-  case api::ScalarType::name:                                  \
-    memcpy_from_mapping_impl<ctype>(src_mapping, dst, nbytes); \
-    break;
-
-  switch (dtype) {
-    VK_FORALL_SCALAR_TYPES(DTYPE_CASE)
-    default:
-      VK_THROW("Unrecognized dtype!");
-  }
-#undef DTYPE_CASE
-}
-
-void copy_ptr_to_staging(
-    const void* src,
-    api::StorageBuffer& staging,
-    const size_t nbytes) {
-  api::MemoryMap mapping(staging.buffer(), api::MemoryAccessType::WRITE);
-  mapping.invalidate();
-  memcpy_to_mapping(src, mapping, nbytes, staging.dtype());
-}
-
-void copy_staging_to_ptr(
-    api::StorageBuffer& staging,
-    void* dst,
-    const size_t nbytes) {
-  api::MemoryMap mapping(staging.buffer(), api::MemoryAccessType::READ);
-  mapping.invalidate();
-  memcpy_from_mapping(mapping, dst, nbytes, staging.dtype());
-}
-
-void set_staging_zeros(api::StorageBuffer& staging, const size_t nbytes) {
-  api::MemoryMap mapping(staging.buffer(), api::MemoryAccessType::WRITE);
-  uint8_t* data_ptr = mapping.template data<uint8_t>();
-  memset(data_ptr, 0, staging.nbytes());
-}
-
-api::ShaderInfo get_nchw_to_tensor_shader(const vTensor& v_dst) {
+vkapi::ShaderInfo get_nchw_to_tensor_shader(
+    const api::vTensor& v_dst,
+    const bool int8_buffer_enabled) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
-  kernel_name = "nchw_to_tensor";
+  if (v_dst.dtype() == vkapi::kChar &&
+      v_dst.storage_type() == utils::kTexture3D && !int8_buffer_enabled) {
+    return VK_KERNEL(nchw_to_int8_image_noint8);
+  }
+
+  if (v_dst.storage_type() == utils::kBuffer) {
+    kernel_name = "nchw_to_buffer";
+    add_dtype_suffix(kernel_name, v_dst);
+    return VK_KERNEL_FROM_STR(kernel_name);
+  }
+
+  kernel_name = "nchw_to_image";
   add_dtype_suffix(kernel_name, v_dst);
   add_storage_type_suffix(kernel_name, v_dst);
 
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
-api::ShaderInfo get_tensor_to_nchw_shader(const vTensor& v_src) {
+vkapi::ShaderInfo get_tensor_to_nchw_shader(
+    const api::vTensor& v_src,
+    bool int8_buffer_enabled) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
-  kernel_name = "tensor_to_nchw";
+  if (v_src.dtype() == vkapi::kChar &&
+      v_src.storage_type() == utils::kTexture3D && !int8_buffer_enabled) {
+    return VK_KERNEL(int8_image_to_nchw_noint8);
+  }
+
+  if (v_src.storage_type() == utils::kBuffer) {
+    kernel_name = "buffer_to_nchw";
+    add_dtype_suffix(kernel_name, v_src);
+    return VK_KERNEL_FROM_STR(kernel_name);
+  }
+
+  kernel_name = "image_to_nchw";
   add_dtype_suffix(kernel_name, v_src);
   add_storage_type_suffix(kernel_name, v_src);
 

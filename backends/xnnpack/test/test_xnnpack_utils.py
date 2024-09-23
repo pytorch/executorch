@@ -25,6 +25,12 @@ from executorch.backends.xnnpack.utils.utils import capture_graph_for_xnnpack
 
 # import the xnnpack backend implementation
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
+from executorch.devtools import BundledProgram
+
+from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.devtools.bundled_program.serialize import (
+    serialize_from_bundled_program_to_flatbuffer,
+)
 from executorch.exir import ExecutorchProgram, ExirExportedProgram
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
 
@@ -34,12 +40,6 @@ from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 from executorch.extension.pytree import tree_flatten
-from executorch.sdk import BundledProgram
-
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.serialize import (
-    serialize_from_bundled_program_to_flatbuffer,
-)
 
 from torch.ao.quantization import (  # @manual
     default_per_channel_symmetric_qnnpack_qconfig,
@@ -72,6 +72,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+from torch.export import export_for_training
 
 from torch.testing import FileCheck
 
@@ -315,10 +316,11 @@ class TestXNNPACK(unittest.TestCase):
     ):
         module.eval()
         # program capture
-        m = torch._export.capture_pre_autograd_graph(
+
+        m = export_for_training(
             module,
             example_inputs,
-        )
+        ).module()
 
         quantizer = XNNPACKQuantizer()
         quantization_config = get_symmetric_quantization_config()

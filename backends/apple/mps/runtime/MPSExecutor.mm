@@ -29,7 +29,7 @@ MPSExecutor::MPSExecutor() {
 #if TARGET_OS_SIMULATOR or defined(__x86_64__)
   _use_shared_mem = false;
 #endif
-  if (!isMacOS13OrNewer(MacOSVersion::MACOS_VER_14_0_PLUS)) {
+  if (!is_macos_13_or_newer(MacOSVersion::MACOS_VER_14_0_PLUS)) {
     _use_shared_mem = false;
   }
 
@@ -37,7 +37,7 @@ MPSExecutor::MPSExecutor() {
   _outputsArray = [[NSMutableArray<MPSGraphTensorData *> alloc] initWithCapacity:getNumOutputs()];
 }
 
-__ET_NODISCARD Error
+ET_NODISCARD Error
 MPSExecutor::set_inputs_outputs(std::vector<const Tensor*>& inputs, std::vector<const Tensor*>& outputs) {
   ET_CHECK_OR_RETURN_ERROR(inputs.size() == getNumInputs(), Internal, "Inputs mismatch");
   ET_CHECK_OR_RETURN_ERROR(outputs.size() == getNumOutputs(), Internal, "Outputs mismatch");
@@ -61,7 +61,7 @@ MPSExecutor::set_inputs_outputs(std::vector<const Tensor*>& inputs, std::vector<
   return Error::Ok;
 }
 
-__ET_NODISCARD Error MPSExecutor::forward(std::vector<const Tensor*>& outputs) {
+ET_NODISCARD Error MPSExecutor::forward(std::vector<const Tensor*>& outputs) {
   Error err = Error::Ok;
   MPSStream* mpsStream = getDefaultMPSStream();
   if (mpsStream->commitAndContinueEnabled() || mpsStream->hasLiveCommandBuffer()) {

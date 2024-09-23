@@ -16,12 +16,12 @@ namespace vkcompute {
 
 ExecuteNode::ExecuteNode(
     ComputeGraph& graph,
-    const api::ShaderInfo& shader,
-    const api::utils::uvec3& global_workgroup_size,
-    const api::utils::uvec3& local_workgroup_size,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const utils::uvec3& local_workgroup_size,
     const std::vector<ArgGroup>& args,
-    const api::ParamsBindList& params,
-    const api::SpecVarList& spec_vars,
+    const vkapi::ParamsBindList& params,
+    const vkapi::SpecVarList& spec_vars,
     const ResizeFunction& resize_fn,
     const std::vector<ValueRef>& resize_args)
     : shader_(shader),
@@ -35,9 +35,24 @@ ExecuteNode::ExecuteNode(
   graph.update_descriptor_counts(shader, /*execute = */ true);
 }
 
+ExecuteNode::ExecuteNode(
+    const ResizeFunction& resize_fn,
+    const std::vector<ValueRef>& resize_args)
+    : shader_(),
+      global_workgroup_size_({0u, 0u, 0u}),
+      local_workgroup_size_({0u, 0u, 0u}),
+      args_(),
+      params_(),
+      spec_vars_(),
+      resize_fn_(resize_fn),
+      resize_args_(resize_args) {}
+
 void ExecuteNode::encode(ComputeGraph* graph) {
+  if (!shader_) {
+    return;
+  }
   api::Context* const context = graph->context();
-  api::PipelineBarrier pipeline_barrier{};
+  vkapi::PipelineBarrier pipeline_barrier{};
 
   std::unique_lock<std::mutex> cmd_lock = context->dispatch_lock();
 
@@ -47,7 +62,7 @@ void ExecuteNode::encode(ComputeGraph* graph) {
       local_workgroup_size_,
       node_id_);
 
-  api::DescriptorSet descriptor_set =
+  vkapi::DescriptorSet descriptor_set =
       context->get_descriptor_set(shader_, local_workgroup_size_, spec_vars_);
 
   uint32_t idx = 0;

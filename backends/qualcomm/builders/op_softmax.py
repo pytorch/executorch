@@ -9,6 +9,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER, QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpSoftmax, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -16,7 +17,7 @@ from .qnn_constants import OpSoftmax, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Softmax(NodeVisitor):
-    target = ["aten._softmax.default"]
+    target = ["aten._softmax.default", "aten._safe_softmax.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -50,8 +51,8 @@ class Softmax(NodeVisitor):
         dim = cast(int, node.args[1])
         if dim < 0:
             dim = dim % len(input_tensor.shape)
-        if "axis_order" in node.meta:
-            dim = node.meta["axis_order"].index(dim)
+        if QCOM_AXIS_ORDER in node.meta:
+            dim = node.meta[QCOM_AXIS_ORDER].index(dim)
 
         # softmax only supports last dimension for now, which is channel in QNN
         if dim != input_tensor.dim() - 1:
@@ -68,7 +69,7 @@ class Softmax(NodeVisitor):
         softmax_op.AddScalarParam(
             OpSoftmax.param_axis,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(dim)},
+            {QCOM_DATA: np.uint32(dim)},
         )
 
         return softmax_op

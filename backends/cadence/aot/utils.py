@@ -4,9 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
+
 import logging
 import operator
-from typing import Dict
+from typing import Dict, List, Tuple
 
 import torch
 from executorch.exir import memory
@@ -49,6 +51,33 @@ def get_conv1d_output_size(
     return torch.Size((in_size[0], out_channels, lout))
 
 
+# Get the output size of a 2D convolution given the input size and parameters
+def get_conv2d_output_size(
+    in_size: torch.Size,
+    out_channels: int,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    kernel_size: List[int],
+    channel_last: bool,
+) -> torch.Size:
+    assert len(in_size) == 4
+    if channel_last:
+        N, H, W, C = in_size
+    else:
+        N, C, H, W = in_size
+
+    # Reference: https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
+    hout = (H + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1) // stride[
+        0
+    ] + 1
+    wout = (W + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) // stride[
+        1
+    ] + 1
+
+    return torch.Size((in_size[0], out_channels, hout, wout))
+
+
 # Return the overload packet for the edge op
 def get_edge_overload_packet(edge_op: EdgeOpOverload) -> EdgeOpOverloadPacket:
     edge_op_namespace, edge_op_name = (
@@ -75,11 +104,11 @@ def get_ops_count(graph_module: torch.fx.GraphModule) -> Dict[str, int]:
             ):
                 continue
             # If the op is already present, increment the count
-            if get_edge_overload_packet(node.target).__name__ in freq:
-                freq[get_edge_overload_packet(node.target).__name__] += 1
+            if node.target._name in freq:
+                freq[node.target._name] += 1
             # else, add a new entry
             else:
-                freq[get_edge_overload_packet(node.target).__name__] = 1
+                freq[node.target._name] = 1
     return freq
 
 
@@ -89,7 +118,7 @@ def get_ops_count(graph_module: torch.fx.GraphModule) -> Dict[str, int]:
 def print_ops_info(
     to_edge_gm: torch.fx.GraphModule,
     jarvis_gm: torch.fx.GraphModule,
-):
+) -> None:
     to_edge_ops_count = get_ops_count(to_edge_gm)
     jarvis_ops_count = get_ops_count(jarvis_gm)
 
@@ -148,3 +177,11 @@ def print_ops_info(
                 tablefmt="outline",
             )
         )
+
+
+def model_gm_has_SDPA(model_gm: torch.fx.GraphModule) -> bool:
+    for node in model_gm.graph.nodes:
+        if node.op == "call_function":
+            if node.target == torch.ops.aten.scaled_dot_product_attention.default:
+                return True
+    return False

@@ -5,36 +5,37 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import <ETCoreMLAsset.h>
-#import <ETCoreMLAssetManager.h>
-#import <ETCoreMLDefaultModelExecutor.h>
-#import <ETCoreMLLogging.h>
-#import <ETCoreMLModel.h>
-#import <ETCoreMLModelCompiler.h>
-#import <ETCoreMLModelExecutor.h>
-#import <ETCoreMLModelLoader.h>
-#import <ETCoreMLModelManager.h>
-#import <ETCoreMLStrings.h>
-#import <MLModel_Prewarm.h>
-#import <MLMultiArray_Copy.h>
+#import "ETCoreMLAsset.h"
+#import "ETCoreMLAssetManager.h"
+#import "ETCoreMLDefaultModelExecutor.h"
+#import "ETCoreMLLogging.h"
+#import "ETCoreMLModel.h"
+#import "ETCoreMLModelCompiler.h"
+#import "ETCoreMLModelExecutor.h"
+#import "ETCoreMLModelLoader.h"
+#import "ETCoreMLModelManager.h"
+#import "ETCoreMLStrings.h"
+#import "MLModel_Prewarm.h"
+#import "MLMultiArray_Copy.h"
 #import <filesystem>
-#import <inmemory_filesystem_utils.hpp>
+#import "inmemory_filesystem_utils.hpp"
 #import <iostream>
 #import <memory>
-#import <model_metadata.h>
-#import <multiarray.h>
-#import <objc_array_util.h>
+#import "model_metadata.h"
+#import "multiarray.h"
+#import "objc_array_util.h"
 #import <optional>
 #import <os/lock.h>
-#import <serde_json.h>
+#import "serde_json.h"
 #import <string>
 #import <system_error>
 #import <vector>
 
 #if ET_EVENT_TRACER_ENABLED
-#import <ETCoreMLModelAnalyzer.h>
-#import <ETCoreMLModelStructurePath.h>
-#import <objc_safe_cast.h>
+#import "ETCoreMLModelAnalyzer.h"
+#import "ETCoreMLModelDebugInfo.h"
+#import "ETCoreMLModelStructurePath.h"
+#import "objc_safe_cast.h"
 #endif
 
 namespace {
@@ -317,31 +318,14 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
     return [[ETCoreMLAsset alloc] initWithBackingAsset:std::move(backingAsset.value())];
 }
 
-NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_operation_path_to_symbol_name_map(const inmemoryfs::InMemoryFileSystem *inMemoryFS,
-                                                                                                         NSError * __autoreleasing *error) {
+ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemoryFileSystem *inMemoryFS,
+                                                        NSError * __autoreleasing *error) {
     NSData *file_data = get_file_data(inMemoryFS, ETCoreMLStrings.debugInfoFileRelativePath);
     if (!file_data) {
         return nil;
     }
-    
-    id object = [NSJSONSerialization JSONObjectWithData:file_data options:(NSJSONReadingOptions)0 error:error];
-    if (!object) {
-        return nil;
-    }
-    
-    NSDictionary<NSString *, id> *json_dict = SAFE_CAST(object, NSDictionary);
-    NSMutableDictionary<ETCoreMLModelStructurePath *, NSString *> *result = [NSMutableDictionary dictionaryWithCapacity:json_dict.count];
-    NSDictionary<NSString *, NSArray<id> *> *debug_symbol_to_operation_path_map = SAFE_CAST(json_dict[ETCoreMLStrings.debugSymbolToOperationPathKeyName], NSDictionary);
-    for (NSString *symbol_name in debug_symbol_to_operation_path_map) {
-        NSArray<NSDictionary<NSString *, id> *> *components = SAFE_CAST(debug_symbol_to_operation_path_map[symbol_name], NSArray);
-        if (components.count == 0) {
-            continue;
-        }
-        ETCoreMLModelStructurePath *path = [[ETCoreMLModelStructurePath alloc] initWithComponents:components];
-        result[path] = symbol_name;
-    }
-    
-    return result;
+
+    return [ETCoreMLModelDebugInfo modelDebugInfoFromData:file_data error:error];
 }
 
 #endif
@@ -490,16 +474,16 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_operation
     }
     
     NSError *localError = nil;
-    NSDictionary<ETCoreMLModelStructurePath *, NSString *> *operation_path_to_symbol_name_map = get_operation_path_to_symbol_name_map(inMemoryFS,
-                                                                                                                                      &localError);
+    ETCoreMLModelDebugInfo *debug_info = get_model_debug_info(inMemoryFS, &localError);
     if (localError) {
         ETCoreMLLogError(localError, "Failed to parse debug info file");
     }
     
+
     return [[ETCoreMLModelAnalyzer alloc] initWithCompiledModelAsset:compiledModelAsset
                                                           modelAsset:modelAsset
+                                                      modelDebugInfo:debug_info
                                                             metadata:metadata
-                                       operationPathToDebugSymbolMap:operation_path_to_symbol_name_map
                                                        configuration:configuration
                                                         assetManager:self.assetManager
                                                                error:error];
@@ -614,21 +598,8 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_operation
     if (!model) {
         return NO;
     }
-    
-    NSError *localError = nil;
-    BOOL result = [model.mlModel prewarmAndReturnError:&localError];
-    if (!result) {
-        ETCoreMLLogError(localError,
-                         "%@: Failed to prewarm model with identifier = %@",
-                         NSStringFromClass(self.assetManager.class),
-                         model.identifier);
-    }
-    
-    if (error) {
-        *error = localError;
-    }
-    
-    return result;
+
+    return [model prewarmAndReturnError:error];
 }
 
 - (void)prewarmRecentlyUsedAssetsWithMaxCount:(NSUInteger)maxCount {
@@ -655,7 +626,7 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_operation
             
             NSError *prewarmError = nil;
             if (![asset prewarmAndReturnError:&prewarmError]) {
-                ETCoreMLLogError(localError,
+                ETCoreMLLogError(prewarmError,
                                  "%@: Failed to prewarm asset with identifier = %@",
                                  NSStringFromClass(strongSelf.assetManager.class),
                                  asset.identifier);
@@ -698,16 +669,15 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_operation
                                                                        error:&localError];
     // Try without output backings.
     if (!modelOutputs && predictionOptions.outputBackings.count > 0) {
-        localError = nil;
         executor.ignoreOutputBackings = YES;
+        localError = nil;
+        modelOutputs = [executor executeModelWithInputs:inputFeatures
+                                      predictionOptions:predictionOptions
+                                         loggingOptions:loggingOptions
+                                            eventLogger:eventLogger
+                                                  error:&localError];
     }
-    
-    modelOutputs = [executor executeModelWithInputs:inputFeatures
-                                  predictionOptions:predictionOptions
-                                     loggingOptions:loggingOptions
-                                        eventLogger:eventLogger
-                                              error:&localError];
-    
+
     if (error) {
         *error = localError;
     }

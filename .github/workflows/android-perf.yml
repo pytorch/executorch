@@ -1,0 +1,240 @@
+name: android-perf
+
+on:
+  schedule:
+    - cron: 0 0 * * *
+  # Note: GitHub has an upper limit of 10 inputs
+  workflow_dispatch:
+    inputs:
+      models:
+        description: Models to be benchmarked
+        required: false
+        type: string
+        default: stories110M
+      devices:
+        description: Target devices to run benchmark
+        required: false
+        type: string
+        default: samsung_galaxy_s22
+      delegates:
+        description: Backend delegates
+        required: false
+        type: string
+        default: xnnpack
+      threadpool:
+        description: Run with threadpool?
+        required: false
+        type: boolean
+        default: false
+      benchmark_configs:
+        description: The list of configs used the benchmark
+        required: false
+        type: string
+      test_spec:
+        description: The test spec to drive the test on AWS devices
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      models:
+        description: Models to be benchmarked
+        required: false
+        type: string
+        default: stories110M
+      devices:
+        description: Target devices to run benchmark
+        required: false
+        type: string
+        default: samsung_galaxy_s22
+      delegates:
+        description: Backend delegates
+        required: false
+        type: string
+        default: xnnpack
+      threadpool:
+        description: Run with threadpool?
+        required: false
+        type: boolean
+        default: false
+      benchmark_configs:
+        description: The list of configs used the benchmark
+        required: false
+        type: string
+      test_spec:
+        description: The test spec to drive the test on AWS devices
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  set-parameters:
+    runs-on: linux.2xlarge
+    outputs:
+      models: ${{ steps.set-parameters.outputs.models }}
+      devices: ${{ steps.set-parameters.outputs.devices }}
+      delegates: ${{ steps.set-parameters.outputs.delegates }}
+    steps:
+      - name: Set parameters
+        id: set-parameters
+        shell: bash
+        env:
+          # Separate default values from the workflow dispatch. To ensure defaults are accessible
+          # during scheduled runs and to provide flexibility for different defaults between
+          # on-demand and periodic benchmarking.
+          CRON_DEFAULT_MODELS: "stories110M,dl3,mv3,mv2,ic4,ic3,vit"
+          CRON_DEFAULT_DEVICES: "samsung_galaxy_s22"
+          CRON_DEFAULT_DELEGATES: "xnnpack,qnn"
+        run: |
+          set -ex
+          MODELS="${{ inputs.models }}"
+          if [ -z "$MODELS" ]; then
+            MODELS="$CRON_DEFAULT_MODELS"
+          fi
+          DEVICES="${{ inputs.devices }}"
+          if [ -z "$DEVICES" ]; then
+            DEVICES="$CRON_DEFAULT_DEVICES"
+          fi
+          DELEGATES="${{ inputs.delegates }}"
+          if [ -z "$DELEGATES" ]; then
+            DELEGATES="$CRON_DEFAULT_DELEGATES"
+          fi
+
+          # Mapping devices to their corresponding device-pool-arn
+          declare -A DEVICE_POOL_ARNS
+          DEVICE_POOL_ARNS[samsung_galaxy_s22]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa"
+          DEVICE_POOL_ARNS[samsung_galaxy_s24]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/98f8788c-2e25-4a3c-8bb2-0d1e8897c0db"
+
+          # Resolve device names with their corresponding ARNs
+          if [[ ! $(echo "$DEVICES" | jq empty 2>/dev/null) ]]; then
+            DEVICES=$(echo "$DEVICES" | jq -Rc 'split(",")')
+          fi
+          declare -a MAPPED_ARNS=()
+          for DEVICE in $(echo "$DEVICES" | jq -r '.[]'); do
+            if [[ -z "${DEVICE_POOL_ARNS[$DEVICE]}" ]]; then
+              echo "Error: No ARN found for device '$DEVICE'. Abort." >&2
+              exit 1
+            fi
+            MAPPED_ARNS+=("${DEVICE_POOL_ARNS[$DEVICE]}")
+          done
+
+          echo "models=$(echo $MODELS | jq -Rc 'split(",")')" >> $GITHUB_OUTPUT
+          MAPPED_ARNS_JSON=$(printf '%s\n' "${MAPPED_ARNS[@]}" | jq -R . | jq -s .)
+          echo "devices=$(echo "$MAPPED_ARNS_JSON" | jq -c .)" >> $GITHUB_OUTPUT
+          echo "delegates=$(echo $DELEGATES | jq -Rc 'split(",")')" >> $GITHUB_OUTPUT
+
+  export-models:
+    name: export-models
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    needs: set-parameters
+    strategy:
+      matrix:
+          model: ${{ fromJson(needs.set-parameters.outputs.models) }}
+          delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12-android
+      submodules: 'true'
+      timeout: 60
+      upload-artifact: android-models
+      upload-artifact-to-s3: true
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        echo "::group::Setting up dev environment"
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+        if [[ ${{ matrix.delegate }} == "qnn" ]]; then
+            PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+            PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+        fi
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
+        ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded/${{ matrix.model }}_${{ matrix.delegate }}
+        echo "::endgroup::"
+
+        echo "::group::Exporting ${{ matrix.delegate }} model: ${{ matrix.model }}"
+        BUILD_MODE="cmake"
+        DTYPE="fp32"
+
+        if [[ ${{ matrix.model }} =~ ^stories* ]]; then
+            # Install requirements for export_llama
+            PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
+            # Test llama2
+            if [[ ${{ matrix.delegate }} == "xnnpack" ]]; then
+                DELEGATE_CONFIG="xnnpack+custom+qe"
+            elif [[ ${{ matrix.delegate }} == "qnn" ]]; then
+                DELEGATE_CONFIG="qnn"
+            else
+                echo "Unsupported delegate ${{ matrix.delegate }}"
+                exit 1
+            fi
+            PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
+        else
+            PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
+        fi
+        echo "::endgroup::"
+
+  build-llm-demo:
+    name: build-llm-demo
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    needs: set-parameters
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12-android
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      upload-artifact: android-apps
+      upload-artifact-to-s3: true
+      script: |
+        set -eux
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
+        export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+
+        export ANDROID_ABIS="arm64-v8a"
+        PYTHON_EXECUTABLE=python EXECUTORCH_BUILD_QNN=ON QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728 bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+
+  # Let's see how expensive this job is, we might want to tone it down by running it periodically
+  benchmark-on-device:
+    permissions:
+      id-token: write
+      contents: read
+    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
+    needs:
+      - set-parameters
+      - build-llm-demo
+      - export-models
+    strategy:
+      matrix:
+        model: ${{ fromJson(needs.set-parameters.outputs.models) }}
+        delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
+        device: ${{ fromJson(needs.set-parameters.outputs.devices) }}
+      fail-fast: false
+    with:
+      # Due to scheduling a job may be pushed beyond the default 60m threshold
+      timeout: 120
+      device-type: android
+      runner: linux.2xlarge
+      test-infra-ref: ''
+      # This is the ARN of ExecuTorch project on AWS
+      project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
+      device-pool-arn: ${{ matrix.device }}
+      # Uploaded to S3 from the previous job, the name of the app comes from the project itself.
+      # Unlike models there are limited numbers of build flavor for apps, and the model controls whether it should build with bpe/tiktoken tokenizer.
+      # It's okay to build all possible apps with all possible flavors in job "build-llm-demo". However, in this job, once a model is given, there is only
+      # one app+flavor that could load and run the model.
+      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug.apk
+      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug-androidTest.apk
+      # NB: Need to set the default spec here so that it works for periodic too
+      test-spec: ${{ inputs.test_spec || 'https://ossci-android.s3.amazonaws.com/executorch/android-llm-device-farm-test-spec.yml' }}
+      # Uploaded to S3 from the previous job
+      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/model.zip

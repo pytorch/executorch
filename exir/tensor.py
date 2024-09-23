@@ -22,6 +22,10 @@ from executorch.exir.schema import ScalarType, TensorShapeDynamism
 from executorch.exir.sym_util import eval_shape
 
 
+class AddressSpaceOverflowException(Exception):
+    pass
+
+
 def num_bytes_from_shape_and_dtype(shape: torch.Size, dtype: torch.dtype) -> int:
     """
     Assume the tensor is a contiguous one.
@@ -258,6 +262,7 @@ scalar_type_table: Dict[torch.dtype, ScalarType] = {
     torch.qint32: ScalarType.QINT32,
     torch.bfloat16: ScalarType.BFLOAT16,
     torch.quint4x2: ScalarType.QUINT4x2,
+    torch.uint16: ScalarType.Bits16,
 }
 
 
@@ -296,7 +301,9 @@ def make_allocation_info(mem_id: int, mem_offset: int) -> schema.AllocationDetai
     memory_offset_low = mem_offset & ((1 << 32) - 1)
     memory_offset_high = mem_offset >> 32
     if memory_offset_high >= 1 << 32:
-        raise ValueError(f"mem_offset {mem_offset} does not fit in 64 bits")
+        raise AddressSpaceOverflowException(
+            f"mem_offset {mem_offset} does not fit in 64 bits"
+        )
 
     allocation_info = schema.AllocationDetails(
         memory_id=mem_id,
@@ -307,7 +314,7 @@ def make_allocation_info(mem_id: int, mem_offset: int) -> schema.AllocationDetai
 
 
 def make_tensor_value(
-    constant_buffer_idx: int,
+    data_buffer_idx: int,
     allocation_info: Optional[schema.AllocationDetails],
     spec: TensorSpec,
 ) -> schema.Tensor:
@@ -325,11 +332,6 @@ def make_tensor_value(
         else:
             return x
 
-    internal_assert(
-        not spec.const or not allocation_info,
-        "We only create non-constant tensors as the constant tensors are directly written to buffer",
-    )
-
     tensor_size = to_list(spec.shape)
     tensor_dim_order = to_list(spec.dim_order)
 
@@ -340,7 +342,7 @@ def make_tensor_value(
         sizes=tensor_size,
         dim_order=tensor_dim_order,
         requires_grad=spec.requires_grad,
-        constant_buffer_idx=constant_buffer_idx,
+        data_buffer_idx=data_buffer_idx,
         allocation_info=allocation_info,
         layout=layout_enum(spec.layout),
         shape_dynamism=spec.shape_dynamism,

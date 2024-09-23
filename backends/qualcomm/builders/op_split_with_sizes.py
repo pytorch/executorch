@@ -9,6 +9,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER, QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpSplit, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -59,7 +60,6 @@ class SplitWithSizes(NodeVisitor):
         # Edge represents chunks by specifying the size of each chunk
         # QNN represents chunks by specifying the index to split chunks
         for index, _value in enumerate(chunks[:-1]):
-
             sum = sum + chunks[index]
             split_indices.append(sum)
 
@@ -68,8 +68,8 @@ class SplitWithSizes(NodeVisitor):
         if dim < 0:
             dim = dim % len(input_tensor.shape)
 
-        if "axis_order" in node.meta:
-            dim = node.meta["axis_order"].index(dim)
+        if QCOM_AXIS_ORDER in node.meta:
+            dim = node.meta[QCOM_AXIS_ORDER].index(dim)
         split_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
@@ -89,6 +89,6 @@ class SplitWithSizes(NodeVisitor):
         split_op.AddScalarParam(
             OpSplit.param_axis,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(dim)},
+            {QCOM_DATA: np.uint32(dim)},
         )
         return split_op

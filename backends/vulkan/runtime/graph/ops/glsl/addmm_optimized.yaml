@@ -7,14 +7,37 @@
 addmm_optimized:
   parameter_names_with_default_values:
     DTYPE: float
-    NDIM: 3
-    PACKING: C_packed
     MAT2_IS_TRANSPOSED: false
+    BATCH_MODE: false
+    TILE_ROWS: 4
+    HAS_BIAS: true
   generate_variant_forall:
+    TILE_ROWS:
+      - VALUE: 4
+        SUFFIX: tile_row_4
+      - VALUE: 2
+        SUFFIX: tile_row_2
     DTYPE:
       - VALUE: float
       - VALUE: half
   shader_variants:
     - NAME: addmm_optimized
+    - NAME: matmul_optimized
+      HAS_BIAS: false
     - NAME: linear_optimized
       MAT2_IS_TRANSPOSED: true
+    - NAME: matmul_transposed_optimized
+      MAT2_IS_TRANSPOSED: true
+      HAS_BIAS: false
+    - NAME: batch_addmm_optimized
+      BATCH_MODE: true
+    - NAME: batch_matmul_optimized
+      BATCH_MODE: true
+      HAS_BIAS: false
+    - NAME: batch_linear_optimized
+      MAT2_IS_TRANSPOSED: true
+      BATCH_MODE: true
+    - NAME: batch_matmul_transposed_optimized
+      MAT2_IS_TRANSPOSED: true
+      BATCH_MODE: true
+      HAS_BIAS: false

@@ -23,7 +23,7 @@ using TensorList = exec_aten::TensorList;
  * unbind_copy.int_out(Tensor input, int dim=0, *, Tensor(a!)[] out) -> ()
  */
 void unbind_copy_int_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     int64_t dim,
     TensorList out) {
@@ -35,6 +35,13 @@ void unbind_copy_int_out(
 
   ET_KERNEL_CHECK(
       ctx, check_unbind_copy_args(input, dim, out), InvalidArgument, );
+
+  for (int i = 0; i < out.size(); ++i) {
+    ET_KERNEL_CHECK(
+        ctx, tensors_have_same_dim_order(input, out[i]), InvalidArgument, );
+  }
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(input), InvalidArgument, );
 
   if (input.numel() == 0) {
     return;

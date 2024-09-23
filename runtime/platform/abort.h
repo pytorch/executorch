@@ -15,14 +15,22 @@
 
 #include <executorch/runtime/platform/compiler.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * Trigger the ExecuTorch global runtime to immediately exit without cleaning
  * up, and set an abnormal exit status (platform-defined).
  */
-__ET_NORETURN void runtime_abort();
+ET_NORETURN void runtime_abort();
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::runtime_abort;
 } // namespace executor
 } // namespace torch

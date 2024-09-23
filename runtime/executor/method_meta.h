@@ -19,8 +19,8 @@ namespace executorch_flatbuffer {
 struct ExecutionPlan;
 } // namespace executorch_flatbuffer
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * Metadata about a specific tensor of an ExecuTorch Program.
@@ -53,6 +53,11 @@ class TensorInfo final {
   exec_aten::ScalarType scalar_type() const;
 
   /**
+   * Returns whether the tensor's memory was planned during export.
+   */
+  bool is_memory_planned() const;
+
+  /**
    * Returns the size of the tensor in bytes.
    */
   size_t nbytes() const;
@@ -64,7 +69,8 @@ class TensorInfo final {
   TensorInfo(
       Span<const int32_t> sizes,
       Span<const uint8_t> dim_order,
-      exec_aten::ScalarType scalar_type);
+      exec_aten::ScalarType scalar_type,
+      const bool is_memory_planned);
 
   /**
    * The sizes of the tensor.
@@ -84,6 +90,9 @@ class TensorInfo final {
 
   /// The scalar type of the tensor.
   exec_aten::ScalarType scalar_type_;
+
+  /// Whether the tensor's memory was planned during export.
+  bool is_memory_planned_;
 
   /// The size in bytes of the tensor.
   size_t nbytes_;
@@ -179,7 +188,7 @@ class MethodMeta final {
   /**
    * DEPRECATED: Use num_memory_planned_buffers() instead.
    */
-  __ET_DEPRECATED size_t num_non_const_buffers() const {
+  ET_DEPRECATED size_t num_non_const_buffers() const {
     return num_memory_planned_buffers();
   }
 
@@ -200,5 +209,14 @@ class MethodMeta final {
   const executorch_flatbuffer::ExecutionPlan* s_plan_;
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::MethodMeta;
+using ::executorch::runtime::TensorInfo;
 } // namespace executor
 } // namespace torch

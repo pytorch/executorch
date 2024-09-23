@@ -2,6 +2,8 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
 from typing import List
 
 import serializer.tosa_serializer as ts
@@ -11,7 +13,7 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_utils import promote_shape
+from executorch.backends.arm.tosa_utils import promote_shape, tosa_shape
 from serializer.tosa_serializer import TosaOp
 
 
@@ -25,12 +27,9 @@ class BatchNormVisitor(NodeVisitor):
     # For BatchNorm2D, mean and var are calculated over the channel dimension
     # But TOSA doesn't allow subtraction of inputs with different ranks
     # Need to augment the shapes to match the ranks with activations
-    def augment_shape_rank(self, input, permute_memory_to_nhwc):
-        return (
-            (1, 1, 1) + input.shape
-            if permute_memory_to_nhwc
-            else ((1,) + input.shape + (1, 1))
-        )
+    def augment_shape_rank(self, shape, dim_order):
+        nchw_shape = (1, *shape, 1, 1)
+        return tosa_shape(nchw_shape, dim_order)
 
     def define_node(
         self,
@@ -39,7 +38,6 @@ class BatchNormVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
         is_quant_node: bool,
-        permute_memory_to_nhwc: bool,
     ) -> None:
         # Decompose batch norm into sequence
         (activations, weights, bias, running_mean, running_var, momentum, epsilon) = (
@@ -67,13 +65,15 @@ class BatchNormVisitor(NodeVisitor):
         mean_reshaped = promote_shape(
             tosa_graph,
             running_mean,
-            self.augment_shape_rank(running_mean, permute_memory_to_nhwc),
+            self.augment_shape_rank(running_mean.shape, output.dim_order),
             input_dtype,
         )
 
         # Subtract mean
         # %op1 = tosa.SUB(%activations, %running_mean)
-        op1 = tosa_graph.addIntermediate(output.shape, input_dtype)
+        op1 = tosa_graph.addIntermediate(
+            tosa_shape(output.shape, output.dim_order), input_dtype
+        )
         tosa_graph.addOperator(
             TosaOp.Op().SUB,
             [activations.name, mean_reshaped.name],
@@ -82,7 +82,9 @@ class BatchNormVisitor(NodeVisitor):
         # Adding eplison to variance
         # %op2 = tosa.ADD(%running_var, %epsilon_const)
         epsilon_const = tosa_graph.addConst([1], input_dtype, [epsilon.number])
-        op2 = tosa_graph.addIntermediate(running_var.shape, input_dtype)
+        op2 = tosa_graph.addIntermediate(
+            tosa_shape(running_var.shape, running_var.dim_order), input_dtype
+        )
         tosa_graph.addOperator(
             TosaOp.Op().ADD,
             [running_var.name, epsilon_const.name],
@@ -97,7 +99,7 @@ class BatchNormVisitor(NodeVisitor):
         op3_reshaped = promote_shape(
             tosa_graph,
             op3,
-            self.augment_shape_rank(running_var, permute_memory_to_nhwc),
+            self.augment_shape_rank(running_var.shape, output.dim_order),
             input_dtype,
         )
 
@@ -114,7 +116,9 @@ class BatchNormVisitor(NodeVisitor):
         else:
             # Multiply shifted activations with reciprocal variance
             # %op4 = tosa.MUL(%op1, %op3)
-            op4 = tosa_graph.addIntermediate(output.shape, input_dtype)
+            op4 = tosa_graph.addIntermediate(
+                tosa_shape(output.shape, output.dim_order), input_dtype
+            )
             attr_mul = ts.TosaSerializerAttribute()
             attr_mul.MulAttribute(0)
             tosa_graph.addOperator(
@@ -130,7 +134,7 @@ class BatchNormVisitor(NodeVisitor):
             weights_reshaped = promote_shape(
                 tosa_graph,
                 weights,
-                self.augment_shape_rank(weights, permute_memory_to_nhwc),
+                self.augment_shape_rank(weights.shape, output.dim_order),
                 input_dtype,
             )
 
@@ -152,7 +156,7 @@ class BatchNormVisitor(NodeVisitor):
             bias_reshaped = promote_shape(
                 tosa_graph,
                 bias,
-                self.augment_shape_rank(bias, permute_memory_to_nhwc),
+                self.augment_shape_rank(bias.shape, output.dim_order),
                 input_dtype,
             )
 
@@ -170,12 +174,14 @@ class BatchNormVisitor(NodeVisitor):
         weights_reshaped = promote_shape(
             tosa_graph,
             weights,
-            self.augment_shape_rank(weights, permute_memory_to_nhwc),
+            self.augment_shape_rank(weights.shape, output.dim_order),
             input_dtype,
         )
 
         # %op5 = tosa.MUL(%op4, %weights)
-        op5 = tosa_graph.addIntermediate(output.shape, input_dtype)
+        op5 = tosa_graph.addIntermediate(
+            tosa_shape(output.shape, output.dim_order), input_dtype
+        )
         attr_mul = ts.TosaSerializerAttribute()
         attr_mul.MulAttribute(0)
         tosa_graph.addOperator(
@@ -189,7 +195,7 @@ class BatchNormVisitor(NodeVisitor):
         bias_reshaped = promote_shape(
             tosa_graph,
             bias,
-            self.augment_shape_rank(bias, permute_memory_to_nhwc),
+            self.augment_shape_rank(bias.shape, output.dim_order),
             input_dtype,
         )
 

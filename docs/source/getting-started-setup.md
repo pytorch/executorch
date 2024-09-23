@@ -59,19 +59,21 @@ also work in similar environments.
   - We recommend `conda` as it provides cross-language
     support and integrates smoothly with `pip` (Python's built-in package manager)
   - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
-* `g++` version 8 or higher, `clang++` version 8 or higher, or another
-  C++17-compatible toolchain that supports GNU C-style [statement
-  expressions](https://gcc.gnu.org/onlinedocs/gcc/Statement-Exprs.html) (`({ ...
-  })` syntax).
+* `g++` version 7 or higher, `clang++` version 5 or higher, or another
+  C++17-compatible toolchain.
 
 Note that the cross-compilable core runtime code supports a wider range of
-toolchains, down to C++11. See the [Runtime Overview](./runtime-overview.md) for
+toolchains, down to C++17. See the [Runtime Overview](./runtime-overview.md) for
 portability details.
 
 ## Quick Setup: Colab/Jupyter Notebook Prototype
 
-To utilize ExecuTorch to its fullest extent, please follow the setup instructions provided below. Alternatively, if you would like to experiment with ExecuTorch quickly and easily, we recommend using the following [colab notebook](https://colab.research.google.com/drive/1qpxrXC3YdJQzly3mRg-4ayYiOjC6rue3?usp=sharing) for prototyping purposes.
+To utilize ExecuTorch to its fullest extent, please follow the setup instructions provided below to install from source.
 
+Alternatively, if you would like to experiment with ExecuTorch quickly and easily, we recommend using the following [colab notebook](https://colab.research.google.com/drive/1qpxrXC3YdJQzly3mRg-4ayYiOjC6rue3?usp=sharing) for prototyping purposes. You can install directly via `pip` for basic functionality.
+  ```bash
+  pip install executorch
+  ```
 
 
 ## Environment Setup
@@ -108,6 +110,23 @@ To utilize ExecuTorch to its fullest extent, please follow the setup instruction
    ```
 After setting up your environment, you are ready to convert your PyTorch programs
 to ExecuTorch.
+
+> **_NOTE:_**  Cleaning the build system
+>
+> When fetching a new version of the upstream repo (via `git fetch` or `git
+> pull`) it is a good idea to clean the old build artifacts. The build system
+> does not currently adapt well to changes in build dependencies.
+>
+> You should also update and pull the submodules again, in case their versions
+> have changed.
+>
+> ```bash
+> # From the root of the executorch repo:
+> rm -rf cmake-out pip-out
+> git submodule sync
+> git submodule update --init
+> ```
+
 ## Create an ExecuTorch program
 
 After setting up your environment, you are ready to convert your PyTorch programs
@@ -167,12 +186,29 @@ For now, let's use [`executor_runner`](https://github.com/pytorch/executorch/blo
 ### Build Tooling Setup
 The ExecuTorch repo uses CMake to build its C++ code. Here, we'll configure it to build the `executor_runner` tool to run it on our desktop OS.
   ```bash
-  # Clean and configure the CMake build system. Compiled programs will appear in the executorch/cmake-out directory we create here.
+  # Clean and configure the CMake build system. Compiled programs will
+  # appear in the executorch/cmake-out directory we create here.
   (rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake ..)
 
   # Build the executor_runner target
   cmake --build cmake-out --target executor_runner -j9
   ```
+
+> **_NOTE:_**  Cleaning the build system
+>
+> When fetching a new version of the upstream repo (via `git fetch` or `git
+> pull`) it is a good idea to clean the old build artifacts. The build system
+> does not currently adapt well to changes in build dependencies.
+>
+> You should also update and pull the submodules again, in case their versions
+> have changed.
+>
+> ```bash
+> # From the root of the executorch repo:
+> rm -rf cmake-out pip-out
+> git submodule sync
+> git submodule update --init
+> ```
 
 ### Run Your Program
 
@@ -190,41 +226,6 @@ Output 0: tensor(sizes=[1], [2.])
   :::
 
 To learn how to build a similar program, visit the [Runtime APIs Tutorial](extension-module.md).
-
-### [Optional] Setting Up Buck2
-**Buck2** is an open-source build system that some of our examples currently utilize for building and running.
-
-However, please note that the installation of `Buck2` is optional for using ExecuTorch and we are in the process of transitioning away from `Buck2` and migrating all relevant sections to `cmake`. This section will be removed once we finish the migration.
-
-To set up `Buck2`, You will need the following prerequisits for this section:
-* The `zstd` command line tool — install by running
-   ```bash
-   pip3 install zstd
-   ```
-* Version `${executorch_version:buck2}` of the `buck2` commandline tool — you can download a
-  prebuilt archive for your system from [the Buck2
-  repo](https://github.com/facebook/buck2/releases/tag/2024-05-15). Note that
-  the version is important, and newer or older versions may not work with the
-  version of the buck2 prelude used by the ExecuTorch repo.
-
-Configure Buck2 by decompressing with the following command (filename depends
-   on your system, and the location of the binary can be different):
-
-   ```bash
-   # For example, buck2-x86_64-unknown-linux-musl.zst for Linux, or buck2-aarch64-apple-darwin.zst for Mac with Apple silicon.
-   zstd -cdq buck2-DOWNLOADED_FILENAME.zst > /tmp/buck2 && chmod +x /tmp/buck2
-   ```
-
-You may want to copy the `buck2` binary into your `$PATH` so you can run it
-   as `buck2`.
-
-After the installation, you can run the `add.pte` program by following `buck2` command:
-
-```bash
-/tmp/buck2 run //examples/portable/executor_runner:executor_runner -- --model_path add.pte
-```
-
-Note that the first run may take a while as it will have to complie the kernels from sources
 
 ## Next Steps
 

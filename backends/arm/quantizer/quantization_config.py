@@ -4,11 +4,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from dataclasses import dataclass
 
 import torch
 
-from torch.ao.quantization.quantizer import QuantizationSpec
+from torch.ao.quantization.quantizer import (
+    FixedQParamsQuantizationSpec,
+    QuantizationSpec,
+)
 
 
 @dataclass(eq=True, frozen=True)
@@ -56,3 +61,21 @@ class QuantizationConfig:
             self.bias.dtype == torch.float
         ), "Only float dtype for bias is supported for bias right now"
         return self.bias
+
+    def get_fixed_qspec(
+        self,
+        scale: float,
+        zp: int,
+        dtype: torch.dtype = torch.int8,
+        quant_min: int = -128,
+        quant_max: int = 127,
+    ) -> FixedQParamsQuantizationSpec:
+        """Returns a new FixedQParamsQuantizationSpec with the given parameters."""
+        return FixedQParamsQuantizationSpec(
+            dtype=dtype,
+            qscheme=torch.per_tensor_affine,
+            scale=scale,
+            zero_point=zp,
+            quant_min=quant_min,
+            quant_max=quant_max,
+        )

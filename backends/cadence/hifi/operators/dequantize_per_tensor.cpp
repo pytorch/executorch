@@ -6,19 +6,20 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include "kernels.h"
+#include <xa_nnlib_kernels_api.h>
 
 namespace impl {
 namespace HiFi {
 namespace native {
 
 using Tensor = exec_aten::Tensor;
-using RuntimeContext = torch::executor::RuntimeContext;
+using executorch::runtime::KernelRuntimeContext;
 using ScalarType = exec_aten::ScalarType;
 
 void dequantize_per_tensor_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& input,
     double scale,
     int64_t zero_point,
@@ -35,8 +36,8 @@ void dequantize_per_tensor_out(
         out_data, input_data, scale, zero_point, numel);
   } else if (input.scalar_type() == ScalarType::Char) {
     const int8_t* input_data = input.const_data_ptr<int8_t>();
-    impl::HiFi::kernels::dequantize<int8_t>(
-        out_data, input_data, scale, zero_point, numel);
+    xa_nn_elm_dequantize_asym8s_f32(
+        out_data, input_data, zero_point, scale, numel);
   } else if (input.scalar_type() == ScalarType::Int) {
     const int32_t* input_data = input.const_data_ptr<int32_t>();
     impl::HiFi::kernels::dequantize<int32_t>(

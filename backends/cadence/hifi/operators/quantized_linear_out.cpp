@@ -6,8 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include "kernels.h"
-
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <algorithm>
 #include <cmath>
@@ -17,10 +16,10 @@ namespace HiFi {
 namespace native {
 
 using Tensor = exec_aten::Tensor;
-using RuntimeContext = torch::executor::RuntimeContext;
+using executorch::runtime::KernelRuntimeContext;
 
 void quantized_linear_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& src,
     const Tensor& weight,
     const Tensor& bias,

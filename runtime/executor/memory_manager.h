@@ -11,8 +11,8 @@
 #include <executorch/runtime/core/hierarchical_allocator.h>
 #include <executorch/runtime/core/memory_allocator.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * A container class for allocators used during Method load and execution.
@@ -66,8 +66,8 @@ class MemoryManager final {
    *
    * TODO(T162089316): Remove this once all users migrate to the new ctor.
    */
-  __ET_DEPRECATED MemoryManager(
-      // We would normally use __ET_UNUSED here, but GCC older than 9.3 has a
+  ET_DEPRECATED MemoryManager(
+      // We would normally use ET_UNUSED here, but GCC older than 9.3 has a
       // bug that triggers a syntax error when using [[maybe_unused]] on the
       // first parameter of a constructor:
       // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=81429
@@ -113,5 +113,13 @@ class MemoryManager final {
   MemoryAllocator* temp_allocator_;
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::MemoryManager;
 } // namespace executor
 } // namespace torch

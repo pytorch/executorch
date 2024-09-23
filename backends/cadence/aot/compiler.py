@@ -4,30 +4,136 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
+
 import logging
-from typing import Any, Tuple
+from typing import Optional
 
 import torch
 
 from executorch.backends.cadence.aot.passes import (
+    InitializePipeline,
+    RemoveNopExpandOpPass,
     RemoveZeroSizedCatArgsPass,
+    ReplaceLogicalNotBooleanWhereWithWherePass,
     ReplacePT2DequantWithCadenceDequantPass,
     ReplacePT2QuantWithCadenceQuantPass,
+    ReplaceSafeSoftmaxWithSoftmax,
     ReplaceScalarTensorWithFullPass,
     ReplaceSqueezeAndUnsqueezeWithViewPass,
 )
-from executorch.backends.cadence.aot.utils import model_is_quantized
+from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
+from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
+from executorch.backends.cadence.aot.utils import model_gm_has_SDPA, model_is_quantized
+from executorch.backends.transforms.decompose_sdpa import (
+    DecomposeScaledDotProductAttention,
+)
+from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
+from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.pt2e.export_utils import model_is_exported
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from torch.export import export
 from torch.export.exported_program import ExportedProgram
 
 
+# Note: this is not meant as a primary API since it can create inconsistencies
+# if the quantizer here is different from the quantizer used to convert. It is
+# however useful for unit tests to separate the converted model from the fused
+# model, to be able to get reference numerics.
+# If this does not apply, please use quantize_and_fuse_pt2 instead.
+def convert_pt2(
+    model: torch.nn.Module,
+    inputs: tuple[object, ...],
+    quantizer: CadenceQuantizer,
+) -> torch.fx.GraphModule:
+    """
+    Prepare and convert a model using the given quantizer.
+    The quantizer must be supplied and be the same as the one used to
+    fuse the model later, if applicable. If you do not expect that behavior,
+    please use quantize_and_fuse_pt2 instead, which will instantiate a
+    default quantizer for you if needed.
+    Returns a GraphModule with the converted model.
+    """
+
+    # Export with dynamo
+    model_gm = capture_pre_autograd_graph(model, inputs)
+
+    if model_gm_has_SDPA(model_gm):  # pyre-fixme[6]
+        # Decompose SDPA
+        DecomposeScaledDotProductAttention(False)(model_gm)  # pyre-fixme[6]
+
+        # Swap _safe_softmax with _softmax (see https://github.com/pytorch/pytorch/pull/133882
+        # for details).
+        result = ReplaceSafeSoftmaxWithSoftmax()(model_gm)  # pyre-fixme[6]
+        assert result is not None
+        model_gm = result.graph_module
+
+    # Prepare
+    prepared_model = prepare_pt2e(model_gm, quantizer)
+
+    # Calibrate
+    prepared_model(*inputs)
+
+    # Convert
+    converted_model = convert_pt2e(prepared_model)
+
+    return converted_model
+
+
+# Note: this is not meant as a primary API since it can create inconsistencies
+# if the quantizer here is different from the quantizer used to convert. It is
+# however useful for unit tests to separate the converted model from the fused
+# model, to be able to get reference numerics.
+# If this does not apply, please use quantize_and_fuse_pt2 instead.
+def fuse_pt2(
+    converted_graph_module: torch.fx.GraphModule,
+    quantizer: CadenceQuantizer,
+) -> torch.fx.GraphModule:
+    """
+    Fuse a converted graph module using the given quantizer.
+    The quantizer must be the same as the one used to convert the model.
+    If you do not expect that behavior, please use quantize_and_fuse_pt2 instead,
+    which will instantiate a default quantizer for you if needed.
+    Returns a GraphModule with the fused model.
+    """
+    # Get patterns and apply fusion of dq -> op -> q to qop
+    # pyre-ignore[16]: no attribute
+    patterns = [q.pattern for q in quantizer.quantizers]
+    QuantFusion(patterns)(converted_graph_module)
+
+    return converted_graph_module
+
+
+# Note: this is the one-liner API to quantize and fuse a model.
+def quantize_pt2(
+    model: torch.nn.Module,
+    inputs: tuple[object, ...],
+    quantizer: Optional[CadenceQuantizer] = None,
+) -> torch.fx.GraphModule:
+    """
+    Prepare, convert and fuse the model using the given quantizer.
+    Returns a GraphModule with the quantized model.
+    """
+    # Quantizer
+    if not quantizer:
+        quantizer = CadenceQuantizer()
+
+    # Get converted graph module
+    converted_gm = convert_pt2(model, inputs, quantizer)
+
+    # Get fused model
+    fused_gm = fuse_pt2(converted_gm, quantizer)
+
+    return fused_gm
+
+
 # Export the model and lower it to an ExportedProgram (in aten IR)
 def export_program(
     model: torch.nn.Module,
-    inputs: Tuple[Any, ...],
+    inputs: tuple[object, ...],
+    dump_graphs: bool = False,
 ) -> ExportedProgram:
     assert isinstance(model, torch.nn.Module), "model should be an nn.Module"
 
@@ -51,23 +157,25 @@ def export_program(
     torch._C._set_mkldnn_enabled(False)
 
     # else: capture the model and return it.
-    return export(model, inputs)
+    expo_program = export(model, inputs)
+
+    if dump_graphs:
+        logging.info("Exported graph:")
+        expo_program.graph_module.graph.print_tabular()
+
+    return expo_program
 
 
 # Export the model and lower it to an EdgeProgramManager (in edge IR).
 def export_to_edge(
     model: torch.nn.Module,
-    inputs: Tuple[Any, ...],
+    inputs: tuple[object, ...],
     dump_graphs: bool = False,
 ) -> EdgeProgramManager:
     assert isinstance(model, torch.nn.Module), "model should be an nn.Module"
 
     # Export the model into an ExportedProgram.
-    expo_program = export_program(model, inputs)
-
-    if dump_graphs:
-        logging.info("Exported graph:")
-        expo_program.graph_module.graph.print_tabular()
+    expo_program = export_program(model, inputs, dump_graphs=dump_graphs)
 
     # Call to_edge to convert the graph to edge IR.
     # Note: dim_order is skipped (https://github.com/pytorch/executorch/issues/3704)
@@ -89,7 +197,7 @@ def export_to_edge(
 # apply passes specific to Cadence DSP execution.
 def export_to_cadence(
     model: torch.nn.Module,
-    inputs: Tuple[Any, ...],
+    inputs: tuple[object, ...],
     dump_graphs: bool = False,
 ) -> EdgeProgramManager:
     edge_program_manager = export_to_edge(model, inputs)
@@ -97,8 +205,12 @@ def export_to_cadence(
     # Run a couple required passes for quant/dequant ops
     cadence_program_manager = edge_program_manager.transform(
         [
+            InitializePipeline(),
             RemoveZeroSizedCatArgsPass(),
+            ReplaceLogicalNotBooleanWhereWithWherePass(),
             ReplaceScalarTensorWithFullPass(),
+            RemoveCloneOpsTransform(),
+            RemoveNopExpandOpPass(),
             ReplaceSqueezeAndUnsqueezeWithViewPass(),
             ReplacePT2QuantWithCadenceQuantPass(),
             ReplacePT2DequantWithCadenceDequantPass(),

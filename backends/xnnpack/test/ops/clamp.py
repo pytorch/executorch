@@ -26,9 +26,7 @@ class TestClamp(unittest.TestCase):
             Tester(module, inputs)
             .export()
             .check_count({"torch.ops.aten.clamp.default": 1})
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_clamp_default": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_clamp_default"])
             .to_executorch()
@@ -64,9 +62,7 @@ class TestClamp(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.clamp.default": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_clamp_default": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [

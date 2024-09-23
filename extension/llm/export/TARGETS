@@ -1,0 +1,38 @@
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets()
+
+runtime.python_library(
+    name = "export_lib",
+    srcs = [
+        "builder.py",
+        "partitioner_lib.py",
+        "quantizer_lib.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.extension.llm.export",
+    visibility = [
+        "//bento/...",
+        "//bento_kernels/...",
+        "//executorch/examples/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/apple/coreml:backend",
+        "//executorch/backends/apple/coreml:partitioner",
+        "//executorch/backends/apple/mps:partitioner",
+        "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_details",
+        "//executorch/extension/export_util:export_util",
+        "//executorch/extension/llm/tokenizer:tokenizer_py_lib",
+    ],
+)

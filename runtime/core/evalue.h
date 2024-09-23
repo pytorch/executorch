@@ -11,10 +11,12 @@
 #include <executorch/runtime/core/tag.h>
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 struct EValue;
+
+namespace internal {
 
 // Tensor gets proper reference treatment because its expensive to copy in aten
 // mode, all other types are just copied.
@@ -37,6 +39,8 @@ template <>
 struct evalue_to_ref_overload_return<exec_aten::Tensor> {
   using type = exec_aten::Tensor&;
 };
+
+} // namespace internal
 
 /*
  * Helper class used to correlate EValues in the executor table, with the
@@ -234,6 +238,25 @@ struct EValue {
     new (&payload.as_tensor) exec_aten::Tensor(t);
   }
 
+  // Template constructor that allows construction from types that can be
+  // dereferenced to produce a type that EValue can be implicitly constructed
+  // from.
+  template <typename T>
+  /*implicit*/ EValue(
+      T&& value,
+      typename std::enable_if<std::is_convertible<
+          decltype(*std::forward<T>(value)),
+          EValue>::value>::type* = 0) {
+    ET_CHECK_MSG(value != nullptr, "Pointer is null.");
+    // Note that this ctor does not initialize this->tag directly; it is set by
+    // moving in the new value.
+    moveFrom(*std::forward<T>(value));
+  }
+
+  // Delete constructor for raw pointers to ensure they cannot be used.
+  template <typename T>
+  explicit EValue(T* value) = delete;
+
   bool isTensor() const {
     return tag == Tag::Tensor;
   }
@@ -371,9 +394,9 @@ struct EValue {
   template <typename T>
   T to() &&;
   template <typename T>
-  typename evalue_to_const_ref_overload_return<T>::type to() const&;
+  typename internal::evalue_to_const_ref_overload_return<T>::type to() const&;
   template <typename T>
-  typename evalue_to_ref_overload_return<T>::type to() &;
+  typename internal::evalue_to_ref_overload_return<T>::type to() &;
 
   /**
    * Converts the EValue to an optional object that can represent both T and
@@ -441,13 +464,19 @@ struct EValue {
     return static_cast<T>(std::move(*this).method_name());                     \
   }                                                                            \
   template <>                                                                  \
-  inline evalue_to_const_ref_overload_return<T>::type EValue::to<T>() const& { \
-    typedef evalue_to_const_ref_overload_return<T>::type return_type;          \
+  inline ::executorch::runtime::internal::evalue_to_const_ref_overload_return< \
+      T>::type                                                                 \
+  EValue::to<T>() const& {                                                     \
+    typedef ::executorch::runtime::internal::                                  \
+        evalue_to_const_ref_overload_return<T>::type return_type;              \
     return static_cast<return_type>(this->method_name());                      \
   }                                                                            \
   template <>                                                                  \
-  inline evalue_to_ref_overload_return<T>::type EValue::to<T>()& {             \
-    typedef evalue_to_ref_overload_return<T>::type return_type;                \
+  inline ::executorch::runtime::internal::evalue_to_ref_overload_return<       \
+      T>::type                                                                 \
+  EValue::to<T>()& {                                                           \
+    typedef ::executorch::runtime::internal::evalue_to_ref_overload_return<    \
+        T>::type return_type;                                                  \
     return static_cast<return_type>(this->method_name());                      \
   }
 
@@ -507,5 +536,14 @@ exec_aten::ArrayRef<T> BoxedEvalueList<T>::get() const {
   return exec_aten::ArrayRef<T>{unwrapped_vals_, wrapped_vals_.size()};
 }
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::BoxedEvalueList;
+using ::executorch::runtime::EValue;
 } // namespace executor
 } // namespace torch

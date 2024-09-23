@@ -28,11 +28,11 @@ def define_common_targets():
         deps = [
             ":models",
             "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
-            "//executorch/examples/portable:utils",
+            "//executorch/extension/export_util:export_util",
             "//executorch/examples/xnnpack/quantization:quant_utils",
             "//executorch/exir:lib",
             "//executorch/exir/backend:backend_api",
-            "//executorch/sdk:lib",
+            "//executorch/devtools:lib",
         ],
     )
 

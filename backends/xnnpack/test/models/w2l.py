@@ -25,8 +25,7 @@ class TestW2L(unittest.TestCase):
         (
             Tester(self.wav2letter, self.model_inputs, self.dynamic_shape)
             .export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .check_not(
                 [
                     "executorch_exir_dialectes_edge__ops_aten_convolution_default",
@@ -44,8 +43,7 @@ class TestW2L(unittest.TestCase):
             Tester(self.wav2letter.eval(), self.model_inputs, self.dynamic_shape)
             .quantize()
             .export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .check_not(
                 [
                     "executorch_exir_dialectes_edge__ops_aten_convolution_default",

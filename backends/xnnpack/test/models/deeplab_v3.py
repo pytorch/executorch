@@ -32,8 +32,7 @@ class TestDeepLabV3(unittest.TestCase):
         (
             Tester(self.dl3, self.model_inputs)
             .export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .to_executorch()
             .serialize()
             .run_method_and_compare_outputs()

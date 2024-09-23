@@ -28,6 +28,8 @@ test_data_suite = [
 
 
 class TestAvgPool2d(unittest.TestCase):
+    """Tests AvgPool2d."""
+
     class AvgPool2d(torch.nn.Module):
         def __init__(
             self,
@@ -60,7 +62,7 @@ class TestAvgPool2d(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs()
+            .run_method_and_compare_outputs(inputs=test_data)
         )
 
     def _test_avgpool2d_tosa_BI_pipeline(
@@ -81,7 +83,7 @@ class TestAvgPool2d(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(qtol=1)
+            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
     def _test_avgpool2d_tosa_u55_BI_pipeline(

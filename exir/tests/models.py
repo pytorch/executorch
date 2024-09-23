@@ -21,6 +21,23 @@ from torch.export import export
 # TODO: add one more test for data dependent op plus repeat
 
 
+class TensorItem(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, arg1: torch.Tensor, arg2: torch.Tensor) -> torch.Tensor:
+        h = arg1.item()
+        w = arg2.item()
+        torch._check(h >= 2)
+        torch._check(h <= 100)
+        torch._check(w >= 2)
+        torch._check(w <= 100)
+        return torch.ones(int(h), int(w))
+
+    def get_random_inputs(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        return (torch.tensor(10), torch.tensor(20))
+
+
 class Repeat(nn.Module):
     def __init__(self) -> None:
         super().__init__()

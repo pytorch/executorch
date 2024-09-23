@@ -28,7 +28,7 @@ In `BundledProgram`, we create two new classes, `MethodTestCase` and `MethodTest
 :::{dropdown} `MethodTestCase`
 
 ```{eval-rst}
-.. autofunction:: executorch.sdk.bundled_program.config.MethodTestCase.__init__
+.. autofunction:: executorch.devtools.bundled_program.config.MethodTestCase.__init__
     :noindex:
 ```
 :::
@@ -38,7 +38,7 @@ In `BundledProgram`, we create two new classes, `MethodTestCase` and `MethodTest
 :::{dropdown} `MethodTestSuite`
 
 ```{eval-rst}
-.. autofunction:: executorch.sdk.bundled_program.config.MethodTestSuite
+.. autofunction:: executorch.devtools.bundled_program.config.MethodTestSuite
     :noindex:
 ```
 :::
@@ -48,13 +48,13 @@ Since each model may have multiple inference methods, we need to generate `List[
 
 ### Step 3: Generate `BundledProgram`
 
-We provide `BundledProgram` class under `executorch/sdk/bundled_program/core.py` to bundled the `ExecutorchProgram`-like variable, including
+We provide `BundledProgram` class under `executorch/devtools/bundled_program/core.py` to bundled the `ExecutorchProgram`-like variable, including
                             `ExecutorchProgram`, `MultiMethodExecutorchProgram` or `ExecutorchProgramManager`, with the `List[MethodTestSuite]`:
 
 :::{dropdown} `BundledProgram`
 
 ```{eval-rst}
-.. autofunction:: executorch.sdk.bundled_program.core.BundledProgram.__init__
+.. autofunction:: executorch.devtools.bundled_program.core.BundledProgram.__init__
     :noindex:
 ```
 :::
@@ -65,18 +65,18 @@ Construtor of `BundledProgram `will do sannity check internally to see if the gi
 
 ### Step 4: Serialize `BundledProgram` to Flatbuffer.
 
-To serialize `BundledProgram` to make runtime APIs use it, we provide two APIs, both under `executorch/sdk/bundled_program/serialize/__init__.py`.
+To serialize `BundledProgram` to make runtime APIs use it, we provide two APIs, both under `executorch/devtools/bundled_program/serialize/__init__.py`.
 
 :::{dropdown} Serialize and Deserialize
 
 ```{eval-rst}
-.. currentmodule:: executorch.sdk.bundled_program.serialize
+.. currentmodule:: executorch.devtools.bundled_program.serialize
 .. autofunction:: serialize_from_bundled_program_to_flatbuffer
     :noindex:
 ```
 
 ```{eval-rst}
-.. currentmodule:: executorch.sdk.bundled_program.serialize
+.. currentmodule:: executorch.devtools.bundled_program.serialize
 .. autofunction:: deserialize_from_flatbuffer_to_bundled_program
     :noindex:
 ```
@@ -90,14 +90,13 @@ Here is a flow highlighting how to generate a `BundledProgram` given a PyTorch m
 import torch
 
 from executorch.exir import to_edge
-from executorch.sdk import BundledProgram
+from executorch.devtools import BundledProgram
 
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.serialize import (
+from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
-from torch._export import capture_pre_autograd_graph
-from torch.export import export
+from torch.export import export, export_for_training
 
 
 # Step 1: ExecuTorch Program Export
@@ -131,7 +130,7 @@ capture_input = (
 
 # Export method's FX Graph.
 method_graph = export(
-    capture_pre_autograd_graph(model, capture_input),
+    export_for_training(model, capture_input).module(),
     capture_input,
 )
 
@@ -187,7 +186,7 @@ with open(save_path, "wb") as f:
 We can also regenerate `BundledProgram` from flatbuffer file if needed:
 
 ```python
-from executorch.sdk.bundled_program.serialize import deserialize_from_flatbuffer_to_bundled_program
+from executorch.devtools.bundled_program.serialize import deserialize_from_flatbuffer_to_bundled_program
 save_path = "bundled_program.bpte"
 with open(save_path, "rb") as f:
     serialized_bundled_program = f.read()
@@ -211,21 +210,19 @@ We need the pointer to ExecuTorch program to do the execution. To unify the proc
 
 Here's an example of how to use the `GetProgramData` API:
 ```c++
-std::shared_ptr<char> buff_ptr;
-size_t buff_len;
+// Assume that the user has read the contents of the file into file_data using
+// whatever method works best for their application. The file could contain
+// either BundledProgram data or Program data.
+void* file_data = ...;
+size_t file_data_len = ...;
 
-// FILE_PATH here can be either BundledProgram or Program flatbuffer file.
-Error status = torch::executor::util::read_file_content(
-    FILE_PATH, &buff_ptr, &buff_len);
-ET_CHECK_MSG(
-    status == Error::Ok,
-    "read_file_content() failed with status 0x%" PRIx32,
-    status);
-
+// If file_data contains a BundledProgram, GetProgramData() will return a
+// pointer to the Program data embedded inside it. Otherwise it will return
+// file_data, which already pointed to Program data.
 const void* program_ptr;
 size_t program_len;
 status = torch::executor::bundled_program::GetProgramData(
-    buff_ptr.get(), buff_len, &program_ptr, &program_len);
+    file_data, file_data_len, &program_ptr, &program_len);
 ET_CHECK_MSG(
     status == Error::Ok,
     "GetProgramData() failed with status 0x%" PRIx32,
@@ -255,7 +252,7 @@ We call `torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput
 
 ### Runtime Example
 
-Here we provide an example about how to run the bundled program step by step. Most of the code is borrowed from [executor_runner](https://github.com/pytorch/executorch/blob/main/examples/sdk/sdk_example_runner/sdk_example_runner.cpp), and please review that file if you need more info and context:
+Here we provide an example about how to run the bundled program step by step. Most of the code is borrowed from [executor_runner](https://github.com/pytorch/executorch/blob/main/examples/devtools/example_runner/example_runner.cpp), and please review that file if you need more info and context:
 
 ```c++
 // method_name is the name for the method we want to test
@@ -313,9 +310,9 @@ Here's the example of the dtype of test input not meet model's requirement:
 import torch
 
 from executorch.exir import to_edge
-from executorch.sdk import BundledProgram
+from executorch.devtools import BundledProgram
 
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 from torch.export import export
 
 
@@ -340,7 +337,7 @@ inputs = (torch.ones(2, 2, dtype=torch.float), )
 
 # Find each method of model needs to be traced my its name, export its FX Graph.
 method_graph = export(
-    capture_pre_autograd_graph(model, inputs),
+    export_for_training(model, inputs).module(),
     inputs,
 )
 
@@ -400,7 +397,7 @@ Cell In[1], line 72
      68 ]
      70 # Step 3: Generate BundledProgram
 ---> 72 bundled_program = create_bundled_program(program, method_test_suites)
-File /executorch/sdk/bundled_program/core.py:276, in create_bundled_program(program, method_test_suites)
+File /executorch/devtools/bundled_program/core.py:276, in create_bundled_program(program, method_test_suites)
     264 """Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.
     265
     266 Args:
@@ -411,7 +408,7 @@ File /executorch/sdk/bundled_program/core.py:276, in create_bundled_program(prog
 --> 276 assert_valid_bundle(program, method_test_suites)
     278 bundled_method_test_suites: List[bp_schema.BundledMethodTestSuite] = []
     280 # Emit data and metadata of bundled tensor
-File /executorch/sdk/bundled_program/core.py:219, in assert_valid_bundle(program, method_test_suites)
+File /executorch/devtools/bundled_program/core.py:219, in assert_valid_bundle(program, method_test_suites)
     215 # type of tensor input should match execution plan
     216 if type(cur_plan_test_inputs[j]) == torch.Tensor:
     217     # pyre-fixme[16]: Undefined attribute [16]: Item `bool` of `typing.Union[bool, float, int, torch._tensor.Tensor]`
@@ -449,9 +446,9 @@ Another common error would be the method name in any `MethodTestSuite` does not 
 import torch
 
 from executorch.exir import to_edge
-from executorch.sdk import BundledProgram
+from executorch.devtools import BundledProgram
 
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 from torch.export import export
 
 
@@ -476,7 +473,7 @@ inputs = (torch.ones(2, 2, dtype=torch.float),)
 
 # Find each method of model needs to be traced my its name, export its FX Graph.
 method_graph = export(
-    capture_pre_autograd_graph(model, inputs),
+    export_for_training(model, inputs).module(),
     inputs,
 )
 
@@ -532,7 +529,7 @@ Cell In[3], line 73
      70 method_test_suites[0].method_name = "MISSING_METHOD_NAME"
      72 # Generate BundledProgram
 ---> 73 bundled_program = create_bundled_program(program, method_test_suites)
-File /executorch/sdk/bundled_program/core.py:276, in create_bundled_program(program, method_test_suites)
+File /executorch/devtools/bundled_program/core.py:276, in create_bundled_program(program, method_test_suites)
     264 """Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.
     265
     266 Args:
@@ -543,7 +540,7 @@ File /executorch/sdk/bundled_program/core.py:276, in create_bundled_program(prog
 --> 276 assert_valid_bundle(program, method_test_suites)
     278 bundled_method_test_suites: List[bp_schema.BundledMethodTestSuite] = []
     280 # Emit data and metadata of bundled tensor
-File /executorch/sdk/bundled_program/core.py:141, in assert_valid_bundle(program, method_test_suites)
+File /executorch/devtools/bundled_program/core.py:141, in assert_valid_bundle(program, method_test_suites)
     138 method_name_of_program = {e.name for e in program.execution_plan}
     139 method_name_of_test_suites = {t.method_name for t in method_test_suites}
 --> 141 assert method_name_of_test_suites.issubset(

@@ -58,20 +58,15 @@ add_compile_options("-Wall" "-Werror" "-Wno-sign-compare")
 # which can be ignored by GNU. So we make it a warning, not an error in GNU.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   add_compile_options("-Wno-error=attributes")
+  add_link_options("-flto=auto")
 endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
   # strip symbols
   add_link_options("-s")
-  # hide dynamic symbols
-  set(CMAKE_C_VISIBILITY_PRESET hidden)
-  set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
   # --gc-sections is added by torch.
-  add_compile_options(
-    "-O3" "-ffunction-sections" "-fdata-sections" "-frtti"
-    "-Wno-unused-command-line-argument"
-  )
+  add_compile_options("-O3" "-ffunction-sections" "-fdata-sections" "-frtti")
 endif()
 
 include_directories(
@@ -186,7 +181,10 @@ target_link_libraries(
 )
 target_link_libraries(
   qnn_executorch_backend PRIVATE qnn_executorch_header qnn_schema qnn_manager
-                                 executorch_no_prim_ops qcir_utils
+                                 executorch_no_prim_ops qcir_utils extension_tensor
+)
+set_target_properties(
+  qnn_executorch_backend PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
 )
 target_link_libraries(utils PRIVATE qnn_executorch_logging)
 target_link_libraries(
@@ -235,6 +233,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   set_target_properties(
     PyQnnManagerAdaptor PROPERTIES CXX_VISIBILITY_PRESET hidden
   )
+  set_target_properties(
+    PyQnnWrapperAdaptor PROPERTIES CXX_VISIBILITY_PRESET hidden
+  )
 
   target_link_libraries(
     PyQnnManagerAdaptor
@@ -245,6 +246,7 @@ if(EXECUTORCH_BUILD_PYBIND)
             qnn_executorch_header
             executorch
             qcir_utils
+            extension_tensor
   )
   target_link_libraries(
     PyQnnWrapperAdaptor PRIVATE pybind11::module pybind11::lto wrappers
@@ -257,6 +259,19 @@ if(EXECUTORCH_BUILD_PYBIND)
     # Strip unnecessary sections of the binary
     pybind11_strip(PyQnnManagerAdaptor)
     pybind11_strip(PyQnnWrapperAdaptor)
+  endif()
+
+  if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    # need to allow exceptions in pybind
+    set(_pybind_compile_options -Wno-deprecated-declarations -fPIC -frtti
+                                -fexceptions
+    )
+    target_compile_options(
+      PyQnnManagerAdaptor PUBLIC ${_pybind_compile_options}
+    )
+    target_compile_options(
+      PyQnnWrapperAdaptor PUBLIC ${_pybind_compile_options}
+    )
   endif()
 
   add_subdirectory(

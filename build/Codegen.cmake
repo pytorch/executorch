@@ -78,7 +78,8 @@ function(generate_bindings_for_kernels)
   # Executorch runtime.
   execute_process(
     COMMAND
-      "${PYTHON_EXECUTABLE}" -c "from distutils.sysconfig import get_python_lib;print(get_python_lib())"
+      "${PYTHON_EXECUTABLE}" -c
+      "from distutils.sysconfig import get_python_lib;print(get_python_lib())"
     OUTPUT_VARIABLE site-packages-out
     ERROR_VARIABLE site-packages-out-error
     RESULT_VARIABLE site-packages-result
@@ -145,11 +146,16 @@ function(gen_custom_ops_aot_lib)
   target_compile_options(${GEN_LIB_NAME} PRIVATE -frtti -fexceptions)
   target_compile_definitions(${GEN_LIB_NAME} PRIVATE USE_ATEN_LIB=1)
   include_directories(${TORCH_INCLUDE_DIRS})
-  target_link_libraries(${GEN_LIB_NAME} PRIVATE torch executorch)
+  target_link_libraries(${GEN_LIB_NAME} PRIVATE torch)
 
   include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
   target_link_options_shared_lib(${GEN_LIB_NAME})
+  if(TARGET portable_lib)
+    target_link_libraries(${GEN_LIB_NAME} PRIVATE portable_lib)
+  else()
+    target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_no_prim_ops)
+  endif()
 endfunction()
 
 # Generate a runtime lib for registering operators in Executorch

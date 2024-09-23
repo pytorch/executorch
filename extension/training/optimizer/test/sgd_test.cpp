@@ -17,12 +17,13 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-CArray
 
 using namespace ::testing;
-using namespace torch::executor::training::optimizer;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
-using torch::executor::Error;
-using torch::executor::Span;
-using torch::executor::testing::TensorFactory;
+using ::executorch::extension::training::optimizer::SGD;
+using ::executorch::extension::training::optimizer::SGDOptions;
+using ::executorch::extension::training::optimizer::SGDParamState;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::testing::TensorFactory;
 
 class SGDOptimizerTest : public ::testing::Test {
  protected:
@@ -67,70 +68,47 @@ TEST_F(SGDOptimizerTest, SGDOptionsDefaultValuesTest) {
 TEST_F(SGDOptimizerTest, SGDOptimizerSimple) {
   TensorFactory<ScalarType::Float> tf;
 
-  const char* param_name[1] = {"param1"};
-  Span<const char*> param_names(param_name, 1);
+  std::map<exec_aten::string_view, exec_aten::Tensor> named_parameters;
+  std::map<exec_aten::string_view, exec_aten::Tensor> named_gradients;
 
-  Tensor param_data[1] = {tf.make({1, 1}, {1})};
-  Span<Tensor> param_data_span(param_data, 1);
+  named_parameters.insert({"param1", tf.make({1, 1}, {1})});
 
   // dummy gradient of -1 for all epochs
-  Tensor grad_data[1] = {tf.make({1, 1}, {-1})};
-  Span<Tensor> grad_data_span(grad_data, 1);
+  named_gradients.insert({"param1", tf.make({1, 1}, {-1})});
 
-  SGD optimizer(param_names, param_data_span, SGDOptions{0.1});
+  SGD optimizer(named_parameters, SGDOptions{0.1});
 
   for (int i = 0; i < 10; ++i) {
-    optimizer.step(param_names, grad_data_span);
+    optimizer.step(named_gradients);
   }
 
   auto p1 = static_cast<const float*>(
-      param_data_span[0].unsafeGetTensorImpl()->data());
+      named_parameters.at("param1").unsafeGetTensorImpl()->data());
   EXPECT_NEAR(p1[0], 2.0, 0.1);
-}
-
-TEST_F(SGDOptimizerTest, SGDOptimizerMismatchedGradientSpans) {
-  TensorFactory<ScalarType::Float> tf;
-
-  const char* param_name[1] = {"param1"};
-  Span<const char*> param_names(param_name, 1);
-
-  Tensor param_data[1] = {tf.make({1, 1}, {1})};
-  Span<Tensor> param_data_span(param_data, 1);
-
-  // dummy gradient of -1 for all epochs
-  Tensor grad_data[2] = {tf.make({1, 1}, {-1}), tf.make({1, 1}, {-1})};
-  Span<Tensor> grad_data_span(grad_data, 2);
-
-  SGD optimizer(param_names, param_data_span, SGDOptions{0.1});
-
-  Error error = optimizer.step(param_names, grad_data_span);
-
-  EXPECT_EQ(error, Error::InvalidState);
 }
 
 TEST_F(SGDOptimizerTest, SGDOptimizerComplex) {
   TensorFactory<ScalarType::Float> tf;
 
-  const char* param_name[2] = {"param1", "param2"};
-  Span<const char*> param_names(param_name, 2);
+  std::map<exec_aten::string_view, exec_aten::Tensor> named_parameters;
 
-  Tensor param_data[2] = {tf.make({1, 1}, {1.0}), tf.make({1, 1}, {2.0})};
-  Span<Tensor> param_data_span(param_data, 2);
+  named_parameters.insert({"param1", tf.make({1, 1}, {1.0})});
+  named_parameters.insert({"param2", tf.make({1, 1}, {2.0})});
 
-  SGD optimizer(param_names, param_data_span, SGDOptions{0.1, 0.1, 0, 2, true});
+  SGD optimizer(named_parameters, SGDOptions{0.1, 0.1, 0, 2, true});
 
   for (int i = 0; i < 10; ++i) {
+    std::map<exec_aten::string_view, exec_aten::Tensor> named_gradients;
     // dummy gradient of -1 for all epochs
-    Tensor grad_data[2] = {tf.make({1, 1}, {-1}), tf.make({1, 1}, {-1})};
-    Span<Tensor> grad_data_span(grad_data, 2);
-
-    optimizer.step(param_names, grad_data_span);
+    named_gradients.insert({"param1", tf.make({1, 1}, {-1})});
+    named_gradients.insert({"param2", tf.make({1, 1}, {-1})});
+    optimizer.step(named_gradients);
   }
 
-  auto p1 = static_cast<const float*>(
-      param_data_span[0].unsafeGetTensorImpl()->data());
-  auto p2 = static_cast<const float*>(
-      param_data_span[1].unsafeGetTensorImpl()->data());
+  auto p1 =
+      static_cast<const float*>(named_parameters.at("param1").const_data_ptr());
+  auto p2 =
+      static_cast<const float*>(named_parameters.at("param2").const_data_ptr());
   EXPECT_NEAR(p1[0], 0.540303, 0.1);
   EXPECT_NEAR(p2[0], 0.620909, 0.1);
 }

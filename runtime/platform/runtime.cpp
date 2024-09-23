@@ -11,8 +11,8 @@
 
 #include <executorch/runtime/platform/platform.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * Initialize the ExecuTorch global runtime.
@@ -22,5 +22,5 @@ void runtime_init() {
   EXECUTORCH_PROFILE_CREATE_BLOCK("default");
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch
