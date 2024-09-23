@@ -69,9 +69,7 @@ def generate_cpp(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Generate a simple Hello World C++ program."
-    )
+    parser = argparse.ArgumentParser()
     parser.add_argument(
         "--aten-yaml-path",
         help="path to native_functions.yaml file.",
