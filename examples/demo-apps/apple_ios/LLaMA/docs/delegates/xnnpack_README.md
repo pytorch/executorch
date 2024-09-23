@@ -39,10 +39,10 @@ Install dependencies
 ## Prepare Models
 In this demo app, we support text-only inference with up-to-date Llama models.
 
-Install the required packages
+Install the required packages to export the model
 
 ```
-executorch/examples/models/llama2/install_requirements.sh
+sh examples/models/llama2/install_requirements.sh
 ```
 
 Export the model
