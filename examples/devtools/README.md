@@ -64,7 +64,7 @@ Once an `ETDump` has been generated, it can be viewed using the CLI inspector. T
 ETDump profiling can also be used in a custom C++ program. `ETDumpGen` is an implementation of the abstract `EventTracer` class.  Include the header file located at `devtools/etdump/etdump_flatcc.h`. To initialize the ETDump generator, construct it before loading the method from the program.
 
 ```cpp
-   torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();
+   executorch::etdump::ETDumpGen etdump_gen;
    Result<Method> method =
       program->load_method(method_name, &memory_manager, &etdump_gen);
    ```
