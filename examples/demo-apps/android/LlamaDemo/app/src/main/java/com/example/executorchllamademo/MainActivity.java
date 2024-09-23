@@ -704,6 +704,16 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
                         startPos,
                         MainActivity.this,
                         false);
+                  } else if (mCurrentSettingsFields.getModelType() == ModelType.LLAMA_GUARD_3) {
+                    String llamaGuardPromptForClassification =
+                        PromptFormat.getFormattedLlamaGuardPrompt(rawPrompt);
+                    ETLogging.getInstance()
+                        .log("Running inference.. prompt=" + llamaGuardPromptForClassification);
+                    mModule.generate(
+                        llamaGuardPromptForClassification,
+                        llamaGuardPromptForClassification.length() + 64,
+                        MainActivity.this,
+                        false);
                   } else {
                     ETLogging.getInstance().log("Running inference.. prompt=" + finalPrompt);
                     mModule.generate(
