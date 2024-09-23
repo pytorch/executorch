@@ -95,19 +95,19 @@ Note: To access logs, link against the Debug build of the ExecuTorch runtime, i.
 For more details integrating and Running ExecuTorch on Apple Platforms, checkout this [link](https://pytorch.org/executorch/main/apple-runtime.html).
 
 <p align="center">
-<img src="../screenshots/ios_demo_app_swift_pm.png" alt="iOS LLaMA App Swift PM" width="600">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_swift_pm.png" alt="iOS LLaMA App Swift PM" width="600px">
 </p>
 
 Then select which ExecuTorch framework should link against which target.
 
 <p align="center">
-<img src="../screenshots/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" width="600">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" width="600px">
 </p>
 
 Click “Run” to build the app and run in on your iPhone. If the app successfully run on your device, you should see something like below:
 
 <p align="center">
-<img src="../screenshots/ios_demo_app_mps.jpg" alt="iOS LLaMA App mps" width="300">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_mps.jpg" alt="iOS LLaMA App mps" width="300px">
 </p>
 
 ## Reporting Issues

@@ -112,7 +112,7 @@ Before continuing forward, make sure to modify the tokenizer, token embedding, a
 Prior to deploying the files on device, make sure to modify the tokenizer, token embedding, and model file names in  examples/mediatek/executor_runner/run_llama3_sample.sh reflect what was generated during the Export Llama Model step.
 
 <p align="center">
-<img src="../screenshots/mtk_changes_to_shell_file.png" width=600>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/mtk_changes_to_shell_file.png" width=600px>
 </p>
 
 In addition, create a sample_prompt.txt file with a prompt. This will be deployed to the device in the next step.
@@ -150,7 +150,7 @@ adb shell
 ```
 
 <p align="center">
-<img src="../screenshots/mtk_output.png" width=800>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/mtk_output.png" width=800px>
 </p>
 
 ## Reporting Issues

@@ -147,6 +147,10 @@ function build_executorch_runner() {
     cmake --build cmake-out -- -j"$((n - 5))" arm_executor_runner
     echo "[${FUNCNAME[0]}] Generated baremetal elf file:"
     find cmake-out -name "arm_executor_runner"
+    echo "executable_text: $(find -name arm_executor_runner -exec size {} \; | grep -v filename | awk '{print $1}') bytes"
+    echo "executable_data: $(find -name arm_executor_runner -exec size {} \; | grep -v filename | awk '{print $2}') bytes"
+    echo "executable_bss:  $(find -name arm_executor_runner -exec size {} \; | grep -v filename | awk '{print $3}') bytes"
+    echo "pte_data_size:   $(stat -c%s ${pte}) bytes"
 }
 
 # Execute the executor_runner on FVP Simulator
