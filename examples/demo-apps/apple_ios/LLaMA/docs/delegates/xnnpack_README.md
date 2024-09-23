@@ -156,7 +156,7 @@ The following package should be linked in your target app `LLaMARunner` (left si
 - executorch
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" style="width:600px">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_swift_pm.png" alt="iOS LLaMA App Swift PM" width="600px">
 </p>
 
 If you cannot add the package into your app target (it's greyed out), it might have been linked before. You can verify it by checking it from your target app `(LLaMA / LLaMARunner) --> Build Phases --> Link Binary With Libraries`.
@@ -198,14 +198,19 @@ There are two options to copy the model (.pte) and tokenizer files (.model) to y
 Open the iLLaMA app, click the settings button at the top left of the app to select the model and tokenizer files. When the app successfully runs on your device, you should see something like below:
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app.jpg" alt="iOS LLaMA App" style="width:300px">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" width="600px">
 </p>
 
+Click “Run” to build the app and run in on your iPhone. If the app successfully run on your device, you should see something like below:
+
+<p align="center">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app.jpg" alt="iOS LLaMA App" width="300px">
+</p>
 
 For Llava 1.5 models, you can select and image (via image/camera selector button) before typing prompt and send button.
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_llava.jpg" alt="iOS LLaMA App" style="width:300px">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_llava.jpg" alt="iOS LLaMA App" width="300px">
 </p>
 
 ## Reporting Issues
