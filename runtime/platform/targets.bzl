@@ -6,12 +6,7 @@ def _select_pal(dict_):
     `executorch.pal_default` build config value. Fails if no corresponding entry
     exists.
     """
-    # buck2 check target platform
-    # check config//os:
-    if host_info().os.is_windows:
-        pal_default = native.read_config("executorch", "pal_default", "windows")
-    else:
-        pal_default = native.read_config("executorch", "pal_default", "posix")
+    pal_default = native.read_config("executorch", "pal_default", "posix")
     if not pal_default in dict_:
         fail("Missing key for executorch.pal_default value '{}' in dict '{}'".format(pal_default, dict_))
     return dict_[pal_default]
@@ -49,7 +44,6 @@ def define_common_targets():
         srcs = _select_pal({
             "minimal": ["default/minimal.cpp"],
             "posix": ["default/posix.cpp"],
-            "windows": ["default/Windows.cpp"],
         }),
         deps = [
             ":pal_interface",
