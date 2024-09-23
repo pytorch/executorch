@@ -7,59 +7,30 @@
 import re
 from typing import Any, List
 
+from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
+    AT_INT_ARRAY_REF,
+    AT_SCALAR,
+    AT_TENSOR,
+    AT_TENSOR_LIST,
+    BOOL,
+    DOUBLE,
+    INT,
+    OPT_AT_DOUBLE_ARRAY_REF,
+    OPT_AT_INT_ARRAY_REF,
+    OPT_AT_TENSOR,
+    OPT_BOOL,
+    OPT_DEVICE,
+    OPT_INT64,
+    OPT_LAYOUT,
+    OPT_MEMORY_FORMAT,
+    OPT_SCALAR_TYPE,
+    STRING,
+)
+from executorch.backends.vulkan.test.op_tests.utils.test_suite import TestSuite
+
 from torchgen.api import cpp
 from torchgen.api.types import CppSignatureGroup
 from torchgen.model import Argument, NativeFunction
-
-########################
-## ATen code patterns ##
-########################
-
-AT_INT_ARRAY_REF = "at::IntArrayRef"
-AT_SCALAR = "at::Scalar"
-AT_TENSOR = "at::Tensor"
-AT_TENSOR_LIST = "at::TensorList"
-BOOL = "bool"
-DOUBLE = "double"
-INT = "int64_t"
-OPT_AT_DOUBLE_ARRAY_REF = "::std::optional<at::ArrayRef<double>>"
-OPT_AT_INT_ARRAY_REF = "at::OptionalIntArrayRef"
-OPT_AT_TENSOR = "::std::optional<at::Tensor>"
-OPT_BOOL = "::std::optional<bool>"
-OPT_INT64 = "::std::optional<int64_t>"
-OPT_DEVICE = "::std::optional<at::Device>"
-OPT_LAYOUT = "::std::optional<at::Layout>"
-OPT_MEMORY_FORMAT = "::std::optional<at::MemoryFormat>"
-OPT_SCALAR_TYPE = "::std::optional<at::ScalarType>"
-STRING = "c10::string_view"
-TWO_TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor>"
-THREE_TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor,at::Tensor>"
-TENSOR_VECTOR = "::std::vector<at::Tensor>"
-
-###########################
-## Test Suite definition ##
-###########################
-
-
-class TestSuite:
-    def __init__(self, input_cases: List[Any]):
-        self.input_cases: List[Any] = input_cases
-        self.prepacked_args: List[str] = []
-        self.requires_prepack: bool = False
-        self.dtypes: List[str] = ["at::kFloat", "at::kHalf"]
-
-        self.data_gen: str = "make_rand_tensor"
-        self.data_range = (0, 1)
-
-        self.arg_dtype = {}
-        self.arg_data_range = {}
-
-        self.atol: str = "1e-5"
-        self.rtol: str = "1e-5"
-
-    def supports_prepack(self):
-        return len(self.prepacked_args) > 0
-
 
 ##########################
 ## Test Suite Generation ##
@@ -103,9 +74,7 @@ def get_or_return_default(arg: Argument, inputs: List[Any], i: int):
         return arg.default
 
 
-class TestSuiteGen:
-    backend_key = None
-
+class CorrectnessTestGen:
     def __init__(self, f: NativeFunction, test_suite: TestSuite):
         self.f = f
         self.suite_def = test_suite
@@ -377,7 +346,7 @@ at::Tensor make_index_tensor(std::vector<std::vector<std::vector<int64_t>>> indi
 """
 
 
-class CppTestFileGen:
+class CorrectnessTestFileGen:
     def __init__(self, out_path):
         self.out_path = out_path
         self.suites_gens = []
@@ -395,5 +364,5 @@ class CppTestFileGen:
         return "\n".join([h.generate_suite_cpp() for h in self.suites_gens])
 
     def add_suite(self, op_reg_name: str, f: NativeFunction, all_input_cases) -> None:
-        suites_gen = TestSuiteGen(f, all_input_cases)
+        suites_gen = CorrectnessTestGen(f, all_input_cases)
         self.suites_gens.append(suites_gen)

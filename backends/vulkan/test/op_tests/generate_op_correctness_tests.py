@@ -10,12 +10,14 @@ import os
 from typing import Dict
 
 from executorch.backends.vulkan.test.op_tests.cases import test_suites
-
-from executorch.backends.vulkan.test.op_tests.utils.codegen import VkCppTestFileGen
-from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
-    TestSuite,
-    TestSuiteGen,
+from executorch.backends.vulkan.test.op_tests.utils.gen_computegraph import (
+    ComputeGraphGen,
 )
+
+from executorch.backends.vulkan.test.op_tests.utils.gen_correctness_vk import (
+    VkCorrectnessTestFileGen,
+)
+from executorch.backends.vulkan.test.op_tests.utils.test_suite import TestSuite
 from torchgen import local
 
 from torchgen.gen import parse_native_yaml, ParsedYaml
@@ -37,7 +39,7 @@ def construct_f_map(parsed_yaml: ParsedYaml) -> Dict[str, NativeFunction]:
 
 
 def process_test_suites(
-    cpp_generator: VkCppTestFileGen,
+    cpp_generator: VkCorrectnessTestFileGen,
     f_map: Dict[str, NativeFunction],
     test_suites: Dict[str, TestSuite],
 ) -> None:
@@ -53,12 +55,12 @@ def generate_cpp(
     native_functions_yaml_path: str, tags_path: str, output_dir: str
 ) -> None:
     output_file = os.path.join(output_dir, "op_tests.cpp")
-    cpp_generator = VkCppTestFileGen(output_file)
+    cpp_generator = VkCorrectnessTestFileGen(output_file)
 
     parsed_yaml = parse_native_yaml(native_functions_yaml_path, tags_path)
     f_map = construct_f_map(parsed_yaml)
 
-    TestSuiteGen.backend_key = parsed_yaml.backend_indices[DispatchKey.CPU]
+    ComputeGraphGen.backend_key = parsed_yaml.backend_indices[DispatchKey.CPU]
 
     process_test_suites(cpp_generator, f_map, test_suites)
 
@@ -76,7 +78,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--tags-path",
-        help="Path to tags.yaml. Required by yaml parsing in codegen system.",
+        help="Path to tags.yaml. Required by yaml parsing in gen_correctness_vk system.",
     )
     parser.add_argument("-o", "--output", help="Output directory", required=True)
     args = parser.parse_args()
