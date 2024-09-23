@@ -18,7 +18,7 @@
 #include "llm_helper/include/rotary_embedding.h"
 #include "llm_helper/include/token_embedding.h"
 
-namespace torch::executor {
+namespace example {
 
 void LlamaRuntime::Initialize(
     const LlamaModelOptions& modelOptions,
@@ -201,4 +201,4 @@ const LlamaModelOptions& LlamaRuntime::GetModelOptions() const {
   return mModelOptions;
 }
 
-} // namespace torch::executor
+} // namespace example
