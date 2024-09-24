@@ -1,7 +1,12 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import unittest
 
 import torch
-import torch.nn.functional as F
 
 from executorch.examples.models.llama2.llama_transformer import KVCache
 
@@ -40,8 +45,6 @@ class QuantizedKVCacheTest(unittest.TestCase):
         self.n_kv_heads = 8
         self.head_dim = 17
         self.enable_dynamic_shape = False
-        # Need to transpose because thats what kv cache expects
-        # when not consumed by custom SDPA
         self.transpose_kv_cache = False
         self.dtype = torch.float32
 
@@ -59,34 +62,30 @@ class QuantizedKVCacheTest(unittest.TestCase):
         updated_dequantized_k_cache, updated_dequantized_v_cache = (
             quantized_kv_cache.update(input_pos, k, v)
         )
-        if self.transpose_kv_cache:
-            sliced_k_cache = updated_k_cache[:, :, input_pos, :]
-            sliced_v_cache = updated_v_cache[:, :, input_pos, :]
 
-            sliced_dequantized_k_cache = updated_dequantized_k_cache[:, :, input_pos, :]
-            sliced_dequantized_v_cache = updated_dequantized_v_cache[:, :, input_pos, :]
-        else:
-            sliced_k_cache = updated_k_cache[:, input_pos, :, :]
-            sliced_v_cache = updated_v_cache[:, input_pos, :, :]
+        def index(t, input_pos):
+            if self.transpose_kv_cache:
+                return t[:, :, input_pos, :]
+            else:
+                return t[:, input_pos, :, :]
 
-            sliced_dequantized_k_cache = updated_dequantized_k_cache[:, input_pos, :, :]
-            sliced_dequantized_v_cache = updated_dequantized_v_cache[:, input_pos, :, :]
+        sliced_k_cache = index(updated_k_cache, input_pos)
+        sliced_v_cache = index(updated_v_cache, input_pos)
 
-        self.assertTrue(
-            torch.allclose(
-                sliced_k_cache,
-                sliced_dequantized_k_cache,
-                rtol=1e-02,
-                atol=1e-02,
-            )
+        sliced_dequantized_k_cache = index(updated_dequantized_k_cache, input_pos)
+        sliced_dequantized_v_cache = index(updated_dequantized_v_cache, input_pos)
+
+        torch.testing.assert_close(
+            sliced_k_cache,
+            sliced_dequantized_k_cache,
+            rtol=1e-02,
+            atol=1e-02,
         )
-        self.assertTrue(
-            torch.allclose(
-                sliced_v_cache,
-                sliced_dequantized_v_cache,
-                rtol=1e-02,
-                atol=1e-02,
-            )
+        torch.testing.assert_close(
+            sliced_v_cache,
+            sliced_dequantized_v_cache,
+            rtol=1e-02,
+            atol=1e-02,
         )
 
         input_pos = torch.tensor([3])
@@ -97,42 +96,23 @@ class QuantizedKVCacheTest(unittest.TestCase):
         updated_dequantized_k_cache, updated_dequantized_v_cache = (
             quantized_kv_cache.update(input_pos, k, v)
         )
-        if self.transpose_kv_cache:
-            sliced_k_cache = updated_k_cache[:, :, pos_to_check, :]
-            sliced_v_cache = updated_v_cache[:, :, pos_to_check, :]
+        sliced_k_cache = index(updated_k_cache, pos_to_check)
+        sliced_v_cache = index(updated_v_cache, pos_to_check)
 
-            sliced_dequantized_k_cache = updated_dequantized_k_cache[
-                :, :, pos_to_check, :
-            ]
-            sliced_dequantized_v_cache = updated_dequantized_v_cache[
-                :, :, pos_to_check, :
-            ]
-        else:
-            sliced_k_cache = updated_k_cache[:, pos_to_check, :, :]
-            sliced_v_cache = updated_v_cache[:, pos_to_check, :, :]
+        sliced_dequantized_k_cache = index(updated_dequantized_k_cache, pos_to_check)
+        sliced_dequantized_v_cache = index(updated_dequantized_v_cache, pos_to_check)
 
-            sliced_dequantized_k_cache = updated_dequantized_k_cache[
-                :, pos_to_check, :, :
-            ]
-            sliced_dequantized_v_cache = updated_dequantized_v_cache[
-                :, pos_to_check, :, :
-            ]
-
-        self.assertTrue(
-            torch.allclose(
-                sliced_k_cache,
-                sliced_dequantized_k_cache,
-                rtol=1e-02,
-                atol=1e-02,
-            )
+        torch.testing.assert_close(
+            sliced_k_cache,
+            sliced_dequantized_k_cache,
+            rtol=1e-02,
+            atol=1e-02,
         )
-        self.assertTrue(
-            torch.allclose(
-                sliced_v_cache,
-                sliced_dequantized_v_cache,
-                rtol=1e-02,
-                atol=1e-02,
-            )
+        torch.testing.assert_close(
+            sliced_v_cache,
+            sliced_dequantized_v_cache,
+            rtol=1e-02,
+            atol=1e-02,
         )
 
     def test_simple_update_fetch_not_transposed(self):

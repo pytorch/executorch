@@ -444,7 +444,7 @@ void add_conv1d_node(
   int32_t out_group_size = static_cast<int64_t>(out_channels / groups_val);
 
   utils::uvec3 global_size = {1, static_cast<uint32_t>(out_channels), 1};
-  utils::uvec3 local_size = {1, 1, 1};
+  utils::uvec3 local_size = {1, 64, 1};
 
   Kernel1dParams kernel_params = {
       kernel_size,
@@ -476,6 +476,10 @@ void add_conv1d_node(
       {
           t_out->logical_limits_ubo(),
           t_in->sizes_ubo(),
+          t_out->axis_map_ubo(),
+          t_in->axis_map_ubo(),
+          t_weight->axis_map_ubo(),
+          t_bias->axis_map_ubo(),
           graph.create_params_buffer(kernel_params),
           graph.create_params_buffer(out_params),
       },
