@@ -14,7 +14,7 @@ Phone verified: OnePlus 12. Samsung S23 (Llama only), Samsung S24+ (Llama only),
 
 ## Prerequisites
 * Install [Java 17 JDK](https://www.oracle.com/java/technologies/javase/jdk17-archive-downloads.html).
-* Install the [Android SDK API Level 34](https://developer.android.com/about/versions/14/setup-sdk) and [Android NDK 25.0.8775105](https://developer.android.com/studio/projects/install-ndk).
+* Install the [Android SDK API Level 34](https://developer.android.com/about/versions/15/setup-sdk) and [Android NDK r26d](https://developer.android.com/studio/projects/install-ndk).
 * If you have Android Studio set up, you can install them with
   * Android Studio Settings -> Language & Frameworks -> Android SDK -> SDK Platforms -> Check the row with API Level 34.
   * Android Studio Settings -> Language & Frameworks -> Android SDK -> SDK Tools -> Check NDK (Side by side) row.
@@ -22,7 +22,7 @@ Phone verified: OnePlus 12. Samsung S23 (Llama only), Samsung S24+ (Llama only),
 Supported Host OS: CentOS, macOS Sonoma on Apple Silicon.
 
 
-Note: This demo app and tutorial has only been validated with arm64-v8a [ABI](https://developer.android.com/ndk/guides/abis), with NDK 25.0.8775105.
+Note: This demo app and tutorial has only been validated with arm64-v8a [ABI](https://developer.android.com/ndk/guides/abis), with NDK r26d.
 
 
 
