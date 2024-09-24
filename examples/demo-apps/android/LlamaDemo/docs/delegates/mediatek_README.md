@@ -5,7 +5,7 @@ More specifically, it covers:
 2. Building and linking libraries that are required to inference on-device for Android platform using MediaTek AI accelerators.
 3. Loading the needed files on the device and running inference.
 
-Verified on MacOS, Linux CentOS (model export), Python 3.10, Android NDK r26d
+Verified on MacOS, Linux CentOS (model export), Python 3.10, Android NDK 26.3.11579264
 Phone verified: MediaTek Dimensity 9300 (D9300) chip.
 
 ## Prerequisites

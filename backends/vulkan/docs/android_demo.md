@@ -28,7 +28,7 @@ Tutorial in order to install the specified versions of the Android NDK and the
 Android SDK.
 
 ```shell
-# Recommended version is Android NDK r26d.
+# Recommended version is Android NDK 26.3.11579264.
 export ANDROID_NDK=<path_to_ndk>
 # Select an appropriate Android ABI
 export ANDROID_ABI=arm64-v8a

@@ -137,12 +137,12 @@ compile the Vulkan Compute Library's GLSL compute shaders.
 The Vulkan Delegate libraries can be built by setting `-DEXECUTORCH_BUILD_VULKAN=ON`
 when building with CMake.
 
-First, make sure that you have the Android NDK installed - Android NDK r26d is
+First, make sure that you have the Android NDK installed - Android NDK 26.3.11579264 is
 recommended. The Android SDK should also be installed so that you have access
 to `adb`.
 
 ```shell
-# Recommended version is Android NDK r26d.
+# Recommended version is Android NDK 26.3.11579264.
 export ANDROID_NDK=<path_to_ndk>
 # Select an appropriate Android ABI
 export ANDROID_ABI=arm64-v8a
