@@ -18,7 +18,7 @@ float hardswish(float x) {
 
 vec4 hardswish(vec4 tex) {
   return vec4(
-      hardswish(tex.x), hardswish(tex.y), hardswish(tex.z), hardswish(tex.z));
+      hardswish(tex.x), hardswish(tex.y), hardswish(tex.z), hardswish(tex.w));
 }
 
 float hardshrink(float x, float lambda, float neg_lambda) {
@@ -29,4 +29,16 @@ vec4 hardshrink(vec4 tex, float lambda, float neg_lambda) {
   return tex *
       (vec4(greaterThan(tex, vec4(lambda))) +
        vec4(lessThan(tex, vec4(neg_lambda))));
+}
+
+float hardsigmoid(float x) {
+  return mix(float(x >= 0.0), x / 6 + 0.5, float(abs(x) <= 3.0));
+}
+
+vec4 hardsigmoid(vec4 tex) {
+  return vec4(
+      hardsigmoid(tex.x),
+      hardsigmoid(tex.y),
+      hardsigmoid(tex.z),
+      hardsigmoid(tex.w));
 }

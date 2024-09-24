@@ -21,12 +21,20 @@ from executorch.exir.backend.partitioner import (
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
+from executorch.exir.backend.test.demos.rpc.executor_backend_preprocess import (
+    ExecutorBackend,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_control_flow_submodules
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
+
+
+class AllOperatorSupport(OperatorSupportBase):
+    def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
+        return node.op == "call_function"
 
 
 class AddOperatorSupport(OperatorSupportBase):
@@ -93,6 +101,48 @@ class AddAttributePartitionerDemo(Partitioner):
         self.op_support = AddOperatorSupport()
 
         self.delegation_spec = DelegationSpec(BackendWithCompilerDemo.__name__, [])
+
+    def partition(self, edge_exported_program: ExportedProgram) -> PartitionResult:
+        partition_tags = {}
+        partition_list = generate_pattern_op_partitions(
+            edge_exported_program.graph_module, op_support=self.op_support
+        )
+        for partition in partition_list:
+            for node in partition.nodes:
+                delegation_tag = f"tag{partition.id}"
+                partition_tags[delegation_tag] = self.delegation_spec
+
+                # Tag the add nodes
+                node.meta["delegation_tag"] = delegation_tag
+
+                for arg_node in node.args:
+                    if not isinstance(arg_node, torch.fx.Node):
+                        continue
+
+                    is_get_attr = arg_node.op == "get_attr"
+                    is_param_buffer = arg_node.op == "placeholder" and (
+                        is_param(edge_exported_program, arg_node)
+                        or is_buffer(edge_exported_program, arg_node)
+                        or is_lifted_tensor_constant(edge_exported_program, arg_node)
+                    )
+                    if is_get_attr or is_param_buffer:
+                        arg_node.meta["delegation_tag"] = delegation_tag
+                    # Add to the list of partitioned nodes.
+
+        return PartitionResult(
+            tagged_exported_program=edge_exported_program, partition_tags=partition_tags
+        )
+
+
+@final
+class AllNodesPartitionerDemo(Partitioner):
+    """
+    Partitions all nodes
+    """
+
+    def __init__(self) -> None:
+        self.op_support = AllOperatorSupport()
+        self.delegation_spec = DelegationSpec(ExecutorBackend.__name__, [])
 
     def partition(self, edge_exported_program: ExportedProgram) -> PartitionResult:
         partition_tags = {}

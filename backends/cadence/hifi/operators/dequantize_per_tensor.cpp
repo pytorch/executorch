@@ -6,19 +6,20 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/reference/kernels/kernels.h>
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <xa_nnlib_kernels_api.h>
 
 namespace impl {
 namespace HiFi {
 namespace native {
 
 using Tensor = exec_aten::Tensor;
-using RuntimeContext = torch::executor::RuntimeContext;
+using executorch::runtime::KernelRuntimeContext;
 using ScalarType = exec_aten::ScalarType;
 
 void dequantize_per_tensor_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& input,
     double scale,
     int64_t zero_point,

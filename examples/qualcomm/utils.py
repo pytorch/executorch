@@ -19,6 +19,7 @@ from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitione
 from executorch.backends.qualcomm.quantizer.quantizer import (
     get_16a4w_qnn_ptq_config,
     get_default_16bit_qnn_ptq_config,
+    get_default_8bit_qnn_ptq_config,
     QnnQuantizer,
     QuantDtype,
 )
@@ -30,7 +31,7 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
 )
-from executorch.exir import EdgeCompileConfig, EdgeProgramManager
+from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
@@ -66,6 +67,7 @@ class SimpleADB:
         host_id=None,
         error_only=False,
         shared_buffer=False,
+        dump_intermediate_outputs=False,
         runner="examples/qualcomm/executor_runner/qnn_executor_runner",
     ):
         self.qnn_sdk = qnn_sdk
@@ -77,6 +79,8 @@ class SimpleADB:
         self.working_dir = Path(self.pte_path[0]).parent.absolute()
         self.input_list_filename = "input_list.txt"
         self.etdump_path = f"{self.workspace}/etdump.etdp"
+        self.dump_intermediate_outputs = dump_intermediate_outputs
+        self.debug_output_path = f"{self.workspace}/debug_output.bin"
         self.output_folder = f"{self.workspace}/outputs"
         self.arch_table = {
             "SM8650": "75",
@@ -152,13 +156,17 @@ class SimpleADB:
                     f"--input_list_path {self.input_list_filename}",
                     f"--etdump_path {self.etdump_path}",
                     "--shared_buffer" if self.shared_buffer else "",
+                    f"--debug_output_path {self.debug_output_path}",
+                    (
+                        "--dump_intermediate_outputs"
+                        if self.dump_intermediate_outputs
+                        else ""
+                    ),
                 ]
             )
             qnn_executor_runner_cmds = " ".join(
                 [
                     f"cd {self.workspace} &&",
-                    "export ADSP_LIBRARY_PATH=. &&",
-                    "export LD_LIBRARY_PATH=. &&",
                     f"./qnn_executor_runner {qnn_executor_runner_args}",
                 ]
             )
@@ -177,6 +185,45 @@ class SimpleADB:
         if callback:
             callback()
 
+    def pull_debug_output(self, etdump_path, debug_ouput_path, callback=None):
+        self._adb(["pull", self.etdump_path, etdump_path])
+        self._adb(["pull", self.debug_output_path, debug_ouput_path])
+        if callback:
+            callback()
+
+
+def make_quantizer(
+    quant_dtype: Optional[QuantDtype],
+    custom_annotations=(),
+    per_channel_conv=True,
+    per_channel_linear=False,
+    act_observer=MovingAverageMinMaxObserver,
+):
+    quantizer = QnnQuantizer()
+    quantizer.add_custom_quant_annotations(custom_annotations)
+    quantizer.set_per_channel_conv_quant(per_channel_conv)
+    quantizer.set_per_channel_linear_quant(per_channel_linear)
+
+    if quant_dtype == QuantDtype.use_8a8w:
+        quantizer.set_bit8_op_quant_config(
+            get_default_8bit_qnn_ptq_config(act_observer=act_observer)
+        )
+    elif quant_dtype == QuantDtype.use_16a16w:
+        quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
+        quantizer.set_bit16_op_quant_config(
+            get_default_16bit_qnn_ptq_config(act_observer=act_observer)
+        )
+    elif quant_dtype == QuantDtype.use_16a4w:
+        quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
+        quantizer.set_bit16_op_quant_config(
+            get_16a4w_qnn_ptq_config(act_observer=act_observer)
+        )
+        quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
+    else:
+        raise AssertionError(f"No support for QuantDtype {quant_dtype}.")
+
+    return quantizer
+
 
 # TODO: refactor to support different backends
 def build_executorch_binary(
@@ -193,29 +240,16 @@ def build_executorch_binary(
     shared_buffer=False,
     metadata=None,
     act_observer=MovingAverageMinMaxObserver,
+    dump_intermediate_outputs=False,
 ):
     if quant_dtype is not None:
-        quantizer = QnnQuantizer()
-        quantizer.add_custom_quant_annotations(custom_annotations)
-        quantizer.set_per_channel_linear_quant(per_channel_linear)
-        quantizer.set_per_channel_conv_quant(True)
-
-        if quant_dtype == QuantDtype.use_8a8w:
-            pass  # default setting
-        elif quant_dtype == QuantDtype.use_16a16w:
-            quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
-            quantizer.set_bit16_op_quant_config(
-                get_default_16bit_qnn_ptq_config(act_observer=act_observer)
-            )
-        elif quant_dtype == QuantDtype.use_16a4w:
-            quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
-            quantizer.set_bit16_op_quant_config(
-                get_16a4w_qnn_ptq_config(act_observer=act_observer)
-            )
-            quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
-        else:
-            raise AssertionError(f"No support for QuantDtype {quant_dtype}.")
-
+        quantizer = make_quantizer(
+            quant_dtype=quant_dtype,
+            custom_annotations=custom_annotations,
+            per_channel_conv=True,
+            per_channel_linear=per_channel_linear,
+            act_observer=act_observer,
+        )
         captured_model = torch.export.export(model, inputs).module()
         annotated_model = prepare_pt2e(captured_model, quantizer)
         print("Quantizing the model...")
@@ -225,54 +259,41 @@ def build_executorch_binary(
         else:
             for data in dataset:
                 annotated_model(*data)
+
         quantized_model = convert_pt2e(annotated_model)
         edge_prog = capture_program(quantized_model, inputs)
     else:
         edge_prog = capture_program(model, inputs)
-
-    arch_table = {
-        "SM8650": QcomChipset.SM8650,
-        "SM8550": QcomChipset.SM8550,
-        "SM8475": QcomChipset.SM8475,
-        "SM8450": QcomChipset.SM8450,
-    }
 
     backend_options = generate_htp_compiler_spec(
         use_fp16=False if quant_dtype else True
     )
     qnn_partitioner = QnnPartitioner(
         generate_qnn_executorch_compiler_spec(
-            soc_model=arch_table[soc_model],
+            soc_model=getattr(QcomChipset, soc_model),
             backend_options=backend_options,
-            debug=False,
-            saver=False,
             shared_buffer=shared_buffer,
-            profile=False,
+            dump_intermediate_outputs=dump_intermediate_outputs,
         ),
         skip_node_id_set,
         skip_node_op_set,
     )
 
     executorch_config = ExecutorchBackendConfig(
-        extract_constant_segment=False,
         # For shared buffer, user must pass the memory address
         # which is allocated by RPC memory to executor runner.
         # Therefore, won't want to pre-allocate
         # by memory manager in runtime.
         memory_planning_pass=MemoryPlanningPass(
-            memory_planning_algo="greedy",
             alloc_graph_input=not shared_buffer,
             alloc_graph_output=not shared_buffer,
         ),
-        extract_delegate_segments=True,
     )
 
     if metadata is None:
-        edge_prog.exported_program = to_backend(
-            edge_prog.exported_program, qnn_partitioner
-        )
-        edge_prog.exported_program.graph_module.graph.print_tabular()
-        exec_prog = edge_prog.to_executorch(config=executorch_config)
+        exported_program = to_backend(edge_prog.exported_program, qnn_partitioner)
+        exported_program.graph_module.graph.print_tabular()
+        exec_prog = to_edge(exported_program).to_executorch(config=executorch_config)
         with open(f"{file_name}.pte", "wb") as file:
             file.write(exec_prog.buffer)
     else:
@@ -353,7 +374,7 @@ def setup_common_args_and_variables():
     parser.add_argument(
         "-b",
         "--build_folder",
-        help="path to cmake binary directory for android, e.g., /path/to/cmake-out-android",
+        help="path to cmake binary directory for android, e.g., /path/to/build-android",
         type=str,
         required=True,
     )
@@ -418,19 +439,25 @@ def setup_common_args_and_variables():
         action="store_true",
     )
 
+    parser.add_argument(
+        "--skip_push",
+        help="If specified, skip pushing files to device.",
+        action="store_true",
+        default=False,
+    )
+
+    parser.add_argument(
+        "--dump_intermediate_outputs",
+        help="If specified, enable dump intermediate outputs",
+        action="store_true",
+        default=False,
+    )
+
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
     # So maybe it's fine to just use the environment.
     if "QNN_SDK_ROOT" not in os.environ:
         raise RuntimeError("Environment variable QNN_SDK_ROOT must be set")
     print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
-
-    if "LD_LIBRARY_PATH" not in os.environ:
-        print(
-            "[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
-            "not found happen, please follow setup.md to set environment."
-        )
-    else:
-        print(f"LD_LIBRARY_PATH={os.getenv('LD_LIBRARY_PATH')}")
 
     return parser
 

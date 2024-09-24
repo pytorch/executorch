@@ -16,7 +16,7 @@ namespace executor {
 namespace native {
 
 Tensor& rsub_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     const Scalar& alpha,
@@ -30,6 +30,9 @@ Tensor& rsub_scalar_out(
       InvalidArgument,
       out,
       "Failed to resize output tensor.");
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
   ET_KERNEL_CHECK(ctx, tensor_is_realhb_type(out), InvalidArgument, out);
 

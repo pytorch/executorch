@@ -5,12 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 # lint_cmake: -linelength
-add_library(
-  cadence_kernels
-  kernels.cpp
-)
+add_library(cadence_kernels kernels.cpp)
 
-target_include_directories(
-  cadence_kernels
-  PUBLIC .
-)
+target_include_directories(cadence_kernels PUBLIC .)

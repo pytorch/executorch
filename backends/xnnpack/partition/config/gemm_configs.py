@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from itertools import chain
 from typing import cast, List, Optional, Tuple
 
@@ -13,9 +14,12 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     XNNPartitionerConfig,
 )
 from executorch.backends.xnnpack.utils.quant_utils import (
+    extract_qdq_affine_op_args_for_decomposed_ops,
+    is_affine_qdq,
     is_dequant,
     is_dynamic_qdq,
     is_per_channel,
+    is_per_channel_group,
     is_qparam,
     is_quant,
 )
@@ -28,11 +32,15 @@ from executorch.backends.xnnpack.utils.utils import (
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
+from executorch.exir.backend.utils import WhyNoPartition
 from torch.export import ExportedProgram
 from torch.fx.passes.utils.source_matcher_utils import (
     get_source_partitions,
     SourcePartition,
 )
+
+logger = logging.getLogger(__name__)
+why = WhyNoPartition(logger=logger)
 
 
 class GEMMConfig(XNNPartitionerConfig):
@@ -44,8 +52,8 @@ class GEMMConfig(XNNPartitionerConfig):
     different ops
     """
 
-    def __init__(self, weight_idx, bias_idx, act_idx, fused_acts):
-        super().__init__()
+    def __init__(self, weight_idx, bias_idx, act_idx, fused_acts, **kwargs):
+        super().__init__(**kwargs)
         self.weight_idx = weight_idx
         self.bias_idx = bias_idx
         self.act_idx = act_idx
@@ -57,6 +65,8 @@ class GEMMConfig(XNNPartitionerConfig):
             return False
 
         is_valid, _ = self.get_deps(node, ep)
+        if not is_valid:
+            why(node, "Failed to get valid dependent nodes.")
         return is_valid
 
     def get_node_and_deps(
@@ -131,7 +141,7 @@ class GEMMConfig(XNNPartitionerConfig):
                 return False, []
             gemm_deps.append(weight)
 
-            if is_per_channel(dequant_node):
+            if is_per_channel(dequant_node) or is_per_channel_group(dequant_node):
                 if len(dequant_node.all_input_nodes) < 2:
                     # Expected channel quantized to have scale/zp nodes
                     return False, []
@@ -214,12 +224,15 @@ class GEMMConfig(XNNPartitionerConfig):
                 return (False, [])
 
             gemm_deps.append(q_input)
-            if not (is_node(q_input.args[1]) and is_node(q_input.args[2])):
+            q_input_args = q_input.args
+            if is_affine_qdq(q_input):
+                q_input_args = extract_qdq_affine_op_args_for_decomposed_ops(q_input)
+            if not (is_node(q_input_args[1]) and is_node(q_input_args[2])):
                 # expected to find getitem node from choose qparam
                 return (False, [])
 
-            getitem1 = get_input_node(q_input, 1)
-            getitem2 = get_input_node(q_input, 2)
+            getitem1 = q_input_args[1]
+            getitem2 = q_input_args[2]
 
             if not (is_getitem(getitem1) and is_getitem(getitem2)):
                 # expected getitem node from choose qparam
@@ -237,16 +250,27 @@ class GEMMConfig(XNNPartitionerConfig):
 class LinearConfig(GEMMConfig):
     target_name = "linear.default"
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         super().__init__(
             weight_idx=1,
             bias_idx=2,
             act_idx=0,
             fused_acts=["relu.default", "hardtanh.default"],
+            **kwargs,
         )
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
         return torch.ops.aten.linear.default
+
+    def _get_weight_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
+    ) -> Tuple[bool, List[torch.fx.Node]]:
+        if precision == ConfigPrecisionType.FP32 and self.force_fp32_dynamic_linear:
+            # if force fp32_dynamic_linear is on and we detected this as fp32, then we
+            # do not partition the weight node
+            return (True, [])
+
+        return super()._get_weight_deps(node, ep, precision)
 
     def supported_precision_types(self):
         return [
@@ -259,12 +283,13 @@ class LinearConfig(GEMMConfig):
 class ConvolutionConfig(GEMMConfig):
     target_name = "convolution.default"
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         super().__init__(
             weight_idx=1,
             bias_idx=2,
             act_idx=0,
             fused_acts=["relu.default", "hardtanh.default"],
+            **kwargs,
         )
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
@@ -276,10 +301,12 @@ class ConvolutionConfig(GEMMConfig):
 
         conv_stride = cast(List[int], node.args[3])
         if len(conv_stride) > 2:
+            why(node, "Only support 1D + 2D Conv")
             return False  # Only support 1D + 2D Conv
 
         transposed = cast(bool, node.args[6])
         if transposed:
+            why(node, "Transposed Conv is not supported")
             return False  # Currently don't support transposed conv
 
         return True
@@ -299,12 +326,13 @@ class AddmmConfig(GEMMConfig):
 
     target_name = "addmm.default"
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         super().__init__(
             weight_idx=2,
             bias_idx=0,
             act_idx=1,
             fused_acts=["relu.default", "hardtanh.default"],
+            **kwargs,
         )
         self.src_partitions = None
         self.linear_modules = [torch.nn.functional.linear, torch.nn.Linear]
@@ -402,8 +430,8 @@ class AddmmConfig(GEMMConfig):
 class MMConfig(AddmmConfig):
     target_name = "mm.default"
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.bias_idx = None
         self.weight_idx = 1
         self.act_idx = 0

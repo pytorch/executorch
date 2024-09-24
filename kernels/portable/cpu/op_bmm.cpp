@@ -17,11 +17,16 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& bmm_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& mat2,
     Tensor& out) {
   ET_KERNEL_CHECK(ctx, check_bmm_args(in, mat2, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, mat2, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   size_t output_ndim = 0;
   exec_aten::SizesType output_sizes[kTensorDimensionLimit];

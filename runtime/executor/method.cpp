@@ -17,6 +17,7 @@
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/memory_manager.h>
+#include <executorch/runtime/executor/platform_memory_allocator.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/executor/tensor_parser.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
@@ -28,6 +29,8 @@
 
 namespace executorch {
 namespace runtime {
+
+using internal::PlatformMemoryAllocator;
 
 /**
  * Runtime state for a backend delegate.
@@ -58,7 +61,7 @@ class BackendDelegate final {
     ET_CHECK_OR_RETURN_ERROR(
         delegate.id() != nullptr, InvalidProgram, "Missing backend id");
     const char* backend_id = delegate.id()->c_str();
-    PyTorchBackendInterface* backend = get_backend_class(backend_id);
+    BackendInterface* backend = get_backend_class(backend_id);
     ET_CHECK_OR_RETURN_ERROR(
         backend != nullptr,
         NotFound,
@@ -198,7 +201,7 @@ class BackendDelegate final {
   }
 
   FreeableBuffer segment_;
-  const PyTorchBackendInterface* backend_;
+  const BackendInterface* backend_;
   DelegateHandle* handle_;
 };
 
@@ -527,19 +530,20 @@ Error Method::resolve_operator(
           i,
           static_cast<uint32_t>(err));
       meta[count].dim_order_ =
-          ArrayRef<exec_aten::DimOrderType>(dim_order_ptr, size);
+          Span<exec_aten::DimOrderType>(dim_order_ptr, size);
       count++;
     }
   }
-  // search kernel
-  if (hasOpsFn(operator_name, ArrayRef<TensorMeta>(meta, count))) {
-    kernels[kernel_index] =
-        getOpsFn(operator_name, ArrayRef<TensorMeta>(meta, count));
-    return Error::Ok;
-  } else {
+
+  // Find a kernel with the matching name and tensor meta.
+  Result<OpFunction> op_function =
+      get_op_function_from_registry(operator_name, {meta, count});
+  if (!op_function.ok()) {
     ET_LOG(Error, "Missing operator: [%d] %s", op_index, operator_name);
-    return Error::OperatorMissing;
+    return op_function.error();
   }
+  kernels[kernel_index] = op_function.get();
+  return Error::Ok;
 }
 
 Result<Method> Method::load(
@@ -547,7 +551,16 @@ Result<Method> Method::load(
     const Program* program,
     MemoryManager* memory_manager,
     EventTracer* event_tracer) {
-  Method method(program, memory_manager, event_tracer);
+  MemoryAllocator* temp_allocator = memory_manager->temp_allocator();
+  if (temp_allocator == nullptr) {
+    PlatformMemoryAllocator* platform_allocator =
+        ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
+            memory_manager->method_allocator(), PlatformMemoryAllocator);
+    new (platform_allocator) PlatformMemoryAllocator();
+    temp_allocator = platform_allocator;
+  }
+  Method method(program, memory_manager, event_tracer, temp_allocator);
+
   Error err = method.init(s_plan);
   if (err != Error::Ok) {
     return err;
@@ -731,40 +744,6 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
     }
   }
 
-  // Validate input values and get tensor pre-allocation info.
-  pre_allocated_input_ = false;
-  for (int i = 0; i < inputs_size(); i++) {
-    // get_input() will panic if the index is invalid, so do this manually.
-    size_t index = get_input_index(i);
-    ET_CHECK_OR_RETURN_ERROR(
-        index < n_value_,
-        InvalidProgram,
-        "Input index %zu >= %zu",
-        index,
-        n_value_);
-    const EValue& input = values_[index];
-    if (input.isTensor()) {
-      pre_allocated_input_ |= input.toTensor().const_data_ptr() != nullptr;
-    }
-  }
-
-  // Validate output values and get tensor pre-allocation info.
-  pre_allocated_output_ = false;
-  for (int i = 0; i < outputs_size(); i++) {
-    // get_output() will panic if the index is invalid, so do this manually.
-    size_t index = get_output_index(i);
-    ET_CHECK_OR_RETURN_ERROR(
-        index < n_value_,
-        InvalidProgram,
-        "output index %zu >= %zu",
-        index,
-        n_value_);
-    const EValue& output = values_[index];
-    if (output.isTensor()) {
-      pre_allocated_output_ |= output.toTensor().const_data_ptr() != nullptr;
-    }
-  }
-
   step_state_ = StepState{0, 0};
 
   init_state_ = InitializationState::Initialized;
@@ -828,7 +807,8 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         input_idx,
         static_cast<uint32_t>(err));
     Error error;
-    if (pre_allocated_input_) {
+    auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
+    if (tensor_meta->is_memory_planned()) {
       error = internal::copy_tensor_data(t_dst, t_src);
     } else {
       error = internal::share_tensor_data(t_dst, t_src);
@@ -937,21 +917,11 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
       InvalidState,
       "Outputs can not be retrieved until method has been initialized.");
 
-  // ET_CHECK_OR_RETURN_ERROR(
-  //     !pre_allocated_output_,
-  //     InvalidState,
-  //     "Overriding output data pointer allocated by memory plan is not
-  //     allowed.");
-  // TODO(T188740925): for now, return error without logs.
-  if (pre_allocated_output_) {
-    return Error::InvalidState;
-  }
-
   // Check the args
   ET_CHECK_OR_RETURN_ERROR(
-      output_idx <= outputs_size(),
+      output_idx < outputs_size(),
       InvalidArgument,
-      "output_idx: %zu num_outputs: %zu",
+      "output_idx: %zu > num_outputs: %zu",
       output_idx,
       outputs_size());
 
@@ -961,6 +931,16 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
       InvalidArgument,
       "output type: %zu is not tensor",
       (size_t)output.tag);
+
+  auto tensor_meta = this->method_meta().output_tensor_meta(output_idx);
+  if (tensor_meta->is_memory_planned()) {
+    ET_LOG(
+        Error,
+        "Output %zu is memory planned, or is a constant. Cannot override \
+        the existing data pointer.",
+        output_idx);
+    return Error::InvalidState;
+  }
 
   auto& t = output.toTensor();
   ET_CHECK_OR_RETURN_ERROR(
@@ -1038,16 +1018,14 @@ Error Method::execute_instruction() {
   auto instruction = instructions->Get(step_state_.instr_idx);
   size_t next_instr_idx = step_state_.instr_idx + 1;
   Error err = Error::Ok;
+
   switch (instruction->instr_args_type()) {
     case executorch_flatbuffer::InstructionArguments::KernelCall: {
       EXECUTORCH_SCOPE_PROF("OPERATOR_CALL");
       internal::EventTracerProfileScope event_tracer_scope =
           internal::EventTracerProfileScope(event_tracer_, "OPERATOR_CALL");
       // TODO(T147221312): Also expose tensor resizer via the context.
-      // The temp_allocator passed can be null, but calling allocate_temp will
-      // fail
-      KernelRuntimeContext context(
-          event_tracer_, memory_manager_->temp_allocator());
+      KernelRuntimeContext context(event_tracer_, temp_allocator_);
       auto args = chain.argument_lists_[step_state_.instr_idx];
       chain.kernels_[step_state_.instr_idx](context, args.data());
       // We reset the temp_allocator after the switch statement
@@ -1095,7 +1073,7 @@ Error Method::execute_instruction() {
           step_state_.instr_idx);
       BackendExecutionContext backend_execution_context(
           /*event_tracer*/ event_tracer_,
-          /*temp_allocator*/ memory_manager_->temp_allocator());
+          /*temp_allocator*/ temp_allocator_);
       err = delegates_[delegate_idx].Execute(
           backend_execution_context,
           chain.argument_lists_[step_state_.instr_idx].data());
@@ -1167,8 +1145,8 @@ Error Method::execute_instruction() {
       err = Error::InvalidProgram;
   }
   // Reset the temp allocator for every instruction.
-  if (memory_manager_->temp_allocator() != nullptr) {
-    memory_manager_->temp_allocator()->reset();
+  if (temp_allocator_ != nullptr) {
+    temp_allocator_->reset();
   }
   if (err == Error::Ok) {
     step_state_.instr_idx = next_instr_idx;

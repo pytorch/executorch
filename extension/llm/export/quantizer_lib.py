@@ -146,7 +146,7 @@ def get_qnn_quantizer(
     quantization_mode: Optional[str] = None,
 ):
     try:
-        from executorch.backends.qualcomm.quantizer.custom_annotation import (
+        from executorch.backends.qualcomm.quantizer.custom_annotation import (  # pyre-fixme[21]
             custom_annotate_llama_matmul_16a8w,
         )
 
@@ -168,15 +168,22 @@ def get_qnn_quantizer(
     assert (
         backend == "qnn"
     ), f"The quantization config is for backend {backend} instead of qnn."
-    qnn_quantizer = QnnQuantizer()
+    qnn_quantizer = QnnQuantizer()  # pyre-fixme[16]
     qnn_quantizer.set_per_channel_conv_quant(enable=True)
     qnn_quantizer.set_per_channel_linear_quant(enable=True)
     # more custom quantization are supported including 16a4w etc. default to 8bit quantized
     custom_annotations = ()
     if quant_config == "8a8w":
-        quant_dtype = QuantDtype.use_8a8w
+        quant_dtype = QuantDtype.use_8a8w  # pyre-fixme[16]
     elif quant_config == "16a16w":
-        quant_dtype = QuantDtype.use_16a16w
+        quant_dtype = QuantDtype.use_16a16w  # pyre-fixme[16]
+        # Due to the error with 16a16w in Qnn Htp, we need to disable per channel linear quantization when use 16a16w
+        # TODO: enable it after the issue is fixed
+        logging.warning(
+            "Disable per channel quantization for linear and conv due to the error with QNN HTP 16a16w."
+        )
+        qnn_quantizer.set_per_channel_conv_quant(enable=False)
+        qnn_quantizer.set_per_channel_linear_quant(enable=False)
         qnn_quantizer.add_16bit_quant_ops(qnn_quantizer.SUPPORTED_OPS)
         qnn_quantizer.set_bit16_op_quant_config(
             # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
@@ -202,6 +209,12 @@ def get_qnn_quantizer(
         quantization_mode is None
     ), "Currently qnn backend only supports QnnQuantizer via pt2e flow"
     qnn_quantizer.add_custom_quant_annotations(custom_annotations)
+    qnn_quantizer.add_discard_ops(
+        [
+            torch.ops.aten.embedding.default,
+        ]
+    )
+
     return qnn_quantizer, quant_dtype
 
 

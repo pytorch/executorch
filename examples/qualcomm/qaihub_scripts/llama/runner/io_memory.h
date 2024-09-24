@@ -26,44 +26,47 @@
 #define QAIHUB_LLAMA_LOGITS 32000
 #endif
 
-namespace torch {
-namespace executor {
+namespace example {
 
 class Memory {
  public:
   Memory(
       const std::vector<std::string>& pos_embs_path,
-      std::vector<std::shared_ptr<Module>>& modules);
+      std::vector<std::shared_ptr<executorch::extension::Module>>& modules);
   virtual ~Memory();
   virtual void prepare_io(
-      const std::vector<Result<MethodMeta>>& methods_meta) = 0;
+      const std::vector<
+          executorch::runtime::Result<executorch::runtime::MethodMeta>>&
+          methods_meta) = 0;
   virtual void update_io(
       int64_t cur_token,
       int64_t pos,
-      std::vector<std::vector<Tensor>>& output_tensors) = 0;
+      std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) = 0;
   void* get_mutable_ptr();
-  std::vector<Tensor> get_input_tensors(int shard_index);
-  std::vector<Tensor> get_output_tensors(int shard_index);
+  std::vector<executorch::aten::Tensor> get_input_tensors(int shard_index);
+  std::vector<executorch::aten::Tensor> get_output_tensors(int shard_index);
 
  protected:
   std::unique_ptr<void, void (*)(void*)> data_ptr_;
-  std::vector<std::vector<TensorImpl*>> input_tensors_;
-  std::vector<std::vector<TensorImpl*>> output_tensors_;
+  std::vector<std::vector<executorch::aten::TensorImpl*>> input_tensors_;
+  std::vector<std::vector<executorch::aten::TensorImpl*>> output_tensors_;
   std::vector<std::string> pos_embs_path_;
-  std::vector<std::shared_ptr<Module>> modules_;
+  std::vector<std::shared_ptr<executorch::extension::Module>> modules_;
 };
 
 class BertMemory : public Memory {
  public:
   BertMemory(
       const std::vector<std::string>& pos_embs_path,
-      std::vector<std::shared_ptr<Module>>& modules,
+      std::vector<std::shared_ptr<executorch::extension::Module>>& modules,
       std::vector<int> shard_layers);
-  void prepare_io(const std::vector<Result<MethodMeta>>& methods_meta) override;
+  void prepare_io(const std::vector<executorch::runtime::Result<
+                      executorch::runtime::MethodMeta>>& methods_meta) override;
   void update_io(
       int64_t cur_token,
       int64_t pos,
-      std::vector<std::vector<Tensor>>& output_tensors) override;
+      std::vector<std::vector<executorch::aten::Tensor>>& output_tensors)
+      override;
   struct IO {
     int32_t input_ids[1024 * 2];
     uint16_t hidden_state[1024 * 4096];
@@ -76,14 +79,14 @@ class BertMemory : public Memory {
   };
 
  private:
-  std::unique_ptr<TensorImpl> input_ids_;
-  std::unique_ptr<TensorImpl> hidden_state_;
-  std::unique_ptr<TensorImpl> attention_mask_;
-  std::unique_ptr<TensorImpl> position_ids_cos_;
-  std::unique_ptr<TensorImpl> position_ids_sin_;
-  std::vector<std::unique_ptr<TensorImpl>> k_cache_;
-  std::vector<std::unique_ptr<TensorImpl>> v_cache_;
-  std::unique_ptr<TensorImpl> logits_;
+  std::unique_ptr<executorch::aten::TensorImpl> input_ids_;
+  std::unique_ptr<executorch::aten::TensorImpl> hidden_state_;
+  std::unique_ptr<executorch::aten::TensorImpl> attention_mask_;
+  std::unique_ptr<executorch::aten::TensorImpl> position_ids_cos_;
+  std::unique_ptr<executorch::aten::TensorImpl> position_ids_sin_;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> k_cache_;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> v_cache_;
+  std::unique_ptr<executorch::aten::TensorImpl> logits_;
   std::vector<int> shard_layers_;
   int num_heads_;
 };
@@ -117,13 +120,15 @@ class KVCachedMemory : public Memory {
  public:
   KVCachedMemory(
       const std::vector<std::string>& pos_embs_path,
-      std::vector<std::shared_ptr<Module>>& modules,
+      std::vector<std::shared_ptr<executorch::extension::Module>>& modules,
       std::vector<int> shard_layers);
-  void prepare_io(const std::vector<Result<MethodMeta>>& methods_meta) override;
+  void prepare_io(const std::vector<executorch::runtime::Result<
+                      executorch::runtime::MethodMeta>>& methods_meta) override;
   void update_io(
       int64_t cur_token,
       int64_t pos,
-      std::vector<std::vector<Tensor>>& output_tensors) override;
+      std::vector<std::vector<executorch::aten::Tensor>>& output_tensors)
+      override;
   struct IO {
     int32_t input_ids;
     uint16_t hidden_state[4096];
@@ -142,16 +147,16 @@ class KVCachedMemory : public Memory {
   };
 
  private:
-  std::unique_ptr<TensorImpl> input_ids_;
-  std::unique_ptr<TensorImpl> hidden_state_;
-  std::unique_ptr<TensorImpl> attention_mask_;
-  std::unique_ptr<TensorImpl> position_ids_cos_;
-  std::unique_ptr<TensorImpl> position_ids_sin_;
-  std::vector<std::unique_ptr<TensorImpl>> k_cache_in_;
-  std::vector<std::unique_ptr<TensorImpl>> v_cache_in_;
-  std::vector<std::unique_ptr<TensorImpl>> k_cache_out_;
-  std::vector<std::unique_ptr<TensorImpl>> v_cache_out_;
-  std::unique_ptr<TensorImpl> logits_;
+  std::unique_ptr<executorch::aten::TensorImpl> input_ids_;
+  std::unique_ptr<executorch::aten::TensorImpl> hidden_state_;
+  std::unique_ptr<executorch::aten::TensorImpl> attention_mask_;
+  std::unique_ptr<executorch::aten::TensorImpl> position_ids_cos_;
+  std::unique_ptr<executorch::aten::TensorImpl> position_ids_sin_;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> k_cache_in_;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> v_cache_in_;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> k_cache_out_;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> v_cache_out_;
+  std::unique_ptr<executorch::aten::TensorImpl> logits_;
   std::vector<LoopRange> lr_update_kv_;
   std::vector<std::future<void>> futures_;
   ThreadPool thread_pool_;
@@ -159,5 +164,4 @@ class KVCachedMemory : public Memory {
   int num_heads_;
 };
 
-} // namespace executor
-} // namespace torch
+} // namespace example

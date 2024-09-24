@@ -4,11 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import unittest
-from typing import Any, Callable, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 import torch
-from executorch.exir import ExecutorchProgramManager, to_edge
+from executorch.exir import ExecutorchBackendConfig, ExecutorchProgramManager, to_edge
+from executorch.exir.passes import MemoryPlanningPass
 from torch.export import export
 
 
@@ -73,8 +76,25 @@ def make_test(  # noqa: C901
             def get_inputs(self):
                 return (torch.ones(2, 2),)
 
+        class ModuleAddConstReturn(torch.nn.Module):
+            """The module to serialize and execute."""
+
+            def __init__(self):
+                super(ModuleAddConstReturn, self).__init__()
+                self.state = torch.ones(2, 2)
+
+            def forward(self, x):
+                return x + self.state, self.state
+
+            def get_methods_to_export(self):
+                return ("forward",)
+
+            def get_inputs(self):
+                return (torch.ones(2, 2),)
+
         def create_program(
             eager_module: torch.nn.Module,
+            et_config: Optional[ExecutorchBackendConfig] = None,
         ) -> Tuple[ExecutorchProgramManager, Tuple[Any, ...]]:
             """Returns an executorch program based on ModuleAdd, along with inputs."""
 
@@ -101,7 +121,7 @@ def make_test(  # noqa: C901
                 )
                 exported_methods[method_name] = export(wrapped_mod, method_input)
 
-            exec_prog = to_edge(exported_methods).to_executorch()
+            exec_prog = to_edge(exported_methods).to_executorch(config=et_config)
 
             # Create the ExecuTorch program from the graph.
             exec_prog.dump_executorch_program(verbose=True)
@@ -211,11 +231,79 @@ def make_test(  # noqa: C901
                 except Exception:
                     tester.assertTrue(str(out).find("The length of given input array"))
 
+        def test_quantized_ops(tester):
+            eager_module = ModuleAdd()
+
+            from executorch.exir import EdgeCompileConfig
+            from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
+            from torch.ao.quantization import get_default_qconfig_mapping
+            from torch.ao.quantization.backend_config.executorch import (
+                get_executorch_backend_config,
+            )
+            from torch.ao.quantization.quantize_fx import (
+                _convert_to_reference_decomposed_fx,
+                prepare_fx,
+            )
+
+            qconfig_mapping = get_default_qconfig_mapping("qnnpack")
+            example_inputs = (
+                torch.ones(1, 5, dtype=torch.float32),
+                torch.ones(1, 5, dtype=torch.float32),
+            )
+            m = prepare_fx(
+                eager_module,
+                qconfig_mapping,
+                example_inputs,
+                backend_config=get_executorch_backend_config(),
+            )
+            m = _convert_to_reference_decomposed_fx(m)
+            config = EdgeCompileConfig(_check_ir_validity=False)
+            m = to_edge(export(m, example_inputs), compile_config=config)
+            m = m.transform([QuantFusionPass(_fix_node_meta_val=True)])
+
+            exec_prog = m.to_executorch()
+
+            executorch_module = load_fn(exec_prog.buffer)
+            executorch_output = executorch_module.forward(example_inputs)[0]
+
+            expected = example_inputs[0] + example_inputs[1]
+            tester.assertEqual(str(expected), str(executorch_output))
+
+        def test_constant_output_not_memory_planned(tester):
+            # Create an ExecuTorch program from ModuleAdd.
+            exported_program, inputs = create_program(
+                ModuleAddConstReturn(),
+                et_config=ExecutorchBackendConfig(
+                    memory_planning_pass=MemoryPlanningPass(alloc_graph_output=False)
+                ),
+            )
+
+            exported_program.dump_executorch_program(verbose=True)
+
+            # Use pybindings to load and execute the program.
+            executorch_module = load_fn(exported_program.buffer)
+            # Invoke the callable on executorch_module instead of calling module.forward.
+            # Use only one input to test this case.
+            executorch_output = executorch_module((torch.ones(2, 2),))
+            print(executorch_output)
+
+            # The test module adds the input to torch.ones(2,2), so its output should be the same
+            # as adding them directly.
+            expected = torch.ones(2, 2) + torch.ones(2, 2)
+            tester.assertEqual(str(expected), str(executorch_output[0]))
+
+            # The test module returns the state. Check that its value is correct.
+            tester.assertEqual(str(torch.ones(2, 2)), str(executorch_output[1]))
+
+        ######### RUN TEST CASES #########
+
         test_e2e(tester)
         test_multiple_entry(tester)
         test_output_lifespan(tester)
         test_module_callable(tester)
         test_module_single_input(tester)
         test_stderr_redirect(tester)
+        test_quantized_ops(tester)
+        test_constant_output_not_memory_planned(tester)
 
     return wrapper

@@ -19,7 +19,7 @@ using Tensor = exec_aten::Tensor;
 // clone.out(Tensor self, *, MemoryFormat? memory_format=None, Tensor(a!) out)
 // -> Tensor(a!)
 Tensor& clone_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& self,
     exec_aten::optional<exec_aten::MemoryFormat> memory_format,
     Tensor& out) {
@@ -37,6 +37,9 @@ Tensor& clone_out(
       tensors_have_same_shape_and_dtype(self, out),
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      context, tensors_have_same_dim_order(self, out), InvalidArgument, out);
 
   // Right now we only focus on contiguous memory, memory_format shall always
   // either a nullopt or exec::aten::MemoryFormat::Contiguous

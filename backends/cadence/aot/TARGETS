@@ -60,6 +60,17 @@ python_library(
     ],
 )
 
+python_library(
+    name = "ops_registrations",
+    srcs = [
+        "ops_registrations.py",
+    ],
+    deps = [
+        "fbcode//caffe2:torch",
+        "fbcode//executorch/backends/cadence/aot:utils",
+    ],
+)
+
 export_file(name = "functions.yaml")
 
 executorch_generated_lib(

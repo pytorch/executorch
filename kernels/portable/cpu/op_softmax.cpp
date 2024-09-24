@@ -20,7 +20,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& softmax_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     bool half_to_float,
@@ -35,6 +35,9 @@ Tensor& softmax_out(
 
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   // Adjust for negative dim
   dim = dim < 0 ? dim + nonzero_dim(in) : dim;

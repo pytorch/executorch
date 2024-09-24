@@ -3,6 +3,8 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
 from typing import List
 
 import serializer.tosa_serializer as ts
@@ -96,6 +98,7 @@ class MMVisitor(NodeVisitor):
             build_rescale(
                 tosa_fb=tosa_graph,
                 scale=final_output_scale,
+                # pyre-ignore[61]: Uninitialized local [61]: Local variable `reshape_intermediate` is undefined, or not always defined.
                 input_node=reshape_intermediate,
                 output_name=output.name,
                 output_type=ts.DType.INT8,

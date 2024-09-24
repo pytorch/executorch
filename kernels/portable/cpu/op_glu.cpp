@@ -137,12 +137,18 @@ Tensor& glu_out_tensor(const Tensor& self, int64_t dim, Tensor& out) {
  *  1. The input shall be in any float types (Float, Double)
  *  2. The output shall be in float types (Float, Double)
  */
-Tensor&
-glu_out(RuntimeContext& ctx, const Tensor& self, int64_t dim, Tensor& out) {
+Tensor& glu_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& self,
+    int64_t dim,
+    Tensor& out) {
   (void)ctx;
 
   ET_KERNEL_CHECK(
       ctx, resize_glu_out(self, dim, out) == Error::Ok, InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
 
   ET_KERNEL_CHECK(ctx, check_glu_args(self, dim, out), InvalidArgument, out);
 

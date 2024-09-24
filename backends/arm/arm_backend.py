@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 #
 # Main implementation of AoT flow to partition and preprocess for Arm target
 # backends. Converts via TOSA as an intermediate form supported by AoT and
@@ -50,11 +52,11 @@ class ArmCompileSpecBuilder:
     def ethosu_compile_spec(
         self,
         config: str,
-        system_config: Optional[str] = None,
-        memory_mode: Optional[str] = None,
+        system_config: str,
+        memory_mode: str,
         extra_flags: Optional[str] = None,
         config_ini: Optional[str] = "Arm/vela.ini",
-    ):
+    ) -> "ArmCompileSpecBuilder":
         """
         Generate compile spec for Ethos-U NPU
 
@@ -84,7 +86,7 @@ class ArmCompileSpecBuilder:
 
         return self
 
-    def tosa_compile_spec(self):
+    def tosa_compile_spec(self) -> "ArmCompileSpecBuilder":
         """
         Generate compile spec for TOSA flatbuffer output
         """
@@ -94,14 +96,18 @@ class ArmCompileSpecBuilder:
         self.output_format = "tosa"
         return self
 
-    def dump_intermediate_artifacts_to(self, output_path: str):
+    def dump_intermediate_artifacts_to(
+        self, output_path: str
+    ) -> "ArmCompileSpecBuilder":
         """
         Sets a path for dumping intermediate results during such as tosa and pte.
         """
         self.path_for_intermediates = output_path
         return self
 
-    def set_permute_memory_format(self, set_nhwc_permutation: bool = True):
+    def set_permute_memory_format(
+        self, set_nhwc_permutation: bool = True
+    ) -> "ArmCompileSpecBuilder":
         """
         Permute to channel last in compiler and runtime. Compilation and
         runtime will convert rank 4 inputs to channel last for each sub-graph.
@@ -109,7 +115,7 @@ class ArmCompileSpecBuilder:
         self.permute_nhwc = set_nhwc_permutation
         return self
 
-    def set_quantize_io(self, quantize_io: bool = False):
+    def set_quantize_io(self, quantize_io: bool = False) -> "ArmCompileSpecBuilder":
         """
         Quantization of inputs and dequantization of outputs for cases where
         whole graph is quantized and method signature is not of quantized type.
@@ -117,7 +123,7 @@ class ArmCompileSpecBuilder:
         self.quantize_io = quantize_io
         return self
 
-    def build(self):
+    def build(self) -> List[CompileSpec]:
         """
         Generate a list of compile spec objects from the builder
         """
@@ -159,10 +165,21 @@ def is_tosa(compile_spec: List[CompileSpec]) -> bool:
     return False
 
 
-def get_intermediate_path(compile_spec: List[CompileSpec]) -> str:
+def get_intermediate_path(compile_spec: List[CompileSpec]) -> Optional[str]:
     for spec in compile_spec:
         if spec.key == "debug_artifact_path":
             return spec.value.decode()
+    return None
+
+
+def _get_first_delegation_tag(graph_module) -> str | None:
+    """Get the first delegation tag from the graph_module or return None."""
+    for node in graph_module.graph.nodes:
+        tag = node.meta.get("delegation_tag")
+        if tag:
+            return tag
+
+    logger.debug("No delegation tag found in partition.")
     return None
 
 
@@ -220,8 +237,13 @@ class ArmBackend(BackendDetails):
         # TODO: It would be awesome if this dump could somehow be done on top level and not here.
         # Problem is that the desc.json has to be created on the tosa_graph object, which we can't
         # access from top level.
-        if artifact_path is not None:
-            dbg_tosa_dump(tosa_graph, artifact_path)
+        if artifact_path:
+            tag = _get_first_delegation_tag(graph_module)
+            dbg_tosa_dump(
+                tosa_graph,
+                artifact_path,
+                suffix="{}".format(f"_{tag}" if tag else ""),
+            )
 
         # Serialize and return the program. While we have always produced TOSA
         # output as an intermediate, some flows compile to device binaries in

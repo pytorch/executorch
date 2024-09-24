@@ -17,7 +17,7 @@ using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
 Tensor& as_strided_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     ArrayRef<int64_t> size,
     ArrayRef<int64_t> stride,
@@ -36,6 +36,11 @@ Tensor& as_strided_copy_out(
       resize_tensor(out, size) == torch::executor::Error::Ok,
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   if (in.numel() == 0) {
     return out;

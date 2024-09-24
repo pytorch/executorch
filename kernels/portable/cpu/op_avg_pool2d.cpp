@@ -21,7 +21,7 @@ using ScalarType = exec_aten::ScalarType;
 using IntArrayRef = exec_aten::ArrayRef<int64_t>;
 
 Tensor& avg_pool2d_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     IntArrayRef kernel_size,
     IntArrayRef stride,
@@ -43,6 +43,11 @@ Tensor& avg_pool2d_out(
           out),
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   size_t output_ndim = 0;
   exec_aten::SizesType output_sizes[kTensorDimensionLimit];

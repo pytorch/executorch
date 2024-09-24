@@ -38,12 +38,18 @@ size_t unflip_flat_ix(size_t ix, const Tensor& in, ArrayRef<bool> flip_dim) {
 
 } // namespace
 
-Tensor&
-flip_out(RuntimeContext& ctx, const Tensor& in, IntArrayRef dims, Tensor& out) {
+Tensor& flip_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& in,
+    IntArrayRef dims,
+    Tensor& out) {
   (void)ctx;
 
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   ET_KERNEL_CHECK(ctx, check_flip_args(in, dims, out), InvalidArgument, out);
 

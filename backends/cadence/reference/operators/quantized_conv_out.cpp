@@ -17,7 +17,7 @@ namespace reference {
 namespace native {
 
 using Tensor = exec_aten::Tensor;
-using RuntimeContext = torch::executor::RuntimeContext;
+using executorch::runtime::KernelRuntimeContext;
 
 // This implements a generic 2d conv kernel that operates on raw pointers.
 // The version handles both quantized and fp32 convolutions.
@@ -156,7 +156,7 @@ __attribute__((noinline)) void conv2d_nchw_core_generic(
 // quantized::conv1d or quantized::conv2d based on the dimensionality of
 // activation tensor.
 void quantized_conv_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
     const Tensor& bias,

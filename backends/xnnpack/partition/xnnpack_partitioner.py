@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import itertools
+
+import logging
 from typing import List, Optional, Type, Union
 
 from executorch.backends.xnnpack.partition.config import ALL_PARTITIONER_CONFIGS
@@ -21,6 +23,9 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
 from executorch.exir.backend.partitioner import DelegationSpec
 from torch.fx.passes.infra.partitioner import Partition
 
+logging.basicConfig(level=logging.WARNING)
+logger = logging.getLogger(__name__)
+
 
 class XnnpackPartitioner(ConfigerationBasedPartitioner):
     def __init__(
@@ -30,7 +35,17 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
             Union[ConfigPrecisionType, List[ConfigPrecisionType]]
         ] = None,
         per_op_mode=False,
+        verbose: bool = False,
+        **kwargs,
     ):
+        """
+        @verbose: if True, print out more information about the partitioner.
+            Default level is WARNING. If verbose is True, level is set to DEBUG.
+        """
+        if verbose:
+            logger.setLevel(logging.DEBUG)
+            logger.debug("Verbose logging enabled for XNNPACK partitioner.")
+
         delegation_spec = DelegationSpec(XnnpackBackend.__name__, [])
         configs_to_use = configs or ALL_PARTITIONER_CONFIGS
         # Can do logic and have extra args to filter/delete/select
@@ -41,7 +56,7 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
 
         for config in configs_to_use:
             # Config Classes given to XnnpackPartitioner should no longer be abstract
-            initialized = config()  #  pyre-ignore
+            initialized = config(**kwargs)  #  pyre-ignore
             initialized.set_enabled_precision_types(config_precisions)
             initialized_configs.append(initialized)
 

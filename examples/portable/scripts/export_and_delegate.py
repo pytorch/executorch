@@ -15,8 +15,6 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
-from executorch.exir.capture._config import ExecutorchBackendConfig
-
 from executorch.extension.export_util import export_to_edge
 
 from ...models import MODEL_NAME_TO_MODEL
@@ -63,7 +61,7 @@ def export_composite_module_with_lower_graph():
     m_compile_spec = m.get_compile_spec()
 
     # pre-autograd export. eventually this will become torch.export
-    m = torch._export.capture_pre_autograd_graph(m, m_inputs)
+    m = torch.export.export_for_training(m, m_inputs).module()
     edge = export_to_edge(m, m_inputs)
     logging.info(f"Exported graph:\n{edge.exported_program().graph}")
 
@@ -86,7 +84,7 @@ def export_composite_module_with_lower_graph():
     m = CompositeModule()
     m = m.eval()
     # pre-autograd export. eventually this will become torch.export
-    m = torch._export.capture_pre_autograd_graph(m, m_inputs)
+    m = torch.export.export_for_training(m, m_inputs).module()
     composited_edge = export_to_edge(m, m_inputs)
 
     # The graph module is still runnerable
@@ -94,9 +92,7 @@ def export_composite_module_with_lower_graph():
 
     logging.info(f"Lowered graph:\n{composited_edge.exported_program().graph}")
 
-    exec_prog = composited_edge.to_executorch(
-        config=ExecutorchBackendConfig(extract_constant_segment=False)
-    )
+    exec_prog = composited_edge.to_executorch()
     buffer = exec_prog.buffer
 
     model_name = "composite_model"
@@ -138,7 +134,7 @@ def export_and_lower_partitioned_graph():
     m = Model()
     m_inputs = m.get_example_inputs()
     # pre-autograd export. eventually this will become torch.export
-    m = torch._export.capture_pre_autograd_graph(m, m_inputs)
+    m = torch.export.export_for_training(m, m_inputs).module()
     edge = export_to_edge(m, m_inputs)
     logging.info(f"Exported graph:\n{edge.exported_program().graph}")
 
@@ -147,9 +143,7 @@ def export_and_lower_partitioned_graph():
     edge = edge.to_backend(AddMulPartitionerDemo())
     logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
-    exec_prog = edge.to_executorch(
-        config=ExecutorchBackendConfig(extract_constant_segment=False)
-    )
+    exec_prog = edge.to_executorch()
     buffer = exec_prog.buffer
 
     model_name = "partition_lowered_model"
@@ -177,7 +171,7 @@ def export_and_lower_the_whole_graph():
 
     m_inputs = m.get_example_inputs()
     # pre-autograd export. eventually this will become torch.export
-    m = torch._export.capture_pre_autograd_graph(m, m_inputs)
+    m = torch.export.export_for_training(m, m_inputs).module()
     edge = export_to_edge(m, m_inputs)
     logging.info(f"Exported graph:\n{edge.exported_program().graph}")
 

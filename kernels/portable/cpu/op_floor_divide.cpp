@@ -75,7 +75,7 @@ struct FloorDivideInner<false, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT>
 } // namespace
 
 Tensor& floor_divide_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
@@ -86,6 +86,9 @@ Tensor& floor_divide_out(
       out);
 
   ET_KERNEL_CHECK(ctx, tensor_is_real_type(out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();

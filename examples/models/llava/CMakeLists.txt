@@ -21,6 +21,8 @@ project(llava)
 # Duplicating options as root CMakeLists.txt
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 
+# This is a temporary hack to get around Torch dep so we can test this on android
+option(LLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE "Hack option to feed dummy image to remove torch.load dep" OFF)
 
 include(CMakeDependentOption)
 #
@@ -71,7 +73,14 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
 find_package(gflags REQUIRED)
 
-find_package(Torch CONFIG REQUIRED)
+# Avoid torch dep from torch.load()-ing the image.
+# This is a temporary hack.
+if(LLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE)
+  add_definitions(-DLLAVA_NO_TORCH_DUMMY_IMAGE=1)
+  message("Buidling the runner without Torch, feeding a dummy image!")
+else()
+  find_package(Torch CONFIG REQUIRED)
+endif()
 add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
 
 #
@@ -96,7 +105,11 @@ endif()
 # llava_runner library
 add_subdirectory(runner)
 
-set(link_libraries gflags torch)
+set(LINK_LIBS gflags)
+if(NOT LLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE)
+  list(APPEND LINK_LIBS torch)
+endif()
+set(link_libraries ${LINK_LIBS})
 set(_srcs main.cpp)
 
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
@@ -128,13 +141,7 @@ set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)
 # Extra compile option and include dir for pthreadpool
 if(EXECUTORCH_BUILD_PTHREADPOOL)
   list(APPEND _common_compile_options -DET_USE_THREADPOOL)
-  list(APPEND link_libraries pthreadpool)
-  # These 2 source files are included in xnnpack_backend
-  if(NOT TARGET xnnpack_backend)
-    list(APPEND _srcs ${XNNPACK_ROOT}/threadpool/threadpool.cpp
-         ${XNNPACK_ROOT}/threadpool/threadpool_guard.cpp
-    )
-  endif()
+  list(APPEND link_libraries extension_threadpool pthreadpool)
   list(APPEND _common_include_directories
        ${XNNPACK_ROOT}/third-party/pthreadpool/include
   )
@@ -142,8 +149,7 @@ endif()
 
 # Extra sources for cpuinfo
 if(EXECUTORCH_BUILD_CPUINFO)
-  list(APPEND link_libraries cpuinfo)
-  list(APPEND _srcs ${XNNPACK_ROOT}/threadpool/cpuinfo_utils.cpp)
+  list(APPEND link_libraries extension_threadpool cpuinfo)
   list(APPEND _common_include_directories
        ${XNNPACK_ROOT}/third-party/cpuinfo/include
   )
@@ -203,7 +209,11 @@ endif()
 
 add_executable(llava_main ${_srcs})
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-  target_link_options(llava_main PRIVATE "LINKER:--gc-sections,-s")
+  if(APPLE)
+    target_link_options(llava_main PRIVATE "LINKER:-dead_strip,-s")
+  else()
+    target_link_options(llava_main PRIVATE "LINKER:--gc-sections,-s")
+  endif()
 endif()
 
 target_include_directories(llava_main PUBLIC ${_common_include_directories})

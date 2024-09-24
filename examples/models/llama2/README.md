@@ -19,6 +19,14 @@ Please note that the models are subject to the [Llama 2 Acceptable Use Policy](h
 
 Since Llama 2 7B or Llama 3 8B model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized model.
 
+<p align="center">
+      <img src="./llama_via_xnnpack.gif" width=300>
+      <br>
+      <em>
+      Running Llama3.1 8B on Android phone
+      </em>
+</p>
+
 ## Quantization:
 We employed 4-bit groupwise per token dynamic quantization of all the linear layers of the model. Dynamic quantization refers to quantizating activations dynamically, such that quantization parameters for activations are calculated, from min/max range, at runtime. Here we quantized activations with 8bits (signed integer). Furthermore, weights are statically quantized. In our case weights were per-channel groupwise quantized with 4bit signed integer. For more information refer to this [page](https://github.com/pytorch/ao).
 
@@ -30,6 +38,12 @@ We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/l
 |Llama 3 8B | 7.9 | 9.4 | 9.7
 
 Note that groupsize less than 128 was not enabled, since such models were still too large. This is because our current efforts have focused on enabling FP32 and support for FP16 is under way. What this implies for model size is that 1) embedding table is in FP32 and 2) quantized weights scales are FP32.
+
+### SpinQuant (Optional)
+
+To improve accuracy, we can use [SpinQuant](https://github.com/facebookresearch/SpinQuant/tree/main), a post-training quantization (PTQ) technique that generates new quantized weights. In the standard PTQ process, quantization may lead to a decrease in accuracy when there are outliers. The SpinQuant method takes the original weights and produces optimized quantized weights with minimal outliers, resulting in higher accuracy. This can be achieved without any finetuning of the weights and only requires 100 iterations on a single A100 node.
+
+SpinQuant can generate quantized weights that are [compatible with ExecuTorch](https://github.com/facebookresearch/SpinQuant/tree/main?tab=readme-ov-file#3-export-to-executorch), specifically, it can be integrated with the existing optimized XNNPACK kernels (aka group-wise 4bit weight and 8bit dynamic activation). This allows developers to benefit from the higher accuracy of SpinQuant while also taking advantage of the strong performance of ExecuTorch acceleration. We are currently working on enabling SpinQuant for the Llama3.1 8B model on ExecuTorch.
 
 ## Enablement
 
@@ -60,7 +74,7 @@ Note that since Llama3's vocabulary size is 4x that of Llama2, we had to quantiz
 |OnePlus 12 | 10.85 tokens/second | 11.02 tokens/second |
 
 ### Llama3.1
-> :warning: **use the main branch**: Llama3.1 is supported on the ExecuTorch main branch (not release 0.3).
+Llama3.1 is supported on the ExecuTorch main branch and release/0.4
 
 # Instructions
 
@@ -111,7 +125,7 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     ```
 3. Export model and generate `.pte` file.
     ```
-    python -m examples.models.llama2.export_llama -c stories110M.pt -p params.json -X
+    python -m examples.models.llama2.export_llama -c stories110M.pt -p params.json -X -kv
     ```
 4. Create tokenizer.bin.
 
@@ -131,6 +145,8 @@ You can export and run the original Llama 3 8B instruct model.
     ```
 
     Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `--embedding-quantize 4,32` as shown above to further reduce the model size.
+
+3. SpinQuant [Optional]. If you want to improve accuracy, you can use [SpinQuant](https://github.com/facebookresearch/SpinQuant). Namely, (1) you can generate a new checkpoint via `31_optimize_rotation_executorch.sh` and `32_eval_ptq_executorch.sh` commands in [SpinQuant repo](https://github.com/facebookresearch/SpinQuant/tree/main?tab=readme-ov-file#3-export-to-executorch) (2) pass in an extra `--use_spin_quant native` argument in `export_llama` script above.
 
 ### Option D: Download models from Hugging Face and convert from safetensor format to state dict
 
@@ -200,8 +216,9 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DEXECUTORCH_ENABLE_LOGGING=1 \
         -DCMAKE_BUILD_TYPE=Release \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
@@ -227,8 +244,6 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
     cmake --build cmake-out/examples/models/llama2 -j16 --config Release
     ```
 
-For Llama3, add `-DEXECUTORCH_USE_TIKTOKEN=ON` option when building the llama runner.
-
 3. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/main.cpp#L18-L40).
     ```
     cmake-out/examples/models/llama2/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.bin> --prompt=<prompt>
@@ -253,8 +268,9 @@ cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_PLATFORM=android-23 \
     -DCMAKE_INSTALL_PREFIX=cmake-out-android \
     -DCMAKE_BUILD_TYPE=Release \
-    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
     -DEXECUTORCH_ENABLE_LOGGING=1 \
     -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
@@ -283,7 +299,6 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
 
 cmake --build cmake-out-android/examples/models/llama2 -j16 --config Release
 ```
-For Llama3, add `-DEXECUTORCH_USE_TIKTOKEN=ON` option when building the llama runner.
 
 **2. Run on Android via adb shell**
 
@@ -316,9 +331,9 @@ Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-de
 Currently we supported lowering the stories model to other backends, including, CoreML, MPS and QNN. Please refer to the instruction
 for each backend ([CoreML](https://pytorch.org/executorch/main/build-run-coreml.html), [MPS](https://pytorch.org/executorch/main/build-run-mps.html), [QNN](https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html)) before trying to lower them. After the backend library is installed, the script to export a lowered model is
 
-- Lower to CoreML: `python -m examples.models.llama2.export_llama -kv --coreml -c stories110M.pt -p params.json`
-- MPS: `python -m examples.models.llama2.export_llama -kv --mps -c stories110M.pt -p params.json`
-- QNN: `python -m examples.models.llama2.export_llama -kv --qnn -c stories110M.pt -p params.json`
+- Lower to CoreML: `python -m examples.models.llama2.export_llama -kv --disable_dynamic_shape --coreml -c stories110M.pt -p params.json `
+- MPS: `python -m examples.models.llama2.export_llama -kv --disable_dynamic_shape --mps -c stories110M.pt -p params.json `
+- QNN: `python -m examples.models.llama2.export_llama -kv --disable_dynamic_shape --qnn -c stories110M.pt -p params.json `
 
 The iOS LLAMA app supports the CoreML and MPS model and the Android LLAMA app supports the QNN model. On Android, it also allow to cross compiler the llama runner binary, push to the device and run.
 

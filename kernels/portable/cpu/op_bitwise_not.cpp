@@ -21,7 +21,8 @@ using exec_aten::Tensor;
  * Computes the bitwise NOT of the given input tensor. The input tensor must be
  * of Integral or Boolean types. For bool tensors, it computes the logical NOT.
  **/
-Tensor& bitwise_not_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor&
+bitwise_not_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape
@@ -33,6 +34,8 @@ Tensor& bitwise_not_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
       "Failed to resize output tensor.");
 
   ET_KERNEL_CHECK(ctx, tensors_have_same_dtype(in, out), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   if (in.scalar_type() == exec_aten::ScalarType::Bool) {
     apply_unary_map_fn(
