@@ -63,7 +63,7 @@ jobs:
 
           pip install awscli==1.32.18
           AWS_CMD="aws s3 cp --dryrun"
-          VERSION_NAME="$(date -f "%Y%m%d")"
+          VERSION_NAME="$(date +'%Y%m%d')"
           ${AWS_CMD} executorch.aar s3://ossci-android/executorch/release/${VERSION_NAME}/executorch.aar --acl public-read
 
   # Running Android emulator directly on the runner and not using Docker
