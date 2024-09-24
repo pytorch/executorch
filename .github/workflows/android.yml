@@ -23,8 +23,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-llm-demo:
-    name: build-llm-demo
+  build-aar-and-upload:
+    name: build-aar-and-upload
+    env:
+      RELEASE_JOB: ${{ startsWith(github.ref, 'refs/tags/ciflow/android/release') }}
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     with:
       runner: linux.2xlarge
@@ -46,9 +48,18 @@ jobs:
         # Build LLM Demo for Android
         bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
 
+        # Upload to RC if ciflow/android/release tag is present
+        if [[ "$RELEASE_JOB" = 'true']]
+          pip install awscli==1.32.18
+          AWS_CMD="aws s3 cp"
+          VERSION_NAME="$(date -f "%Y%m%d")"
+          shasum -a 256 "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar"
+          ${AWS_CMD} "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar" s3://ossci-android/executorch/release/${VERSION_NAME}/executorch.aar --acl public-read
+        fi
+
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
-    needs: build-llm-demo
+    needs: build-aar-and-upload
     # NB: Use metal install for KVM support to run the emulator faster
     runs-on: linux.24xl.spr-metal
     env:
