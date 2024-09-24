@@ -33,6 +33,7 @@ public class PromptFormat {
     switch (modelType) {
       case LLAMA_3:
       case LLAMA_3_1:
+      case LLAMA_GUARD_3:
         return "<|start_header_id|>user<|end_header_id|>\n"
             + USER_PLACEHOLDER
             + "<|eot_id|>"
@@ -60,6 +61,7 @@ public class PromptFormat {
     switch (modelType) {
       case LLAMA_3:
       case LLAMA_3_1:
+      case LLAMA_GUARD_3:
         return "<|eot_id|>";
       case LLAVA_1_5:
         return "</s>";
@@ -71,5 +73,45 @@ public class PromptFormat {
   public static String getLlavaPresetPrompt() {
     return "A chat between a curious human and an artificial intelligence assistant. The assistant"
         + " gives helpful, detailed, and polite answers to the human's questions. USER: ";
+  }
+
+  public static String getFormattedLlamaGuardPrompt(String userPrompt) {
+    return getUserPromptTemplate(ModelType.LLAMA_GUARD_3)
+        .replace(
+            USER_PLACEHOLDER, getLlamaGuardPresetPrompt().replace(USER_PLACEHOLDER, userPrompt));
+  }
+
+  public static String getLlamaGuardPresetPrompt() {
+    return "Task: Check if there is unsafe content in 'User' messages in conversations"
+        + " according our safety policy with the below categories.\n"
+        + "\n"
+        + "<BEGIN UNSAFE CONTENT CATEGORIES>\n"
+        + "S1: Violent Crimes. \n"
+        + "S2: Non-Violent Crimes. \n"
+        + "S3: Sex Crimes. \n"
+        + "S4: Child Exploitation. \n"
+        + "S5: Defamation. \n"
+        + "S6: Specialized Advice. \n"
+        + "S7: Privacy. \n"
+        + "S8: Intellectual Property. \n"
+        + "S9: Indiscriminate Weapons. \n"
+        + "S10: Hate. \n"
+        + "S11: Self-Harm. \n"
+        + "S12: Sexual Content. \n"
+        + "S13: Elections. \n"
+        + "S14: Code Interpreter Abuse.\n"
+        + "<END UNSAFE CONTENT CATEGORIES>\n"
+        + "\n"
+        + "<BEGIN CONVERSATION>\n"
+        + "\n"
+        + "User: "
+        + USER_PLACEHOLDER
+        + "\n"
+        + "<END CONVERSATION>\n"
+        + "Provide your safety assessment for ONLY THE LAST User message in the above"
+        + " conversation:\n"
+        + " - First line must read 'safe' or 'unsafe'.\n"
+        + " - If unsafe, a second line must include a comma-separated list of violated"
+        + " categories.";
   }
 }
