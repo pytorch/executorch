@@ -679,6 +679,8 @@ for (int i=0; i<out.size(); i++) {{
 
     def gen_build_graph_fn(self, include_declarations: bool = False) -> str:
         op_name = self.f.func.name.unambiguous_name()
+        if self.suite_def.test_name_suffix is not None:
+            op_name += "_" + self.suite_def.test_name_suffix
         op_build_graph_fn = self.gen_decl(f"build_graph_{op_name}") + " {\n"
         if self.should_prepack:
             op_build_graph_fn = (
@@ -694,6 +696,8 @@ for (int i=0; i<out.size(); i++) {{
 
     def gen_op_exec_graph_fn(self) -> str:
         op_name = self.f.func.name.unambiguous_name()
+        if self.suite_def.test_name_suffix is not None:
+            op_name += "_" + self.suite_def.test_name_suffix
         op_benchmark_fn = self.gen_decl(f"benchmark_{op_name}") + " {\n"
         if self.should_prepack:
             op_benchmark_fn = self.gen_decl(f"prepacked_benchmark_{op_name}") + " {\n"
