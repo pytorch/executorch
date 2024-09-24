@@ -42,9 +42,9 @@ class Runner {
   uint64_t prefill(std::vector<uint64_t>& tokens);
   uint64_t run_model_step(uint64_t token);
 
-  std::unique_ptr<Module> module_;
-  std::unique_ptr<Tokenizer> tokenizer_;
-  std::unique_ptr<Sampler> sampler_;
+  std::unique_ptr<executorch::extension::Module> module_;
+  std::unique_ptr<executorch::extension::llm::Tokenizer> tokenizer_;
+  std::unique_ptr<executorch::extension::llm::Sampler> sampler_;
 };
 
 } // namespace example
