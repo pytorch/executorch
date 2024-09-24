@@ -1,9 +1,6 @@
 name: Android Release Artifacts
 
 on:
-  push:
-    branches:
-      - android-upload-artifact-2
   workflow_dispatch:
     inputs:
       version:
@@ -62,7 +59,7 @@ jobs:
           shasum -a 256 executorch.aar > executorch.aar.sha256sums
 
           pip install awscli==1.32.18
-          AWS_CMD="aws s3 cp --dryrun"
+          AWS_CMD="aws s3 cp"
           VERSION="${{ inputs.version }}"
           VERSION_NAME="${VERSION:-temp_snapshot}"
           ${AWS_CMD} executorch.aar s3://ossci-android/executorch/release/${VERSION_NAME}/executorch.aar --acl public-read
