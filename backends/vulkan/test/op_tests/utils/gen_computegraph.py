@@ -6,15 +6,14 @@
 
 import re
 from dataclasses import dataclass
-from typing import Any, List, Optional, Union
+from typing import List, Optional, Union
 
-from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
+from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     AT_INT_ARRAY_REF,
     AT_SCALAR,
     AT_TENSOR,
     AT_TENSOR_LIST,
     BOOL,
-    CppTestFileGen,
     DOUBLE,
     INT,
     OPT_AT_DOUBLE_ARRAY_REF,
@@ -28,37 +27,20 @@ from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
     OPT_SCALAR_TYPE,
     STRING,
     TENSOR_VECTOR,
-    TestSuite,
-    TestSuiteGen,
     THREE_TENSOR_TUPLE,
     TWO_TENSOR_TUPLE,
 )
+from executorch.backends.vulkan.test.op_tests.utils.test_suite import TestSuite
 
 from torchgen.api import cpp
 from torchgen.api.types import CppSignatureGroup
-
 from torchgen.gen import generate_static_dispatch_backend_call, translate_args
-
 from torchgen.gen_aoti_c_shim import gen_static_dispatch_backend_call_signature
 from torchgen.model import NativeFunction, Variant
 
-##################################
-## Custom Test Suite Definition ##
-##################################
-
-
-@dataclass
-class VkTestSuite(TestSuite):
-    def __init__(self, input_cases: List[Any]):
-        super().__init__(input_cases)
-        self.storage_types: List[str] = ["utils::kTexture3D"]
-        self.layouts: List[str] = ["utils::kChannelsPacked"]
-        self.data_gen: str = "make_rand_tensor"
-
-
-##########################
-## Code Generator Class ##
-##########################
+###################################
+## Compute Graph Code Generation ##
+###################################
 
 
 @dataclass
@@ -105,6 +87,8 @@ InableCppType = frozenset([AT_TENSOR, AT_TENSOR_LIST])
 
 
 class ComputeGraphGen:
+    backend_key = None
+
     def __init__(self, op_reg_name: str, f: NativeFunction, suite_def: TestSuite):
         self.op_reg_name = op_reg_name
         self.f = f
@@ -230,7 +214,7 @@ class ComputeGraphGen:
 
     def create_aten_fn_call(self) -> str:
         func_call = generate_static_dispatch_backend_call(
-            self.f_sig, self.f, TestSuiteGen.backend_key
+            self.f_sig, self.f, ComputeGraphGen.backend_key
         )[7:].replace("::cpu", "")
 
         return func_call
@@ -244,11 +228,12 @@ class ComputeGraphGen:
         func_call = f"ATEN_FN({self.f_sig.name()})({exprs});"
         return func_call
 
-    def create_out_src(self) -> str:
+    def create_out_src(self, include_declarations: bool = True) -> str:
+        cpp_type = self.out.cpp_type if include_declarations else ""
         if Variant.function in self.f.variants:
-            return f"{self.out.cpp_type} out = " + self.create_aten_fn_call() + "\n"
+            return f"{cpp_type} out = " + self.create_aten_fn_call() + "\n"
         else:
-            return f"{self.out.cpp_type} out = " + self.create_aten_method_call() + "\n"
+            return f"{cpp_type} out = " + self.create_aten_method_call() + "\n"
 
     ## Graph code generation utils
 
@@ -258,7 +243,28 @@ class ComputeGraphGen:
         else:
             return ref.supports_prepack and self.should_prepack
 
-    def create_value_for(self, ref: ValueRefList) -> str:  # noqa: C901
+    def create_value_decl_for(self, ref: ValueRefList) -> str:  # noqa: C901
+        if isinstance(ref, list):
+            ret_str = ""
+            for r in ref:
+                ret_str += self.create_value_decl_for(r)
+            return ret_str
+
+        cpp_type = "IOValueRef" if (ref.is_in or ref.requires_prepack) else "ValueRef"
+        if ref.src_cpp_type == AT_TENSOR_LIST:
+            ret_str = f"std::vector<IOValueRef> {ref.name}_io_value_refs;\n"
+            ret_str += f"std::vector<ValueRef> {ref.name}_value_refs;\n"
+            return ret_str
+        elif ref.src_cpp_type == TENSOR_VECTOR:
+            ret_str = f"std::vector<IOValueRef> {ref.io_value_list_name};\n"
+            ret_str += f"std::vector<ValueRef> {ref.value_list_name};\n"
+            return ret_str
+        else:
+            return f"{cpp_type} {ref.name};\n"
+
+    def create_value_for(  # noqa: C901
+        self, ref: ValueRefList, include_declarations: bool = True
+    ) -> str:
         if isinstance(ref, list):
             ret_str = ""
             for r in ref:
@@ -268,9 +274,16 @@ class ComputeGraphGen:
         prepack = self.prepack_ref(ref)
 
         cpp_type = "IOValueRef" if (ref.is_in and not prepack) else "ValueRef"
+        if not include_declarations:
+            cpp_type = ""
 
         if ref.src_cpp_type == OPT_AT_TENSOR:
             ret_str = f"{cpp_type} {ref.name} = "
+            if prepack:
+                ret_str = ""
+                if include_declarations:
+                    ret_str += f"IOValueRef {ref.name};\n"
+                ret_str += f"{ref.name}.value = "
             ret_str += f"!{ref.src_cpp_name}.has_value() ? "
             ret_str += f"{self.graph}{self.dot}add_none() : "
             if not prepack:
@@ -307,11 +320,13 @@ class ComputeGraphGen:
             # each tensor, to facilate staging. On the other hand, we will
             # use the .value tensor to create a ValueList, which will be passed
             # to the corresponding ops.
-            ret_str = f"std::vector<IOValueRef> {ref.name}_io_value_refs;\n"
-            ret_str += f"std::vector<ValueRef> {ref.name}_value_refs;\n"
+            ret_str = ""
+            if include_declarations:
+                ret_str += f"std::vector<IOValueRef> {ref.name}_io_value_refs;\n"
+                ret_str += f"std::vector<ValueRef> {ref.name}_value_refs;\n"
             ret_str += f"for (int i=0; i < {ref.src_cpp_name}.size(); i++) {{\n"
             ret_str += (
-                f"  {cpp_type} io_value_ref = {self.graph}{self.dot}add_input_tensor(\n"
+                f"  IOValueRef io_value_ref = {self.graph}{self.dot}add_input_tensor(\n"
             )
             ret_str += f"      {ref.src_cpp_name}[i].sizes().vec(),\n"
             ret_str += (
@@ -323,9 +338,11 @@ class ComputeGraphGen:
             ret_str += f"ValueRef {ref.name} = {self.graph}{self.dot}add_value_list(std::move({ref.name}_value_refs));\n"
             return ret_str
         elif ref.src_cpp_type == TENSOR_VECTOR:
-            ret_str = f"""
-std::vector<IOValueRef> {ref.io_value_list_name};
-std::vector<ValueRef> {ref.value_list_name};
+            ret_str = ""
+            if include_declarations:
+                ret_str += f"std::vector<IOValueRef> {ref.io_value_list_name};\n"
+                ret_str += f"std::vector<ValueRef> {ref.value_list_name};\n"
+            ret_str += f"""
 for (int i=0; i<out.size(); i++) {{
     const at::Tensor& cur = out[i];
     IOValueRef io_value_ref;
@@ -339,6 +356,12 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
             return ret_str
 
         ret_str = f"{cpp_type} {ref.name} = {self.graph}{self.dot}"
+        if prepack:
+            ret_str = ""
+            if include_declarations:
+                ret_str = f"IOValueRef {ref.name};\n"
+            ret_str += f"{ref.name}.value = {self.graph}{self.dot}"
+
         if ref.src_cpp_type == AT_TENSOR and not prepack:
             ret_str += "add_input_tensor(" if ref.is_in else "add_tensor("
             ret_str += f"{ref.src_cpp_name}.sizes().vec(), "
@@ -390,14 +413,29 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
             else:
                 op_create_code += (
                     f"{ref.name}.value, "
-                    if (ref.is_in and not self.prepack_ref(ref)) or ref.is_out
+                    if ref.is_in or ref.requires_prepack or ref.is_out
                     else f"{ref.name}, "
                 )
+                # op_create_code += f"{ref.name}, "
 
         op_create_code += "out_ref});\n"
         return op_create_code
 
-    def set_output(self, ref: ValueRefList) -> str:
+    def gen_output_staging_valueref_decl(self, ref: ValueRefList) -> str:
+        if isinstance(ref, list):
+            ret_str = ""
+            for r in ref[:-1]:
+                ret_str += self.gen_output_staging_valueref_decl(r)
+            return ret_str
+        elif ref.src_cpp_type == TENSOR_VECTOR:
+            assert ref.is_out
+            ret_str = ""
+            return ret_str
+
+        assert ref.src_cpp_type == AT_TENSOR and ref.is_out
+        return f"ValueRef {ref.name}_staging;\n"
+
+    def set_output(self, ref: ValueRefList, include_declarations: bool = True) -> str:
         if isinstance(ref, list):
             ret_str = ""
             for r in ref[:-1]:
@@ -414,7 +452,8 @@ for (int i=0; i<out.size(); i++) {{
             return ret_str
 
         assert ref.src_cpp_type == AT_TENSOR and ref.is_out
-        ret_str = f"ValueRef {ref.name}_staging = {self.graph}{self.dot}"
+        cpptype = "ValueRef" if include_declarations else ""
+        ret_str = f"{cpptype} {ref.name}_staging = {self.graph}{self.dot}"
         ret_str += f"set_output_tensor({ref.name});\n"
         return ret_str
 
@@ -532,15 +571,28 @@ for (int i=0; i<out.size(); i++) {{
 
     ## Top level code generation
 
-    def gen_graph_build_code(self) -> str:
-        graph_build = self.create_out_src()
+    def gen_arg_valueref_decls(self) -> str:
+        ret_str = ""
         for aten_arg in self.args:
-            graph_build += self.create_value_for(self.refs[aten_arg.name])
+            ref = self.refs[aten_arg.name]
+            ret_str += self.create_value_decl_for(ref)
 
-        graph_build += self.create_value_for(self.refs["out"])
+        ret_str += self.create_value_decl_for(self.refs["out"])
+        ret_str += f"{self.out.cpp_type} out;\n"
+        ret_str += self.gen_output_staging_valueref_decl(self.refs["out"])
+        return ret_str
+
+    def gen_graph_build_code(self, include_declarations: bool = True) -> str:
+        graph_build = self.create_out_src(include_declarations)
+        for aten_arg in self.args:
+            graph_build += self.create_value_for(
+                self.refs[aten_arg.name], include_declarations
+            )
+
+        graph_build += self.create_value_for(self.refs["out"], include_declarations)
         graph_build += self.create_op_call()
 
-        graph_build += self.set_output(self.refs["out"])
+        graph_build += self.set_output(self.refs["out"], include_declarations)
 
         graph_build += f"{self.graph}{self.dot}prepare();\n"
         graph_build += f"{self.graph}{self.dot}encode_prepack();\n"
@@ -550,7 +602,7 @@ for (int i=0; i<out.size(); i++) {{
         graph_build += "\n"
         return graph_build
 
-    def gen_graph_exec_code(self) -> str:
+    def gen_graph_exec_code(self, check_output=True) -> str:
         graph_exec = ""
         for aten_arg in self.args:
             ref = self.refs[aten_arg.name]
@@ -563,26 +615,27 @@ for (int i=0; i<out.size(); i++) {{
 
         graph_exec += self.declare_vk_out_for(self.refs["out"])
         graph_exec += self.copy_from_staging(self.refs["out"])
-        graph_exec += self.check_graph_out(self.refs["out"])
+        if check_output:
+            graph_exec += self.check_graph_out(self.refs["out"])
 
         graph_exec = re.sub(r"^", "  ", graph_exec, flags=re.M)
         graph_exec = "{\n" + graph_exec + "\n}"
 
         return graph_exec
 
-    def gen_conditional_skips(self) -> str:
+    def gen_conditional_skips(self, skip_str: str = "GTEST_SKIP();") -> str:
         fp16_skip = f"if (!{self.graph}{self.dot}context()->adapter_ptr()->has_full_float16_buffers_support()) {{\n"
-        fp16_skip += "  GTEST_SKIP();\n"
+        fp16_skip += f"  {skip_str}\n"
         fp16_skip += "}"
         fp16_skip = re.sub(r"^", "  ", fp16_skip, flags=re.M) + "\n"
 
         int8_skip = f"if (!{self.graph}{self.dot}context()->adapter_ptr()->has_full_int8_buffers_support()) {{\n"
-        int8_skip += "  GTEST_SKIP();\n"
+        int8_skip += f"  {skip_str};\n"
         int8_skip += "}\n"
 
         skips = ""
 
-        skips = "if (test_dtype == at::kHalf) {\n"
+        skips += "if (test_dtype == at::kHalf) {\n"
         skips += fp16_skip
         skips += "}\n"
 
@@ -612,146 +665,32 @@ for (int i=0; i<out.size(); i++) {{
 
         return op_check_fn
 
+    def gen_build_graph_fn(self, include_declarations: bool = False) -> str:
+        op_name = self.f.func.name.unambiguous_name()
+        op_build_graph_fn = self.gen_decl(f"build_graph_{op_name}") + " {\n"
+        if self.should_prepack:
+            op_build_graph_fn = (
+                self.gen_decl(f"prepacked_build_graph_{op_name}") + " {\n"
+            )
 
-##################################
-## Test Fixture Code Generation ##
-##################################
+        op_build_graph_fn_body = ""
+        op_build_graph_fn_body += self.gen_graph_build_code(include_declarations)
 
-test_fixture_template = """
-class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple<at::ScalarType, utils::StorageType, utils::GPUMemoryLayout>> {{
- protected:
-  ComputeGraph* graph;
-  at::ScalarType test_dtype = at::kFloat;
-  float rtol = {rtol};
-  float atol = {atol};
+        op_build_graph_fn += op_build_graph_fn_body
+        op_build_graph_fn += "\n  }"
+        return op_build_graph_fn
 
-  void SetUp() override {{
-    GraphConfig config;
-    utils::StorageType default_storage_type;
-    utils::GPUMemoryLayout default_memory_layout;
-    std::tie(test_dtype, default_storage_type, default_memory_layout) = GetParam();
-    config.set_storage_type_override(default_storage_type);
-    config.set_memory_layout_override(default_memory_layout);
-    graph = new ComputeGraph(config);
+    def gen_op_exec_graph_fn(self) -> str:
+        op_name = self.f.func.name.unambiguous_name()
+        op_benchmark_fn = self.gen_decl(f"benchmark_{op_name}") + " {\n"
+        if self.should_prepack:
+            op_benchmark_fn = self.gen_decl(f"prepacked_benchmark_{op_name}") + " {\n"
 
-    if (test_dtype == at::kHalf) {{
-      rtol = 1e-2;
-      atol = 1e-2;
-    }}
-  }}
+        op_benchmark_fn_body = ""
+        op_benchmark_fn_body += self.gen_graph_exec_code(False)
 
-  void TearDown() override {{
-    delete graph;
-    graph = nullptr;
-  }}
+        op_benchmark_fn_body = re.sub(r"^", "    ", op_benchmark_fn_body, flags=re.M)
 
-  {check_fn}
-}};
-"""
-
-
-class VkTestSuiteGen(TestSuiteGen):
-    def __init__(self, op_reg_name: str, f: NativeFunction, inputs: VkTestSuite):
-        super().__init__(f, inputs)
-        self.op_reg_name = op_reg_name
-        self.generator = ComputeGraphGen(self.op_reg_name, self.f, self.suite_def)
-
-    def generate_fixture_cpp(self) -> str:
-        check_fn = ""
-        if not self.suite_def.requires_prepack:
-            check_fn = self.generator.gen_op_check_fn()
-
-        prepacked_check_fn = ""
-        if self.suite_def.supports_prepack():
-            self.generator.should_prepack = True
-            prepacked_check_fn = self.generator.gen_op_check_fn()
-            check_fn += "\n\n  "
-            check_fn += prepacked_check_fn
-
-        return test_fixture_template.format(
-            op_name=self.op_name,
-            check_fn=check_fn,
-            rtol=self.suite_def.rtol,
-            atol=self.suite_def.atol,
-        )
-
-    def gen_parameterization(self) -> str:
-        dtypes = self.suite_def.dtypes
-        storage_types = self.suite_def.storage_types
-        layouts = self.suite_def.layouts
-
-        return f"""
-INSTANTIATE_TEST_SUITE_P(
-  Combos_{self.op_name},
-  GeneratedOpsTest_{self.op_name},
-    ::testing::Combine(
-      ::testing::Values({', '.join(dtypes)}),
-      ::testing::Values({', '.join(storage_types)}),
-      ::testing::Values({', '.join(layouts)})));
-        """
-
-
-##############################
-## Test File Code Generation ##
-###############################
-
-preamble_str = """
-#include <executorch/backends/vulkan/runtime/api/api.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
-#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
-
-#include <tuple>
-
-using namespace vkcompute;
-using TensorOptions = at::TensorOptions;
-
-vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
-  switch (at_scalartype) {
-    case c10::kFloat:
-      return vkapi::kFloat;
-    case c10::kHalf:
-      return vkapi::kHalf;
-    case c10::kInt:
-      return vkapi::kInt;
-    case c10::kLong:
-      return vkapi::kInt;
-    case c10::kChar:
-      return vkapi::kChar;
-    default:
-      VK_THROW("Unsupported at::ScalarType!");
-  }
-}
-
-#ifdef USE_VULKAN_FP16_INFERENCE
-bool check_close(at::Tensor& t1, at::Tensor& t2, float rtol=1e-2, float atol=1e-2) {
-#else
-bool check_close(at::Tensor& t1, at::Tensor& t2, float rtol=1e-5, float atol=1e-5) {
-#endif
-  // Skip checking index tensors
-  if (t1.scalar_type() == at::kLong || t2.scalar_type() == at::kLong) {
-    return true;
-  }
-  bool is_close = at::allclose(t1, t2, rtol, atol);
-  if (!is_close && t1.numel() < 500) {
-    std::cout << "reference: " << std::endl;
-    print(t1, 150);
-    std::cout << std::endl;
-    std::cout << "vulkan: " << std::endl;
-    print(t2, 150);
-    std::cout << std::endl;
-  }
-  return is_close;
-}
-"""
-
-
-class VkCppTestFileGen(CppTestFileGen):
-    def __init__(self, out_path: str):
-        super().__init__(out_path)
-
-    def generate_preamble(self) -> str:
-        return preamble_str
-
-    def add_suite(self, op_reg_name: str, f: NativeFunction, all_input_cases) -> None:
-        suites_gen = VkTestSuiteGen(op_reg_name, f, all_input_cases)
-        self.suites_gens.append(suites_gen)
+        op_benchmark_fn += op_benchmark_fn_body
+        op_benchmark_fn += "\n  }"
+        return op_benchmark_fn
