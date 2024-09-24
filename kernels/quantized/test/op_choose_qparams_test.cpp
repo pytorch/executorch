@@ -11,7 +11,7 @@
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
-#include <executorch/runtime/platform/runtime.h>
+
 #include <executorch/test/utils/DeathTest.h>
 
 #include <gtest/gtest.h>

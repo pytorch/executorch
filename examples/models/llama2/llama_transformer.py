@@ -177,10 +177,7 @@ class KVCache(nn.Module):
             start_pos = input_pos[0].item()
             torch._check_is_size(start_pos)
             torch._check(start_pos < self.max_seq_length)
-            if self.transpose_cache:
-                dim_to_slice = 2
-            else:
-                dim_to_slice = 1
+            dim_to_slice = 2 if self.transpose_cache else 1
             seq_length = k_val.size(dim_to_slice)
             # Replace the entry in the cache for this token
             # The following lines are equivalent to:
