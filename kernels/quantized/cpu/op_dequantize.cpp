@@ -191,7 +191,7 @@ Tensor& dequantize_per_channel_out(
 
   ET_CHECK_MSG(
       scale.scalar_type() == ScalarType::Double,
-      "scale.scalar_type() %" PRId8 " is not float type",
+      "scale.scalar_type() %" PRId8 " is not double type",
       static_cast<int8_t>(scale.scalar_type()));
 
   ET_CHECK_MSG(
@@ -397,9 +397,7 @@ Tensor& dequantize_per_token_out(
 // This unfortunate change is needed because we compile op_quantize for aten
 // mode as well
 #ifdef USE_ATEN_LIB
-  std::vector<int64_t> sizes(2);
-  sizes[0] = num_channels;
-  sizes[1] = input.size(input.dim() - 1);
+  const std::array<int64_t, 2> sizes = {{num_channels, input.dim() - 1}};
   Tensor reshaped_input = at::from_blob(
       input.mutable_data_ptr(), sizes, at::TensorOptions(input.scalar_type()));
 #else
