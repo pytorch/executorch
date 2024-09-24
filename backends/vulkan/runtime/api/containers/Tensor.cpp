@@ -707,8 +707,7 @@ void vTensor::virtual_transpose(const int64_t dim0, const int64_t dim1) {
   const int dim1_whcn = sizes_.size() - 1 - dim1;
   if (packed_dim_ == dim0_whcn) {
     packed_dim_ = dim1_whcn;
-  }
-  if (packed_dim_ == dim1_whcn) {
+  } else if (packed_dim_ == dim1_whcn) {
     packed_dim_ = dim0_whcn;
   }
 
@@ -719,6 +718,12 @@ void vTensor::virtual_transpose(const int64_t dim0, const int64_t dim1) {
     VK_CHECK_COND(dim0_whcn < 3 && dim1_whcn < 3);
     std::iter_swap(
         axis_map_.begin() + dim0_whcn, axis_map_.begin() + dim1_whcn);
+    // Update the "identity" of the concatted dimension
+    if (axis_map_.at(3) == dim0_whcn) {
+      axis_map_.at(3) = dim1_whcn;
+    } else if (axis_map_.at(3) == dim1_whcn) {
+      axis_map_.at(3) = dim0_whcn;
+    }
   }
   update_metadata();
 }
