@@ -371,6 +371,28 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--spin_qmode",
+        type=str,
+        default=None,
+        choices=["8da4w"],
+        help="Quantization mode for SpinQuant. Only support 8da4w right now.",
+    )
+
+    parser.add_argument(
+        "--spin_group_size",
+        type=int,
+        default=32,
+        help="group_size for SpinQuant weight quantization",
+    )
+
+    parser.add_argument(
+        "--spin_embedding_quantize",
+        default="8,0",
+        type=str,
+        help="type of embedding quantization for SpinQuant, '<bitwidth>,<groupsize>', e.g., '8,1024'.",
+    )
+
+    parser.add_argument(
         "--output_prune_map",
         default=None,
         help="path to the output pruning token mapping file (token_map.json)",
@@ -466,10 +488,10 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             max_seq_len=args.max_seq_length,
             output_prune_map_path=args.output_prune_map,
             metadata_str=args.metadata,
+            dtype_override=dtype_override,
             args=args,
         )
         .set_output_dir(output_dir_path)
-        .to_dtype(dtype_override)
         .source_transform(_get_source_transforms(modelname, dtype_override, args))
     )
 
@@ -691,6 +713,7 @@ def _load_llama_model(
     max_seq_len: int = 128,
     output_prune_map_path: Optional[str] = None,
     metadata_str: Optional[str] = None,
+    dtype_override: Optional[DType] = None,
     args,
 ) -> "LLMEdgeManager":
     """
@@ -720,23 +743,32 @@ def _load_llama_model(
         output_prune_map_path=output_prune_map_path,
         args=args,
     )
-    state_dict = model.state_dict()
-    dtype = state_dict[next(iter(state_dict))].dtype
-    assert dtype in [
-        torch.bfloat16,
-        torch.float16,
-        torch.float32,
-    ], f"Only support bfloat16, fp16 or fp32 got {dtype}"
-    logging.info(f"Loaded model with dtype={dtype}")
-
-    if dtype == torch.bfloat16:
-        dtype = DType.bf16
-    elif dtype == torch.float16:
-        dtype = DType.fp16
-    elif dtype == torch.float32:
-        dtype = DType.fp32
+    if dtype_override:
+        assert isinstance(
+            dtype_override, DType
+        ), "Override dtype needs to be of type <DType>"
+        torch_dtype = dtype_override.to_torch_dtype()
+        logging.info(f"model.to {torch_dtype}")
+        model = model.to(dtype=torch_dtype)
+        dtype = dtype_override
     else:
-        raise ValueError(f"Unsupported dtype {dtype}")
+        state_dict = model.state_dict()
+        dtype = state_dict[next(iter(state_dict))].dtype
+        assert dtype in [
+            torch.bfloat16,
+            torch.float16,
+            torch.float32,
+        ], f"Only support bfloat16, fp16 or fp32 got {dtype}"
+        logging.info(f"Loaded model with dtype={dtype}")
+
+        if dtype == torch.bfloat16:
+            dtype = DType.bf16
+        elif dtype == torch.float16:
+            dtype = DType.fp16
+        elif dtype == torch.float32:
+            dtype = DType.fp32
+        else:
+            raise ValueError(f"Unsupported dtype {dtype}")
 
     return LLMEdgeManager(
         model=model,
@@ -769,21 +801,9 @@ def _get_source_transforms(  # noqa
     modelname: str, dtype_override: Optional[DType], args
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
     transforms = []
-    if args.quantization_mode:
-        modelname = f"{modelname}_q"
-        if args.use_spin_quant is None:
-            transforms.append(
-                get_quant_weight_transform(args, dtype_override, verbose_export())
-            )
-        # For SpinQuant, the checkpoints are already quantized
-        # aka the weights have corresponding scales value,
-        # So that means, we don't need to apply quantization
-        # transform. However, we will still need to apply
-        # transformations that change the model structure to
-        # match the checkpoint format.
-        # transform_for_spinquant() will apply these transformations
-        # later in model.py file.
-        elif args.use_spin_quant == "cuda":
+
+    if args.use_spin_quant:
+        if args.use_spin_quant == "cuda":
             from .source_transformation.spin_quant import (
                 inject_fast_hadamard_transform_cuda_for_spin_quant,
             )
@@ -796,7 +816,35 @@ def _get_source_transforms(  # noqa
 
             transforms.append(inject_fast_hadamard_transform_native_for_spin_quant)
 
+    if args.quantization_mode:
+        """
+        When this option is selected, it finds all linear layers and transforms
+        into quantized linear equivalent module.
+
+        There are cases where the checkpoint is already quantized, for example
+        on use_spin_quant is enabled. In that case, it will do the appropriate
+        transformations based on the given checkpoint first. In those cases,
+        if quantization_mode is enabled, it will quantize any remaining linear
+        ops that is not quantized.
+
+        There are cases where this may be a no-op, namely, if all linears are
+        quantized in the checkpoint.
+        """
+        modelname = f"{modelname}_q"
+        transforms.append(
+            get_quant_weight_transform(args, dtype_override, verbose_export())
+        )
+
     if args.embedding_quantize:
+        """
+        When this option is selected, it finds all embedding layers and transforms
+        into quantized embedding equivalent module.
+
+        There are cases where the checkpoint is already quantized, for example
+        on use_spin_quant is enabled. In that case, it will do the appropriate
+        transformations based on the given checkpoint first. In those cases,
+        this wil be a no-op.
+        """
         modelname = f"{modelname}_e"
         transforms.append(get_quant_embedding_transform(args))
 
