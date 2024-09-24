@@ -19,6 +19,19 @@ Link your binary with the ExecuTorch runtime and any backends or kernels used by
 
 ## Integration
 
+### Setup
+
+#### CMake
+
+Building the Xcode project requires CMake. Installing via homebrew does not
+typically work; instead, install the packaged application and commandline tools
+globally:
+
+1. Download the macOS `.dmg` installer from https://cmake.org/download
+2. Open the `.dmg`
+3. Drag the CMake app to the `/Applications` folder
+4. In a terminal, install the command line tools: `sudo /Applications/CMake.app/Contents/bin/cmake-gui --install`
+
 ### Swift Package Manager
 
 The prebuilt ExecuTorch runtime, backend, and kernels are available as a [Swift PM](https://www.swift.org/documentation/package-manager/) package.
