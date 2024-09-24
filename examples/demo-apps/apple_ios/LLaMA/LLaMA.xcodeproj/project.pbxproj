@@ -864,7 +864,7 @@
 				OTHER_LDFLAGS = "";
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-ios-debug.a",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_optimized-ios-debug.a",
 					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-ios-debug.a",
 					"-force_load",
@@ -878,7 +878,7 @@
 				);
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-simulator-debug.a",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_optimized-simulator-debug.a",
 					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-simulator-debug.a",
 					"-force_load",
@@ -926,7 +926,7 @@
 				OTHER_LDFLAGS = "";
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-ios-release.a",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_optimized-ios-release.a",
 					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-ios-release.a",
 					"-force_load",
@@ -940,7 +940,7 @@
 				);
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-simulator-release.a",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_optimized-simulator-release.a",
 					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-simulator-release.a",
 					"-force_load",
@@ -1097,6 +1097,8 @@
 				MARKETING_VERSION = 1.0;
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
 					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_optimized-ios-debug.a",
+					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-ios-debug.a",
 					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-ios-debug.a",
@@ -1110,6 +1112,8 @@
 					"$(BUILT_PRODUCTS_DIR)/libbackend_mps-ios-debug.a",
 				);
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_optimized-simulator-debug.a",
 					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-simulator-debug.a",
 					"-force_load",
