@@ -175,10 +175,13 @@ class TestCollateTosaTests(unittest.TestCase):
         )
         # test that the output directory is created and contains the expected files
         assert os.path.exists(
-            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/output.tosa"
+            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests"
         )
         assert os.path.exists(
-            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/desc.json"
+            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/output_tag8.tosa"
+        )
+        assert os.path.exists(
+            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/desc_tag8.json"
         )
 
         os.environ.pop("TOSA_TESTCASES_BASE_PATH")
