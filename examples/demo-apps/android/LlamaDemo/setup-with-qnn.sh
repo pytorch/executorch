@@ -15,6 +15,9 @@ cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
   -DEXECUTORCH_BUILD_XNNPACK=ON \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+  -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
   -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
   -DEXECUTORCH_BUILD_QNN=ON \
   -DQNN_SDK_ROOT="${QNN_SDK_ROOT}" \
@@ -28,20 +31,14 @@ else
 fi
 cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config Release
 
-cmake examples/models/llama2 \
-         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
-         -DANDROID_ABI="$ANDROID_ABI" \
-         -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
-         -DCMAKE_BUILD_TYPE=Release \
-         -B"${CMAKE_OUT}"/examples/models/llama2
-
-cmake --build "${CMAKE_OUT}"/examples/models/llama2 -j "${CMAKE_JOBS}" --config Release
-
 cmake extension/android \
   -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
   -DANDROID_ABI="${ANDROID_ABI}" \
   -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
   -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+  -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
   -DCMAKE_BUILD_TYPE=Release \
   -B"${CMAKE_OUT}"/extension/android
 
@@ -53,7 +50,7 @@ mkdir -p "${JNI_LIBS_PATH}/${ANDROID_ABI}"
 BUILD_AAR_DIR="$(mktemp -d)"
 mkdir -p "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}" "${BUILD_AAR_DIR}/libs"
 JNI_LIBS_PATH="${BUILD_AAR_DIR}/jni"
-cp "${CMAKE_OUT}"/extension/android/libexecutorch_llama_jni.so "${JNI_LIBS_PATH}/${ANDROID_ABI}/"
+cp "${CMAKE_OUT}"/extension/android/libexecutorch_jni.so "${JNI_LIBS_PATH}/${ANDROID_ABI}/libexecutorch.so"
 cp "${CMAKE_OUT}"/lib/libqnn_executorch_backend.so "${JNI_LIBS_PATH}/${ANDROID_ABI}/"
 cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnHtp.so "${JNI_LIBS_PATH}/${ANDROID_ABI}/"
 cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnSystem.so "${JNI_LIBS_PATH}/${ANDROID_ABI}/"

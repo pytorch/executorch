@@ -78,7 +78,8 @@ function(generate_bindings_for_kernels)
   # Executorch runtime.
   execute_process(
     COMMAND
-      "${PYTHON_EXECUTABLE}" -c "from distutils.sysconfig import get_python_lib;print(get_python_lib())"
+      "${PYTHON_EXECUTABLE}" -c
+      "from distutils.sysconfig import get_python_lib;print(get_python_lib())"
     OUTPUT_VARIABLE site-packages-out
     ERROR_VARIABLE site-packages-out-error
     RESULT_VARIABLE site-packages-result
@@ -150,9 +151,8 @@ function(gen_custom_ops_aot_lib)
   include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
   target_link_options_shared_lib(${GEN_LIB_NAME})
-  if(EXECUTORCH_BUILD_PYBIND AND APPLE)
-    target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_no_prim_ops)
-    target_link_options(${GEN_LIB_NAME} PRIVATE -undefined dynamic_lookup)
+  if(TARGET portable_lib)
+    target_link_libraries(${GEN_LIB_NAME} PRIVATE portable_lib)
   else()
     target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_no_prim_ops)
   endif()

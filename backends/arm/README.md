@@ -9,7 +9,7 @@ The expected flow is:
  * torch.nn.module -> TOSA -> command_stream for fully AoT flows e.g. embedded.
  * torch.nn.module -> TOSA for flows supporting a JiT compilation step.
 
-Current backend support is being developed for TOSA to Ethos(TM)-U55/65 via the
+Current backend support is being developed for TOSA to Ethos(TM)-U55/65/85 via the
 ethos-u-vela compilation stack. which follows the fully AoT flow.
 
 ## Layout
@@ -33,7 +33,7 @@ Quantization:
 - `arm_quantizer_utils.py` - Utilities for quantization
 
 Runtime:
-- `runtime/ArmBackendEthosU.cpp` - The Arm backend implementation of the ExecuTorch runtime backend (PyTorchBackendInterface) for Ethos-U
+- `runtime/ArmBackendEthosU.cpp` - The Arm backend implementation of the ExecuTorch runtime backend (BackendInterface) for Ethos-U
 
 Other:
 - `third-party/` - Dependencies on other code - in particular the TOSA serialization_lib for compiling to TOSA and the ethos-u-core-driver for the bare-metal backend supporting Ethos-U

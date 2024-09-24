@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import tempfile
 
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -265,9 +266,12 @@ class RunnerUtil:
             raise RuntimeError(
                 f"Corstone simulation failed, log: \n {result_stdout}\n{result.stderr.decode()}"
             )
+        elif "E [" in result_stdout:
+            logger.error(result_stdout)
 
         tosa_ref_output = np.fromfile(out_path_with_suffix, dtype=np.float32)
-        tosa_ref_output = torch.from_numpy(tosa_ref_output).reshape(inputs[0].shape)
+        output_shape = self.output_node.args[0][0].meta["val"].shape
+        tosa_ref_output = torch.from_numpy(tosa_ref_output).reshape(output_shape)
         return [tosa_ref_output]
 
     def run_tosa_ref_model(
@@ -322,7 +326,18 @@ class RunnerUtil:
             self._has_init_run
         ), "RunnerUtil needs to be initialized using init_run() before running tosa reference."
 
-        desc_file_path = os.path.join(self.intermediate_path, "desc.json")
+        all_desc_file_paths = [
+            str(path) for path in Path(self.intermediate_path).glob("desc*.json")
+        ]
+        assert (
+            all_desc_file_paths
+        ), f"No TOSA description file found in '{self.intermediate_path}'."
+        if len(all_desc_file_paths) != 1:
+            raise NotImplementedError(
+                "Graphs with more than one partition are currently not supported."
+            )
+
+        desc_file_path = all_desc_file_paths[0]
         assert os.path.exists(
             desc_file_path
         ), f"desc_file_path: {desc_file_path} does not exist"

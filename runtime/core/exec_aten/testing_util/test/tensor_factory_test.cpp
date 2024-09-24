@@ -449,7 +449,7 @@ TEST_F(TensorFactoryTest, MakeStridedDataIsCopied) {
 
   // Create two tensors using the same input data and strided vector.
   std::vector<int32_t> data = {1, 2, 3, 4};
-  std::vector<int32_t> strides = {1, 2};
+  std::vector<exec_aten::StridesType> strides = {1, 2};
   Tensor t1 = tf.make(/*sizes=*/{2, 2}, data, strides);
   Tensor t2 = tf.make(/*sizes=*/{2, 2}, data, strides);
 

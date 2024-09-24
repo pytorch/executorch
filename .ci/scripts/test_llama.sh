@@ -11,7 +11,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 MODEL_NAME=$1 # stories110M
 BUILD_TOOL=$2 # buck2 or cmake
-DTYPE=$3 # fp16 or fp32
+DTYPE=$3 # fp16, bf16, or fp32
 MODE=${4:-"xnnpack+custom"} # portable or xnnpack+custom or xnnpack+custom+qe
 UPLOAD_DIR=${5:-}
 if [[ $# -lt 4 ]]; then # Assuming 4 mandatory args
@@ -29,7 +29,7 @@ if [[ -z "${BUILD_TOOL:-}" ]]; then
 fi
 
 if [[ -z "${DTYPE:-}" ]]; then
-  echo "Missing dtype, choose fp16 or fp32, exiting..."
+  echo "Missing dtype, choose fp16, bf16, or fp32, exiting..."
   exit 1
 fi
 
@@ -75,7 +75,7 @@ echo "COREML option ${COREML}"
 if [[ "${MODE}" =~ .*qnn.* ]]; then
   QNN=ON
   export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-  export QNN_SDK_ROOT=/tmp/qnn/2.23.0.240531
+  export QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728
   export LD_LIBRARY_PATH="${QNN_SDK_ROOT}/lib/x86_64-linux-clang"
   export PYTHONPATH=".."
   cp schema/program.fbs exir/_serialize/program.fbs
@@ -107,8 +107,9 @@ cmake_install_executorch_libraries() {
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Debug \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM="$CUSTOM" \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
@@ -173,6 +174,8 @@ fi
 EXPORTED_MODEL_NAME="llama2"
 if [[ "${DTYPE}" == "fp16" ]]; then
   EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}_h"
+elif [[ "${DTYPE}" == "bf16" ]]; then
+  EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}_bf"
 elif [[ "${DTYPE}" == "fp32" ]]; then
   :
 else

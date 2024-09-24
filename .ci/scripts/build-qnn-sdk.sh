@@ -6,11 +6,12 @@
 # LICENSE file in the root directory of this source tree.
 
 set -eux
+set -o xtrace
 
 build_qnn_backend() {
   echo "Start building qnn backend."
   export ANDROID_NDK_ROOT=/opt/ndk
-  export QNN_SDK_ROOT=/tmp/qnn/2.23.0.240531
+  export QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728
   export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
   bash backends/qualcomm/scripts/build.sh --skip_aarch64 --job_number 2 --release
@@ -26,8 +27,9 @@ set_up_aot() {
       -DCMAKE_INSTALL_PREFIX=$PWD \
       -DEXECUTORCH_BUILD_QNN=ON \
       -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
-      -DEXECUTORCH_BUILD_SDK=ON \
+      -DEXECUTORCH_BUILD_DEVTOOLS=ON \
       -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+      -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
       -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
       -DPYTHON_EXECUTABLE=python3 \
       -DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=OFF

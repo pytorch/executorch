@@ -1,0 +1,115 @@
+version: 0.1
+
+android_test_host: amazon_linux_2
+
+phases:
+  install:
+    commands:
+
+  pre_test:
+    commands:
+      # Prepare the model and the tokenizer
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /sdcard/"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "mkdir -p /data/local/tmp/minibench/"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.bin /data/local/tmp/minibench/"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.pte /data/local/tmp/minibench/"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/minibench/*.bin"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/minibench/*.pte"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /data/local/tmp/minibench/"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "run-as org.pytorch.minibench rm -rf files"
+
+  test:
+    commands:
+      # By default, the following ADB command is used by Device Farm to run your Instrumentation test.
+      # Please refer to Android's documentation for more options on running instrumentation tests with adb:
+      # https://developer.android.com/studio/test/command-line#run-tests-with-adb
+
+      # Run the Instrumentation test for sanity check
+      - echo "Starting the Instrumentation test"
+      - |
+        adb -s $DEVICEFARM_DEVICE_UDID shell "am instrument -r -w --no-window-animation \
+        $DEVICEFARM_TEST_PACKAGE_NAME/$DEVICEFARM_TEST_PACKAGE_RUNNER 2>&1 || echo \": -1\"" |
+        tee $DEVICEFARM_LOG_DIR/instrument.log
+
+      # Parse the results
+      - |-
+        INSTRUMENT_LOG="$DEVICEFARM_LOG_DIR/instrument.log"
+
+        DID_ANY_TESTS_START=$(grep "INSTRUMENTATION_STATUS_CODE: 1" $INSTRUMENT_LOG | wc -l);
+        TESTS_PASSED=$(grep "INSTRUMENTATION_STATUS_CODE: 0" $INSTRUMENT_LOG | wc -l);
+        TESTS_ERRORED=$(grep "INSTRUMENTATION_STATUS_CODE: -1" $INSTRUMENT_LOG | wc -l);
+        TESTS_FAILED=$(grep "INSTRUMENTATION_STATUS_CODE: -2" $INSTRUMENT_LOG | wc -l);
+        TESTS_IGNORED=$(grep "INSTRUMENTATION_STATUS_CODE: -3" $INSTRUMENT_LOG | wc -l);
+        TESTS_ASSUMPTION_FAILED=$(grep "INSTRUMENTATION_STATUS_CODE: -4" $INSTRUMENT_LOG | wc -l);
+        TESTS_PROCESSES_CRASHED=$(grep "INSTRUMENTATION_RESULT: shortMsg=Process crashed." $INSTRUMENT_LOG | wc -l);
+
+      # And print the results so that the CI job can show them later
+      - |
+        INSTRUMENT_LOG="$DEVICEFARM_LOG_DIR/instrument.log"
+
+        if [ $DID_ANY_TESTS_START -eq 0 ];
+        then
+          echo "[PyTorch] Marking the test suite as failed because no tests started!";
+          false;
+        elif [ $TESTS_FAILED -ne 0 ];
+        then
+          echo "[PyTorch] Marking the test suite as failed because it failed to load the model";
+          false;
+        elif [ $TESTS_ERRORED -ne 0 ];
+        then
+          echo "[PyTorch] Marking the test suite as failed because $TESTS_ERRORED tests errored!";
+          false;
+        elif [ $TESTS_PROCESSES_CRASHED -ne 0 ];
+        then
+          echo "[PyTorch] Marking the test suite as failed because the app crashed due to OOM!";
+          false;
+        # Check for this last to make sure that there is no failure
+        elif [ $TESTS_PASSED -ne 0 ];
+        then
+          cat "${INSTRUMENT_LOG}"
+        fi;
+
+      # Run the new generic benchmark activity https://developer.android.com/tools/adb#am
+      - echo "Determine model type"
+      - |
+        BIN_FOUND="$(adb -s $DEVICEFARM_DEVICE_UDID shell find /data/local/tmp/minibench/ -name '*.bin')"
+        if [ -z "$BIN_FOUND" ]; then
+          echo "No tokenizer files found in /data/local/tmp/minibench/"
+        else
+          echo "tokenizer files found in /data/local/tmp/minibench/"
+        fi
+
+      - echo "Run benchmark"
+      - |
+        adb -s $DEVICEFARM_DEVICE_UDID shell am force-stop org.pytorch.minibench
+        if [ -z "$BIN_FOUND" ]; then
+          adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.BenchmarkActivity \
+            --es "model_dir" "/data/local/tmp/minibench"
+        else
+          adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.LlmBenchmarkActivity \
+            --es "model_dir" "/data/local/tmp/minibench" \
+            --es "tokenizer_path" "/data/local/tmp/minibench/tokenizer.bin"
+        fi
+
+
+  post_test:
+    commands:
+      - echo "Gather benchmark results"
+      - |
+        BENCHMARK_RESULTS=$(adb -s $DEVICEFARM_DEVICE_UDID shell run-as org.pytorch.minibench cat files/benchmark_results.json)
+        ATTEMPT=0
+        MAX_ATTEMPT=10
+        while [ -z "${BENCHMARK_RESULTS}" ] && [ $ATTEMPT -lt $MAX_ATTEMPT ]; do
+          echo "Waiting for benchmark results..."
+          BENCHMARK_RESULTS=$(adb -s $DEVICEFARM_DEVICE_UDID shell run-as org.pytorch.minibench cat files/benchmark_results.json)
+          sleep 30
+          ((ATTEMPT++))
+        done
+
+        adb -s $DEVICEFARM_DEVICE_UDID shell run-as org.pytorch.minibench ls -la files/
+        # Trying to pull the file using adb ends up with permission error, but this works too, so why not
+        echo "${BENCHMARK_RESULTS}" > $DEVICEFARM_LOG_DIR/benchmark_results.json
+
+artifacts:
+  # By default, Device Farm will collect your artifacts from the $DEVICEFARM_LOG_DIR directory.
+  - $DEVICEFARM_LOG_DIR

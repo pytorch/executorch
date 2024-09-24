@@ -27,8 +27,8 @@ template <
     typename CTYPE_OUT,
     typename std::enable_if<
         std::is_same<CTYPE_IN, CTYPE_OUT>::value &&
-            !std::is_same<CTYPE_IN, torch::executor::Half>::value &&
-            !std::is_same<CTYPE_OUT, torch::executor::Half>::value,
+            !std::is_same<CTYPE_IN, exec_aten::Half>::value &&
+            !std::is_same<CTYPE_OUT, exec_aten::Half>::value,
         int>::type = 0>
 void exp_data(
     const CTYPE_IN* in_data,
@@ -47,8 +47,8 @@ template <
     typename CTYPE_OUT,
     typename std::enable_if<
         !std::is_same<CTYPE_IN, CTYPE_OUT>::value ||
-            std::is_same<CTYPE_IN, torch::executor::Half>::value ||
-            std::is_same<CTYPE_OUT, torch::executor::Half>::value,
+            std::is_same<CTYPE_IN, exec_aten::Half>::value ||
+            std::is_same<CTYPE_OUT, exec_aten::Half>::value,
         int>::type = 0>
 void exp_data(
     const CTYPE_IN* in_data,
@@ -62,7 +62,7 @@ void exp_data(
 
 } // namespace
 
-Tensor& opt_exp_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& opt_exp_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape

@@ -1,0 +1,70 @@
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("papaya_oncall")
+
+python_library(
+    name = "model_loading_lib",
+    srcs = [
+        "model_loading_lib.py",
+    ],
+    deps = [
+        "fbcode//caffe2:torch",
+        "fbcode//executorch/examples/llm_pte_finetuning:training_lib",
+        "fbcode//executorch/exir:lib",
+        "fbcode//executorch/extension/pybindings:aten_lib",  # @manual For PTE loader
+        "fbcode//pytorch/torchtune:lib",
+        "fbsource//third-party/pypi/blobfile:blobfile",  # @manual For tokenizer
+        "fbsource//third-party/pypi/omegaconf:omegaconf",
+        "fbsource//third-party/pypi/tiktoken:tiktoken",  # @manual For tokenizer
+    ],
+)
+
+python_library(
+    name = "training_lib",
+    srcs = [
+        "training_lib.py",
+    ],
+    deps = [
+        "fbcode//caffe2:torch",
+        "fbcode//executorch/extension/pybindings:aten_lib",  # @manual For PTE loader
+        "fbcode//pytorch/torchtune:lib",
+        "fbsource//third-party/pypi/blobfile:blobfile",  # @manual For tokenizer
+        "fbsource//third-party/pypi/tiktoken:tiktoken",  # @manual For tokenizer
+        "fbsource//third-party/pypi/tqdm:tqdm",
+    ],
+)
+
+python_binary(
+    name = "runner",
+    srcs = [
+        "runner.py",
+    ],
+    main_function = "executorch.examples.llm_pte_finetuning.runner.main",
+    deps = [
+        "fbcode//caffe2:torch",
+        "fbcode//executorch/examples/llm_pte_finetuning:training_lib",
+        "fbcode//pytorch/torchtune:lib",
+        "fbsource//third-party/pypi/blobfile:blobfile",  # @manual For tokenizer
+        "fbsource//third-party/pypi/omegaconf:omegaconf",
+        "fbsource//third-party/pypi/tiktoken:tiktoken",  # @manual For tokenizer
+        "fbsource//third-party/pypi/tqdm:tqdm",
+    ],
+)
+
+python_binary(
+    name = "model_exporter",
+    srcs = [
+        "model_exporter.py",
+    ],
+    main_function = "executorch.examples.llm_pte_finetuning.model_exporter.main",
+    deps = [
+        "fbcode//caffe2:torch",
+        "fbcode//executorch/examples/llm_pte_finetuning:model_loading_lib",  # @manual for model loading
+        "fbcode//executorch/examples/llm_pte_finetuning:training_lib",  # @manual for model exporting
+        "fbcode//pytorch/torchtune:lib",
+        "fbsource//third-party/pypi/blobfile:blobfile",  # @manual For tokenizer
+        "fbsource//third-party/pypi/omegaconf:omegaconf",
+        "fbsource//third-party/pypi/tiktoken:tiktoken",  # @manual For tokenizer
+    ],
+)

@@ -9,7 +9,15 @@
 package org.pytorch.executorch;
 
 import com.facebook.jni.annotations.DoNotStrip;
+import org.pytorch.executorch.annotations.Experimental;
 
+/**
+ * Callback interface for Llama model. Users can implement this interface to receive the generated
+ * tokens and statistics.
+ *
+ * <p>Warning: These APIs are experimental and subject to change without notice
+ */
+@Experimental
 public interface LlamaCallback {
   /**
    * Called when a new result is available from JNI. Users will keep getting onResult() invocations

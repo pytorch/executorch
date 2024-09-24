@@ -214,7 +214,11 @@ if __name__ == "__main__":
         edge = edge.to_backend(
             ArmPartitioner(
                 ArmCompileSpecBuilder()
-                .ethosu_compile_spec("ethos-u55-128")
+                .ethosu_compile_spec(
+                    "ethos-u55-128",
+                    system_config="Ethos_U55_High_End_Embedded",
+                    memory_mode="Shared_Sram",
+                )
                 .set_permute_memory_format(
                     args.model_name in MODEL_NAME_TO_MODEL.keys()
                 )
@@ -226,9 +230,7 @@ if __name__ == "__main__":
 
     try:
         exec_prog = edge.to_executorch(
-            config=ExecutorchBackendConfig(
-                extract_delegate_segments=False, extract_constant_segment=False
-            )
+            config=ExecutorchBackendConfig(extract_delegate_segments=False)
         )
     except RuntimeError as e:
         if "Missing out variants" in str(e.args[0]):

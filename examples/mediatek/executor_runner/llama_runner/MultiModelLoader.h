@@ -12,7 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace torch::executor {
+namespace example {
 
 template <typename IdType = size_t>
 class MultiModelLoader {
@@ -92,4 +92,4 @@ class MultiModelLoader {
   IdType mCurrentModelId = 0;
 };
 
-} // namespace torch::executor
+} // namespace example

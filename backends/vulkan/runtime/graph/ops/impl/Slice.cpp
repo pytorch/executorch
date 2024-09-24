@@ -42,8 +42,8 @@ void add_slice_tensor_out_node(
   vTensorPtr t_in = graph.get_tensor(in);
   vTensorPtr t_out = graph.get_tensor(out);
 
-  VK_CHECK_COND(check_memory_layout_is(*t_in, utils::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(*t_out, utils::kChannelsPacked));
+  VK_CHECK_COND(check_packed_dim_is(*t_in, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_packed_dim_is(*t_out, WHCN::kChannelsDim));
 
   // Need normalize the dim
   int64_t dim = graph.extract_scalar<int64_t>(dim_ref);
@@ -123,7 +123,7 @@ void add_slice_tensor_out_node(
     kernel_name.reserve(kShaderNameReserve);
     add_dtype_suffix(kernel_name, *t_out);
 
-    utils::uvec3 global_size = t_out->image_extents();
+    utils::uvec3 global_size = t_out->logical_limits();
     utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
     const struct Block final {

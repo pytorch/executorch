@@ -8,7 +8,7 @@
 from collections import namedtuple
 from typing import Callable
 
-from executorch.backends.vulkan.test.op_tests.utils.codegen import VkTestSuite
+from executorch.backends.vulkan.test.op_tests.utils.test_suite import VkTestSuite
 
 
 # Prime numbers dim sizes for testing
@@ -49,6 +49,7 @@ def get_binary_elementwise_inputs():
             ((S, S1, S2), (S, S1, S2)),
             ((S, S1, S2), (S, S1, 1), 2.0),
             ((S, S1, S2), (S, 1, S2), 2.0),
+            ((XS, S, S1, S2), (XS, S, 1, 1), 2.0),
         ]
     )
     test_suite.layouts = [
@@ -878,6 +879,7 @@ def get_softmax_inputs():
         "aten.neg.default",
         "aten.cos.default",
         "aten.hardswish.default",
+        "aten.hardsigmoid.default",
     ]
 )
 def get_unary_ops_inputs():

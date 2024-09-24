@@ -16,6 +16,8 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
+using exec_aten::BFloat16;
+using exec_aten::Half;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
 
@@ -32,15 +34,22 @@ namespace {
  * T must be a floating point type. Non-floating point data should be compared
  * directly.
  */
-template <
-    typename T,
-    typename = std::enable_if_t<std::is_floating_point<T>::value>>
+template <typename T>
 bool data_is_close(
     const T* a,
     const T* b,
     size_t numel,
     double rtol,
     double atol) {
+  ET_CHECK_MSG(
+      numel == 0 || (a != nullptr && b != nullptr),
+      "Pointers must not be null when numel > 0: numel %zu, a 0x%p, b 0x%p",
+      numel,
+      a,
+      b);
+  if (a == b) {
+    return true;
+  }
   for (size_t i = 0; i < numel; i++) {
     const auto ai = a[i];
     const auto bi = b[i];
@@ -107,6 +116,20 @@ bool tensors_are_close(
     return data_is_close<double>(
         a.const_data_ptr<double>(),
         b.const_data_ptr<double>(),
+        a.numel(),
+        rtol,
+        atol);
+  } else if (a.scalar_type() == ScalarType::Half) {
+    return data_is_close<Half>(
+        a.const_data_ptr<Half>(),
+        b.const_data_ptr<Half>(),
+        a.numel(),
+        rtol,
+        atol);
+  } else if (a.scalar_type() == ScalarType::BFloat16) {
+    return data_is_close<BFloat16>(
+        a.const_data_ptr<BFloat16>(),
+        b.const_data_ptr<BFloat16>(),
         a.numel(),
         rtol,
         atol);
@@ -260,7 +283,7 @@ std::ostream& operator<<(std::ostream& os, const Tensor& t) {
     break;
 
   switch (t.scalar_type()) {
-    ET_FORALL_REAL_TYPES_AND2(Half, Bool, PRINT_CASE)
+    ET_FORALL_REAL_TYPES_AND3(Half, Bool, BFloat16, PRINT_CASE)
     default:
       ET_CHECK_MSG(
           false,

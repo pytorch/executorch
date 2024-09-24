@@ -29,7 +29,7 @@ void _to_impl(const Tensor& self, Tensor& out) {
 // to_copy.out(Tensor self, *, bool non_blocking=False, MemoryFormat?
 // memory_format=None, Tensor(a!) out) -> Tensor(a!)
 Tensor& to_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     bool non_blocking,
     exec_aten::optional<exec_aten::MemoryFormat> memory_format,
@@ -46,10 +46,16 @@ Tensor& to_copy_out(
       InvalidArgument,
       out);
 
-  ET_SWITCH_REALHB_TYPES(self.scalar_type(), ctx, "to_copy", CTYPE_IN, [&] {
-    ET_SWITCH_REALHB_TYPES(out.scalar_type(), ctx, "to_copy", CTYPE_OUT, [&] {
-      _to_impl<CTYPE_IN, CTYPE_OUT>(self, out);
-    });
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(self), InvalidArgument, out);
+
+  ET_SWITCH_REALHBBF16_TYPES(self.scalar_type(), ctx, "to_copy", CTYPE_IN, [&] {
+    ET_SWITCH_REALHBBF16_TYPES(
+        out.scalar_type(), ctx, "to_copy", CTYPE_OUT, [&] {
+          _to_impl<CTYPE_IN, CTYPE_OUT>(self, out);
+        });
   });
 
   return out;

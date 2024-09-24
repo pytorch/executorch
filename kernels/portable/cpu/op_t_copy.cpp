@@ -24,7 +24,7 @@ using Tensor = exec_aten::Tensor;
  * is equivalent to transpose(input, 0, 1).
  * t_copy.out(Tensor self, Tensor(a!) out)
  */
-Tensor& t_copy_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& t_copy_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   ET_KERNEL_CHECK(ctx, check_t_copy_args(in, out), InvalidArgument, out);
@@ -46,6 +46,11 @@ Tensor& t_copy_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
     return out;
   }
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   Tensor::SizesType expected_out_size[kTensorDimensionLimit];
   size_t expected_out_dim = 0;

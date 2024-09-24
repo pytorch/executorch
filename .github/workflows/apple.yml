@@ -8,13 +8,14 @@ on:
   pull_request:
     paths:
       - .ci/docker/**
+      - .ci/scripts/setup-ios.sh
       - .github/workflows/apple.yml
       - install_requirements.sh
       - backends/apple/**
       - build/build_apple_frameworks.sh
       - build/create_frameworks.sh
       - build/test_ios_ci.sh
-      - examples/demo-apps/**
+      - examples/demo-apps/apple_ios/**
       - extension/apple/**
       - extension/module/**
   workflow_dispatch:
@@ -24,27 +25,89 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-demo-ios:
-    name: test-demo-ios
+  build-demo-ios:
+    name: build-demo-ios
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    secrets: inherit
     with:
       runner: macos-latest-xlarge
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      secrets-env: BUILD_CERTIFICATE_BASE64 EXECUTORCH_DEMO_BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
+      upload-artifact: ios-apps
       script: |
         BUILD_TOOL=cmake
 
         .ci/scripts/setup-conda.sh
 
+        # Setup Apple certificate for iOS development
+        BUILD_PROVISION_PROFILE_BASE64="${SECRET_EXECUTORCH_DEMO_BUILD_PROVISION_PROFILE_BASE64}" \
+        BUILD_CERTIFICATE_BASE64="${SECRET_BUILD_CERTIFICATE_BASE64}" \
+        KEYCHAIN_PASSWORD="${SECRET_KEYCHAIN_PASSWORD}" \
+        .ci/scripts/setup-ios.sh
+
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
         .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
 
+        export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
+
         # Build and test iOS Demo App
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        build/test_ios_ci.sh
+        build/test_ios_ci.sh ${ARTIFACTS_DIR_NAME}
+
+  # Upload the test demo app to S3
+  upload-demo-ios:
+    needs: build-demo-ios
+    runs-on: linux.2xlarge
+    steps:
+      - name: Download the artifacts from GitHub
+        uses: actions/download-artifact@v3
+        with:
+          # The name here needs to match the name of the upload-artifact parameter
+          name: ios-apps
+          path: ${{ runner.temp }}/artifacts/
+
+      - name: Verify the artifacts
+        shell: bash
+        working-directory: ${{ runner.temp }}/artifacts/
+        run: |
+          ls -lah ./
+
+      - name: Upload the artifacts to S3
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifact
+          retention-days: 14
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/artifacts/
+
+  test-demo-ios:
+    # Only PR from ExecuTorch itself has permission to access AWS, forked PRs will fail to
+    # authenticate with the cloud service. So, this job will be skipped on the latter
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    needs: upload-demo-ios
+    permissions:
+      id-token: write
+      contents: read
+    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
+    with:
+      device-type: ios
+      # For iOS testing, the runner just needs to call AWS Device Farm, so there is no need to run this on macOS
+      runner: linux.2xlarge
+      test-infra-ref: ''
+      # This is the ARN of ExecuTorch project on AWS
+      project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
+      # This is the custom device pool that only includes iOS devices
+      device-pool-arn: arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/3b5acd2e-92e2-4778-b651-7726bafe129d
+      # Uploaded to S3 from the previous job
+      ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/ExecuTorchDemo.ipa
+      ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/ExecuTorchDemo.xctestrun.zip
+      test-spec: https://ossci-ios.s3.amazonaws.com/executorch/default-ios-device-farm-appium-test-spec.yml
 
   build-frameworks-ios:
     name: build-frameworks-ios

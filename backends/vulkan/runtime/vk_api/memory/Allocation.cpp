@@ -26,36 +26,24 @@ namespace vkcompute {
 namespace vkapi {
 
 Allocation::Allocation()
-    : memory_requirements{},
-      create_info{},
-      allocator(VK_NULL_HANDLE),
-      allocation(VK_NULL_HANDLE),
-      is_copy_(false) {}
+    : allocator(VK_NULL_HANDLE), allocation(VK_NULL_HANDLE), is_copy_(false) {}
 
 Allocation::Allocation(
     VmaAllocator vma_allocator,
     const VkMemoryRequirements& mem_props,
     const VmaAllocationCreateInfo& create_info)
-    : memory_requirements(mem_props),
-      create_info(create_info),
-      allocator(vma_allocator),
-      allocation(VK_NULL_HANDLE),
-      is_copy_(false) {
+    : allocator(vma_allocator), allocation(VK_NULL_HANDLE), is_copy_(false) {
   VK_CHECK(vmaAllocateMemory(
-      allocator, &memory_requirements, &create_info, &allocation, nullptr));
+      allocator, &mem_props, &create_info, &allocation, nullptr));
 }
 
 Allocation::Allocation(const Allocation& other) noexcept
-    : memory_requirements(other.memory_requirements),
-      create_info(other.create_info),
-      allocator(other.allocator),
+    : allocator(other.allocator),
       allocation(other.allocation),
       is_copy_(true) {}
 
 Allocation::Allocation(Allocation&& other) noexcept
-    : memory_requirements(other.memory_requirements),
-      create_info(other.create_info),
-      allocator(other.allocator),
+    : allocator(other.allocator),
       allocation(other.allocation),
       is_copy_(other.is_copy_) {
   other.allocation = VK_NULL_HANDLE;
@@ -64,8 +52,6 @@ Allocation::Allocation(Allocation&& other) noexcept
 Allocation& Allocation::operator=(Allocation&& other) noexcept {
   VmaAllocation tmp_allocation = allocation;
 
-  memory_requirements = other.memory_requirements;
-  create_info = other.create_info;
   allocator = other.allocator;
   allocation = other.allocation;
   is_copy_ = other.is_copy_;

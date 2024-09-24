@@ -80,7 +80,7 @@ void cumsum_tensors(const Tensor& self, int64_t dim, Tensor& out) {
  * operation is performed. This is useful for preventing data type overflows.
  */
 Tensor& cumsum_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     int64_t dim,
     optional<ScalarType> enforced_dtype,
@@ -92,6 +92,9 @@ Tensor& cumsum_out(
       check_cumsum_args(self, dim, enforced_dtype, out),
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
 
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, self.sizes()) == Error::Ok, InvalidArgument, out);

@@ -16,7 +16,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& reflection_pad1d_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     exec_aten::ArrayRef<int64_t> padding,
     Tensor& out) {
@@ -27,6 +27,11 @@ Tensor& reflection_pad1d_out(
       check_padding_args(1, in, padding, out, /*reflection*/ true),
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   Tensor::SizesType target_sizes[kTensorDimensionLimit];
   size_t target_ndim = 0;

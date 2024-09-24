@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/optimized/cpu/binary_ops.h>
 #include <executorch/kernels/optimized/vec/functional.h>
 #include <executorch/kernels/optimized/vec/vec.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
@@ -38,7 +39,7 @@ ScalarType get_compute_type(ScalarType a_type, ScalarType b_type) {
 } // namespace
 
 Tensor& opt_div_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
@@ -48,7 +49,58 @@ Tensor& opt_div_out(
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
 
-  if (a_type == b_type && a_type == out_type && a.sizes().equals(b.sizes())) {
+  if (a.numel() == 1 || b.numel() == 1) {
+    if (a_type == b_type && a_type == out_type && a_type != ScalarType::Half) {
+      const Tensor* tensor;
+      const Tensor* scalar;
+      ScalarType tensor_type;
+      ScalarType scalar_type;
+      if (a.numel() == 1) {
+        tensor = &b;
+        tensor_type = b_type;
+        scalar = &a;
+        scalar_type = a_type;
+      } else {
+        tensor = &a;
+        tensor_type = a_type;
+        scalar = &b;
+        scalar_type = b_type;
+      }
+      ET_KERNEL_CHECK(
+          ctx,
+          resize_to_broadcast_target_size(a, b, out) == Error::Ok,
+          InvalidArgument,
+          out);
+      ET_SWITCH_REALB_TYPES(tensor_type, ctx, "div.out", CTYPE, [&]() {
+        ET_SWITCH_REALB_TYPES(scalar_type, ctx, "div.out", CTYPE_SCALAR, [&]() {
+          CTYPE_SCALAR scalar_val = *scalar->const_data_ptr<CTYPE_SCALAR>();
+          CTYPE scalar_casted = static_cast<CTYPE>(scalar_val);
+
+          using Vec = executorch::vec::Vectorized<CTYPE>;
+          if (a.numel() == 1) {
+            executorch::vec::map<CTYPE>(
+                [scalar_casted](Vec x) { return Vec(scalar_casted) / x; },
+                out.mutable_data_ptr<CTYPE>(),
+                tensor->const_data_ptr<CTYPE>(),
+                out.numel());
+          } else {
+            Vec inv_scalar_casted_vec(CTYPE(1) / scalar_casted);
+            executorch::vec::map<CTYPE>(
+                [inv_scalar_casted_vec](Vec x) {
+                  return x * inv_scalar_casted_vec;
+                },
+                out.mutable_data_ptr<CTYPE>(),
+                tensor->const_data_ptr<CTYPE>(),
+                out.numel());
+          }
+        });
+      });
+      return out;
+    }
+  }
+
+  auto selected_optimized_path = select_optimized_path(a, b, out);
+  if (selected_optimized_path == ElementwiseOptimizedPath::kTreatAs1d) {
     // Resize for dynamic shape
     auto error = resize_tensor(out, a.sizes());
     ET_KERNEL_CHECK_MSG(
@@ -67,6 +119,49 @@ Tensor& opt_div_out(
           b.const_data_ptr<CTYPE>(),
           out.numel());
     });
+  } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
+    const Tensor* lhs;
+    const Tensor* rhs;
+    if (selected_optimized_path ==
+        ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments) {
+      lhs = &b;
+      rhs = &a;
+    } else {
+      // Catch failure to update logic when subing new broadcasting possibility.
+      ET_DCHECK(
+          selected_optimized_path ==
+          ElementwiseOptimizedPath::kBroadcast2dBy1d);
+      lhs = &a;
+      rhs = &b;
+    }
+    auto error = resize_tensor(out, lhs->sizes());
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        error == Error::Ok,
+        InvalidArgument,
+        out,
+        "Failed to resize output tensor.");
+    ET_SWITCH_REALB_TYPES(out_type, ctx, "sub.out", CTYPE, [&]() {
+      using Vec = executorch::vec::Vectorized<CTYPE>;
+      if (selected_optimized_path ==
+          ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments) {
+        executorch::vec::broadcasting_map_2d_by_1d<CTYPE>(
+            [](Vec x, Vec y) { return y / x; },
+            out.mutable_data_ptr<CTYPE>(),
+            lhs->const_data_ptr<CTYPE>(),
+            rhs->const_data_ptr<CTYPE>(),
+            lhs->sizes()[lhs->dim() - 2],
+            lhs->sizes()[lhs->dim() - 1]);
+      } else {
+        executorch::vec::broadcasting_map_2d_by_1d<CTYPE>(
+            [](Vec x, Vec y) { return x / y; },
+            out.mutable_data_ptr<CTYPE>(),
+            lhs->const_data_ptr<CTYPE>(),
+            rhs->const_data_ptr<CTYPE>(),
+            lhs->sizes()[lhs->dim() - 2],
+            lhs->sizes()[lhs->dim() - 1]);
+      }
+    });
   } else {
     ScalarType common_type = get_compute_type(a_type, b_type);
     ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
@@ -77,25 +172,23 @@ Tensor& opt_div_out(
         InvalidArgument,
         out);
 
-    ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div.out", CTYPE_A, [&]() {
-      ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "div.out", CTYPE_B, [&]() {
-        ET_SWITCH_REAL_TYPES_AND(
-            Bool, common_type, ctx, "div.out", CTYPE_IN, [&]() {
-              ET_SWITCH_REAL_TYPES_AND(
-                  Bool, out_type, ctx, "div.out", CTYPE_OUT, [&]() {
-                    apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-                        [](const CTYPE_A val_a, const CTYPE_B val_b) {
-                          CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                          CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                          CTYPE_IN value = a_casted / b_casted;
+    ET_SWITCH_REALB_TYPES(a_type, ctx, "div.out", CTYPE_A, [&]() {
+      ET_SWITCH_REALB_TYPES(b_type, ctx, "div.out", CTYPE_B, [&]() {
+        ET_SWITCH_REALB_TYPES(common_type, ctx, "div.out", CTYPE_IN, [&]() {
+          ET_SWITCH_REALB_TYPES(out_type, ctx, "div.out", CTYPE_OUT, [&]() {
+            apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
+                [](const CTYPE_A val_a, const CTYPE_B val_b) {
+                  CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+                  CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
+                  CTYPE_IN value = a_casted / b_casted;
 
-                          return static_cast<CTYPE_OUT>(value);
-                        },
-                        a,
-                        b,
-                        out);
-                  });
-            });
+                  return static_cast<CTYPE_OUT>(value);
+                },
+                a,
+                b,
+                out);
+          });
+        });
       });
     });
   }
@@ -104,7 +197,7 @@ Tensor& opt_div_out(
 }
 
 Tensor& opt_div_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {
@@ -130,8 +223,9 @@ Tensor& opt_div_scalar_out(
             CTYPE b_casted = static_cast<CTYPE>(b_val);
 
             using Vec = executorch::vec::Vectorized<CTYPE>;
+            Vec inv_b_casted_vec(CTYPE(1) / b_casted);
             executorch::vec::map<CTYPE>(
-                [b_casted](Vec x) { return x / Vec(b_casted); },
+                [inv_b_casted_vec](Vec x) { return x * inv_b_casted_vec; },
                 out.mutable_data_ptr<CTYPE>(),
                 a.const_data_ptr<CTYPE>(),
                 out.numel());
@@ -149,6 +243,7 @@ Tensor& opt_div_scalar_out(
                             CTYPE_B b_val;
                             ET_EXTRACT_SCALAR(b, b_val);
                             CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
+                            CTYPE_IN inv_b_casted = CTYPE_IN(1) / b_casted;
 
                             const size_t n = a.numel();
                             const CTYPE_A* a_data = a.const_data_ptr<CTYPE_A>();
@@ -156,7 +251,8 @@ Tensor& opt_div_scalar_out(
                                 out.mutable_data_ptr<CTYPE_OUT>();
                             for (auto i = 0; i < n; ++i) {
                               out_data[i] = static_cast<CTYPE_OUT>(
-                                  static_cast<CTYPE_IN>(a_data[i]) / b_casted);
+                                  static_cast<CTYPE_IN>(a_data[i]) *
+                                  inv_b_casted);
                             }
                           });
                     });

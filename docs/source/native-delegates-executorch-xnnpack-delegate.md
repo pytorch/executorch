@@ -74,7 +74,7 @@ Since weight packing creates an extra copy of the weights inside XNNPACK, We fre
 When executing the XNNPACK subgraphs, we prepare the tensor inputs and outputs and feed them to the XNNPACK runtime graph. After executing the runtime graph, the output pointers are filled with the computed tensors.
 
 #### **Profiling**
-We have enabled basic profiling for XNNPACK delegate that can be enabled with the following compiler flag `-DENABLE_XNNPACK_PROFILING`. With ExecuTorch's SDK integration, you can also now use the SDK tools to profile the model. You can follow the steps in [Using the ExecuTorch SDK to Profile a Model](./tutorials/sdk-integration-tutorial) on how to profile ExecuTorch models and use SDK's Inspector API to view XNNPACK's internal profiling information.
+We have enabled basic profiling for XNNPACK delegate that can be enabled with the following compiler flag `-DENABLE_XNNPACK_PROFILING`. With ExecuTorch's Developer Tools integration, you can also now use the Developer Tools to profile the model. You can follow the steps in [Using the ExecuTorch Developer Tools to Profile a Model](./tutorials/devtools-integration-tutorial) on how to profile ExecuTorch models and use Developer Tools' Inspector API to view XNNPACK's internal profiling information.
 
 
 [comment]: <> (TODO: Refactor quantizer to a more official quantization doc)
@@ -110,9 +110,9 @@ quantizer.set_global(quantization_config)
 ### Quantizing your model with the XNNPACKQuantizer
 After configuring our quantizer, we are now ready to quantize our model
 ```python
-from torch._export import capture_pre_autograd_graph
+from torch.export import export_for_training
 
-exported_model = capture_pre_autograd_graph(model_to_quantize, example_inputs)
+exported_model = export_for_training(model_to_quantize, example_inputs).module()
 prepared_model = prepare_pt2e(exported_model, quantizer)
 print(prepared_model.graph)
 ```

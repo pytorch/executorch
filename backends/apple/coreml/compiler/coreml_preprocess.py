@@ -3,6 +3,7 @@
 # CoreML backend for delegating a EdgeProgram to CoreML.
 
 import json
+import logging
 
 import shutil
 import uuid
@@ -14,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, final, List, Optional, Tuple
 
 import coremltools as ct
+import coremltools.optimize as cto
 import executorchcoreml
 
 from executorch.exir.backend.backend_details import (
@@ -23,12 +25,16 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.WARNING)
+
 
 class COMPILE_SPEC_KEYS(Enum):
     COMPUTE_UNITS = "compute_units"
     MODEL_TYPE = "model_type"
     MIN_DEPLOYMENT_TARGET = "min_deployment_target"
     MODEL_COMPUTE_PRECISION = "model_compute_precision"
+    OP_LINEAR_QUANTIZER_CONFIG = "op_linear_quantizer_config"
 
 
 class MODEL_PATHS(Enum):
@@ -170,11 +176,43 @@ class CoreMLBackend(BackendDetails):
         )
 
     @staticmethod
+    def generate_op_linear_quantizer_config_compile_spec(
+        op_linear_quantizer_config: Dict,
+    ) -> CompileSpec:
+        """
+        Returns the compile spec representing the model post conversion quantization,
+        which is a dict that will construct cto.coreml.OpLinearQuantizerConfig
+        """
+        str_representation = json.dumps(op_linear_quantizer_config)
+        byte_representation = str_representation.encode("utf-8")
+        return CompileSpec(
+            COMPILE_SPEC_KEYS.OP_LINEAR_QUANTIZER_CONFIG.value,
+            byte_representation,
+        )
+
+    @staticmethod
+    def op_linear_quantizer_config_from_compile_specs(
+        compile_specs: List[CompileSpec],
+    ) -> cto.coreml.OpLinearQuantizerConfig:
+        """
+        Returns the model's post conversion quantization by parsing the list of compile specs.
+        """
+        for compile_spec in compile_specs:
+            if compile_spec.key == COMPILE_SPEC_KEYS.OP_LINEAR_QUANTIZER_CONFIG.value:
+                config_dict_str = compile_spec.value.decode("utf-8")
+                config_dict = json.loads(config_dict_str)
+                config = cto.coreml.OpLinearQuantizerConfig._from_dict(config_dict)
+                return config
+
+        return None
+
+    @staticmethod
     def generate_compile_specs(
         compute_unit: ct.ComputeUnit = ct.ComputeUnit.ALL,
         minimum_deployment_target: ct.target = ct.target.iOS15,
         compute_precision: ct.precision = ct.precision.FLOAT16,
         model_type: MODEL_TYPE = MODEL_TYPE.MODEL,
+        op_linear_quantizer_config: Optional[Dict] = None,
     ) -> List[CompileSpec]:
         """
         Returns the list of compile specs that's used by CoreMLBackend to lower the module.
@@ -192,6 +230,12 @@ class CoreMLBackend(BackendDetails):
             CoreMLBackend.generate_compute_precision_compile_spec(compute_precision)
         )
         compile_specs.append(CoreMLBackend.generate_model_type_compile_spec(model_type))
+        if op_linear_quantizer_config is not None:
+            compile_specs.append(
+                CoreMLBackend.generate_op_linear_quantizer_config_compile_spec(
+                    op_linear_quantizer_config
+                )
+            )
 
         return compile_specs
 
@@ -368,17 +412,17 @@ class CoreMLBackend(BackendDetails):
                 compile_specs,
             )
         )
-
         model_compute_precision: ct.precision = (
             CoreMLBackend.model_compute_precision_from_compile_specs(compile_specs)
         )
-
         minimum_deployment_target: ct.target = (
             CoreMLBackend.min_deployment_target_from_compile_specs(compile_specs)
         )
-
         compute_units: ct.ComputeUnit = CoreMLBackend.compute_unit_from_compile_specs(
             compile_specs
+        )
+        op_linear_quantizer_config = (
+            CoreMLBackend.op_linear_quantizer_config_from_compile_specs(compile_specs)
         )
 
         mlmodel = ct.convert(
@@ -391,5 +435,16 @@ class CoreMLBackend(BackendDetails):
             minimum_deployment_target=minimum_deployment_target,
             compute_units=compute_units,
         )
+
+        if op_linear_quantizer_config is not None:
+            logger.warning(
+                "Core ML Backend op_linear_quantizer_config API is experimental"
+            )
+            config = cto.coreml.OptimizationConfig(
+                global_config=op_linear_quantizer_config,
+                # skip embedding
+                op_type_configs={"gather": None},
+            )
+            mlmodel = cto.coreml.linear_quantize_weights(mlmodel, config=config)
 
         return CoreMLBackend.preprocess_model(mlmodel, model_type=model_type)

@@ -38,6 +38,9 @@ ops_not_to_decompose = [
     torch.ops.aten.upsample_nearest2d.vec,
 ]
 
+logger: logging.Logger = logging.getLogger("")
+logger.setLevel(logging.INFO)
+
 
 class VulkanSupportedOperators(OperatorSupportBase):
     _ops: OpList = enumerate_supported_ops()
@@ -110,7 +113,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
     ) -> bool:
         r = self._is_node_supported(submodules, node)
         if not r and node.op == "call_function":
-            logging.info(f"Skipping node in Vulkan partitioning: {node.format_node()}")
+            logger.info(f"Skipping node in Vulkan partitioning: {node.format_node()}")
         return r
 
     def _is_node_supported(
@@ -179,9 +182,9 @@ class VulkanPartitioner(Partitioner):
 
         pl = len(partition_list)
         if pl == 0:
-            logging.warning("No Vulkan subgraphs can be partitioned!")
+            logger.warning("No Vulkan subgraphs can be partitioned!")
         else:
-            logging.info(f"Found {pl} Vulkan subgraphs to be partitioned.")
+            logger.info(f"Found {pl} Vulkan subgraphs to be partitioned.")
 
         tag_constant_data(exported_program)
 

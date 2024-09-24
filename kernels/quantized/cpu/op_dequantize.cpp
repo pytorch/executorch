@@ -324,7 +324,7 @@ Tensor& dequantize_per_channel_out(
 }
 
 Tensor& dequantize_per_channel_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
     const optional<Tensor>& opt_zero_points,
@@ -348,7 +348,7 @@ Tensor& dequantize_per_channel_out(
 }
 
 Tensor& dequantize_per_tensor_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& input,
     double scale,
     int64_t zero_point,
@@ -365,7 +365,7 @@ Tensor& dequantize_per_tensor_out(
 }
 
 Tensor& dequantize_per_tensor_tensor_args_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
     const Tensor& zero_point,

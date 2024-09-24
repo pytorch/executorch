@@ -53,6 +53,11 @@ from executorch.backends.xnnpack.partition.config.node_configs import (
     MaxDimConfig,
     PreluConfig,
 )
+from executorch.backends.xnnpack.partition.config.quant_affine_configs import (
+    ChooseQParamsAffineConfig,
+    DeQuantizeAffineConfig,
+    QuantizeAffineConfig,
+)
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     XNNPartitionerConfig,
 )
@@ -98,4 +103,8 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     # Quant/Dequant Op Configs
     QuantizedPerTensorConfig,
     DeQuantizedPerTensorConfig,
+    # Quant Affine Configs to preserve decomp
+    QuantizeAffineConfig,
+    DeQuantizeAffineConfig,
+    ChooseQParamsAffineConfig,
 ]

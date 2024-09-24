@@ -19,6 +19,7 @@ import java.nio.IntBuffer;
 import java.nio.LongBuffer;
 import java.util.Arrays;
 import java.util.Locale;
+import org.pytorch.executorch.annotations.Experimental;
 
 /**
  * Representation of an ExecuTorch Tensor. Behavior is similar to PyTorch's tensor objects.
@@ -36,7 +37,10 @@ import java.util.Locale;
  * between {@link Module} calls to avoid reallocation. Data retrieved from {@code Tensor} objects
  * may be copied or may be a reference to the {@code Tensor}'s internal data buffer. {@code shape}
  * is always copied.
+ *
+ * <p>Warning: These APIs are experimental and subject to change without notice
  */
+@Experimental
 public abstract class Tensor {
   private static final String ERROR_MSG_DATA_BUFFER_NOT_NULL = "Data buffer must be not null";
   private static final String ERROR_MSG_DATA_ARRAY_NOT_NULL = "Data array must be not null";

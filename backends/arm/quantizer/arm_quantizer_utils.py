@@ -5,12 +5,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 #
 # Utility functions for ArmQuantizer
 #
 
 import operator
-from typing import Callable, cast, List
+from typing import Callable, cast, List, Union
 
 import torch
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
@@ -72,7 +74,7 @@ def get_shared_qspec(
 
         Both outputs are None if one of the inputs is a node that can't be quantized.
     """
-    input_act0 = node.args[0]
+    input_act0 = cast(Node, node.args[0])
     input_act1 = node.args[1]
 
     input_act_qspec = quantization_config.get_input_act_qspec()
@@ -102,12 +104,19 @@ def is_input_ok_for_quantization(input_act: Node, gm: GraphModule):
     )
 
 
+def get_node_target(module: torch.nn.Module | GraphModule, target_str: str):
+    targets = target_str.split(".")
+    for target in targets[:-1]:
+        module = module.get_submodule(target)
+    return getattr(module, targets[-1])
+
+
 def is_input_large_scalar(node: Node, gm: GraphModule):
     """Check if input is a large scalar value. So that we can skip quantization for the node
     since histc op (in HistogramObserver) only works for values up to certain upper bound
     """
     if node.op == "get_attr" and isinstance(node.target, str):
-        tensor = getattr(gm, node.target)
+        tensor = get_node_target(gm, node.target)
         # torch.histc works until this upper bound
         HISTC_UPPER_BOUND = 3.4028235e15
         return tensor.numel() == 1 and abs(tensor.item()) > HISTC_UPPER_BOUND
@@ -131,6 +140,7 @@ def is_share_obs_or_fq_op(op: Callable) -> bool:
     return op in [
         torch.ops.aten.hardtanh.default,
         torch.ops.aten.hardtanh_.default,
+        torch.ops.aten.relu.default,
         torch.ops.aten.mean.default,
         torch.ops.aten.mean.dim,
         torch.ops.aten.permute.default,
@@ -161,7 +171,9 @@ def propagate_annotation(model: GraphModule) -> None:
         n = cast(Node, n)
         if is_annotated(n):
             continue
-        if n.op != "call_function" or not is_share_obs_or_fq_op(n.target):
+        if n.op != "call_function" or not is_share_obs_or_fq_op(
+            cast(Callable, n.target)
+        ):
             continue
 
         prev_node = n.args[0]
@@ -209,7 +221,7 @@ def convert_scalars_to_attrs(model: GraphModule) -> GraphModule:
             prefix = "_tensor_constant_"
             get_new_attr_name = get_new_attr_name_with_prefix(prefix)
             tensor_constant_name = get_new_attr_name(model)
-            float_tensor = torch.tensor(float(args[i]))
+            float_tensor = torch.tensor(float(cast(Union[int, float], args[i])))
             model.register_buffer(tensor_constant_name, float_tensor)
             fake_mode = n.meta["val"].fake_mode
             with model.graph.inserting_before(n):
