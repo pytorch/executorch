@@ -22,7 +22,7 @@ The ExecuTorch project introduces an advanced benchmarking infrastructure design
 Below is a table summarizing some example data points obtained via the infra. These numbers represent model load time and average inference latency across different platforms and backends.
 
 | Model                 | Backend      | Model Load Time (ms) | Avg Inference Latency (ms) | Device                 |
-|-----------------------|--------------|----------------------|----------------------------|------------------------|
+|-----------------------|--------------|----------------------:|----------------------------:|------------------------|
 | MobileNetV3 (mv3)     | XNNPACK Q8   | [34.024](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218988461)               | [252.628](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218988461)                    | Samsung S22            |
 | MobileNetV3 (mv3)     | QNN FP16     | [168.414](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218987785)              | [1.182](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218987785)                      | Samsung S22            |
 | MobileNetV3 (mv3)     | COREML FP16  | [61.583](https://github.com/pytorch/executorch/actions/runs/10836589365/job/30078681158)               | [682.197](https://github.com/pytorch/executorch/actions/runs/10836589365/job/30078681158)                    | Apple iPhone 15 Pro    |
