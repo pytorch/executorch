@@ -53,6 +53,7 @@ class Method final {
       : step_state_(rhs.step_state_),
         program_(rhs.program_),
         memory_manager_(rhs.memory_manager_),
+        temp_allocator_(rhs.temp_allocator_),
         serialization_plan_(rhs.serialization_plan_),
         event_tracer_(rhs.event_tracer_),
         n_value_(rhs.n_value_),
@@ -61,9 +62,7 @@ class Method final {
         delegates_(rhs.delegates_),
         n_chains_(rhs.n_chains_),
         chains_(rhs.chains_),
-        init_state_(rhs.init_state_),
-        pre_allocated_input_(rhs.pre_allocated_input_),
-        pre_allocated_output_(rhs.pre_allocated_output_) {
+        init_state_(rhs.init_state_) {
     // Required: clear out fields that the dtor looks at, so that we don't free
     // anything twice.
     rhs.n_value_ = 0;
@@ -81,8 +80,6 @@ class Method final {
     rhs.event_tracer_ = nullptr;
     rhs.n_chains_ = 0;
     rhs.chains_ = nullptr;
-    rhs.pre_allocated_input_ = false;
-    rhs.pre_allocated_output_ = false;
   }
 
   /**
@@ -273,10 +270,12 @@ class Method final {
   Method(
       const Program* program,
       MemoryManager* memory_manager,
-      EventTracer* event_tracer)
+      EventTracer* event_tracer,
+      MemoryAllocator* temp_allocator)
       : step_state_(),
         program_(program),
         memory_manager_(memory_manager),
+        temp_allocator_(temp_allocator),
         serialization_plan_(nullptr),
         event_tracer_(event_tracer),
         n_value_(0),
@@ -285,9 +284,7 @@ class Method final {
         delegates_(nullptr),
         n_chains_(0),
         chains_(nullptr),
-        init_state_(InitializationState::Uninitialized),
-        pre_allocated_input_(false),
-        pre_allocated_output_(false) {}
+        init_state_(InitializationState::Uninitialized) {}
 
   /// Static factory used by Program.
   ET_NODISCARD static Result<Method> load(
@@ -319,6 +316,7 @@ class Method final {
   StepState step_state_;
   const Program* program_;
   MemoryManager* memory_manager_;
+  MemoryAllocator* temp_allocator_;
   executorch_flatbuffer::ExecutionPlan* serialization_plan_;
   EventTracer* event_tracer_;
 
@@ -332,8 +330,6 @@ class Method final {
   Chain* chains_;
 
   InitializationState init_state_;
-  bool pre_allocated_input_;
-  bool pre_allocated_output_;
 
   /**
    * Parses the elements of the values_ array. On error, n_value_ will be set to

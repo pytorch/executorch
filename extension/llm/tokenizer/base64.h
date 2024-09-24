@@ -24,6 +24,8 @@
 
 #pragma once
 
+#include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/assert.h>
 #include <cassert>
 #include <string>
@@ -32,10 +34,13 @@
 namespace executorch {
 namespace extension {
 namespace llm {
+using Error = executorch::runtime::Error;
+template <typename T>
+using Result = executorch::runtime::Result<T>;
 
 namespace base64 {
 
-std::string decode(const std::string_view& input);
+Result<std::string> decode(const std::string_view& input);
 
 namespace detail {
 
@@ -59,96 +64,111 @@ constexpr uint32_t DECODE_TABLE[] = {
     255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
     255};
 
-inline void validate(uint32_t v) {
-  ET_CHECK_MSG(v != 255, "invalid char");
+inline Error validate(uint32_t v) {
+  ET_CHECK_OR_RETURN_ERROR(v != 255, InvalidArgument, "invalid char");
+  return Error::Ok;
 }
 
-inline void decode(const std::string_view& input, std::string& output) {
-  ET_CHECK_MSG(
-      input.size() == 4, "input length must be 4, got %zu", input.size());
+inline Error decode(const std::string_view& input, std::string& output) {
+  ET_CHECK_OR_RETURN_ERROR(
+      input.size() == 4,
+      InvalidArgument,
+      "input length must be 4, got %zu",
+      input.size());
 
   uint32_t val = 0;
 
   uint8_t c = input[0];
   auto v = DECODE_TABLE[c];
-  validate(v);
+  ET_CHECK_OK_OR_RETURN_ERROR(validate(v));
   val = v;
 
   c = input[1];
   v = DECODE_TABLE[c];
-  validate(v);
+  ET_CHECK_OK_OR_RETURN_ERROR(validate(v));
   val = (val << 6) | v;
 
   c = input[2];
   v = DECODE_TABLE[c];
-  validate(v);
+  ET_CHECK_OK_OR_RETURN_ERROR(validate(v));
   val = (val << 6) | v;
 
   c = input[3];
   v = DECODE_TABLE[c];
-  validate(v);
+  ET_CHECK_OK_OR_RETURN_ERROR(validate(v));
   val = (val << 6) | v;
 
   output.push_back(static_cast<char>((val >> 16) & 0xFF));
   output.push_back(static_cast<char>((val >> 8) & 0xFF));
   output.push_back(static_cast<char>(val & 0xFF));
+  return Error::Ok;
 }
 
-inline void decode_1_padding(
+inline Error decode_1_padding(
     const std::string_view& input,
     std::string& output) {
-  ET_CHECK_MSG(
-      input.size() == 3, "input length must be 3, got %zu", input.size());
+  ET_CHECK_OR_RETURN_ERROR(
+      input.size() == 3,
+      InvalidArgument,
+      "input length must be 3, got %zu",
+      input.size());
 
   uint32_t val = 0;
 
   uint8_t c = input[0];
   auto v = DECODE_TABLE[c];
-  validate(v);
+  ET_CHECK_OK_OR_RETURN_ERROR(validate(v));
   val = v;
 
   c = input[1];
   v = DECODE_TABLE[c];
-  validate(v);
+  ET_CHECK_OK_OR_RETURN_ERROR(validate(v));
   val = (val << 6) | v;
 
   c = input[2];
   v = DECODE_TABLE[c];
-  validate(v);
+  ET_CHECK_OK_OR_RETURN_ERROR(validate(v));
   val = (val << 6) | v;
 
   output.push_back(static_cast<char>((val >> 10) & 0xFF));
   output.push_back(static_cast<char>((val >> 2) & 0xFF));
+  return Error::Ok;
 }
 
-inline void decode_2_padding(
+inline Error decode_2_padding(
     const std::string_view& input,
     std::string& output) {
-  assert(input.size() == 2);
+  ET_CHECK_OR_RETURN_ERROR(
+      input.size() == 2,
+      InvalidArgument,
+      "input length must be 2, got %zu",
+      input.size());
 
   uint32_t val = 0;
 
   uint8_t c = input[0];
   auto v = DECODE_TABLE[c];
-  validate(v);
+  ET_CHECK_OK_OR_RETURN_ERROR(validate(v));
   val = v;
 
   c = input[1];
   v = DECODE_TABLE[c];
-  validate(v);
+  ET_CHECK_OK_OR_RETURN_ERROR(validate(v));
   val = (val << 6) | v;
 
   output.push_back(static_cast<char>((val >> 4) & 0xFF));
+  return Error::Ok;
 }
 
 } // namespace detail
 
-inline std::string decode(const std::string_view& input) {
-  ET_CHECK_MSG(!input.empty(), "empty input");
+inline Result<std::string> decode(const std::string_view& input) {
+  ET_CHECK_OR_RETURN_ERROR(!input.empty(), InvalidArgument, "empty input");
 
   // Faster than `input.size() % 4`.
-  ET_CHECK_MSG(
+  ET_CHECK_OR_RETURN_ERROR(
       (input.size() & 3) == 0 && input.size() >= 4,
+      InvalidArgument,
       "input length must be larger than 4 and is multiple of 4, got %zu",
       input.size());
 
@@ -156,21 +176,23 @@ inline std::string decode(const std::string_view& input) {
   output.reserve(input.size() / 4 * 3);
   auto idx = 0U;
   for (; idx < input.size() - 4; idx += 4) {
-    detail::decode(input.substr(idx, 4), output);
+    ET_CHECK_OK_OR_RETURN_ERROR(detail::decode(input.substr(idx, 4), output));
   }
 
   // Last 4 bytes. Might contain paddings.
   if (input[idx + 3] == '=') {
     if (input[idx + 2] == '=') {
       // Tow paddings.
-      detail::decode_2_padding(input.substr(idx, 2), output);
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          detail::decode_2_padding(input.substr(idx, 2), output));
     } else {
       // One padding.
-      detail::decode_1_padding(input.substr(idx, 3), output);
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          detail::decode_1_padding(input.substr(idx, 3), output));
     }
   } else {
     // No padding.
-    detail::decode(input.substr(idx, 4), output);
+    ET_CHECK_OK_OR_RETURN_ERROR(detail::decode(input.substr(idx, 4), output));
   }
 
   return output;

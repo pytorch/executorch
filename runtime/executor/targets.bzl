@@ -65,6 +65,9 @@ def define_common_targets():
                 "tensor_parser_exec_aten.cpp",
                 "tensor_parser{}.cpp".format(aten_suffix if aten_mode else "_portable"),
             ],
+            headers = [
+                "platform_memory_allocator.h",
+            ],
             exported_headers = [
                 "method.h",
                 "method_meta.h",

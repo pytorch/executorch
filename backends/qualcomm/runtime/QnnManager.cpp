@@ -8,7 +8,9 @@
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/runtime/SharedBuffer.h>
 #include <executorch/backends/qualcomm/runtime/Utils.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
+#include <executorch/extension/tensor/tensor.h>
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -56,9 +58,7 @@ QnnManager::QnnManager(
         "backend_type: %s", EnumNameQnnExecuTorchBackendType(backend_type));
     QNN_EXECUTORCH_LOG_INFO("graph_name: %s", options_->graph_name()->c_str());
     QNN_EXECUTORCH_LOG_INFO("library_path: %s", library_path.c_str());
-    QNN_EXECUTORCH_LOG_INFO(
-        "tensor_dump_output_path: %s",
-        options_->tensor_dump_output_path()->c_str());
+    QNN_EXECUTORCH_LOG_INFO("dump intermediate outputs: %s", IsTensorDump());
     QNN_EXECUTORCH_LOG_INFO(
         "log_level: %s", EnumNameQnnExecuTorchLogLevel(options_->log_level()));
     QNN_EXECUTORCH_LOG_INFO(
@@ -282,6 +282,8 @@ Error QnnManager::Init() {
     backend_params_ptr_ = QnnBackendFactory().Create(
         qnn_loaded_backend_, logger_.get(), qnn_context_blob_, options_);
     ET_CHECK_OR_RETURN_ERROR(
+        backend_params_ptr_ != nullptr, Internal, "Failed to load Qnn backend.")
+    ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_->qnn_backend_ptr_->Configure() == Error::Ok,
         Internal,
         "Fail to configure Qnn backend");
@@ -363,7 +365,8 @@ Error QnnManager::AllocateTensor(
 
 Error QnnManager::Execute(
     const std::vector<Qnn_Tensor_t>& input_tensor_structs,
-    std::vector<Qnn_Tensor_t>& output_tensor_structs) {
+    std::vector<Qnn_Tensor_t>& output_tensor_structs,
+    EventTracer* event_tracer) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
   error = backend_params_ptr_->qnn_graph_ptr_->GraphExecute(
@@ -374,30 +377,27 @@ Error QnnManager::Execute(
         "qnn_graph_execute failed. Error %d", QNN_GET_ERROR_CODE(error));
     return Error::Internal;
   }
-
   if (IsTensorDump()) {
     // TODO: Need to handle the graph which is partitioned.
     // Maybe we could use graph name.
-    std::string dir = options_->tensor_dump_output_path()->str() + "/Result/";
-    CreateDirectory(dir);
-    QNN_EXECUTORCH_LOG_INFO("Dump tensor to the path: %s", dir.c_str());
     for (std::size_t out_idx = 0; out_idx < output_tensor_structs.size();
          ++out_idx) {
       const Qnn_Tensor_t& output_tensor = output_tensor_structs[out_idx];
+      std::vector<exec_aten::SizesType> sizes(
+          QNN_VER_PTR(output_tensor)->dimensions,
+          QNN_VER_PTR(output_tensor)->dimensions +
+              QNN_VER_PTR(output_tensor)->rank);
 
-      std::string output_path =
-          dir + QNN_VER_PTR(output_tensor)->name + "_tensor.raw";
+      auto dump_tensor = executorch::extension::from_blob(
+          QNN_VER_PTR(output_tensor)->clientBuf.data,
+          sizes,
+          qnn_dtype_to_scalar_type_[QNN_VER_PTR(output_tensor)->dataType]);
 
-      std::ofstream fout(output_path, std::ios::binary);
-      if (fout.fail()) {
-        QNN_EXECUTORCH_LOG_ERROR(
-            "Dump tensor name: %s Failed.", QNN_VER_PTR(output_tensor)->name);
-        return Error::Internal;
-      }
-
-      fout.write(
-          static_cast<const char*>(QNN_VER_PTR(output_tensor)->clientBuf.data),
-          QNN_VER_PTR(output_tensor)->clientBuf.dataSize);
+      torch::executor::event_tracer_log_output_delegate<exec_aten::Tensor>(
+          event_tracer,
+          QNN_VER_PTR(output_tensor)->name,
+          /*delegate_debug_id=*/static_cast<torch::executor::DebugHandle>(-1),
+          *dump_tensor);
     }
   }
 

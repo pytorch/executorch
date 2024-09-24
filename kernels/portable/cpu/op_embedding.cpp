@@ -28,7 +28,7 @@ namespace {
 
 template <typename CTYPE>
 void embedding_kernel(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& weight,
     const Tensor& indices,
     Tensor& out) {
@@ -71,7 +71,7 @@ void embedding_kernel(
 // embedding.out(Tensor weight, Tensor indices, int padding_idx=-1, bool
 // scale_grad_by_freq=False, bool sparse=False, *, Tensor(a!) out) -> Tensor(a!)
 Tensor& embedding_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& weight,
     const Tensor& indices,
     int64_t padding_idx,
@@ -101,6 +101,15 @@ Tensor& embedding_out(
       out.dim() - 1,
       out.size(1),
       weight.size(1));
+
+  ET_KERNEL_CHECK(
+      ctx,
+      tensors_have_same_dim_order(weight, indices, out),
+      InvalidArgument,
+      out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensor_is_default_dim_order(weight), InvalidArgument, out);
 
   ScalarType ix_type = indices.scalar_type();
   ET_CHECK_MSG(

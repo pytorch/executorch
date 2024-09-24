@@ -21,7 +21,7 @@ using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
 Tensor& hardtanh_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Scalar& min,
     const Scalar& max,
@@ -35,6 +35,9 @@ Tensor& hardtanh_out(
       InvalidArgument,
       out,
       "Failed to resize output tensor.");
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   ScalarType in_type = in.scalar_type();
   ScalarType min_type = utils::get_scalar_dtype(min);

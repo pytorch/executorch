@@ -19,7 +19,7 @@ namespace native {
 
 using exec_aten::Tensor;
 
-Tensor& sign_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& sign_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape
@@ -29,6 +29,9 @@ Tensor& sign_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
       InvalidArgument,
       out,
       "Failed to resize output tensor.");
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_shape_and_dtype(in, out), InvalidArgument, out);

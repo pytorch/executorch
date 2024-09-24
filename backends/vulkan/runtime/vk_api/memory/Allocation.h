@@ -55,9 +55,6 @@ struct Allocation final {
 
   ~Allocation();
 
-  VkMemoryRequirements memory_requirements;
-  // The properties this allocation was created with
-  VmaAllocationCreateInfo create_info;
   // The allocator object this was allocated from
   VmaAllocator allocator;
   // Handles to the allocated memory
@@ -78,6 +75,7 @@ struct Allocation final {
   }
 
   friend class VulkanBuffer;
+  friend class VulkanImage;
 };
 
 } // namespace vkapi

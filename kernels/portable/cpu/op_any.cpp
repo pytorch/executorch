@@ -16,11 +16,14 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
-Tensor& any_all_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& any_all_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, {}) == Error::Ok, InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
@@ -44,7 +47,7 @@ Tensor& any_all_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 }
 
 Tensor& any_dims_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     optional<ArrayRef<int64_t>> dim_list,
     bool keepdim,
@@ -67,6 +70,9 @@ Tensor& any_dims_out(
         InvalidArgument,
         out);
   }
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
@@ -102,7 +108,7 @@ Tensor& any_dims_out(
 }
 
 Tensor& any_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     bool keepdim,
@@ -121,6 +127,9 @@ Tensor& any_out(
       resize_reduction_out(in, dim, keepdim, out) == Error::Ok,
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();

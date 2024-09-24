@@ -365,11 +365,9 @@ def export_to_et_ir(
         executorch_program = delegated_program.to_executorch(
             config=exir.ExecutorchBackendConfig(
                 memory_planning_pass=exir.passes.MemoryPlanningPass(
-                    memory_planning_algo="greedy",
                     alloc_graph_input=False,
                     alloc_graph_output=False,
                 ),
-                extract_constant_segment=True,
                 extract_delegate_segments=True,
             )
         )

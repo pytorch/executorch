@@ -28,9 +28,6 @@ T_QuantPerTensor = exir_ops.edge.quantized_decomposed.quantize_per_tensor.defaul
 T_DQuantPerTensor = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
 
 
-log: logging.Logger = logging.getLogger(__name__)
-
-
 # NB: Set this to None to handle validation from MobileBert
 @lru_cache(maxsize=None)
 def is_same_node(
@@ -386,6 +383,40 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
                     node.meta["delegation_tag"] = user_tags.pop()
 
 
+def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
+    """
+    Util function for partitioners. This function tags the mutated buffer nodes
+    whose users all belong within the same partition. This should be called after tagging all other nodes.
+    Any buffer which is used as input to a subgraph, will be tagged with the same tag as that
+    subgraph. Throw error when buffers is used across different partitions. That is the
+    underlying data will be owned by multiple delegates.
+    """
+    for node in edge_program.graph.nodes:
+        # Determine whether this node is a mutated buffer
+        is_mutated_buffer_node = False
+        if node.op == "placeholder" and is_buffer(edge_program, node):
+            for node_user in node.users:
+                if node_user.name in edge_program.graph_signature.buffers_to_mutate:
+                    is_mutated_buffer_node = True
+                    break
+        # This node is mutated buffer, tag it
+        if is_mutated_buffer_node:
+            user_tags = set()
+            for user in node.users:
+                user_tag = user.meta.get("delegation_tag", None)
+                if user_tag is not None:
+                    user_tags.add(user_tag)
+            if len(user_tags) > 1:
+                logging.info(
+                    f"The data node is used across multiple partitions, including {user_tags}. "
+                    "If the data is too large and it's not preferred to copy, please tag the "
+                    "constant node like node.['no_copy'] = True and they won't be copied."
+                )
+            # tag the data node with the same tag as the last user
+            if len(user_tags) > 0:
+                node.meta["delegation_tag"] = user_tags.pop()
+
+
 # TODO - style: use templated types
 class DelegateMappingBuilder:
     """
@@ -499,3 +530,31 @@ class DelegateMappingBuilder:
         # pyre-ignore Warning from Union[int, st] keys
         self._debug_handle_map[identifier] = filtered_debug_handles
         return identifier
+
+
+class WhyNoPartition:
+    """
+    Simple helper class for partitioners to log why a node was not lowered.
+
+    Example usage:
+
+        # In your backend partitioner file(s)
+        why = WhyNoPartition(logger=your_backend_logger)
+
+        # hypothetical function that checks if a node can be lowered
+        if not can_be_lowered(node):
+            why(node, "This node was not lowered because ...")
+    """
+
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+        self.node: Optional[torch.fx.Node] = None
+        self.reason: str = ""
+
+    def __call__(self, node: torch.fx.Node, reason: str) -> None:
+        self.node = node
+        self.reason = reason
+        self.logger.debug(self)
+
+    def __str__(self) -> str:
+        return f"WhyNoPartition: Node {self.node} was not partitioned because {self.reason}."

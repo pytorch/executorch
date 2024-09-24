@@ -13,17 +13,34 @@
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/log.h>
 
 #include <ctime>
 #include <memory>
 #include <sstream>
 
-namespace torch {
-namespace executor {
+using executorch::aten::ScalarType;
+using executorch::aten::SizesType;
+using executorch::aten::Tensor;
+using executorch::extension::from_blob;
+using executorch::extension::Module;
+using executorch::extension::TensorPtr;
+using executorch::extension::llm::BPETokenizer;
+using executorch::extension::llm::Sampler;
+using executorch::extension::llm::time_in_ms;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Result;
+using executorch::runtime::TensorInfo;
+
+// TODO: Remove this usage of an internal-only function.
+using executorch::runtime::internal::set_tensor_data;
+
+namespace example {
 
 namespace {
 static constexpr auto kTopp = 0.9f;
@@ -56,7 +73,7 @@ Error Runner::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
-  stats_.model_load_start_ms = util::time_in_ms();
+  stats_.model_load_start_ms = time_in_ms();
   ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("forward"));
 
   // Read out metadata from the model
@@ -96,7 +113,7 @@ Error Runner::load() {
       temperature_,
       kTopp,
       static_cast<unsigned long long>(std::time(nullptr)));
-  stats_.model_load_end_ms = util::time_in_ms();
+  stats_.model_load_end_ms = time_in_ms();
 
   return Error::Ok;
 }
@@ -124,7 +141,7 @@ T Runner::getMetadataHelper(std::string method_name, T default_val) {
 }
 
 template <typename T>
-int32_t Runner::logitsToToken(const exec_aten::Tensor& logits_tensor) {
+int32_t Runner::logitsToToken(const Tensor& logits_tensor) {
   T* logits = logits_tensor.mutable_data_ptr<T>();
 
   // Since the logits are for all tokens, get the last token probabilities
@@ -134,42 +151,40 @@ int32_t Runner::logitsToToken(const exec_aten::Tensor& logits_tensor) {
 
 // Given an input token. Set up the inputs for the model and execute a single
 // step. Returning the logits tensor.
-Result<torch::executor::Tensor> Runner::run_model_step(
+Result<Tensor> Runner::run_model_step(
     int64_t input_token,
-    Tensor& token,
-    Tensor& start_pos,
-    Tensor& atten_mask,
-    std::vector<Tensor>& kv_tensors,
-    std::vector<Tensor>& kv_outputs) {
-  token.mutable_data_ptr<int32_t>()[0] = input_token;
+    TensorPtr& token,
+    TensorPtr& start_pos,
+    TensorPtr& atten_mask,
+    std::vector<TensorPtr>& kv_tensors,
+    std::vector<TensorPtr>& kv_outputs) {
+  token->mutable_data_ptr<int32_t>()[0] = input_token;
 
   // inputs:[tokens, start_pos, atten_mask, k_cache, v_cache]
-  std::vector<EValue> inputs = {token, start_pos, atten_mask};
-  inputs.insert(inputs.end(), kv_tensors.begin(), kv_tensors.end());
-  Result<std::vector<EValue>> outputs_res = module_->forward(inputs);
+  auto outputs_res = module_->forward({token, start_pos, atten_mask});
   ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
 
   // TODO: need to handle batch size != 1
-  size_t v_offset = kv_outputs[0].nbytes();
-  size_t el_size = kv_outputs[0].element_size();
+  size_t v_offset = kv_outputs[0]->nbytes();
+  size_t el_size = kv_outputs[0]->element_size();
   size_t k_input_step = (max_seq_len_ - 1) * el_size;
   int k_tensors_end = kv_tensors.size() / 2;
   // update k caches
   for (int j = 0; j < k_tensors_end; ++j) {
     uint8_t* input_addr =
-        static_cast<uint8_t*>(kv_tensors[j].mutable_data_ptr());
+        static_cast<uint8_t*>(kv_tensors[j]->mutable_data_ptr());
     uint8_t* output_addr =
-        static_cast<uint8_t*>(kv_outputs[j].mutable_data_ptr());
+        static_cast<uint8_t*>(kv_outputs[j]->mutable_data_ptr());
     // fill the output k values back
-    for (int src = 0, dst = k_input_step; src < kv_outputs[j].nbytes();
+    for (int src = 0, dst = k_input_step; src < kv_outputs[j]->nbytes();
          src += el_size, dst += k_input_step) {
       input_addr[dst] = output_addr[src];
     }
     char* new_inp_addr = io_mem_mgr_.update_k_caches_read(j, el_size);
     // inputs
     ET_CHECK_MSG(
-        internal::set_tensor_data(
-            kv_tensors[j], new_inp_addr, kv_tensors[j].nbytes()) == Error::Ok,
+        set_tensor_data(
+            *kv_tensors[j], new_inp_addr, kv_tensors[j]->nbytes()) == Error::Ok,
         "Failed to set input tensor when updating k_cache");
   }
   // update v caches
@@ -178,26 +193,26 @@ Result<torch::executor::Tensor> Runner::run_model_step(
     char* new_inp_addr = io_mem_mgr_.update_v_caches_read(v_idx, v_offset);
 
     ET_CHECK_MSG(
-        internal::set_tensor_data(
-            kv_tensors[j], new_inp_addr, kv_tensors[j].nbytes()) == Error::Ok,
+        set_tensor_data(
+            *kv_tensors[j], new_inp_addr, kv_tensors[j]->nbytes()) == Error::Ok,
         "Failed to set input tensor when updating v_cache");
     // outputs
     char* new_out_addr = io_mem_mgr_.update_v_caches_write(v_idx, v_offset);
     ET_CHECK_MSG(
-        internal::set_tensor_data(
-            kv_outputs[j], new_out_addr, kv_outputs[j].nbytes()) == Error::Ok,
+        set_tensor_data(
+            *kv_outputs[j], new_out_addr, kv_outputs[j]->nbytes()) == Error::Ok,
         "Failed to set output tensor when updating v_cache");
     ET_CHECK_MSG(
-        module_->set_output_data_ptr(kv_outputs[j], j + 1) == Error::Ok,
+        module_->set_output(*kv_outputs[j], j + 1) == Error::Ok,
         "Failed to set llama output data pointer");
   }
 
   // Bump start_pos by 1
-  start_pos.mutable_data_ptr<int32_t>()[0]++;
+  start_pos->mutable_data_ptr<int32_t>()[0]++;
 
   // update atten_mask
-  atten_mask.mutable_data_ptr<float>()
-      [atten_mask.numel() - 1 - start_pos.const_data_ptr<int32_t>()[0]] = 0;
+  atten_mask->mutable_data_ptr<float>()
+      [atten_mask->numel() - 1 - start_pos->const_data_ptr<int32_t>()[0]] = 0;
   return outputs_res.get()[0].toTensor();
 }
 // TODO: add overloaded method for on-device tokenize
@@ -211,7 +226,7 @@ Error Runner::generate(
 
   // First token time only measures the time it takes to encode the prompt and
   // return a response token.
-  stats_.inference_start_ms = util::time_in_ms();
+  stats_.inference_start_ms = time_in_ms();
   shouldStop_ = false;
 
   // Set the sequence length to the max seq length if not provided
@@ -236,36 +251,31 @@ Error Runner::generate(
       "Sequence length exceeded - please increase the seq_len value passed to generate()");
 
   int32_t pos = 0, prev_token, cur_token = prompt_tokens[0];
-  std::vector<exec_aten::SizesType> token_shape = {1, 1};
+  std::vector<SizesType> token_shape = {1, 1};
 
   io_mem_mgr_.get_input_token_ptr()[0] = 0;
-  std::vector<exec_aten::SizesType> start_pos_shape = {1, 1};
+  std::vector<SizesType> start_pos_shape = {1, 1};
 
   float* atten_mask_ptr =
       reinterpret_cast<float*>(io_mem_mgr_.get_atten_mask_ptr());
   std::fill(atten_mask_ptr, atten_mask_ptr + max_seq_len_, -255);
   atten_mask_ptr[max_seq_len_ - 1] = 0;
 
-  std::vector<exec_aten::SizesType> atten_mask_shape = {1, max_seq_len_};
+  std::vector<SizesType> atten_mask_shape = {1, max_seq_len_};
 
-  std::vector<exec_aten::SizesType> logits_data_shape = {1, vocab_size_};
+  std::vector<SizesType> logits_data_shape = {1, vocab_size_};
 
-  std::vector<exec_aten::SizesType> hidden_states_data_shape = {1, 1, dim_};
+  std::vector<SizesType> hidden_states_data_shape = {1, 1, dim_};
 
   // initialize tensor wrappers
-  ManagedTensor managed_token(
+  auto token = from_blob(
       io_mem_mgr_.get_input_token_ptr(), token_shape, ScalarType::Int);
-  ManagedTensor managed_pos_id(
+  auto start_pos = from_blob(
       io_mem_mgr_.get_pos_idx_ptr(), start_pos_shape, ScalarType::Int);
-  ManagedTensor managed_atten_mask(
+  auto atten_mask = from_blob(
       io_mem_mgr_.get_atten_mask_ptr(), atten_mask_shape, ScalarType::Float);
 
-  Tensor token = managed_token.get_aliasing_tensor();
-  Tensor atten_mask = managed_atten_mask.get_aliasing_tensor();
-  Tensor start_pos = managed_pos_id.get_aliasing_tensor();
-
-  std::vector<ManagedTensor> managed_kv_inputs, managed_kv_outputs;
-  std::vector<Tensor> kv_tensors, kv_outputs;
+  std::vector<TensorPtr> kv_tensors, kv_outputs;
 
   Result<MethodMeta> method_meta = get_method_meta();
   size_t num_inputs = method_meta->num_inputs();
@@ -280,26 +290,24 @@ Error Runner::generate(
         method_meta->input_tensor_meta(input_index);
 
     auto tensor_shape = tensor_meta->sizes();
-    std::vector<exec_aten::SizesType> sizes(
+    std::vector<SizesType> sizes(
         tensor_shape.data(), tensor_shape.data() + tensor_shape.size());
-    managed_kv_inputs.emplace_back(ManagedTensor(
+    kv_tensors.emplace_back(from_blob(
         io_mem_mgr_.get_k_caches_read_ptr(i),
         sizes,
         tensor_meta->scalar_type()));
-    kv_tensors.emplace_back(managed_kv_inputs.back().get_aliasing_tensor());
 
     // outpus
     Result<TensorInfo> out_tensor_meta = method_meta->output_tensor_meta(i + 1);
     tensor_shape = out_tensor_meta->sizes();
-    sizes = std::vector<exec_aten::SizesType>{
+    sizes = std::vector<SizesType>{
         tensor_shape.data(), tensor_shape.data() + tensor_shape.size()};
-    managed_kv_outputs.emplace_back(ManagedTensor(
+    kv_outputs.emplace_back(from_blob(
         io_mem_mgr_.get_k_caches_write_ptr(i),
         sizes,
-        kv_tensors.back().scalar_type()));
-    kv_outputs.emplace_back(managed_kv_outputs.back().get_aliasing_tensor());
+        kv_tensors.back()->scalar_type()));
     ET_CHECK_MSG(
-        module_->set_output_data_ptr(kv_outputs.back(), i + 1) == Error::Ok,
+        module_->set_output(kv_outputs.back(), i + 1) == Error::Ok,
         "Failed to set output tensor for kv cache");
   }
 
@@ -311,62 +319,57 @@ Error Runner::generate(
     Result<TensorInfo> tensor_meta =
         method_meta->input_tensor_meta(input_index);
     auto tensor_shape = tensor_meta->sizes();
-    std::vector<exec_aten::SizesType> sizes(
+    std::vector<SizesType> sizes(
         tensor_shape.data(), tensor_shape.data() + tensor_shape.size());
 
-    managed_kv_inputs.emplace_back(ManagedTensor(
+    kv_tensors.emplace_back(from_blob(
         io_mem_mgr_.get_v_caches_read_ptr(i),
         sizes,
         tensor_meta->scalar_type()));
-    kv_tensors.push_back(managed_kv_inputs.back().get_aliasing_tensor());
 
     // outputs
     Result<TensorInfo> out_tensor_meta =
         method_meta->output_tensor_meta(output_index);
     tensor_shape = out_tensor_meta->sizes();
-    sizes = std::vector<exec_aten::SizesType>{
+    sizes = std::vector<SizesType>{
         tensor_shape.data(), tensor_shape.data() + tensor_shape.size()};
 
-    managed_kv_outputs.push_back(ManagedTensor(
+    kv_outputs.push_back(from_blob(
         io_mem_mgr_.get_v_caches_write_ptr(i),
         sizes,
-        kv_tensors.back().scalar_type()));
-    kv_outputs.push_back(managed_kv_outputs.back().get_aliasing_tensor());
+        kv_tensors.back()->scalar_type()));
     ET_CHECK_MSG(
-        module_->set_output_data_ptr(kv_outputs.back(), output_index) ==
-            Error::Ok,
+        module_->set_output(kv_outputs.back(), output_index) == Error::Ok,
         "Failed to set output tensor for llama block");
   }
 
-  ManagedTensor affine_managed_logits(
+  auto affine_logits = from_blob(
       reinterpret_cast<float*>(io_mem_mgr_.get_logit_ptr()),
       logits_data_shape,
       ScalarType::Float);
-  Tensor affine_logits = affine_managed_logits.get_aliasing_tensor();
   ET_CHECK_MSG(
-      module_->set_output_data_ptr(affine_logits, 0) == Error::Ok,
+      module_->set_output(affine_logits) == Error::Ok,
       "Failed to set output tensor for affine module - logits");
 
   // Start consuming user's prompts and generating new tokens
   std::string final_output;
   while (pos < seq_len - 1) {
     // Run the model
-    Result<torch::executor::Tensor> logits_res = run_model_step(
+    auto logits_res = run_model_step(
         cur_token, token, start_pos, atten_mask, kv_tensors, kv_outputs);
     if (pos == num_prompt_tokens) {
-      stats_.first_token_ms = util::time_in_ms();
+      stats_.first_token_ms = time_in_ms();
     } else if (pos == num_prompt_tokens - 1) {
-      stats_.prompt_eval_end_ms = util::time_in_ms();
+      stats_.prompt_eval_end_ms = time_in_ms();
     }
 
     ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
-    exec_aten::Tensor& logits_tensor = logits_res.get();
+    Tensor& logits_tensor = logits_res.get();
     prev_token = cur_token;
-    long sample_start_time_ms = util::time_in_ms();
+    long sample_start_time_ms = time_in_ms();
 
     cur_token = logitsToToken<float>(logits_tensor);
-    stats_.aggregate_sampling_time_ms +=
-        util::time_in_ms() - sample_start_time_ms;
+    stats_.aggregate_sampling_time_ms += time_in_ms() - sample_start_time_ms;
 
     // advance the state machine
     if (pos < num_prompt_tokens - 1) {
@@ -393,7 +396,7 @@ Error Runner::generate(
       break;
     }
   }
-  stats_.inference_end_ms = util::time_in_ms();
+  stats_.inference_end_ms = time_in_ms();
 
   if (pos == seq_len) {
     ET_LOG(Info, "Sequence length (%i tokens) reached!", seq_len);
@@ -662,5 +665,4 @@ template bool Runner::getMetadataHelper<bool>(
     std::string method_name,
     bool default_val);
 
-} // namespace executor
-} // namespace torch
+} // namespace example

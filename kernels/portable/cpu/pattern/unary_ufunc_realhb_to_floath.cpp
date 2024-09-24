@@ -17,7 +17,7 @@ namespace internal {
 
 Tensor& unary_ufunc_realhb_to_floath(
     double (*fn)(double),
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     Tensor& out) {
   (void)ctx;
@@ -31,6 +31,9 @@ Tensor& unary_ufunc_realhb_to_floath(
       InvalidArgument,
       out,
       "Failed to resize output tensor.");
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   const auto in_type = in.scalar_type();
   const auto out_type = out.scalar_type();

@@ -15,6 +15,7 @@ from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir import EdgeCompileConfig
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
 logger = logging.getLogger(__name__)
@@ -26,17 +27,17 @@ test_data_suite_rank1 = [
     (
         "model_linear_rank1_zeros",
         torch.zeros(10),
-        10,
+        15,
     ),
     (
         "model_linear_rank1_ones",
         torch.ones(10),
-        10,
+        15,
     ),
     (
         "model_linear_rank1_negative_ones",
         torch.ones(10) * (-1),
-        10,
+        20,
     ),
     (
         "model_linear_rank1_rand",
@@ -46,12 +47,12 @@ test_data_suite_rank1 = [
     (
         "model_linear_rank1_negative_large_rand",
         torch.rand(10) * (-100),
-        10,
+        30,
     ),
     (
         "model_linear_rank1_large_randn",
-        torch.randn(10) * 100,
-        10,
+        torch.randn(15) * 100,
+        20,
     ),
 ]
 
@@ -153,14 +154,17 @@ class TestLinear(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data, qtol=True)
         )
 
-    def _test_linear_tosa_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
-    ):
+    def _test_linear_tosa_ethosu_BI_pipeline(
+        self,
+        module: torch.nn.Module,
+        compile_spec: CompileSpec,
+        test_data: Tuple[torch.Tensor],
+    ) -> ArmTester:
         tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=False),
+                compile_spec=compile_spec,
             )
             .quantize()
             .export()
@@ -172,9 +176,7 @@ class TestLinear(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
-
-        if common.is_option_enabled("corstone300"):
-            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
+        return tester
 
     @parameterized.expand(test_data_suite_rank1 + test_data_suite_rank4)
     def test_linear_tosa_MI(
@@ -215,10 +217,32 @@ class TestLinear(unittest.TestCase):
     ):
         in_features = test_data.shape[-1]
         test_data = (test_data,)
-        self._test_linear_tosa_u55_BI_pipeline(
+        tester = self._test_linear_tosa_ethosu_BI_pipeline(
             self.Linear(
                 in_features=in_features,
                 out_features=out_features,
             ),
+            common.get_u55_compile_spec(permute_memory_to_nhwc=False),
+            test_data,
+        )
+
+        if common.is_option_enabled("corstone300"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
+
+    @parameterized.expand(test_data_suite_rank1)
+    def test_linear_tosa_u85_BI(
+        self,
+        test_name: str,
+        test_data: torch.Tensor,
+        out_features: int,
+    ):
+        in_features = test_data.shape[-1]
+        test_data = (test_data,)
+        self._test_linear_tosa_ethosu_BI_pipeline(
+            self.Linear(
+                in_features=in_features,
+                out_features=out_features,
+            ),
+            common.get_u85_compile_spec(permute_memory_to_nhwc=False),
             test_data,
         )

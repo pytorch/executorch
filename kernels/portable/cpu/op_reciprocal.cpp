@@ -20,7 +20,8 @@ double reciprocal(double x) {
 
 } // namespace
 
-Tensor& reciprocal_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor&
+reciprocal_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   return internal::unary_ufunc_realhb_to_floath(reciprocal, ctx, in, out);
 }
 

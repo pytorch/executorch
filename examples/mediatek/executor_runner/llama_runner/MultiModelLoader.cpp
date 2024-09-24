@@ -16,7 +16,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace torch::executor {
+namespace example {
 
 template <typename IdType>
 void MultiModelLoader<IdType>::LoadModels() {
@@ -174,4 +174,4 @@ std::string MultiModelLoader<IdType>::GetIdString(const IdType& id) {
 template class MultiModelLoader<int>;
 template class MultiModelLoader<size_t>;
 
-} // namespace torch::executor
+} // namespace example

@@ -61,7 +61,7 @@ namespace internal {
  */
 Tensor& unary_ufunc_realh(
     double (*fn)(double),
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     Tensor& out);
 
@@ -73,7 +73,7 @@ Tensor& unary_ufunc_realh(
  */
 Tensor& unary_ufunc_realhb_to_bool(
     bool (*fn)(double),
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     Tensor& out);
 
@@ -85,7 +85,7 @@ Tensor& unary_ufunc_realhb_to_bool(
  */
 Tensor& unary_ufunc_realhb_to_floath(
     double (*fn)(double),
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     Tensor& out);
 
@@ -97,7 +97,7 @@ Tensor& unary_ufunc_realhb_to_floath(
  */
 Tensor& binary_ufunc_realb_realb_to_realb_logical(
     bool (*fn)(bool, bool),
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out);

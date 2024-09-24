@@ -29,6 +29,7 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:distance_util",
             "//executorch/kernels/portable/cpu/util:select_copy_util",
             "//executorch/kernels/portable/cpu/util:advanced_index_util",
+            "//executorch/kernels/portable/cpu/util:slice_util",
         ],
         visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     )
@@ -226,6 +227,16 @@ def define_common_targets():
         visibility = ["//executorch/kernels/portable/cpu/..."],
     )
 
+    runtime.cxx_library(
+        name = "slice_util",
+        srcs = ["slice_util.cpp"],
+        exported_headers = ["slice_util.h"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/..."],
+    )
+
     # Utility functions that can be used by operators that perform reduction
     for aten_mode in [True, False]:
         suffix = "_aten" if aten_mode else ""
@@ -238,5 +249,9 @@ def define_common_targets():
                 "//executorch/runtime/core/exec_aten/util:tensor_util{}".format(suffix),
             ],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
-            visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
+            visibility = [
+                "//executorch/extension/llm/custom_ops/...",
+                "//executorch/kernels/portable/cpu/...",
+                "//executorch/kernels/quantized/...",
+            ],
         )

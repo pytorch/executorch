@@ -14,8 +14,7 @@ import executorch.exir as exir
 import torch
 from executorch.exir import EdgeProgramManager, ExecutorchProgramManager, to_edge
 from executorch.exir.tracer import Value
-from torch._export import capture_pre_autograd_graph
-from torch.export import export, ExportedProgram
+from torch.export import export, export_for_training, ExportedProgram
 
 
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
@@ -63,7 +62,7 @@ def _core_aten_to_edge(
         compile_config=edge_compile_config,
     )
     if verbose:
-        logging.info(f"Exported graph:\n{edge_manager.exported_program().graph}")
+        logging.info(f"Exported graph:\n{edge_manager.exported_program()}")
     return edge_manager
 
 
@@ -95,7 +94,7 @@ def export_to_exec_prog(
 ) -> ExecutorchProgramManager:
     m = model.eval()
     # pre-autograd export. eventually this will become torch.export
-    m = capture_pre_autograd_graph(m, example_inputs)
+    m = export_for_training(m, example_inputs).module()
 
     core_aten_ep = _to_core_aten(m, example_inputs, dynamic_shapes, strict=strict)
 

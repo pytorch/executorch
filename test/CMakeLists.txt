@@ -19,8 +19,7 @@
 cmake_minimum_required(VERSION 3.19)
 project(size_test)
 
-# Use C++11 for size test.
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
@@ -62,8 +61,9 @@ endif()
 #
 add_executable(size_test_all_ops ${_size_test__srcs})
 target_link_options_shared_lib(portable_ops_lib)
-target_link_libraries(size_test_all_ops executorch
-  portable_ops_lib portable_kernels)
+target_link_libraries(
+  size_test_all_ops executorch portable_ops_lib portable_kernels
+)
 if(CMAKE_BUILD_TYPE EQUAL "Release")
   target_link_options(size_test_all_ops PRIVATE "LINKER:--gc-sections")
 endif()

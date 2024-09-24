@@ -58,6 +58,7 @@ class OpAddOutKernelTest : public OperatorTest {
 
   template <ScalarType DTYPE_A, ScalarType DTYPE_B>
   void test_add_enumerate_out_types() {
+    test_add<DTYPE_A, DTYPE_B, ScalarType::BFloat16>();
     test_add<DTYPE_A, DTYPE_B, ScalarType::Half>();
     test_add<DTYPE_A, DTYPE_B, ScalarType::Float>();
     test_add<DTYPE_A, DTYPE_B, ScalarType::Double>();
@@ -73,7 +74,7 @@ class OpAddOutKernelTest : public OperatorTest {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_add_enumerate_out_types<DTYPE_A, ScalarType::dtype>();
 
-    ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
+    ET_FORALL_REALHBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
   }
@@ -82,7 +83,7 @@ class OpAddOutKernelTest : public OperatorTest {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_add_enumerate_b_types<ScalarType::dtype>();
 
-    ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
+    ET_FORALL_REALHBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
   }
@@ -99,13 +100,15 @@ class OpAddOutKernelTest : public OperatorTest {
 
     // Add two tensors.
     op_add_out(
-        tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}),
+        tf.make(sizes, /*data=*/{1.25, 2.25, 4.5, 8.875}),
         tf.ones(sizes),
-        /*alpha=*/1.1,
+        /*alpha=*/1.25,
         out);
 
-    // Check that it matches the expected output.
-    EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{2.2, 3.3, 5.5, 9.9}));
+    // Check that it matches the expected output. Values selected to
+    // be exactly representable to avoid throwing off half/bfloat16
+    // tests.
+    EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{2.5, 3.5, 5.75, 10.125}));
   }
 };
 
@@ -134,6 +137,14 @@ TEST_F(OpAddOutKernelTest, FloatTensors) {
 
 TEST_F(OpAddOutKernelTest, DoubleTensors) {
   test_floating_point_add_out<ScalarType::Double>();
+}
+
+TEST_F(OpAddOutKernelTest, HalfTensors) {
+  test_floating_point_add_out<ScalarType::Half>();
+}
+
+TEST_F(OpAddOutKernelTest, BFloat16Tensors) {
+  test_floating_point_add_out<ScalarType::BFloat16>();
 }
 
 TEST_F(OpAddOutKernelTest, BoolAndIntInputTensor) {
@@ -288,6 +299,76 @@ TEST_F(OpAddOutKernelTest, BroadcastSupported) {
   EXPECT_TENSOR_EQ(out, tf.ones({5, 2, 3, 4}));
 }
 
+TEST_F(OpAddOutKernelTest, BroadcastOneElementTensor) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor x = tf.make({1}, {1.75});
+  Tensor y = tf.make({3, 2}, {-1.5, -1, -0.5, 0, 0.5, 1.5});
+
+  Tensor out = tf.zeros({3, 2});
+
+  Tensor ret = op_add_out(x, y, 1, out);
+
+  Tensor expected = tf.make(
+      {3, 2},
+      {
+          0.25,
+          0.75,
+          1.25,
+          1.75,
+          2.25,
+          3.25,
+      });
+
+  EXPECT_TENSOR_EQ(out, expected);
+
+  out = op_add_out(y, x, 1, out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpAddOutKernelTest, BroadcastOneElementTensorTypePromotion) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Double> tfDouble;
+  Tensor x = tfDouble.make({1}, {1.75});
+  Tensor y = tf.make({3, 2}, {-1.5, -1, -0.5, 0, 0.5, 1.5});
+
+  Tensor out = tfDouble.zeros({3, 2});
+
+  Tensor ret = op_add_out(x, y, 1, out);
+
+  Tensor expected = tfDouble.make(
+      {3, 2},
+      {
+          0.25,
+          0.75,
+          1.25,
+          1.75,
+          2.25,
+          3.25,
+      });
+
+  EXPECT_TENSOR_EQ(out, expected);
+
+  out = op_add_out(y, x, 1, out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpAddOutKernelTest, BroadcastOneElementRank0Tensor) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor a = tf.make({1}, {5});
+  Tensor b = tf.make({}, {2});
+
+  Tensor out = tf.zeros({1});
+
+  op_add_out(a, b, 1, out);
+
+  Tensor ret = tf.make({1}, {7});
+  EXPECT_TENSOR_EQ(out, ret);
+
+  op_add_out(b, a, 1, out);
+  EXPECT_TENSOR_EQ(out, ret);
+}
+
 //
 // Death Tests
 //
@@ -355,15 +436,15 @@ TEST_F(OpAddOutKernelTest, BoolOutputWithIntegralInput) {
   ET_EXPECT_KERNEL_FAILURE(context_, op_add_out(a, b, /*alpha=*/1, out));
 }
 
-TEST_F(OpAddOutKernelTest, MismatchedInputShapesDies) {
+TEST_F(OpAddOutKernelTest, MismatchedNonBroadcastableInputShapesDies) {
   TensorFactory<ScalarType::Int> tf;
 
   // Addends with different shapes.
-  Tensor a = tf.ones(/*sizes=*/{4});
+  Tensor a = tf.ones(/*sizes=*/{4, 2});
   Tensor b = tf.ones(/*sizes=*/{2, 2});
 
   // Destination for the sum; matches the shape of one of the inputs.
-  Tensor out = tf.zeros(/*sizes=*/{4});
+  Tensor out = tf.zeros(/*sizes=*/{8});
 
   // Adding the two mismatched tensors should cause an assertion and kill the
   // test process.

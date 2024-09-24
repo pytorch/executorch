@@ -713,7 +713,7 @@ class TestPasses(unittest.TestCase):
         self.assertIsNotNone(new_gm_res)
         new_gm = new_gm_res.graph_module
 
-        new_gm_res = MemoryPlanningPass("greedy")(new_gm)
+        new_gm_res = MemoryPlanningPass()(new_gm)
         self.assertIsNotNone(new_gm_res)
         new_gm = new_gm_res.graph_module
 
@@ -1421,7 +1421,7 @@ class TestPasses(unittest.TestCase):
             quantizer = XNNPACKQuantizer()
             quantization_config = get_symmetric_quantization_config()
             quantizer.set_global(quantization_config)
-            m = prepare_pt2e(m, quantizer)
+            m = prepare_pt2e(m, quantizer)  # pyre-fixme[6]
             m = convert_pt2e(m, fold_quantize=True)
             ep = torch.export.export(m, example_inputs)
             dq_nodes_pre = count_dq_nodes(ep.graph_module)

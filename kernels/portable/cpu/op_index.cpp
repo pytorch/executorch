@@ -23,7 +23,7 @@ using Tensor = exec_aten::Tensor;
 using TensorOptList = exec_aten::ArrayRef<exec_aten::optional<Tensor>>;
 
 Tensor& index_Tensor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     TensorOptList indices,
     Tensor& out) {
@@ -31,6 +31,11 @@ Tensor& index_Tensor_out(
 
   ET_KERNEL_CHECK(
       ctx, check_index_args(in, indices, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   ScalarType in_type = in.scalar_type();
   size_t block_count = count_index_blocks(indices);
@@ -84,7 +89,7 @@ Tensor& index_Tensor_out(
   compute_dim_map(in, indices, dim_map, block_count == 1);
   compute_index_map(in, indices, ix_map);
 
-  ET_SWITCH_REALHB_TYPES(in_type, ctx, "index.Tensor_out", CTYPE, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, "index.Tensor_out", CTYPE, [&]() {
     const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
     CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 

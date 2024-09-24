@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import logging
 import operator
 import os
@@ -39,10 +41,14 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.addmm.default,
             exir_ops.edge.aten.expand_copy.default,
+            exir_ops.edge.aten.cat.default,
+            exir_ops.edge.aten.bmm.default,
             exir_ops.edge.aten.permute_copy.default,
             exir_ops.edge.aten.hardtanh.default,
             exir_ops.edge.aten.convolution.default,
             exir_ops.edge.aten.div.Tensor,
+            exir_ops.edge.aten.exp.default,
+            exir_ops.edge.aten.log.default,
             exir_ops.edge.aten.split_with_sizes_copy.default,
             exir_ops.edge.aten.full.default,
             exir_ops.edge.aten.mul.Tensor,
@@ -51,12 +57,14 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.sigmoid.default,
             exir_ops.edge.aten.mm.default,
             exir_ops.edge.aten.repeat.default,
+            exir_ops.edge.aten.relu.default,
             exir_ops.edge.aten._softmax.default,
             exir_ops.edge.aten.slice_copy.Tensor,
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.view_copy.default,
             exir_ops.edge.aten.clone.default,
             exir_ops.edge.aten.mean.dim,
+            exir_ops.edge.aten.unsqueeze_copy.default,
             operator.getitem,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,

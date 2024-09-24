@@ -6,13 +6,16 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/examples/models/flamingo/cross_attention/cross_attention_mask.h>
+
 #include <algorithm>
 #include <string>
 
-#include <executorch/examples/models/flamingo/cross_attention/cross_attention_mask.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
+namespace example {
 
-namespace torch::executor {
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::aten::TensorImpl;
 
 // Fowrward declaration needed for ARM compilers.
 int32_t safe_size_t_to_sizes_type(size_t value);
@@ -97,7 +100,7 @@ std::vector<std::vector<int>> _get_image_attention_intervals(
   return vision_masks;
 }
 
-std::vector<ManagedTensor> cross_attention_mask(
+std::vector<executorch::extension::TensorPtr> cross_attention_mask(
     const std::vector<int>& tokens,
     const std::vector<Tensor>& images,
     size_t tile_size,
@@ -121,7 +124,7 @@ std::vector<ManagedTensor> cross_attention_mask(
   // Create mask for each individual image based on its number of tokens,
   // which can vary based on number of tiles since they are not yet tile padded.
   // The masks are padded and concatenated together in the batch collator.
-  std::vector<ManagedTensor> cross_attention_masks;
+  std::vector<executorch::extension::TensorPtr> cross_attention_masks;
   size_t text_seq_len = tokens.size();
   for (size_t image_idx = 0; image_idx < image_intervals.size(); ++image_idx) {
     size_t n_tiles = images[image_idx].size(0);
@@ -140,7 +143,8 @@ std::vector<ManagedTensor> cross_attention_mask(
     size_t stride = image_seq_len;
     std::vector<int> mask_data(num_elements);
 
-    ManagedTensor mask(mask_data.data(), sizes, ScalarType::Int);
+    auto mask = executorch::extension::from_blob(
+        mask_data.data(), sizes, ScalarType::Int);
     cross_attention_masks.emplace_back(std::move(mask));
 
     // Add the allocated data to the output vector.
@@ -166,4 +170,4 @@ std::vector<ManagedTensor> cross_attention_mask(
   return cross_attention_masks;
 }
 
-} // namespace torch::executor
+} // namespace example

@@ -22,7 +22,7 @@ bool logical_xor(bool a, bool b) {
 } // namespace
 
 Tensor& logical_xor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {

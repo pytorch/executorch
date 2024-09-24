@@ -79,6 +79,7 @@ from executorch.exir.schema import (
     TensorShapeDynamism,
 )
 from executorch.exir.tensor import (
+    AddressSpaceOverflowException,
     layout_enum,
     make_allocation_info,
     make_tensor_value,
@@ -349,7 +350,20 @@ class _Emitter(torch.fx.Interpreter):
                 self.node,
                 f"Non-const tensor should be an activation tensor: mem_offset {spec.mem_offset}",
             )
-            allocation_info = make_allocation_info(spec.mem_id, spec.mem_offset)
+            try:
+                allocation_info = make_allocation_info(spec.mem_id, spec.mem_offset)
+            except AddressSpaceOverflowException as e:
+                raise InternalError(
+                    self._emit_node_specific_error(
+                        self.node,
+                        (
+                            f"{e}\nHint: If you are using a memory pass based on dynamic shape bounds, "
+                            f"such as ConstraintBasedSymShapeEvalPass, this may be the cause of an "
+                            f"unbacked SymInt with its upper bound lazily set to 2^64-1 (uint64 max) "
+                            "during torch.export()."
+                        ),
+                    )
+                )
 
         if spec.const:
             # Tensor with a blob we need to serialize. May not actually be constant at runtime
@@ -1270,7 +1284,7 @@ class _Emitter(torch.fx.Interpreter):
 
     def fetch_attr(self, target: _Target) -> _AbstractValue:
         """Fetch weights and other module parameters. If the attribute is a tensor, emit it."""
-        attr = super().fetch_attr(target)
+        attr = super().fetch_attr(target)  # pyre-fixme[6]
 
         if isinstance(attr, torch.Tensor):
             return self._emit_evalue(
@@ -1286,7 +1300,7 @@ class _Emitter(torch.fx.Interpreter):
         else:
             return attr
 
-    def call_module(
+    def call_module(  # pyre-fixme[14]
         self, target: _Target, args: Tuple[_Argument, ...], kwargs: Dict[str, _Argument]
     ) -> None:
         """Unsupported in execution IR, so unhandled by the emitter."""
@@ -1294,7 +1308,7 @@ class _Emitter(torch.fx.Interpreter):
             self._emit_node_specific_error(self.node, "call_module is not supported")
         )
 
-    def call_method(
+    def call_method(  # pyre-fixme[14]
         self, target: _Target, args: Tuple[_Argument, ...], kwargs: Dict[str, _Argument]
     ) -> _EmitterValue:
         """Unsupported in execution IR, so unhandled by the emitter."""
@@ -1302,7 +1316,7 @@ class _Emitter(torch.fx.Interpreter):
             self._emit_node_specific_error(self.node, "call_method is not supported")
         )
 
-    def placeholder(
+    def placeholder(  # pyre-fixme[14]
         self, target: _Target, args: Tuple[_Argument, ...], kwargs: Dict[str, _Argument]
     ) -> _AbstractValue:
         """Performs actions for the placeholder node of a graph module.
@@ -1324,7 +1338,7 @@ class _Emitter(torch.fx.Interpreter):
         self.placeholder_count += 1
         return value
 
-    def output(
+    def output(  # pyre-fixme[14]
         self, target: _Target, args: Tuple[_Argument, ...], kwargs: Dict[str, _Argument]
     ) -> None:
         """Performs actions for the output node of a graph module.
@@ -1354,7 +1368,7 @@ class _Emitter(torch.fx.Interpreter):
                     )
                     self.chain.instructions.append(instruction)
 
-    def call_function(
+    def call_function(  # pyre-fixme[14]
         self, target: _Target, args: Tuple[_Argument, ...], kwargs: Dict[str, _Argument]
     ) -> _EmitterValue:
         """Performs actions for the call_function node of a graph module.
@@ -1412,7 +1426,7 @@ class _Emitter(torch.fx.Interpreter):
                 )
             )
 
-    def run(
+    def run(  # pyre-fixme[14]
         self,
         *args: _Argument,
         initial_env: Optional[Dict[torch.fx.Node, _Argument]] = None,
@@ -1527,7 +1541,6 @@ class _TopLevelEmitter(_Emitter):
         is_user_input = True
 
         if isinstance(target, str) and isinstance(spec, TensorSpec):
-
             fqn, is_mutable_buffer = self._find_fqn_for_placeholder(target, spec)
 
             # From the fqn find the corresponding tensor

@@ -238,6 +238,25 @@ struct EValue {
     new (&payload.as_tensor) exec_aten::Tensor(t);
   }
 
+  // Template constructor that allows construction from types that can be
+  // dereferenced to produce a type that EValue can be implicitly constructed
+  // from.
+  template <typename T>
+  /*implicit*/ EValue(
+      T&& value,
+      typename std::enable_if<std::is_convertible<
+          decltype(*std::forward<T>(value)),
+          EValue>::value>::type* = 0) {
+    ET_CHECK_MSG(value != nullptr, "Pointer is null.");
+    // Note that this ctor does not initialize this->tag directly; it is set by
+    // moving in the new value.
+    moveFrom(*std::forward<T>(value));
+  }
+
+  // Delete constructor for raw pointers to ensure they cannot be used.
+  template <typename T>
+  explicit EValue(T* value) = delete;
+
   bool isTensor() const {
     return tag == Tag::Tensor;
   }

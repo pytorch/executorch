@@ -77,6 +77,46 @@ inline bool tensor_is_default_or_channels_last_dim_order(at::Tensor t) {
   return ret_val;
 }
 
+bool tensors_have_same_dim_order(
+    const exec_aten::ArrayRef<exec_aten::Tensor> tensor_list) {
+  if (tensor_list.size() < 2) {
+    return true;
+  }
+
+  exec_aten::DimOrderType first_dim_order[kTensorDimensionLimit];
+  exec_aten::DimOrderType other_dim_order[kTensorDimensionLimit];
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      get_dim_order(tensor_list[0], first_dim_order, tensor_list[0].dim()) ==
+          Error::Ok,
+      "Failed to retrieve dim order from 1st input tensor!");
+
+  bool all_contiguous =
+      is_contiguous_dim_order(first_dim_order, tensor_list[0].dim());
+  bool all_channels_last =
+      is_channels_last_dim_order(first_dim_order, tensor_list[0].dim());
+
+  for (size_t i = 1; i < tensor_list.size(); ++i) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        get_dim_order(tensor_list[i], other_dim_order, tensor_list[i].dim()) ==
+            Error::Ok,
+        "Failed to retrieve dim order from %zd-th input tensor!",
+        i);
+
+    all_contiguous = all_contiguous &&
+        is_contiguous_dim_order(other_dim_order, tensor_list[i].dim());
+    all_channels_last = all_channels_last &&
+        is_channels_last_dim_order(other_dim_order, tensor_list[i].dim());
+  }
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      all_contiguous || all_channels_last,
+      "%zd input tensors have different dim orders",
+      tensor_list.size());
+
+  return all_contiguous || all_channels_last;
+}
+
 namespace internal {
 
 Error share_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {

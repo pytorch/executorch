@@ -16,7 +16,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& replication_pad3d_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     exec_aten::ArrayRef<int64_t> padding,
     Tensor& out) {

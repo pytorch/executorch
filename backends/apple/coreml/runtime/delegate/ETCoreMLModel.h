@@ -37,14 +37,11 @@ __attribute__((objc_subclassing_restricted))
                     orderedOutputNames:(NSOrderedSet<NSString*>*)orderedOutputNames
                                  error:(NSError* __autoreleasing*)error NS_DESIGNATED_INITIALIZER;
 
-- (nullable NSArray<MLMultiArray*>*)prepareInputs:(const std::vector<executorchcoreml::MultiArray>&)inputs
-                                            error:(NSError* __autoreleasing*)error;
-
-- (nullable NSArray<MLMultiArray*>*)prepareOutputBackings:(const std::vector<executorchcoreml::MultiArray>&)outputs
-                                                    error:(NSError* __autoreleasing*)error;
-
 /// The underlying MLModel.
 @property (strong, readonly, nonatomic) MLModel* mlModel;
+
+/// The model state.
+@property (strong, readonly, nonatomic, nullable) id state;
 
 /// The asset from which the model is loaded.
 @property (strong, readonly, nonatomic) ETCoreMLAsset* asset;
@@ -57,6 +54,19 @@ __attribute__((objc_subclassing_restricted))
 
 /// The ordered output names of the model.
 @property (copy, readonly, nonatomic) NSOrderedSet<NSString*>* orderedOutputNames;
+
+
+- (nullable id<MLFeatureProvider>)predictionFromFeatures:(id<MLFeatureProvider>)input
+                                                 options:(MLPredictionOptions*)options
+                                                   error:(NSError* __autoreleasing*)error;
+
+- (nullable NSArray<MLMultiArray*>*)prepareInputs:(const std::vector<executorchcoreml::MultiArray>&)inputs
+                                            error:(NSError* __autoreleasing*)error;
+
+- (nullable NSArray<MLMultiArray*>*)prepareOutputBackings:(const std::vector<executorchcoreml::MultiArray>&)outputs
+                                                    error:(NSError* __autoreleasing*)error;
+
+- (BOOL)prewarmAndReturnError:(NSError* __autoreleasing*)error;
 
 @end
 

@@ -41,7 +41,7 @@ _EXTERNAL_DEPS = {
     "libtorch_python": "//third-party:libtorch_python",
     "prettytable": "//third-party:prettytable",
     "pybind11": "//third-party:pybind11",
-    "re2": [],  # TODO(larryliu0820): Add support
+    "re2": "//extension/llm/third-party:re2",
     "sentencepiece-py": [],
     # Core C++ PyTorch functionality like Tensor and ScalarType.
     "torch-core-cpp": "//third-party:libtorch",
@@ -118,7 +118,8 @@ def _remove_platform_specific_args(kwargs):
     """
     keys = []
     for key in kwargs:
-        if key.endswith("_platform_preprocessor_flags") or key.endswith("_platform_deps") or key.startswith("fbobjc"):
+        if (key.endswith("_platform_preprocessor_flags") or key.endswith("_platform_deps") or
+            key.startswith("fbobjc") or key.endswith("_platform_compiler_flags")):
             keys.append(key)
     for key in keys:
         kwargs.pop(key)

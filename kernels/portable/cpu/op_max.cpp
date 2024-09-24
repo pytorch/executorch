@@ -23,7 +23,7 @@ using SizesType = exec_aten::SizesType;
 using Tensor = exec_aten::Tensor;
 
 std::tuple<Tensor&, Tensor&> max_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     bool keepdim,
@@ -46,6 +46,24 @@ std::tuple<Tensor&, Tensor&> max_out(
   ET_KERNEL_CHECK(
       ctx,
       resize_tensor(max_indices, max.sizes()) == Error::Ok,
+      InvalidArgument,
+      (std::tuple<Tensor&, Tensor&>({max, max_indices})));
+
+  ET_KERNEL_CHECK(
+      ctx,
+      tensors_have_same_dim_order(in, max),
+      InvalidArgument,
+      (std::tuple<Tensor&, Tensor&>({max, max_indices})));
+
+  ET_KERNEL_CHECK(
+      ctx,
+      tensor_is_default_dim_order(max_indices),
+      InvalidArgument,
+      (std::tuple<Tensor&, Tensor&>({max, max_indices})));
+
+  ET_KERNEL_CHECK(
+      ctx,
+      tensor_is_default_dim_order(in),
       InvalidArgument,
       (std::tuple<Tensor&, Tensor&>({max, max_indices})));
 

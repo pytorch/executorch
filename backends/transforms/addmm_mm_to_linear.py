@@ -130,7 +130,7 @@ def replace_addmm_mm_with_linear(graph: torch.fx.Graph) -> torch.fx.Graph:
                         "call_function", ops.aten.linear.default, args
                     )
                     node.replace_all_uses_with(linear_node)
-                    output_val = linear_node.target(
+                    output_val = linear_node.target(  # pyre-fixme[29]
                         args[0].meta["val"], args[1].meta["val"], args[2].meta["val"]
                     )
                 else:
@@ -147,7 +147,7 @@ def replace_addmm_mm_with_linear(graph: torch.fx.Graph) -> torch.fx.Graph:
                         "call_function", ops.aten.linear.default, args
                     )
                     node.replace_all_uses_with(linear_node)
-                    output_val = linear_node.target(
+                    output_val = linear_node.target(  # pyre-fixme[29]
                         args[0].meta["val"], args[1].meta["val"]
                     )
                 linear_node.meta = node.meta

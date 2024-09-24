@@ -17,7 +17,6 @@
 #include <executorch/examples/qualcomm/qaihub_scripts/llama/runner/runner.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/llm/runner/util.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
@@ -30,8 +29,16 @@
 #include "arm_neon.h"
 #endif
 
-namespace torch {
-namespace executor {
+using executorch::aten::Tensor;
+using executorch::extension::Module;
+using executorch::extension::llm::Sampler;
+using executorch::extension::llm::time_in_ms;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Result;
+
+namespace example {
 
 namespace {
 static constexpr auto kTopp = 0.9f;
@@ -50,8 +57,6 @@ Runner::Runner(
     const int logits_offset)
     : tokenizer_path_(tokenizer_path),
       temperature_(temperature),
-      bos_id_(1),
-      eos_id_(2),
       n_bos_(1),
       n_eos_(1),
       vocab_size_(QAIHUB_LLAMA_LOGITS),
@@ -66,6 +71,21 @@ Runner::Runner(
     ET_LOG(Info, "creating module: model_path=%s", models_path[i].c_str());
   }
   ET_LOG(Info, "creating runner: tokenizer_path=%s", tokenizer_path_.c_str());
+
+// load tokenizer
+#if defined(QAIHUB_LLAMA3_RUNNER)
+  tokenizer_ = example::get_tiktoken_for_llama();
+  tokenizer_->load(tokenizer_path_);
+  eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
+  version_ = LlamaVersion::kLlama3;
+#else
+  tokenizer_ = std::make_unique<executorch::extension::llm::BPETokenizer>();
+  tokenizer_->load(tokenizer_path_);
+  version_ = LlamaVersion::kLlama2;
+#endif
+
+  bos_id_ = tokenizer_->bos_tok();
+  eos_id_.insert(tokenizer_->eos_tok());
 
   switch (eval_mode_) {
     case EvalMode::kBert:
@@ -97,14 +117,6 @@ Error Runner::load() {
   for (std::shared_ptr<Module>& module : modules_) {
     ET_CHECK_OK_OR_RETURN_ERROR(module->load_method("forward"));
   }
-
-// load tokenizer
-#if defined(QAIHUB_LLAMA3_RUNNER)
-  tokenizer_ = get_tiktoken_for_llama();
-#else
-  tokenizer_ = std::make_unique<BPETokenizer>();
-#endif
-  tokenizer_->load(tokenizer_path_);
 
   // create sampler
   sampler_ = std::make_unique<Sampler>(
@@ -157,6 +169,7 @@ void Runner::run_model_step(std::vector<std::vector<EValue>>& inputs) {
 // TODO: add overloaded method for on-device tokenize
 Error Runner::generate(
     const std::string& prompt,
+    const std::string& system_prompt,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
@@ -165,15 +178,14 @@ Error Runner::generate(
   std::vector<std::vector<Tensor>> input_tensors, output_tensors;
   std::vector<std::vector<EValue>> inputs;
   if (!is_loaded()) {
-    stats_.model_load_start_ms = util::time_in_ms();
+    stats_.model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
     for (int i = 0; i < modules_.size(); ++i) {
       input_tensors.emplace_back(io_mem_->get_input_tensors(i));
       output_tensors.emplace_back(io_mem_->get_output_tensors(i));
       for (size_t j = 0; j < output_tensors[i].size(); ++j) {
         ET_CHECK_MSG(
-            modules_[i]->set_output_data_ptr(output_tensors[i][j], j) ==
-                Error::Ok,
+            modules_[i]->set_output(output_tensors[i][j], j) == Error::Ok,
             "failed to set output tensor for module %d's %zu'th output",
             i,
             j);
@@ -181,17 +193,47 @@ Error Runner::generate(
       inputs.emplace_back(
           std::vector<EValue>(begin(input_tensors[i]), end(input_tensors[i])));
     }
-    stats_.model_load_end_ms = util::time_in_ms();
+    stats_.model_load_end_ms = time_in_ms();
   }
 
-  stats_.inference_start_ms = util::time_in_ms();
-  shouldStop_ = false;
+  stats_.inference_start_ms = time_in_ms();
   seq_len = (seq_len > 0 && seq_len <= max_seq_len_) ? seq_len : max_seq_len_;
 
+  std::string post_process_prompt;
+  switch (version_) {
+    case LlamaVersion::kLlama2:
+      post_process_prompt.append(prompt);
+      break;
+    case LlamaVersion::kLlama3:
+      if (!system_prompt.empty()) {
+        post_process_prompt.append(
+            "<|start_header_id|>system<|end_header_id|>\n\n");
+        post_process_prompt.append(system_prompt);
+        post_process_prompt.append("<|eot_id|>\n");
+      }
+      post_process_prompt.append(
+          "<|start_header_id|>user<|end_header_id|>\n\n");
+      post_process_prompt.append(prompt);
+      post_process_prompt.append(
+          "<|eot_id|><|start_header_id|>assistant<|end_header_id|>");
+      // tokenizer_->encode will add <|begin_of_text|> token for us.
+      // For now, do token call back so the output format looks the same as
+      // llama3 model card.
+      if (token_callback && eval_mode_ == EvalMode::kKVCached) {
+        token_callback("<|begin_of_text|>");
+      }
+      break;
+    default:
+      ET_CHECK_MSG(false, "unsupported llama version");
+      break;
+  }
+
   Result<std::vector<uint64_t>> encode_res =
-      tokenizer_->encode(prompt, n_bos_, 0);
+      tokenizer_->encode(post_process_prompt, n_bos_, 0);
   ET_CHECK_OK_OR_RETURN_ERROR(
-      encode_res.error(), "failed to encode prompt %s", prompt.c_str());
+      encode_res.error(),
+      "failed to encode prompt %s",
+      post_process_prompt.c_str());
 
   std::vector<uint64_t> prompt_tokens = encode_res.get();
   int num_prompt_tokens = prompt_tokens.size();
@@ -241,16 +283,15 @@ Error Runner::generate(
     Tensor& logits_tensor = output_tensors.back().back();
 
     if (pos == num_prompt_tokens) {
-      stats_.first_token_ms = util::time_in_ms();
+      stats_.first_token_ms = time_in_ms();
     } else if (pos == num_prompt_tokens - 1) {
-      stats_.prompt_eval_end_ms = util::time_in_ms();
+      stats_.prompt_eval_end_ms = time_in_ms();
     }
 
-    long sample_start_time_ms = util::time_in_ms();
+    long sample_start_time_ms = time_in_ms();
     prev_token = cur_token;
     cur_token = logitsToToken(logits_tensor);
-    stats_.aggregate_sampling_time_ms +=
-        util::time_in_ms() - sample_start_time_ms;
+    stats_.aggregate_sampling_time_ms += time_in_ms() - sample_start_time_ms;
 
     if (pos < num_prompt_tokens - 1) {
       cur_token = prompt_tokens[pos + 1];
@@ -264,16 +305,12 @@ Error Runner::generate(
       token_callback(piece_res.get().c_str());
     }
 
-    if (shouldStop_) {
-      break;
-    }
-
-    if (pos >= num_prompt_tokens && cur_token == eos_id_) {
+    if (pos >= num_prompt_tokens && eos_id_.count(cur_token) > 0) {
       ET_LOG(Info, "\nReached to the end of generation");
       break;
     }
   }
-  stats_.inference_end_ms = util::time_in_ms();
+  stats_.inference_end_ms = time_in_ms();
 
   if (pos == seq_len) {
     ET_LOG(Info, "\nSequence length (%i tokens) reached!", seq_len);
@@ -367,10 +404,6 @@ std::string statsToJsonString(const Runner::Stats& stats) {
 }
 } // namespace
 
-void Runner::stop() {
-  shouldStop_ = true;
-}
-
 std::vector<Result<MethodMeta>> Runner::get_methods_meta() {
   std::vector<Result<MethodMeta>> methods_meta;
   methods_meta.reserve(modules_.size());
@@ -379,5 +412,4 @@ std::vector<Result<MethodMeta>> Runner::get_methods_meta() {
   }
   return methods_meta;
 }
-} // namespace executor
-} // namespace torch
+} // namespace example

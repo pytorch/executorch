@@ -6,54 +6,75 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
-    runtime.cxx_library(
-        name = "custom_ops",
-        srcs = ["op_sdpa.cpp"],
-        exported_headers = ["op_sdpa.h"],
-        exported_deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/kernels/portable/cpu:scalar_utils",
-            "//executorch/kernels/optimized:libblas",
-            "//executorch/kernels/optimized:libvec",
-            "//executorch/extension/kernel_util:kernel_util",
-            "//executorch/extension/parallel:thread_parallel",
-            "//executorch/backends/xnnpack/threadpool:threadpool",
-        ],
-        compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"],
-        visibility = [
-            "//executorch/...",
-            "//executorch/extension/llm/custom_ops/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        # @lint-ignore BUCKLINT link_whole
-        link_whole = True,
-        force_static = True,
-    )
+    for mkl_dep in ["", "_mkl_noomp"]:
+        runtime.cxx_library(
+            name = "custom_ops" + mkl_dep,
+            srcs = [
+                "op_fallback.cpp",
+                "op_fast_hadamard_transform.cpp",
+                "op_sdpa.cpp",
+            ],
+            exported_headers = [
+                "op_fallback.h",
+                "op_fast_hadamard_transform.h",
+                "op_sdpa.h",
+            ],
+            exported_deps = [
+                "//executorch/runtime/kernel:kernel_includes",
+                "//executorch/kernels/portable/cpu:scalar_utils",
+                "//executorch/kernels/optimized:libblas{}".format(mkl_dep),
+                "//executorch/kernels/optimized:libvec",
+                "//executorch/extension/kernel_util:kernel_util",
+                "//executorch/extension/parallel:thread_parallel",
+                "//executorch/extension/threadpool:threadpool",
+            ],
+            deps = [
+                "//executorch/kernels/portable/cpu/util:reduce_util",
+                "//executorch/extension/llm/custom_ops/spinquant:fast_hadamard_transform",
+            ],
+            compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"],
+            visibility = [
+                "//executorch/...",
+                "//executorch/extension/llm/custom_ops/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            # @lint-ignore BUCKLINT link_whole
+            link_whole = True,
+            force_static = True,
+        )
 
-    runtime.cxx_library(
-        name = "custom_ops_aot_lib",
-        srcs = [
-            "op_sdpa_aot.cpp",
-        ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        external_deps = [
-            "libtorch",
-        ],
-        deps = [
-            ":custom_ops",
-            "//executorch/extension/aten_util:aten_bridge",
-        ],
-    )
+        runtime.cxx_library(
+            name = "custom_ops_aot_lib" + mkl_dep,
+            srcs = [
+                "op_fast_hadamard_transform_aten.cpp",
+                "op_sdpa_aot.cpp",
+                "op_tile_crop.cpp",
+                "op_tile_crop_aot.cpp",
+            ],
+            headers = ["op_tile_crop.h"],
+            compiler_flags = ["-Wno-global-constructors"],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            external_deps = [
+                "libtorch",
+            ],
+            deps = [
+                ":custom_ops" + mkl_dep,
+                "//executorch/extension/aten_util:aten_bridge",
+            ],
+        )
 
     runtime.python_library(
         name = "custom_ops_aot_py",
         srcs = [
             "sdpa_with_kv_cache.py",
         ],
-        visibility = ["//executorch/..."],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
         deps = [
             "//caffe2:torch",
         ],

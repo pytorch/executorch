@@ -8,7 +8,10 @@
 # Install snakeviz for cProfile flamegraph
 # Install sentencepiece for llama tokenizer
 pip install snakeviz sentencepiece
-pip install torchao==0.1
+
+# Install torchao.
+TORCHAO_VERSION=$(cat "$(dirname "$0")"/../../../.ci/docker/ci_commit_pins/torchao.txt)
+pip install --no-use-pep517 --user "git+https://github.com/pytorch/ao.git@${TORCHAO_VERSION}"
 
 # Install lm-eval for Model Evaluation with lm-evalution-harness
 # Install tiktoken for tokenizer

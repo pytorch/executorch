@@ -25,12 +25,12 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 "//executorch/runtime/executor:program",
-                "//executorch/util:util",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
                 "//executorch/extension/evalue_util:print_evalue",
                 "//executorch/runtime/executor/test:managed_memory_manager",
                 "//executorch/extension/training/optimizer:sgd",
+                "//executorch/extension/training/module:training_module",
                 "//executorch/kernels/portable:generated_lib",
             ],
             env = modules_env,

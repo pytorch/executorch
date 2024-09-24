@@ -160,7 +160,7 @@ void constant_pad_nd_out_impl(
 } // namespace
 
 Tensor& constant_pad_nd_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     IntArrayRef pad,
     const Scalar& value,
@@ -169,6 +169,9 @@ Tensor& constant_pad_nd_out(
 
   ET_KERNEL_CHECK(
       ctx, check_constant_pad_args(in, pad, value, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   // resize out tensor for dynamic shapes
   ET_KERNEL_CHECK_MSG(
