@@ -1,3 +1,9 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import logging
 from enum import Enum
 
@@ -33,10 +39,11 @@ class QuantizedKVCache(nn.Module):
         enable_dynamic_shape=False,
     ):
         super().__init__()
-        if not (
-            cache_type == QuantizedCacheType.AffineSymmetric
-            or cache_type == QuantizedCacheType.AffineAsymmetric
+        if cache_type not in (
+            QuantizedCacheType.AffineSymmetric,
+            QuantizedCacheType.AffineAsymmetric,
         ):
+
             raise ValueError(
                 f"Only affine symmetric and asymmetric cache types are supported: got {cache_type}"
             )
