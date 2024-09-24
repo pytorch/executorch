@@ -79,6 +79,8 @@ class CorrectnessTestGen:
         self.f = f
         self.suite_def = test_suite
         self.op_name = f.func.name.unambiguous_name()
+        if test_suite.test_name_suffix is not None:
+            self.op_name += f"_{test_suite.test_name_suffix}"
 
         self.f_sig = CppSignatureGroup.from_native_function(
             self.f, method=False, fallback_binding=self.f.manual_cpp_binding

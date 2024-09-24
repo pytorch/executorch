@@ -13,7 +13,7 @@
 layout(std430) buffer;
 
 ${layout_declare_tensor(0, "rw", "t_in", "float", "texture3d")}
-${layout_declare_ubo(1, "uvec3", "extents")}
+${layout_declare_ubo(1, "ivec3", "extents")}
 ${layout_declare_ubo(2, "int", "scalar")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
