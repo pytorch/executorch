@@ -33,19 +33,13 @@ void add_copy_offset_node(
   add_dtype_suffix(kernel_name, *t_out);
 
   const struct Block final {
-    ivec3 range;
-    int32_t unused0;
-    ivec3 src_offset;
-    int32_t unused1;
-    ivec3 dst_offset;
-    int32_t unused2;
+    alignas(16) ivec3 range;
+    alignas(16) ivec3 src_offset;
+    alignas(16) ivec3 dst_offset;
   } offset_params{
       range,
-      0,
       src_offset,
-      0,
       dst_offset,
-      0,
   };
 
   auto shader = VK_KERNEL_FROM_STR(kernel_name);
@@ -61,7 +55,11 @@ void add_copy_offset_node(
           {in, vkapi::MemoryAccessType::READ},
       },
       // Parameter buffers
-      {graph.create_params_buffer(offset_params)},
+      {
+          graph.create_params_buffer(offset_params),
+          t_out->axis_map_ubo(),
+          t_in->axis_map_ubo(),
+      },
       // Specialization Constants
       {}));
 }
