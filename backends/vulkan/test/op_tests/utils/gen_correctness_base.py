@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import re
-from typing import Any, List, Optional
+from typing import Any, List
 
 from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     AT_INT_ARRAY_REF,
