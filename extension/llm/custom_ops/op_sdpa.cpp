@@ -878,7 +878,7 @@ Tensor& custom_sdpa_out(
       util::kKVDim,
       sliced_key_strides.data());
   // since the cache is sliced, the batch stride needs to stay the same.
-  sliced_key_strides[0] = key_cache.strides()[0];
+  sliced_key_strides[0] = k.strides()[0];
   void* key_cache_data = k.mutable_data_ptr();
   TensorImpl k_impl = TensorImpl(
       k.scalar_type(),
@@ -904,7 +904,7 @@ Tensor& custom_sdpa_out(
       util::kKVDim,
       sliced_value_strides.data());
   // since the cache is sliced, the batch stride needs to stay the same.
-  sliced_value_strides[0] = value_cache.strides()[0];
+  sliced_value_strides[0] = v.strides()[0];
   void* value_cache_data = v.mutable_data_ptr();
   TensorImpl value_impl = TensorImpl(
       v.scalar_type(),
