@@ -148,6 +148,18 @@ deps = [
   "executorch",
 ]
 
+[targets.extension_memory_allocator]
+buck_targets = [
+  "//extension/memory_allocator:malloc_memory_allocator",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch_no_prim_ops",
+  "executorch",
+]
+
 [targets.extension_module]
 buck_targets = [
   "//extension/module:module",

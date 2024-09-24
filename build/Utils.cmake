@@ -59,6 +59,9 @@ function(executorch_print_configuration_summary)
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER : "
                  "${EXECUTORCH_BUILD_EXTENSION_DATA_LOADER}"
   )
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_MEMORY_ALLOCATOR : "
+                 "${EXECUTORCH_BUILD_EXTENSION_MEMORY_ALLOCATOR}"
+  )
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_MODULE      : "
                  "${EXECUTORCH_BUILD_EXTENSION_MODULE}"
   )
