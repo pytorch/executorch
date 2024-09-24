@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from dataclasses import dataclass
-from typing import Any, List
+from typing import Any, List, Optional
 
 ###################################
 ## Generic Test Suite definition ##
@@ -29,6 +29,7 @@ class TestSuite:
         self.rtol: str = "1e-5"
 
         self.is_view_op: bool = False
+        self.test_name_suffix: Optional[str] = None
 
     def supports_prepack(self):
         return len(self.prepacked_args) > 0
