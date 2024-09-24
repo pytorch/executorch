@@ -13,6 +13,7 @@ import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir import EdgeCompileConfig
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
 
@@ -92,16 +93,17 @@ class TestSimpleAdd(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
-    def _test_add_u55_BI_pipeline(
+    def _test_add_ethos_BI_pipeline(
         self,
         module: torch.nn.Module,
+        compile_spec: CompileSpec,
         test_data: Tuple[torch.Tensor],
     ):
         tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=compile_spec,
             )
             .quantize()
             .export()
@@ -114,8 +116,7 @@ class TestSimpleAdd(unittest.TestCase):
             .serialize()
         )
 
-        if common.is_option_enabled("corstone300"):
-            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
+        return tester
 
     @parameterized.expand(Add.test_parameters)
     def test_add_tosa_MI(self, test_data: torch.Tensor):
@@ -130,7 +131,22 @@ class TestSimpleAdd(unittest.TestCase):
     @parameterized.expand(Add.test_parameters)
     def test_add_u55_BI(self, test_data: torch.Tensor):
         test_data = (test_data,)
-        self._test_add_u55_BI_pipeline(self.Add(), test_data)
+        tester = self._test_add_ethos_BI_pipeline(
+            self.Add(),
+            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            test_data,
+        )
+        if common.is_option_enabled("corstone300"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
+
+    @parameterized.expand(Add.test_parameters)
+    def test_add_u85_BI(self, test_data: torch.Tensor):
+        test_data = (test_data,)
+        self._test_add_ethos_BI_pipeline(
+            self.Add(),
+            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            test_data,
+        )
 
     @parameterized.expand(Add2.test_parameters)
     def test_add2_tosa_MI(self, operand1: torch.Tensor, operand2: torch.Tensor):
@@ -145,4 +161,15 @@ class TestSimpleAdd(unittest.TestCase):
     @parameterized.expand(Add2.test_parameters)
     def test_add2_u55_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
-        self._test_add_u55_BI_pipeline(self.Add2(), test_data)
+        tester = self._test_add_ethos_BI_pipeline(
+            self.Add2(), common.get_u55_compile_spec(), test_data
+        )
+        if common.is_option_enabled("corstone300"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
+
+    @parameterized.expand(Add2.test_parameters)
+    def test_add2_u85_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
+        test_data = (operand1, operand2)
+        self._test_add_ethos_BI_pipeline(
+            self.Add2(), common.get_u85_compile_spec(), test_data
+        )

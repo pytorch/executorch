@@ -10,6 +10,7 @@ import unittest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
 
 test_data_sute = [
@@ -101,14 +102,17 @@ class TestMul(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data, qtol=1.0)
         )
 
-    def _test_mul_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: tuple[torch.Tensor, torch.Tensor]
+    def _test_mul_ethosu_BI_pipeline(
+        self,
+        compile_spec: CompileSpec,
+        module: torch.nn.Module,
+        test_data: tuple[torch.Tensor, torch.Tensor],
     ):
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=compile_spec,
             )
             .quantize()
             .export()
@@ -149,4 +153,18 @@ class TestMul(unittest.TestCase):
         other_: torch.Tensor,
     ):
         test_data = (input_, other_)
-        self._test_mul_u55_BI_pipeline(self.Mul(), test_data)
+        self._test_mul_ethosu_BI_pipeline(
+            common.get_u55_compile_spec(), self.Mul(), test_data
+        )
+
+    @parameterized.expand(test_data_sute)
+    def test_mul_u85_BI(
+        self,
+        test_name: str,
+        input_: torch.Tensor,
+        other_: torch.Tensor,
+    ):
+        test_data = (input_, other_)
+        self._test_mul_ethosu_BI_pipeline(
+            common.get_u85_compile_spec(), self.Mul(), test_data
+        )

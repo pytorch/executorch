@@ -13,6 +13,7 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
 
@@ -89,14 +90,17 @@ class TestCat(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
-    def _test_cat_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[tuple[torch.Tensor, ...], int]
+    def _test_cat_ethosu_BI_pipeline(
+        self,
+        module: torch.nn.Module,
+        compile_spec: CompileSpec,
+        test_data: Tuple[tuple[torch.Tensor, ...], int],
     ):
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(),
+                compile_spec=compile_spec,
             )
             .quantize()
             .export()
@@ -125,9 +129,16 @@ class TestCat(unittest.TestCase):
         test_data = (operands, dim)
         self._test_cat_tosa_BI_pipeline(self.Cat(), test_data)
 
-    # TODO: Remove @unittest.expectedFailure when this issue is fixed in Regor
     @parameterized.expand(Cat.test_parameters)
-    @unittest.expectedFailure
     def test_cat_u55_BI(self, operands: tuple[torch.Tensor, ...], dim: int):
         test_data = (operands, dim)
-        self._test_cat_u55_BI_pipeline(self.Cat(), test_data)
+        self._test_cat_ethosu_BI_pipeline(
+            self.Cat(), common.get_u55_compile_spec(), test_data
+        )
+
+    @parameterized.expand(Cat.test_parameters)
+    def test_cat_u85_BI(self, operands: tuple[torch.Tensor, ...], dim: int):
+        test_data = (operands, dim)
+        self._test_cat_ethosu_BI_pipeline(
+            self.Cat(), common.get_u85_compile_spec(), test_data
+        )

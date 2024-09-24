@@ -102,3 +102,18 @@ class TestMobileNetV2(unittest.TestCase):
             tester.run_method_and_compare_outputs(
                 atol=1.0, qtol=1, inputs=self.model_inputs
             )
+
+    def test_mv2_u85_BI(self):
+        (
+            ArmTester(
+                self.mv2,
+                example_inputs=self.model_inputs,
+                compile_spec=common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            )
+            .quantize()
+            .export()
+            .to_edge(config=self._edge_compile_config)
+            .check(list(self.operators_after_quantization))
+            .partition()
+            .to_executorch()
+        )
