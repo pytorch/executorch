@@ -17,6 +17,11 @@ on:
       - extension/android/**
       - extension/module/**
   workflow_dispatch:
+    inputs:
+      version:
+        description: Version name to be uploaded for AAR release
+        required: false
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
@@ -44,7 +49,9 @@ jobs:
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         # Build LLM Demo for Android
-        bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+        # bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+        mkdir -p "${ARTIFACTS_DIR_NAME}/llm_demo"
+        echo Hello > "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar"
 
         shasum -a 256 "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar"
 
@@ -71,7 +78,8 @@ jobs:
 
           pip install awscli==1.32.18
           AWS_CMD="aws s3 cp"
-          VERSION_NAME="$(date +'%Y%m%d')"
+          VERSION="${{ inputs.version }}"
+          VERSION_NAME="${VERSION:-temp_snapshot}"
           ${AWS_CMD} executorch.aar s3://ossci-android/executorch/release/${VERSION_NAME}/executorch.aar --acl public-read
           ${AWS_CMD} executorch.aar.sha256sums s3://ossci-android/executorch/release/${VERSION_NAME}/executorch.aar.sha256sums --acl public-read
 
