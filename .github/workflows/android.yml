@@ -23,10 +23,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-aar-and-upload:
-    name: build-aar-and-upload
-    env:
-      RELEASE_JOB: ${{ startsWith(github.ref, 'refs/tags/ciflow/android/release') }}
+  build-aar:
+    name: build-aar
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     with:
       runner: linux.2xlarge
@@ -51,18 +49,23 @@ jobs:
         mkdir -p "${ARTIFACTS_DIR_NAME}/llm_demo"
         touch "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar"
 
-        # Upload to RC if ciflow/android/release tag is present
-        if [[ "$RELEASE_JOB" = 'true']]
-          pip install awscli==1.32.18
-          AWS_CMD="aws s3 cp --dryrun"
-          VERSION_NAME="$(date -f "%Y%m%d")"
-          shasum -a 256 "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar"
-          ${AWS_CMD} "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar" s3://ossci-android/executorch/release/${VERSION_NAME}/executorch.aar --acl public-read
-        fi
+  upload-release-aar:
+    name: Upload AAR to RC if ciflow/android/release tag is present
+    needs: build-aar-and-upload
+    if: ${{ startsWith(github.ref, 'refs/tags/ciflow/android/release') }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    run: |
+        wget https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/llm_demo/executorch.aar
+
+        pip install awscli==1.32.18
+        AWS_CMD="aws s3 cp --dryrun"
+        VERSION_NAME="$(date -f "%Y%m%d")"
+        ${AWS_CMD} executorch.aar s3://ossci-android/executorch/release/${VERSION_NAME}/executorch.aar --acl public-read
 
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
-    needs: build-aar-and-upload
+    needs: build-aar
     # NB: Use metal install for KVM support to run the emulator faster
     runs-on: linux.24xl.spr-metal
     env:
