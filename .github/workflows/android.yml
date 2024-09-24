@@ -62,7 +62,7 @@ jobs:
           wget https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/llm_demo/executorch.aar
 
           pip install awscli==1.32.18
-          AWS_CMD="aws s3 cp --dryrun"
+          AWS_CMD="aws s3 cp"
           VERSION_NAME="$(date +'%Y%m%d')"
           ${AWS_CMD} executorch.aar s3://ossci-android/executorch/release/${VERSION_NAME}/executorch.aar --acl public-read
 
