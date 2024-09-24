@@ -44,7 +44,9 @@ function generate_pte_file() {
 
     local model_filename=${model}.pte
     if [[ "${delegate}" == *"--delegate"* ]]; then
-        model_filename=${model}_arm_delegate.pte
+	# Name aligned with default aot_arm_compiler output - run.sh only supports
+	# running on Corstone-300 with Ethos-U55 FVP at the moment.
+        model_filename=${model}_arm_delegate_ethos-u55-128.pte
     fi
     cd $et_root_dir
 
@@ -56,7 +58,7 @@ function generate_pte_file() {
     SO_LIB=$(find cmake-out-aot-lib -name libquantized_ops_aot_lib.so)
 
     python3 -m examples.arm.aot_arm_compiler --model_name="${model}" ${delegate} --so_library="$SO_LIB" 1>&2
-    [[ -f ${pte_file} ]] || { echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
+    [[ -f ${pte_file} ]] || { >&2 echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
     echo "${pte_file}"
 }
 
