@@ -49,9 +49,7 @@ jobs:
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         # Build LLM Demo for Android
-        # bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
-        mkdir -p "${ARTIFACTS_DIR_NAME}/llm_demo"
-        echo Hello > "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar"
+        bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
 
         shasum -a 256 "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar"
 
