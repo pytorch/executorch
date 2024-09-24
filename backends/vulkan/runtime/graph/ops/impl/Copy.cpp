@@ -139,28 +139,17 @@ void add_copy_channel_offset_node(
     uvec3 local_size = adaptive_work_group_size(global_size);
 
     const struct Block final {
-      utils::ivec4 out_sizes;
-      utils::ivec4 in_sizes;
-      int32_t channel_range;
-      int32_t src_channel_offset;
-      int32_t dst_channel_offset;
-      int32_t unused;
       ivec3 range;
-      int32_t unused1;
+      int32_t channel_range;
       ivec3 dst_offset;
-      int32_t unused2;
-
+      int32_t dst_channel_offset;
+      int32_t src_channel_offset;
     } channel_offset_params{
-        utils::make_whcn_ivec4(out_sizes),
-        utils::make_whcn_ivec4(in_sizes),
-        channel_range,
-        src_channel_offset,
-        dst_channel_offset,
-        0,
         utils::make_ivec3(global_size),
-        0,
+        channel_range,
         dst_offset,
-        0,
+        dst_channel_offset,
+        src_channel_offset,
     };
 
     auto shader = VK_KERNEL_FROM_STR(kernel_name);
@@ -177,7 +166,13 @@ void add_copy_channel_offset_node(
             {in, vkapi::MemoryAccessType::READ},
         },
         // Parameter buffers
-        {graph.create_params_buffer(channel_offset_params)},
+        {
+            t_out->sizes_ubo(),
+            t_out->axis_map_ubo(),
+            t_in->sizes_ubo(),
+            t_in->axis_map_ubo(),
+            graph.create_params_buffer(channel_offset_params),
+        },
         // Specialization Constants
         {}));
   }
