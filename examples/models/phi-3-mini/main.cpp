@@ -42,7 +42,7 @@ int main(int32_t argc, char** argv) {
 
   int32_t seq_len = FLAGS_seq_len;
 
-  ::torch::executor::Runner runner(model_path, tokenizer_path, temperature);
+  example::Runner runner(model_path, tokenizer_path, temperature);
 
   runner.generate(prompt, seq_len);
 
