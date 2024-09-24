@@ -44,10 +44,9 @@ jobs:
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         # Build LLM Demo for Android
-        # bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+        bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
 
-        mkdir -p "${ARTIFACTS_DIR_NAME}/llm_demo"
-        touch "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar"
+        shasum -a 256 "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar"
 
   upload-release-aar:
     name: upload-release-aar
@@ -65,11 +64,13 @@ jobs:
         shell: bash
         run: |
           wget https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/llm_demo/executorch.aar
+          shasum -a 256 executorch.aar > executorch.aar.sha256sums
 
           pip install awscli==1.32.18
           AWS_CMD="aws s3 cp"
           VERSION_NAME="$(date +'%Y%m%d')"
           ${AWS_CMD} executorch.aar s3://ossci-android/executorch/release/${VERSION_NAME}/executorch.aar --acl public-read
+          ${AWS_CMD} executorch.aar.sha256sums s3://ossci-android/executorch/release/${VERSION_NAME}/executorch.aar.sha256sums --acl public-read
 
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
