@@ -11,6 +11,7 @@
 #include <math.h>
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <numeric>
 
 namespace impl {
@@ -19,8 +20,7 @@ namespace kernels {
 
 // Quantize a fp32 value to an int8_t/uint8_t value
 template <typename T>
-__attribute__((always_inline)) T
-quantize(const float x, float scale, int32_t zero_point) {
+T quantize(const float x, float scale, int32_t zero_point) {
   constexpr float min_val = std::numeric_limits<T>::min();
   constexpr float max_val = std::numeric_limits<T>::max();
   float tmp = roundf(x * scale + zero_point);
@@ -42,8 +42,7 @@ void quantize(
 
 // Dequantize an int8_t/uint8_t value to an fp32 value
 template <typename T>
-__attribute__((always_inline)) float
-dequantize(const T x, float scale, int32_t zero_point) {
+float dequantize(const T x, float scale, int32_t zero_point) {
   return scale * (x - zero_point);
 }
 
@@ -62,9 +61,8 @@ void dequantize(
 
 // explicit template instantiation
 
-#define typed_quantize_val(dtype)                         \
-  template __attribute__((always_inline)) dtype quantize( \
-      const float x, float inv_scale, int32_t zero_point);
+#define typed_quantize_val(dtype) \
+  template dtype quantize(const float x, float inv_scale, int32_t zero_point);
 typed_quantize_val(int8_t);
 typed_quantize_val(uint8_t);
 typed_quantize_val(int16_t);
@@ -84,9 +82,8 @@ typed_quantize_vec(int16_t);
 typed_quantize_vec(int32_t);
 #undef typed_quantize_vec
 
-#define typed_dequantize_val(dtype)                         \
-  template __attribute__((always_inline)) float dequantize( \
-      const dtype x, float scale, int32_t zero_point);
+#define typed_dequantize_val(dtype) \
+  template float dequantize(const dtype x, float scale, int32_t zero_point);
 typed_dequantize_val(int8_t);
 typed_dequantize_val(uint8_t);
 typed_dequantize_val(int16_t);
