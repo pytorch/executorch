@@ -15,7 +15,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-namespace torch::executor {
+namespace example {
 
 class FileMemMapper { // Read-only mmap
  public:
@@ -97,4 +97,4 @@ class FileMemMapper { // Read-only mmap
   size_t mSize = 0;
 };
 
-} // namespace torch::executor
+} // namespace example
