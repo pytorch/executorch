@@ -13,6 +13,7 @@ on:
       - install_requirements.sh
       - backends/apple/**
       - build/build_apple_frameworks.sh
+      - build/build_apple_llm_demo.sh
       - build/create_frameworks.sh
       - build/test_ios_ci.sh
       - examples/demo-apps/apple_ios/**
@@ -215,3 +216,70 @@ jobs:
             shasum -a 256 "${FILENAME}"
             ${AWS_CMD} "${FILENAME}" s3://ossci-ios/executorch/ --acl public-read
           done
+
+  build-benchmark-app:
+    name: build-benchmark-app
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    secrets: inherit
+    with:
+      runner: macos-latest-xlarge
+      python-version: '3.11'
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      upload-artifact: ios-apps
+      secrets-env: BUILD_CERTIFICATE_BASE64 EXECUTORCH_BENCHMARK_BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Setting up CI environment"
+        .ci/scripts/setup-conda.sh
+
+        BUILD_TOOL=cmake
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+        .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
+
+        # Setup Apple certificate for iOS development
+        BUILD_PROVISION_PROFILE_BASE64="${SECRET_EXECUTORCH_BENCHMARK_BUILD_PROVISION_PROFILE_BASE64}" \
+        BUILD_CERTIFICATE_BASE64="${SECRET_BUILD_CERTIFICATE_BASE64}" \
+        KEYCHAIN_PASSWORD="${SECRET_KEYCHAIN_PASSWORD}" \
+        .ci/scripts/setup-ios.sh
+
+        # Install CoreML Backend Requirements
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+          backends/apple/coreml/scripts/install_requirements.sh
+
+        # Install MPS Backend Requirements
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+          backends/apple/mps/install_requirements.sh
+        echo "::endgroup::"
+
+        echo "::group::Build ExecuTorch iOS frameworks"
+        FRAMEWORKS=(
+          "executorch"
+          "backend_coreml"
+          "backend_mps"
+          "backend_xnnpack"
+          "kernels_custom"
+          "kernels_optimized"
+          "kernels_portable"
+          "kernels_quantized"
+        )
+
+        # Build Release iOS Frameworks
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+          build/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack
+
+        mkdir -p extension/apple/Benchmark/Frameworks
+        for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
+          cp -r "cmake-out/${FRAMEWORK}.xcframework" extension/apple/Benchmark/Frameworks/
+        ) done
+        echo "::endgroup::"
+
+        echo "::group::Build ExecuTorch benchmark app"
+        mkdir -p extension/apple/Benchmark/Models
+        ${CONDA_RUN} --no-capture-output \
+          build/build_apple_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+        echo "::endgroup::"
