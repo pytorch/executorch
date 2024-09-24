@@ -15,45 +15,45 @@ class UpdateQuantizedKVCacheTest(unittest.TestCase):
 
     def _reset(self):
         self.quantized_k_cache = torch.zeros(
-            (1, self.seq_len, self.num_heads, self.head_dim), dtype=torch.int8
+            (self.batch_size, self.seq_len, self.num_heads, self.head_dim),
+            dtype=torch.int8,
         )
         self.quantized_v_cache = torch.zeros(
-            (1, self.seq_len, self.num_heads, self.head_dim), dtype=torch.int8
+            (self.batch_size, self.seq_len, self.num_heads, self.head_dim),
+            dtype=torch.int8,
         )
         self.k_scales_cache = torch.zeros(
-            (1, self.seq_len, self.num_heads, 1), dtype=torch.float64
+            (self.batch_size, self.seq_len, self.num_heads, 1), dtype=torch.float64
         )
         self.v_scales_cache = torch.zeros(
-            (1, self.seq_len, self.num_heads, 1), dtype=torch.float64
+            (self.batch_size, self.seq_len, self.num_heads, 1), dtype=torch.float64
         )
         self.k_zero_points_cache = torch.zeros(
-            (1, self.seq_len, self.num_heads, 1), dtype=torch.int64
+            (self.batch_size, self.seq_len, self.num_heads, 1), dtype=torch.int64
         )
         self.v_zero_points_cache = torch.zeros(
-            (1, self.seq_len, self.num_heads, 1), dtype=torch.int64
+            (self.batch_size, self.seq_len, self.num_heads, 1), dtype=torch.int64
         )
 
     def setUp(self):
         torch.manual_seed(42)
+        self.batch_size = 1
         self.seq_len = 10
         self.num_heads = 8
         self.head_dim = 4
         self._reset()
 
-    def _update(self, start_pos, value, scales, zero_points, update_v=False):
+    def _update_k(self, start_pos, value, scales, zero_points):
         seq_len = value.size(1)
-        if update_v:
-            self.quantized_v_cache[:, start_pos : start_pos + seq_len, :, :] = value
-            self.v_scales_cache[:, start_pos : start_pos + seq_len, :, :] = scales
-            self.v_zero_points_cache[:, start_pos : start_pos + seq_len, :, :] = (
-                zero_points
-            )
-        else:
-            self.quantized_k_cache[:, start_pos : start_pos + seq_len, :, :] = value
-            self.k_scales_cache[:, start_pos : start_pos + seq_len, :, :] = scales
-            self.k_zero_points_cache[:, start_pos : start_pos + seq_len, :, :] = (
-                zero_points
-            )
+        self.quantized_k_cache[:, start_pos : start_pos + seq_len, :, :] = value
+        self.k_scales_cache[:, start_pos : start_pos + seq_len, :, :] = scales
+        self.k_zero_points_cache[:, start_pos : start_pos + seq_len, :, :] = zero_points
+
+    def _update_v(self, start_pos, value, scales, zero_points):
+        seq_len = value.size(1)
+        self.quantized_v_cache[:, start_pos : start_pos + seq_len, :, :] = value
+        self.v_scales_cache[:, start_pos : start_pos + seq_len, :, :] = scales
+        self.v_zero_points_cache[:, start_pos : start_pos + seq_len, :, :] = zero_points
 
     def _update_and_validate(
         self, k, v, k_scales, v_scales, k_zero_points, v_zero_points, start_pos
@@ -64,8 +64,8 @@ class UpdateQuantizedKVCacheTest(unittest.TestCase):
         v_scales_cache = self.v_scales_cache.clone()
         k_zero_points_cache = self.k_zero_points_cache.clone()
         v_zero_points_cache = self.v_zero_points_cache.clone()
-        self._update(start_pos, k, k_scales, k_zero_points, update_v=False)
-        self._update(start_pos, v, v_scales, v_zero_points, update_v=True)
+        self._update_k(start_pos, k, k_scales, k_zero_points)
+        self._update_v(start_pos, v, v_scales, v_zero_points)
 
         torch.ops.llama.update_quantized_cache(k, k_cache, start_pos)
         torch.ops.llama.update_quantized_cache(k_scales, k_scales_cache, start_pos)
@@ -143,6 +143,40 @@ class UpdateQuantizedKVCacheTest(unittest.TestCase):
         v_scales = torch.rand((1, 1, 8, 1), dtype=torch.float64)
         k_zero_points = torch.randint(0, 20, (1, 1, 8, 1), dtype=torch.int64)
         v_zero_points = torch.randint(0, 20, (1, 1, 8, 1), dtype=torch.int64)
+        start_pos = 4
+
+        self._update_and_validate(
+            k, v, k_scales, v_scales, k_zero_points, v_zero_points, start_pos
+        )
+
+    def test_batched_update_kv_cache_more_updates(self):
+        self.batch_size = 7
+        self._reset()
+        k = torch.randint(0, 50, (self.batch_size, 1, 8, 4), dtype=torch.int8)
+        v = torch.randint(0, 50, (self.batch_size, 1, 8, 4), dtype=torch.int8)
+        k_scales = torch.rand((self.batch_size, 1, 8, 1), dtype=torch.float64)
+        v_scales = torch.rand((self.batch_size, 1, 8, 1), dtype=torch.float64)
+        k_zero_points = torch.randint(
+            0, 20, (self.batch_size, 1, 8, 1), dtype=torch.int64
+        )
+        v_zero_points = torch.randint(
+            0, 20, (self.batch_size, 1, 8, 1), dtype=torch.int64
+        )
+        start_pos = 2
+        self._update_and_validate(
+            k, v, k_scales, v_scales, k_zero_points, v_zero_points, start_pos
+        )
+
+        k = torch.randint(0, 50, (self.batch_size, 1, 8, 4), dtype=torch.int8)
+        v = torch.randint(0, 50, (self.batch_size, 1, 8, 4), dtype=torch.int8)
+        k_scales = torch.rand((self.batch_size, 1, 8, 1), dtype=torch.float64)
+        v_scales = torch.rand((self.batch_size, 1, 8, 1), dtype=torch.float64)
+        k_zero_points = torch.randint(
+            0, 20, (self.batch_size, 1, 8, 1), dtype=torch.int64
+        )
+        v_zero_points = torch.randint(
+            0, 20, (self.batch_size, 1, 8, 1), dtype=torch.int64
+        )
         start_pos = 4
 
         self._update_and_validate(

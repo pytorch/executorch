@@ -183,7 +183,7 @@ static executorch::runtime::Kernel make_boxed_kernel(
 
 #define _EXECUTORCH_LIBRARY_IMPL(ns, op_name, func, uid) \
   static auto ET_CONCATENATE(res_##ns##_, uid) =         \
-      ::executorch::runtime::register_kernels(           \
+      ::executorch::runtime::register_kernel(            \
           ::executorch::extension::make_boxed_kernel(    \
               #ns "::" op_name, EXECUTORCH_FN(func)))
 

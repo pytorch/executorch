@@ -1,9 +1,24 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+oncall("executorch")
+
 runtime.python_library(
     name = "quantized_kv_cache",
     srcs = [
         "quantized_kv_cache.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.llama2.source_transformation",
+    visibility = ["//executorch/..."],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_library(
+    name = "sdpa",
+    srcs = [
+        "sdpa.py",
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama2.source_transformation",
@@ -19,10 +34,26 @@ runtime.python_test(
         "test_quantized_kv_cache.py",
     ],
     preload_deps = [
-        "//executorch/extension/llm/custom_ops:update_quantized_cache_aot_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
     ],
     deps = [
         ":quantized_kv_cache",
+        "//caffe2:torch",
+        "//executorch/examples/models/llama2:llama_transformer",
+    ],
+)
+
+runtime.python_test(
+    name = "quantized_sdpa_with_kv_cache_test",
+    srcs = [
+        "test_sdpa_with_quantized_kv_cache.py",
+    ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+    ],
+    deps = [
+        ":quantized_kv_cache",
+        ":sdpa",
         "//caffe2:torch",
         "//executorch/examples/models/llama2:llama_transformer",
     ],
