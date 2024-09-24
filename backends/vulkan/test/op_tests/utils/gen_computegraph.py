@@ -272,6 +272,7 @@ class ComputeGraphGen:
             return ret_str
 
         prepack = self.prepack_ref(ref)
+        ref_is_view = self.suite_def.is_view_op and ref.is_out
 
         cpp_type = "IOValueRef" if (ref.is_in and not prepack) else "ValueRef"
         if not include_declarations:
@@ -362,7 +363,15 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
                 ret_str = f"IOValueRef {ref.name};\n"
             ret_str += f"{ref.name}.value = {self.graph}{self.dot}"
 
-        if ref.src_cpp_type == AT_TENSOR and not prepack:
+        if ref.src_cpp_type == AT_TENSOR and ref_is_view:
+            input_name = None
+            for _name, ref in self.refs.items():
+                if ref.is_in and ref.src_cpp_type == AT_TENSOR:
+                    input_name = ref.name
+
+            assert input_name is not None
+            ret_str += f"add_tensor_view({input_name}.value);"
+        elif ref.src_cpp_type == AT_TENSOR and not prepack:
             ret_str += "add_input_tensor(" if ref.is_in else "add_tensor("
             ret_str += f"{ref.src_cpp_name}.sizes().vec(), "
             ret_str += f"from_at_scalartype({ref.src_cpp_name}.scalar_type())); \n"
