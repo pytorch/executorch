@@ -23,8 +23,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-aar:
-    name: build-aar
+  build-llm-demo:
+    name: build-llm-demo
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     with:
       runner: linux.2xlarge
@@ -46,38 +46,9 @@ jobs:
         # Build LLM Demo for Android
         bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
 
-        shasum -a 256 "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar"
-
-  upload-release-aar:
-    name: upload-release-aar
-    needs: build-aar
-    if: ${{ startsWith(github.ref, 'refs/tags/ciflow/android/release') }}
-    runs-on: ubuntu-22.04
-    timeout-minutes: 10
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: configure aws credentials
-        uses: aws-actions/configure-aws-credentials@v1.7.0
-        with:
-          role-to-assume: arn:aws:iam::308535385114:role/gha_executorch_upload-frameworks-android
-          aws-region: us-east-1
-      - name: Upload AAR to RC if ciflow/android/release tag is present
-        shell: bash
-        run: |
-          wget https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/llm_demo/executorch.aar
-          shasum -a 256 executorch.aar > executorch.aar.sha256sums
-
-          pip install awscli==1.32.18
-          AWS_CMD="aws s3 cp"
-          VERSION_NAME="$(date +'%Y%m%d')"
-          ${AWS_CMD} executorch.aar s3://ossci-android/executorch/release/${VERSION_NAME}/executorch.aar --acl public-read
-          ${AWS_CMD} executorch.aar.sha256sums s3://ossci-android/executorch/release/${VERSION_NAME}/executorch.aar.sha256sums --acl public-read
-
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
-    needs: build-aar
+    needs: build-llm-demo
     # NB: Use metal install for KVM support to run the emulator faster
     runs-on: linux.24xl.spr-metal
     env:
