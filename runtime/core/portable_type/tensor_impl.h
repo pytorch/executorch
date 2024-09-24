@@ -103,9 +103,9 @@ class TensorImpl {
       ScalarType type,
       ssize_t dim,
       SizesType* sizes,
-      void* data = nullptr,
-      DimOrderType* dim_order = nullptr,
-      StridesType* strides = nullptr,
+      void* data,
+      DimOrderType* dim_order,
+      StridesType* strides,
       TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC);
 
   /**

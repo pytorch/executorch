@@ -59,6 +59,9 @@ TensorImpl::TensorImpl(
   ET_CHECK_MSG(
       isValid(type_), "Invalid type %" PRId8, static_cast<int8_t>(type_));
   ET_CHECK_MSG(dim_ >= 0, "Dimension must be non-negative, got %zd", dim_);
+  ET_CHECK_MSG(
+      dim == 0 || dim_order_ != nullptr, "dim_order_ must be non-null");
+  ET_CHECK_MSG(dim == 0 || strides_ != nullptr, "strides_ must be non-null");
 }
 
 size_t TensorImpl::nbytes() const {
