@@ -46,12 +46,15 @@ jobs:
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         # Build LLM Demo for Android
-        bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+        # bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+
+        mkdir -p "${ARTIFACTS_DIR_NAME}/llm_demo"
+        touch "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar"
 
         # Upload to RC if ciflow/android/release tag is present
         if [[ "$RELEASE_JOB" = 'true']]
           pip install awscli==1.32.18
-          AWS_CMD="aws s3 cp"
+          AWS_CMD="aws s3 cp --dryrun"
           VERSION_NAME="$(date -f "%Y%m%d")"
           shasum -a 256 "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar"
           ${AWS_CMD} "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar" s3://ossci-android/executorch/release/${VERSION_NAME}/executorch.aar --acl public-read
