@@ -65,8 +65,7 @@ Optional Parameters:
 * System Prompt: Without any formatting, you can enter in a system prompt. For example, "you are a travel assistant" or "give me a response in a few sentences".
 * User Prompt: More for the advanced user, if you would like to manually input a prompt then you can do so by modifying the `{{user prompt}}`. You can also modify the special tokens as well. Once changed then go back to the main Chat activity to send.
 
-> [!TIP]
-> Helpful ExecuTorch API in app
+#### ExecuTorch App API
 
 ```java
 // Upon returning to the Main Chat Activity
@@ -95,8 +94,8 @@ You can provide it more follow-up questions as well.
 <img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/chat.png" style="width:300px">
 </p>
 
-> [!TIP]
-> Helpful ExecuTorch API in app
+#### ExecuTorch App API
+
 ```java
 mModule.generate(prompt,sequence_length, MainActivity.this);
 ```
@@ -119,8 +118,7 @@ To show completion of the follow-up question, here is the complete detailed resp
 <img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/chat_response.png" style="width:300px">
 </p>
 
-> [!TIP]
-> Helpful ExecuTorch API in app
+#### ExecuTorch App API
 
 Ensure you have the following functions in your callback class that you provided in the `mModule.generate()`. For this example, it is `MainActivity.this`.
 ```java
