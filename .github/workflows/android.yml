@@ -51,7 +51,7 @@ jobs:
 
   upload-release-aar:
     name: Upload AAR to RC if ciflow/android/release tag is present
-    needs: build-aar-and-upload
+    needs: build-aar
     if: ${{ startsWith(github.ref, 'refs/tags/ciflow/android/release') }}
     runs-on: ubuntu-22.04
     timeout-minutes: 10
