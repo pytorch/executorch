@@ -49,7 +49,7 @@ using Tensor = exec_aten::Tensor;
 
 // repeat.out(Tensor self, int[] repeats, *, Tensor(a!) out) -> Tensor(a!)
 Tensor& repeat_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     exec_aten::ArrayRef<int64_t> repeats,
     Tensor& out) {
@@ -61,6 +61,11 @@ Tensor& repeat_out(
       calculate_output_size(self.sizes(), repeats, expected_output_size),
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(self), InvalidArgument, out);
 
   // Resize for dynamic shape
   ET_KERNEL_CHECK_MSG(

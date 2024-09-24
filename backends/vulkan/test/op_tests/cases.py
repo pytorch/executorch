@@ -8,7 +8,7 @@
 from collections import namedtuple
 from typing import Callable
 
-from executorch.backends.vulkan.test.op_tests.utils.codegen import VkTestSuite
+from executorch.backends.vulkan.test.op_tests.utils.test_suite import VkTestSuite
 
 
 # Prime numbers dim sizes for testing
@@ -49,6 +49,7 @@ def get_binary_elementwise_inputs():
             ((S, S1, S2), (S, S1, S2)),
             ((S, S1, S2), (S, S1, 1), 2.0),
             ((S, S1, S2), (S, 1, S2), 2.0),
+            ((XS, S, S1, S2), (XS, S, 1, 1), 2.0),
         ]
     )
     test_suite.layouts = [
@@ -554,16 +555,15 @@ def get_slice_view_inputs():
 
     # Slice by channel
     test_cases = [
-        Test(self=[1, 5, 1, 10], dim=1, start=0, end=3),
-        Test(self=[1, 5, 1, 10], dim=1, start=0, end=4),
-        Test(self=[1, 5, 3, 7], dim=1, start=0, end=2),
-        Test(self=[1, 5, 8, 7], dim=1, start=0, end=3),
+        Test(self=[1, 17, 1, 10], dim=1, start=0, end=4),
+        Test(self=[1, 17, 1, 10], dim=1, start=0, end=8),
+        Test(self=[1, 17, 3, 7], dim=1, start=0, end=12),
     ]
 
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
 
     test_suite.dtypes = ["at::kFloat"]
-    test_suite.storage_types = ["utils::kBuffer"]
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
     test_suite.layouts = ["utils::kWidthPacked"]
     test_suite.data_gen = "make_seq_tensor"
     test_suite.is_view_op = True
@@ -592,7 +592,6 @@ def get_transpose_inputs():
         Test(self=[M1, S2, M], dim0=0, dim1=1),
         Test(self=[M1, S2, M], dim0=0, dim1=2),
         Test(self=[M1, S2, M], dim0=2, dim1=1),
-        Test(self=[S, M, S2, M2], dim0=0, dim1=2),
         Test(self=[S, M, S2, M2], dim0=3, dim1=2),
         Test(self=[S, M, S2, M2], dim0=1, dim1=2),
         Test(self=[S, M, S2, M2], dim0=3, dim1=1),
@@ -601,7 +600,7 @@ def get_transpose_inputs():
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
 
     test_suite.dtypes = ["at::kFloat"]
-    test_suite.storage_types = ["utils::kBuffer"]
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
     test_suite.layouts = ["utils::kWidthPacked", "utils::kChannelsPacked"]
     test_suite.data_gen = "make_seq_tensor"
     test_suite.is_view_op = True
@@ -938,6 +937,7 @@ def get_softmax_inputs():
         "aten.neg.default",
         "aten.cos.default",
         "aten.hardswish.default",
+        "aten.hardsigmoid.default",
     ]
 )
 def get_unary_ops_inputs():

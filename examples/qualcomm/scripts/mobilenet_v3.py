@@ -70,10 +70,13 @@ def main(args):
         )
 
     data_num = 100
-    inputs, targets, input_list = get_dataset(
-        dataset_path=f"{args.dataset}",
-        data_size=data_num,
-    )
+    if args.compile_only:
+        inputs = [(torch.rand(1, 3, 224, 224),)]
+    else:
+        inputs, targets, input_list = get_dataset(
+            dataset_path=f"{args.dataset}",
+            data_size=data_num,
+        )
     pte_filename = "mv3_qnn"
     instance = MV3Model()
     build_executorch_binary(
@@ -90,12 +93,6 @@ def main(args):
     if args.compile_only:
         sys.exit(0)
 
-    # setup required paths accordingly
-    # qnn_sdk       : QNN SDK path setup in environment variable
-    # build_path : path where QNN delegate artifacts were built
-    # pte_path      : path where executorch binary was stored
-    # device_id     : serial number of android device
-    # workspace     : folder for storing artifacts on android device
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
         build_path=f"{args.build_folder}",
@@ -146,7 +143,7 @@ if __name__ == "__main__":
             "for https://www.kaggle.com/datasets/ifigotin/imagenetmini-1000)"
         ),
         type=str,
-        required=True,
+        required=False,
     )
 
     parser.add_argument(

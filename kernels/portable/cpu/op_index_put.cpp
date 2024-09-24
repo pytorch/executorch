@@ -19,7 +19,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& index_put_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
     const Tensor& values,
@@ -32,6 +32,11 @@ Tensor& index_put_out(
 
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dtype(in, values), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   ScalarType in_type = in.scalar_type();
   size_t block_count = count_index_blocks(indices);
@@ -48,7 +53,7 @@ Tensor& index_put_out(
     ET_KERNEL_CHECK(
         ctx, tensor_is_broadcastable_to(values, out), InvalidArgument, out);
 
-    ET_SWITCH_REALHB_TYPES(in_type, ctx, "index_put.out", CTYPE, [&]() {
+    ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, "index_put.out", CTYPE, [&]() {
       apply_binary_elementwise_fn<CTYPE, CTYPE, CTYPE>(
           [accumulate](const CTYPE val_in, const CTYPE val) {
             return accumulate ? val_in + val : val;
@@ -115,7 +120,7 @@ Tensor& index_put_out(
     x_numel *= x_sizes[i];
   }
 
-  ET_SWITCH_REALHB_TYPES(in_type, ctx, "index_put.out", CTYPE, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, "index_put.out", CTYPE, [&]() {
     const CTYPE* const values_data = values.const_data_ptr<CTYPE>();
     CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 

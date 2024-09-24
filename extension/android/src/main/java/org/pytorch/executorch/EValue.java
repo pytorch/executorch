@@ -11,6 +11,7 @@ package org.pytorch.executorch;
 import com.facebook.jni.annotations.DoNotStrip;
 import java.util.Locale;
 import java.util.Optional;
+import org.pytorch.executorch.annotations.Experimental;
 
 /**
  * Java representation of an ExecuTorch value, which is implemented as tagged union that can be one
@@ -27,7 +28,10 @@ import java.util.Optional;
  *
  * <p>{@code EValue} objects may retain references to objects passed into their constructors, and
  * may return references to their internal state from {@code toX()}.
+ *
+ * <p>Warning: These APIs are experimental and subject to change without notice
  */
+@Experimental
 @DoNotStrip
 public class EValue {
   private static final int TYPE_CODE_NONE = 0;

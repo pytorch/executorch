@@ -23,6 +23,7 @@
 using namespace ::testing;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
+using exec_aten::TensorImpl;
 using exec_aten::TensorList;
 using executorch::runtime::testing::IsCloseTo;
 using executorch::runtime::testing::IsDataCloseTo;
@@ -824,6 +825,24 @@ TEST(TensorUtilTest, TensorStreamBool) {
   EXPECT_STREQ(
       out.str().c_str(),
       "ETensor(sizes={2, 2}, dtype=Bool, data={1, 0, 1, 0})");
+}
+
+TEST(TensorTest, TestZeroShapeTensorEquality) {
+  TensorImpl::SizesType sizes[2] = {2, 2};
+  TensorImpl::StridesType strides[2] = {2, 1};
+  TensorImpl::DimOrderType dim_order[2] = {0, 1};
+
+  TensorImpl t1(ScalarType::Float, 2, sizes, nullptr, dim_order, strides);
+  TensorImpl t2(ScalarType::Float, 2, sizes, nullptr, dim_order, strides);
+
+  ET_EXPECT_DEATH({ EXPECT_TENSOR_EQ(Tensor(&t1), Tensor(&t2)); }, "");
+
+  float data[] = {1.0, 2.0, 3.0, 4.0};
+
+  t1.set_data(data);
+  t2.set_data(data);
+
+  EXPECT_TENSOR_EQ(Tensor(&t1), Tensor(&t2));
 }
 
 #endif // !USE_ATEN_LIB

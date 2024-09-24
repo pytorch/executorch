@@ -598,21 +598,8 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
     if (!model) {
         return NO;
     }
-    
-    NSError *localError = nil;
-    BOOL result = [model.mlModel prewarmAndReturnError:&localError];
-    if (!result) {
-        ETCoreMLLogError(localError,
-                         "%@: Failed to prewarm model with identifier = %@",
-                         NSStringFromClass(self.assetManager.class),
-                         model.identifier);
-    }
-    
-    if (error) {
-        *error = localError;
-    }
-    
-    return result;
+
+    return [model prewarmAndReturnError:error];
 }
 
 - (void)prewarmRecentlyUsedAssetsWithMaxCount:(NSUInteger)maxCount {
@@ -682,16 +669,15 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
                                                                        error:&localError];
     // Try without output backings.
     if (!modelOutputs && predictionOptions.outputBackings.count > 0) {
-        localError = nil;
         executor.ignoreOutputBackings = YES;
+        localError = nil;
+        modelOutputs = [executor executeModelWithInputs:inputFeatures
+                                      predictionOptions:predictionOptions
+                                         loggingOptions:loggingOptions
+                                            eventLogger:eventLogger
+                                                  error:&localError];
     }
-    
-    modelOutputs = [executor executeModelWithInputs:inputFeatures
-                                  predictionOptions:predictionOptions
-                                     loggingOptions:loggingOptions
-                                        eventLogger:eventLogger
-                                              error:&localError];
-    
+
     if (error) {
         *error = localError;
     }

@@ -42,7 +42,7 @@ class TestGenOpList(unittest.TestCase):
         mock_get_operators: NonCallableMock,
     ) -> None:
         args = ["--output_path=wrong_path", "--model_file_path=path2"]
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(RuntimeError):
             gen_oplist.main(args)
 
     @patch("executorch.codegen.tools.gen_oplist._get_kernel_metadata_for_model")

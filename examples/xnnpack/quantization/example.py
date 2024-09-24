@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import argparse
 import copy
 import logging
@@ -58,7 +60,7 @@ def verify_xnnpack_quantizer_matching_fx_quant_model(model_name, model, example_
     m = model
 
     # 1. pytorch 2.0 export quantization flow (recommended/default flow)
-    m = torch._export.capture_pre_autograd_graph(m, copy.deepcopy(example_inputs))
+    m = torch.export.export_for_training(m, copy.deepcopy(example_inputs)).module()
     quantizer = XNNPACKQuantizer()
     quantization_config = get_symmetric_quantization_config(is_per_channel=True)
     quantizer.set_global(quantization_config)
@@ -175,7 +177,7 @@ def main() -> None:
 
     model = model.eval()
     # pre-autograd export. eventually this will become torch.export
-    model = torch._export.capture_pre_autograd_graph(model, example_inputs)
+    model = torch.export.export_for_training(model, example_inputs).module()
     start = time.perf_counter()
     quantized_model = quantize(model, example_inputs)
     end = time.perf_counter()
@@ -191,9 +193,7 @@ def main() -> None:
 
     start = time.perf_counter()
     prog = edge_m.to_executorch(
-        config=ExecutorchBackendConfig(
-            extract_delegate_segments=False, extract_constant_segment=False
-        )
+        config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
     save_pte_program(prog, f"{args.model_name}_quantized")
     end = time.perf_counter()

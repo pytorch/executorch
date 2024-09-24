@@ -39,7 +39,7 @@ void increment_index(size_t* index, const ArrayRef<SizesType> sizes) {
  * out to the appropriate size, and then loop again and properly write into out
  */
 template <typename CTYPE>
-void nonzero(RuntimeContext& ctx, const Tensor& input, Tensor& output) {
+void nonzero(KernelRuntimeContext& ctx, const Tensor& input, Tensor& output) {
   const CTYPE* in_data = input.const_data_ptr<CTYPE>();
   size_t lim = input.numel();
   int32_t num_nonzero = 0;
@@ -83,7 +83,7 @@ void nonzero(RuntimeContext& ctx, const Tensor& input, Tensor& output) {
  * Determines the non zero indices of input.
  * Out is a 2-D tensor where every row is a non zero index of the input.
  */
-Tensor& nonzero_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& nonzero_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   ET_KERNEL_CHECK(ctx, check_nonzero_args(in, out), InvalidArgument, out);

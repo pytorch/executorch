@@ -48,6 +48,8 @@ class Allocator final {
   VmaAllocator allocator_;
 
  public:
+  VmaAllocationCreateInfo gpuonly_resource_create_info();
+
   Allocation create_allocation(
       const VkMemoryRequirements& memory_requirements,
       const VmaAllocationCreateInfo& create_info);
@@ -62,12 +64,11 @@ class Allocator final {
       const bool allow_transfer = false,
       const bool allocate_memory = true);
 
+  VulkanBuffer create_staging_buffer(const VkDeviceSize);
+
   VulkanBuffer create_storage_buffer(
       const VkDeviceSize,
-      const bool gpu_only = true,
       const bool allocate_memory = true);
-
-  VulkanBuffer create_staging_buffer(const VkDeviceSize);
 
   /*
    * Create a uniform buffer with a specified size

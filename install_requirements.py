@@ -82,13 +82,19 @@ for arg in sys.argv[1:]:
         print(f"Error: Unknown option {arg}")
         sys.exit(1)
 
+# Use ClangCL on Windows.
+# ClangCL is an alias to Clang that configures it to work in an MSVC-compatible
+# mode. Using it on Windows to avoid compiler compatibility issues for MSVC.
+if os.name == "nt":
+    CMAKE_ARGS += " -T ClangCL"
+
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
 # pip versions will have the required features.
 #
 # NOTE: If a newly-fetched version of the executorch repo changes the value of
 # NIGHTLY_VERSION, you should re-run this script to install the necessary
 # package versions.
-NIGHTLY_VERSION = "dev20240821"
+NIGHTLY_VERSION = "dev20240901"
 
 # The pip repository that hosts nightly torch packages.
 TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
@@ -115,7 +121,7 @@ DEVEL_REQUIREMENTS = [
 # TODO: Make each example publish its own requirements.txt
 EXAMPLES_REQUIREMENTS = [
     "timm==1.0.7",
-    f"torchaudio==2.4.0.{NIGHTLY_VERSION}",
+    f"torchaudio==2.5.0.{NIGHTLY_VERSION}",
     "torchsr==1.0.4",
     "transformers==4.42.4",
 ]

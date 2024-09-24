@@ -20,7 +20,7 @@ If users are interested in well-known applications, [Qualcomm AI HUB](https://ai
 ### Dependencies
 
 * Register for Qualcomm AI HUB.
-* Download the corresponding QNN SDK via shit [link](https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct-sdk) which your favorite model is compiled with. Ths link will automatically download the latest version at this moment (users should be able to specify version soon, please refer to [this](../../../../docs/source/build-run-qualcomm-ai-engine-direct-backend.md#software) for earlier releases).
+* Download the corresponding QNN SDK via [link](https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct-sdk) which your favorite model is compiled with. Ths link will automatically download the latest version at this moment (users should be able to specify version soon, please refer to [this](../../../../docs/source/build-run-qualcomm-ai-engine-direct-backend.md#software) for earlier releases).
 
 ### Target Model
 

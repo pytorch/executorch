@@ -8,8 +8,6 @@
 
 #pragma once
 
-#include <sys/types.h> // TODO(T126923429): Include size_t, ssize_t
-
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/portable_type/scalar_type.h>
@@ -150,6 +148,10 @@ class TensorImpl {
     return type_;
   }
 
+  inline ScalarType dtype() const {
+    return scalar_type();
+  }
+
   /// Returns the size in bytes of one element of the tensor.
   ssize_t element_size() const;
 
@@ -166,6 +168,11 @@ class TensorImpl {
   /// Returns the strides of the tensor at each dimension.
   const ArrayRef<StridesType> strides() const {
     return ArrayRef<StridesType>{strides_, static_cast<size_t>(dim_)};
+  }
+
+  /// Returns the mutability of the shape of the tensor.
+  TensorShapeDynamism shape_dynamism() const {
+    return shape_dynamism_;
   }
 
   /// Returns a pointer of type T to the constant underlying data blob.
@@ -255,5 +262,20 @@ class TensorImpl {
   const TensorShapeDynamism shape_dynamism_;
 };
 
+/**
+ * Compute the number of elements based on the sizes of a tensor.
+ */
+ssize_t compute_numel(
+    const ::torch::executor::TensorImpl::SizesType* sizes,
+    ssize_t dim);
+
 } // namespace executor
 } // namespace torch
+
+namespace executorch {
+namespace runtime {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using torch::executor::compute_numel;
+} // namespace runtime
+} // namespace executorch

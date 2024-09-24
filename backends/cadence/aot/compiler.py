@@ -60,13 +60,13 @@ def convert_pt2(
     # Export with dynamo
     model_gm = capture_pre_autograd_graph(model, inputs)
 
-    if model_gm_has_SDPA(model_gm):
+    if model_gm_has_SDPA(model_gm):  # pyre-fixme[6]
         # Decompose SDPA
-        DecomposeScaledDotProductAttention(False)(model_gm)
+        DecomposeScaledDotProductAttention(False)(model_gm)  # pyre-fixme[6]
 
         # Swap _safe_softmax with _softmax (see https://github.com/pytorch/pytorch/pull/133882
         # for details).
-        result = ReplaceSafeSoftmaxWithSoftmax()(model_gm)
+        result = ReplaceSafeSoftmaxWithSoftmax()(model_gm)  # pyre-fixme[6]
         assert result is not None
         model_gm = result.graph_module
 

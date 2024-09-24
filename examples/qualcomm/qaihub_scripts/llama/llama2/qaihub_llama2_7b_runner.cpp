@@ -16,7 +16,6 @@
 
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/examples/qualcomm/qaihub_scripts/llama/runner/runner.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
 #include <executorch/runtime/platform/log.h>
 
 #include <gflags/gflags.h>
@@ -36,8 +35,8 @@ DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
 DEFINE_double(
     temperature,
-    0.8f,
-    "Temperature; Default is 0.8f. 0 = greedy argmax sampling (deterministic). Lower temperature = more deterministic");
+    0.0f,
+    "Temperature; Default is 0.0f. 0 = greedy argmax sampling (deterministic). Lower temperature = more deterministic");
 DEFINE_int32(
     eval_mode,
     0,
@@ -50,8 +49,6 @@ DEFINE_double(logits_scale, 0.0, "Path to logits scale file");
 DEFINE_int32(logits_offset, 0, "Path to logits offset file");
 
 int main(int argc, char** argv) {
-  using namespace torch::executor;
-
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   std::vector<std::string> models_path = {
@@ -63,7 +60,7 @@ int main(int argc, char** argv) {
       FLAGS_freq_cos_path, FLAGS_freq_sin_path};
 
   // create llama runner
-  Runner runner(
+  example::Runner runner(
       models_path,
       pos_embs_path,
       {8, 8, 8, 8},
@@ -75,9 +72,10 @@ int main(int argc, char** argv) {
 
   // generate tokens & store inference output
   std::ofstream fout(FLAGS_output_path.c_str());
-  runner.generate(FLAGS_prompt, FLAGS_seq_len, [&](const std::string& piece) {
-    fout << piece;
-  });
+  runner.generate(
+      FLAGS_prompt, "", FLAGS_seq_len, [&](const std::string& piece) {
+        fout << piece;
+      });
   fout.close();
   return 0;
 }

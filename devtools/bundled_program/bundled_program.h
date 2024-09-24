@@ -11,14 +11,13 @@
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/method.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
 namespace bundled_program {
 
 /**
  * An opaque pointer to a serialized bundled program.
  */
-using serialized_bundled_program = const void;
+using SerializedBundledProgram = const void;
 
 /**
  * Load testset_idx-th bundled input of method_idx-th Method test in
@@ -31,9 +30,9 @@ using serialized_bundled_program = const void;
  * @returns Return Error::Ok if load successfully, or the error happens during
  * execution.
  */
-ET_NODISCARD Error LoadBundledInput(
-    Method& method,
-    serialized_bundled_program* bundled_program_ptr,
+ET_NODISCARD ::executorch::runtime::Error load_bundled_input(
+    ::executorch::runtime::Method& method,
+    SerializedBundledProgram* bundled_program_ptr,
     size_t testset_idx);
 
 /**
@@ -49,9 +48,9 @@ ET_NODISCARD Error LoadBundledInput(
  * @returns Return Error::Ok if two outputs match, or the error happens during
  * execution.
  */
-ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
-    Method& method,
-    serialized_bundled_program* bundled_program_ptr,
+ET_NODISCARD ::executorch::runtime::Error verify_method_outputs(
+    ::executorch::runtime::Method& method,
+    SerializedBundledProgram* bundled_program_ptr,
     size_t testset_idx,
     double rtol = 1e-5,
     double atol = 1e-8);
@@ -73,7 +72,7 @@ ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
  * in it, and out_program_data/out_program_data_len point to the data. Other
  * values on failure.
  */
-ET_NODISCARD Error GetProgramData(
+ET_NODISCARD ::executorch::runtime::Error get_program_data(
     void* file_data,
     size_t file_data_len,
     const void** out_program_data,
@@ -83,11 +82,61 @@ ET_NODISCARD Error GetProgramData(
  * Checks whether the given file is a bundled program.
  *
  * @param[in] file_data The contents of the given file.
+ * @param[in] file_data_len The length of file_data, in bytes.
  *
  * @returns true if the given file is a bundled program, false otherwise
  */
-bool IsBundledProgram(void* file_data);
+bool is_bundled_program(void* file_data, size_t file_data_len);
 
+/// DEPRECATED: Use the version with the file_data_len parameter.
+ET_DEPRECATED inline bool is_bundled_program(void* file_data) {
+  // 128 is enough data to contain the identifier in the flatbuffer header.
+  return is_bundled_program(file_data, 128);
+}
+
+} // namespace bundled_program
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace bundled_program {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using serialized_bundled_program =
+    ::executorch::bundled_program::SerializedBundledProgram;
+
+ET_NODISCARD inline ::executorch::runtime::Error LoadBundledInput(
+    ::executorch::runtime::Method& method,
+    serialized_bundled_program* bundled_program_ptr,
+    size_t testset_idx) {
+  return ::executorch::bundled_program::load_bundled_input(
+      method, bundled_program_ptr, testset_idx);
+}
+
+ET_NODISCARD inline ::executorch::runtime::Error
+VerifyResultWithBundledExpectedOutput(
+    ::executorch::runtime::Method& method,
+    serialized_bundled_program* bundled_program_ptr,
+    size_t testset_idx,
+    double rtol = 1e-5,
+    double atol = 1e-8) {
+  return ::executorch::bundled_program::verify_method_outputs(
+      method, bundled_program_ptr, testset_idx, rtol, atol);
+}
+
+ET_NODISCARD inline ::executorch::runtime::Error GetProgramData(
+    void* file_data,
+    size_t file_data_len,
+    const void** out_program_data,
+    size_t* out_program_data_len) {
+  return ::executorch::bundled_program::get_program_data(
+      file_data, file_data_len, out_program_data, out_program_data_len);
+}
+
+inline bool IsBundledProgram(void* file_data) {
+  // 128 is enough data to contain the identifier in the flatbuffer header.
+  return ::executorch::bundled_program::is_bundled_program(file_data, 128);
+}
 } // namespace bundled_program
 } // namespace executor
 } // namespace torch

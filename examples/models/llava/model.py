@@ -6,24 +6,21 @@
 
 # An ExecuTorch friendly implementation of Llava-1.5.
 
-import math
-
 import re
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import requests
 import torch
-import torchvision
 from executorch.examples.models.llama2.llama_transformer import ModelArgs, Transformer
 
 from executorch.examples.models.llama2.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
+from executorch.examples.models.llava.image_util import prepare_image
 from executorch.examples.models.model_base import EagerModelBase
 from PIL import Image
 
-from torch import nn
 from torch.export import Dim
 from torchvision.transforms.v2 import functional as F
 
@@ -41,6 +38,7 @@ class Llava(torch.nn.Module):
         llava_model: LlavaForConditionalGeneration,
         image_processor: CLIPImageProcessor,
         use_sdpa_with_kv_cache_op: bool = True,
+        max_seq_len: int = 768,
     ):
         super().__init__()
         self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
@@ -59,11 +57,7 @@ class Llava(torch.nn.Module):
             enable_dynamic_shape=True,  # allow parallel prefill
             use_sdpa_with_kv_cache_op=use_sdpa_with_kv_cache_op,  # use sdpa_with_kv_cache op
             use_hf_rope=True,
-        )
-        self.embed_tokens = nn.Embedding(
-            self.model_.config.text_config.vocab_size,
-            self.model_.config.text_config.hidden_size,
-            self.model_.config.pad_token_id,
+            max_seq_len=max_seq_len,
         )
         self.text_model = Transformer(self.text_model_args)
         # use custom op for SDPA.
@@ -73,11 +67,6 @@ class Llava(torch.nn.Module):
         self.text_model.load_state_dict(
             state_dict=self._translate_state_dict_for_text_model(),
             strict=False,
-            assign=True,
-        )
-        self.embed_tokens.load_state_dict(
-            state_dict=self.model_.language_model.model.embed_tokens.state_dict(),
-            strict=True,
             assign=True,
         )
 
@@ -133,6 +122,9 @@ class Llava(torch.nn.Module):
     def get_model(self):
         return self.model_.get_model()
 
+    def embed_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
+        return self.model_.language_model.model.embed_tokens(tokens)
+
     def encode_images(self, images: torch.Tensor) -> torch.Tensor:
         images = images.to(dtype=self.model_.dtype)
         if type(images) is list:
@@ -156,19 +148,32 @@ class Llava(torch.nn.Module):
         return image_features
 
     def image_preprocess(self, img: torch.Tensor) -> torch.Tensor:
-        w = max(img.shape[1], img.shape[2])
+        target_h = self.image_processor.crop_size["height"]
+        target_w = self.image_processor.crop_size["width"]
         # pad the image with median rgb value, to make a square
-        v_padding = (w - img.shape[1]) / 2
-        h_padding = (w - img.shape[2]) / 2
-        l_pad = int(math.ceil(h_padding))
-        t_pad = int(math.ceil(v_padding))
-        r_pad = int(math.floor(h_padding))
-        b_pad = int(math.floor(v_padding))
-        resized = F.pad(
+        l_pad = (target_w - img.shape[2]) // 2
+        t_pad = (target_h - img.shape[1]) // 2
+        # ceil division
+        r_pad = -((target_w - img.shape[2]) // -2)
+        b_pad = -((target_h - img.shape[1]) // -2)
+
+        torch._check(l_pad >= 0)
+        torch._check(t_pad >= 0)
+        torch._check(r_pad >= 0)
+        torch._check(b_pad >= 0)
+
+        # This is different from the original implementation, due to export limitations.
+        resized = torch.nn.functional.pad(
             img,
-            padding=(l_pad, t_pad, r_pad, b_pad),
-            fill=tuple(int(x * 255) for x in self.image_processor.image_mean),
+            (l_pad, r_pad, t_pad, b_pad),
         )
+        # originally:
+        # resized = F.pad(
+        #     img,
+        #     padding=(l_pad, t_pad, r_pad, b_pad),
+        #     fill=tuple(int(x * 255) for x in self.image_mean),
+        # )
+
         # TODO: implement _upsample_bicubic_aa.out in portable kernel library.
         # here padded shape should be max(h, w) x max(h, w)
         # skipping resize for now due to missing _upsample_bicubic_aa kernel in portable
@@ -222,7 +227,7 @@ class Llava(torch.nn.Module):
         prompt_before_image: torch.Tensor,
         images: torch.Tensor,
         prompt_after_image: torch.Tensor,
-    ) -> (int, torch.Tensor):
+    ) -> Tuple[int, torch.Tensor]:
         """Avoiding the torch.where() call to find <image> placeholder and insert image embedding. Taking 3 inputs instead."""
         embeds = self.prefill_embedding(prompt_before_image, images, prompt_after_image)
         # returns the prefilled token length too, because the text model generates one logits in each forward call.
@@ -253,8 +258,9 @@ class Llava(torch.nn.Module):
 
 
 class LlavaModel(EagerModelBase):
-    def __init__(self, use_sdpa_with_kv_cache_op=True):
+    def __init__(self, use_sdpa_with_kv_cache_op=True, max_seq_len=768):
         self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
+        self.max_seq_len = max_seq_len
         self.processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
         self.tokenizer = self.processor.tokenizer
         self.image_processor = self.processor.image_processor
@@ -279,6 +285,7 @@ What are the things I should be cautious about when I visit here? ASSISTANT:"""
             self.model,
             self.image_processor,
             self.use_sdpa_with_kv_cache_op,
+            self.max_seq_len,
         )
         model.to(dtype=torch.float32)
         return model
@@ -287,13 +294,12 @@ What are the things I should be cautious about when I visit here? ASSISTANT:"""
         """Returns a resized image as input to model.forward()."""
         if self.resized_image:
             return self.resized_image
-        imagr = torchvision.transforms.functional.pil_to_tensor(self.image)
-        ratio = (
-            max(imagr.shape[1], imagr.shape[2])
-            / self.image_processor.crop_size["height"]
+        resized = prepare_image(
+            self.image,
+            self.image_processor.crop_size["height"],
+            self.image_processor.crop_size["width"],
         )
-        output_size = (int(imagr.shape[1] / ratio), int(imagr.shape[2] / ratio))
-        self.resized_image = (torchvision.transforms.Resize(size=output_size)(imagr),)
+        self.resized_image = (resized,)
         return self.resized_image
 
     def get_inputs_for_prefill(self):
@@ -317,12 +323,17 @@ What are the things I should be cautious about when I visit here? ASSISTANT:"""
         return self._get_image_dynamic_shapes()
 
     def _get_image_dynamic_shapes(self):
-        height = Dim("height", min=8, max=336)
-        width = Dim("width", min=28, max=336)
+        # only support even number of height and width for now
+        _height = Dim(
+            "_height", min=1, max=self.image_processor.crop_size["height"] // 2
+        )
+        _width = Dim("_width", min=1, max=self.image_processor.crop_size["width"] // 2)
+        height = 2 * _height
+        width = 2 * _width
         dynamic_shapes = [{1: height, 2: width}]
         return dynamic_shapes
 
     def _get_prompt_dynamic_shapes(self):
-        dim = torch.export.Dim("token_dim", min=2, max=2048)
+        dim = torch.export.Dim("token_dim", min=2, max=self.max_seq_len)
         text_model_dynamic_shapes = ({0: 1}, {1: dim})
         return text_model_dynamic_shapes

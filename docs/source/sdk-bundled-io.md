@@ -96,8 +96,7 @@ from executorch.devtools.bundled_program.config import MethodTestCase, MethodTes
 from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
-from torch._export import capture_pre_autograd_graph
-from torch.export import export
+from torch.export import export, export_for_training
 
 
 # Step 1: ExecuTorch Program Export
@@ -131,7 +130,7 @@ capture_input = (
 
 # Export method's FX Graph.
 method_graph = export(
-    capture_pre_autograd_graph(model, capture_input),
+    export_for_training(model, capture_input).module(),
     capture_input,
 )
 
@@ -211,21 +210,19 @@ We need the pointer to ExecuTorch program to do the execution. To unify the proc
 
 Here's an example of how to use the `GetProgramData` API:
 ```c++
-std::shared_ptr<char> buff_ptr;
-size_t buff_len;
+// Assume that the user has read the contents of the file into file_data using
+// whatever method works best for their application. The file could contain
+// either BundledProgram data or Program data.
+void* file_data = ...;
+size_t file_data_len = ...;
 
-// FILE_PATH here can be either BundledProgram or Program flatbuffer file.
-Error status = torch::executor::util::read_file_content(
-    FILE_PATH, &buff_ptr, &buff_len);
-ET_CHECK_MSG(
-    status == Error::Ok,
-    "read_file_content() failed with status 0x%" PRIx32,
-    status);
-
+// If file_data contains a BundledProgram, GetProgramData() will return a
+// pointer to the Program data embedded inside it. Otherwise it will return
+// file_data, which already pointed to Program data.
 const void* program_ptr;
 size_t program_len;
 status = torch::executor::bundled_program::GetProgramData(
-    buff_ptr.get(), buff_len, &program_ptr, &program_len);
+    file_data, file_data_len, &program_ptr, &program_len);
 ET_CHECK_MSG(
     status == Error::Ok,
     "GetProgramData() failed with status 0x%" PRIx32,
@@ -255,7 +252,7 @@ We call `torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput
 
 ### Runtime Example
 
-Here we provide an example about how to run the bundled program step by step. Most of the code is borrowed from [executor_runner](https://github.com/pytorch/executorch/blob/main/examples/sdk/sdk_example_runner/sdk_example_runner.cpp), and please review that file if you need more info and context:
+Here we provide an example about how to run the bundled program step by step. Most of the code is borrowed from [executor_runner](https://github.com/pytorch/executorch/blob/main/examples/devtools/example_runner/example_runner.cpp), and please review that file if you need more info and context:
 
 ```c++
 // method_name is the name for the method we want to test
@@ -340,7 +337,7 @@ inputs = (torch.ones(2, 2, dtype=torch.float), )
 
 # Find each method of model needs to be traced my its name, export its FX Graph.
 method_graph = export(
-    capture_pre_autograd_graph(model, inputs),
+    export_for_training(model, inputs).module(),
     inputs,
 )
 
@@ -476,7 +473,7 @@ inputs = (torch.ones(2, 2, dtype=torch.float),)
 
 # Find each method of model needs to be traced my its name, export its FX Graph.
 method_graph = export(
-    capture_pre_autograd_graph(model, inputs),
+    export_for_training(model, inputs).module(),
     inputs,
 )
 

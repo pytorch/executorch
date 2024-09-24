@@ -336,7 +336,7 @@ void convolution_wrapper(
 } // namespace
 
 Tensor& convolution_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& weight,
     const exec_aten::optional<Tensor>& bias,
@@ -364,6 +364,9 @@ Tensor& convolution_out(
           out),
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   size_t output_ndim = 0;
   exec_aten::SizesType output_sizes[kTensorDimensionLimit];

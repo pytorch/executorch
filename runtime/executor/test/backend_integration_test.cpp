@@ -14,6 +14,7 @@
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
@@ -23,7 +24,6 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <executorch/test/utils/alignment.h>
-#include <executorch/util/util.h>
 
 #include <gtest/gtest.h>
 
@@ -31,6 +31,7 @@ using namespace ::testing;
 using exec_aten::ArrayRef;
 using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::BackendInitContext;
+using executorch::runtime::BackendInterface;
 using executorch::runtime::CompileSpec;
 using executorch::runtime::DataLoader;
 using executorch::runtime::DelegateHandle;
@@ -40,7 +41,6 @@ using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Method;
 using executorch::runtime::Program;
-using executorch::runtime::PyTorchBackendInterface;
 using executorch::runtime::Result;
 using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
@@ -48,9 +48,9 @@ using torch::executor::util::FileDataLoader;
 /**
  * A backend class whose methods can be overridden individually.
  */
-class StubBackend final : public PyTorchBackendInterface {
+class StubBackend final : public BackendInterface {
  public:
-  // Function signature types that match the PyTorchBackendInterface methods.
+  // Function signature types that match the BackendInterface methods.
   using IsAvailableFn = std::function<bool()>;
   using InitFn = std::function<Result<DelegateHandle*>(
       FreeableBuffer*,
@@ -325,7 +325,7 @@ class BackendIntegrationTest : public ::testing::TestWithParam<bool> {
 };
 
 TEST_P(BackendIntegrationTest, BackendIsPresent) {
-  PyTorchBackendInterface* backend =
+  BackendInterface* backend =
       executorch::runtime::get_backend_class(StubBackend::kName);
   ASSERT_EQ(backend, &StubBackend::singleton());
 }
@@ -454,10 +454,9 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
     EXPECT_FALSE(spy_loader.WasFreed(init_processed->data()));
     auto method(std::move(method_res.get()));
     // Execute the model.
-    exec_aten::ArrayRef<void*> inputs =
-        torch::executor::util::PrepareInputTensors(method);
+    auto input_cleanup = executorch::extension::prepare_input_tensors(method);
+    ASSERT_EQ(input_cleanup.error(), Error::Ok);
     auto err = method.execute();
-    torch::executor::util::FreeInputs(inputs);
     EXPECT_EQ(err, Error::Ok);
 
     // Check that the processed buffer was passed to execute() as the handle.

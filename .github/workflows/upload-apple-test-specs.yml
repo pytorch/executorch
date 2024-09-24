@@ -1,0 +1,95 @@
+name: Upload AWS Device Farm Apple iOS test specs
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/upload-apple-test-specs.yml
+      - examples/demo-apps/apple_ios/default-ios-device-farm-appium-test-spec.yml
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/upload-apple-test-specs.yml
+      - examples/demo-apps/apple_ios/default-ios-device-farm-appium-test-spec.yml
+
+concurrency:
+  # NB: This concurency group needs to be different than the one used in apple-perf, otherwise
+  # GH complains about concurrency deadlock
+  group: apple-spec-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  upload-apple-test-spec-for-validation:
+    runs-on: linux.2xlarge
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Upload the spec as a GitHub artifact for validation
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifacts
+          retention-days: 1
+          if-no-files-found: error
+          path: examples/demo-apps/apple_ios/default-ios-device-farm-appium-test-spec.yml
+
+  validate-apple-test-spec:
+    needs: upload-apple-test-spec-for-validation
+    uses: ./.github/workflows/apple-perf.yml
+    secrets: inherit
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      # Just use a small model here with a minimal amount of configuration to test the spec
+      models: stories110M
+      devices: apple_iphone_15
+      delegates: xnnpack
+      test_spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/default-ios-device-farm-appium-test-spec.yml
+
+  upload-apple-test-spec:
+    needs: validate-apple-test-spec
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v1.7.0
+        with:
+          role-to-assume: arn:aws:iam::308535385114:role/gha_executorch_upload-frameworks-ios
+          aws-region: us-east-1
+
+      - name: Only push to S3 when running the workflow manually from main branch
+        if: ${{ github.ref == 'refs/heads/main' }}
+        shell: bash
+        run: |
+          set -eux
+          echo "UPLOAD_ON_MAIN=1" >> "${GITHUB_ENV}"
+
+      - name: Upload the spec to S3 ossci-ios bucket
+        shell: bash
+        working-directory: examples/demo-apps/apple_ios
+        env:
+          SPEC_FILE: default-ios-device-farm-appium-test-spec.yml
+        run: |
+          set -eux
+
+          pip install awscli==1.32.18
+
+          AWS_CMD="aws s3 cp --dryrun"
+          if [[ "${UPLOAD_ON_MAIN:-0}" == "1" ]]; then
+            AWS_CMD="aws s3 cp"
+          fi
+
+          shasum -a 256 "${SPEC_FILE}"
+          ${AWS_CMD} "${SPEC_FILE}" s3://ossci-ios/executorch/ --acl public-read

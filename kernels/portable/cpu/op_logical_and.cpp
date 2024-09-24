@@ -22,7 +22,7 @@ bool logical_and(bool a, bool b) {
 } // namespace
 
 Tensor& logical_and_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {

@@ -30,6 +30,22 @@
 #define ET_EXPECT_KERNEL_FAILURE_WITH_MSG(_context, _statement, _matcher) \
   EXPECT_ANY_THROW(_statement)
 
+#define ET_TEST_OP_SUPPORTS_MEMORY_FORMATS(                                  \
+    tf, op, input_contiguous, expected_contiguous, channels_last_support)    \
+  Tensor input_channels_last = tf.channels_last_like(input_contiguous);      \
+  Tensor expected_channel_last = tf.channels_last_like(expected_contiguous); \
+                                                                             \
+  Tensor output_contiguous = tf.zeros_like(expected_contiguous);             \
+  Tensor output_channels_last = tf.channels_last_like(output_contiguous);    \
+                                                                             \
+  Tensor ret = op(input_channels_last, output_channels_last);                \
+  if (channels_last_support) {                                               \
+    EXPECT_TENSOR_EQ(output_channels_last, expected_channel_last);           \
+  } else {                                                                   \
+    EXPECT_TENSOR_NE(output_channels_last, expected_channel_last);           \
+  }                                                                          \
+  EXPECT_TENSOR_EQ(output_channels_last, ret);
+
 #else
 
 #define ET_EXPECT_KERNEL_FAILURE(_context, _statement)              \
@@ -51,6 +67,26 @@
       ADD_FAILURE();                                                  \
     }                                                                 \
   } while (false)
+
+#define ET_TEST_OP_SUPPORTS_MEMORY_FORMATS(                                  \
+    tf, op, input_contiguous, expected_contiguous, channels_last_support)    \
+  Tensor input_channels_last = tf.channels_last_like(input_contiguous);      \
+  Tensor expected_channel_last = tf.channels_last_like(expected_contiguous); \
+                                                                             \
+  Tensor output_contiguous = tf.zeros_like(expected_contiguous);             \
+  Tensor output_channels_last = tf.channels_last_like(output_contiguous);    \
+                                                                             \
+  Tensor ret = op(input_channels_last, output_channels_last);                \
+  if (channels_last_support) {                                               \
+    EXPECT_TENSOR_EQ(output_channels_last, expected_channel_last);           \
+  } else {                                                                   \
+    EXPECT_TENSOR_NE(output_channels_last, expected_channel_last);           \
+  }                                                                          \
+  EXPECT_TENSOR_EQ(output_channels_last, ret);                               \
+  ET_EXPECT_KERNEL_FAILURE(                                                  \
+      context_, op(input_channels_last, output_contiguous));                 \
+  ET_EXPECT_KERNEL_FAILURE(                                                  \
+      context_, op(input_contiguous, output_channels_last));
 
 #endif // USE_ATEN_LIB
 
@@ -80,6 +116,6 @@ class OperatorTest : public ::testing::Test {
   }
 
  protected:
-  exec_aten::RuntimeContext context_;
+  executorch::runtime::KernelRuntimeContext context_;
   bool expect_failure_;
 };
