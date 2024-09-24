@@ -9,7 +9,7 @@
 
 import argparse
 import logging
-
+import os
 import torch
 
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
@@ -148,6 +148,7 @@ models = {
 }
 
 targets = [
+    "ethos-u85-128",
     "ethos-u55-128",
     "TOSA",
 ]
@@ -200,6 +201,13 @@ if __name__ == "__main__":
         action="store",
         required=False,
         help=f"Store intermediate output (like TOSA artefacts) somewhere."
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        action="store",
+        required=False,
+        help="Location for outputs, if not the default of cwd."
     )
 
     args = parser.parse_args()
@@ -254,18 +262,30 @@ if __name__ == "__main__":
                 tosa_compile_spec().
                 set_permute_memory_format(True)
             )
-        elif args.target.startswith("ethos-u"):
+        elif args.target == "ethos-u55-128":
             compile_spec = (
                 ArmCompileSpecBuilder()
                 .ethosu_compile_spec(
                     "ethos-u55-128",
                     system_config="Ethos_U55_High_End_Embedded",
                     memory_mode="Shared_Sram",
+                    extra_flags="--debug-force-regor --output-format=raw",
                 )
                 .set_permute_memory_format(
                     args.model_name in MODEL_NAME_TO_MODEL.keys()
                 )
                 .set_quantize_io(True)
+            )
+        elif args.target == "ethos-u85-128":
+            compile_spec = (
+                ArmCompileSpecBuilder()
+                .ethosu_compile_spec(
+                    "ethos-u85-128",
+                    system_config="Ethos_U85_SYS_DRAM_Mid",
+                    memory_mode="Shared_Sram",
+                    extra_flags="--output-format=raw",
+                )
+                .set_permute_memory_format(True)
             )
         else:
             raise RuntimeError(f"Expected a target in {targets}, found {args.target}");
@@ -293,7 +313,12 @@ if __name__ == "__main__":
         else:
             raise e
 
-    model_name = f"{args.model_name}" + (
-        "_arm_delegate" if args.delegate is True else ""
+    model_name = os.path.basename(os.path.splitext(args.model_name)[0])
+    output_name = f"{model_name}" + (
+        f"_arm_delegate_{args.target}" if args.delegate is True else ""
     )
-    save_pte_program(exec_prog, model_name)
+
+    if args.output != None:
+        output_name = os.path.join( args.output, output_name )
+
+    save_pte_program(exec_prog, output_name)
