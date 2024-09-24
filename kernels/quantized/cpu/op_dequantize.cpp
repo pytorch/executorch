@@ -197,7 +197,7 @@ Tensor& dequantize_per_channel_out(
 
   ET_CHECK_MSG(
       scale.scalar_type() == ScalarType::Double,
-      "scale.scalar_type() %" PRId8 " is not float type",
+      "scale.scalar_type() %" PRId8 " is not double type",
       static_cast<int8_t>(scale.scalar_type()));
 
   ET_CHECK_MSG(
