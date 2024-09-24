@@ -43,6 +43,7 @@ set(lib_list
     mpsdelegate
     qnn_executorch_backend
     portable_ops_lib
+    extension_memory_allocator
     extension_module
     extension_module_static
     extension_runner_util

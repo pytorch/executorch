@@ -175,6 +175,8 @@ option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
        OFF
 )
 
+option(EXECUTORCH_BUILD_EXTENSION_MEMORY_ALLOCATOR "Build the Memory Allocator extension" OFF)
+
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" OFF)
 
 option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
@@ -632,6 +634,10 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_MEMORY_ALLOCATOR)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/memory_allocator)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
