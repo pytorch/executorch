@@ -1,5 +1,7 @@
 # Building ExecuTorch Android Demo App for Llama running XNNPack
 
+**[UPDATE - 09/25]** We have added support for running [Llama 3.2 models](#for-llama-32-1b-and-3b-models) on the XNNPack backend. We currently support inference on their original data type (BFloat16). We have also added instructions to run [Llama Guard 1B models](#for-llama-guard-1b-models) on-device.
+
 This tutorial covers the end to end workflow for building an android demo app using CPU on device via XNNPack framework.
 More specifically, it covers:
 1. Export and quantization of Llama and Llava models against the XNNPack backend.
