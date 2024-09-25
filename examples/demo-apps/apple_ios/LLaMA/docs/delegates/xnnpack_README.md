@@ -1,6 +1,6 @@
 # Building Llama iOS Demo for XNNPack Backend
 
-**[UPDATE - 09/25]** We have added support for running [Llama 3.2 models](#for-llama-3.2-1b-and-3b-models) on the XNNPack backend. We currently support inference on their original data type (BFloat16).
+**[UPDATE - 09/25]** We have added support for running [Llama 3.2 models](#for-llama-32-1b-and-3b-models) on the XNNPack backend. We currently support inference on their original data type (BFloat16).
 
 This tutorial covers the end to end workflow for building an iOS demo app using XNNPack backend on device.
 More specifically, it covers:
