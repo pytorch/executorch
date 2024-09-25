@@ -78,7 +78,7 @@ For more detail using Llama 3.2 lightweight models including prompt template, pl
 ### For Llama Guard 1B models
 To safeguard your application, you can use our Llama Guard models for prompt classification or response classification as mentioned [here](https://www.llama.com/docs/model-cards-and-prompt-formats/llama-guard-3/).
 * Llama Guard 3-1B is a fine-tuned Llama-3.2-1B pretrained model for content safety classification. It is aligned to safeguard against the [MLCommons standardized hazards taxonomy](https://arxiv.org/abs/2404.12241).
-* You can download the latest Llama Guard 1B INT4 model, which is already exported for Executorch, using instructions from [here](https://github.com/meta-llama/PurpleLlama/tree/main/Llama-Guard3). This model is pruned and quantized to 4-bit weights using 8da4w mode and reduced the size to <450MB to optimize deployment on edge devices.
+* You can download the latest Llama Guard 1B INT4 model, which is already exported for ExecuTorch, using instructions from [here](https://github.com/meta-llama/PurpleLlama/tree/main/Llama-Guard3). This model is pruned and quantized to 4-bit weights using 8da4w mode and reduced the size to <450MB to optimize deployment on edge devices.
 * You can use the same tokenizer from Llama 3.2.
 * To try this model, choose Model Type as LLAMA_GUARD_3 in the demo app below and try prompt classification for a given user prompt.
 * We prepared this model using the following command
