@@ -141,6 +141,35 @@ def fast_hadamard_transform_meta(mat):
     return torch.empty_like(mat)
 
 
+@impl(custom_ops_lib, "custom_sdpa", "Meta")
+def custom_sdpa(
+    query,
+    key_cache,
+    value_cache,
+    start_pos,
+    attn_mask=None,
+    drpout_p=0.0,
+    is_causal=False,
+    scale=None,
+):
+    seq_len = query.size(1)
+    _validate_params(
+        query,
+        key_cache,
+        value_cache,
+        key_cache,
+        value_cache,
+        start_pos,
+        seq_len,
+        attn_mask,
+        drpout_p,
+        is_causal,
+        scale,
+    )
+
+    return torch.empty_like(query)
+
+
 def _validate_update_cache_params(
     value,
     cache,
