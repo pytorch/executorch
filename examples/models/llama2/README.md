@@ -3,6 +3,7 @@ This example demonstrates how to run a [llama models](https://www.llama.com/) on
 
 Here are supported models:
 
+- Llama 3.2 1B and 3B
 - Llama 3.1 8B
 - Llama 3 8B
 - Llama 2 7B
@@ -93,7 +94,27 @@ Llama 2 7B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
 
 ## Step 2: Prepare model
 
-### Option A: Download and export Llama 3 8B instruct model
+### Option A: Download and export Llama3.2 1B/3B model.
+
+1. Download `consolidated.00.pth`, `params.json` and `tokenizer.model` from [Llama website](https://www.llama.com/llama-downloads/) or (Hugging Face)[https://huggingface.co/meta-llama/Llama-3.2-1B].  For chat use-cases, download the instruct models.
+
+2. Export model and generate `.pte` file. Use original bfloat16 version, without any quantization.
+
+```
+# Set these paths to point to the downloaded files
+LLAMA_CHECKPOINT=path/to/checkpoint.pth
+LLAMA_PARAMS=path/to/params.json
+
+python -m examples.models.llama2.export_llama \
+  --checkpoint "${LLAMA_CHECKPOINT:?}" \
+  --params "${LLAMA_PARAMS:?}" \
+  -kv -X \
+  -d bf16 \
+  --metadata '{"append_eos_to_prompt": 0, "get_bos_id":128000, "get_eos_ids":[128009, 128001], "get_n_bos": 0, "get_n_eos": 0}' \
+  --output_name="llama3_2.pte"
+```
+
+### Option B: Download and export Llama 3 8B instruct model
 
 You can export and run the original Llama 3 8B instruct model.
 
@@ -108,7 +129,7 @@ You can export and run the original Llama 3 8B instruct model.
 
 3. SpinQuant [Optional]. If you want to improve accuracy, you can use [SpinQuant](https://github.com/facebookresearch/SpinQuant). Namely, (1) you can generate a new checkpoint via `31_optimize_rotation_executorch.sh` and `32_eval_ptq_executorch.sh` commands in [SpinQuant repo](https://github.com/facebookresearch/SpinQuant/tree/main?tab=readme-ov-file#3-export-to-executorch) (2) pass in an extra `--use_spin_quant native` argument in `export_llama` script above.
 
-### Option B: Download and export stories110M model
+### Option C: Download and export stories110M model
 
 If you want to deploy and run a smaller model for educational purposes. From `executorch` root:
 
@@ -131,7 +152,7 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     python -m extension.llm.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
     ```
 
-### Option C: Download and export Llama 2 7B model
+### Option D: Download and export Llama 2 7B model
 
 You can export and run the original Llama 2 7B model.
 
@@ -149,7 +170,7 @@ You can export and run the original Llama 2 7B model.
     python -m extension.llm.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
     ```
 
-### Option D: Download models from Hugging Face and convert from safetensor format to state dict
+### Option E: Download models from Hugging Face and convert from safetensor format to state dict
 
 
 You can also download above models from [Hugging Face](https://huggingface.co/). Since ExecuTorch starts from a PyTorch model, a script like below can be used to convert the Hugging Face safetensors format to PyTorch's state dict. It leverages the utils provided by [TorchTune](https://github.com/pytorch/torchtune).
@@ -249,10 +270,10 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
 
 3. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/main.cpp#L18-L40).
     ```
-    cmake-out/examples/models/llama2/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.bin> --prompt=<prompt>
+    cmake-out/examples/models/llama2/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.model> --prompt=<prompt>
     ```
 
-For Llama3, you can pass the original `tokenizer.model` (without converting to `.bin` file).
+For Llama2 and stories models, pass the converted `tokenizer.bin` file instead of `tokenizer.model`.
 
 ## Step 5: Run benchmark on Android phone
 
@@ -313,19 +334,19 @@ cmake --build cmake-out-android/examples/models/llama2 -j16 --config Release
 ```
 adb shell mkdir -p /data/local/tmp/llama
 adb push <model.pte> /data/local/tmp/llama/
-adb push <tokenizer.bin> /data/local/tmp/llama/
+adb push <tokenizer.model> /data/local/tmp/llama/
 adb push cmake-out-android/examples/models/llama2/llama_main /data/local/tmp/llama/
 ```
 
 **2.3 Run model**
 ```
-adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.bin> --prompt \"Once upon a time\" --seq_len 120"
+adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.model> --prompt \"Once upon a time\" --seq_len 120"
 ```
 ## Step 6: Build Mobile apps
 
 ### iOS
 
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios.html) to for full instructions on building the iOS LLAMA Demo App. Note that to use Llama 3 8B instruct in the iOS demo app, you don't need to convert the downloaded `tokenizer.model` to `tokenizer.bin`, required for Llama 2 (shown in Step 2 - Option A - 4 above), but you need to rename `tokenizer.model` file to `tokenizer.bin` because the demo app looks for the tokenizer file with .bin extension.
+Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios.html) to for full instructions on building the iOS LLAMA Demo App. Rename `tokenizer.model` file to `tokenizer.bin` because the demo app looks for the tokenizer file with .bin extension.
 
 ### Android
 Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android.html) to for full instructions on building the Android LLAMA Demo App.
