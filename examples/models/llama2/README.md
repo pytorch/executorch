@@ -96,7 +96,7 @@ Llama 2 7B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
 
 ### Option A: Download and export Llama3.2 1B/3B model.
 
-1. Download `consolidated.00.pth`, `params.json` and `tokenizer.model` from [Llama website](https://www.llama.com/llama-downloads/) or (Hugging Face)[https://huggingface.co/meta-llama/Llama-3.2-1B].  For chat use-cases, download the instruct models.
+1. Download `consolidated.00.pth`, `params.json` and `tokenizer.model` from [Llama website](https://www.llama.com/llama-downloads/) or [Hugging Face](https://huggingface.co/meta-llama/Llama-3.2-1B). For chat use-cases, download the instruct models.
 
 2. Export model and generate `.pte` file. Use original bfloat16 version, without any quantization.
 
