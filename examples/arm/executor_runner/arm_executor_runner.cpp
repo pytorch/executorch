@@ -28,7 +28,7 @@
 // needs to be large enough to take an entire model. On the FVP,
 // network_model_sec is linked to the DDR, which is large (256MB on
 // Corstone-300).
-const size_t input_allocation_pool_size = 60 * 1024 * 1024;
+const size_t input_allocation_pool_size = 100 * 1024 * 1024;
 unsigned char __attribute__((
     section("network_model_sec"),
     aligned(16))) input_allocation_pool[input_allocation_pool_size];
@@ -63,7 +63,7 @@ using executorch::runtime::Span;
 using executorch::runtime::Tag;
 using executorch::runtime::TensorInfo;
 
-#define METHOD_ALLOCATOR_POOL_SIZE (60 * 1024 * 1024)
+#define METHOD_ALLOCATOR_POOL_SIZE (70 * 1024 * 1024)
 unsigned char __attribute__((
     section("network_model_sec"),
     aligned(16))) method_allocation_pool[METHOD_ALLOCATOR_POOL_SIZE];
@@ -326,8 +326,6 @@ int main(int argc, const char* argv[]) {
   std::vector<Span<uint8_t>> planned_spans; // Passed to the allocator
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
 
-  size_t planned_buffer_membase = method_allocator.used_size();
-
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
     size_t buffer_size =
         static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
@@ -339,8 +337,6 @@ int main(int argc, const char* argv[]) {
     planned_buffers.push_back(buffer);
     planned_spans.push_back({planned_buffers.back(), buffer_size});
   }
-  size_t planned_buffer_memsize =
-      method_allocator.used_size() - planned_buffer_membase;
 
   HierarchicalAllocator planned_memory(
       {planned_spans.data(), planned_spans.size()});
@@ -351,7 +347,6 @@ int main(int argc, const char* argv[]) {
   MemoryManager memory_manager(
       &method_allocator, &planned_memory, &temp_allocator);
 
-  size_t method_loaded_membase = method_allocator.used_size();
   Result<Method> method = program->load_method(method_name, &memory_manager);
   if (!method.ok()) {
     ET_LOG(
@@ -360,12 +355,10 @@ int main(int argc, const char* argv[]) {
         method_name,
         method.error());
   }
-  size_t method_loaded_memsize =
-      method_allocator.used_size() - method_loaded_membase;
   ET_LOG(Info, "Method loaded.");
 
   ET_LOG(Info, "Preparing inputs...");
-  size_t input_membase = method_allocator.used_size();
+
   auto inputs =
       ::prepare_input_tensors(*method, method_allocator, input_buffers);
 
@@ -376,15 +369,12 @@ int main(int argc, const char* argv[]) {
         method_name,
         inputs.error());
   }
-  size_t input_memsize = method_allocator.used_size() - input_membase;
   ET_LOG(Info, "Input prepared.");
 
   ET_LOG(Info, "Starting the model execution...");
-  size_t executor_membase = method_allocator.used_size();
   StartMeasurements();
   Error status = method->execute();
   StopMeasurements();
-  size_t executor_memsize = method_allocator.used_size() - executor_membase;
 
   if (status != Error::Ok) {
     ET_LOG(
@@ -435,25 +425,6 @@ int main(int argc, const char* argv[]) {
   }
 out:
   ET_LOG(Info, "Program complete, exiting.");
-  if (method_allocator.size() != 0) {
-    size_t method_allocator_used = method_allocator.used_size();
-    ET_LOG(
-        Info,
-        "Method allocator area ( method_allocator_planned: %zu method_allocator_loaded: %zu method_allocator_input: %zu method_allocator_executor: %zu ) total: %zu",
-        planned_buffer_memsize,
-        method_loaded_memsize,
-        input_memsize,
-        executor_memsize,
-        method_allocator_used);
-    ET_LOG(
-        Info,
-        "Method allocator area method_allocator_used: %d / method_allocator_size: %d  method_allocator_free: %d ( used: %d %% ) ",
-        method_allocator_used,
-        method_allocator.size(),
-        method_allocator.free_size(),
-        100 * method_allocator_used / method_allocator.size());
-  }
-
 #ifdef SEMIHOSTING
   _exit(0);
 #endif
