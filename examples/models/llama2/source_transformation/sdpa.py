@@ -46,25 +46,28 @@ class SDPACustom(torch.nn.Module):
             # returns dequantized kv cache
             # Not most optimal. Optimizations to follow next
             k_cache, v_cache = self.kv_cache.update(input_pos, k, v)
-        # Note that this path will still inplace mutate the k_cache, v_cache.
-        # WHen we are not using quantized kv cache, this will just mutate
-        # the original kv cache.
-        # When we aer using quantized kv cache, this will mutate
-        # k_cache, v_cache that is returned from cache update operation.
-        # This operation just dequantized thee cache and returns that.
-        # Future diffs will optimize this
-        output = torch.ops.llama.sdpa_with_kv_cache(
-            q,
-            k,
-            v,
-            k_cache,
-            v_cache,
-            input_pos[-1].item(),
-            seqlen,
-            None,  # Attention mask
-            0,  # dropout probability. Ignored by the code
-            True,  # is_causal
-        )
+            output = torch.ops.llama.custom_sdpa(
+                q,
+                k_cache,
+                v_cache,
+                input_pos[0].item(),
+                None,  # Attention mask
+                0,  # dropout probability. Ignored by the code
+                True,  # is_causal
+            )
+        else:
+            output = torch.ops.llama.sdpa_with_kv_cache(
+                q,
+                k,
+                v,
+                k_cache,
+                v_cache,
+                input_pos[0].item(),
+                seqlen,
+                None,  # Attention mask
+                0,  # dropout probability. Ignored by the code
+                True,  # is_causal
+            )
         return output.view(bsz, seqlen, self.dim)
 
 
