@@ -680,10 +680,15 @@ if(EXECUTORCH_BUILD_PYBIND)
       etdump
       executorch
       extension_data_loader
-      portable_ops_lib
       util
       torch
   )
+
+  if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+    list(APPEND _dep_libs optimized_native_cpu_ops_lib)
+  else()
+    list(APPEND _dep_libs portable_ops_lib)
+  endif()
 
   if(EXECUTORCH_BUILD_COREML)
     list(APPEND _dep_libs coremldelegate)

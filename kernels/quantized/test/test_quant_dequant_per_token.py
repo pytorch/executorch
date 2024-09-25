@@ -9,6 +9,7 @@
 import unittest
 
 import torch
+from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noqa: F401
 
 
 class QuantizePerTokenTest(unittest.TestCase):

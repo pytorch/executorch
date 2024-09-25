@@ -35,6 +35,13 @@ enum MemoryAccessType : MemoryAccessFlags {
   WRITE = 1u << 1u,
 };
 
+static constexpr MemoryAccessFlags kReadWrite =
+    MemoryAccessType::WRITE | MemoryAccessType::READ;
+
+static constexpr MemoryAccessFlags kRead = MemoryAccessType::READ;
+
+static constexpr MemoryAccessFlags kWrite = MemoryAccessType::WRITE;
+
 class VulkanBuffer final {
  public:
   struct BufferProperties final {
