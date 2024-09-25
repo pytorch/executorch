@@ -394,17 +394,19 @@ Tensor& dequantize_per_token_out(
   for (size_t i = 0; i < input.dim() - 1; i++) {
     num_channels *= input.size(i);
   }
-// This unfortunate change is needed because we compile op_quantize for aten
-// mode as well
+  // This unfortunate change is needed because we compile op_quantize for aten
+  // mode as well
+  std::array<exec_aten::SizesType, 2> input_sizes;
+  input_sizes[0] = static_cast<exec_aten::SizesType>(num_channels);
+  input_sizes[1] =
+      static_cast<exec_aten::SizesType>(input.size(input.dim() - 1));
 #ifdef USE_ATEN_LIB
-  const std::array<int64_t, 2> sizes = {{num_channels, input.dim() - 1}};
   Tensor reshaped_input = at::from_blob(
-      input.mutable_data_ptr(), sizes, at::TensorOptions(input.scalar_type()));
+      input.mutable_data_ptr(),
+      input_sizes,
+      at::TensorOptions(input.scalar_type()));
 #else
   std::array<exec_aten::DimOrderType, 2> input_dim_order{0, 1};
-  std::array<exec_aten::SizesType, 2> input_sizes;
-  input_sizes[0] = num_channels;
-  input_sizes[1] = input.size(input.dim() - 1);
   std::array<exec_aten::StridesType, 2> input_strides;
   dim_order_to_stride_nocheck(
       input_sizes.data(), input_dim_order.data(), 2, input_strides.data());
@@ -428,7 +430,7 @@ Tensor& dequantize_per_token_out(
       reshaped_input,
       scale,
       zero_points,
-      0,
+      0, /* axis */
       quant_min,
       quant_max,
       dtype,

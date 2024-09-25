@@ -9,13 +9,9 @@
 import unittest
 
 import torch
-from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib
 
 
 class QuantizePerTokenTest(unittest.TestCase):
-
-    def setUp(self):
-        pass
 
     def test_quantize_per_token(self):
         input_tensor = torch.tensor(

@@ -214,7 +214,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--quantize_kv_cache",
         default=False,
         action="store_true",
-        help="Whether or not to export a model using quantized kv cache",
+        help="Whether or not to export a model using int8 per token quantized kv cache",
     )
     parser.add_argument(
         "--num_sharding",
@@ -455,41 +455,6 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
     else:
         dtype_override = None
 
-    # source transforms
-    transforms = []
-    if args.quantization_mode:
-        modelname = f"{modelname}_q"
-        transforms.append(
-            get_quant_weight_transform(args, dtype_override, verbose_export())
-        )
-
-    if args.embedding_quantize:
-        modelname = f"{modelname}_e"
-        transforms.append(get_quant_embedding_transform(args))
-
-    if args.expand_rope_table:
-        transforms.append(materialze_broadcast_of_rope_freq_cis)
-
-    if args.use_sdpa_with_kv_cache:
-        transforms.append(replace_sdpa_with_custom_op)
-
-    if args.quantize_kv_cache:
-        assert (
-            args.use_kv_cache and not args.use_sdpa_with_kv_cache
-        ), "quantize_kv_cache requires use_kv_cache=True and use_sdpa_with_kv_cache=False"
-        transforms.append(replace_kv_cache_with_quantized_kv_cache)
-
-    if args.use_kv_cache:
-        if args.qnn:
-            transforms.append(replace_kv_cache_with_simple_kv_cache)
-            transforms.append(replace_sdpa_with_flex_sdpa)
-            transforms.append(replace_causal_mask)
-
-        elif args.coreml or args.mps:
-            # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
-            # to get free perf gain.
-            transforms.append(replace_sdpa_with_simple_sdpa)
-            transforms.append(replace_causal_mask)
     return (
         _load_llama_model(
             modelname=modelname,
@@ -849,6 +814,12 @@ def _get_source_transforms(  # noqa
 
     if args.use_sdpa_with_kv_cache:
         transforms.append(replace_sdpa_with_custom_op)
+
+    if args.quantize_kv_cache:
+        assert (
+            args.use_kv_cache and not args.use_sdpa_with_kv_cache
+        ), "quantize_kv_cache requires use_kv_cache=True and use_sdpa_with_kv_cache=False"
+        transforms.append(replace_kv_cache_with_quantized_kv_cache)
 
     if args.use_kv_cache:
         if args.qnn:
