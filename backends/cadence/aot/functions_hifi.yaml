@@ -92,6 +92,11 @@
     - arg_meta: null
       kernel_name: torch::executor::sub_out
 
+- op: tanh.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::tanh_out
+
 - op: view_copy.out
   kernels:
     - arg_meta: null
