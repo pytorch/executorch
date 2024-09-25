@@ -1,4 +1,4 @@
-# Building ExecuTorch Android Demo App for Llama running XNNPack
+# Building ExecuTorch Android Demo App for Llama/Llava running XNNPack
 
 **[UPDATE - 09/25]** We have added support for running [Llama 3.2 models](#for-llama-32-1b-and-3b-models) on the XNNPack backend. We currently support inference on their original data type (BFloat16). We have also added instructions to run [Llama Guard 1B models](#for-llama-guard-1b-models) on-device.
 
@@ -8,7 +8,7 @@ More specifically, it covers:
 2. Building and linking libraries that are required to inference on-device for Android platform.
 3. Building the Android demo app itself.
 
-Phone verified: OnePlus 12. Samsung S23 (Llama only), Samsung S24+ (Llama only), Pixel 8 Pro (Llama only)
+Phone verified: OnePlus 12, OnePlus 9 Pro. Samsung S23 (Llama only), Samsung S24+ (Llama only), Pixel 8 Pro (Llama only)
 
 
 ## Known Issues
@@ -101,7 +101,7 @@ python -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --pa
 
 You may wonder what the ‘--metadata’ flag is doing. This flag helps export the model with proper special tokens added that the runner can detect EOS tokens easily.
 
-* Convert tokenizer for Llama 2
+* Convert tokenizer for Llama 2 and Llava (skip this for Llama 3.x)
 ```
 python -m extension.llm.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
 ```
