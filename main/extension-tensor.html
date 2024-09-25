@@ -479,7 +479,7 @@
   <div class="section" id="managing-tensor-memory-in-c">
 <h1>Managing Tensor Memory in C++<a class="headerlink" href="#managing-tensor-memory-in-c" title="Permalink to this heading">¶</a></h1>
 <p><strong>Author:</strong> <a class="reference external" href="https://github.com/shoumikhin">Anthony Shoumikhin</a></p>
-<p>Tensors are fundamental data structures in ExecuTorch, representing multi-dimensional arrays used in computations for neural networks and other numerical algorithms. In ExecuTorch, the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/core/portable_type/tensor.h">Tensor</a> class doesn’t own its metadata (sizes, strides, dim_order) or data, keeping the runtime lightweight. Users are responsible for supplying all these memory buffers and ensuring that the metadata and data outlive the <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> instance. While this design is lightweight and flexible, especially for tiny embedded systems, it places a significant burden on the user. However, if your environment requires minimal dynamic allocations, a small binary footprint, or limited C++ standard library support, you’ll need to accept that trade-off and stick with the regular <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> type.</p>
+<p>Tensors are fundamental data structures in ExecuTorch, representing multi-dimensional arrays used in computations for neural networks and other numerical algorithms. In ExecuTorch, the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/core/portable_type/tensor.h">Tensor</a> class doesn’t own its metadata (sizes, strides, dim_order) or data, keeping the runtime lightweight. Users are responsible for supplying all these memory buffers and ensuring that the metadata and data outlive the <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> instance. While this design is lightweight and flexible, especially for tiny embedded systems, it places a significant burden on the user. If your environment requires minimal dynamic allocations, a small binary footprint, or limited C++ standard library support, you’ll need to accept that trade-off and stick with the regular <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> type.</p>
 <p>Imagine you’re working with a <a class="reference internal" href="extension-module.html"><span class="doc std std-doc"><code class="docutils literal notranslate"><span class="pre">Module</span></code></span></a> interface, and you need to pass a <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> to the <code class="docutils literal notranslate"><span class="pre">forward()</span></code> method. You would need to declare and maintain at least the sizes array and data separately, sometimes the strides too, often leading to the following pattern:</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/module/module.h&gt;</span>
 
@@ -505,7 +505,7 @@
 <div class="section" id="introducing-tensorptr">
 <h2>Introducing TensorPtr<a class="headerlink" href="#introducing-tensorptr" title="Permalink to this heading">¶</a></h2>
 <p>To alleviate these issues, ExecuTorch provides <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> and <code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code> via the new <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/extension/tensor">Tensor Extension</a> that manage the lifecycle of tensors and their implementations. These are essentially smart pointers (<code class="docutils literal notranslate"><span class="pre">std::unique_ptr&lt;Tensor&gt;</span></code> and <code class="docutils literal notranslate"><span class="pre">std::shared_ptr&lt;TensorImpl&gt;</span></code>, respectively) that handle the memory management of both the tensor’s data and its dynamic metadata.</p>
-<p>Now, users no longer need to worry about metadata lifetimes separately. Data ownership is determined based on whether the it is passed by pointer or moved into the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> as an <code class="docutils literal notranslate"><span class="pre">std::vector</span></code>. Everything is bundled in one place and managed automatically, enabling you to focus on actual computations.</p>
+<p>Now, users no longer need to worry about metadata lifetimes separately. Data ownership is determined based on whether it is passed by pointer or moved into the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> as an <code class="docutils literal notranslate"><span class="pre">std::vector</span></code>. Everything is bundled in one place and managed automatically, enabling you to focus on actual computations.</p>
 <p>Here’s how you can use it:</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/module/module.h&gt;</span>
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/tensor/tensor.h&gt;</span>
@@ -519,23 +519,22 @@
 <span class="k">module</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">tensor</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>The data is now owned by the tensor instance because it’s provided as a vector. To create a non-owning <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> just pass the data by pointer. The <code class="docutils literal notranslate"><span class="pre">type</span></code> is deduced automatically from the data vector (<code class="docutils literal notranslate"><span class="pre">float</span></code>). <code class="docutils literal notranslate"><span class="pre">strides</span></code> and <code class="docutils literal notranslate"><span class="pre">dim_order</span></code> are computed automatically to the default values based on the <code class="docutils literal notranslate"><span class="pre">sizes</span></code> if not specified explicitly as extra arguments.</p>
-<p><code class="docutils literal notranslate"><span class="pre">EValue</span></code> in <code class="docutils literal notranslate"><span class="pre">Module::forward()</span></code> accepts <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> directly, ensuring seamless integration. <code class="docutils literal notranslate"><span class="pre">EValue</span></code> can now be constructed implicitly with a smart pointer to any type that it can hold, so <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> gets dereferenced implicitly and <code class="docutils literal notranslate"><span class="pre">EValue</span></code> holding a <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> that the  <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> pointed at is passed to the <code class="docutils literal notranslate"><span class="pre">forward()</span></code>.</p>
+<p>The data is now owned by the tensor instance because it’s provided as a vector. To create a non-owning <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> just pass the data by pointer. The <code class="docutils literal notranslate"><span class="pre">type</span></code> is deduced automatically based on the data vector (<code class="docutils literal notranslate"><span class="pre">float</span></code>). <code class="docutils literal notranslate"><span class="pre">strides</span></code> and <code class="docutils literal notranslate"><span class="pre">dim_order</span></code> are computed automatically to the default values based on the <code class="docutils literal notranslate"><span class="pre">sizes</span></code> if not specified explicitly as additional arguments.</p>
+<p><code class="docutils literal notranslate"><span class="pre">EValue</span></code> in <code class="docutils literal notranslate"><span class="pre">Module::forward()</span></code> accepts <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> directly, ensuring seamless integration. <code class="docutils literal notranslate"><span class="pre">EValue</span></code> can now be constructed implicitly with a smart pointer to any type that it can hold. This allows <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> to be dereferenced implicitly when passed to <code class="docutils literal notranslate"><span class="pre">forward()</span></code>, and <code class="docutils literal notranslate"><span class="pre">EValue</span></code> will hold the <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> that the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> points to.</p>
 </div>
 <div class="section" id="api-overview">
 <h2>API Overview<a class="headerlink" href="#api-overview" title="Permalink to this heading">¶</a></h2>
 <p>The new API revolves around two main smart pointers:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code>: <code class="docutils literal notranslate"><span class="pre">std::unique_ptr</span></code> managing a <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> object. Since each <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> instance is unique, <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> ensures exclusive ownership.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code>: <code class="docutils literal notranslate"><span class="pre">std::shared_ptr</span></code> managing a <code class="docutils literal notranslate"><span class="pre">TensorImpl</span></code> object. Multiple <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> instances can share the same <code class="docutils literal notranslate"><span class="pre">TensorImpl</span></code>, so <code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code> uses shared ownership.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code>: <code class="docutils literal notranslate"><span class="pre">std::shared_ptr</span></code> managing a <code class="docutils literal notranslate"><span class="pre">TensorImpl</span></code> object. Multiple <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> instances can share the same <code class="docutils literal notranslate"><span class="pre">TensorImpl</span></code>, so <code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code> ensures shared ownership.</p></li>
 </ul>
 <div class="section" id="creating-tensors">
 <h3>Creating Tensors<a class="headerlink" href="#creating-tensors" title="Permalink to this heading">¶</a></h3>
 <p>There are several ways to create a <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code>.</p>
-</div>
 <div class="section" id="creating-scalar-tensors">
-<h3>Creating Scalar Tensors<a class="headerlink" href="#creating-scalar-tensors" title="Permalink to this heading">¶</a></h3>
-<p>You can create a scalar tensor, i.e. a tensor with zero dimensions or with one of sizes being zero.</p>
+<h4>Creating Scalar Tensors<a class="headerlink" href="#creating-scalar-tensors" title="Permalink to this heading">¶</a></h4>
+<p>You can create a scalar tensor, i.e. a tensor with zero dimensions or with one of the sizes being zero.</p>
 <p><em>Providing A Single Data Value</em></p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span><span class="mf">3.14</span><span class="p">);</span>
 </pre></div>
@@ -546,8 +545,9 @@
 </pre></div>
 </div>
 <p>Now the integer 42 will be cast to float and the tensor will contain a single value 42 of type float.</p>
-<div class="section" id="owning-a-data-vector">
-<h4>Owning a Data Vector<a class="headerlink" href="#owning-a-data-vector" title="Permalink to this heading">¶</a></h4>
+</div>
+<div class="section" id="owning-data-from-a-vector">
+<h4>Owning Data from a Vector<a class="headerlink" href="#owning-data-from-a-vector" title="Permalink to this heading">¶</a></h4>
 <p>When you provide sizes and data vectors, <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> takes ownership of both the data and the sizes.</p>
 <p><em>Providing Data Vector</em></p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span>
@@ -557,15 +557,15 @@
 </div>
 <p>The type is deduced automatically as <code class="docutils literal notranslate"><span class="pre">ScalarType::Float</span></code> from the data vector.</p>
 <p><em>Providing Data Vector with a Type</em></p>
-<p>If you provide data of one type but specify a different scalar type, the data will be cast to the specified type.</p>
+<p>If you provide data of one type but specify a different scalar type, the data will be cast to the given type.</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span>
 <span class="w">    </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span><span class="w"> </span><span class="mi">6</span><span class="p">},</span><span class="w">          </span><span class="c1">// data (int)</span>
 <span class="w">    </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Double</span><span class="p">);</span><span class="w">         </span><span class="c1">// double scalar type</span>
 </pre></div>
 </div>
-<p>In this example, even though the data vector contains integers, we specify the scalar type as <code class="docutils literal notranslate"><span class="pre">Double</span></code>. The integers are cast to doubles, and the new data vector is owned by the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code>. The <code class="docutils literal notranslate"><span class="pre">sizes</span></code> argument is skipped in this example, so the input data vector’s size is used. Note that we forbid the opposite cast, when a floating point type casts to an integral type, because that loses precision. Similarly, casting other types to <code class="docutils literal notranslate"><span class="pre">Bool</span></code> isn’t allowed.</p>
+<p>In this example, even though the data vector contains integers, we specify the scalar type as <code class="docutils literal notranslate"><span class="pre">Double</span></code>. The integers are cast to double, and the new data vector is owned by the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code>. Since the <code class="docutils literal notranslate"><span class="pre">sizes</span></code> argument is skipped in this example, the tensor is one-dimensional with a size equal to the length of the data vector. Note that the reverse cast, from a floating-point type to an integral type, is not allowed because that loses precision. Similarly, casting other types to <code class="docutils literal notranslate"><span class="pre">Bool</span></code> is disallowed.</p>
 <p><em>Providing Data Vector as <code class="docutils literal notranslate"><span class="pre">std::vector&lt;uint8_t&gt;</span></code></em></p>
-<p>You can also provide raw data as a <code class="docutils literal notranslate"><span class="pre">std::vector&lt;uint8_t&gt;</span></code>, specifying the sizes and scalar type. The data will be reinterpreted according to the provided type.</p>
+<p>You can also provide raw data in the form of a <code class="docutils literal notranslate"><span class="pre">std::vector&lt;uint8_t&gt;</span></code>, specifying the sizes and scalar type. The data will be reinterpreted according to the provided type.</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">uint8_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="cm">/* raw data */</span><span class="p">;</span>
 <span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span>
 <span class="w">    </span><span class="p">{</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">},</span><span class="w">                 </span><span class="c1">// sizes</span>
@@ -575,8 +575,8 @@
 </div>
 <p>The <code class="docutils literal notranslate"><span class="pre">data</span></code> vector must be large enough to accommodate all the elements according to the provided sizes and scalar type.</p>
 </div>
-<div class="section" id="non-owning-a-raw-data-pointer">
-<h4>Non-Owning a Raw Data Pointer<a class="headerlink" href="#non-owning-a-raw-data-pointer" title="Permalink to this heading">¶</a></h4>
+<div class="section" id="non-owning-data-from-raw-pointer">
+<h4>Non-Owning Data from Raw Pointer<a class="headerlink" href="#non-owning-data-from-raw-pointer" title="Permalink to this heading">¶</a></h4>
 <p>You can create a <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> that references existing data without taking ownership.</p>
 <p><em>Providing Raw Data</em></p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="kt">float</span><span class="w"> </span><span class="n">data</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="mf">1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">3.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">4.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">5.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">6.0f</span><span class="p">};</span>
@@ -588,7 +588,7 @@
 </div>
 <p>The <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> does not own the data, you must ensure the <code class="docutils literal notranslate"><span class="pre">data</span></code> remains valid.</p>
 <p><em>Providing Raw Data with Custom Deleter</em></p>
-<p>If you want <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> to manage the lifetime of the data, you can provide a custom deleter.</p>
+<p>If you want the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> to manage the lifetime of the data, you can provide a custom deleter.</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="kt">double</span><span class="p">[</span><span class="mi">6</span><span class="p">]{</span><span class="mf">1.0</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0</span><span class="p">,</span><span class="w"> </span><span class="mf">3.0</span><span class="p">,</span><span class="w"> </span><span class="mf">4.0</span><span class="p">,</span><span class="w"> </span><span class="mf">5.0</span><span class="p">,</span><span class="w"> </span><span class="mf">6.0</span><span class="p">};</span>
 <span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span>
 <span class="w">    </span><span class="p">{</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">},</span><span class="w">                               </span><span class="c1">// sizes</span>
@@ -602,7 +602,7 @@
 </div>
 <div class="section" id="sharing-existing-tensor">
 <h4>Sharing Existing Tensor<a class="headerlink" href="#sharing-existing-tensor" title="Permalink to this heading">¶</a></h4>
-<p>You can create a <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> by wrapping an existing <code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code>, and the latter can be created with the same collection of APIs as <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code>. Any changes made to <code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code> or any <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> sharing the same <code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code> get reflected in for all.</p>
+<p>You can create a <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> by wrapping an existing <code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code>, and the latter can be created with the same collection of APIs as <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code>. Any changes made to <code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code> or any <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> sharing the same <code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code> are reflected across all.</p>
 <p><em>Sharing Existing TensorImplPtr</em></p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor_impl</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_impl_ptr</span><span class="p">(</span>
 <span class="w">    </span><span class="p">{</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">},</span>
@@ -611,7 +611,7 @@
 <span class="k">auto</span><span class="w"> </span><span class="n">tensor_copy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span><span class="n">tensor_impl</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>Both <code class="docutils literal notranslate"><span class="pre">tensor</span></code> and <code class="docutils literal notranslate"><span class="pre">tensor_copy</span></code> share the underlying <code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code>, reflecting changes in data but not in metadata.</p>
+<p>Both <code class="docutils literal notranslate"><span class="pre">tensor</span></code> and <code class="docutils literal notranslate"><span class="pre">tensor_copy</span></code> share the underlying <code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code>, reflecting changes to data but not to metadata.</p>
 <p>Also, you can create a new <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> that shares the same <code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code> as an existing <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code>.</p>
 <p><em>Sharing Existing TensorPtr</em></p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor_copy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span><span class="n">tensor</span><span class="p">);</span>
@@ -626,7 +626,7 @@
 <span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span><span class="n">original_tensor</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>Now the newly created <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> references the same data as the original tensor, but has its own metadata copy, so can interpret or “view” the data differently, but any modifications to the data will be reflected for the original <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> too.</p>
+<p>Now the newly created <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> references the same data as the original tensor, but has its own metadata copy, so it can interpret or “view” the data differently, but any modifications to the data will be reflected in the original <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> as well.</p>
 </div>
 </div>
 <div class="section" id="cloning-tensors">
@@ -642,15 +642,15 @@ Likewise, you can create a clone of an existing <code class="docutils literal no
 <span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">clone_tensor_ptr</span><span class="p">(</span><span class="n">original_tensor</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>Note that regardless of whether the original <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> owns the data or not, the newly created <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> will own a copy of the data.</p>
+<p>Note that, regardless of whether the original <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> owns the data or not, the newly created <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> will own a copy of the data.</p>
 </div>
 <div class="section" id="resizing-tensors">
 <h3>Resizing Tensors<a class="headerlink" href="#resizing-tensors" title="Permalink to this heading">¶</a></h3>
 <p>The <code class="docutils literal notranslate"><span class="pre">TensorShapeDynamism</span></code> enum specifies the mutability of a tensor’s shape:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">STATIC</span></code>: The tensor’s shape cannot be changed.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">DYNAMIC_BOUND</span></code>: The tensor’s shape can be changed, but can never contain more elements than it had at creation based on the initial sizes.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">DYNAMIC</span></code>: The tensor’s shape can be changed arbitrarily. Note that currently <code class="docutils literal notranslate"><span class="pre">DYNAMIC</span></code> is an alias of <code class="docutils literal notranslate"><span class="pre">DYNAMIC_BOUND</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DYNAMIC_BOUND</span></code>: The tensor’s shape can be changed but cannot contain more elements than it originally had at creation based on the initial sizes.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DYNAMIC</span></code>: The tensor’s shape can be changed arbitrarily. Note that, currently, <code class="docutils literal notranslate"><span class="pre">DYNAMIC</span></code> is an alias for <code class="docutils literal notranslate"><span class="pre">DYNAMIC_BOUND</span></code>.</p></li>
 </ul>
 <p>When resizing a tensor, you must respect its dynamism setting. Resizing is only allowed for tensors with <code class="docutils literal notranslate"><span class="pre">DYNAMIC</span></code> or <code class="docutils literal notranslate"><span class="pre">DYNAMIC_BOUND</span></code> shapes, and you cannot resize <code class="docutils literal notranslate"><span class="pre">DYNAMIC_BOUND</span></code> tensor to contain more elements than it had initially.</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span>
@@ -662,19 +662,19 @@ Likewise, you can create a clone of an existing <code class="docutils literal no
 <span class="c1">// Number of elements: 6</span>
 
 <span class="n">resize_tensor_ptr</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">});</span>
-<span class="c1">// The tensor&#39;s sizes are now {2, 2}</span>
+<span class="c1">// The tensor sizes are now {2, 2}</span>
 <span class="c1">// Number of elements is 4 &lt; initial 6</span>
 
 <span class="n">resize_tensor_ptr</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">});</span>
-<span class="c1">// The tensor&#39;s sizes are now {1, 3}</span>
+<span class="c1">// The tensor sizes are now {1, 3}</span>
 <span class="c1">// Number of elements is 3 &lt; initial 6</span>
 
 <span class="n">resize_tensor_ptr</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">});</span>
-<span class="c1">// The tensor&#39;s sizes are now {3, 2}</span>
+<span class="c1">// The tensor sizes are now {3, 2}</span>
 <span class="c1">// Number of elements is 6 == initial 6</span>
 
 <span class="n">resize_tensor_ptr</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="mi">6</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">});</span>
-<span class="c1">// The tensor&#39;s sizes are now {6, 1}</span>
+<span class="c1">// The tensor sizes are now {6, 1}</span>
 <span class="c1">// Number of elements is 6 == initial 6</span>
 </pre></div>
 </div>
@@ -783,7 +783,7 @@ Likewise, you can create a clone of an existing <code class="docutils literal no
 </div>
 <div class="section" id="interoperability-with-aten">
 <h2>Interoperability with ATen<a class="headerlink" href="#interoperability-with-aten" title="Permalink to this heading">¶</a></h2>
-<p>If your code is compiled with the preprocessor flag <code class="docutils literal notranslate"><span class="pre">USE_ATEN_LIB</span></code> turned on, all the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> APIs will use <code class="docutils literal notranslate"><span class="pre">at::</span></code> APIs under the hood. E.g. <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> becomes a <code class="docutils literal notranslate"><span class="pre">std::unique_ptr&lt;at::Tensor&gt;</span></code> and <code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code> becomes <code class="docutils literal notranslate"><span class="pre">c10::intrusive_ptr&lt;at::TensorImpl&gt;</span></code>. This allows for seamless integration with <a class="reference external" href="https://pytorch.org/cppdocs">PyTorch ATen</a> library.</p>
+<p>If your code is compiled with the preprocessor flag <code class="docutils literal notranslate"><span class="pre">USE_ATEN_LIB</span></code> enabled, all the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> APIs will use <code class="docutils literal notranslate"><span class="pre">at::</span></code> APIs under the hood. E.g. <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> becomes a <code class="docutils literal notranslate"><span class="pre">std::unique_ptr&lt;at::Tensor&gt;</span></code> and <code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code> becomes <code class="docutils literal notranslate"><span class="pre">c10::intrusive_ptr&lt;at::TensorImpl&gt;</span></code>. This allows for seamless integration with <a class="reference external" href="https://pytorch.org/cppdocs">PyTorch ATen</a> library.</p>
 <div class="section" id="api-equivalence-table">
 <h3>API Equivalence Table<a class="headerlink" href="#api-equivalence-table" title="Permalink to this heading">¶</a></h3>
 <p>Here’s a table matching <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> creation functions with their corresponding ATen APIs:</p>
@@ -882,8 +882,8 @@ Likewise, you can create a clone of an existing <code class="docutils literal no
 </div>
 <div class="section" id="conclusion">
 <h2>Conclusion<a class="headerlink" href="#conclusion" title="Permalink to this heading">¶</a></h2>
-<p>The <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> and <code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code> in ExecuTorch simplifies tensor memory management by bundling the data and dynamic metadata into smart pointers. This design eliminates the need for users to manage multiple pieces of data and ensures safer and more maintainable code.</p>
-<p>By providing interfaces similar to PyTorch’s ATen library, ExecuTorch makes it easier for developers to adopt the new API without a steep learning curve.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> and <code class="docutils literal notranslate"><span class="pre">TensorImplPtr</span></code> in ExecuTorch simplify tensor memory management by bundling the data and dynamic metadata into smart pointers. This design eliminates the need for users to manage multiple pieces of data and ensures safer and more maintainable code.</p>
+<p>By providing interfaces similar to PyTorch’s ATen library, ExecuTorch simplifies the adoption of the new API, allowing developers to transition without a steep learning curve.</p>
 </div>
 </div>
 
@@ -935,10 +935,10 @@ Likewise, you can create a clone of an existing <code class="docutils literal no
 <li><a class="reference internal" href="#">Managing Tensor Memory in C++</a><ul>
 <li><a class="reference internal" href="#introducing-tensorptr">Introducing TensorPtr</a></li>
 <li><a class="reference internal" href="#api-overview">API Overview</a><ul>
-<li><a class="reference internal" href="#creating-tensors">Creating Tensors</a></li>
-<li><a class="reference internal" href="#creating-scalar-tensors">Creating Scalar Tensors</a><ul>
-<li><a class="reference internal" href="#owning-a-data-vector">Owning a Data Vector</a></li>
-<li><a class="reference internal" href="#non-owning-a-raw-data-pointer">Non-Owning a Raw Data Pointer</a></li>
+<li><a class="reference internal" href="#creating-tensors">Creating Tensors</a><ul>
+<li><a class="reference internal" href="#creating-scalar-tensors">Creating Scalar Tensors</a></li>
+<li><a class="reference internal" href="#owning-data-from-a-vector">Owning Data from a Vector</a></li>
+<li><a class="reference internal" href="#non-owning-data-from-raw-pointer">Non-Owning Data from Raw Pointer</a></li>
 <li><a class="reference internal" href="#sharing-existing-tensor">Sharing Existing Tensor</a></li>
 <li><a class="reference internal" href="#viewing-existing-tensor">Viewing Existing Tensor</a></li>
 </ul>

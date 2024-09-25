@@ -60,7 +60,7 @@ const auto error = module.load_method("forward");
 
 assert(module.is_method_loaded("forward"));
 ```
-Note: the `Program` is loaded automatically before any `Method` is loaded. Subsequent attemps to load them have no effect if one of the previous attemps was successful.
+Note: the `Program` is loaded automatically before any `Method` is loaded. Subsequent attempts to load them have no effect if one of the previous attempts was successful.
 
 You can also force-load the "forward" method with a convenience syntax:
 
@@ -72,7 +72,7 @@ assert(module.is_method_loaded("forward"));
 
 ### Querying for Metadata
 
-Get a set of method names that a Module contains udsing the `method_names()` function:
+Get a set of method names that a Module contains using the `method_names()` function:
 
 ```cpp
 const auto method_names = module.method_names();
@@ -98,7 +98,7 @@ if (method_meta.ok()) {
   if (input_meta.ok()) {
     assert(input_meta->scalar_type() == ScalarType::Float);
   }
-  const auto output_meta = meta->output_tensor_meta(0);
+  const auto output_meta = method_meta->output_tensor_meta(0);
 
   if (output_meta.ok()) {
     assert(output_meta->sizes().size() == 1);
