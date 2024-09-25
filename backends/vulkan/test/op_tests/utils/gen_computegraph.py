@@ -272,6 +272,7 @@ class ComputeGraphGen:
             return ret_str
 
         prepack = self.prepack_ref(ref)
+        ref_is_view = self.suite_def.is_view_op and ref.is_out
 
         cpp_type = "IOValueRef" if (ref.is_in and not prepack) else "ValueRef"
         if not include_declarations:
@@ -362,7 +363,15 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
                 ret_str = f"IOValueRef {ref.name};\n"
             ret_str += f"{ref.name}.value = {self.graph}{self.dot}"
 
-        if ref.src_cpp_type == AT_TENSOR and not prepack:
+        if ref.src_cpp_type == AT_TENSOR and ref_is_view:
+            input_name = None
+            for _name, ref in self.refs.items():
+                if ref.is_in and ref.src_cpp_type == AT_TENSOR:
+                    input_name = ref.name
+
+            assert input_name is not None
+            ret_str += f"add_tensor_view({input_name}.value);"
+        elif ref.src_cpp_type == AT_TENSOR and not prepack:
             ret_str += "add_input_tensor(" if ref.is_in else "add_tensor("
             ret_str += f"{ref.src_cpp_name}.sizes().vec(), "
             ret_str += f"from_at_scalartype({ref.src_cpp_name}.scalar_type())); \n"
@@ -649,6 +658,9 @@ for (int i=0; i<out.size(); i++) {{
 
     def gen_op_check_fn(self) -> str:
         op_name = self.f.func.name.unambiguous_name()
+        if self.suite_def.test_name_suffix is not None:
+            op_name += "_" + self.suite_def.test_name_suffix
+
         op_check_fn = self.gen_decl(f"check_{op_name}") + " {\n"
         if self.should_prepack:
             op_check_fn = self.gen_decl(f"prepacked_check_{op_name}") + " {\n"
@@ -667,6 +679,8 @@ for (int i=0; i<out.size(); i++) {{
 
     def gen_build_graph_fn(self, include_declarations: bool = False) -> str:
         op_name = self.f.func.name.unambiguous_name()
+        if self.suite_def.test_name_suffix is not None:
+            op_name += "_" + self.suite_def.test_name_suffix
         op_build_graph_fn = self.gen_decl(f"build_graph_{op_name}") + " {\n"
         if self.should_prepack:
             op_build_graph_fn = (
@@ -682,6 +696,8 @@ for (int i=0; i<out.size(); i++) {{
 
     def gen_op_exec_graph_fn(self) -> str:
         op_name = self.f.func.name.unambiguous_name()
+        if self.suite_def.test_name_suffix is not None:
+            op_name += "_" + self.suite_def.test_name_suffix
         op_benchmark_fn = self.gen_decl(f"benchmark_{op_name}") + " {\n"
         if self.should_prepack:
             op_benchmark_fn = self.gen_decl(f"prepacked_benchmark_{op_name}") + " {\n"
