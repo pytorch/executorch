@@ -20,7 +20,7 @@ from torch import nn
 from torchao.quantization.GPTQ import _check_linear_int4_k, Int8DynActInt4WeightLinear
 from torchao.quantization.quant_api import _replace_with_custom_fn_if_matches_filter
 
-from .quantize import QuantizedGroupEmbedding
+from .quantize import Int8DynActInt8WeightLinear, QuantizedGroupEmbedding
 
 
 def _inject_fast_hadamard_transform_cuda_for_spin_quant(module: torch.nn.Module):
@@ -129,25 +129,68 @@ def transform_linear_for_spinquant(
     module: torch.nn.Module,
     checkpoint: Any,
     group_size: int,
-    quantization_mode: str,
     dtype: torch.dtype,
 ) -> torch.nn.Module:
     """
     Transform the model to be able to load SpinQuant checkpoints that
-    are quantized with the given group size and quantization mode.
+    are quantized with the given group size and quantization mode for
+    linear layers.
     """
 
     if group_size not in [32, 64, 128, 256]:
         raise ValueError(f"Group size {group_size} is not supported for SpinQuant.")
-    if quantization_mode not in ["8da4w"]:
-        raise ValueError(
-            f"Quantization mode {quantization_mode} is not compatible with SpinQuant."
-        )
     _replace_linear_with_linear_8da4w_for_spin_quant(
         module,
         checkpoint,
         group_size,
         dtype,
+        dtype,
+    )
+    return module
+
+
+def _replace_output_linear_with_linear_int8_for_spinquant(
+    module: torch.nn.Module,
+    checkpoint: Any,
+    dtype: torch.dtype,
+):
+    def filter_fn(child: torch.nn.Module, cur_fqn: str) -> bool:
+        scales_key = f"{cur_fqn}.scale"
+        if (
+            isinstance(child, nn.Linear)
+            and scales_key in checkpoint
+            and "output" in cur_fqn
+        ):
+            assert checkpoint[f"{cur_fqn}.weight"].dtype == torch.int8
+            assert checkpoint[scales_key].dtype == dtype
+            return True
+        return False
+
+    def replacement_fn(child: torch.nn.Module) -> torch.nn.Module:
+        new_linear = Int8DynActInt8WeightLinear(
+            device=child.weight.device,
+            in_features=child.in_features,
+            out_features=child.out_features,
+            precision=dtype,
+            bias=False,
+        )
+        return new_linear
+
+    _replace_with_custom_fn_if_matches_filter(module, replacement_fn, filter_fn)
+
+
+def transform_output_linear_for_spinquant(
+    module: torch.nn.Module,
+    checkpoint: Any,
+    dtype: torch.dtype,
+) -> torch.nn.Module:
+    """
+    Transform the model to be able to load SpinQuant checkpoints that
+    has the output layer quantized per-channel.
+    """
+    _replace_output_linear_with_linear_int8_for_spinquant(
+        module,
+        checkpoint,
         dtype,
     )
     return module
@@ -233,8 +276,10 @@ def sanitize_checkpoint_from_spinquant(
         module_name = new_key[0 : new_key.rfind(".")]
         sub_module = module.get_submodule(module_name)
         assert sub_module is not None
-        assert isinstance(sub_module, Int8DynActInt4WeightLinear) or isinstance(
-            sub_module, QuantizedGroupEmbedding
+        assert (
+            isinstance(sub_module, Int8DynActInt4WeightLinear)
+            or isinstance(sub_module, QuantizedGroupEmbedding)
+            or isinstance(sub_module, Int8DynActInt8WeightLinear)
         )
         # Checkpoints with SpinQuant could come with two formats for scales:
         # 1. scales is grouped by group size
@@ -245,6 +290,8 @@ def sanitize_checkpoint_from_spinquant(
             checkpoint[new_key] = (
                 old_val if linear_group_size == -1 else old_val[:, ::linear_group_size]
             )
+        elif isinstance(sub_module, Int8DynActInt8WeightLinear):
+            checkpoint[new_key] = old_val[:, 0]
         elif isinstance(sub_module, QuantizedGroupEmbedding):
             if (
                 embedding_group_size is None or embedding_group_size == 0

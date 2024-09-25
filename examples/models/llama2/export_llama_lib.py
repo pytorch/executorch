@@ -374,8 +374,8 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--spin_qmode",
         type=str,
         default=None,
-        choices=["8da4w"],
-        help="Quantization mode for SpinQuant. Only support 8da4w right now.",
+        choices=["8da4w", "8da4w_output_8da8w"],
+        help="Quantization mode for SpinQuant. Only support 8da4w and 8da4w_output_8da8w right now.",
     )
 
     parser.add_argument(
