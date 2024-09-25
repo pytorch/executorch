@@ -1,7 +1,6 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
- * Copyright 2024 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -149,16 +148,6 @@ class MemoryAllocator {
   // Returns the total size of the allocator's memory buffer.
   virtual uint32_t size() const {
     return size_;
-  }
-
-  // Returns the used size of the allocator's memory buffer.
-  virtual uint32_t used_size() const {
-    return cur_ - begin_;
-  }
-
-  // Returns the free size of the allocator's memory buffer.
-  virtual uint32_t free_size() const {
-    return end_ - cur_;
   }
 
   // Resets the current pointer to the base address. It does nothing to
