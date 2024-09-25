@@ -661,7 +661,14 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     mSendButton.setOnClickListener(
         view -> {
           addSelectedImagesToChatThread(mSelectedImageUri);
+          String finalPrompt;
           String rawPrompt = mEditTextMessage.getText().toString();
+          if (ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType())
+              == ModelUtils.VISION_MODEL) {
+            finalPrompt = mCurrentSettingsFields.getFormattedSystemAndUserPrompt(rawPrompt);
+          } else {
+            finalPrompt = getTotalFormattedPrompt(getConversationHistory(), rawPrompt);
+          }
           // We store raw prompt into message adapter, because we don't want to show the extra
           // tokens from system prompt
           mMessageAdapter.add(new Message(rawPrompt, true, MessageType.TEXT, promptID));
@@ -692,14 +699,22 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
                   if (ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType())
                       == ModelUtils.VISION_MODEL) {
                     mModule.generateFromPos(
-                        mCurrentSettingsFields.getFormattedSystemAndUserPrompt(rawPrompt),
+                        finalPrompt,
                         ModelUtils.VISION_MODEL_SEQ_LEN,
                         startPos,
                         MainActivity.this,
                         false);
+                  } else if (mCurrentSettingsFields.getModelType() == ModelType.LLAMA_GUARD_3) {
+                    String llamaGuardPromptForClassification =
+                        PromptFormat.getFormattedLlamaGuardPrompt(rawPrompt);
+                    ETLogging.getInstance()
+                        .log("Running inference.. prompt=" + llamaGuardPromptForClassification);
+                    mModule.generate(
+                        llamaGuardPromptForClassification,
+                        llamaGuardPromptForClassification.length() + 64,
+                        MainActivity.this,
+                        false);
                   } else {
-                    String finalPrompt =
-                        getTotalFormattedPrompt(getConversationHistory(), rawPrompt);
                     ETLogging.getInstance().log("Running inference.. prompt=" + finalPrompt);
                     mModule.generate(
                         finalPrompt,

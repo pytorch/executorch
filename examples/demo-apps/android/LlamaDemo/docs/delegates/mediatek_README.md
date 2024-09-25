@@ -5,7 +5,7 @@ More specifically, it covers:
 2. Building and linking libraries that are required to inference on-device for Android platform using MediaTek AI accelerators.
 3. Loading the needed files on the device and running inference.
 
-Verified on MacOS, Linux CentOS (model export), Python 3.10, Android NDK 25.0.8775105
+Verified on MacOS, Linux CentOS (model export), Python 3.10, Android NDK 26.3.11579264
 Phone verified: MediaTek Dimensity 9300 (D9300) chip.
 
 ## Prerequisites
@@ -112,7 +112,7 @@ Before continuing forward, make sure to modify the tokenizer, token embedding, a
 Prior to deploying the files on device, make sure to modify the tokenizer, token embedding, and model file names in  examples/mediatek/executor_runner/run_llama3_sample.sh reflect what was generated during the Export Llama Model step.
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/mtk_changes_to_shell_file.png" width=600>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/mtk_changes_to_shell_file.png" style="width:600px">
 </p>
 
 In addition, create a sample_prompt.txt file with a prompt. This will be deployed to the device in the next step.
@@ -150,7 +150,7 @@ adb shell
 ```
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/mtk_output.png" width=800>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/mtk_output.png" style="width:800px">
 </p>
 
 ## Reporting Issues

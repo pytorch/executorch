@@ -198,6 +198,32 @@ std::vector<int64_t> ComputeGraph::sizes_of(const ValueRef idx) const {
   VK_THROW("Could not get sizes of value with type ", val.type());
 }
 
+int64_t ComputeGraph::dim_of(const ValueRef idx) const {
+  const Value& val = values_.at(idx);
+  if (val.isTensor()) {
+    return val.toConstTensor().dim();
+  } else if (val.isTensorRef()) {
+    return val.toConstTensorRef().sizes.size();
+  }
+  VK_THROW("Could not get dim of value with type ", val.type());
+}
+
+std::vector<int64_t> ComputeGraph::dim_order_of(const ValueRef idx) const {
+  const Value& val = values_.at(idx);
+  if (val.isTensor()) {
+    return val.toConstTensor().dim_order();
+  }
+  VK_THROW("Could not get dim order of value with type ", val.type());
+}
+
+std::vector<int64_t> ComputeGraph::strides_of(const ValueRef idx) const {
+  const Value& val = values_.at(idx);
+  if (val.isTensor()) {
+    return val.toConstTensor().strides();
+  }
+  VK_THROW("Could not get strides of value with type ", val.type());
+}
+
 vkapi::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
   const Value& val = values_.at(idx);
   if (val.isTensor()) {

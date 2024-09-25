@@ -52,8 +52,8 @@ class ArmCompileSpecBuilder:
     def ethosu_compile_spec(
         self,
         config: str,
-        system_config: Optional[str] = None,
-        memory_mode: Optional[str] = None,
+        system_config: str,
+        memory_mode: str,
         extra_flags: Optional[str] = None,
         config_ini: Optional[str] = "Arm/vela.ini",
     ) -> "ArmCompileSpecBuilder":
