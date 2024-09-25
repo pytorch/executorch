@@ -23,7 +23,9 @@ class SDPACustom(torch.nn.Module):
         dim: int,
     ):
         super().__init__()
-        self.kv_cache = kv_cache
+        # Custom op only supports float32 currently. Converting to/from float32 is
+        # faster than not having the op.
+        self.kv_cache = kv_cache.to(torch.float)
         self.dim = dim
 
     def forward(
@@ -36,6 +38,12 @@ class SDPACustom(torch.nn.Module):
         seqlen,
         mask,
     ):
+        # Custom op only supports float32 currently. Converting to/from float32 is
+        # faster than not having the op.
+        input_dtype = q.dtype
+        q = q.to(dtype=torch.float)
+        k = k.to(dtype=torch.float)
+        v = v.to(dtype=torch.float)
         output = torch.ops.llama.sdpa_with_kv_cache(
             q,
             k,
@@ -48,7 +56,7 @@ class SDPACustom(torch.nn.Module):
             0,  # dropout probability. Ignored by the code
             True,  # is_causal
         )
-        return output.view(bsz, seqlen, self.dim)
+        return output.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
 
 
 def _replace_sdpa_with_custom_op(module: torch.nn.Module):

@@ -12,6 +12,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
 
 test_data_suite = [
@@ -71,8 +72,11 @@ class TestExp(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data)
         )
 
-    def _test_exp_tosa_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
+    def _test_exp_ethosu_BI_pipeline(
+        self,
+        compile_spec: CompileSpec,
+        module: torch.nn.Module,
+        test_data: Tuple[torch.tensor],
     ):
         (
             ArmTester(
@@ -105,4 +109,12 @@ class TestExp(unittest.TestCase):
 
     @parameterized.expand(test_data_suite)
     def test_exp_tosa_u55_BI(self, test_name: str, test_data: torch.Tensor):
-        self._test_exp_tosa_u55_BI_pipeline(self.Exp(), (test_data,))
+        self._test_exp_ethosu_BI_pipeline(
+            common.get_u55_compile_spec(), self.Exp(), (test_data,)
+        )
+
+    @parameterized.expand(test_data_suite)
+    def test_exp_tosa_u85_BI(self, test_name: str, test_data: torch.Tensor):
+        self._test_exp_ethosu_BI_pipeline(
+            common.get_u85_compile_spec(), self.Exp(), (test_data,)
+        )

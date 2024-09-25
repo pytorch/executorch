@@ -12,6 +12,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
 
 logger = logging.getLogger(__name__)
@@ -199,14 +200,17 @@ class TestConvCombos(unittest.TestCase):
             )
         )
 
-    def _test_conv_combo_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
+    def _test_conv_combo_ethos_BI_pipeline(
+        self,
+        module: torch.nn.Module,
+        compile_spec: CompileSpec,
+        test_data: Tuple[torch.Tensor],
     ):
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=compile_spec,
             )
             .quantize()
             .export()
@@ -230,7 +234,19 @@ class TestConvCombos(unittest.TestCase):
 
     def test_conv_meandim_u55_BI(self):
         model = ComboConv2dMeandim()
-        self._test_conv_combo_u55_BI_pipeline(model, model.get_inputs())
+        self._test_conv_combo_ethos_BI_pipeline(
+            model,
+            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            model.get_inputs(),
+        )
+
+    def test_conv_meandim_u85_BI(self):
+        model = ComboConv2dMeandim()
+        self._test_conv_combo_ethos_BI_pipeline(
+            model,
+            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            model.get_inputs(),
+        )
 
     ##############################
     ## Conv + batch norm + relu ##
@@ -245,7 +261,17 @@ class TestConvCombos(unittest.TestCase):
 
     def test_conv_batchnorm_relu6_u55_BI(self):
         model = ComboConvBatchnormRelu6()
-        self._test_conv_combo_u55_BI_pipeline(model, model.get_inputs())
+        self._test_conv_combo_ethos_BI_pipeline(
+            model, common.get_u55_compile_spec(), model.get_inputs()
+        )
+
+    def test_conv_batchnorm_relu_u85_BI(self):
+        model = ComboConvBatchnormRelu6()
+        self._test_conv_combo_ethos_BI_pipeline(
+            model,
+            common.get_u85_compile_spec(),
+            model.get_inputs(),
+        )
 
     ##################
     ## Conv + ReLU6 ##
@@ -266,7 +292,17 @@ class TestConvCombos(unittest.TestCase):
     def test_conv_relu6_u55_BI(self, test_data: torch.Tensor):
         model = ComboConvRelu6()
         test_data = (test_data,)
-        self._test_conv_combo_u55_BI_pipeline(model, test_data)
+        self._test_conv_combo_ethos_BI_pipeline(
+            model, common.get_u55_compile_spec(permute_memory_to_nhwc=True), test_data
+        )
+
+    @parameterized.expand(ComboConvRelu6.test_data)
+    def test_conv_relu6_u85_BI(self, test_data: torch.Tensor):
+        model = ComboConvRelu6()
+        test_data = (test_data,)
+        self._test_conv_combo_ethos_BI_pipeline(
+            model, common.get_u85_compile_spec(permute_memory_to_nhwc=True), test_data
+        )
 
     ###############################
     ## Block bottleneck residual ##
@@ -281,4 +317,16 @@ class TestConvCombos(unittest.TestCase):
 
     def test_block_bottleneck_residual_u55_BI(self):
         model = ComboBlockBottleneckResidual()
-        self._test_conv_combo_u55_BI_pipeline(model, model.get_inputs())
+        self._test_conv_combo_ethos_BI_pipeline(
+            model,
+            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            model.get_inputs(),
+        )
+
+    def test_block_bottleneck_residual_u85_BI(self):
+        model = ComboBlockBottleneckResidual()
+        self._test_conv_combo_ethos_BI_pipeline(
+            model,
+            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            model.get_inputs(),
+        )

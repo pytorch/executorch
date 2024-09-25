@@ -107,7 +107,7 @@ class OpIndexTensorOutTest : public OperatorTest {
 #define TEST_ENTRY(ctype, dtype) \
   test_dtype<ScalarType::dtype, ScalarType::Long, ScalarType::dtype>();
 
-    ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+    ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 
 #undef TEST_ENTRY
   }

@@ -68,7 +68,6 @@ def gen_pte_from_ctx_bin(
     for pte_name in pte_names:
         print(f"{pte_name} generating...")
         memory_planning_pass = MemoryPlanningPass(
-            memory_planning_algo="greedy",
             alloc_graph_input=False,
             alloc_graph_output=False,
         )
