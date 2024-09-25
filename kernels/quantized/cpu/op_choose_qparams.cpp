@@ -73,12 +73,12 @@ void check_quantize_per_tensor_args(
     }
     ET_CHECK_MSG(
         scale_out.size(input.dim() - 1) == 1,
-        "Exepcted scale to have only one element at dimentions %ld but got %zd",
+        "Exepcted scale to have only one element at dimentions %zd but got %zd",
         input.dim() - 1,
         scale_out.size(input.dim() - 1));
     ET_CHECK_MSG(
         zero_point_out.size(input.dim() - 1) == 1,
-        "Exepcted zero point to have only one element at dimentions %ld but got %zd",
+        "Exepcted zero point to have only one element at dimentions %zd but got %zd",
         input.dim() - 1,
         zero_point_out.size(input.dim() - 1));
   } else {
