@@ -282,6 +282,12 @@ class ComputeGraph final {
     VK_THROW("Could not get sizes of value with type ", val.type());
   }
 
+  int64_t dim_of(const ValueRef idx) const;
+
+  std::vector<int64_t> dim_order_of(const ValueRef idx) const;
+
+  std::vector<int64_t> strides_of(const ValueRef idx) const;
+
   vkapi::ScalarType dtype_of(const ValueRef idx) const;
 
   inline const utils::ivec3& logical_limits_of(const ValueRef idx) const {

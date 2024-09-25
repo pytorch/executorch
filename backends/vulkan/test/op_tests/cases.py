@@ -8,7 +8,7 @@
 from collections import namedtuple
 from typing import Callable
 
-from executorch.backends.vulkan.test.op_tests.utils.codegen import VkTestSuite
+from executorch.backends.vulkan.test.op_tests.utils.test_suite import VkTestSuite
 
 
 # Prime numbers dim sizes for testing
@@ -466,8 +466,8 @@ def get_view_inputs():
     return test_suite
 
 
-@register_test_suite(["aten.slice.Tensor", "aten.slice_copy.Tensor"])
-def get_slice_inputs():
+@register_test_suite("aten.slice_copy.Tensor")
+def get_slice_out_inputs():
     Test = namedtuple("VkSliceTest", ["self", "dim", "start", "end", "step"])
     Test.__new__.__defaults__ = (None, 0, None, None, 1)
 
@@ -546,6 +546,64 @@ def get_slice_inputs():
     test_suite.dtypes = ["at::kFloat", "at::kHalf"]
     test_suite.layouts = ["utils::kChannelsPacked"]
     test_suite.data_gen = "make_seq_tensor"
+    return test_suite
+
+
+def get_slice_view_inputs():
+    Test = namedtuple("VkSliceTest", ["self", "dim", "start", "end", "step"])
+    Test.__new__.__defaults__ = (None, 0, None, None, 1)
+
+    # Slice by channel
+    test_cases = [
+        Test(self=[1, 17, 1, 10], dim=1, start=0, end=4),
+        Test(self=[1, 17, 1, 10], dim=1, start=0, end=8),
+        Test(self=[1, 17, 3, 7], dim=1, start=0, end=12),
+    ]
+
+    test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
+    test_suite.layouts = ["utils::kWidthPacked"]
+    test_suite.data_gen = "make_seq_tensor"
+    test_suite.is_view_op = True
+
+    return test_suite
+
+
+@register_test_suite(["aten.slice.Tensor"])
+def get_slice_inputs():
+    texture_test_suite = get_slice_out_inputs()
+    texture_test_suite.test_name_suffix = "no_view"
+
+    view_test_suite = get_slice_view_inputs()
+    view_test_suite.test_name_suffix = "view"
+
+    return [view_test_suite, texture_test_suite]
+
+
+@register_test_suite(["aten.transpose.int"])
+def get_transpose_inputs():
+    Test = namedtuple("VkTransposeViewTest", ["self", "dim0", "dim1"])
+    Test.__new__.__defaults__ = (None, 0, 1)
+
+    test_cases = [
+        Test(self=[M1, M2], dim0=0, dim1=1),
+        Test(self=[M1, S2, M], dim0=0, dim1=1),
+        Test(self=[M1, S2, M], dim0=0, dim1=2),
+        Test(self=[M1, S2, M], dim0=2, dim1=1),
+        Test(self=[S, M, S2, M2], dim0=3, dim1=2),
+        Test(self=[S, M, S2, M2], dim0=1, dim1=2),
+        Test(self=[S, M, S2, M2], dim0=3, dim1=1),
+    ]
+
+    test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
+    test_suite.layouts = ["utils::kWidthPacked", "utils::kChannelsPacked"]
+    test_suite.data_gen = "make_seq_tensor"
+    test_suite.is_view_op = True
     return test_suite
 
 

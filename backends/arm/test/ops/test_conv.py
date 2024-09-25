@@ -12,6 +12,7 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
 
@@ -297,14 +298,17 @@ class TestConv2D(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
-    def _test_conv2d_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
+    def _test_conv2d_ethosu_BI_pipeline(
+        self,
+        compile_spec: CompileSpec,
+        module: torch.nn.Module,
+        test_data: Tuple[torch.Tensor],
     ):
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=compile_spec,
             )
             .quantize()
             .export()
@@ -325,4 +329,16 @@ class TestConv2D(unittest.TestCase):
 
     @parameterized.expand(testsuite_u55)
     def test_conv2d_u55_BI(self, test_name, model):
-        self._test_conv2d_u55_BI_pipeline(model, model.get_inputs())
+        self._test_conv2d_ethosu_BI_pipeline(
+            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            model,
+            model.get_inputs(),
+        )
+
+    @parameterized.expand(testsuite_u55)
+    def test_conv2d_u85_BI(self, test_name, model):
+        self._test_conv2d_ethosu_BI_pipeline(
+            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            model,
+            model.get_inputs(),
+        )
