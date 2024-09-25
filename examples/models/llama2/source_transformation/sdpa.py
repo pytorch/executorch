@@ -14,6 +14,9 @@ from typing import Tuple
 import torch
 
 from executorch.examples.models.llama2.llama_transformer import KVCache, SDPA
+from executorch.examples.models.llama2.source_transformation.quantized_kv_cache import (
+    QuantizedKVCache,
+)
 
 
 class SDPACustom(torch.nn.Module):
@@ -44,12 +47,27 @@ class SDPACustom(torch.nn.Module):
         q = q.to(dtype=torch.float)
         k = k.to(dtype=torch.float)
         v = v.to(dtype=torch.float)
+
+        k_cache = self.kv_cache.k_cache
+        v_cache = self.kv_cache.v_cache
+        if isinstance(self.kv_cache, QuantizedKVCache):
+            # updated quantize cache, scale and zero points
+            # returns dequantized kv cache
+            # Not most optimal. Optimizations to follow next
+            k_cache, v_cache = self.kv_cache.update(input_pos, k, v)
+        # Note that this path will still inplace mutate the k_cache, v_cache.
+        # WHen we are not using quantized kv cache, this will just mutate
+        # the original kv cache.
+        # When we aer using quantized kv cache, this will mutate
+        # k_cache, v_cache that is returned from cache update operation.
+        # This operation just dequantized thee cache and returns that.
+        # Future diffs will optimize this
         output = torch.ops.llama.sdpa_with_kv_cache(
             q,
             k,
             v,
-            self.kv_cache.k_cache,
-            self.kv_cache.v_cache,
+            k_cache,
+            v_cache,
             input_pos[-1].item(),
             seqlen,
             None,  # Attention mask
