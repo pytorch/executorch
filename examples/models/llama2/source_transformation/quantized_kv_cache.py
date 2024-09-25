@@ -23,8 +23,8 @@ from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noq
 class QuantizedCacheType(Enum):
     AffineSymmetric = 0
     AffineAsymmetric = 1
-    AffineSymmetricGroupWise = 1
-    AffineAsymmetricGroupWise = 2
+    AffineSymmetricGroupWise = 2
+    AffineAsymmetricGroupWise = 3
 
 
 class QuantizedKVCache(nn.Module):
@@ -58,8 +58,12 @@ class QuantizedKVCache(nn.Module):
         else:
             cache_shape = (max_batch_size, max_seq_length, n_heads, head_dim)
             scale_shape = (max_batch_size, max_seq_length, n_heads, 1)
-        self.register_buffer("k_cache", torch.zeros(cache_shape, dtype=torch.int8))
-        self.register_buffer("v_cache", torch.zeros(cache_shape, dtype=torch.int8))
+        self.register_buffer(
+            "k_cache", torch.zeros(cache_shape, dtype=self.quantized_cache_dtype)
+        )
+        self.register_buffer(
+            "v_cache", torch.zeros(cache_shape, dtype=self.quantized_cache_dtype)
+        )
         self.register_buffer(
             "k_cache_scales", torch.ones(scale_shape, dtype=torch.double)
         )
@@ -74,43 +78,32 @@ class QuantizedKVCache(nn.Module):
                 "v_cache_zero_points", torch.ones(scale_shape, dtype=torch.int64)
             )
 
+    def _quantize(self, value):
+        scales, zero_points = (
+            torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric.default(
+                value, self.quantized_cache_dtype
+            )
+        )
+        quantized_value = torch.ops.quantized_decomposed.quantize_per_token(
+            value,
+            scales,
+            zero_points,
+            torch.iinfo(self.quantized_cache_dtype).min,
+            torch.iinfo(self.quantized_cache_dtype).max,
+            self.quantized_cache_dtype,
+        )
+        return quantized_value, scales, zero_points
+
     def update(self, input_pos, k_val, v_val):
         # quantize current k_val and store it in the cache
-        k_scales, k_zero_points = (
-            torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric.default(
-                k_val, torch.int8  # no other value is supported by this op anyway
-            )
-        )
-        quantized_k_val = torch.ops.quantized_decomposed.quantize_per_token(
-            k_val,
-            k_scales,
-            k_zero_points,
-            torch.iinfo(torch.int8).min,
-            torch.iinfo(torch.int8).max,
-            torch.int8,
-        )
+        quantized_k_val, k_scales, k_zero_points = self._quantize(k_val)
 
-        v_scales, v_zero_points = (
-            torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric(
-                v_val, torch.int8
-            )
-        )
-        quantized_v_val = torch.ops.quantized_decomposed.quantize_per_token(
-            v_val,
-            v_scales,
-            v_zero_points,
-            torch.iinfo(torch.int8).min,
-            torch.iinfo(torch.int8).max,
-            torch.int8,
-        )
+        quantized_v_val, v_scales, v_zero_points = self._quantize(v_val)
 
         if self.enable_dynamic_shape:
             start_pos = input_pos[0].item()
             torch._check_is_size(start_pos)
-            if self.is_transposed:
-                dim_to_slice = 2
-            else:
-                dim_to_slice = 1
+            dim_to_slice = 2 if self.is_transposed else 1
             torch._check(start_pos < self.k_cache.size(dim_to_slice))
             seq_length = k_val.size(dim_to_slice)
             narrowed_k = self.k_cache.narrow(dim_to_slice, start_pos, seq_length)
@@ -154,8 +147,8 @@ class QuantizedKVCache(nn.Module):
             self.k_cache,
             self.k_cache_scales,
             self.k_cache_zero_points,
-            torch.iinfo(torch.int8).min,
-            torch.iinfo(torch.int8).max,
+            torch.iinfo(self.quantized_cache_dtype).min,
+            torch.iinfo(self.quantized_cache_dtype).max,
             self.quantized_cache_dtype,
             self.cache_fp_type,
         )
@@ -163,8 +156,8 @@ class QuantizedKVCache(nn.Module):
             self.v_cache,
             self.v_cache_scales,
             self.v_cache_zero_points,
-            torch.iinfo(torch.int8).min,
-            torch.iinfo(torch.int8).max,
+            torch.iinfo(self.quantized_cache_dtype).min,
+            torch.iinfo(self.quantized_cache_dtype).max,
             self.quantized_cache_dtype,
             self.cache_fp_type,
         )
