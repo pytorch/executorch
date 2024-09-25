@@ -62,9 +62,30 @@ def define_common_targets():
             ],
             deps = [
                 ":custom_ops" + mkl_dep,
+                ":update_quantized_cache",
                 "//executorch/extension/aten_util:aten_bridge",
             ],
         )
+
+    runtime.cxx_library(
+        name = "update_quantized_cache",
+        srcs = ["op_update_quantized_cache.cpp"],
+        exported_headers = ["op_update_quantized_cache.h"],
+        exported_deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/extension/kernel_util:kernel_util",
+        ],
+        compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"],
+        visibility = [
+            "//executorch/...",
+            "//executorch/extension/llm/custom_ops/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        # @lint-ignore BUCKLINT link_whole
+        link_whole = True,
+        force_static = True,
+    )
 
     runtime.python_library(
         name = "custom_ops_aot_py",
