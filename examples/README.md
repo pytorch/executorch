@@ -49,27 +49,27 @@ For specific details related to models and backend, you can explore the various 
 
 To understand how to deploy the ExecuTorch runtime with optimization for binary size, explore the demos available in the [`selective_build/`](./selective_build) directory. These demos are specifically designed to illustrate the [Selective Build](../docs/source/kernel-library-selective_build.md), offering insights into reducing the binary size while maintaining efficiency.
 
-### ExecuTorch Developer Tools
+### Developer Tools
 
 You will find demos of [ExecuTorch Developer Tools](./devtools/) in the [`devtools/`](./devtools/) directory. The examples focuses on exporting and executing BundledProgram for ExecuTorch model verification and ETDump for collecting profiling and debug data.
 
-### ExecuTorch on XNNPACK delegation
+### XNNPACK delegation
 
 The demos in the [`xnnpack/`](./xnnpack) directory provide valuable insights into the process of lowering and executing an ExecuTorch model with built-in performance enhancements. These demos specifically showcase the workflow involving [XNNPACK backend](https://github.com/pytorch/executorch/tree/main/backends/xnnpack) delegation and quantization.
 
-### ExecuTorch on Apple Backend
+### Apple Backend
 
 You will find demos of [ExecuTorch Core ML Backend](./apple/coreml/) in the [`apple/coreml/`](./apple/coreml) directory and [MPS Backend](./apple/mps/) in the [`apple/mps/`](./apple/mps) directory.
 
-### ExecuTorch on ARM Cortex-M55 + Ethos-U55 Backend
+### ARM Cortex-M55 + Ethos-U55 Backend
 
 The [`arm/`](./arm) directory contains scripts to help you run a PyTorch model on a ARM Corstone-300 platform via ExecuTorch.
 
-### ExecuTorch on QNN Backend
+### QNN Backend
 
 You will find demos of [ExecuTorch QNN Backend](./qualcomm) in the [`qualcomm/`](./qualcomm) directory.
 
-### ExecuTorch on Cadence HiFi4 DSP
+### Cadence HiFi4 DSP
 
 The [`Cadence/`](./cadence) directory hosts a demo that showcases the process of exporting and executing a model on Xtensa Hifi4 DSP. You can utilize [this tutorial](../docs/source/build-run-xtensa.md) to guide you in configuring the demo and running it.
 
