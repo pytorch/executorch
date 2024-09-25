@@ -196,8 +196,8 @@ Tensor& dequantize_per_channel_out(
       "Failed to resize out Tensor in dequantize_per_channel_out");
 
   ET_CHECK_MSG(
-      scale.scalar_type() == ScalarType::Float,
-      "scale.scalar_type() %" PRId8 " is not float type",
+      scale.scalar_type() == ScalarType::Double,
+      "scale.scalar_type() %" PRId8 " is not double type",
       static_cast<int8_t>(scale.scalar_type()));
 
   ET_CHECK_MSG(
@@ -232,7 +232,7 @@ Tensor& dequantize_per_channel_out(
       dims[i] = i + 1;
     }
   }
-  const float* scale_data = scale.const_data_ptr<float>();
+  const double* scale_data = scale.const_data_ptr<double>();
   const int64_t* zero_point_data;
   if (opt_zero_points.has_value()) {
     zero_point_data = opt_zero_points.value().const_data_ptr<int64_t>();
@@ -264,7 +264,7 @@ Tensor& dequantize_per_channel_out(
               size_t numel, size_t stride, size_t base_ix) {                   \
             for (size_t i = 0; i < numel; i++) {                               \
               size_t current_ix = base_ix * stride + i;                        \
-              float _scale = scale_data[current_ix];                           \
+              float _scale = static_cast<float>(scale_data[current_ix]);       \
               int64_t zero_point = 0;                                          \
               if (zero_point_data != nullptr) {                                \
                 zero_point = zero_point_data[current_ix];                      \
@@ -280,7 +280,7 @@ Tensor& dequantize_per_channel_out(
       break;                                                                   \
     }                                                                          \
     for (size_t channel_ix = 0; channel_ix < input.size(axis); ++channel_ix) { \
-      float _scale = scale_data[channel_ix];                                   \
+      float _scale = static_cast<float>(scale_data[channel_ix]);               \
       int64_t _zero_point = 0;                                                 \
       if (zero_point_data != nullptr) {                                        \
         _zero_point = zero_point_data[channel_ix];                             \
