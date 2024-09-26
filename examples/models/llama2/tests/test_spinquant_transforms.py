@@ -65,7 +65,7 @@ class SpinQuantTests(unittest.TestCase):
                     weight.to(torch.float32), n_bit, group_size, scales_precision
                 )
                 checkpoint[f"{fqn}.weight"] = weight_int8.to("cpu")
-                checkpoint[f"{fqn}.scale"] = scales.to("cpu")
+                checkpoint[f"{fqn}.scales"] = scales.to("cpu")
 
         # Step 3:
         # Transform the model so that it is compatible with the new checkpoint
@@ -76,11 +76,7 @@ class SpinQuantTests(unittest.TestCase):
             "8da4w",
             torch.float32,
         )
-        sanitize_checkpoint_from_spinquant(
-            model,
-            checkpoint,
-            -1,
-        )
+        sanitize_checkpoint_from_spinquant(checkpoint)
 
         model.load_state_dict(
             checkpoint,
@@ -114,7 +110,7 @@ class SpinQuantTests(unittest.TestCase):
                     scales_dtype=torch.float32,
                 )
                 checkpoint[f"{fqn}.weight"] = weight_int8.to("cpu")
-                checkpoint[f"{fqn}.scale"] = scales.to("cpu")
+                checkpoint[f"{fqn}.scales"] = scales.to("cpu")
 
         # Step 3:
         # Transform the model so that it is compatible with the new checkpoint
@@ -123,11 +119,7 @@ class SpinQuantTests(unittest.TestCase):
             checkpoint,
             torch.float32,
         )
-        sanitize_checkpoint_from_spinquant(
-            model,
-            checkpoint,
-            -1,
-        )
+        sanitize_checkpoint_from_spinquant(checkpoint)
 
         model.load_state_dict(
             checkpoint,
@@ -166,7 +158,7 @@ class SpinQuantTests(unittest.TestCase):
                     weight.to(torch.float32), n_bit, group_size, scales_precision
                 )
                 checkpoint[f"{fqn}.weight"] = weight_int8.to("cpu")
-                checkpoint[f"{fqn}.scale"] = scales.to("cpu")
+                checkpoint[f"{fqn}.scales"] = scales.to("cpu")
 
         # Step 3:
         # Transform the model so that it is compatible with the new checkpoint
@@ -177,12 +169,7 @@ class SpinQuantTests(unittest.TestCase):
             n_bit,
             group_size,
         )
-        sanitize_checkpoint_from_spinquant(
-            module=model,
-            checkpoint=checkpoint,
-            linear_group_size=-1,
-            embedding_group_size=-1,
-        )
+        sanitize_checkpoint_from_spinquant(checkpoint)
 
         model.load_state_dict(
             checkpoint,
