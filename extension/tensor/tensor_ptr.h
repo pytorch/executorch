@@ -10,6 +10,7 @@
 
 #include <executorch/extension/tensor/tensor_impl_ptr.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/platform/assert.h>
 
 namespace executorch {
 namespace extension {
@@ -17,22 +18,14 @@ namespace extension {
 #ifndef USE_ATEN_LIB
 
 /**
- * A smart pointer for managing the lifecycle of a Tensor.
- *
- * TensorPtr uses a unique pointer to ensure each Tensor object has distinct
- * ownership. This abstraction simplifies memory management and serves as a
- * safer alternative to the standard Tensor, which does not manage its metadata
- * by design. It ensures that the underlying TensorImpl can be safely shared
- * among tensors as needed.
+ * A smart pointer to a Tensor that owns and reference-counts its
+ * underlying TensorImpl, like torch::Tensor.
  */
-class TensorPtr : private std::unique_ptr<exec_aten::Tensor> {
+class TensorPtr {
  public:
-  using unique_ptr::element_type;
-  using unique_ptr::get;
-  using unique_ptr::pointer;
-  using unique_ptr::operator bool;
-  using unique_ptr::operator*;
-  using unique_ptr::operator->;
+  // Match unique_ptr, just in case.
+  using element_type = exec_aten::Tensor;
+  using pointer = exec_aten::Tensor*;
 
   constexpr TensorPtr() = default;
   constexpr TensorPtr(std::nullptr_t) {}
@@ -40,29 +33,40 @@ class TensorPtr : private std::unique_ptr<exec_aten::Tensor> {
   TensorPtr(TensorPtr&& rhs) noexcept = default;
   TensorPtr& operator=(TensorPtr&& rhs) noexcept = default;
 
-  TensorPtr(TensorImplPtr p)
-      : unique_ptr(std::make_unique<exec_aten::Tensor>(p.get())),
-        tensor_impl(std::move(p)) {}
+  TensorPtr(TensorImplPtr p) : tensor_(p.get()), tensor_impl_(std::move(p)) {}
 
-  // release() does not make sense as it separates the Tensor from the
-  // TensorImplPtr. using unique_ptr::release;
+  operator bool() const {
+    return static_cast<bool>(tensor_impl_);
+  }
+
+  exec_aten::Tensor* get() const {
+    return tensor_impl_ ? &tensor_ : nullptr;
+  }
+
+  exec_aten::Tensor* operator->() const {
+    return get();
+  }
+
+  exec_aten::Tensor& operator*() const {
+    ET_DCHECK(*this != nullptr);
+    return *get();
+  }
 
   void reset() {
-    unique_ptr::reset();
-    tensor_impl.reset();
+    tensor_ = exec_aten::Tensor(nullptr);
+    tensor_impl_.reset();
   }
 
   void swap(TensorPtr& other) {
-    unique_ptr::swap(static_cast<unique_ptr&>(other));
-    tensor_impl.swap(other.tensor_impl);
+    std::swap(tensor_, other.tensor_);
+    std::swap(tensor_impl_, other.tensor_impl_);
   }
 
   bool operator==(const TensorPtr& rhs) const {
-    // No need to check tensor_impl; if the Tensor pointers are equal
-    // then the tensor_impls must also be since this is a unique
-    // pointer.
-    return static_cast<const unique_ptr&>(*this) ==
-        static_cast<const unique_ptr&>(rhs);
+    ET_DCHECK(
+        (tensor_.unsafeGetTensorImpl() == rhs.tensor_.unsafeGetTensorImpl()) ==
+        (tensor_impl_ == rhs.tensor_impl_));
+    return tensor_impl_ == rhs.tensor_impl_;
   }
 
   bool operator!=(const TensorPtr& rhs) const {
@@ -70,7 +74,7 @@ class TensorPtr : private std::unique_ptr<exec_aten::Tensor> {
   }
 
   bool operator==(std::nullptr_t) const {
-    return static_cast<const unique_ptr&>(*this) == nullptr;
+    return !operator bool();
   }
 
   bool operator!=(std::nullptr_t) const {
@@ -79,7 +83,8 @@ class TensorPtr : private std::unique_ptr<exec_aten::Tensor> {
 
  private:
   friend TensorPtr make_tensor_ptr(const TensorPtr& tensor);
-  TensorImplPtr tensor_impl;
+  mutable exec_aten::Tensor tensor_{nullptr};
+  TensorImplPtr tensor_impl_;
 };
 #else
 /**
@@ -126,7 +131,7 @@ inline TensorPtr make_tensor_ptr(TensorImplPtr tensor_impl) {
  */
 inline TensorPtr make_tensor_ptr(const TensorPtr& tensor) {
 #ifndef USE_ATEN_LIB
-  return make_tensor_ptr(tensor.tensor_impl);
+  return make_tensor_ptr(tensor.tensor_impl_);
 #else
   return make_tensor_ptr(tensor->getIntrusivePtr());
 #endif // USE_ATEN_LIB
