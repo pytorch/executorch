@@ -70,6 +70,14 @@ We have verified running Llama 2 7B [mobile applications](#step-6-build-mobile-a
 
 ## Performance
 
+### Llama 3.2 1B and 3B
+Llama 3.2 1B and 3B performance was measured on the OnePlus 12 device. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on) for generating 128 tokens.
+
+|Model  | bf16 | SpinQuant
+|--------| ---------------------- | ---------------
+|1B  | 19.4 tokens/second | 53.41 tokens/second |
+|3B | 7.76 tokens/second | 22.98 tokens/second |
+
 ### Llama3 8B and Llama3.1 8B
 Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 12 devices. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on).
 
