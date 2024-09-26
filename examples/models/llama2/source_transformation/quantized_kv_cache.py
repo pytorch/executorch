@@ -66,10 +66,10 @@ class QuantizedKVCache(nn.Module):
             "v_cache", torch.zeros(cache_shape, dtype=self.quantized_cache_dtype)
         )
         self.register_buffer(
-            "k_cache_scales", torch.ones(scale_shape, dtype=torch.double)
+            "k_cache_scales", torch.ones(scale_shape, dtype=torch.float64)
         )
         self.register_buffer(
-            "v_cache_scales", torch.ones(scale_shape, dtype=torch.double)
+            "v_cache_scales", torch.ones(scale_shape, dtype=torch.float64)
         )
         if cache_type == QuantizedCacheType.AffineAsymmetric:
             self.register_buffer(
