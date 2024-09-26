@@ -30,10 +30,10 @@ class NativePeer {
 
   @DoNotStrip
   private static native HybridData initHybrid(
-      String moduleAbsolutePath, Map<String, String> extraFiles, int loadMode);
+      String moduleAbsolutePath, int loadMode);
 
-  NativePeer(String moduleAbsolutePath, Map<String, String> extraFiles, int loadMode) {
-    mHybridData = initHybrid(moduleAbsolutePath, extraFiles, loadMode);
+  NativePeer(String moduleAbsolutePath, int loadMode) {
+    mHybridData = initHybrid(moduleAbsolutePath, loadMode);
   }
 
   /** Clean up the native resources associated with this instance */
