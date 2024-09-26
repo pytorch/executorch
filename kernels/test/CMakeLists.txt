@@ -68,6 +68,9 @@ add_custom_target(
 )
 
 add_library(test_util UnaryUfuncRealHBToFloatHTest.cpp)
+target_include_directories(
+  test_util PRIVATE "${CMAKE_INSTALL_PREFIX}/include"
+)
 
 set(all_test_sources
     "op__to_dim_order_copy_test.cpp"
