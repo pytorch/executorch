@@ -15,7 +15,8 @@
 
 using exec_aten::Tensor;
 
-class OpAcoshOutTest : public public torch::executor::testing::UnaryUfuncRealHBToFloatHTest {
+class OpAcoshOutTest
+    : public torch::executor::testing::UnaryUfuncRealHBToFloatHTest {
  protected:
   Tensor& op_out(const Tensor& self, Tensor& out) override {
     return torch::executor::aten::acosh_outf(context_, self, out);
@@ -24,6 +25,9 @@ class OpAcoshOutTest : public public torch::executor::testing::UnaryUfuncRealHBT
   double op_reference(double x) const override {
     return std::acosh(x);
   }
+
+  torch::executor::testing::SupportedFeatures* get_supported_features()
+      const override;
 };
 
 IMPLEMENT_UNARY_UFUNC_REALHB_TO_FLOATH_TEST(OpAcoshOutTest)
