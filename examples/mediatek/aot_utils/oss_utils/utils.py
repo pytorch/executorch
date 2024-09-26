@@ -59,7 +59,7 @@ def build_executorch_binary(
     )
 
     exec_prog = edge_prog.to_executorch(
-        config=exir.ExecutorchBackendConfig(extract_constant_segment=False)
+        config=exir.ExecutorchBackendConfig()
     )
     with open(f"{file_name}.pte", "wb") as file:
         file.write(exec_prog.buffer)
