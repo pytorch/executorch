@@ -29,8 +29,7 @@ class TensorPtr {
   TensorPtr(TensorPtr&& rhs) noexcept = default;
   TensorPtr& operator=(TensorPtr&& rhs) noexcept = default;
 
-  explicit TensorPtr(TensorImplPtr p)
-      : tensor_impl_(std::move(p)) {}
+  explicit TensorPtr(TensorImplPtr p) : tensor_impl_(std::move(p)) {}
 
   operator bool() const {
     return static_cast<bool>(tensor_impl_);
