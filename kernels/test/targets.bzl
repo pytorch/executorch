@@ -39,6 +39,9 @@ def define_common_targets():
         aten_suffix = "_aten" if aten_kernel else ""
         runtime.cxx_library(
             name = "test_util" + aten_suffix,
+            srcs = [
+                "UnaryUfuncRealHBToFloatHTest.cpp",
+            ],
             exported_headers = [
                 "TestUtil.h",
                 "UnaryUfuncRealHBToFloatHTest.h",
@@ -51,16 +54,20 @@ def define_common_targets():
             fbcode_exported_deps = [
                 "//common/init:init",
                 "//common/gtest:gtest",
+                "//executorch/kernels/portable/test:supported_features",
                 "//executorch/runtime/core/exec_aten:lib",
                 "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
                 "//executorch/runtime/kernel:kernel_includes",
+                "//executorch/test/utils:utils" + aten_suffix,
             ],
             xplat_exported_deps = [
                 "//xplat/folly:init_init",
                 "//third-party/googletest:gtest_main",
+                "//executorch/kernels/portable/test:supported_features",
                 "//executorch/runtime/core/exec_aten:lib",
                 "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
                 "//executorch/runtime/kernel:kernel_includes",
+                "//executorch/test/utils:utils" + aten_suffix,
             ],
         )
 

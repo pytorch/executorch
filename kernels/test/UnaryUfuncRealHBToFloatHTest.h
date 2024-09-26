@@ -58,6 +58,7 @@ class UnaryUfuncRealHBToFloatHTest : public OperatorTest {
         tf_out.make({1, 6}, expected_vector));
     // clang-format on
   }
+
   // Unhandled output dtypes.
   template <
       exec_aten::ScalarType INPUT_DTYPE,
@@ -74,130 +75,27 @@ class UnaryUfuncRealHBToFloatHTest : public OperatorTest {
     ET_EXPECT_KERNEL_FAILURE(context_, op_out(in, out));
   }
 
-  void test_bool_input() {
-    TensorFactory<exec_aten::ScalarType::Bool> tf_bool;
-    TensorFactory<exec_aten::ScalarType::Float> tf_float;
+  void test_bool_input();
 
-    const std::vector<int32_t> sizes = {1, 2};
+  void test_mismatched_input_shapes_dies();
 
-    exec_aten::Tensor a = tf_bool.make(sizes, /*data=*/{false, true});
-    exec_aten::Tensor out = tf_float.zeros(sizes);
-    exec_aten::Tensor res = tf_float.make(
-        sizes,
-        /*data=*/{(float)op_reference(false), (float)op_reference(true)});
+  void test_all_real_input_half_output_static_dynamism_support();
 
-    EXPECT_TENSOR_CLOSE(op_out(a, out), res);
-  }
+  void test_all_real_input_float_output_static_dynamism_support();
 
-  void test_mismatched_input_shapes_dies() {
-    if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-      GTEST_SKIP() << "ATen kernel can handle mismatched input shapes";
-    }
-    TensorFactory<exec_aten::ScalarType::Float> tf;
+  void test_all_real_input_double_output_static_dynamism_support();
 
-    exec_aten::Tensor a = tf.ones(/*sizes=*/{4});
-    exec_aten::Tensor out = tf.ones(/*sizes=*/{2, 2});
+  void test_all_real_input_half_output_bound_dynamism_support();
 
-    ET_EXPECT_KERNEL_FAILURE(context_, op_out(a, out));
-  }
+  void test_all_real_input_float_output_bound_dynamism_support();
 
-  void test_all_real_input_half_output_static_dynamism_support() {
-    if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-      GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
-    }
-#define TEST_ENTRY(ctype, dtype)    \
-  test_floating_point_op_out<       \
-      exec_aten::ScalarType::dtype, \
-      exec_aten::ScalarType::Half>();
-    ET_FORALL_REALH_TYPES(TEST_ENTRY);
-#undef TEST_ENTRY
-  }
+  void test_all_real_input_double_output_bound_dynamism_support();
 
-  void test_all_real_input_float_output_static_dynamism_support() {
-#define TEST_ENTRY(ctype, dtype)    \
-  test_floating_point_op_out<       \
-      exec_aten::ScalarType::dtype, \
-      exec_aten::ScalarType::Float>();
-    ET_FORALL_REAL_TYPES(TEST_ENTRY);
-#undef TEST_ENTRY
-  }
+  void test_all_real_input_float_output_unbound_dynamism_support();
 
-  void test_all_real_input_double_output_static_dynamism_support() {
-#define TEST_ENTRY(ctype, dtype)    \
-  test_floating_point_op_out<       \
-      exec_aten::ScalarType::dtype, \
-      exec_aten::ScalarType::Double>();
-    ET_FORALL_REAL_TYPES(TEST_ENTRY);
-#undef TEST_ENTRY
-  }
+  void test_all_real_input_double_output_unbound_dynamism_support();
 
-  void test_all_real_input_half_output_bound_dynamism_support() {
-    if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-      GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
-    }
-#define TEST_ENTRY(ctype, dtype)    \
-  test_floating_point_op_out<       \
-      exec_aten::ScalarType::dtype, \
-      exec_aten::ScalarType::Half>( \
-      {10, 10}, exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
-    ET_FORALL_REALH_TYPES(TEST_ENTRY);
-#undef TEST_ENTRY
-  }
-
-  void test_all_real_input_float_output_bound_dynamism_support() {
-#define TEST_ENTRY(ctype, dtype)     \
-  test_floating_point_op_out<        \
-      exec_aten::ScalarType::dtype,  \
-      exec_aten::ScalarType::Float>( \
-      {10, 10}, exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
-    ET_FORALL_REAL_TYPES(TEST_ENTRY);
-#undef TEST_ENTRY
-  }
-
-  void test_all_real_input_double_output_bound_dynamism_support() {
-#define TEST_ENTRY(ctype, dtype)      \
-  test_floating_point_op_out<         \
-      exec_aten::ScalarType::dtype,   \
-      exec_aten::ScalarType::Double>( \
-      {10, 10}, exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
-    ET_FORALL_REAL_TYPES(TEST_ENTRY);
-#undef TEST_ENTRY
-  }
-
-  void test_all_real_input_float_output_unbound_dynamism_support() {
-    if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
-      GTEST_SKIP() << "Dynamic shape unbound not supported";
-    }
-#define TEST_ENTRY(ctype, dtype)     \
-  test_floating_point_op_out<        \
-      exec_aten::ScalarType::dtype,  \
-      exec_aten::ScalarType::Float>( \
-      {1, 1}, exec_aten::TensorShapeDynamism::DYNAMIC_UNBOUND);
-    ET_FORALL_REAL_TYPES(TEST_ENTRY);
-#undef TEST_ENTRY
-  }
-
-  void test_all_real_input_double_output_unbound_dynamism_support() {
-    if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
-      GTEST_SKIP() << "Dynamic shape unbound not supported";
-    }
-#define TEST_ENTRY(ctype, dtype)      \
-  test_floating_point_op_out<         \
-      exec_aten::ScalarType::dtype,   \
-      exec_aten::ScalarType::Double>( \
-      {1, 1}, exec_aten::TensorShapeDynamism::DYNAMIC_UNBOUND);
-    ET_FORALL_REAL_TYPES(TEST_ENTRY);
-#undef TEST_ENTRY
-  }
-
-  void test_non_float_output_dtype_dies() {
-#define TEST_ENTRY(ctype, dtype)     \
-  test_op_invalid_output_dtype_dies< \
-      exec_aten::ScalarType::Float,  \
-      exec_aten::ScalarType::dtype>();
-    ET_FORALL_INT_TYPES(TEST_ENTRY);
-#undef TEST_ENTRY
-  }
+  void test_non_float_output_dtype_dies();
 };
 
 #define IMPLEMENT_UNARY_UFUNC_REALHB_TO_FLOATH_TEST(TestName)        \
