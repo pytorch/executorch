@@ -20,6 +20,7 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/exir:_warnings",
         "//executorch/exir:error",
         "//executorch/exir:graph_module",
         "//executorch/exir:pass_base",

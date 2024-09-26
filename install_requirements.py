@@ -94,14 +94,14 @@ if os.name == "nt":
 # NOTE: If a newly-fetched version of the executorch repo changes the value of
 # NIGHTLY_VERSION, you should re-run this script to install the necessary
 # package versions.
-NIGHTLY_VERSION = "dev20240901"
+NIGHTLY_VERSION = "dev20240917"
 
 # The pip repository that hosts nightly torch packages.
 TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 
 # pip packages needed by exir.
 EXIR_REQUIREMENTS = [
-    f"torch==2.5.0.{NIGHTLY_VERSION}",
+    f"torch==2.6.0.{NIGHTLY_VERSION}",
     f"torchvision==0.20.0.{NIGHTLY_VERSION}",  # For testing.
     "typing-extensions",
 ]
