@@ -22,6 +22,89 @@ class TensorPtrTest : public ::testing::Test {
   }
 };
 
+TEST_F(TensorPtrTest, BasicSmartPointerAccess) {
+  TensorPtr p;
+  EXPECT_FALSE(p);
+  EXPECT_EQ(p, nullptr);
+  EXPECT_EQ(p.get(), nullptr);
+  EXPECT_EQ(p.operator->(), nullptr);
+  TensorPtr p2 = make_tensor_ptr({1}, nullptr, {}, {});
+  EXPECT_TRUE(p2);
+  EXPECT_NE(p2, nullptr);
+  ASSERT_NE(p2.get(), nullptr);
+  ASSERT_NE(p2.operator->(), nullptr);
+  EXPECT_EQ(p2.get(), p2.operator->());
+  EXPECT_EQ(p2->dim(), 1);
+  EXPECT_EQ((*p2).dim(), 1);
+  EXPECT_NE(p, p2);
+  p2.reset();
+  EXPECT_FALSE(p2);
+  EXPECT_EQ(p2, nullptr);
+  EXPECT_EQ(p2.get(), nullptr);
+  EXPECT_EQ(p2.operator->(), nullptr);
+  EXPECT_EQ(p, p2);
+}
+
+TEST_F(TensorPtrTest, Swap) {
+  TensorPtr p;
+  TensorPtr p2 = make_tensor_ptr({1}, nullptr, {}, {});
+  p.swap(p2);
+  EXPECT_FALSE(p2);
+  EXPECT_TRUE(p);
+  EXPECT_EQ(p->dim(), 1);
+}
+
+TEST_F(TensorPtrTest, MoveConstruction) {
+  TensorPtr empty;
+  TensorPtr emptyMoved(std::move(empty));
+  EXPECT_FALSE(empty); // NOLINT(bugprone-use-after-move)
+  EXPECT_FALSE(emptyMoved);
+
+  TensorPtr notEmpty = make_tensor_ptr({1}, nullptr, {}, {});
+  TensorPtr notEmptyMoved(std::move(notEmpty));
+  EXPECT_FALSE(notEmpty); // NOLINT(bugprone-use-after-move)
+  EXPECT_TRUE(notEmptyMoved);
+  EXPECT_EQ(notEmptyMoved->dim(), 1);
+}
+
+TEST_F(TensorPtrTest, MoveAssignment) {
+  {
+    TensorPtr empty, emptyMoved;
+
+    emptyMoved = std::move(empty);
+    EXPECT_FALSE(empty); // NOLINT(bugprone-use-after-move)
+    EXPECT_FALSE(emptyMoved);
+  }
+
+  {
+    TensorPtr empty;
+    TensorPtr emptyMoved = make_tensor_ptr({1}, nullptr, {}, {});
+    emptyMoved = std::move(empty);
+    EXPECT_FALSE(empty); // NOLINT(bugprone-use-after-move)
+    EXPECT_FALSE(emptyMoved);
+  }
+
+  {
+    TensorPtr full = make_tensor_ptr({1}, nullptr, {}, {});
+    TensorPtr fullMoved;
+
+    fullMoved = std::move(full);
+    EXPECT_FALSE(full); // NOLINT(bugprone-use-after-move)
+    EXPECT_TRUE(fullMoved);
+    EXPECT_EQ(fullMoved->dim(), 1);
+  }
+
+  {
+    TensorPtr full = make_tensor_ptr({1}, nullptr, {}, {});
+    TensorPtr fullMoved = make_tensor_ptr({2, 2}, nullptr, {}, {});
+
+    fullMoved = std::move(full);
+    EXPECT_FALSE(full); // NOLINT(bugprone-use-after-move)
+    EXPECT_TRUE(fullMoved);
+    EXPECT_EQ(fullMoved->dim(), 1);
+  }
+}
+
 TEST_F(TensorPtrTest, ScalarTensorCreation) {
   float scalar_data = 3.14f;
   auto tensor = make_tensor_ptr({}, &scalar_data);

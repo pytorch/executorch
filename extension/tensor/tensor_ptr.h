@@ -10,45 +10,79 @@
 
 #include <executorch/extension/tensor/tensor_impl_ptr.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/platform/assert.h>
 
 namespace executorch {
 namespace extension {
 
 #ifndef USE_ATEN_LIB
-namespace internal {
-/**
- * Custom deleter for TensorPtr that ensures proper management of the associated
- * TensorImplPtr.
- *
- * Since Tensor does not own its TensorImpl, this deleter manages the
- * TensorImplPtr lifecycle, ensuring dynamic metadata (sizes, dim_order,
- * strides) is released appropriately when the Tensor is destroyed.
- */
-struct TensorPtrDeleter final {
-  TensorImplPtr tensor_impl;
 
-  void operator()(exec_aten::Tensor* pointer) {
-    // Release all resources immediately since the data held by the
-    // TensorPtrDeleter is tied to the managed object, not the smart pointer
-    // itself. We need to free this memory when the object is destroyed, not
-    // when the smart pointer (and deleter) are eventually destroyed or reset.
-    tensor_impl.reset();
-    delete pointer;
+/**
+ * A smart pointer to a Tensor that owns and reference-counts its
+ * underlying TensorImpl, like torch::Tensor.
+ */
+class TensorPtr {
+ public:
+  constexpr TensorPtr() = default;
+  explicit constexpr TensorPtr(std::nullptr_t) {}
+  ~TensorPtr() = default;
+  TensorPtr(TensorPtr&& rhs) noexcept = default;
+  TensorPtr& operator=(TensorPtr&& rhs) noexcept = default;
+
+  explicit TensorPtr(TensorImplPtr p)
+      : tensor_(p.get()), tensor_impl_(std::move(p)) {}
+
+  operator bool() const {
+    return static_cast<bool>(tensor_impl_);
   }
-};
-} // namespace internal
 
-/**
- * A smart pointer for managing the lifecycle of a Tensor.
- *
- * TensorPtr uses a unique pointer to ensure each Tensor object has distinct
- * ownership. This abstraction simplifies memory management and serves as a
- * safer alternative to the standard Tensor, which does not manage its metadata
- * by design. It ensures that the underlying TensorImpl can be safely shared
- * among tensors as needed.
- */
-using TensorPtr =
-    std::unique_ptr<exec_aten::Tensor, internal::TensorPtrDeleter>;
+  exec_aten::Tensor* get() const {
+    return tensor_impl_ ? &tensor_ : nullptr;
+  }
+
+  exec_aten::Tensor* operator->() const {
+    return get();
+  }
+
+  exec_aten::Tensor& operator*() const {
+    ET_DCHECK(*this != nullptr);
+    return *get();
+  }
+
+  void reset() {
+    tensor_ = exec_aten::Tensor(nullptr);
+    tensor_impl_.reset();
+  }
+
+  void swap(TensorPtr& other) noexcept {
+    std::swap(tensor_, other.tensor_);
+    std::swap(tensor_impl_, other.tensor_impl_);
+  }
+
+  bool operator==(const TensorPtr& rhs) const {
+    ET_DCHECK(
+        (tensor_.unsafeGetTensorImpl() == rhs.tensor_.unsafeGetTensorImpl()) ==
+        (tensor_impl_ == rhs.tensor_impl_));
+    return tensor_impl_ == rhs.tensor_impl_;
+  }
+
+  bool operator!=(const TensorPtr& rhs) const {
+    return !(*this == rhs);
+  }
+
+  bool operator==(std::nullptr_t) const {
+    return !operator bool();
+  }
+
+  bool operator!=(std::nullptr_t) const {
+    return !(*this == nullptr);
+  }
+
+ private:
+  friend TensorPtr make_tensor_ptr(const TensorPtr& tensor);
+  mutable exec_aten::Tensor tensor_{nullptr};
+  TensorImplPtr tensor_impl_;
+};
 #else
 /**
  * A smart pointer type for managing the lifecycle of a Tensor.
@@ -74,9 +108,7 @@ using TensorPtr = std::unique_ptr<exec_aten::Tensor>;
  */
 inline TensorPtr make_tensor_ptr(TensorImplPtr tensor_impl) {
 #ifndef USE_ATEN_LIB
-  auto tensor = std::make_unique<exec_aten::Tensor>(tensor_impl.get());
-  return TensorPtr(
-      tensor.release(), internal::TensorPtrDeleter{std::move(tensor_impl)});
+  return TensorPtr(std::move(tensor_impl));
 #else
   return std::make_unique<exec_aten::Tensor>(std::move(tensor_impl));
 #endif // USE_ATEN_LIB
@@ -96,7 +128,7 @@ inline TensorPtr make_tensor_ptr(TensorImplPtr tensor_impl) {
  */
 inline TensorPtr make_tensor_ptr(const TensorPtr& tensor) {
 #ifndef USE_ATEN_LIB
-  return make_tensor_ptr(tensor.get_deleter().tensor_impl);
+  return make_tensor_ptr(tensor.tensor_impl_);
 #else
   return make_tensor_ptr(tensor->getIntrusivePtr());
 #endif // USE_ATEN_LIB
