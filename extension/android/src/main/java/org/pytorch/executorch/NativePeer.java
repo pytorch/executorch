@@ -11,7 +11,6 @@ package org.pytorch.executorch;
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
-import java.util.Map;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**

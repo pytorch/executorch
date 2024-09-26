@@ -10,7 +10,6 @@ package org.pytorch.executorch;
 
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
-import java.util.Map;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**
@@ -44,8 +43,7 @@ public class Module {
    * @param numThreads number of threads to use for the module.
    * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
    */
-  public static Module load(
-      final String modelPath, int loadMode, int numThreads) {
+  public static Module load(final String modelPath, int loadMode, int numThreads) {
     if (!NativeLoader.isInitialized()) {
       NativeLoader.init(new SystemDelegate());
     }
@@ -59,8 +57,7 @@ public class Module {
    * @param loadMode load mode for the module. See constants in {@link Module}.
    * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
    */
-  public static Module load(
-      final String modelPath, int loadMode) {
+  public static Module load(final String modelPath, int loadMode) {
     return load(modelPath, loadMode, 0);
   }
 
