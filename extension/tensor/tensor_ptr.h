@@ -39,17 +39,13 @@ class TensorPtr {
     return static_cast<bool>(tensor_impl_);
   }
 
-  exec_aten::Tensor* get() const {
-    return tensor_impl_ ? &tensor_ : nullptr;
-  }
-
   exec_aten::Tensor* operator->() const {
-    return get();
+    return tensor_impl_ ? &tensor_ : nullptr;
   }
 
   exec_aten::Tensor& operator*() const {
     ET_DCHECK(*this != nullptr);
-    return *get();
+    return *operator->();
   }
 
   void reset() {
