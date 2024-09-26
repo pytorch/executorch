@@ -56,7 +56,7 @@ Note that groupsize less than 128 was not enabled, since such models were still 
 
 To improve accuracy, we can use [SpinQuant](https://github.com/facebookresearch/SpinQuant/tree/main), a post-training quantization (PTQ) technique that generates new quantized weights. In the standard PTQ process, quantization may lead to a decrease in accuracy when there are outliers. The SpinQuant method takes the original weights and produces optimized quantized weights with minimal outliers, resulting in higher accuracy. This can be achieved without any finetuning of the weights and only requires 100 iterations on a single A100 node.
 
-SpinQuant can generate quantized weights that are [compatible with ExecuTorch](https://github.com/facebookresearch/SpinQuant/tree/main?tab=readme-ov-file#3-export-to-executorch), specifically, it can be integrated with the existing optimized XNNPACK kernels (aka group-wise 4bit weight and 8bit dynamic activation). This allows developers to benefit from the higher accuracy of SpinQuant while also taking advantage of the strong performance of ExecuTorch acceleration. We are currently working on enabling SpinQuant for the Llama3.1 8B model on ExecuTorch.
+SpinQuant can generate quantized weights that are [compatible with ExecuTorch](https://github.com/facebookresearch/SpinQuant/tree/main?tab=readme-ov-file#3-export-to-executorch), specifically, it can be integrated with the existing optimized XNNPACK kernels (aka group-wise 4bit weight and 8bit dynamic activation). This allows developers to benefit from the higher accuracy of SpinQuant while also taking advantage of the strong performance of ExecuTorch acceleration. We are currently working on enabling SpinQuant for the Llama3.1 8B and Llama3.2 1B/3B models on ExecuTorch.
 
 ## Enablement
 
@@ -120,6 +120,31 @@ python -m examples.models.llama2.export_llama \
   -d bf16 \
   --metadata '{"append_eos_to_prompt": 0, "get_bos_id":128000, "get_eos_ids":[128009, 128001], "get_n_bos": 0, "get_n_eos": 0}' \
   --output_name="llama3_2.pte"
+```
+
+Optionally, we can apply SpinQuant to quantize the model without sacrifacing too much accuracy loss. With SpinQuant, we currently support 8-bit per-channel groupwise quantization for embeddings, 8-bit per-channel groupwise weight and 8-bit dynamic activation for the last output layer, 4-bit groupwise with group size 32 weight and 8-bit dynamic activation for other linear layers.
+
+To use SpinQuant, follow its [instruction](https://github.com/facebookresearch/SpinQuant/tree/main?tab=readme-ov-file#3-export-to-executorch) for exporting checkpoint to ExecuTorch and then export the SpinQuant checkpoint.
+
+```
+# Set these paths to point to the exported files
+LLAMA_QUANTIZED_CHECKPOINT=path/to/spinquant/checkpoint.pth
+LLAMA_PARAMS=path/to/params.json
+
+python -m examples.models.llama2.export_llama \
+   --checkpoint "${LLAMA_QUANTIZED_CHECKPOINT:?}" \
+   --params "${LLAMA_PARAMS:?}" \
+   --use_sdpa_with_kv_cache \
+   -X \
+   --spin_qmode 8da4w_output_8da8w \
+   --spin_group_size 32 \
+   --max_seq_length 2048 \
+   --output_name "llama3_2.pte" \
+   -kv \
+   -d fp32 \
+   --spin_embedding_quantize 8,0 \
+   --use_spin_quant native \
+   --metadata '{"append_eos_to_prompt": 0, "get_bos_id":128000, "get_eos_ids":[128009, 128001], "get_n_bos": 0, "get_n_eos": 0}'
 ```
 
 ### Option B: Download and export Llama 3 8B instruct model
