@@ -27,6 +27,9 @@
 
 #include <fbjni/ByteBuffer.h>
 #include <fbjni/fbjni.h>
+#if ET_USE_THREADPOOL == 1
+#include <pthreadpool.h>
+#endif
 
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -349,9 +352,23 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     ET_LOG(Debug, "Execution time: %lld ms.", duration);
 
 #else
-    torch::executorch::threadpool::UseNThreadsThreadPoolGuard thread_pool_guard(
-        num_threads_);
+#if ET_USE_THREADPOOL == 1
+    pthreadpool_t pool = get_pthreadpool();
+    int prev_num_threads = pthreadpool_get_num_threads_to_use();
+    bool set_num_threads = pool && 0 < num_threads_ && num_threads_ <= pthreadpool_get_threads_count(pool);
+    if (set_num_threads) {
+      pthreadpool_set_num_threads_to_use(num_threads_);
+    }
+#endif
+
     auto result = module_->execute(method, evalues);
+
+#if ET_USE_THREADPOOL == 1
+    if (set_num_threads) {
+      pthreadpool_set_num_threads_to_use(prev_num_threads);
+    }
+#endif
+
 #endif
 
     if (!result.ok()) {
