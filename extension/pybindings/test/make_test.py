@@ -295,8 +295,53 @@ def make_test(  # noqa: C901
             # The test module returns the state. Check that its value is correct.
             tester.assertEqual(str(torch.ones(2, 2)), str(executorch_output[1]))
 
-        ######### RUN TEST CASES #########
+        def test_method_meta(tester) -> None:
+            # pyre-fixme[16]: Callable `make_test` has no attribute `wrapper`.
+            exported_program, inputs = create_program(ModuleAdd())
 
+            # Use pybindings to load the program and query its metadata.
+            executorch_module = load_fn(exported_program.buffer)
+            meta = executorch_module.method_meta("forward")
+
+            # Ensure that all these APIs work even if the module object is destroyed.
+            del executorch_module
+            tester.assertEqual(meta.name(), "forward")
+            tester.assertEqual(meta.num_inputs(), 2)
+            tester.assertEqual(meta.num_outputs(), 1)
+            # Common string for all these tensors.
+            tensor_info = "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16)"
+            float_dtype = 6
+            tester.assertEqual(
+                str(meta),
+                "MethodMeta(name='forward', num_inputs=2, "
+                f"input_tensor_meta=['{tensor_info}', '{tensor_info}'], "
+                f"num_outputs=1, output_tensor_meta=['{tensor_info}'])",
+            )
+
+            input_tensors = [meta.input_tensor_meta(i) for i in range(2)]
+            output_tensor = meta.output_tensor_meta(0)
+            # Check that accessing out of bounds raises IndexError.
+            with tester.assertRaises(IndexError):
+                meta.input_tensor_meta(2)
+            # Test that tensor metadata can outlive method metadata.
+            del meta
+            tester.assertEqual([t.sizes() for t in input_tensors], [(2, 2), (2, 2)])
+            tester.assertEqual(
+                [t.dtype() for t in input_tensors], [float_dtype, float_dtype]
+            )
+            tester.assertEqual(
+                [t.is_memory_planned() for t in input_tensors], [True, True]
+            )
+            tester.assertEqual([t.nbytes() for t in input_tensors], [16, 16])
+            tester.assertEqual(str(input_tensors), f"[{tensor_info}, {tensor_info}]")
+
+            tester.assertEqual(output_tensor.sizes(), (2, 2))
+            tester.assertEqual(output_tensor.dtype(), float_dtype)
+            tester.assertEqual(output_tensor.is_memory_planned(), True)
+            tester.assertEqual(output_tensor.nbytes(), 16)
+            tester.assertEqual(str(output_tensor), tensor_info)
+
+        ######### RUN TEST CASES #########
         test_e2e(tester)
         test_multiple_entry(tester)
         test_output_lifespan(tester)
@@ -305,5 +350,6 @@ def make_test(  # noqa: C901
         test_stderr_redirect(tester)
         test_quantized_ops(tester)
         test_constant_output_not_memory_planned(tester)
+        test_method_meta(tester)
 
     return wrapper
