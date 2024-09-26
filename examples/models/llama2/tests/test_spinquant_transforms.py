@@ -8,10 +8,14 @@ import unittest
 
 import torch
 from executorch.examples.models.llama2.llama_transformer import ModelArgs, Transformer
+from executorch.examples.models.llama2.source_transformation.quantize import (
+    dynamically_quantize_per_channel,
+)
 from executorch.examples.models.llama2.source_transformation.spin_quant import (
     sanitize_checkpoint_from_spinquant,
     transform_embedding_for_spinquant,
     transform_linear_for_spinquant,
+    transform_output_linear_for_spinquant,
 )
 from torchao.quantization.utils import group_quantize_tensor_symmetric
 
@@ -51,8 +55,7 @@ class SpinQuantTests(unittest.TestCase):
         n_bit = 4
         scales_precision = torch.float32
         for fqn, mod in model.named_modules():
-            # Quantize everything except the last layer
-            if isinstance(mod, torch.nn.Linear) and ("output" not in fqn):
+            if isinstance(mod, torch.nn.Linear):
                 weight = mod.weight.data
                 (
                     weight_int8,
@@ -62,7 +65,7 @@ class SpinQuantTests(unittest.TestCase):
                     weight.to(torch.float32), n_bit, group_size, scales_precision
                 )
                 checkpoint[f"{fqn}.weight"] = weight_int8.to("cpu")
-                checkpoint[f"{fqn}.scale"] = scales.to("cpu")
+                checkpoint[f"{fqn}.scales"] = scales.to("cpu")
 
         # Step 3:
         # Transform the model so that it is compatible with the new checkpoint
@@ -73,11 +76,50 @@ class SpinQuantTests(unittest.TestCase):
             "8da4w",
             torch.float32,
         )
-        sanitize_checkpoint_from_spinquant(
+        sanitize_checkpoint_from_spinquant(checkpoint)
+
+        model.load_state_dict(
+            checkpoint,
+            strict=False,
+            assign=True,
+        )
+
+        new_checkpoint = model.state_dict()
+
+        for k, v in checkpoint.items():
+            # The new_checkpoint contains zeros so
+            # have to iterate over the keys.
+            self.assertTrue(torch.allclose(new_checkpoint[k], v))
+
+    def test_transform_output_linear_for_spinquant(self):
+        # Step 1: Create llama class with dummy weights
+        model = self._prepare_dummy_model()
+        checkpoint = model.state_dict()
+
+        # Step 2:
+        # Do per-channel quantization and amend the checkpoints with
+        # int8 weight and fp32 scales
+        for fqn, mod in model.named_modules():
+            if isinstance(mod, torch.nn.Linear) and fqn == "output":
+                weight = mod.weight.data
+                weight_int8, scales, _ = dynamically_quantize_per_channel(
+                    weight,
+                    quant_min=-128,
+                    quant_max=127,
+                    target_dtype=torch.int8,
+                    scales_dtype=torch.float32,
+                )
+                checkpoint[f"{fqn}.weight"] = weight_int8.to("cpu")
+                checkpoint[f"{fqn}.scales"] = scales.to("cpu")
+
+        # Step 3:
+        # Transform the model so that it is compatible with the new checkpoint
+        transform_output_linear_for_spinquant(
             model,
             checkpoint,
-            -1,
+            torch.float32,
         )
+        sanitize_checkpoint_from_spinquant(checkpoint)
 
         model.load_state_dict(
             checkpoint,
@@ -116,7 +158,7 @@ class SpinQuantTests(unittest.TestCase):
                     weight.to(torch.float32), n_bit, group_size, scales_precision
                 )
                 checkpoint[f"{fqn}.weight"] = weight_int8.to("cpu")
-                checkpoint[f"{fqn}.scale"] = scales.to("cpu")
+                checkpoint[f"{fqn}.scales"] = scales.to("cpu")
 
         # Step 3:
         # Transform the model so that it is compatible with the new checkpoint
@@ -127,12 +169,7 @@ class SpinQuantTests(unittest.TestCase):
             n_bit,
             group_size,
         )
-        sanitize_checkpoint_from_spinquant(
-            module=model,
-            checkpoint=checkpoint,
-            linear_group_size=-1,
-            embedding_group_size=-1,
-        )
+        sanitize_checkpoint_from_spinquant(checkpoint)
 
         model.load_state_dict(
             checkpoint,
