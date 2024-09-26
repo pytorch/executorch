@@ -243,19 +243,11 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
       facebook::jni::alias_ref<jstring> modelPath,
-      facebook::jni::alias_ref<
-          facebook::jni::JMap<facebook::jni::JString, facebook::jni::JString>>
-          extraFiles,
       jint loadMode) {
-    return makeCxxInstance(modelPath, extraFiles, loadMode);
+    return makeCxxInstance(modelPath, loadMode);
   }
 
-  ExecuTorchJni(
-      facebook::jni::alias_ref<jstring> modelPath,
-      facebook::jni::alias_ref<
-          facebook::jni::JMap<facebook::jni::JString, facebook::jni::JString>>
-          extraFiles,
-      jint loadMode) {
+  ExecuTorchJni(facebook::jni::alias_ref<jstring> modelPath, jint loadMode) {
     Module::LoadMode load_mode = Module::LoadMode::Mmap;
     if (loadMode == 0) {
       load_mode = Module::LoadMode::File;

@@ -37,31 +37,18 @@ public class Module {
   private NativePeer mNativePeer;
 
   /**
-   * Loads a serialized ExecuTorch module from the specified path on the disk. Uses default load
-   * FILE.
-   *
-   * @param modelPath path to file that contains the serialized ExecuTorch module.
-   * @param extraFiles map with extra files names as keys, content of them will be loaded to values.
-   * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
-   */
-  public static Module load(final String modelPath, final Map<String, String> extraFiles) {
-    return load(modelPath, extraFiles, LOAD_MODE_FILE);
-  }
-
-  /**
    * Loads a serialized ExecuTorch module from the specified path on the disk.
    *
    * @param modelPath path to file that contains the serialized ExecuTorch module.
-   * @param extraFiles map with extra files names as keys, content of them will be loaded to values.
    * @param loadMode load mode for the module. See constants in {@link Module}.
    * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
    */
   public static Module load(
-      final String modelPath, final Map<String, String> extraFiles, int loadMode) {
+      final String modelPath, int loadMode) {
     if (!NativeLoader.isInitialized()) {
       NativeLoader.init(new SystemDelegate());
     }
-    return new Module(new NativePeer(modelPath, extraFiles, loadMode));
+    return new Module(new NativePeer(modelPath, loadMode));
   }
 
   /**
@@ -71,7 +58,7 @@ public class Module {
    * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
    */
   public static Module load(final String modelPath) {
-    return load(modelPath, null);
+    return load(modelPath, LOAD_MODE_FILE);
   }
 
   Module(NativePeer nativePeer) {
