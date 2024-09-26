@@ -53,12 +53,12 @@ TEST_F(TensorPtrTest, Swap) {
 TEST_F(TensorPtrTest, MoveConstruction) {
   TensorPtr empty;
   TensorPtr emptyMoved(std::move(empty));
-  EXPECT_FALSE(empty);
+  EXPECT_FALSE(empty); // NOLINT(bugprone-use-after-move)
   EXPECT_FALSE(emptyMoved);
 
   TensorPtr notEmpty = make_tensor_ptr({1}, nullptr, {}, {});
   TensorPtr notEmptyMoved(std::move(notEmpty));
-  EXPECT_FALSE(notEmpty);
+  EXPECT_FALSE(notEmpty); // NOLINT(bugprone-use-after-move)
   EXPECT_TRUE(notEmptyMoved);
   EXPECT_EQ(notEmptyMoved->dim(), 1);
 }
@@ -68,7 +68,7 @@ TEST_F(TensorPtrTest, MoveAssignment) {
     TensorPtr empty, emptyMoved;
 
     emptyMoved = std::move(empty);
-    EXPECT_FALSE(empty);
+    EXPECT_FALSE(empty); // NOLINT(bugprone-use-after-move)
     EXPECT_FALSE(emptyMoved);
   }
 
@@ -76,7 +76,7 @@ TEST_F(TensorPtrTest, MoveAssignment) {
     TensorPtr empty;
     TensorPtr emptyMoved = make_tensor_ptr({1}, nullptr, {}, {});
     emptyMoved = std::move(empty);
-    EXPECT_FALSE(empty);
+    EXPECT_FALSE(empty); // NOLINT(bugprone-use-after-move)
     EXPECT_FALSE(emptyMoved);
   }
 
@@ -85,7 +85,7 @@ TEST_F(TensorPtrTest, MoveAssignment) {
     TensorPtr fullMoved;
 
     fullMoved = std::move(full);
-    EXPECT_FALSE(full);
+    EXPECT_FALSE(full); // NOLINT(bugprone-use-after-move)
     EXPECT_TRUE(fullMoved);
     EXPECT_EQ(fullMoved->dim(), 1);
   }
@@ -95,7 +95,7 @@ TEST_F(TensorPtrTest, MoveAssignment) {
     TensorPtr fullMoved = make_tensor_ptr({2, 2}, nullptr, {}, {});
 
     fullMoved = std::move(full);
-    EXPECT_FALSE(full);
+    EXPECT_FALSE(full); // NOLINT(bugprone-use-after-move)
     EXPECT_TRUE(fullMoved);
     EXPECT_EQ(fullMoved->dim(), 1);
   }
