@@ -9,6 +9,7 @@
 #include <type_traits>
 #include <bitset>
 #include <climits>
+#include <cstdint>
 
 // These macros helped us unify vec_base.h
 #ifdef CPU_CAPABILITY_AVX512
