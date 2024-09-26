@@ -24,6 +24,10 @@ Please note that the models are subject to the [Llama 2 Acceptable Use Policy](h
 
 Since Llama 2 7B or Llama 3 8B model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized model.
 
+For Llama 3.2 1B/3B, we validated the models by running them in their original bf16 datatype and unquantized on both Android and iOS phones. The 3B version required high-end phones with larger RAMs to fit the model.
+
+Additionally, these models are sensitive to accuracy when regular PTQ quantization is applied, so we employed [SpinQuant](https://github.com/facebookresearch/SpinQuant/tree/main) to achieve a good balance between accuracy and performance.
+
 <table>
   <tr>
     <td>
