@@ -14,7 +14,8 @@
 #include <cmath>
 
 using exec_aten::Tensor;
-class OpRsqrtOutTest : public torch::executor::testing::UnaryUfuncRealHBToFloatHTest {
+class OpRsqrtOutTest
+    : public torch::executor::testing::UnaryUfuncRealHBToFloatHTest {
  protected:
   Tensor& op_out(const Tensor& self, Tensor& out) override {
     return torch::executor::aten::rsqrt_outf(context_, self, out);
@@ -23,6 +24,9 @@ class OpRsqrtOutTest : public torch::executor::testing::UnaryUfuncRealHBToFloatH
   double op_reference(double x) const override {
     return 1.0 / std::sqrt(x);
   }
+
+  torch::executor::testing::SupportedFeatures* get_supported_features()
+      const override;
 };
 
 IMPLEMENT_UNARY_UFUNC_REALHB_TO_FLOATH_TEST(OpRsqrtOutTest)

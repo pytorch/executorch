@@ -20,7 +20,8 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpErfOutTest : public torch::executor::testing::UnaryUfuncRealHBToFloatHTest {
+class OpErfOutTest
+    : public torch::executor::testing::UnaryUfuncRealHBToFloatHTest {
  protected:
   Tensor& op_out(const Tensor& self, Tensor& out) override {
     return torch::executor::aten::erf_outf(context_, self, out);
@@ -30,6 +31,8 @@ class OpErfOutTest : public torch::executor::testing::UnaryUfuncRealHBToFloatHTe
     return std::erf(x);
   }
 
+  torch::executor::testing::SupportedFeatures* get_supported_features()
+      const override;
 };
 
 TEST_F(OpErfOutTest, SanityCheck) {

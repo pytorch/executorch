@@ -31,6 +31,15 @@ class UnaryUfuncRealHBToFloatHTest : public OperatorTest {
   // Scalar reference implementation of the function in question for testing.
   virtual double op_reference(double x) const = 0;
 
+  // The SupportedFeatures system assumes that it can build each test
+  // target with a separate SupportedFeatures (really just one
+  // portable, one optimzed but between one and the infinite, two is
+  // ridiculous and can't exist). We work around that by calling
+  // SupportedFeatures::get() in the concrete test translation
+  // unit. You need to declare an override, but we implement it for you
+  // in IMPLEMENT_UNARY_UFUNC_REALHB_TO_FLOATH_TEST.
+  virtual SupportedFeatures* get_supported_features() const = 0;
+
   template <exec_aten::ScalarType IN_DTYPE, exec_aten::ScalarType OUT_DTYPE>
   void test_floating_point_op_out(
       const std::vector<int32_t>& out_shape = {1, 6},
@@ -99,6 +108,10 @@ class UnaryUfuncRealHBToFloatHTest : public OperatorTest {
 };
 
 #define IMPLEMENT_UNARY_UFUNC_REALHB_TO_FLOATH_TEST(TestName)        \
+  torch::executor::testing::SupportedFeatures*                       \
+  TestName::get_supported_features() const {                         \
+    return torch::executor::testing::SupportedFeatures::get();       \
+  }                                                                  \
   TEST_F(TestName, HandleBoolInput) {                                \
     test_bool_input();                                               \
   }                                                                  \

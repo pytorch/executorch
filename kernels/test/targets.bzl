@@ -52,15 +52,16 @@ def define_common_targets():
             ],
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_kernel else [],
             fbcode_exported_deps = [
+                ":supported_features_header",
                 "//common/init:init",
                 "//common/gtest:gtest",
-                "//executorch/kernels/portable/test:supported_features",
                 "//executorch/runtime/core/exec_aten:lib",
                 "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
                 "//executorch/runtime/kernel:kernel_includes",
                 "//executorch/test/utils:utils" + aten_suffix,
             ],
             xplat_exported_deps = [
+                ":supported_features_header",
                 "//xplat/folly:init_init",
                 "//third-party/googletest:gtest_main",
                 "//executorch/kernels/portable/test:supported_features",
