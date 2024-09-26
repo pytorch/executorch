@@ -25,7 +25,7 @@ void UnaryUfuncRealHBToFloatHTest::test_bool_input() {
 }
 
 void UnaryUfuncRealHBToFloatHTest::test_mismatched_input_shapes_dies() {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+  if (get_supported_features()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched input shapes";
   }
   TensorFactory<exec_aten::ScalarType::Float> tf;
@@ -38,7 +38,7 @@ void UnaryUfuncRealHBToFloatHTest::test_mismatched_input_shapes_dies() {
 
 void UnaryUfuncRealHBToFloatHTest::
     test_all_real_input_half_output_static_dynamism_support() {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+  if (get_supported_features()->is_aten) {
     GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
   }
 #define TEST_ENTRY(ctype, dtype)    \
@@ -71,7 +71,7 @@ void UnaryUfuncRealHBToFloatHTest::
 
 void UnaryUfuncRealHBToFloatHTest::
     test_all_real_input_half_output_bound_dynamism_support() {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+  if (get_supported_features()->is_aten) {
     GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
   }
 #define TEST_ENTRY(ctype, dtype)    \
@@ -107,7 +107,7 @@ void UnaryUfuncRealHBToFloatHTest::
 
 void UnaryUfuncRealHBToFloatHTest::
     test_all_real_input_float_output_unbound_dynamism_support() {
-  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
+  if (!get_supported_features()->is_aten) {
     GTEST_SKIP() << "Dynamic shape unbound not supported";
   }
 #define TEST_ENTRY(ctype, dtype)     \
@@ -121,7 +121,7 @@ void UnaryUfuncRealHBToFloatHTest::
 
 void UnaryUfuncRealHBToFloatHTest::
     test_all_real_input_double_output_unbound_dynamism_support() {
-  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
+  if (!get_supported_features()->is_aten) {
     GTEST_SKIP() << "Dynamic shape unbound not supported";
   }
 #define TEST_ENTRY(ctype, dtype)      \
