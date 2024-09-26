@@ -61,10 +61,7 @@ public class Module {
    */
   public static Module load(
       final String modelPath, int loadMode) {
-    if (!NativeLoader.isInitialized()) {
-      NativeLoader.init(new SystemDelegate());
-    }
-    return new Module(new NativePeer(modelPath, loadMode));
+    return load(modelPath, loadMode, 0);
   }
 
   /**
