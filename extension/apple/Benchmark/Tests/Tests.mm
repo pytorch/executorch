@@ -99,7 +99,7 @@ using namespace ::executorch::runtime;
         IMP testForwardImplementation = imp_implementationWithBlock(^(
             id _self) {
           auto __block module = std::make_unique<Module>(modelPath.UTF8String);
-          XCTAssertEqual(module->load_method("forward"), Error::Ok);
+          XCTAssertEqual(module->load_forward(), Error::Ok);
 
           const auto method_meta = module->method_meta("forward");
           XCTAssertEqual(method_meta.error(), Error::Ok);
@@ -109,8 +109,6 @@ using namespace ::executorch::runtime;
 
           std::vector<TensorPtr> __block tensors;
           tensors.reserve(num_inputs);
-          std::vector<EValue> __block inputs;
-          inputs.reserve(num_inputs);
 
           for (auto index = 0; index < num_inputs; ++index) {
             const auto input_tag = method_meta->input_tag(index);
@@ -124,7 +122,7 @@ using namespace ::executorch::runtime;
               const auto sizes = tensor_meta->sizes();
               tensors.emplace_back(ones({sizes.begin(), sizes.end()},
                                         tensor_meta->scalar_type()));
-              inputs.emplace_back(tensors.back());
+              module.set_input(tensors.back(), index);
             } break;
             default:
               XCTFail("Unsupported tag %i at input %d", *input_tag, index);
