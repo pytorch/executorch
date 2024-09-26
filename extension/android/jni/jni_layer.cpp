@@ -236,6 +236,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
  private:
   friend HybridBase;
   std::unique_ptr<Module> module_;
+  int num_threads_;
 
  public:
   constexpr static auto kJavaDescriptor = "Lorg/pytorch/executorch/NativePeer;";
@@ -243,11 +244,15 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
       facebook::jni::alias_ref<jstring> modelPath,
-      jint loadMode) {
-    return makeCxxInstance(modelPath, loadMode);
+      jint loadMode,
+      jint numThreads) {
+    return makeCxxInstance(modelPath, loadMode, numThreads);
   }
 
-  ExecuTorchJni(facebook::jni::alias_ref<jstring> modelPath, jint loadMode) {
+  ExecuTorchJni(
+      facebook::jni::alias_ref<jstring> modelPath,
+      jint loadMode,
+      jint numThreads) {
     Module::LoadMode load_mode = Module::LoadMode::Mmap;
     if (loadMode == 0) {
       load_mode = Module::LoadMode::File;
@@ -260,6 +265,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     }
 
     module_ = std::make_unique<Module>(modelPath->toStdString(), load_mode);
+    num_threads_ = numThreads;
   }
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> forward(
@@ -343,8 +349,9 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     ET_LOG(Debug, "Execution time: %lld ms.", duration);
 
 #else
+    torch::executorch::threadpool::UseNThreadsThreadPoolGuard thread_pool_guard(
+        num_threads_);
     auto result = module_->execute(method, evalues);
-
 #endif
 
     if (!result.ok()) {
