@@ -15,7 +15,11 @@ def make_example_generated_op_test_target():
     Makes a test for kernels/test/util generated_op_test() helper
     Here we use portable kernel. Try with `buck test xplat/executorch/kernels/test:op_<>_test`
     """
-    op_test_cpp_files = native.glob(["op_*_test.cpp"])
+    op_test_cpp_files = native.glob(
+        ["op_*_test.cpp"],
+        # linear has no portable op.
+        exclude = ["op_linear_test.cpp"],
+    )
 
     # The op name is from the beginning to the part without `_test.cpp` (:-9)
     op_to_test = [f[:-9] for f in op_test_cpp_files]
@@ -55,8 +59,8 @@ def define_common_targets():
                 ":supported_features_header",
                 "//common/init:init",
                 "//common/gtest:gtest",
-                "//executorch/runtime/core/exec_aten:lib",
-                "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_includes",
                 "//executorch/test/utils:utils" + aten_suffix,
             ],

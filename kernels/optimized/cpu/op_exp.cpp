@@ -79,12 +79,13 @@ Tensor& opt_exp_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   ET_KERNEL_CHECK(ctx, tensor_is_floating_type(out), InvalidArgument, out);
 
   ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "exp.out", CTYPE_IN, [&] {
-    ET_SWITCH_FLOATHBF16_TYPES(out.scalar_type(), ctx, "exp.out", CTYPE_OUT, [&] {
-      exp_data<CTYPE_IN, CTYPE_OUT>(
-          in.const_data_ptr<CTYPE_IN>(),
-          in.numel(),
-          out.mutable_data_ptr<CTYPE_OUT>());
-    });
+    ET_SWITCH_FLOATHBF16_TYPES(
+        out.scalar_type(), ctx, "exp.out", CTYPE_OUT, [&] {
+          exp_data<CTYPE_IN, CTYPE_OUT>(
+              in.const_data_ptr<CTYPE_IN>(),
+              in.numel(),
+              out.mutable_data_ptr<CTYPE_OUT>());
+        });
   });
 
   return out;

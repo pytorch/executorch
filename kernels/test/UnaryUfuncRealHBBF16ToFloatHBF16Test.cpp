@@ -89,9 +89,9 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
 
 void UnaryUfuncRealHBBF16ToFloatHBF16Test::
     test_all_real_input_bfloat16_output_bound_dynamism_support() {
-#define TEST_ENTRY(ctype, dtype)    \
-  test_floating_point_op_out<       \
-      exec_aten::ScalarType::dtype, \
+#define TEST_ENTRY(ctype, dtype)        \
+  test_floating_point_op_out<           \
+      exec_aten::ScalarType::dtype,     \
       exec_aten::ScalarType::BFloat16>( \
       {10, 10}, exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
   ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);

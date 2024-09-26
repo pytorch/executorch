@@ -67,6 +67,8 @@ add_custom_target(
     "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp"
 )
 
+add_library(test_util UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp)
+
 set(all_test_sources
     "op__to_dim_order_copy_test.cpp"
     "op_abs_test.cpp"
@@ -220,7 +222,7 @@ set(_portable_kernels_test_sources
 
 et_cxx_test(
   portable_kernels_test SOURCES ${_portable_kernels_test_sources} EXTRA_LIBS
-  portable_kernels portable_ops_lib
+  portable_kernels portable_ops_lib test_util
 )
 add_dependencies(portable_kernels_test generate_wrapper)
 target_include_directories(
@@ -260,6 +262,7 @@ et_cxx_test(
   portable_kernels
   pthreadpool
   eigen_blas
+  test_util
 )
 add_dependencies(optimized_kernels_test generate_wrapper)
 target_include_directories(
