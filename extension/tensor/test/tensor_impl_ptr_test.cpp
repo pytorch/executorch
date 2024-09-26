@@ -23,6 +23,31 @@ class TensorImplPtrTest : public ::testing::Test {
   }
 };
 
+TEST_F(TensorImplPtrTest, BasicSmartPointerAccess) {
+  TensorImplPtr p;
+  EXPECT_FALSE(p);
+  EXPECT_EQ(p, nullptr);
+  TensorImplPtr p2 = make_tensor_impl_ptr({1}, nullptr);
+  EXPECT_TRUE(p2);
+  EXPECT_NE(p2, nullptr);
+  EXPECT_EQ(p2->dim(), 1);
+  EXPECT_EQ((*p2).dim(), 1);
+  EXPECT_NE(p, p2);
+  p2.reset();
+  EXPECT_FALSE(p2);
+  EXPECT_EQ(p2, nullptr);
+  EXPECT_EQ(p, p2);
+}
+
+TEST_F(TensorImplPtrTest, Swap) {
+  TensorImplPtr p;
+  TensorImplPtr p2 = make_tensor_impl_ptr({1}, nullptr);
+  p.swap(p2);
+  EXPECT_FALSE(p2);
+  EXPECT_TRUE(p);
+  EXPECT_EQ(p->dim(), 1);
+}
+
 TEST_F(TensorImplPtrTest, ScalarTensorCreation) {
   float scalar_data = 3.14f;
   auto tensor_impl = make_tensor_impl_ptr({}, &scalar_data);

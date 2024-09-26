@@ -15,43 +15,6 @@
 
 namespace executorch {
 namespace extension {
-namespace {
-#ifndef USE_ATEN_LIB
-// No-op deleter that does nothing when called.
-static void noop_deleter(void*) {}
-
-/**
- * Custom deleter for TensorImplPtr that ensures the memory associated with
- * dynamic metadata (sizes, dim_order, and strides) is properly managed when the
- * TensorImpl is destroyed.
- *
- * Since TensorImpl does not own the metadata arrays (sizes, dim_order,
- * strides), this deleter is responsible for releasing that memory when the
- * TensorImpl is destroyed.
- */
-struct TensorImplPtrDeleter final {
-  // A custom deleter of the std::shared_ptr is required to be copyable until
-  // C++20, so any data it holds must be copyable too. Hence, we use shared_ptr
-  // to hold the data and metadata to avoid unnecessary copies.
-  std::shared_ptr<void> data;
-  std::shared_ptr<std::vector<exec_aten::SizesType>> sizes;
-  std::shared_ptr<std::vector<exec_aten::DimOrderType>> dim_order;
-  std::shared_ptr<std::vector<exec_aten::StridesType>> strides;
-
-  void operator()(exec_aten::TensorImpl* pointer) {
-    // Release all resources immediately since the data held by the
-    // TensorImplPtrDeleter is tied to the managed object, not the smart pointer
-    // itself. We need to free this memory when the object is destroyed, not
-    // when the smart pointer (and deleter) are eventually destroyed or reset.
-    data.reset();
-    sizes.reset();
-    dim_order.reset();
-    strides.reset();
-    delete pointer;
-  }
-};
-#endif // USE_ATEN_LIB
-} // namespace
 
 TensorImplPtr make_tensor_impl_ptr(
     std::vector<exec_aten::SizesType> sizes,
@@ -89,7 +52,7 @@ TensorImplPtr make_tensor_impl_ptr(
     strides = std::move(computed_strides);
   }
 #ifndef USE_ATEN_LIB
-  auto tensor_impl = std::make_unique<exec_aten::TensorImpl>(
+  exec_aten::TensorImpl tensor_impl(
       type,
       dim,
       sizes.data(),
@@ -98,15 +61,11 @@ TensorImplPtr make_tensor_impl_ptr(
       strides.data(),
       dim > 0 ? dynamism : exec_aten::TensorShapeDynamism::STATIC);
   return TensorImplPtr(
-      tensor_impl.release(),
-      TensorImplPtrDeleter{
-          std::shared_ptr<void>(
-              data, deleter ? std::move(deleter) : noop_deleter),
-          std::make_shared<std::vector<exec_aten::SizesType>>(std::move(sizes)),
-          std::make_shared<std::vector<exec_aten::DimOrderType>>(
-              std::move(dim_order)),
-          std::make_shared<std::vector<exec_aten::StridesType>>(
-              std::move(strides))});
+      std::move(tensor_impl),
+      std::move(sizes),
+      std::move(dim_order),
+      std::move(strides),
+      std::move(deleter));
 #else
   auto options = c10::TensorOptions()
                      .dtype(c10::scalarTypeToTypeMeta(type))
