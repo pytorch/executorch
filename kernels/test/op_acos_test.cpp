@@ -25,6 +25,9 @@ class OpAcosOutTest : public UnaryUfuncRealHBToFloatHTest {
   double op_reference(double x) const override {
     return std::acos(x);
   }
+
+  torch::executor::testing::SupportedFeatures* get_supported_features()
+      const override;
 };
 
 IMPLEMENT_UNARY_UFUNC_REALHB_TO_FLOATH_TEST(OpAcosOutTest)
