@@ -23,17 +23,14 @@ namespace extension {
  */
 class TensorPtr {
  public:
-  // Match unique_ptr, just in case.
-  using element_type = exec_aten::Tensor;
-  using pointer = exec_aten::Tensor*;
-
   constexpr TensorPtr() = default;
   explicit constexpr TensorPtr(std::nullptr_t) {}
   ~TensorPtr() = default;
   TensorPtr(TensorPtr&& rhs) noexcept = default;
   TensorPtr& operator=(TensorPtr&& rhs) noexcept = default;
 
-  explicit TensorPtr(TensorImplPtr p) : tensor_(p.get()), tensor_impl_(std::move(p)) {}
+  explicit TensorPtr(TensorImplPtr p)
+      : tensor_(p.get()), tensor_impl_(std::move(p)) {}
 
   operator bool() const {
     return static_cast<bool>(tensor_impl_);
