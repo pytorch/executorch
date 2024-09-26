@@ -7,4 +7,9 @@
 # lint_cmake: -linelength
 add_library(cadence_kernels kernels.cpp)
 
-target_include_directories(cadence_kernels PUBLIC .)
+# Let files say "include <executorch/path/to/header.h>".
+set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+
+target_include_directories(cadence_kernels PUBLIC .
+                    ${_common_include_directories}
+)
