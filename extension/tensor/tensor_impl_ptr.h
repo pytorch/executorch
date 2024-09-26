@@ -30,7 +30,99 @@ namespace extension {
  * It serves as a safer, more convenient alternative to the original TensorImpl,
  * which does not manage its metadata by design.
  */
-using TensorImplPtr = std::shared_ptr<exec_aten::TensorImpl>;
+class TensorImplPtr {
+ public:
+  constexpr TensorImplPtr() = default;
+  explicit constexpr TensorImplPtr(std::nullptr_t) {}
+  TensorImplPtr(
+      exec_aten::TensorImpl tensor_impl,
+      std::vector<exec_aten::SizesType> sizes,
+      std::vector<exec_aten::DimOrderType> dim_order,
+      std::vector<exec_aten::StridesType> strides,
+      std::function<void(void*)> data_deleter = nullptr)
+      : repr_(std::make_shared<HeapData>(
+            std::move(tensor_impl),
+            std::move(sizes),
+            std::move(dim_order),
+            std::move(strides),
+            std::move(data_deleter))) {}
+
+  operator bool() const {
+    return static_cast<bool>(repr_);
+  }
+
+  exec_aten::TensorImpl* get() const {
+    return repr_ ? &repr_->tensor_impl_ : nullptr;
+  }
+
+  exec_aten::TensorImpl* operator->() const {
+    return get();
+  }
+
+  exec_aten::TensorImpl& operator*() const {
+    ET_DCHECK(repr_ != nullptr);
+    return *get();
+  }
+
+  void reset() {
+    repr_.reset();
+  }
+
+  void swap(TensorImplPtr& other) noexcept {
+    repr_.swap(other.repr_);
+  }
+
+  bool operator==(const TensorImplPtr& rhs) const {
+    return repr_ == rhs.repr_;
+  }
+
+  bool operator!=(const TensorImplPtr& rhs) const {
+    return !(*this == rhs);
+  }
+
+  bool operator==(std::nullptr_t) const {
+    return !operator bool();
+  }
+
+  bool operator!=(std::nullptr_t) const {
+    return !(*this == nullptr);
+  }
+
+  auto use_count() const noexcept {
+    return repr_.use_count();
+  }
+
+ private:
+  struct HeapData {
+    exec_aten::TensorImpl tensor_impl_;
+    // TODO: consolidate these allocations similar to torch::Tensor's
+    // SizesAndStrides?
+    std::vector<exec_aten::SizesType> sizes_;
+    std::vector<exec_aten::DimOrderType> dim_order_;
+    std::vector<exec_aten::StridesType> strides_;
+    // TODO: don't pay for the deleter if it wasn't set.
+    std::function<void(void*)> data_deleter_;
+
+    HeapData(
+        exec_aten::TensorImpl&& ti,
+        std::vector<exec_aten::SizesType>&& sizes,
+        std::vector<exec_aten::DimOrderType>&& dim_order,
+        std::vector<exec_aten::StridesType>&& strides,
+        std::function<void(void*)>&& data_deleter)
+        : tensor_impl_(std::move(ti)),
+          sizes_(std::move(sizes)),
+          dim_order_(std::move(dim_order)),
+          strides_(std::move(strides)),
+          data_deleter_(std::move(data_deleter)) {}
+
+    ~HeapData() {
+      if (data_deleter_) {
+        data_deleter_(tensor_impl_.mutable_data());
+      }
+    }
+  };
+  std::shared_ptr<HeapData> repr_;
+};
 #else
 /**
  * A smart pointer type for managing the lifecycle of a TensorImpl.
