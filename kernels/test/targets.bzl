@@ -41,6 +41,7 @@ def define_common_targets():
             name = "test_util" + aten_suffix,
             exported_headers = [
                 "TestUtil.h",
+                "UnaryUfuncRealHBToFloatHTest.h",
             ],
             visibility = [
                 "//executorch/kernels/...",
@@ -50,11 +51,15 @@ def define_common_targets():
             fbcode_exported_deps = [
                 "//common/init:init",
                 "//common/gtest:gtest",
+                "//executorch/runtime/core/exec_aten:lib",
+                "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
                 "//executorch/runtime/kernel:kernel_includes",
             ],
             xplat_exported_deps = [
                 "//xplat/folly:init_init",
                 "//third-party/googletest:gtest_main",
+                "//executorch/runtime/core/exec_aten:lib",
+                "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
                 "//executorch/runtime/kernel:kernel_includes",
             ],
         )
