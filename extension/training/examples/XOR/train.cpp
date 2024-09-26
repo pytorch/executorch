@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
     int index = dist(URBG);
     auto& data = data_set[index];
     const auto& results = mod.execute_forward_backward(
-        "forward", {*data.first.get(), *data.second.get()});
+        "forward", {*data.first, *data.second});
     if (results.error() != Error::Ok) {
       ET_LOG(Error, "Failed to execute forward_backward");
       return 1;
