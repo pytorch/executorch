@@ -14,7 +14,8 @@
 #include <cmath>
 
 using exec_aten::Tensor;
-class OpCosOutTest : public torch::executor::testing::UnaryUfuncRealHBToFloatHTest {
+class OpCosOutTest
+    : public torch::executor::testing::UnaryUfuncRealHBToFloatHTest {
  protected:
   Tensor& op_out(const Tensor& self, Tensor& out) override {
     return torch::executor::aten::cos_outf(context_, self, out);
@@ -23,6 +24,9 @@ class OpCosOutTest : public torch::executor::testing::UnaryUfuncRealHBToFloatHTe
   double op_reference(double x) const override {
     return std::cos(x);
   }
+
+  torch::executor::testing::SupportedFeatures* get_supported_features()
+      const override;
 };
 
 IMPLEMENT_UNARY_UFUNC_REALHB_TO_FLOATH_TEST(OpCosOutTest)

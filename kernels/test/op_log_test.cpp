@@ -17,7 +17,8 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
-class OpLogOutTest : public torch::executor::testing::UnaryUfuncRealHBToFloatHTest {
+class OpLogOutTest
+    : public torch::executor::testing::UnaryUfuncRealHBToFloatHTest {
  protected:
   Tensor& op_out(const Tensor& self, Tensor& out) override {
     return torch::executor::aten::log_outf(context_, self, out);
@@ -26,6 +27,9 @@ class OpLogOutTest : public torch::executor::testing::UnaryUfuncRealHBToFloatHTe
   double op_reference(double x) const override {
     return std::log(x);
   }
+
+  torch::executor::testing::SupportedFeatures* get_supported_features()
+      const override;
 };
 
 IMPLEMENT_UNARY_UFUNC_REALHB_TO_FLOATH_TEST(OpLogOutTest)
