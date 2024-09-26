@@ -28,12 +28,12 @@ class TensorPtr {
   using pointer = exec_aten::Tensor*;
 
   constexpr TensorPtr() = default;
-  constexpr TensorPtr(std::nullptr_t) {}
+  explicit constexpr TensorPtr(std::nullptr_t) {}
   ~TensorPtr() = default;
   TensorPtr(TensorPtr&& rhs) noexcept = default;
   TensorPtr& operator=(TensorPtr&& rhs) noexcept = default;
 
-  TensorPtr(TensorImplPtr p) : tensor_(p.get()), tensor_impl_(std::move(p)) {}
+  explicit TensorPtr(TensorImplPtr p) : tensor_(p.get()), tensor_impl_(std::move(p)) {}
 
   operator bool() const {
     return static_cast<bool>(tensor_impl_);
@@ -57,7 +57,7 @@ class TensorPtr {
     tensor_impl_.reset();
   }
 
-  void swap(TensorPtr& other) {
+  void swap(TensorPtr& other) noexcept {
     std::swap(tensor_, other.tensor_);
     std::swap(tensor_impl_, other.tensor_impl_);
   }
