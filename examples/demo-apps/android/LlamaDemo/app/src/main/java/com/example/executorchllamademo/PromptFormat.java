@@ -19,6 +19,7 @@ public class PromptFormat {
     switch (modelType) {
       case LLAMA_3:
       case LLAMA_3_1:
+      case LLAMA_3_2:
         return "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n"
             + SYSTEM_PLACEHOLDER
             + "<|eot_id|>";
@@ -33,6 +34,7 @@ public class PromptFormat {
     switch (modelType) {
       case LLAMA_3:
       case LLAMA_3_1:
+      case LLAMA_3_2:
       case LLAMA_GUARD_3:
         return "<|start_header_id|>user<|end_header_id|>\n"
             + USER_PLACEHOLDER
@@ -49,6 +51,7 @@ public class PromptFormat {
     switch (modelType) {
       case LLAMA_3:
       case LLAMA_3_1:
+      case LLAMA_3_2:
         return getUserPromptTemplate(modelType) + "\n" + ASSISTANT_PLACEHOLDER + "<|eot_id|>";
       case LLAVA_1_5:
         return USER_PLACEHOLDER + " ASSISTANT:";
@@ -61,6 +64,7 @@ public class PromptFormat {
     switch (modelType) {
       case LLAMA_3:
       case LLAMA_3_1:
+      case LLAMA_3_2:
       case LLAMA_GUARD_3:
         return "<|eot_id|>";
       case LLAVA_1_5:
