@@ -1,5 +1,7 @@
 # Building Llama iOS Demo for XNNPack Backend
 
+**[UPDATE - 09/25]** We have added support for running [Llama 3.2 models](#for-llama-32-1b-and-3b-models) on the XNNPack backend. We currently support inference on their original data type (BFloat16).
+
 This tutorial covers the end to end workflow for building an iOS demo app using XNNPack backend on device.
 More specifically, it covers:
 1. Export and quantization of Llama models against the XNNPack backend.
@@ -45,10 +47,38 @@ Install the required packages to export the model
 sh examples/models/llama2/install_requirements.sh
 ```
 
+### For Llama 3.2 1B and 3B models
+We have supported BFloat16 as a data type on the XNNPack backend for Llama 3.2 1B/3B models.
+* You can download original model weights for Llama through Meta official [website](https://llama.meta.com/).
+* For chat use-cases, download the instruct models instead of pretrained.
+* Run “examples/models/llama2/install_requirements.sh” to install dependencies.
+* The 1B model in BFloat16 format can run on mobile devices with 8GB RAM (iPhone 15 Pro and later). The 3B model will require 12GB+ RAM and hence will not fit on 8GB RAM phones.
+* Export Llama model and generate .pte file as below:
+
+```
+python -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv -X -d bf16 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="llama3_2.pte"
+```
+
+* Convert tokenizer for Llama 3.2 - Rename 'tokenizer.model' to 'tokenizer.bin'.
+
+For more detail using Llama 3.2 lightweight models including prompt template, please go to our official [website](https://www.llama.com/docs/model-cards-and-prompt-formats/llama3_2#-llama-3.2-lightweight-models-(1b/3b)-).
+
+### For Llama 3.1 and Llama 2 models
+
 Export the model
 ```
 python -m examples.models.llama2.export_llama --checkpoint <consolidated.00.pth> -p <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w  --group_size 128 -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --embedding-quantize 4,32 --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
 ```
+
+### For LLaVA model
+* For the Llava 1.5 model, you can get it from Huggingface [here](https://huggingface.co/llava-hf/llava-1.5-7b-hf).
+* Run `examples/models/llava/install_requirements.sh` to install dependencies.
+* Run the following command to generate llava.pte, tokenizer.bin and an image tensor (serialized in TorchScript) image.pt.
+
+```
+python -m executorch.examples.models.llava.export_llava --pte-name llava.pte --with-artifacts
+```
+* You can find more information [here](https://github.com/pytorch/executorch/tree/main/examples/models/llava).
 
 ## Pushing Model and Tokenizer
 

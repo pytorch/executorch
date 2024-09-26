@@ -258,12 +258,7 @@ the checkpoint format to avoid generating faulty models.
                     embedding_group_size,
                 )
 
-            sanitize_checkpoint_from_spinquant(
-                module=self.model_,
-                checkpoint=checkpoint,
-                linear_group_size=self.args.spin_group_size,
-                embedding_group_size=embedding_group_size,
-            )
+            sanitize_checkpoint_from_spinquant(checkpoint)
 
         # assign=True: load params/buffers by assignment instead of performing an in-place copy.
         # Because we are using device="meta", tensors do not have memory associated with them
