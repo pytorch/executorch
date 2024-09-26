@@ -22,6 +22,38 @@ class TensorPtrTest : public ::testing::Test {
   }
 };
 
+TEST_F(TensorPtrTest, BasicSmartPointerAccess) {
+  TensorPtr p;
+  EXPECT_FALSE(p);
+  EXPECT_EQ(p, nullptr);
+  EXPECT_EQ(p.get(), nullptr);
+  EXPECT_EQ(p.operator->(), nullptr);
+  TensorPtr p2 = make_tensor_ptr({1}, nullptr, {}, {});
+  EXPECT_TRUE(p2);
+  EXPECT_NE(p2, nullptr);
+  ASSERT_NE(p2.get(), nullptr);
+  ASSERT_NE(p2.operator->(), nullptr);
+  EXPECT_EQ(p2.get(), p2.operator->());
+  EXPECT_EQ(p2->dim(), 1);
+  EXPECT_EQ((*p2).dim(), 1);
+  EXPECT_NE(p, p2);
+  p2.reset();
+  EXPECT_FALSE(p2);
+  EXPECT_EQ(p2, nullptr);
+  EXPECT_EQ(p2.get(), nullptr);
+  EXPECT_EQ(p2.operator->(), nullptr);
+  EXPECT_EQ(p, p2);
+}
+
+TEST_F(TensorPtrTest, Swap) {
+  TensorPtr p;
+  TensorPtr p2 = make_tensor_ptr({1}, nullptr, {}, {});
+  p.swap(p2);
+  EXPECT_FALSE(p2);
+  EXPECT_TRUE(p);
+  EXPECT_EQ(p->dim(), 1);
+}
+
 TEST_F(TensorPtrTest, ScalarTensorCreation) {
   float scalar_data = 3.14f;
   auto tensor = make_tensor_ptr({}, &scalar_data);
