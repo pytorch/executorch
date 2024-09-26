@@ -149,9 +149,14 @@ bool can_use_optimized_dequantize_per_channel(
     const Tensor& in,
     const ScalarType in_dtype,
     exec_aten::optional<ScalarType>& out_dtype) {
-  if (!executorch::runtime::is_contiguous_dim_order(
-          in.dim_order().data(), in.dim()) ||
-      (in_dtype != ScalarType::Char) ||
+  bool is_contiguous = false;
+#ifdef USE_ATEN_LIB
+  is_contiguous = in.is_contiguous();
+#else
+  is_contiguous = executorch::runtime::is_contiguous_dim_order(
+      in.dim_order().data(), in.dim());
+#endif
+  if (is_contiguous || (in_dtype != ScalarType::Char) ||
       (out_dtype.has_value() && out_dtype.value() != ScalarType::Float)) {
     return false;
   }
@@ -170,10 +175,6 @@ void dequantize_per_channel_optimized(
     exec_aten::optional<ScalarType>& out_dtype) {
   check_dequantize_per_tensor_args(
       in, quant_min, quant_max, in_dtype, out_dtype, out);
-  ET_CHECK_MSG(
-      executorch::runtime::is_contiguous_dim_order(
-          in.dim_order().data(), in.dim()),
-      "in must be in contiguous dim order");
   ET_CHECK_MSG(
       in_dtype == ScalarType::Char,
       "in.scalar_type() %" PRId8 " is not supported:",

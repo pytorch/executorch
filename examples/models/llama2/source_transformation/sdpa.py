@@ -9,7 +9,7 @@
 # Example script for exporting Llama2 to flatbuffer
 
 import math
-from typing import Tuple
+from typing import Tuple, Union
 
 import torch
 
@@ -22,13 +22,19 @@ from executorch.examples.models.llama2.source_transformation.quantized_kv_cache 
 class SDPACustom(torch.nn.Module):
     def __init__(
         self,
-        kv_cache: KVCache,
+        kv_cache: Union[KVCache, QuantizedKVCache],
         dim: int,
     ):
         super().__init__()
         # Custom op only supports float32 currently. Converting to/from float32 is
         # faster than not having the op.
-        self.kv_cache = kv_cache.to(torch.float)
+        self.kv_cache = kv_cache
+        if not isinstance(kv_cache, QuantizedKVCache):
+            self.kv_cache = kv_cache.to(torch.float)
+        else:
+            assert (
+                kv_cache.cache_fp_type == torch.float32
+            ), "Only float32 is supported for custom SDPA"
         self.dim = dim
 
     def forward(

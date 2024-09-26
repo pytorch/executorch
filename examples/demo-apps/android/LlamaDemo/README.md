@@ -17,6 +17,8 @@ The goal is for you to see the type of support ExecuTorch provides and feel comf
 
 ## Supporting Models
 As a whole, the models that this app supports are (varies by delegate):
+* Llama 3.2 1B/3B
+* Llama Guard 3 1B
 * Llama 3.1 8B
 * Llama 3 8B
 * Llama 2 7B
