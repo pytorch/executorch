@@ -20,7 +20,7 @@ namespace torch::executor::testing {
 // Generic test harness for ops that use unary_ufunc_realhb_to_floath
 // -- in other words, ops that just apply an elementwise function
 // mapping to a float or half.
-class UnaryUfuncRealHBToFloatHTest : public OperatorTest {
+class UnaryUfuncRealHBBF16ToFloatHBF16Test : public OperatorTest {
  protected:
   // Implement this to call the torch::executor::aten::op_outf function for the
   // top.
@@ -90,11 +90,15 @@ class UnaryUfuncRealHBToFloatHTest : public OperatorTest {
 
   void test_all_real_input_half_output_static_dynamism_support();
 
+  void test_all_real_input_bfloat16_output_static_dynamism_support();
+
   void test_all_real_input_float_output_static_dynamism_support();
 
   void test_all_real_input_double_output_static_dynamism_support();
 
   void test_all_real_input_half_output_bound_dynamism_support();
+
+  void test_all_real_input_bfloat16_output_bound_dynamism_support();
 
   void test_all_real_input_float_output_bound_dynamism_support();
 
@@ -119,6 +123,10 @@ class UnaryUfuncRealHBToFloatHTest : public OperatorTest {
     test_all_real_input_half_output_static_dynamism_support();       \
   }                                                                  \
                                                                      \
+  TEST_F(TestName, AllRealInputBFloat16OutputStaticDynamismSupport) {    \
+    test_all_real_input_bfloat16_output_static_dynamism_support();       \
+  }                                                                  \
+                                                                     \
   TEST_F(TestName, AllRealInputFloatOutputStaticDynamismSupport) {   \
     test_all_real_input_float_output_static_dynamism_support();      \
   }                                                                  \
@@ -127,8 +135,8 @@ class UnaryUfuncRealHBToFloatHTest : public OperatorTest {
     test_all_real_input_double_output_static_dynamism_support();     \
   }                                                                  \
                                                                      \
-  TEST_F(TestName, AllRealInputHalfOutputBoundDynamismSupport) {     \
-    test_all_real_input_half_output_bound_dynamism_support();        \
+  TEST_F(TestName, AllRealInputBFloat16OutputBoundDynamismSupport) {     \
+    test_all_real_input_bfloat16_output_bound_dynamism_support();        \
   }                                                                  \
                                                                      \
   TEST_F(TestName, AllRealInputFloatOutputBoundDynamismSupport) {    \

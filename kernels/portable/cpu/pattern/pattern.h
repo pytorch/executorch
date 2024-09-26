@@ -83,7 +83,7 @@ Tensor& unary_ufunc_realhb_to_bool(
  * floating point tensor of the same size. The function fn specifies the math
  * operation which is applied to the input tensor element-wise.
  */
-Tensor& unary_ufunc_realhb_to_floath(
+Tensor& unary_ufunc_realhbbf16_to_floathbf16(
     double (*fn)(double),
     KernelRuntimeContext& ctx,
     const Tensor& in,
