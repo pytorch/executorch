@@ -23,7 +23,7 @@ namespace torch::executor::testing {
 class UnaryUfuncRealHBToFloatHTest : public OperatorTest {
  protected:
   // Implement this to call the torch::executor::aten::op_outf function for the
-  // top.
+  // op.
   virtual exec_aten::Tensor& op_out(
       const exec_aten::Tensor& self,
       exec_aten::Tensor& out) = 0;
