@@ -123,6 +123,20 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_library(
+        name = "model_sharding_py",
+        srcs = [
+            "model_sharding.py",
+        ],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        deps = [
+            "//caffe2:torch",
+        ],
+    )
+
     runtime.cxx_library(
         name = "op_tile_crop",
         srcs = ["op_tile_crop.cpp"],
