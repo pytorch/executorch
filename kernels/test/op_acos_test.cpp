@@ -14,9 +14,7 @@
 #include <cmath>
 
 using exec_aten::Tensor;
-using torch::executor::testing::UnaryUfuncRealHBToFloatHTest;
-
-class OpAcosOutTest : public UnaryUfuncRealHBToFloatHTest {
+class OpAcosOutTest : public torch::executor::testing::UnaryUfuncRealHBToFloatHTest {
  protected:
   Tensor& op_out(const Tensor& self, Tensor& out) override {
     return torch::executor::aten::acos_outf(context_, self, out);
