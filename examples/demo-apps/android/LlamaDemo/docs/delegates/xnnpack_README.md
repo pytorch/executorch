@@ -3,6 +3,7 @@
 **[UPDATE - 09/25]** We have added support for running [Llama 3.2 models](#for-llama-32-1b-and-3b-models) on the XNNPACK backend. We currently support inference on their original data type (BFloat16). We have also added instructions to run [Llama Guard 1B models](#for-llama-guard-1b-models) on-device.
 
 This tutorial covers the end to end workflow for building an android demo app using CPU on device via XNNPACK framework.
+
 More specifically, it covers:
 1. Export and quantization of Llama and Llava models against the XNNPACK backend.
 2. Building and linking libraries that are required to inference on-device for Android platform.
@@ -92,6 +93,7 @@ python -m examples.models.llama2.export_llama --checkpoint <pruned llama guard 1
 * You can download original model weights for Llama through Meta official [website](https://llama.meta.com/).
 * For Llama 2 models, Edit params.json file. Replace "vocab_size": -1 with "vocab_size": 32000. This is a short-term workaround
 * Run `examples/models/llama2/install_requirements.sh` to install dependencies.
+* The Llama 3.1 and Llama 2 models (8B and 7B) can run on devices with 12GB+ RAM.
 * Export Llama model and generate .pte file
 
 ```
@@ -105,6 +107,7 @@ You may wonder what the ‘--metadata’ flag is doing. This flag helps export t
 python -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 ```
 * Rename tokenizer for Llama 3.1 with command: `mv tokenizer.model tokenizer.bin`. We are updating the demo app to support tokenizer in original format directly.
+
 
 ### For LLaVA model
 * For the Llava 1.5 model, you can get it from Huggingface [here](https://huggingface.co/llava-hf/llava-1.5-7b-hf).

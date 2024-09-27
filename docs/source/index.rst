@@ -94,6 +94,7 @@ Topics in this section will help you get started with ExecuTorch.
    tutorials/export-to-executorch-tutorial
    running-a-model-cpp-tutorial
    extension-module
+   extension-tensor
    tutorials/devtools-integration-tutorial
    apple-runtime
    demo-apps-ios
@@ -206,6 +207,7 @@ Topics in this section will help you get started with ExecuTorch.
    sdk-profiling
    sdk-debugging
    sdk-inspector
+   memory-planning-inspection
    sdk-delegate-integration
    devtools-tutorial
 
@@ -244,6 +246,13 @@ ExecuTorch tutorials.
    :card_description: A simplified tutorial for executing the model on device.
    :image: _static/img/generic-pytorch-logo.png
    :link: extension-module.html
+   :tags:
+
+.. customcarditem::
+   :header: Managing Tensor Memory in C++ Tutorial
+   :card_description: A tutorial for managing the dynamic memory when working with tensors.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: extension-tensor.html
    :tags:
 
 .. customcarditem::
