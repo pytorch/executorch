@@ -12,7 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 readonly SCRIPT_DIR
 
-readonly EXECUTORCH_ROOT="${SCRIPT_DIR}/../.."
+readonly EXECUTORCH_ROOT="${SCRIPT_DIR}/../../.."
 
 # Allow overriding the number of build jobs. Default to 9.
 export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-9}"
@@ -32,8 +32,9 @@ main() {
     -DEXECUTORCH_BUILD_PTHREADPOOL=OFF \
     -DEXECUTORCH_BUILD_CPUINFO=OFF \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
-    -Bcmake-out .
-  cmake --build cmake-out --target install --config Release
+    -DEXECUTORCH_NNLIB_OPT=OFF \
+    -Bcmake-out
+  cmake --build cmake-out --target install --config Release -j16
 
   local example_dir=backends/cadence
   local build_dir="cmake-out/${example_dir}"
@@ -43,7 +44,7 @@ main() {
     -DCMAKE_BUILD_TYPE=Release \
     -B"${build_dir}" \
     "${example_dir}"
-  cmake --build "${build_dir}" --config Release
+  cmake --build "${build_dir}" --config Release -j16
 
   local runner="${PWD}/${build_dir}/cadence_runner"
   if [[ ! -f "${runner}" ]]; then

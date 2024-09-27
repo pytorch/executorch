@@ -43,7 +43,6 @@
 		03729F132BB2042B00152F2E /* sampler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F112BB2042B00152F2E /* sampler.cpp */; };
 		03729F162BB2043600152F2E /* bpe_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F142BB2043600152F2E /* bpe_tokenizer.cpp */; };
 		03729F172BB2043600152F2E /* tokenizer.h in Headers */ = {isa = PBXBuildFile; fileRef = 03729F152BB2043600152F2E /* tokenizer.h */; };
-		0372C3112C893FE900CD942A /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0372C3102C893FE900CD942A /* CoreGraphics.framework */; };
 		0372C3142C89418E00CD942A /* llava_runner.h in Headers */ = {isa = PBXBuildFile; fileRef = 0372C3122C89418E00CD942A /* llava_runner.h */; };
 		0372C3152C89418E00CD942A /* llava_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 0372C3132C89418E00CD942A /* llava_runner.cpp */; };
 		038D678C2C482C1E00B88CF2 /* llama_tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 038D678A2C482C1D00B88CF2 /* llama_tiktoken.cpp */; };
@@ -184,13 +183,13 @@
 				03312C352BBFC940002106EF /* backend_xnnpack in Frameworks */,
 				03312C372BBFC940002106EF /* backend_xnnpack_debug in Frameworks */,
 				03312C1B2BBFC940002106EF /* backend_coreml_debug in Frameworks */,
-				03729EDB2BB1F8DE00152F2E /* LLaMARunner.framework in Frameworks */,
 				03312C2B2BBFC940002106EF /* kernels_optimized_debug in Frameworks */,
 				03312C2F2BBFC940002106EF /* kernels_portable_debug in Frameworks */,
 				03312C292BBFC940002106EF /* kernels_optimized in Frameworks */,
 				03312C192BBFC940002106EF /* backend_coreml in Frameworks */,
 				03312C332BBFC940002106EF /* kernels_quantized_debug in Frameworks */,
 				03312C1F2BBFC940002106EF /* kernels_custom_debug in Frameworks */,
+				03729EDB2BB1F8DE00152F2E /* LLaMARunner.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -198,7 +197,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0372C3112C893FE900CD942A /* CoreGraphics.framework in Frameworks */,
 				03312C3E2BBFD076002106EF /* executorch_debug in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1288,8 +1286,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
-				branch = latest;
-				kind = branch;
+				kind = revision;
+				revision = 308512d938b2b6bb97d18f83e950d2765b053581;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
