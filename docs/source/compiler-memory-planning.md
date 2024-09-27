@@ -34,7 +34,7 @@ program = edge_program.to_executorch(
                 memory_planning_pass=MemoryPlanningPass(
                     memory_planning_algo="greedy",
                     alloc_graph_input=False, # Inputs will not be memory planned, the data_ptr for input tensors after model load will be nullptr
-                    alloc_graph_output=True, # Outputs will be memory planned, the data_ptr for input tensors after model load will be in the `planned_memory`.
+                    alloc_graph_output=True, # Outputs will be memory planned, the data_ptr for output tensors after model load will be in the `planned_memory`.
                 )
             )
         )
