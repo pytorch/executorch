@@ -507,7 +507,7 @@ When there isn’t an allocated memory whose lifetime doesn’t overlap with the
             <span class="n">exir</span><span class="o">.</span><span class="n">ExecutorchBackendConfig</span><span class="p">(</span>
                 <span class="n">memory_planning_pass</span><span class="o">=</span><span class="n">MemoryPlanningPass</span><span class="p">(</span>
                     <span class="n">alloc_graph_input</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="c1"># Inputs will not be memory planned, the data_ptr for input tensors after model load will be nullptr</span>
-                    <span class="n">alloc_graph_output</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="c1"># Outputs will be memory planned, the data_ptr for input tensors after model load will be in the `planned_memory`.</span>
+                    <span class="n">alloc_graph_output</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="c1"># Outputs will be memory planned, the data_ptr for output tensors after model load will be in the `planned_memory`.</span>
                 <span class="p">)</span>
             <span class="p">)</span>
         <span class="p">)</span>
