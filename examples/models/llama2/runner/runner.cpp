@@ -146,12 +146,21 @@ Error Runner::load() {
   return Error::Ok;
 }
 
+// Don't print with the same priority during warmup
+#define RUNNER_ET_LOG(warmup, format, ...) \
+  if (warmup) {                            \
+    ET_LOG(Debug, format, __VA_ARGS__);    \
+  } else {                                 \
+    ET_LOG(Info, format, __VA_ARGS__);     \
+  }
+
 Error Runner::generate(
     const std::string& prompt,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const llm::Stats&)> stats_callback,
-    bool echo) {
+    bool echo,
+    bool warmup) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
@@ -161,16 +170,22 @@ Error Runner::generate(
     stats_.model_load_end_ms = llm::time_in_ms();
   }
 
-  ET_LOG(
-      Info,
+  if (warmup) {
+    ET_LOG(Info, "Doing a warmup run...");
+  }
+
+  RUNNER_ET_LOG(
+      warmup,
       "RSS after loading model: %f MiB (0 if unsupported)",
       llm::get_rss_bytes() / 1024.0 / 1024.0);
 
   // Wrap the token_callback with print function
   std::function<void(const std::string&)> wrapped_callback =
-      [token_callback](const std::string& piece) {
-        llm::safe_printf(piece.c_str());
-        fflush(stdout);
+      [token_callback, warmup](const std::string& piece) {
+        if (!warmup) {
+          llm::safe_printf(piece.c_str());
+          fflush(stdout);
+        }
         if (token_callback) {
           token_callback(piece);
         }
@@ -228,8 +243,8 @@ Error Runner::generate(
 
   // print the first token from prefill. No prev_token so use cur_token for it.
   wrapped_callback(ET_UNWRAP(tokenizer_->decode(cur_token, cur_token)));
-  ET_LOG(
-      Info,
+  RUNNER_ET_LOG(
+      warmup,
       "RSS after prompt prefill: %f MiB (0 if unsupported)",
       llm::get_rss_bytes() / 1024.0 / 1024.0);
 
@@ -240,23 +255,41 @@ Error Runner::generate(
 
   stats_.inference_end_ms = llm::time_in_ms();
   printf("\n");
-  ET_LOG(
-      Info,
+  RUNNER_ET_LOG(
+      warmup,
       "RSS after finishing text generation: %f MiB (0 if unsupported)",
       llm::get_rss_bytes() / 1024.0 / 1024.0);
 
   if (num_prompt_tokens + num_generated_tokens == seq_len) {
-    ET_LOG(Info, "Sequence length (%i tokens) reached!", seq_len);
+    RUNNER_ET_LOG(warmup, "Sequence length (%i tokens) reached!", seq_len);
   }
 
   stats_.num_prompt_tokens = num_prompt_tokens;
   stats_.num_generated_tokens = num_generated_tokens;
-  ::executorch::llm::print_report(stats_);
+
+  if (warmup) {
+    ET_LOG(Info, "Warmup run finished!");
+  } else {
+    // Do not print report during warmup
+    ::executorch::llm::print_report(stats_);
+  }
   if (stats_callback) {
     stats_callback(stats_);
   }
 
   return Error::Ok;
+}
+
+Error Runner::warmup(const std::string& prompt, int32_t seq_len) {
+  Error err = generate(
+      prompt,
+      seq_len,
+      /*token_callback=*/nullptr,
+      /*stats_callbak=*/nullptr,
+      /*echo=*/false,
+      /*warmup=*/true);
+  stats_.reset();
+  return err;
 }
 
 void Runner::stop() {
