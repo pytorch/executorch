@@ -58,9 +58,8 @@ def build_executorch_binary(
         partitioner=[neuro_partitioner],
     )
 
-    exec_prog = edge_prog.to_executorch(
-        config=exir.ExecutorchBackendConfig()
-    )
+    exec_prog = edge_prog.to_executorch(config=exir.ExecutorchBackendConfig())
+
     with open(f"{file_name}.pte", "wb") as file:
         file.write(exec_prog.buffer)
 
