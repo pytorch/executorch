@@ -116,7 +116,6 @@ class QuantizedKVCache(nn.Module):
             narrowed_k.copy_(quantized_k_val)
             narrowed_k_scales.copy_(k_scales)
             narrowed_k_zp.copy_(k_zero_points)
-            # pyre-ignore: Incompatible parameter type [6]
             narrowed_v = self.v_cache.narrow(dim_to_slice, start_pos, seq_length)
             narrowed_v_scales = self.v_cache_scales.narrow(
                 dim_to_slice, start_pos, seq_length
