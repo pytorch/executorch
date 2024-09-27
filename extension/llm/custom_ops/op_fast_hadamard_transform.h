@@ -18,8 +18,8 @@ namespace torch::executor::native {
 //
 // mat.sizes().back() is currently required to be either a power of
 // two, or 28 * a power of two.
-Tensor& fast_hadamard_transform_out(
+const Tensor& fast_hadamard_transform_out(
     RuntimeContext& ctx,
     const Tensor& mat,
-    Tensor& out);
+    const Tensor& out);
 } // namespace torch::executor::native

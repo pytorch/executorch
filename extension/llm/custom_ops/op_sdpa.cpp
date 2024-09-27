@@ -216,7 +216,7 @@ TODO: Just handle conversion of bool mask to float
 */
 template <typename scalar_t, int64_t q_split_size, int64_t kv_split_size>
 void cpu_flash_attention(
-    Tensor& output,
+    const Tensor& output,
     const Tensor& query,
     const Tensor& key,
     const Tensor& value,
@@ -838,13 +838,13 @@ Tensor& flash_attention_kernel_out(
   @param[in] start_pos: sequence position
   @param[in] seq_len: Seq length. e.g. seq_len dim of q_projected.
 */
-Tensor& sdpa_with_kv_cache_out(
+const Tensor& sdpa_with_kv_cache_out(
     KernelRuntimeContext& ctx,
     const Tensor& q_projected,
     const Tensor& k_projected,
     const Tensor& v_projected,
-    Tensor& key_cache,
-    Tensor& value_cache,
+    const Tensor& key_cache,
+    const Tensor& value_cache,
     const int64_t start_pos,
     const int64_t seq_len,
     const optional<Tensor>& attn_mask,
@@ -852,7 +852,7 @@ Tensor& sdpa_with_kv_cache_out(
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
     const optional<double> scale,
-    Tensor& output) {
+    const Tensor& output) {
   (void)ctx;
   ET_KERNEL_CHECK(
       ctx,

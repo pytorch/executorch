@@ -17,8 +17,10 @@ namespace executor {
 
 namespace native {
 
-Tensor&
-tile_crop_out_no_context(const Tensor& input, int64_t tile_size, Tensor& out) {
+const Tensor& tile_crop_out_no_context(
+    const Tensor& input,
+    int64_t tile_size,
+    const Tensor& out) {
   exec_aten::RuntimeContext context{};
   return tile_crop_out_impl(context, input, tile_size, out);
 }

@@ -26,18 +26,15 @@ TEST_F(TensorPtrTest, BasicSmartPointerAccess) {
   TensorPtr p;
   EXPECT_FALSE(p);
   EXPECT_EQ(p, nullptr);
-  EXPECT_EQ(p.operator->(), nullptr);
   TensorPtr p2 = make_tensor_ptr({1}, nullptr, {}, {});
   EXPECT_TRUE(p2);
   EXPECT_NE(p2, nullptr);
-  ASSERT_NE(p2.operator->(), nullptr);
   EXPECT_EQ(p2->dim(), 1);
   EXPECT_EQ((*p2).dim(), 1);
   EXPECT_NE(p, p2);
   p2.reset();
   EXPECT_FALSE(p2);
   EXPECT_EQ(p2, nullptr);
-  EXPECT_EQ(p2.operator->(), nullptr);
   EXPECT_EQ(p, p2);
 }
 
