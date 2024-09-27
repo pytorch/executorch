@@ -6,23 +6,23 @@ In the [Running an ExecuTorch Model in C++ Tutorial](running-a-model-cpp-tutoria
 
 ## Example
 
-Let's see how we can run the `SimpleConv` model generated from the [Exporting to ExecuTorch tutorial](./tutorials/export-to-executorch-tutorial) using the `Module` APIs:
+Let's see how we can run the `SimpleConv` model generated from the [Exporting to ExecuTorch tutorial](./tutorials/export-to-executorch-tutorial) using the `Module` and [`TensorPtr`](extension-tensor.md) APIs:
 
 ```cpp
 #include <executorch/extension/module/module.h>
+#include <executorch/extension/tensor/tensor.h>
 
-using namespace ::torch::executor;
+using namespace ::executorch::extension;
 
 // Create a Module.
 Module module("/path/to/model.pte");
 
 // Wrap the input data with a Tensor.
 float input[1 * 3 * 256 * 256];
-Tensor::SizesType sizes[] = {1, 3, 256, 256};
-TensorImpl tensor(ScalarType::Float, std::size(sizes), sizes, input);
+auto tensor = from_blob(input, {1, 3, 256, 256});
 
 // Perform an inference.
-const auto result = module.forward(Tensor(&tensor));
+const auto result = module.forward(tensor);
 
 // Check for success or failure.
 if (result.ok()) {
@@ -61,6 +61,14 @@ const auto error = module.load_method("forward");
 assert(module.is_method_loaded("forward"));
 ```
 Note: the `Program` is loaded automatically before any `Method` is loaded. Subsequent attemps to load them have no effect if one of the previous attemps was successful.
+
+You can also force-load the "forward" method with a convenience syntax:
+
+```cpp
+const auto error = module.load_forward();
+
+assert(module.is_method_loaded("forward"));
+```
 
 ### Querying for Metadata
 
@@ -131,10 +139,11 @@ Use [ExecuTorch Dump](sdk-etdump.md) to trace model execution. Create an instanc
 ```cpp
 #include <fstream>
 #include <memory>
+
 #include <executorch/extension/module/module.h>
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 
-using namespace ::torch::executor;
+using namespace ::executorch::extension;
 
 Module module("/path/to/model.pte", Module::LoadMode::MmapUseMlock, std::make_unique<ETDumpGen>());
 
