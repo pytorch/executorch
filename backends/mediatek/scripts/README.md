@@ -24,7 +24,7 @@ Before you begin, ensure you have the following prerequisites installed and conf
 
 ### 3. MediaTek ExercuTorch Libraries
 
-Download the following libraries from MediaTek's NeuroPilot portal (link to be added):
+Download NeuroPilot Express SDK from MediaTek's NeuroPilot portal [NeuroPilot Express SDK](https://neuropilot.mediatek.com/resources/public/npexpress/en/docs/npexpress):
 
 - `libneuronusdk_adapter.mtk.so`: This universal SDK contains the implementation required for executing target-dependent code on the MediaTek chip.
 - `libneuron_buffer_allocator.so`: This utility library is designed for allocating DMA buffers necessary for model inference.
