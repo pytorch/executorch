@@ -29,36 +29,43 @@ class TensorPtr {
   TensorPtr(TensorPtr&& rhs) noexcept = default;
   TensorPtr& operator=(TensorPtr&& rhs) noexcept = default;
 
-  explicit TensorPtr(TensorImplPtr p)
-      : tensor_(p.get()), tensor_impl_(std::move(p)) {}
+  explicit TensorPtr(TensorImplPtr p) : tensor_impl_(std::move(p)) {}
 
   operator bool() const {
     return static_cast<bool>(tensor_impl_);
   }
 
-  exec_aten::Tensor* operator->() const {
-    return tensor_impl_ ? &tensor_ : nullptr;
+  // We do not provide get() because we do not have an actual
+  // underlying Tensor; rather we create one (very cheap, as Tensor is
+  // just a TensorImpl*!) as needed.
+
+  struct ArrowProxy {
+    explicit ArrowProxy(exec_aten::TensorImpl* p) : t_(p) {}
+    exec_aten::Tensor* operator->() {
+      return &t_;
+    }
+    exec_aten::Tensor t_;
+  };
+
+  ArrowProxy operator->() const {
+    ET_DCHECK(*this != nullptr);
+    return ArrowProxy(tensor_impl_.get());
   }
 
-  exec_aten::Tensor& operator*() const {
+  exec_aten::Tensor operator*() const {
     ET_DCHECK(*this != nullptr);
-    return *operator->();
+    return exec_aten::Tensor(tensor_impl_.get());
   }
 
   void reset() {
-    tensor_ = exec_aten::Tensor(nullptr);
     tensor_impl_.reset();
   }
 
   void swap(TensorPtr& other) noexcept {
-    std::swap(tensor_, other.tensor_);
     std::swap(tensor_impl_, other.tensor_impl_);
   }
 
   bool operator==(const TensorPtr& rhs) const {
-    ET_DCHECK(
-        (tensor_.unsafeGetTensorImpl() == rhs.tensor_.unsafeGetTensorImpl()) ==
-        (tensor_impl_ == rhs.tensor_impl_));
     return tensor_impl_ == rhs.tensor_impl_;
   }
 
@@ -76,7 +83,6 @@ class TensorPtr {
 
  private:
   friend TensorPtr make_tensor_ptr(const TensorPtr& tensor);
-  mutable exec_aten::Tensor tensor_{nullptr};
   TensorImplPtr tensor_impl_;
 };
 #else

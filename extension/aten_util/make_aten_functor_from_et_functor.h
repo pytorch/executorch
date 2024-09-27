@@ -112,7 +112,7 @@ struct type_convert<
             {value_.sizes().begin(), value_.sizes().end()},
             ::torch::executor::ScalarType(value_.scalar_type()))) {}
 
-  ETensor call() {
+  decltype(auto) call() {
     return *converted_;
   }
 
@@ -230,8 +230,11 @@ struct wrapper_impl;
 template <class R, class... Args, R (*f)(Args...), int N>
 struct wrapper_impl<R (*)(Args...), f, int, N> {
   static_assert(
-      !(std::is_same<R, at::Tensor&>::value && N == -1),
-      "Can't wrap a kernel with 'Tensor &' return type without specifying an index to the out tensor");
+      !((std::is_same_v<R, at::Tensor&> ||
+         std::is_same_v<R, const at::Tensor&>) &&
+        N == -1),
+      "Can't wrap a kernel with 'Tensor &' or 'const Tensor &' return type "
+      "without specifying an index to the out tensor");
   using ReturnType = typename type_map<R>::type;
   using TupleConvertsType =
       std::tuple<type_convert<typename type_map<Args>::type, Args>...>;
@@ -253,18 +256,22 @@ struct wrapper_impl<R (*)(Args...), f, int, N> {
     // ExecuTorch equivalent, call `f` then return the result converted back to
     // ATen.
     TupleArgsType args_tuple = std::forward_as_tuple(args...);
-    TupleConvertsType converts = std::forward_as_tuple(
-        type_convert<typename type_map<Args>::type, Args>(args)...);
-    R result =
-        call_functor_with_args(converts, std::make_index_sequence<num_args>());
+    // f might return a Tensor& to one of the Tensors passed as an
+    // argument, which may be a temporary created during type
+    // conversion. To make sure the temporary lives long enough, it's
+    // necessary to convert arguments, do the call, and convert back
+    // all in one expresssion.
     typename std::remove_reference<ReturnType>::type converted_result =
-        type_convert<R, ReturnType>(result).call();
+        type_convert<R, ReturnType>(
+            f(type_convert<typename type_map<Args>::type, Args>(args)
+                  .call()...))
+            .call();
     if constexpr (N == -1) {
       return converted_result;
     } else {
       static_assert(
           std::is_same_v<
-              typename std::remove_reference<ReturnType>::type,
+              std::remove_const_t<std::remove_reference_t<ReturnType>>,
               at::Tensor>,
           "Only support at::Tensor-like return");
       ReturnType out = std::get<N>(args_tuple);
