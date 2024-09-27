@@ -16,10 +16,10 @@ namespace torch {
 namespace executor {
 namespace native {
 
-Tensor& fast_hadamard_transform_out(
+const Tensor& fast_hadamard_transform_out(
     RuntimeContext& ctx,
     const Tensor& mat,
-    Tensor& out) {
+    const Tensor& out) {
   ET_KERNEL_CHECK_MSG(
       ctx,
       resize_tensor(out, mat.sizes()) == Error::Ok,

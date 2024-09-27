@@ -18,7 +18,7 @@ namespace {
 bool check_tile_crop_out_args(
     const Tensor& in,
     int64_t tile_size,
-    Tensor& out) {
+    const Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(in, 3));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(out, 4));
@@ -42,7 +42,7 @@ void get_tile_crop_out_target_size(
 }
 
 template <typename CTYPE>
-void tile_crop_impl(const Tensor& in, int64_t tile_size, Tensor& out) {
+void tile_crop_impl(const Tensor& in, int64_t tile_size, const Tensor& out) {
   const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
   CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
@@ -73,11 +73,11 @@ void tile_crop_impl(const Tensor& in, int64_t tile_size, Tensor& out) {
 
 } // namespace
 
-Tensor& tile_crop_out_impl(
+const Tensor& tile_crop_out_impl(
     KernelRuntimeContext& ctx,
     const Tensor& input, // NOLINT
     const int64_t tile_size, // NOLINT
-    Tensor& out) {
+    const Tensor& out) {
   ET_KERNEL_CHECK(
       ctx,
       check_tile_crop_out_args(input, tile_size, out),

@@ -15,11 +15,11 @@ namespace executor {
 
 namespace native {
 
-Tensor& tile_crop_out_impl(
+const Tensor& tile_crop_out_impl(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     const int64_t tile_size,
-    Tensor& out);
+    const Tensor& out);
 
 } // namespace native
 } // namespace executor

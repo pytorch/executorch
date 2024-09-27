@@ -17,12 +17,12 @@ namespace executor {
 
 namespace native {
 namespace {
-Tensor& sdpa_with_kv_cache_out_no_context(
+const Tensor& sdpa_with_kv_cache_out_no_context(
     const Tensor& q_projected,
     const Tensor& k_projected,
     const Tensor& v_projected,
-    Tensor& key_cache,
-    Tensor& value_cache,
+    const Tensor& key_cache,
+    const Tensor& value_cache,
     const int64_t start_pos,
     const int64_t seq_len,
     // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
@@ -32,7 +32,7 @@ Tensor& sdpa_with_kv_cache_out_no_context(
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
     const optional<double> scale,
-    Tensor& output) {
+    const Tensor& output) {
   executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::native::sdpa_with_kv_cache_out(
       context,
