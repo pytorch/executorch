@@ -213,44 +213,54 @@ echo "Creating tokenizer.bin"
 $PYTHON_EXECUTABLE -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 
 
+run_and_verify() {
+    skip_upload=${1:-0}
+    # Check build tool.
+    echo "Running ${EXPORTED_MODEL_NAME} in portable mode"
+    if [[ "${BUILD_TOOL}" == "buck2" ]]; then
+      # Run model.
+      # shellcheck source=/dev/null
+      $BUCK run examples/models/llama2:main -- ${RUNTIME_ARGS} > result.txt
+    elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
+      cmake_install_executorch_libraries
+      cmake_build_llama_runner
+      # Run llama runner
+      NOW=$(date +"%H:%M:%S")
+      echo "Starting to run llama runner at ${NOW}"
+      # shellcheck source=/dev/null
+      cmake-out/examples/models/llama2/llama_main ${RUNTIME_ARGS} > result.txt
+      NOW=$(date +"%H:%M:%S")
+      echo "Finished at ${NOW}"
+    else
+      echo "Invalid build tool ${BUILD_TOOL}. Only buck2 is supported atm"
+      exit 1
+    fi
+    RESULT=$(cat result.txt)
+    # Check results.
+    EXPECTED_PREFIX="Once upon a time,"
+    # Expected result - may take too long to generate:
+    # "Once upon a time, there was a little girl named Lily. She loved to play outside" ...
+    if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
+      echo "Expected result prefix: ${EXPECTED_PREFIX}"
+      echo "Actual result: ${RESULT}"
+      echo "Success"
+      if [[ ${skip_upload} -ne 1 ]]; then
+        prepare_artifacts_upload
+      fi
+    else
+      echo "Expected result prefix: ${EXPECTED_PREFIX}"
+      echo "Actual result: ${RESULT}"
+      echo "Failure; results not the same"
+
+      exit 1
+    fi
+}
+
 RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --tokenizer_path=tokenizer.bin --prompt=Once --temperature=0 --seq_len=10"
-# Check build tool.
-echo "Running ${EXPORTED_MODEL_NAME} in portable mode"
-if [[ "${BUILD_TOOL}" == "buck2" ]]; then
-  # Run model.
-  # shellcheck source=/dev/null
-  $BUCK run examples/models/llama2:main -- ${RUNTIME_ARGS} > result.txt
-elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
-  cmake_install_executorch_libraries
-  cmake_build_llama_runner
-  # Run llama runner
-  NOW=$(date +"%H:%M:%S")
-  echo "Starting to run llama runner at ${NOW}"
-  # shellcheck source=/dev/null
-  cmake-out/examples/models/llama2/llama_main ${RUNTIME_ARGS} > result.txt
-  NOW=$(date +"%H:%M:%S")
-  echo "Finished at ${NOW}"
-else
-  echo "Invalid build tool ${BUILD_TOOL}. Only buck2 is supported atm"
-  exit 1
-fi
-RESULT=$(cat result.txt)
-# Check results.
-EXPECTED_PREFIX="Once upon a time,"
-# Expected result - may take too long to generate:
-# "Once upon a time, there was a little girl named Lily. She loved to play outside" ...
-if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
-  echo "Expected result prefix: ${EXPECTED_PREFIX}"
-  echo "Actual result: ${RESULT}"
-  echo "Success"
+run_and_verify
 
-  prepare_artifacts_upload
-  cleanup_files
-else
-  echo "Expected result prefix: ${EXPECTED_PREFIX}"
-  echo "Actual result: ${RESULT}"
-  echo "Failure; results not the same"
+# rerun with warmup
+RUNTIME_ARGS="${RUNTIME_ARGS} --warmup=1"
+run_and_verify 1 # skip upload
 
-  cleanup_files
-  exit 1
-fi
+cleanup_files
