@@ -61,7 +61,10 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_serialize impor
     convert_to_flatbuffer,
     convert_to_option,
 )
-from executorch.backends.qualcomm.utils.constants import QCOM_QNN_COMPILE_SPEC
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_QNN_COMPILE_SPEC,
+    QCOM_QUANTIZED_IO,
+)
 
 from executorch.exir import ExirExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -824,3 +827,12 @@ def generate_qnn_executorch_compiler_spec(
             QCOM_QNN_COMPILE_SPEC, convert_to_flatbuffer(qnn_executorch_options)
         )
     ]
+
+
+def tag_quant_io(gm: torch.fx.GraphModule, get_quant_io_dtype_fn: Callable):
+    """
+    Tag io nodes which get/output quantized tensor. No need to insert q/dq in qnn_preprocess
+    """
+    for node in gm.graph.nodes:
+        if dtype := get_quant_io_dtype_fn(node):
+            node.meta[QCOM_QUANTIZED_IO] = dtype
