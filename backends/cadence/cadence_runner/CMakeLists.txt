@@ -44,7 +44,9 @@ find_package(
   gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party
 )
 
-add_executable(cadence_runner cadence_runner.cpp)
+add_executable(cadence_runner
+    ${EXECUTORCH_ROOT}/examples/devtools/example_runner/example_runner.cpp
+)
 target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/operators)
