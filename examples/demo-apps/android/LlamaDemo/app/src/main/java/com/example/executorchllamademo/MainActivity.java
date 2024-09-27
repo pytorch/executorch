@@ -126,6 +126,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
             modelPath,
             tokenizerPath,
             temperature);
+    ETLogging.getInstance().log("ModelType is: " + mCurrentSettingsFields.getModelType());
     int loadResult = mModule.load();
     long loadDuration = System.currentTimeMillis() - runStartTime;
     String modelLoadError = "";

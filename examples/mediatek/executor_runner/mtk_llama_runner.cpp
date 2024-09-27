@@ -104,6 +104,8 @@ Error MTKLlamaRunner::load() {
   ET_LOG(Info, "Loading prompt model.");
   runtime_->Initialize(modeloptions_, modelpaths_);
   ET_LOG(Info, "Complete loading prompt model.");
+
+  return Error::Ok;
 }
 
 bool MTKLlamaRunner::is_loaded() const {
@@ -130,8 +132,11 @@ Error MTKLlamaRunner::generate(
         }
       };
   
-  ET_LOG(Info, "Starting inference.");    
+  ET_LOG(Info, "Starting inference from MTKLlamaRunner");    
   inference(*runtime_.get(), tokenizer_, prompt, wrapped_callback);
+  ET_LOG(Info, "Completed inference from MTKLlamaRunner"); 
+
+  return Error::Ok;
 }
 
 void MTKLlamaRunner::stop() {
