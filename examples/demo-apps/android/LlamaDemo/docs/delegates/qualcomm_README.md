@@ -72,7 +72,7 @@ cmake --build cmake-out -j16 --target install --config Release
 
 
 ### Setup Llama Runner
-Next we need to build and compile the Llama runner. This is similar to the requirements for running Llama with XNNPack.
+Next we need to build and compile the Llama runner. This is similar to the requirements for running Llama with XNNPACK.
 ```
 sh examples/models/llama2/install_requirements.sh
 
@@ -130,9 +130,9 @@ You may also wonder what the "--metadata" flag is doing. This flag helps export 
 
 Convert tokenizer for Llama 2
 ```
-python -m extension.llm.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
+python -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 ```
-Convert tokenizer for Llama 3 - Rename tokenizer.model to tokenizer.bin.
+Rename tokenizer for Llama 3 with command: `mv tokenizer.model tokenizer.bin`. We are updating the demo app to support tokenizer in original format directly.
 
 
 ### Export with Spinquant (Llama 3 8B only)

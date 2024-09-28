@@ -50,21 +50,26 @@ class UnaryUfuncRealHBToFloatHTest : public OperatorTest {
 
     exec_aten::Tensor out = tf_out.zeros(out_shape, dynamism);
 
-    std::vector<typename decltype(tf_in)::ctype> test_vector = {
-        0, 1, 3, 5, 10, 100};
-    std::vector<typename decltype(tf_out)::ctype> expected_vector;
-    std::transform(
-        test_vector.begin(),
-        test_vector.end(),
-        std::back_inserter(expected_vector),
-        [this](auto x) { return this->op_reference(x); });
+    using IN_CTYPE = typename decltype(tf_in)::ctype;
+    using OUT_CTYPE = typename decltype(tf_out)::ctype;
+    std::vector<IN_CTYPE> test_vector = {0, 1, 3, 5, 10, 100};
+    std::vector<OUT_CTYPE> expected_vector;
+    for (int ii = 0; ii < test_vector.size(); ++ii) {
+      auto ref_result = this->op_reference(test_vector[ii]);
+      // Drop test cases with high magnitude results due to precision
+      // issues.
+      if ((std::abs(ref_result) > 1e30 || std::abs(ref_result) < -1e30)) {
+        test_vector[ii] = 2;
+        ref_result = this->op_reference(2);
+      }
+      expected_vector.push_back(ref_result);
+    }
 
     // clang-format off
     op_out(tf_in.make({1, 6}, test_vector), out);
 
-    EXPECT_TENSOR_CLOSE(
-        out,
-        tf_out.make({1, 6}, expected_vector));
+    auto expected = tf_out.make({1, 6}, expected_vector);
+    EXPECT_TENSOR_CLOSE(out, expected);
     // clang-format on
   }
 
