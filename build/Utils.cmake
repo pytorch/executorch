@@ -207,6 +207,11 @@ function(extract_sources sources_file)
           set(fake_arch_arg "--fake-arch=aarch64")
         endif()
       endif()
+      if ("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "arm64")
+        set(fake_arch_arg "--fake-arch=aarch64")
+      elseif("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "x86_64")
+        set(fake_arch_arg "--fake-arch=x8664")
+      endif()
     endif()
 
     execute_process(
