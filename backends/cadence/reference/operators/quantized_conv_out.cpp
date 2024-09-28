@@ -9,8 +9,6 @@
 #include <executorch/backends/cadence/reference/kernels/kernels.h>
 
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <algorithm>
-#include <cmath>
 
 namespace impl {
 namespace reference {
