@@ -27,6 +27,8 @@ runtime.python_library(
         "//executorch/backends/apple/coreml:backend",
         "//executorch/backends/apple/coreml:partitioner",
         "//executorch/backends/apple/mps:partitioner",
+        "//executorch/backends/qualcomm/partition:partition",
+        "//executorch/backends/qualcomm/quantizer:quantizer",
         "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
         "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",

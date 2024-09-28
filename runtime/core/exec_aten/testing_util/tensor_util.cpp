@@ -76,13 +76,19 @@ bool data_is_close(
   return true;
 }
 
+double default_atol_for_type(ScalarType t) {
+  if (t == ScalarType::Half) {
+    return internal::kDefaultHalfAtol;
+  }
+  return internal::kDefaultAtol;
+}
 } // namespace
 
 bool tensors_are_close(
     const Tensor& a,
     const Tensor& b,
     double rtol,
-    double atol) {
+    std::optional<double> opt_atol) {
   if (a.scalar_type() != b.scalar_type() || a.sizes() != b.sizes()) {
     return false;
   }
@@ -99,6 +105,8 @@ bool tensors_are_close(
   // b[i_1, i_2, ... i_n] = b.const_data_ptr()[m])
   // So we can just compare the two underlying data sequentially to figure out
   // if the two tensors are same.
+
+  double atol = opt_atol.value_or(default_atol_for_type(a.scalar_type()));
 
   if (a.nbytes() == 0) {
     // Note that this case is important. It's valid for a zero-size tensor to
