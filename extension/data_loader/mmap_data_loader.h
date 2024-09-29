@@ -12,6 +12,12 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/types.h>
+#endif
+
 namespace executorch {
 namespace extension {
 
@@ -76,12 +82,22 @@ class MmapDataLoader final : public executorch::runtime::DataLoader {
       : file_name_(rhs.file_name_),
         file_size_(rhs.file_size_),
         page_size_(rhs.page_size_),
+#ifdef _WIN32
+        file_handle_(rhs.file_handle_),
+        mapping_handle_(rhs.mapping_handle_),
+#else
         fd_(rhs.fd_),
+#endif
         mlock_config_(rhs.mlock_config_) {
+#ifdef _WIN32
+    const_cast<HANDLE&>(rhs.file_handle_) = INVALID_HANDLE_VALUE;
+    const_cast<HANDLE&>(rhs.mapping_handle_) = nullptr;
+#else
+    const_cast<int&>(rhs.fd_) = -1;
+#endif
     const_cast<const char*&>(rhs.file_name_) = nullptr;
     const_cast<size_t&>(rhs.file_size_) = 0;
     const_cast<size_t&>(rhs.page_size_) = 0;
-    const_cast<int&>(rhs.fd_) = -1;
     const_cast<MlockConfig&>(rhs.mlock_config_) = MlockConfig::NoMlock;
   }
 
@@ -97,7 +113,12 @@ class MmapDataLoader final : public executorch::runtime::DataLoader {
 
  private:
   MmapDataLoader(
+#ifdef _WIN32
+      HANDLE file_handle,
+      HANDLE mapping_handle,
+#else
       int fd,
+#endif
       size_t file_size,
       const char* file_name,
       size_t page_size,
@@ -105,7 +126,12 @@ class MmapDataLoader final : public executorch::runtime::DataLoader {
       : file_name_(file_name),
         file_size_(file_size),
         page_size_(page_size),
+#ifdef _WIN32
+        file_handle_(file_handle),
+        mapping_handle_(mapping_handle),
+#else
         fd_(fd),
+#endif
         mlock_config_(mlock_config) {}
 
   // Not safely copyable.
@@ -113,10 +139,15 @@ class MmapDataLoader final : public executorch::runtime::DataLoader {
   MmapDataLoader& operator=(const MmapDataLoader&) = delete;
   MmapDataLoader& operator=(MmapDataLoader&&) = delete;
 
-  const char* const file_name_; // String data is owned by the instance.
+  const char* file_name_; // String data is owned by the instance.
   const size_t file_size_;
   const size_t page_size_;
+#ifdef _WIN32
+  const HANDLE file_handle_;
+  const HANDLE mapping_handle_;
+#else
   const int fd_; // Owned by the instance.
+#endif
   const MlockConfig mlock_config_;
 };
 

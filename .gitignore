@@ -1,13 +1,13 @@
 .hypothesis
 buck-out/
 cmake-out/
-cmake-android-out/
-cmake-out-android/
-cmake-ios-out/
+cmake-*-out/
+cmake-out-*/
 ethos-u-scratch/
 executorch.egg-info
 pip-out/
 __pycache__/
+.python-version
 
 # Any exported models and profiling outputs
 *.pte

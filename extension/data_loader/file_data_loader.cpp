@@ -14,10 +14,14 @@
 #include <cstring>
 #include <limits>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#endif
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
@@ -69,9 +73,15 @@ FileDataLoader::~FileDataLoader() {
   // file_name_ can be nullptr if this instance was moved from, but freeing a
   // null pointer is safe.
   std::free(const_cast<char*>(file_name_));
+#ifdef _WIN32
+  if (fd_ != INVALID_HANDLE_VALUE) {
+    CloseHandle(fd_);
+  }
+#else
   // fd_ can be -1 if this instance was moved from, but closing a negative fd is
   // safe (though it will return an error).
   ::close(fd_);
+#endif
 }
 
 Result<FileDataLoader> FileDataLoader::from(
@@ -83,6 +93,34 @@ Result<FileDataLoader> FileDataLoader::from(
       "Alignment %zu is not a power of 2",
       alignment);
 
+#ifdef _WIN32
+  HANDLE fd = CreateFile(
+      file_name,
+      GENERIC_READ,
+      FILE_SHARE_READ,
+      NULL,
+      OPEN_EXISTING,
+      FILE_ATTRIBUTE_NORMAL,
+      NULL);
+  if (fd == INVALID_HANDLE_VALUE) {
+    ET_LOG(
+        Error, "Failed to open %s: %lu", file_name, GetLastError());
+    return Error::AccessFailed;
+  }
+
+  LARGE_INTEGER file_size_li;
+  if (!GetFileSizeEx(fd, &file_size_li)) {
+    ET_LOG(
+        Error,
+        "Could not get length of %s: %lu",
+        file_name,
+        GetLastError());
+    CloseHandle(fd);
+    return Error::AccessFailed;
+  }
+  size_t file_size = static_cast<size_t>(file_size_li.QuadPart);
+
+#else
   // Use open() instead of fopen() to avoid the layer of buffering that
   // fopen() does. We will be reading large portions of the file in one shot,
   // so buffering does not help.
@@ -107,12 +145,17 @@ Result<FileDataLoader> FileDataLoader::from(
     return Error::AccessFailed;
   }
   size_t file_size = st.st_size;
+#endif
 
   // Copy the filename so we can print better debug messages if reads fail.
   const char* file_name_copy = ::strdup(file_name);
   if (file_name_copy == nullptr) {
     ET_LOG(Error, "strdup(%s) failed", file_name);
+#ifdef _WIN32
+    CloseHandle(fd);
+#else
     ::close(fd);
+#endif
     return Error::MemoryAllocationFailed;
   }
 
@@ -139,7 +182,7 @@ Result<FreeableBuffer> FileDataLoader::load(
     ET_UNUSED const DataLoader::SegmentInfo& segment_info) const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
-      fd_ >= 0,
+      IS_VALID_FD(fd_),
       InvalidState,
       "Uninitialized");
   ET_CHECK_OR_RETURN_ERROR(
@@ -213,7 +256,7 @@ Result<FreeableBuffer> FileDataLoader::load(
 Result<size_t> FileDataLoader::size() const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
-      fd_ >= 0,
+      IS_VALID_FD(fd_),
       InvalidState,
       "Uninitialized");
   return file_size_;
@@ -226,7 +269,7 @@ ET_NODISCARD Error FileDataLoader::load_into(
     void* buffer) const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
-      fd_ >= 0,
+      IS_VALID_FD(fd_),
       InvalidState,
       "Uninitialized");
   ET_CHECK_OR_RETURN_ERROR(
@@ -243,6 +286,53 @@ ET_NODISCARD Error FileDataLoader::load_into(
   // Read the data into the aligned address.
   size_t needed = size;
   uint8_t* buf = reinterpret_cast<uint8_t*>(buffer);
+
+#ifdef _WIN32
+
+  while (needed > 0) {
+    const auto chunk_size = std::min<size_t>(
+        needed, static_cast<size_t>(std::numeric_limits<int32_t>::max()));
+    LARGE_INTEGER move;
+    move.QuadPart = static_cast<LONGLONG>(offset);
+    if (!SetFilePointerEx(fd_, move, nullptr, FILE_BEGIN)) {
+      ET_LOG(
+          Error,
+          "Reading from %s: failed to set file pointer: %lx",
+          file_name_,
+          GetLastError());
+      return Error::AccessFailed;
+    }
+    DWORD nread = 0;
+    if (!ReadFile(fd_, buf, static_cast<DWORD>(chunk_size), &nread, nullptr)) {
+      DWORD error_code = GetLastError();
+      if (error_code == ERROR_IO_PENDING) {
+        continue;
+      }
+      ET_LOG(
+          Error,
+          "Reading from %s: failed to read %zu bytes at offset %lu: %lx",
+          file_name_,
+          chunk_size,
+          offset,
+          error_code);
+      return Error::AccessFailed;
+    }
+
+    if (nread == 0) {
+      ET_LOG(
+          Error,
+          "Reading from %s: EOF encountered unexpectedly at offset %zu",
+          file_name_,
+          offset);
+      return Error::AccessFailed;
+    }
+
+    needed -= nread;
+    buf += nread;
+    offset += nread;
+  }
+
+#else
 
   // Make a duplicate fd if pread() is not available and we have to seek().
   // Cannot use the standard dup() or fcntl() calls because the returned
@@ -288,6 +378,9 @@ ET_NODISCARD Error FileDataLoader::load_into(
   if (!ET_HAVE_PREAD) {
     ::close(dup_fd);
   }
+
+#endif
+
   return Error::Ok;
 }
 

@@ -183,9 +183,11 @@ target_link_libraries(
   qnn_executorch_backend PRIVATE qnn_executorch_header qnn_schema qnn_manager
                                  executorch_core qcir_utils extension_tensor
 )
-set_target_properties(
-  qnn_executorch_backend PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
-)
+if (NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
+  set_target_properties(
+    qnn_executorch_backend PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
+  )
+endif()
 target_link_libraries(utils PRIVATE qnn_executorch_logging)
 target_link_libraries(
   shared_buffer PRIVATE qnn_executorch_logging ${CMAKE_DL_LIBS}
@@ -221,7 +223,7 @@ add_subdirectory(
 install(TARGETS qnn_executorch_backend DESTINATION lib)
 
 # QNN pybind
-if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
+if(EXECUTORCH_BUILD_PYBIND)
   add_subdirectory(
     ${EXECUTORCH_SOURCE_DIR}/third-party/pybind11
     ${CMAKE_CURRENT_BINARY_DIR}/pybind11

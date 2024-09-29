@@ -195,12 +195,34 @@ function(extract_sources sources_file)
       else()
         message(FATAL_ERROR "Unsupported ANDROID_ABI setting ${ANDROID_ABI}. Please add it here!")
       endif()
+    else()
+      if(NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "${CMAKE_HOST_SYSTEM_NAME}")
+        if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin")
+          set(fake_host_arg "--fake-host=macos")
+        else()
+          string(TOLOWER "${CMAKE_SYSTEM_NAME}" lowercase_system_name)
+          set(fake_host_arg "--fake-host=${lowercase_system_name}")
+        endif()
+      endif()
+      if (NOT "${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+        if ("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "x86_64")
+          set(fake_arch_arg "--fake-arch=x8664")
+        else()
+          set(fake_arch_arg "--fake-arch=aarch64")
+        endif()
+      endif()
+      if ("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "arm64")
+        set(fake_arch_arg "--fake-arch=aarch64")
+      elseif("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "x86_64")
+        set(fake_arch_arg "--fake-arch=x8664")
+      endif()
     endif()
+
     execute_process(
       COMMAND
         ${PYTHON_EXECUTABLE} ${executorch_root}/build/extract_sources.py
         --config=${executorch_root}/build/cmake_deps.toml --out=${sources_file}
-        --buck2=${BUCK2} ${target_platforms_arg}
+        --buck2=${BUCK2} ${target_platforms_arg} ${fake_host_arg} ${fake_arch_arg}
       OUTPUT_VARIABLE gen_srcs_output
       ERROR_VARIABLE gen_srcs_error
       RESULT_VARIABLE gen_srcs_exit_code

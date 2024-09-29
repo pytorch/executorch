@@ -162,6 +162,18 @@
 using ssize_t = ptrdiff_t;
 #endif
 
+// Shared variable section
+#ifdef _WIN32
+#ifdef __MINGW32__
+#define ET_SHARED __attribute__((section(".shr"), shared))
+#else
+#define ET_SHARED
+#endif
+#else
+#define ET_SHARED
+#endif
+
+
 // DEPRECATED: Use the non-underscore-prefixed versions instead.
 // TODO(T199005537): Remove these once all users have stopped using them.
 #define __ET_DEPRECATED ET_DEPRECATED

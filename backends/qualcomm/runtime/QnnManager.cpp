@@ -528,24 +528,27 @@ Error QnnManager::Compile(
 } // namespace qnn
 } // namespace executor
 } // namespace torch
-void* QnnExecuTorchAllocCustomMem(size_t bytes, size_t alignment) {
+
+#define EXPORT __attribute__((visibility("default")))
+
+EXPORT void* QnnExecuTorchAllocCustomMem(size_t bytes, size_t alignment) {
   void* buffer_ptr =
       torch::executor::qnn::SharedBuffer::GetSharedBufferManager().AllocMem(
           bytes, alignment);
   return buffer_ptr;
 }
 
-void QnnExecuTorchFreeCustomMem(void* buffer_ptr) {
+EXPORT void QnnExecuTorchFreeCustomMem(void* buffer_ptr) {
   torch::executor::qnn::SharedBuffer::GetSharedBufferManager().FreeMem(
       buffer_ptr);
 }
 
-void QnnExecuTorchAddCustomMemTensorAddr(void* tensor_addr, void* custom_mem) {
+EXPORT void QnnExecuTorchAddCustomMemTensorAddr(void* tensor_addr, void* custom_mem) {
   torch::executor::qnn::SharedBuffer::GetSharedBufferManager()
       .AddCusomMemTensorAddr(tensor_addr, custom_mem);
 }
 
-void QnnExecuTorchAddCustomMemTensorInfo(const CustomMemTensorInfo& info) {
+EXPORT void QnnExecuTorchAddCustomMemTensorInfo(const CustomMemTensorInfo& info) {
   torch::executor::qnn::SharedBuffer::GetSharedBufferManager()
       .AddCusomMemTensorInfo(info);
 }

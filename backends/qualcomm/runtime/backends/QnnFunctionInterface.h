@@ -7,6 +7,11 @@
  */
 #pragma once
 
+// Dummy fix `interface` definition in Windows
+#if defined(__WIN32__) && defined(interface)
+#undef interface
+#endif
+
 #include "QnnInterface.h"
 #include "Saver/QnnSaver.h"
 

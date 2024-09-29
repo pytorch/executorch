@@ -183,6 +183,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--target-platforms", help="--target-platforms to pass to buck cquery, if any."
     )
+    parser.add_argument(
+        "--fake-host", help="Fake host to pass to buck cquery, if any."
+    )
+    parser.add_argument(
+        "--fake-arch", help="Fake architecture to pass to buck cquery, if any."
+    )
     return parser.parse_args()
 
 
@@ -213,6 +219,13 @@ def main():
     if args.target_platforms:
         buck_args = ["--target-platforms"]
         buck_args.append(args.target_platforms)
+    if args.fake_host:
+        buck_args.append("--fake-host")
+        buck_args.append(args.fake_host)
+    if args.fake_arch:
+        buck_args.append("--fake-arch")
+        buck_args.append(args.fake_arch)
+    print(f"buck_args: {buck_args}")
     for name, target in graph.by_name.items():
         target_to_srcs[name] = sorted(target.get_sources(graph, runner, buck_args))
 

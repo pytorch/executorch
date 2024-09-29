@@ -7,7 +7,11 @@
  */
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/Utils.h>
+#ifdef _WIN32
+#include <direct.h>
+#else
 #include <sys/stat.h>
+#endif
 namespace torch {
 namespace executor {
 namespace qnn {
@@ -24,7 +28,11 @@ void CreateDirectory(const std::string& path) {
     return;
   }
   CreateDirectory(subdir);
+#ifdef _WIN32
+  int mkdir_err = _mkdir(subdir.c_str());
+#else
   int mkdir_err = mkdir(subdir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO);
+#endif
   if (mkdir_err != 0 && errno != EEXIST) {
     std::string err_msg = "Failed to create " + subdir + " folder\n";
     QNN_EXECUTORCH_LOG_ERROR(err_msg.c_str());

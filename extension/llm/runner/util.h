@@ -13,6 +13,9 @@
 #if defined(__linux__) || defined(__ANDROID__) || defined(__unix__)
 #include <sys/resource.h>
 #endif
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace executorch {
 namespace extension {
@@ -43,8 +46,12 @@ void inline safe_printf(const char* piece) {
 long inline time_in_ms() {
   // return time in milliseconds, for benchmarking the model speed
   struct timespec time;
+#ifdef _WIN32
+  return GetTickCount();
+#else
   clock_gettime(CLOCK_REALTIME, &time);
   return time.tv_sec * 1000 + time.tv_nsec / 1000000;
+#endif
 }
 
 // ----------------------------------------------------------------------------

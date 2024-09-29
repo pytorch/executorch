@@ -63,11 +63,15 @@
 
 #endif // NDEBUG
 
+#pragma data_seg(".SS_DLLMAIN") // Shared data segment for DLL main with MSVC
+
 /// Start time of the system (used to zero the system timestamp).
-static std::chrono::time_point<std::chrono::steady_clock> systemStartTime;
+static std::chrono::time_point<std::chrono::steady_clock> systemStartTime ET_SHARED;
 
 /// Flag set to true if the PAL has been successfully initialized.
-static bool initialized = false;
+static bool initialized ET_SHARED = false;
+
+#pragma data_seg()
 
 /**
  * Initialize the platform abstraction layer.

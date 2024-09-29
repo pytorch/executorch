@@ -12,6 +12,10 @@
 
 cmake_minimum_required(VERSION 3.19)
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+  set(CMAKE_FIND_LIBRARY_SUFFIXES ".dll;.a")
+endif()
+
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../..")
 set(required_lib_list executorch executorch_core portable_kernels)
 foreach(lib ${required_lib_list})
@@ -62,6 +66,7 @@ set(lib_list
     quantized_kernels
     quantized_ops_lib
     quantized_ops_aot_lib
+    custom_ops
 )
 foreach(lib ${lib_list})
   # Name of the variable which stores result of the find_library search
@@ -83,7 +88,11 @@ foreach(lib ${lib_list})
       # keep all libs as static when CMAKE_TOOLCHAIN_IOS is used
       add_library(${lib} STATIC IMPORTED)
     endif()
-    set_target_properties(${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}")
+    if ("${${lib_var}}" MATCHES ".dll$")
+      set_target_properties(${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}" IMPORTED_IMPLIB "${${lib_var}}.a")
+    else()
+      set_target_properties(${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}")
+    endif()
     target_include_directories(${lib} INTERFACE ${_root})
   endif()
 endforeach()

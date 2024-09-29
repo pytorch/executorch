@@ -19,15 +19,19 @@ namespace {
 // The max number of backends that can be registered globally.
 constexpr size_t kMaxRegisteredBackends = 16;
 
+#pragma data_seg(".SS_DLLMAIN")
+
 // TODO(T128866626): Remove global static variables. We want to be able to run
 // multiple Executor instances and having a global registration isn't a viable
 // solution in the long term.
 
 /// Global table of registered backends.
-Backend registered_backends[kMaxRegisteredBackends];
+Backend registered_backends[kMaxRegisteredBackends] ET_SHARED;
 
 /// The number of backends registered in the table.
 size_t num_registered_backends = 0;
+
+#pragma data_seg()
 
 } // namespace
 

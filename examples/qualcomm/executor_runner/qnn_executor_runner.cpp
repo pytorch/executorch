@@ -32,6 +32,7 @@
 #include <chrono>
 #include <fstream>
 #include <memory>
+#include <chrono>
 
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
 

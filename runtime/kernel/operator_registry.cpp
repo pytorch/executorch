@@ -29,6 +29,8 @@ constexpr uint32_t kMaxKernelsPerOp = 8;
 constexpr uint32_t kMaxRegisteredKernels = kMaxOperators * kMaxKernelsPerOp;
 #endif
 
+#pragma data_seg(".SS_DLLMAIN")
+
 // Data that backs the kernel table. Since Kernel has a custom default
 // constructor (implicitly, because it contains KernelKey, which has a custom
 // ctor), some toolchains don't like having a global array of them: it would
@@ -37,13 +39,15 @@ constexpr uint32_t kMaxRegisteredKernels = kMaxOperators * kMaxKernelsPerOp;
 // and point the table at it.
 // @lint-ignore CLANGTIDY facebook-hte-CArray
 alignas(sizeof(Kernel)) uint8_t
-    registered_kernels_data[kMaxRegisteredKernels * sizeof(Kernel)];
+    registered_kernels_data[kMaxRegisteredKernels * sizeof(Kernel)] ET_SHARED;
 
 /// Global table of registered kernels.
-Kernel* registered_kernels = reinterpret_cast<Kernel*>(registered_kernels_data);
+Kernel* registered_kernels ET_SHARED = reinterpret_cast<Kernel*>(registered_kernels_data);
 
 /// The number of kernels registered in the table.
-size_t num_registered_kernels = 0;
+size_t num_registered_kernels ET_SHARED = 0;
+
+#pragma data_seg()
 
 // Registers the kernels, but may return an error.
 Error register_kernels_internal(const Span<const Kernel> kernels) {

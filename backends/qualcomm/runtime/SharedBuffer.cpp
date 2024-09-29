@@ -5,7 +5,9 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#ifdef __ANDROID__
 #include <dlfcn.h>
+#endif
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/SharedBuffer.h>
 
@@ -158,6 +160,10 @@ bool SharedBuffer::IsAllocated(void* buf) {
 }
 
 Error SharedBuffer::Load() {
+#ifndef __ANDROID__
+  QNN_EXECUTORCH_LOG_WARN("Shared buffer is not supported on this platform.");
+  return Error::Ok;
+#else
   // On Android, 32-bit and 64-bit libcdsprpc.so can be found at /vendor/lib/
   // and /vendor/lib64/ respectively.
   lib_cdsp_rpc_ = dlopen("libcdsprpc.so", RTLD_NOW | RTLD_LOCAL);
@@ -180,6 +186,7 @@ Error SharedBuffer::Load() {
     return Error::Internal;
   }
   return Error::Ok;
+#endif
 }
 
 void SharedBuffer::AddCusomMemTensorAddr(void* tensor_addr, void* custom_mem) {
@@ -192,12 +199,16 @@ void SharedBuffer::AddCusomMemTensorInfo(const CustomMemTensorInfo& info) {
 }
 
 Error SharedBuffer::UnLoad() {
+#ifndef __ANDROID__
+  return Error::Ok;
+#else
   if (dlclose(lib_cdsp_rpc_) != 0) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Unable to close shared buffer. dlerror(): %s", dlerror());
     return Error::Internal;
   };
   return Error::Ok;
+#endif
 }
 } // namespace qnn
 } // namespace executor

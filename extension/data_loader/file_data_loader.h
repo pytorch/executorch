@@ -8,6 +8,17 @@
 
 #pragma once
 
+#ifdef _WIN32
+#include <windows.h>
+#define FD_TYPE HANDLE
+#define INVALID_FD INVALID_HANDLE_VALUE
+#define IS_VALID_FD(fd) (fd != INVALID_HANDLE_VALUE)
+#else
+#define FD_TYPE int
+#define INVALID_FD -1
+#define IS_VALID_FD(fd) (fd >= 0)
+#endif
+
 #include <cstddef>
 
 #include <executorch/runtime/core/data_loader.h>
@@ -59,7 +70,7 @@ class FileDataLoader final : public executorch::runtime::DataLoader {
     const_cast<const char*&>(rhs.file_name_) = nullptr;
     const_cast<size_t&>(rhs.file_size_) = 0;
     const_cast<size_t&>(rhs.alignment_) = 0;
-    const_cast<int&>(rhs.fd_) = -1;
+    const_cast<FD_TYPE&>(rhs.fd_) = INVALID_FD;
   }
 
   ~FileDataLoader() override;
@@ -80,7 +91,7 @@ class FileDataLoader final : public executorch::runtime::DataLoader {
 
  private:
   FileDataLoader(
-      int fd,
+      FD_TYPE fd,
       size_t file_size,
       size_t alignment,
       const char* file_name)
@@ -97,7 +108,7 @@ class FileDataLoader final : public executorch::runtime::DataLoader {
   const char* const file_name_; // Owned by the instance.
   const size_t file_size_;
   const size_t alignment_;
-  const int fd_; // Owned by the instance.
+  const FD_TYPE fd_; // Owned by the instance.
 };
 
 } // namespace extension
