@@ -88,7 +88,7 @@ class ShouldBuild:
 
     @classmethod
     def llama_custom_ops(cls) -> bool:
-        return cls._is_env_enabled("EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT", default=True)
+        return cls._is_env_enabled("EXECUTORCH_BUILD_EXTENSION_LLM_AOT", default=True)
 
     @classmethod
     def flatc(cls) -> bool:
@@ -542,8 +542,8 @@ class CustomBuild(build):
 
         if ShouldBuild.llama_custom_ops():
             cmake_args += [
-                "-DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON",  # add llama sdpa ops to pybindings.
-                "-DEXECUTORCH_BUILD_KERNELS_CUSTOM_AOT=ON",
+                "-DEXECUTORCH_BUILD_EXTENSION_LLM=ON",  # add llama sdpa ops to pybindings.
+                "-DEXECUTORCH_BUILD_EXTENSION_LLM_AOT=ON",
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",  # add quantized ops to pybindings.
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON",
             ]

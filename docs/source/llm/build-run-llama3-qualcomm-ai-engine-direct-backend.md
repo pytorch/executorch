@@ -59,7 +59,7 @@ llama3/Meta-Llama-3-8B-Instruct/tokenizer.model -p <path_to_params.json> -c <pat
         -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
         -Bcmake-android-out .
 
     cmake --build cmake-android-out -j16 --target install --config Release
@@ -75,7 +75,7 @@ llama3/Meta-Llama-3-8B-Instruct/tokenizer.model -p <path_to_params.json> -c <pat
         -DEXECUTORCH_BUILD_QNN=ON \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
         -Bcmake-android-out/examples/models/llama2 examples/models/llama2
 
     cmake --build cmake-android-out/examples/models/llama2 -j16 --config Release

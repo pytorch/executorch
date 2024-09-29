@@ -69,7 +69,7 @@ target_compile_options(
 
 install(TARGETS custom_ops DESTINATION lib)
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
+if(EXECUTORCH_BUILD_EXTENSION_LLM_AOT)
   # Add a AOT library
   find_package(Torch CONFIG REQUIRED)
   add_library(

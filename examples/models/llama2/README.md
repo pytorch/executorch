@@ -291,7 +291,7 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
         -DEXECUTORCH_BUILD_XNNPACK=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
         -Bcmake-out .
 
     cmake --build cmake-out -j16 --target install --config Release
@@ -303,7 +303,7 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
     cmake -DPYTHON_EXECUTABLE=python \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Release \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
@@ -345,7 +345,7 @@ cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
     -Bcmake-out-android .
 
 cmake --build cmake-out-android -j16 --target install --config Release
@@ -362,7 +362,7 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
     -Bcmake-out-android/examples/models/llama2 \
     examples/models/llama2
 
