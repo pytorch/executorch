@@ -536,6 +536,8 @@ class ComputeGraph final {
 
   void set_symint(const ValueRef idx, const int32_t val);
 
+  int32_t read_symint(const ValueRef idx);
+
   /*
    * Convenience function to add an input tensor along with its staging buffer
    */
