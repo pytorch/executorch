@@ -62,6 +62,18 @@ To improve accuracy, we can use [SpinQuant](https://github.com/facebookresearch/
 
 SpinQuant can generate quantized weights that are [compatible with ExecuTorch](https://github.com/facebookresearch/SpinQuant/tree/main?tab=readme-ov-file#3-export-to-executorch), specifically, it can be integrated with the existing optimized XNNPACK kernels (e.g., group-wise 4bit weight and 8bit dynamic activation). This allows developers to benefit from the higher accuracy of SpinQuant while also taking advantage of the strong performance of ExecuTorch acceleration. We enabled SpinQuant for Llama3.2 1B/3B models on ExecuTorch.
 
+<p align="center">
+      <img src="./Android3_2_3B_SpinQuant.gif" width=300>
+      <br>
+      <em>
+      Running Llama3.2 3B on Android phone.
+      </em>
+      <br>
+      <em>
+      4bit quantization using SpinQuant
+      </em>
+</p>
+
 ## Enablement
 
 For Llama 3 8B and Llama3.1 8B, we have verified so far on iPhone 15 Pro, iPhone 15 Pro Max, Samsung Galaxy S24+ and OnePlus 12 (with 16GB RAM).
@@ -73,10 +85,10 @@ We have verified running Llama 2 7B [mobile applications](#step-6-build-mobile-a
 ### Llama 3.2 1B and 3B
 Llama 3.2 1B and 3B performance was measured on the OnePlus 12 device. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on) for generating 128 tokens.
 
-|Model  | bf16 | 4bit(*) via SpinQuant
-|--------| ---------------------- | ---------------
-|1B  | 19.4 tokens/second | 53.41 tokens/second |
-|3B | 7.76 tokens/second | 22.98 tokens/second |
+|Model  | 4bit(*) via SpinQuant
+|--------| ---------------
+|1B  | 53.41 tokens/second |
+|3B | 22.98 tokens/second |
 
 (*) With SpinQuant, we currently quantize 4-bit groupwise (with groupsize 32) weight, 8bit dynamic activation of all the linear layers of the model, except embedding and output layers. The embedding and output layers are quantized as 8-bit per-channel weight and 8-bit dynamic activation.
 
