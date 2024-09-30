@@ -202,7 +202,7 @@ Topics in this section will help you get started with ExecuTorch.
 
    devtools-overview
    sdk-bundled-io
-   sdk-etrecord
+   etrecord
    sdk-etdump
    sdk-profiling
    sdk-debugging
