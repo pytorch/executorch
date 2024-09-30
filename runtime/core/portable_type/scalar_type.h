@@ -43,8 +43,9 @@
 #include <executorch/runtime/core/portable_type/half.h>
 #include <executorch/runtime/core/portable_type/qint_types.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 /**
  * Calls the provided macro on every ScalarType, providing the C type and the
@@ -98,5 +99,14 @@ enum class ScalarType : int8_t {
   NumOptions,
 };
 
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::etensor::ScalarType;
 } // namespace executor
 } // namespace torch

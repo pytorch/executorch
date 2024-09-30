@@ -918,6 +918,8 @@ def get_softmax_inputs():
             ((1, S, S1, S2), -1, False),
             ((1, S, S1, S2), -2, False),
             ((1, S, S1, S2), -3, False),
+            # Test batches > 1 where the reduction dim is not the concat dim
+            ((S, S2, S1, 128), -1, False),
         ]
     )
     test_suite.layouts = [

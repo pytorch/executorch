@@ -66,6 +66,7 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.clone.default,
             exir_ops.edge.aten.mean.dim,
             exir_ops.edge.aten.unsqueeze_copy.default,
+            exir_ops.edge.aten.squeeze_copy.dims,
             operator.getitem,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,

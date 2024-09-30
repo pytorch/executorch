@@ -36,14 +36,25 @@ void add_softmax_node(
     ValueRef out,
     bool log_softmax) {
   VK_CHECK_COND(
-      graph.dim_of(in) < 4 || graph.size_at<int>(0, in) == 1,
-      "Vulkan softmax does not support batches > 1 at the moment.");
+      !graph.is_buffer_storage(in) && !graph.is_buffer_storage(out),
+      "Vulkan softmax only supports texture storage");
 
   const int64_t ndim = graph.dim_of(in);
 
   int32_t reduce_dim = graph.extract_scalar<int32_t>(dim);
   reduce_dim = normalize(reduce_dim, ndim);
   reduce_dim = nchw_dim_to_whcn_dim(reduce_dim, ndim);
+
+  // Check that the concat dim is not the reduction dim, if the tensor has a
+  // batch dim greater than 1.
+  if (graph.dim_of(in) == 4 && graph.size_at<int>(0, in) > 1) {
+    VK_CHECK_COND(
+        graph.concat_dim_of(in) != reduce_dim,
+        "Softmax shader currently does not support concat dim == reduce dim");
+    VK_CHECK_COND(
+        graph.concat_dim_of(out) != reduce_dim,
+        "Softmax shader currently does not support concat dim == reduce dim");
+  }
 
   vkapi::ShaderInfo shader_descriptor;
   std::string kernel_name = "softmax";

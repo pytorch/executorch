@@ -322,6 +322,10 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().packed_dim();
   }
 
+  inline int32_t concat_dim_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().concat_dim();
+  }
+
   inline vkapi::BufferBindInfo sizes_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().sizes_ubo();
   }

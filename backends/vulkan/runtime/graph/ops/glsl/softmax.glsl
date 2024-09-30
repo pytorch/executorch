@@ -33,7 +33,7 @@ layout(constant_id = 4) const int reduce_dim = 0;
 layout(constant_id = 5) const int group_dim = 1;
 
 #define NWORKERS 4
-#define NGROUP 4
+#define NGROUPS 4
 
 #define NTHREADS 64
 
@@ -60,18 +60,18 @@ int tid_to_smi(const ivec2 tid) {
  * exp(x - max_element) / sum_of_exponents.
  *
  * The shaders below also utilize shared memory to have multiple threads help
- * compute the max and sum reduction operations. A total of NGROUP x NWORKERS
+ * compute the max and sum reduction operations. A total of NGROUPS x NWORKERS
  * threads are launched. Each group works on a unique reduction "row", and
  * within a group NWORKERS threads co-operate to compute the max and sum of one
  * "row". Each worker in the group is responsible for computing a partial output
- * of the "row" and uploading it to shared memory; the overal reduction output
+ * of the "row" and uploading it to shared memory; the overall reduction output
  * can then be determined by aggregating the partial outputs stored in shared
  * memory.
  *
- * As a caveat, this shader does not currently support cases where `batch` > 1.
- * To support this, there will need to be additional logic to set the starting
- * value of `scan_pos[reduce_dim]` if the reduction dim is also used as the
- * batch concatenation axis. Since we rarely encounter tensors with `batch` > 1,
+ * As a caveat, this shader does not currently support cases where `batch` > 1
+ * and the reduce dim happens to also be the batch concatenation dim.  To support
+ * this, there will need to be additional logic to set the starting value of
+ * `scan_pos[reduce_dim]`. Since this is not expected to be a common use-case,
  * supporting this case is left as an exercise for when it is required.
  *
  * As a final note, log softmax is supported with this shader as well since via
@@ -115,7 +115,7 @@ void softmax_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
   }
   shared_vecs[smi] = denominators;
   barrier();
-  // Iterate over the partial sums to obtain the overall maximum
+  // Iterate over the partial sums to obtain the overall sum
   group_i = tid.y * NWORKERS;
   denominators = shared_vecs[group_i++];
   for (int i = 1; i < NWORKERS; ++i, group_i++) {
