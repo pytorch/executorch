@@ -32,12 +32,17 @@ layout(constant_id = 3) const int packed_dim = 0;
 layout(constant_id = 4) const int reduce_dim = 0;
 layout(constant_id = 5) const int group_dim = 1;
 
+// A more verbose name would be NWORKERS_PER_GROUP. This describes the number of
+// threads that will co-operate to compute one reduction output. There may be
+// multiple groups computing distinct reduction outputs within one work group.
 #define NWORKERS 4
-#define NGROUPS 4
 
-#define NTHREADS 64
+// Sets an upper limit on the total size of a work group based on how many
+// elements are allocated in the shared memory array below. Each thread in the
+// work group will write into its assigned element in the shared array.
+#define MAX_NTHREADS 16
 
-shared vec4 shared_vecs[NTHREADS];
+shared vec4 shared_vecs[MAX_NTHREADS];
 
 #include "indexing_utils.h"
 

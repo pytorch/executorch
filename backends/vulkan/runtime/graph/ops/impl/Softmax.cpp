@@ -64,19 +64,26 @@ void add_softmax_node(
     kernel_name = "log_" + kernel_name;
   }
 
+  // This should match the value of MAX_NTHREADS in the softmax shader.
+  constexpr uint32_t max_nthreads = 16;
+
+  const uint32_t nworkers_per_group = 4;
+  const uint32_t ngroups = 4;
+  VK_CHECK_COND(nworkers_per_group * ngroups <= max_nthreads);
+
   utils::uvec3 global_wg_size = graph.logical_limits_of(out);
   global_wg_size[reduce_dim] = 1;
 
   utils::uvec3 local_wg_size{1, 1, 1};
-  local_wg_size[reduce_dim] = 4;
+  local_wg_size[reduce_dim] = nworkers_per_group;
   const int other_dim_1 = (reduce_dim + 1) % 3;
   const int other_dim_2 = (reduce_dim + 2) % 3;
   int32_t group_dim;
   if (global_wg_size[other_dim_1] > global_wg_size[other_dim_2]) {
-    local_wg_size[other_dim_1] = 4;
+    local_wg_size[other_dim_1] = ngroups;
     group_dim = other_dim_1;
   } else {
-    local_wg_size[other_dim_2] = 4;
+    local_wg_size[other_dim_2] = ngroups;
     group_dim = other_dim_2;
   }
 
