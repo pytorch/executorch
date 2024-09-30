@@ -98,7 +98,7 @@ void softmax_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
     max_elements = max(max_elements, load_texel(tin, scan_pos));
   }
   shared_vecs[smi] = max_elements;
-  memoryBarrierShared();
+  barrier();
   // Iterate over the partial maximums to obtain the overall maximum
   group_i = tid.y * NWORKERS;
   max_elements = shared_vecs[group_i++];
@@ -114,7 +114,7 @@ void softmax_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
     denominators += exp(load_texel(tin, scan_pos) - max_elements);
   }
   shared_vecs[smi] = denominators;
-  memoryBarrierShared();
+  barrier();
   // Iterate over the partial sums to obtain the overall maximum
   group_i = tid.y * NWORKERS;
   denominators = shared_vecs[group_i++];
@@ -180,7 +180,7 @@ void softmax_packed_dim(const ivec2 tid, ivec3 scan_pos) {
     }
   }
   shared_vecs[smi] = max_elements;
-  memoryBarrierShared();
+  barrier();
   // Iterate over the partial maximums to obtain the overall maximum
   group_i = tid.y * NWORKERS;
   max_elements = shared_vecs[group_i++];
@@ -210,7 +210,7 @@ void softmax_packed_dim(const ivec2 tid, ivec3 scan_pos) {
     }
   }
   shared_vecs[smi] = denominators;
-  memoryBarrierShared();
+  barrier();
   // Iterate over the partial sums to obtain the overall sum
   group_i = tid.y * NWORKERS;
   denominators = shared_vecs[group_i++];
