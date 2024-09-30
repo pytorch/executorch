@@ -32,6 +32,7 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/matmul_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/reduce_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/repeat_util.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/slice_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/pattern/unary_ufunc_realhb_to_floath.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_bmm.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_cat.cpp"

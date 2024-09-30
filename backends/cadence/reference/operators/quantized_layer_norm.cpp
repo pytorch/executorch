@@ -9,9 +9,7 @@
 #include <executorch/backends/cadence/reference/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-#include <algorithm>
 #include <cmath>
-#include <tuple>
 
 using Tensor = exec_aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
