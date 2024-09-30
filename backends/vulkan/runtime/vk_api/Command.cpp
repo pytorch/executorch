@@ -247,7 +247,7 @@ CommandPool::CommandPool(
 }
 
 CommandPool::~CommandPool() {
-  if (VK_NULL_HANDLE == pool_) {
+  if (pool_ == VK_NULL_HANDLE) {
     return;
   }
   vkDestroyCommandPool(device_, pool_, nullptr);

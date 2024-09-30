@@ -2,6 +2,7 @@ load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
     "ANDROID",
 )
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 
@@ -91,5 +92,17 @@ def define_common_targets():
         ],
         exported_deps = [
             ":schema",
+        ],
+    )
+    
+    runtime.python_library(
+        name = "preprocess",
+        srcs = ["qnn_preprocess.py"],
+        deps = [
+            "//executorch/backends/qualcomm/passes:passes",
+        ],
+        visibility = [
+            "//executorch/backends/qualcomm/...",
+            "@EXECUTORCH_CLIENTS",
         ],
     )

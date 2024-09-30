@@ -102,7 +102,7 @@ def _replace_linear_with_linear_8da4w_for_spin_quant(
 ):
     def filter_fn(child: torch.nn.Module, cur_fqn: str) -> bool:
         # Only replace linear layers where the checkpoint contains explicit scales
-        scales_key = f"{cur_fqn}.scale"
+        scales_key = f"{cur_fqn}.scales"
         if isinstance(child, nn.Linear) and scales_key in checkpoint:
             assert _check_linear_int4_k(child.in_features, group_size)
             assert checkpoint[f"{cur_fqn}.weight"].dtype == torch.int8
@@ -155,7 +155,7 @@ def _replace_output_linear_with_linear_int8_for_spinquant(
     dtype: torch.dtype,
 ):
     def filter_fn(child: torch.nn.Module, cur_fqn: str) -> bool:
-        scales_key = f"{cur_fqn}.scale"
+        scales_key = f"{cur_fqn}.scales"
         if (
             isinstance(child, nn.Linear)
             and scales_key in checkpoint
@@ -205,7 +205,7 @@ def _replace_embedding_with_quantized_group_embedding_for_spinquant(
 ):
     def filter_fn(child: torch.nn.Module, cur_fqn: str) -> bool:
         # Only replace embedding layers where the checkpoint contains explicit scales
-        scales_key = f"{cur_fqn}.scale"
+        scales_key = f"{cur_fqn}.scales"
         if isinstance(child, nn.Embedding) and scales_key in checkpoint:
             assert checkpoint[f"{cur_fqn}.weight"].dtype == torch.int8
             assert checkpoint[scales_key].dtype == torch.float32
@@ -250,59 +250,12 @@ def transform_embedding_for_spinquant(
 
 
 def sanitize_checkpoint_from_spinquant(
-    module: torch.nn.Module,
     checkpoint: Any,
-    linear_group_size: int,
-    embedding_group_size: Optional[int] = None,
 ):
     """
     Sanitize the SpinQuant checkpoint.
-        - Renames 'scale' to 'scales'
-        - Groups scales
-        - Removes 'o_weight'
         - Converts all tensors to contiguous format
+        - Squeeze all tensors
     """
-    keys_to_rename = []
-    keys_to_remove = []
-    for k, _ in checkpoint.items():
-        if k.endswith(".scale"):
-            new_key = k + "s"
-            keys_to_rename.append((k, new_key))
-        if k.endswith(".o_weight"):
-            keys_to_remove.append(k)
-
-    for old_key, new_key in keys_to_rename:
-        old_val = checkpoint.pop(old_key)
-        module_name = new_key[0 : new_key.rfind(".")]
-        sub_module = module.get_submodule(module_name)
-        assert sub_module is not None
-        assert (
-            isinstance(sub_module, Int8DynActInt4WeightLinear)
-            or isinstance(sub_module, QuantizedGroupEmbedding)
-            or isinstance(sub_module, Int8DynActInt8WeightLinear)
-        )
-        # Checkpoints with SpinQuant could come with two formats for scales:
-        # 1. scales is grouped by group size
-        # 2. scales is not grouped by group size
-        # We need to handle both cases here.
-        # TODO(lunwenh): remove this once we have a unified format for scales.
-        if isinstance(sub_module, Int8DynActInt4WeightLinear):
-            checkpoint[new_key] = (
-                old_val if linear_group_size == -1 else old_val[:, ::linear_group_size]
-            )
-        elif isinstance(sub_module, Int8DynActInt8WeightLinear):
-            checkpoint[new_key] = old_val[:, 0]
-        elif isinstance(sub_module, QuantizedGroupEmbedding):
-            if (
-                embedding_group_size is None or embedding_group_size == 0
-            ):  # Scales are not grouped
-                checkpoint[new_key] = old_val[:, 0]
-            elif embedding_group_size == -1:  # Scales are grouped by group size
-                checkpoint[new_key] = old_val
-            else:
-                checkpoint[new_key] = old_val[:, ::embedding_group_size]
-
-    for k in keys_to_remove:
-        checkpoint.pop(k)
     for k, v in checkpoint.items():
-        checkpoint[k] = v.contiguous()
+        checkpoint[k] = torch.squeeze(v.contiguous())
