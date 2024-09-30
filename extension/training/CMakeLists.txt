@@ -25,7 +25,7 @@ target_include_directories(
 
 target_include_directories(extension_training PUBLIC ${EXECUTORCH_ROOT}/..)
 target_compile_options(extension_training PUBLIC ${_common_compile_options})
-target_link_libraries(extension_training executorch_no_prim_ops
+target_link_libraries(extension_training executorch_core
     extension_data_loader extension_module extension_tensor)
 
 
@@ -35,7 +35,7 @@ target_include_directories(
   train_xor PUBLIC ${_common_include_directories}
 )
 target_link_libraries(
-train_xor gflags executorch_no_prim_ops portable_ops_lib extension_tensor
+train_xor gflags executorch_core portable_ops_lib extension_tensor
     extension_training program_schema
 )
 target_compile_options(train_xor PUBLIC ${_common_compile_options})
