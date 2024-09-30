@@ -315,3 +315,4 @@ the checkpoint format to avoid generating faulty models.
                 int(embedding_bit_width),
                 embedding_group_size,
             )
+
