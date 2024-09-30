@@ -19,6 +19,7 @@
 #include "executorch/runtime/backend/interface.h"
 #include "executorch/runtime/core/error.h"
 #include "executorch/runtime/core/evalue.h"
+#include "executorch/runtime/core/exec_aten/util/dim_order_util.h"
 #include "executorch/runtime/core/exec_aten/util/scalar_type_util.h"
 
 using namespace std;
@@ -142,6 +143,15 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
             "Input %d expected Integer (4 byte) or Char (1 byte) integer inputs, got ScalarType id %s",
             i,
             toString(tensor_in.scalar_type()));
+        return Error::InvalidProgram;
+      }
+      supported = is_contiguous_dim_order(
+          tensor_in.dim_order().data(), tensor_in.dim());
+      if (!supported) {
+        ET_LOG(
+            Error,
+            "Input %d expected contiguous dim_order, but got non-contiguous dim_order",
+            i);
         return Error::InvalidProgram;
       }
 

@@ -66,7 +66,7 @@ def _get_input_names(program: ExportedProgram) -> list[str]:
 
 
 def _get_input_quantization_params(
-    program: ExportedProgram, input_names: list[str]
+    program: ExportedProgram,
 ) -> list[QuantizationParams]:
     """
     Get input QuantizationParams in a program, maximum one per input to the program.
@@ -79,6 +79,7 @@ def _get_input_quantization_params(
     """
 
     quant_params = []
+    input_names = _get_input_names(program)
     num_inputs = len(input_names)
     for node in program.graph.nodes:
         if (
@@ -178,16 +179,19 @@ class RunnerUtil:
 
         self._has_init_run = False
 
-    def init_run(self, exported_program: ExportedProgram, is_quantized: bool):
-        self.input_names = _get_input_names(exported_program)
+    def init_run(
+        self,
+        exported_program: ExportedProgram,
+        edge_program: ExportedProgram,
+        is_quantized: bool,
+    ):
+        self.input_names = _get_input_names(edge_program)
         self.output_node = _get_output_node(exported_program)
         self.output_name = self.output_node.name
         self.is_quantized = is_quantized
 
         if is_quantized:
-            self.qp_input = _get_input_quantization_params(
-                exported_program, self.input_names
-            )
+            self.qp_input = _get_input_quantization_params(exported_program)
             self.qp_output = _get_output_quantization_params(
                 exported_program, self.output_node
             )
@@ -403,11 +407,11 @@ class RunnerUtil:
 def prep_data_for_save(
     data, is_quantized: bool, input_name: str, quant_param: QuantizationParams
 ):
-    data_np = data.detach().numpy().astype(np.float32)
+    data_np = np.array(data.detach(), order="C").astype(np.float32)
 
     if is_quantized:
         assert (
-            quant_param.node_name == input_name
+            quant_param.node_name in input_name
         ), "These quantization params do not match the input tensor name"
         data_np = (
             ((data_np / np.float32(quant_param.scale)) + quant_param.zp)
@@ -500,7 +504,10 @@ def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
     with open(tosa_input_file, "wb") as f:
         f.write(tosa_fb)
 
-    tosa_schema_file = "./backends/arm/third-party/serialization_lib/schema/tosa.fbs"
+    arm_backend_path = os.path.realpath(os.path.dirname(__file__) + "/..")
+    tosa_schema_file = os.path.join(
+        arm_backend_path, "third-party/serialization_lib/schema/tosa.fbs"
+    )
     assert os.path.exists(
         tosa_schema_file
     ), f"tosa_schema_file: {tosa_schema_file} does not exist"
