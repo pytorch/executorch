@@ -16,6 +16,8 @@ if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
   )
 endif()
 
+set(TARGET_BOARD "corstone-300" CACHE STRING "Target board")
+
 # Example ExecuTorch demo for bare metal Cortex-M based systems
 set(ET_DIR_PATH
     "../../.."
@@ -55,10 +57,13 @@ endif()
 # libraries. We link against ethosu_target_init which includes all of these
 # dependencies.
 
-# For Corstone-300 FVP builds we put models into the larger DRAM area
-set(MEMORY_MODEL "dram")
-set(MEMORY_ARENA "dram")
-add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target)
+if(TARGET_BOARD STREQUAL "corstone-300")
+  add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target)
+elseif(TARGET_BOARD STREQUAL "corstone-320")
+  add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-320 target)
+else()
+  message(FATAL_ERROR "Unsupported TARGET_BOARD: ${TARGET_BOARD}")
+endif()
 
 # Dependencies from the ExecuTorch build
 add_library(executorch STATIC IMPORTED)
@@ -171,7 +176,7 @@ endif()
 if(SEMIHOSTING)
   # Remove this when MLBEDSW-8910 is closed.
   set_source_files_properties(
-    ${ETHOS_SDK_PATH}/core_platform/targets/corstone-300/retarget.c
+    ${ETHOS_SDK_PATH}/core_platform/targets/${TARGET_BOARD}/retarget.c
     PROPERTIES HEADER_FILE_ONLY TRUE
   )
 endif()
