@@ -60,11 +60,11 @@ at::Tensor sdpa_with_kv_cache_aten(
     const int64_t seq_len,
     // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const c10::optional<at::Tensor> attn_mask,
+    const std::optional<at::Tensor> attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const c10::optional<double> scale) {
+    const std::optional<double> scale) {
   auto output = at::empty_like(q_projected);
   WRAP_TO_ATEN(sdpa_with_kv_cache_out_no_context, 11)
   (q_projected,

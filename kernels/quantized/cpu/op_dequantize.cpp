@@ -123,9 +123,10 @@ void dequantize_optimized(
   float32x4_t scales = vdupq_n_f32(static_cast<float>(scale));
   constexpr int32_t kVecSize = 16;
   const size_t num_vecs = numel / kVecSize;
-  const size_t rem = numel % kVecSize;
-  for (; i < numel; i += kVecSize) {
-    int8x16_t in_vec = vld1q_s8(in);
+  const int8_t* in_copy = in;
+  float* out_copy = out;
+  for (; i < num_vecs; i++) {
+    int8x16_t in_vec = vld1q_s8(in_copy);
     int16x8_t sub_vec_0_7 = vsubl_s8(vget_low_s8(in_vec), zero_point_vec);
     int32x4_t sub_vec_0_3 = vmovl_s16(vget_low_s16(sub_vec_0_7));
     int32x4_t sub_vec_4_7 = vmovl_s16(vget_high_s16(sub_vec_0_7));
@@ -137,8 +138,14 @@ void dequantize_optimized(
     int32x4_t sub_vec_12_15 = vmovl_s16(vget_high_s16(sub_vec_8_15));
     float32x4_t out_vec_8_11 = vmulq_f32(vcvtq_f32_s32(sub_vec_8_11), scales);
     float32x4_t out_vec_12_15 = vmulq_f32(vcvtq_f32_s32(sub_vec_12_15), scales);
-    in += kVecSize;
+    vst1q_f32(out_copy + 0, out_vec_0_3);
+    vst1q_f32(out_copy + 4, out_vec_4_7);
+    vst1q_f32(out_copy + 8, out_vec_8_11);
+    vst1q_f32(out_copy + 12, out_vec_12_15);
+    in_copy += kVecSize;
+    out_copy += kVecSize;
   }
+  i = i * kVecSize;
 #endif
   for (; i < numel; i++) {
     out[i] = (in[i] - zero_point) * scale;
@@ -156,7 +163,7 @@ bool can_use_optimized_dequantize_per_channel(
   is_contiguous = executorch::runtime::is_contiguous_dim_order(
       in.dim_order().data(), in.dim());
 #endif
-  if (is_contiguous || (in_dtype != ScalarType::Char) ||
+  if (!is_contiguous || (in_dtype != ScalarType::Char) ||
       (out_dtype.has_value() && out_dtype.value() != ScalarType::Float)) {
     return false;
   }

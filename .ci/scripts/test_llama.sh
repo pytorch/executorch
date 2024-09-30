@@ -188,7 +188,7 @@ EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}.pte"
 echo "Exporting ${EXPORTED_MODEL_NAME}"
 EXPORT_ARGS="-c ${CHECKPOINT_FILE_NAME} -p ${PARAMS} -d ${DTYPE} -n ${EXPORTED_MODEL_NAME} -kv"
 if [[ "${XNNPACK}" == "ON" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} -X -qmode 8da4w -G 128"
+  EXPORT_ARGS="${EXPORT_ARGS} -X --xnnpack-extended-ops -qmode 8da4w -G 128"
 fi
 if [[ "${CUSTOM}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} --use_sdpa_with_kv_cache"
