@@ -211,7 +211,8 @@ set(all_test_sources
     "op_view_copy_test.cpp"
     "op_where_test.cpp"
     "op_zeros_test.cpp"
-)
+    "UnaryUfuncRealHBToFloatHTest.cpp"
+  )
 
 set(_portable_kernels_test_sources
     ${all_test_sources}
