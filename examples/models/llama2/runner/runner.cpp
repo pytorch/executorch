@@ -254,7 +254,9 @@ Error Runner::generate(
       prompt_tokens, num_prompt_tokens, seq_len, wrapped_callback));
 
   stats_.inference_end_ms = llm::time_in_ms();
-  printf("\n");
+  if (!warmup) {
+    printf("\n");
+  }
   RUNNER_ET_LOG(
       warmup,
       "RSS after finishing text generation: %f MiB (0 if unsupported)",
