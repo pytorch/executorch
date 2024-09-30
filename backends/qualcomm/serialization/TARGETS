@@ -3,6 +3,6 @@
 
 load(":targets.bzl", "define_common_targets")
 
-oncall("odai_jarvis")
+oncall("executorch")
 
 define_common_targets()
