@@ -16,11 +16,12 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::runtime::testing::TensorFactory;
 using torch::executor::testing::SupportedFeatures;
-using torch::executor::testing::TensorFactory;
+namespace etrt = executorch::runtime;
 
 class OpSubOutTest : public OperatorTest {
  protected:
@@ -60,7 +61,8 @@ class OpSubOutTest : public OperatorTest {
     test_sub<DTYPE_A, DTYPE_B, ScalarType::Float>();
     test_sub<DTYPE_A, DTYPE_B, ScalarType::Double>();
     // Integral out type is only allowed if both inputs are integral types
-    if (isIntegralType(DTYPE_A, false) && isIntegralType(DTYPE_B, false)) {
+    if (etrt::isIntegralType(DTYPE_A, false) &&
+        etrt::isIntegralType(DTYPE_B, false)) {
       test_sub<DTYPE_A, DTYPE_B, ScalarType::Int>();
       test_sub<DTYPE_A, DTYPE_B, ScalarType::Long>();
     }
