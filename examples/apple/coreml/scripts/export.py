@@ -13,14 +13,20 @@ import coremltools as ct
 import executorch.exir as exir
 
 import torch
+from coremltools.optimize.torch.quantization.quantization_config import (
+    LinearQuantizerConfig,
+    QuantizationScheme,
+)
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
+from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
 from executorch.devtools.etrecord import generate_etrecord
 from executorch.exir import to_edge
 
 from executorch.exir.backend.backend_api import to_backend
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from torch.export import export
 
@@ -75,6 +81,13 @@ def parse_args() -> argparse.ArgumentParser:
     parser.add_argument("--generate_etrecord", action=argparse.BooleanOptionalAction)
     parser.add_argument("--save_processed_bytes", action=argparse.BooleanOptionalAction)
 
+    parser.add_argument(
+        "--quantize",
+        action=argparse.BooleanOptionalAction,
+        required=False,
+        help="Quantize CoreML model",
+    )
+
     args = parser.parse_args()
     return args
 
@@ -110,9 +123,10 @@ def export_lowered_module_to_executorch_program(lowered_module, example_inputs):
     return exec_prog
 
 
-def save_executorch_program(exec_prog, model_name, compute_unit):
+def save_executorch_program(exec_prog, model_name, compute_unit, quantize):
     buffer = exec_prog.buffer
-    filename = f"{model_name}_coreml_{compute_unit}.pte"
+    data_type = "quantize" if quantize else "fp"
+    filename = f"{model_name}_coreml_{compute_unit}_{data_type}.pte"
     print(f"Saving exported program to {filename}")
     with open(filename, "wb") as file:
         file.write(buffer)
@@ -168,6 +182,22 @@ def main():
     if args.use_partitioner:
         model.eval()
         exir_program_aten = torch.export.export(model, example_inputs)
+        if args.quantize:
+            quantization_config = LinearQuantizerConfig.from_dict(
+                {
+                    "global_config": {
+                        "quantization_scheme": QuantizationScheme.affine,
+                        "activation_dtype": torch.quint8,
+                        "weight_dtype": torch.qint8,
+                        "weight_per_channel": True,
+                    }
+                }
+            )
+
+            quantizer = CoreMLQuantizer(quantization_config)
+            model = prepare_pt2e(model, quantizer)  # pyre-fixme[6]
+            model(*example_inputs)
+            exir_program_aten = convert_pt2e(model)
 
         edge_program_manager = exir.to_edge(exir_program_aten)
         edge_copy = copy.deepcopy(edge_program_manager)
@@ -189,7 +219,9 @@ def main():
             example_inputs,
         )
 
-    save_executorch_program(exec_program, args.model_name, args.compute_unit)
+    save_executorch_program(
+        exec_program, args.model_name, args.compute_unit, args.quantize
+    )
     generate_etrecord(f"{args.model_name}_coreml_etrecord.bin", edge_copy, exec_program)
 
     if args.save_processed_bytes and lowered_module is not None:

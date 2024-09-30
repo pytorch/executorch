@@ -52,7 +52,7 @@ Allocator::Allocator(Allocator&& other) noexcept
 }
 
 Allocator::~Allocator() {
-  if (VK_NULL_HANDLE == allocator_) {
+  if (allocator_ == VK_NULL_HANDLE) {
     return;
   }
   vmaDestroyAllocator(allocator_);

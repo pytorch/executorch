@@ -297,7 +297,17 @@ def build_args_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
-    parser.add_argument("-X", "--xnnpack", action="store_true")
+    parser.add_argument(
+        "-X",
+        "--xnnpack",
+        action="store_true",
+        help="Delegate to DQLinear ops to the xnnpack backend",
+    )
+    parser.add_argument(
+        "--xnnpack-extended-ops",
+        action="store_true",
+        help="Delegate more operators beyond DQLinear to the xnnpack backend. Requires -X or --xnnpack to be set.",
+    )
     parser.add_argument("-V", "--vulkan", action="store_true")
     parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
@@ -546,12 +556,24 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
     # to_backend
     partitioners = []
-    if pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None:
-        partitioners.append(get_xnnpack_partitioner())
+
+    # Order matters here, dynamic quantization should be applied first when both xnnpack and xnnpack_extended_ops are enabled
+    if (
+        pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None
+    ) or (args.xnnpack):
+        partitioners.append(
+            get_xnnpack_partitioner(dynamic_quant_only_partitioner=True)
+        )
+
+        # force xnnpack to be true if pt2e_quant_params is not None and args.xnnpack is False
+        args.xnnpack = True
         modelname = f"xnnpack_dq_{modelname}"
 
-    if args.xnnpack:
-        partitioners.append(get_xnnpack_partitioner())
+    if args.xnnpack_extended_ops:
+        assert args.xnnpack, "xnnpack_extended_ops requires xnnpack to be enabled"
+        partitioners.append(
+            get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
+        )
         modelname = f"xnnpack_{modelname}"
 
     if args.vulkan:
@@ -597,6 +619,10 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
                 builder_exported_to_edge.metadata["get_n_layers"],
                 shares=args.num_sharding,
             )
+
+    logging.info("Lowering model using following partitioner(s): ")
+    for partitioner in partitioners:
+        logging.info(f"--> {partitioner.__class__.__name__}")
 
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
