@@ -197,7 +197,7 @@ class _BaseExtension(Extension):
         dst: str,
         name: str,
         is_cmake_built: bool = True,
-        is_dst_dir: bool = False,
+        dst_is_dir: bool = False,
     ):
         # Source path; semantics defined by the subclass.
         self.src: str = src
@@ -219,7 +219,7 @@ class _BaseExtension(Extension):
 
         # If True, the destination is a directory. If False, the destination is a
         # file.
-        self.is_dst_dir: bool = is_dst_dir
+        self.dst_is_dir: bool = dst_is_dir
 
         super().__init__(name=self.name, sources=[])
 
@@ -328,29 +328,24 @@ class HeaderFile(_BaseExtension):
     def __init__(
         self,
         src_dir: str,
-        src_name: Optional[str] = None,
-        dst_dir: Optional[str] = None,
+        src_name: str = "*.h",
+        dst_dir: str = "executorch/include/executorch/",
     ):
         """Initializes a BuiltFile.
 
         Args:
             src_dir: The directory of the headers to install, relative to the root
-                ExecuTorch source directory. Under the hood, we glob all the headers
-                using `*.h` patterns.
+                ExecuTorch source directory. Under the hood, we recursively glob all
+                the headers using `*.h` patterns.
             src_name: The name of the header to install. If not specified, all the
                 headers in the src_dir will be installed.
             dst_dir: The directory to install to, relative to the root of the pip
-                package. If not specified, defaults to `include/executorch/<src_dir>`.
+                package. If not specified, defaults to `executorch/include/executorch/`.
         """
-        if src_name is None:
-            src_name = "*.h"
         src = os.path.join(src_dir, src_name)
-        if dst_dir is None:
-            dst = "executorch/include/executorch/"
-        else:
-            dst = dst_dir
+        assert dst_dir.endswith("/"), f"dst_dir must end with '/', got {dst_dir}"
         super().__init__(
-            src=src, dst=dst, name=src_name, is_cmake_built=False, is_dst_dir=True
+            src=src, dst=dst_dir, name=src_name, is_cmake_built=False, dst_is_dir=True
         )
 
     def dst_path(self, installer: "InstallerBuildExt") -> Path:
@@ -429,7 +424,7 @@ class InstallerBuildExt(build_ext):
         # Copy the file.
         src_list = src_file.parent.rglob(src_file.name)
         for src in src_list:
-            if ext.is_dst_dir:
+            if ext.dst_is_dir:
                 # Destination is a prefix directory. Copy the file to the
                 # destination directory.
                 dst = dst_file / src
@@ -438,8 +433,7 @@ class InstallerBuildExt(build_ext):
                 dst = dst_file
 
             # Ensure that the destination directory exists.
-            if not dst.parent.exists():
-                self.mkpath(os.fspath(dst.parent))
+            self.mkpath(os.fspath(dst.parent))
 
             self.copy_file(os.fspath(src), os.fspath(dst))
 
@@ -693,13 +687,18 @@ def get_ext_modules() -> List[Extension]:
     ext_modules = []
 
     # Copy all the necessary headers into include/executorch/ so that they can
-    # be found in the pip package. This is a subset of the headers that are
-    # essential for building custom ops extensions
+    # be found in the pip package. This is the subset of headers that are
+    # essential for building custom ops extensions.
+    # TODO: Use cmake to gather the headers instead of hard-coding them here.
+    # For example: https://discourse.cmake.org/t/installing-headers-the-modern-
+    # way-regurgitated-and-revisited/3238/3
     for include_dir in [
         "runtime/core/",
         "runtime/kernel/",
         "runtime/platform/",
         "extension/kernel_util/",
+        "extension/tensor/",
+        "extension/threadpool/",
     ]:
         ext_modules.append(
             HeaderFile(
