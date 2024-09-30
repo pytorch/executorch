@@ -6,7 +6,7 @@ We provide a list of util functions to give users insights on what happened to t
 The `get_delegation_info()` method provides a summary of what happened to the model after the `to_backend()` call:
 
 ```python
-from executorch.exir.backend.utils import get_delegation_info
+from executorch.devtools.backend_debug import get_delegation_info
 from tabulate import tabulate
 
 # ... After call to to_backend(), but before to_executorch()
