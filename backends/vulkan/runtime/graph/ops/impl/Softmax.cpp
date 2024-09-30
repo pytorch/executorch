@@ -57,7 +57,7 @@ void add_softmax_node(
   global_wg_size[reduce_dim] = 1;
 
   utils::uvec3 local_wg_size{1, 1, 1};
-  local_wg_size[reduce_dim] = 16;
+  local_wg_size[reduce_dim] = 4;
   const int other_dim_1 = (reduce_dim + 1) % 3;
   const int other_dim_2 = (reduce_dim + 2) % 3;
   int32_t group_dim;

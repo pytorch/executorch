@@ -32,7 +32,7 @@ layout(constant_id = 3) const int packed_dim = 0;
 layout(constant_id = 4) const int reduce_dim = 0;
 layout(constant_id = 5) const int group_dim = 1;
 
-#define NWORKERS 16
+#define NWORKERS 4
 #define NGROUP 4
 
 #define NTHREADS 64
@@ -203,7 +203,7 @@ void softmax_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   // For the last texel in the dim, if there are padding elements then each
   // element of the texel needs to be processed individually such that the
   // padding elements are ignored
-  if (scan_pos[reduce_dim] == tout_limits[reduce_dim] - 1 && nspill > 0) {
+  if (nspill > 0 && scan_pos[reduce_dim] == tout_limits[reduce_dim] - 1) {
     const vec4 intex = load_texel(tin, scan_pos);
     for (int i = 0; i < nspill; ++i) {
       denominators.x += exp(intex[i] - max_element);
@@ -217,26 +217,10 @@ void softmax_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   for (int i = 1; i < NWORKERS; ++i, group_i++) {
     denominators += shared_vecs[group_i];
   }
-
+  // Reduce over the accumulated texel to find the overall sum
   float denominator = 0;
   [[unroll]] for (int i = 0; i < 4; ++i) {
     denominator += denominators[i];
-  }
-
-  vec4 max_elements_gl = vec4(load_texel(tin, scan_pos).x);
-  scan_pos[reduce_dim] = 0;
-  for (int i = 0; i < reduce_len; i += 4, scan_pos[reduce_dim]++) {
-    max_elements_gl = max(load_texel(tin, scan_pos), max_elements_gl);
-  }
-  if (nspill > 0) {
-    const vec4 intex = load_texel(tin, scan_pos);
-    for (int i = 0; i < nspill; ++i) {
-      max_elements_gl.x = max(intex[i], max_elements_gl.x);
-    }
-  }
-  float max_element_gl = max_elements_gl.x;
-  [[unroll]] for (int i = 1; i < 4; ++i) {
-    max_element_gl = max(max_elements_gl[i], max_element_gl);
   }
 
   scan_pos[reduce_dim] = tid.x;
@@ -248,7 +232,7 @@ void softmax_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   // For the last texel in the dim, if there are padding elements then the
   // padding elements need to be set to 0 explicitly, otherwise they may
   // influence subsequent operations.
-  if (scan_pos[reduce_dim] == tout_limits[reduce_dim] - 1 && nspill > 0) {
+  if (nspill > 0 && scan_pos[reduce_dim] == tout_limits[reduce_dim] - 1) {
     const vec4 numerator = op1(load_texel(tin, scan_pos) - max_element);
     vec4 outtex = op2(numerator, denominator);
     [[unroll]] for (int i = nspill; i < 4; ++i) {
