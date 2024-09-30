@@ -96,8 +96,8 @@ public class MessageAdapter extends ArrayAdapter<Message> {
     ArrayList<Message> recentMessages = new ArrayList<Message>();
     int lastIndex = savedMessages.size() - 1;
     // In most cases lastIndex >=0 .
-    // A situation where the user clears chat history and then enters prompt would cause lastIndex=-1 .
-    if(lastIndex >= 0) {
+    // A situation where the user clears chat history and enters prompt. Causes lastIndex=-1 .
+    if (lastIndex >= 0) {
       Message messageToAdd = savedMessages.get(lastIndex);
       int oldPromptID = messageToAdd.getPromptID();
 
