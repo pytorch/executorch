@@ -7,6 +7,9 @@ cmake_minimum_required(VERSION 3.20)
 project(arm_executor_runner)
 
 option(SEMIHOSTING "Enable semihosting" OFF)
+option(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE "Set ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE to specify memory alloction pool size" OFF)
+option(ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE "Set ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE to specify temp alloction pool size" OFF)
+
 
 if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
   message(
@@ -170,6 +173,14 @@ if(SEMIHOSTING)
   target_compile_definitions(arm_executor_runner PUBLIC SEMIHOSTING)
 else()
   add_dependencies(arm_executor_runner gen_model_header)
+endif()
+
+if(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE)
+  target_compile_definitions(arm_executor_runner PUBLIC ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE})
+endif()
+
+if(ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE)
+  target_compile_definitions(arm_executor_runner PUBLIC ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE})
 endif()
 
 # Fixup compilation of retarget.c
