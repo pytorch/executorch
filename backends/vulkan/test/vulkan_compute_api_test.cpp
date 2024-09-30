@@ -1274,6 +1274,49 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_view) {
   }
 }
 
+TEST(VulkanComputeGraphTest, test_graph_view_of_view) {
+  GraphConfig config;
+  config.set_storage_type_override(utils::kTexture3D);
+  ComputeGraph graph(config);
+
+  constexpr int N = 3;
+  constexpr int C = 5;
+  constexpr int H = 17;
+  constexpr int W = 19;
+
+  std::vector<int64_t> orig_sizes = {N, C, H, W};
+
+  // Test a common view of view usage pattern. In delegate execution, the values
+  // of the graph are created first; then operators are added. As a result,
+  // creating views of views is a bit tricky because metadata updates to a view
+  // does not update the metadata of the view's views. Nonetheless, view
+  // operators have an implicit assumption that the metadata of the output is
+  // equivalent to the metadata of the input. Therefore, view operators must
+  // account for unseen updates to the input view by first calling
+  // `virtual_clone()` to make the output equivalent to the input before.
+  // modifying metadata.
+
+  ValueRef t1 = graph.add_tensor(orig_sizes, vkapi::kFloat);
+  ValueRef t2 = graph.add_tensor_view(t1);
+  ValueRef t3 = graph.add_tensor_view(t2);
+
+  ValueRef channels = graph.add_scalar<int64_t>(1);
+  ValueRef height = graph.add_scalar<int64_t>(2);
+  ValueRef width = graph.add_scalar<int64_t>(3);
+
+  auto opFn = VK_GET_OP_FN("aten.transpose.int");
+
+  opFn(graph, {t1, channels, height, t2});
+  std::vector<int64_t> t2_sizes = graph.sizes_of(t2);
+  std::vector<int64_t> expected_t2_sizes = {N, H, C, W};
+  EXPECT_TRUE(t2_sizes == expected_t2_sizes);
+
+  opFn(graph, {t2, height, width, t3});
+  std::vector<int64_t> t3_sizes = graph.sizes_of(t3);
+  std::vector<int64_t> expected_t3_sizes = {N, H, W, C};
+  EXPECT_TRUE(t2_sizes == expected_t2_sizes);
+}
+
 TEST(VulkanComputeGraphTest, test_simple_graph) {
   GraphConfig config;
   ComputeGraph graph(config);
