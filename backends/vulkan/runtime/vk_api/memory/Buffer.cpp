@@ -122,7 +122,7 @@ VulkanBuffer::~VulkanBuffer() {
   // Do not destroy the VkBuffer if this class instance is a copy of another
   // class instance, since this means that this class instance does not have
   // ownership of the underlying resource.
-  if (VK_NULL_HANDLE != handle_ && !is_copy_) {
+  if (handle_ != VK_NULL_HANDLE && !is_copy_) {
     if (owns_memory_) {
       vmaDestroyBuffer(allocator_, handle_, memory_.allocation);
     } else {
