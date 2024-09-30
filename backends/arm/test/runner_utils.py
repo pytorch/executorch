@@ -407,7 +407,7 @@ class RunnerUtil:
 def prep_data_for_save(
     data, is_quantized: bool, input_name: str, quant_param: QuantizationParams
 ):
-    data_np = data.detach().numpy().astype(np.float32)
+    data_np = np.array(data.detach(), order="C").astype(np.float32)
 
     if is_quantized:
         assert (
