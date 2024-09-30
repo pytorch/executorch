@@ -41,12 +41,11 @@ class OpIsNanTest : public OperatorTest {
 
     EXPECT_TENSOR_EQ(out, ret);
     EXPECT_TENSOR_EQ(out, expected);
- }
+  }
 };
 
 TEST_F(OpIsNanTest, SanityCheck) {
-#define TEST_ENTRY(ctype, dtype) \
-  test_sanity_check<ScalarType::dtype>();
+#define TEST_ENTRY(ctype, dtype) test_sanity_check<ScalarType::dtype>();
   ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }

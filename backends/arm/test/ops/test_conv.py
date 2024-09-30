@@ -242,19 +242,6 @@ testsuite = [
     ("two_conv2d", two_conv2d),
 ]
 
-# Expected fails on Ethos-U55/U65. This is a known limitation.
-# Check: https://review.mlplatform.org/plugins/gitiles/ml/ethos-u/ethos-u-vela/+/refs/heads/main/SUPPORTED_OPS.md
-#     IFM Tensor batch size must be 1 - [FULLY_CONNECTED, RESHAPE, SHAPE, SLICE, SOFTMAX, SPLIT, SPLIT_V, SQUEEZE, STRIDED_SLICE, UNPACK]
-testsuite_u55 = testsuite.copy()
-testsuite_u55.remove(("2x2_3x2x40x40_nobias", conv2d_2x2_3x2x40x40_nobias))
-testsuite_u55.remove(("5x5_3x2x128x128_st1", conv2d_5x5_3x2x128x128_st1))
-
-# Fails when enabling CompileSpec.set_quantize_io(True). MLETORCH-191.
-testsuite_u55.remove(("2x2_1x1x14x13_st2_needs_adjust_pass", conv2d_2x2_1x1x14x13_st2))
-testsuite_u55.remove(
-    ("conv2d_5x5_1x3x14x15_st3_pd1_needs_adjust_pass", conv2d_5x5_1x3x14x15_st3_pd1)
-)
-
 
 class TestConv2D(unittest.TestCase):
     """Tests Conv2D, both single ops and multiple Convolutions in series."""
@@ -327,7 +314,7 @@ class TestConv2D(unittest.TestCase):
     def test_conv2d_tosa_BI(self, test_name, model):
         self._test_conv2d_tosa_BI_pipeline(model, model.get_inputs())
 
-    @parameterized.expand(testsuite_u55)
+    @parameterized.expand(testsuite)
     def test_conv2d_u55_BI(self, test_name, model):
         self._test_conv2d_ethosu_BI_pipeline(
             common.get_u55_compile_spec(permute_memory_to_nhwc=True),
@@ -335,7 +322,7 @@ class TestConv2D(unittest.TestCase):
             model.get_inputs(),
         )
 
-    @parameterized.expand(testsuite_u55)
+    @parameterized.expand(testsuite)
     def test_conv2d_u85_BI(self, test_name, model):
         self._test_conv2d_ethosu_BI_pipeline(
             common.get_u85_compile_spec(permute_memory_to_nhwc=True),

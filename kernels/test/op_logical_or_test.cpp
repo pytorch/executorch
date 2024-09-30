@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/BinaryLogicalOpTest.h>
+#include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 
 #include <gtest/gtest.h>
 
@@ -15,8 +15,8 @@ using exec_aten::Tensor;
 
 class OpLogicalOrTest : public torch::executor::testing::BinaryLogicalOpTest {
  protected:
-  Tensor&
-  op_out(const Tensor& self, const Tensor& other, Tensor& out) override {
+  Tensor& op_out(const Tensor& self, const Tensor& other, Tensor& out)
+      override {
     return torch::executor::aten::logical_or_outf(context_, self, other, out);
   }
 
