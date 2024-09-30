@@ -64,7 +64,6 @@
     {
         "directory": "extension/tensor/test",
         "sources": [
-            "tensor_impl_ptr_test.cpp",
             "tensor_ptr_maker_test.cpp",
             "tensor_ptr_test.cpp"
         ],

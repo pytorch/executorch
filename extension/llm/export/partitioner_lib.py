@@ -7,16 +7,28 @@
 from typing import Optional
 
 
-def get_xnnpack_partitioner():
+def get_xnnpack_partitioner(dynamic_quant_only_partitioner: bool = True):
+    """
+    Returns the XNNPACK partitioner.
+
+    @arg dynamic_quant_only_partitioner:
+        This is enabled by default to keep BC.
+        If dynamic_quant_only_partitioner is True, then only dynamically quantized
+        linear layers will be partitioned.
+        Else, anything which can be will be partitioned greedily.
+    """
     from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
         XnnpackDynamicallyQuantizedPartitioner,
+        XnnpackPartitioner,
     )
 
-    # Following changes due to.
-    # 1. We need dynamically quantized partitioner for both pt2e_quantize options
-    #    as well as "qmode 8da4w" which is also dynamic quantizes linear layers.
-    # 2. XNNPACK partitioner seems to result in seg fault for non dqlinear ops.
-    return XnnpackDynamicallyQuantizedPartitioner()
+    if dynamic_quant_only_partitioner:
+        # Following changes due to.
+        # 1. We need dynamically quantized partitioner for both pt2e_quantize options
+        #    as well as "qmode 8da4w" which is also dynamic quantizes linear layers.
+        # 2. XNNPACK partitioner seems to result in seg fault for non dqlinear ops.
+        return XnnpackDynamicallyQuantizedPartitioner()
+    return XnnpackPartitioner()
 
 
 def get_vulkan_partitioner(

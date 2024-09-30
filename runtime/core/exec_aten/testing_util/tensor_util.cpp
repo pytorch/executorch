@@ -157,11 +157,12 @@ bool tensor_data_is_close(
     const Tensor& a,
     const Tensor& b,
     double rtol,
-    double atol) {
+    std::optional<double> opt_atol) {
   if (a.scalar_type() != b.scalar_type() || a.numel() != b.numel()) {
     return false;
   }
 
+  double atol = opt_atol.value_or(default_atol_for_type(a.scalar_type()));
   if (a.nbytes() == 0) {
     // Note that this case is important. It's valid for a zero-size tensor to
     // have a null data pointer, but in some environments it's invalid to pass a
@@ -193,12 +194,12 @@ bool tensor_lists_are_close(
     const exec_aten::Tensor* tensors_b,
     size_t num_tensors_b,
     double rtol,
-    double atol) {
+    std::optional<double> opt_atol) {
   if (num_tensors_a != num_tensors_b) {
     return false;
   }
   for (size_t i = 0; i < num_tensors_a; i++) {
-    if (!tensors_are_close(tensors_a[i], tensors_b[i], rtol, atol)) {
+    if (!tensors_are_close(tensors_a[i], tensors_b[i], rtol, opt_atol)) {
       return false;
     }
   }
