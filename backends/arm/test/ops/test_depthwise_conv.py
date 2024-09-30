@@ -113,24 +113,6 @@ testsuite = [
     ("two_dw_conv2d", two_dw_conv2d),
 ]
 
-# Expected fails on Ethos-U55/U65. This is a known limitation.
-# Check: https://review.mlplatform.org/plugins/gitiles/ml/ethos-u/ethos-u-vela/+/refs/heads/main/SUPPORTED_OPS.md
-#   For depth multipliers > 1, IFM channels must be 1 and OFM channels must be
-#   equal to the depth multiplier
-# and
-#   depthwise_multiplier = out_channels / in_channels
-testsuite_u55 = testsuite.copy()
-testsuite_u55.remove(("2x2_1x6x4x4_gp6_st1", dw_conv2d_2x2_1x6x4x4_gp6_st1))
-testsuite_u55.remove(("3x3_1x4x256x256_gp4_st1", dw_conv2d_3x3_1x4x256x256_gp4_st1))
-testsuite_u55.remove(("3x3_2x8x198x198_gp8_st3", dw_conv2d_3x3_2x8x198x198_gp8_st3))
-testsuite_u55.remove(
-    ("3x3_1x4x256x256_gp4_nobias", dw_conv2d_3x3_1x4x256x256_gp4_nobias)
-)
-testsuite_u55.remove(("two_dw_conv2d", two_dw_conv2d))
-
-# Fails when enabling CompileSpec.set_quantize_io(True). MLETORCH-191.
-testsuite_u55.remove(("3x3_1x3x256x256_gp3_st1", dw_conv2d_3x3_1x3x256x256_gp3_st1))
-
 
 class TestDepthwiseConv2D(unittest.TestCase):
     """Tests Conv2D where groups == in_channels and out_channels = K * in_channels. This
@@ -204,7 +186,7 @@ class TestDepthwiseConv2D(unittest.TestCase):
     def test_dw_conv2d_tosa_BI(self, test_name: str, model: torch.nn.Module):
         self._test_dw_conv2d_tosa_BI_pipeline(model, model.get_inputs())
 
-    @parameterized.expand(testsuite_u55, skip_on_empty=True)
+    @parameterized.expand(testsuite, skip_on_empty=True)
     def test_dw_conv2d_u55_BI(
         self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
     ):
