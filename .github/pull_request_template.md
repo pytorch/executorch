@@ -8,4 +8,4 @@
 [PLEASE REMOVE] List all issues fixed (e.g. "closes #ISSUE_NUMBER"), separate by newlines, that this PR addresses.
 
 ### Changelog
-[PLEASE REMOVE] If this PR introduces a fix or feature that should be the upcoming release notes, please add the following line below - `+changelog: <description of feature>`
+[PLEASE REMOVE] If this PR introduces a fix or feature that should be the upcoming release notes, please add the following "Release notes: <area>" label.
