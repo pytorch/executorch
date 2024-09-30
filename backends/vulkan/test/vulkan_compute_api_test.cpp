@@ -1361,6 +1361,9 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
     int scalar_val = i - 3.0f;
     graph.set_symint(scalar, scalar_val);
 
+    int32_t scalar_val_read = graph.read_symint(scalar);
+    EXPECT_TRUE(scalar_val_read == scalar_val);
+
     float val_a = i + 2.0f;
     float val_out = val_a + scalar_val;
 
