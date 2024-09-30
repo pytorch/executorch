@@ -305,6 +305,7 @@ def make_test(  # noqa: C901
         ######### RUN TEST CASES #########
 
         def test_method_meta(tester) -> None:
+            # pyre-fixme[16]: Callable `make_test` has no attribute `wrapper`.
             exported_program, inputs = create_program(ModuleAdd())
 
             # Use pybindings to load the program and query its metadata.
@@ -351,6 +352,7 @@ def make_test(  # noqa: C901
 
         def test_bad_name(tester) -> None:
             # Create an ExecuTorch program from ModuleAdd.
+            # pyre-fixme[16]: Callable `make_test` has no attribute `wrapper`.
             exported_program, inputs = create_program(ModuleAdd())
 
             # Use pybindings to load and execute the program.

@@ -140,7 +140,7 @@ void setup_output_storage(
     const std::vector<Span<uint8_t>>& output_storages) {
   if (output_storages.size() != method.outputs_size()) {
     THROW_IF_ERROR(
-        Error(),
+        Error::InvalidArgument,
         "number of output storages %zu does not match number of outputs %zu",
         output_storages.size(),
         method.outputs_size());
