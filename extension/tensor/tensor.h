@@ -9,6 +9,5 @@
 #pragma once
 
 // Umbrella header for the Tensor extension.
-#include <executorch/extension/tensor/tensor_impl_ptr.h>
 #include <executorch/extension/tensor/tensor_ptr.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
