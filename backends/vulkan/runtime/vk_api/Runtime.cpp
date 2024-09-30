@@ -134,7 +134,7 @@ VkInstance create_instance(const RuntimeConfig& config) {
 
 std::vector<Runtime::DeviceMapping> create_physical_devices(
     VkInstance instance) {
-  if (VK_NULL_HANDLE == instance) {
+  if (instance == VK_NULL_HANDLE) {
     return std::vector<Runtime::DeviceMapping>();
   }
 
@@ -176,7 +176,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_report_callback_fn(
 VkDebugReportCallbackEXT create_debug_report_callback(
     VkInstance instance,
     const RuntimeConfig config) {
-  if (VK_NULL_HANDLE == instance || !config.enable_validation_messages) {
+  if (instance == VK_NULL_HANDLE || !config.enable_validation_messages) {
     return VkDebugReportCallbackEXT{};
   }
 
@@ -296,7 +296,7 @@ Runtime::Runtime(const RuntimeConfig config)
 }
 
 Runtime::~Runtime() {
-  if (VK_NULL_HANDLE == instance_) {
+  if (instance_ == VK_NULL_HANDLE) {
     return;
   }
 
