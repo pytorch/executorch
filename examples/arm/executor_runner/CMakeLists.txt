@@ -59,8 +59,74 @@ endif()
 
 if(TARGET_BOARD STREQUAL "corstone-300")
   add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target)
+  target_compile_definitions(ethosu_target_common INTERFACE
+      # Configure NPU architecture timing adapters
+      # Ethos_U55_High_End_Embedded
+      # This is just example numbers and you should make this match your hardware
+      # SRAM
+      ETHOSU_TA_MAXR_0=8
+      ETHOSU_TA_MAXW_0=8
+      ETHOSU_TA_MAXRW_0=0
+      ETHOSU_TA_RLATENCY_0=32
+      ETHOSU_TA_WLATENCY_0=32
+      ETHOSU_TA_PULSE_ON_0=3999
+      ETHOSU_TA_PULSE_OFF_0=1
+      ETHOSU_TA_BWCAP_0=4000
+      ETHOSU_TA_PERFCTRL_0=0
+      ETHOSU_TA_PERFCNT_0=0
+      ETHOSU_TA_MODE_0=1
+      ETHOSU_TA_HISTBIN_0=0
+      ETHOSU_TA_HISTCNT_0=0
+      # Flash
+      ETHOSU_TA_MAXR_1=2
+      ETHOSU_TA_MAXW_1=0
+      ETHOSU_TA_MAXRW_1=0
+      ETHOSU_TA_RLATENCY_1=64
+      ETHOSU_TA_WLATENCY_1=0
+      ETHOSU_TA_PULSE_ON_1=320
+      ETHOSU_TA_PULSE_OFF_1=80
+      ETHOSU_TA_BWCAP_1=50
+      ETHOSU_TA_PERFCTRL_1=0
+      ETHOSU_TA_PERFCNT_1=0
+      ETHOSU_TA_MODE_1=1
+      ETHOSU_TA_HISTBIN_1=0
+      ETHOSU_TA_HISTCNT_1=0
+      )
 elseif(TARGET_BOARD STREQUAL "corstone-320")
   add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-320 target)
+  target_compile_definitions(ethosu_target_common INTERFACE
+      # Configure NPU architecture timing adapters
+      # Ethos_U85_SYS_DRAM_Mid
+      # This is just example numbers and you should make this match your hardware
+      # SRAM
+      ETHOSU_TA_MAXR_0=8
+      ETHOSU_TA_MAXW_0=8
+      ETHOSU_TA_MAXRW_0=0
+      ETHOSU_TA_RLATENCY_0=32
+      ETHOSU_TA_WLATENCY_0=32
+      ETHOSU_TA_PULSE_ON_0=3999
+      ETHOSU_TA_PULSE_OFF_0=1
+      ETHOSU_TA_BWCAP_0=4000
+      ETHOSU_TA_PERFCTRL_0=0
+      ETHOSU_TA_PERFCNT_0=0
+      ETHOSU_TA_MODE_0=1
+      ETHOSU_TA_HISTBIN_0=0
+      ETHOSU_TA_HISTCNT_0=0
+      # DRAM
+      ETHOSU_TA_MAXR_1=64
+      ETHOSU_TA_MAXW_1=32
+      ETHOSU_TA_MAXRW_1=0
+      ETHOSU_TA_RLATENCY_1=500
+      ETHOSU_TA_WLATENCY_1=250
+      ETHOSU_TA_PULSE_ON_1=4000
+      ETHOSU_TA_PULSE_OFF_1=1000
+      ETHOSU_TA_BWCAP_1=3750
+      ETHOSU_TA_PERFCTRL_1=0
+      ETHOSU_TA_PERFCNT_1=0
+      ETHOSU_TA_MODE_1=1
+      ETHOSU_TA_HISTBIN_1=0
+      ETHOSU_TA_HISTCNT_1=0
+      )
 else()
   message(FATAL_ERROR "Unsupported TARGET_BOARD: ${TARGET_BOARD}")
 endif()
