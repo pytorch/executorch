@@ -140,7 +140,7 @@ void setup_output_storage(
     const std::vector<Span<uint8_t>>& output_storages) {
   if (output_storages.size() != method.outputs_size()) {
     THROW_IF_ERROR(
-        Error(),
+        Error::InvalidArgument,
         "number of output storages %zu does not match number of outputs %zu",
         output_storages.size(),
         method.outputs_size());
@@ -249,10 +249,10 @@ class Module final {
       const std::vector<EValue>& args,
       const std::optional<std::vector<Span<uint8_t>>>& output_storages =
           std::nullopt) {
-    auto& method = methods_[method_name];
+    auto& method = get_method(method_name);
     exec_aten::ArrayRef<EValue> input_evalue_list(args.data(), args.size());
 
-    Error set_inputs_status = method->set_inputs(input_evalue_list);
+    Error set_inputs_status = method.set_inputs(input_evalue_list);
     THROW_IF_ERROR(
         set_inputs_status,
         "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
@@ -273,9 +273,9 @@ class Module final {
         c10::autograd_dispatch_keyset);
 #endif
     if (output_storages) {
-      setup_output_storage(*method, *output_storages);
+      setup_output_storage(method, *output_storages);
     }
-    Error execute_status = method->execute();
+    Error execute_status = method.execute();
     THROW_IF_ERROR(
         execute_status,
         "method->execute() failed with error 0x%" PRIx32,
@@ -302,7 +302,9 @@ class Module final {
   Method& get_method(const std::string& method_name) {
     if (methods_.count(method_name) == 0) {
       THROW_IF_ERROR(
-          Error(), "no such method in program: %s", method_name.c_str());
+          Error::InvalidArgument,
+          "no such method in program: %s",
+          method_name.c_str());
     }
     return *methods_[method_name].get();
   }
