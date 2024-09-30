@@ -35,7 +35,7 @@ class Tensor {
   using StridesType = TensorImpl::StridesType;
 
   Tensor() = delete;
-  explicit Tensor(TensorImpl* impl) : impl_(impl) {}
+  explicit constexpr Tensor(TensorImpl* impl) : impl_(impl) {}
 
   /**
    * Returns a pointer to the underlying TensorImpl.
