@@ -57,7 +57,7 @@ ImageSampler::ImageSampler(ImageSampler&& other) noexcept
 }
 
 ImageSampler::~ImageSampler() {
-  if (VK_NULL_HANDLE == handle_) {
+  if (handle_ == VK_NULL_HANDLE) {
     return;
   }
   vkDestroySampler(device_, handle_, nullptr);
@@ -232,11 +232,11 @@ VulkanImage::~VulkanImage() {
     return;
   }
 
-  if (VK_NULL_HANDLE != handles_.image_view) {
+  if (handles_.image_view != VK_NULL_HANDLE) {
     vkDestroyImageView(this->device(), handles_.image_view, nullptr);
   }
 
-  if (VK_NULL_HANDLE != handles_.image) {
+  if (handles_.image != VK_NULL_HANDLE) {
     if (owns_memory_) {
       vmaDestroyImage(allocator_, handles_.image, memory_.allocation);
     } else {
