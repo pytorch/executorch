@@ -38,11 +38,11 @@ TEST(BroadcastUtilTest, BroadcastTensor) {
 
   Tensor d = torch::executor::broadcast_tensor(a, c);
   EXPECT_TENSOR_DATA_EQ(d, tf.make({2, 2}, {2, 2, 2, 2}));
-  torch::executor::free_broadcast_tensor(d);
+  torch::executor::free_tensor(d);
 
   d = torch::executor::broadcast_tensor(b, c);
   EXPECT_TENSOR_DATA_EQ(d, tf.make({2, 2}, {2, 2, 2, 2}));
-  torch::executor::free_broadcast_tensor(d);
+  torch::executor::free_tensor(d);
 }
 
 TEST(BroadcastUtilTest, BroadcastableBetween) {
@@ -69,12 +69,12 @@ TEST(BroadcastUtilTest, BroadcastableToFrom) {
   ASSERT_TRUE(tensor_is_broadcastable_to(a, c));
   Tensor d = torch::executor::broadcast_tensor(a, c);
   EXPECT_TENSOR_DATA_EQ(d, tf.make({2, 2}, {2, 2, 2, 2}));
-  torch::executor::free_broadcast_tensor(d);
+  torch::executor::free_tensor(d);
 
   ASSERT_TRUE(tensor_is_broadcastable_to(b, c));
   d = torch::executor::broadcast_tensor(b, c);
   EXPECT_TENSOR_DATA_EQ(d, tf.make({2, 2}, {2, 2, 2, 2}));
-  torch::executor::free_broadcast_tensor(d);
+  torch::executor::free_tensor(d);
 }
 
 TEST(BroadcastUtilTest, NotBroadcastableTo) {

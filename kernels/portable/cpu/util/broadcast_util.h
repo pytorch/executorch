@@ -63,6 +63,23 @@ bool tensors_are_broadcastable_between(
 bool tensors_are_broadcastable_between(const Tensor& a, const Tensor& b);
 
 /**
+ * Create a new tensor with the given sizes, dim_order, and strides. Memory
+ * is dynamically allocated within this function and the tensor must be freed
+ * only using free_tensor.
+ *
+ * @param[in] sizes The sizes of the tensor.
+ * @param[in] dim_order The dim order of the tensor.
+ * @param[in] strides The strides of the tensor.
+ * @param[in] dtype The data type of the tensor.
+ * @returns A new tensor with the given sizes, dim_order, and strides.
+ */
+Tensor allocate_tensor(
+    const ArrayRef<Tensor::SizesType>& sizes,
+    const ArrayRef<Tensor::DimOrderType>& dim_order,
+    const ArrayRef<Tensor::StridesType>& strides,
+    const ScalarType& dtype);
+
+/**
  * DEPRECATED: Use `delinearize_index()` and `linearize_access_indexes()` for
  * index remapping to avoid memory allocation.
  *
@@ -75,7 +92,7 @@ bool tensors_are_broadcastable_between(const Tensor& a, const Tensor& b);
  * @param[in] broadcast_to The tensor to which we want to broadcast to.
  * @returns A new tensor with the same shape as broadcast_to and the data
  * repeated as appropriate. This tensor contains dynamically allocated memory
- * and must be freed using free_broadcast_tensor.
+ * and must be freed using free_tensor.
  */
 ET_DEPRECATED exec_aten::Tensor broadcast_tensor(
     const exec_aten::Tensor& broadcast_from,
@@ -192,18 +209,20 @@ ET_NODISCARD inline Error resize_to_broadcast_target_size(
 }
 
 /**
- * DEPRECATED: Use `delinearize_index()` and `linearize_access_indexes()` for
- * index remapping to avoid memory allocation.
- *
- * Free the dynamically allocated memory in broadcast_tensor. This should only
- * be used on a tensor returned by broadcast_tensor.
  *
  * @param[in] The tensor that was previosuly returned by a call to
- * broadcast_tensor.
+ * allocate_tensor.
  * @returns void
  */
 ET_DEPRECATED void free_broadcast_tensor(
     const exec_aten::Tensor& broadcast_tensor);
+
+/**
+ * Free the dynamically allocated memory in allocate_tensor. This should only
+ * be used on a tensor returned by allocate_tensor.
+ *
+ */
+void free_tensor(const exec_aten::Tensor& allocated_tensor);
 
 /**
  * Delinearize a flattened index to per-dimension indexes.
