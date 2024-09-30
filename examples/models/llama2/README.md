@@ -1,7 +1,12 @@
 # Summary
-This example demonstrates how to run a [Llama 2](https://llama.meta.com/llama2/) 7B or [Llama 3](https://ai.meta.com/llama/) 8B model on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on a phone.
+This example demonstrates how to run a [llama models](https://www.llama.com/) on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on a phone.
 
-For more details, see [Llama 2 repo](https://github.com/facebookresearch/llama) or [Llama 3 repo](https://github.com/facebookresearch/llama3).
+Here are supported models:
+
+- Llama 3.2 1B and 3B
+- Llama 3.1 8B
+- Llama 3 8B
+- Llama 2 7B
 
 Pretrained models are not included in this repo. Users are suggested to download them [here](https://ai.meta.com/resources/models-and-libraries/llama-downloads/).
 
@@ -19,13 +24,25 @@ Please note that the models are subject to the [Llama 2 Acceptable Use Policy](h
 
 Since Llama 2 7B or Llama 3 8B model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized model.
 
-<p align="center">
-      <img src="./llama_via_xnnpack.gif" width=300>
+For Llama 3.2 1B/3B, we validated the models by running them in their original bf16 datatype and unquantized on both Android and iOS phones. The 3B version required high-end phones with larger RAMs to fit the model.
+
+Additionally, 1B/3B models are sensitive to accuracy loss when regular PTQ quantization is applied, so we employed 4bit quantization using [SpinQuant](https://github.com/facebookresearch/SpinQuant/tree/main) to achieve a good balance between accuracy, performance and memory.
+
+<table>
+  <tr>
+    <td>
+      <img src="./llama_via_xnnpack.gif" width="300">
       <br>
       <em>
-      Running Llama3.1 8B on Android phone
+      Llama3.1 8B, 4bit quantized on Android phone
       </em>
-</p>
+    </td>
+    <td><img src="./Android3_2_1B_bf16.gif" width="300">
+    <br>
+    <em> Llama3.2 1B, unquantized, bf16 on Android phone. </em>
+    </td>
+  </tr>
+</table>
 
 ## Quantization:
 We employed 4-bit groupwise per token dynamic quantization of all the linear layers of the model. Dynamic quantization refers to quantizating activations dynamically, such that quantization parameters for activations are calculated, from min/max range, at runtime. Here we quantized activations with 8bits (signed integer). Furthermore, weights are statically quantized. In our case weights were per-channel groupwise quantized with 4bit signed integer. For more information refer to this [page](https://github.com/pytorch/ao).
@@ -39,30 +56,31 @@ We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/l
 
 Note that groupsize less than 128 was not enabled, since such models were still too large. This is because our current efforts have focused on enabling FP32 and support for FP16 is under way. What this implies for model size is that 1) embedding table is in FP32 and 2) quantized weights scales are FP32.
 
-### SpinQuant (Optional)
+### SpinQuant for Llama 3.2 1B/3B models (Optional)
 
 To improve accuracy, we can use [SpinQuant](https://github.com/facebookresearch/SpinQuant/tree/main), a post-training quantization (PTQ) technique that generates new quantized weights. In the standard PTQ process, quantization may lead to a decrease in accuracy when there are outliers. The SpinQuant method takes the original weights and produces optimized quantized weights with minimal outliers, resulting in higher accuracy. This can be achieved without any finetuning of the weights and only requires 100 iterations on a single A100 node.
 
-SpinQuant can generate quantized weights that are [compatible with ExecuTorch](https://github.com/facebookresearch/SpinQuant/tree/main?tab=readme-ov-file#3-export-to-executorch), specifically, it can be integrated with the existing optimized XNNPACK kernels (aka group-wise 4bit weight and 8bit dynamic activation). This allows developers to benefit from the higher accuracy of SpinQuant while also taking advantage of the strong performance of ExecuTorch acceleration. We are currently working on enabling SpinQuant for the Llama3.1 8B model on ExecuTorch.
+SpinQuant can generate quantized weights that are [compatible with ExecuTorch](https://github.com/facebookresearch/SpinQuant/tree/main?tab=readme-ov-file#3-export-to-executorch), specifically, it can be integrated with the existing optimized XNNPACK kernels (e.g., group-wise 4bit weight and 8bit dynamic activation). This allows developers to benefit from the higher accuracy of SpinQuant while also taking advantage of the strong performance of ExecuTorch acceleration. We enabled SpinQuant for Llama3.2 1B/3B models on ExecuTorch.
 
 ## Enablement
 
-We have verified running Llama 2 7B [mobile applications](#step-6-build-mobile-apps) efficiently on select devices including the iPhone 15 Pro, iPhone 15 Pro Max, Samsung Galaxy S22 and S24, and OnePlus 12.
+For Llama 3 8B and Llama3.1 8B, we have verified so far on iPhone 15 Pro, iPhone 15 Pro Max, Samsung Galaxy S24+ and OnePlus 12 (with 16GB RAM).
 
-For Llama 3 8B, we have verified so far on iPhone 15 Pro, iPhone 15 Pro Max, Samsung Galaxy S24+ and OnePlus 12 (with 16GB RAM).
+We have verified running Llama 2 7B [mobile applications](#step-6-build-mobile-apps) efficiently on select devices including the iPhone 15 Pro, iPhone 15 Pro Max, Samsung Galaxy S22 and S24, and OnePlus 12.
 
 ## Performance
 
-### Llama2 7B
-Llama 2 7B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 12 devices. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on).
+### Llama 3.2 1B and 3B
+Llama 3.2 1B and 3B performance was measured on the OnePlus 12 device. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on) for generating 128 tokens.
 
-|Device  | Groupwise 4-bit (128) | Groupwise 4-bit (256)
+|Model  | bf16 | 4bit(*) via SpinQuant
 |--------| ---------------------- | ---------------
-|Galaxy S22  | 8.15 tokens/second | 8.3 tokens/second |
-|Galaxy S24 | 10.66 tokens/second | 11.26 tokens/second |
-|OnePlus 12 | 11.55 tokens/second | 11.6 tokens/second |
+|1B  | 19.4 tokens/second | 53.41 tokens/second |
+|3B | 7.76 tokens/second | 22.98 tokens/second |
 
-### Llama3 8B
+(*) With SpinQuant, we currently quantize 4-bit groupwise (with groupsize 32) weight, 8bit dynamic activation of all the linear layers of the model, except embedding and output layers. The embedding and output layers are quantized as 8-bit per-channel weight and 8-bit dynamic activation.
+
+### Llama3 8B and Llama3.1 8B
 Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 12 devices. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on).
 
 Note that since Llama3's vocabulary size is 4x that of Llama2, we had to quantize embedding lookup table as well. For these results embedding lookup table was groupwise quantized with 4-bits and group size of 32.
@@ -73,8 +91,14 @@ Note that since Llama3's vocabulary size is 4x that of Llama2, we had to quantiz
 |Galaxy S24 | 10.91 tokens/second | 11.21 tokens/second |
 |OnePlus 12 | 10.85 tokens/second | 11.02 tokens/second |
 
-### Llama3.1
-Llama3.1 is supported on the ExecuTorch main branch and release/0.4
+### Llama2 7B
+Llama 2 7B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 12 devices. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on).
+
+|Device  | Groupwise 4-bit (128) | Groupwise 4-bit (256)
+|--------| ---------------------- | ---------------
+|Galaxy S22  | 8.15 tokens/second | 8.3 tokens/second |
+|Galaxy S24 | 10.66 tokens/second | 11.26 tokens/second |
+|OnePlus 12 | 11.55 tokens/second | 11.6 tokens/second |
 
 # Instructions
 
@@ -92,25 +116,65 @@ Llama3.1 is supported on the ExecuTorch main branch and release/0.4
 
 ## Step 2: Prepare model
 
-### Option A: Download and export Llama 2 7B model
+### Option A: Download and export Llama3.2 1B/3B model.
 
-You can export and run the original Llama 2 7B model.
+1. Download `consolidated.00.pth`, `params.json` and `tokenizer.model` from [Llama website](https://www.llama.com/llama-downloads/) or [Hugging Face](https://huggingface.co/meta-llama/Llama-3.2-1B). For chat use-cases, download the instruct models.
 
-1. Llama 2 pretrained parameters can be downloaded from [Meta's official website](https://ai.meta.com/resources/models-and-libraries/llama-downloads/) or from [Hugging Face](https://huggingface.co/meta-llama/Llama-2-7b).
+2. Export model and generate `.pte` file. Use original bfloat16 version, without any quantization.
 
-2. Edit `params.json` file. Replace `"vocab_size": -1` with `"vocab_size": 32000`. This is a short-term workaround.
+```
+# Set these paths to point to the downloaded files
+LLAMA_CHECKPOINT=path/to/checkpoint.pth
+LLAMA_PARAMS=path/to/params.json
 
-3. Export model and generate `.pte` file:
+python -m examples.models.llama2.export_llama \
+  --checkpoint "${LLAMA_CHECKPOINT:?}" \
+  --params "${LLAMA_PARAMS:?}" \
+  -kv -X \
+  -d bf16 \
+  --metadata '{"append_eos_to_prompt": 0, "get_bos_id":128000, "get_eos_ids":[128009, 128001], "get_n_bos": 0, "get_n_eos": 0}' \
+  --output_name="llama3_2.pte"
+```
+
+Optionally, we can apply SpinQuant to quantize the model without sacrifacing too much accuracy loss.
+
+To use SpinQuant, follow its [instruction](https://github.com/facebookresearch/SpinQuant/tree/main?tab=readme-ov-file#3-export-to-executorch) for exporting checkpoint to ExecuTorch and then export the SpinQuant checkpoint.
+
+```
+# Set these paths to point to the exported files
+LLAMA_QUANTIZED_CHECKPOINT=path/to/spinquant/checkpoint.pth
+LLAMA_PARAMS=path/to/params.json
+
+python -m examples.models.llama2.export_llama \
+   --checkpoint "${LLAMA_QUANTIZED_CHECKPOINT:?}" \
+   --params "${LLAMA_PARAMS:?}" \
+   --use_sdpa_with_kv_cache \
+   -X \
+   --spin_qmode 8da4w_output_8da8w \
+   --spin_group_size 32 \
+   --max_seq_length 2048 \
+   --output_name "llama3_2.pte" \
+   -kv \
+   -d fp32 \
+   --spin_embedding_quantize 8,0 \
+   --use_spin_quant native \
+   --metadata '{"append_eos_to_prompt": 0, "get_bos_id":128000, "get_eos_ids":[128009, 128001], "get_n_bos": 0, "get_n_eos": 0}'
+```
+
+### Option B: Download and export Llama 3 8B instruct model
+
+You can export and run the original Llama 3 8B instruct model.
+
+1. Llama 3 pretrained parameters can be downloaded from [Meta's official Llama 3 repository](https://github.com/meta-llama/llama3/).
+
+2. Export model and generate `.pte` file
     ```
-    python -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w --group_size 128 -d fp32
-    ```
-4. Create tokenizer.bin.
-
-    ```
-    python -m extension.llm.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
+    python -m examples.models.llama2.export_llama --checkpoint <consolidated.00.pth> -p <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w  --group_size 128 -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --embedding-quantize 4,32 --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
     ```
 
-### Option B: Download and export stories110M model
+    Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `--embedding-quantize 4,32` as shown above to further reduce the model size.
+
+### Option C: Download and export stories110M model
 
 If you want to deploy and run a smaller model for educational purposes. From `executorch` root:
 
@@ -133,24 +197,29 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     python -m extension.llm.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
     ```
 
-### Option C: Download and export Llama 3 8B instruct model
+### Option D: Download and export Llama 2 7B model
 
-You can export and run the original Llama 3 8B instruct model.
+You can export and run the original Llama 2 7B model.
 
-1. Llama 3 pretrained parameters can be downloaded from [Meta's official Llama 3 repository](https://github.com/meta-llama/llama3/).
+1. Llama 2 pretrained parameters can be downloaded from [Meta's official website](https://ai.meta.com/resources/models-and-libraries/llama-downloads/) or from [Hugging Face](https://huggingface.co/meta-llama/Llama-2-7b).
 
-2. Export model and generate `.pte` file
+2. Edit `params.json` file. Replace `"vocab_size": -1` with `"vocab_size": 32000`. This is a short-term workaround.
+
+3. Export model and generate `.pte` file:
     ```
-    python -m examples.models.llama2.export_llama --checkpoint <consolidated.00.pth> -p <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w  --group_size 128 -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --embedding-quantize 4,32 --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
+    python -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w --group_size 128 -d fp32
+    ```
+4. Create tokenizer.bin.
+
+    ```
+    python -m extension.llm.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
     ```
 
-    Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `--embedding-quantize 4,32` as shown above to further reduce the model size.
+### Option E: Download models from Hugging Face and convert from safetensor format to state dict
 
-3. SpinQuant [Optional]. If you want to improve accuracy, you can use [SpinQuant](https://github.com/facebookresearch/SpinQuant). Namely, (1) you can generate a new checkpoint via `31_optimize_rotation_executorch.sh` and `32_eval_ptq_executorch.sh` commands in [SpinQuant repo](https://github.com/facebookresearch/SpinQuant/tree/main?tab=readme-ov-file#3-export-to-executorch) (2) pass in an extra `--use_spin_quant native` argument in `export_llama` script above.
-
-### Option D: Download models from Hugging Face and convert from safetensor format to state dict
 
 You can also download above models from [Hugging Face](https://huggingface.co/). Since ExecuTorch starts from a PyTorch model, a script like below can be used to convert the Hugging Face safetensors format to PyTorch's state dict. It leverages the utils provided by [TorchTune](https://github.com/pytorch/torchtune).
+
 
 ```Python
 from torchtune.utils import FullModelHFCheckpointer
@@ -246,10 +315,10 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
 
 3. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/main.cpp#L18-L40).
     ```
-    cmake-out/examples/models/llama2/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.bin> --prompt=<prompt>
+    cmake-out/examples/models/llama2/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.model> --prompt=<prompt>
     ```
 
-For Llama3, you can pass the original `tokenizer.model` (without converting to `.bin` file).
+For Llama2 and stories models, pass the converted `tokenizer.bin` file instead of `tokenizer.model`.
 
 ## Step 5: Run benchmark on Android phone
 
@@ -310,19 +379,19 @@ cmake --build cmake-out-android/examples/models/llama2 -j16 --config Release
 ```
 adb shell mkdir -p /data/local/tmp/llama
 adb push <model.pte> /data/local/tmp/llama/
-adb push <tokenizer.bin> /data/local/tmp/llama/
+adb push <tokenizer.model> /data/local/tmp/llama/
 adb push cmake-out-android/examples/models/llama2/llama_main /data/local/tmp/llama/
 ```
 
 **2.3 Run model**
 ```
-adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.bin> --prompt \"Once upon a time\" --seq_len 120"
+adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.model> --prompt \"Once upon a time\" --seq_len 120"
 ```
 ## Step 6: Build Mobile apps
 
 ### iOS
 
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios.html) to for full instructions on building the iOS LLAMA Demo App. Note that to use Llama 3 8B instruct in the iOS demo app, you don't need to convert the downloaded `tokenizer.model` to `tokenizer.bin`, required for Llama 2 (shown in Step 2 - Option A - 4 above), but you need to rename `tokenizer.model` file to `tokenizer.bin` because the demo app looks for the tokenizer file with .bin extension.
+Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios.html) to for full instructions on building the iOS LLAMA Demo App. Rename `tokenizer.model` file to `tokenizer.bin` because the demo app looks for the tokenizer file with .bin extension.
 
 ### Android
 Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android.html) to for full instructions on building the Android LLAMA Demo App.

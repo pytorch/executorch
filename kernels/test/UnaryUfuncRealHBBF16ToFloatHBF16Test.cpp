@@ -62,7 +62,7 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
   test_floating_point_op_out<       \
       exec_aten::ScalarType::dtype, \
       exec_aten::ScalarType::Float>();
-  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
@@ -72,7 +72,7 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
   test_floating_point_op_out<       \
       exec_aten::ScalarType::dtype, \
       exec_aten::ScalarType::Double>();
-  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
@@ -105,7 +105,7 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
       exec_aten::ScalarType::dtype,  \
       exec_aten::ScalarType::Float>( \
       {10, 10}, exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
-  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
@@ -116,7 +116,7 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
       exec_aten::ScalarType::dtype,   \
       exec_aten::ScalarType::Double>( \
       {10, 10}, exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
-  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
@@ -130,7 +130,7 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
       exec_aten::ScalarType::dtype,  \
       exec_aten::ScalarType::Float>( \
       {1, 1}, exec_aten::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
@@ -144,7 +144,7 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
       exec_aten::ScalarType::dtype,   \
       exec_aten::ScalarType::Double>( \
       {1, 1}, exec_aten::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
