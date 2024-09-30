@@ -250,25 +250,27 @@ the checkpoint format to avoid generating faulty models.
             # switch all to FP32
             return self.model_.to(torch.float32)
 
-    def get_example_inputs(self):
+    def get_example_inputs(self) -> Tuple[Tuple, Dict]:
         if self.use_kv_cache:
             return self.get_example_inputs_kvcache_sdpa()
         else:
-            return (
+            positional_inputs = (
                 torch.tensor(
                     [[1, 2, 3]], dtype=torch.long
                 ),  # tokens, with kv cache our input token length is always just 1 token.
             )
+            return (positional_inputs, {})
 
     # assumption is the custom op doesnt support dynamic shape right now. It might but its untested so lets first get static shape working
-    def get_example_inputs_kvcache_sdpa(self):
+    def get_example_inputs_kvcache_sdpa(self) -> Tuple[Tuple, Dict]:
         if self.enable_dynamic_shape:
-            return (
+            positional_inputs = (
                 torch.tensor([[2, 3, 4]], dtype=torch.long),
                 torch.tensor([0], dtype=torch.long),
             )
+            return (positional_inputs, {})
         else:
-            return (
+            positional_inputs = (
                 torch.tensor(
                     [[1]], dtype=torch.long
                 ),  # tokens, with kv cache our input token length is always just 1 token.
@@ -276,6 +278,7 @@ the checkpoint format to avoid generating faulty models.
                     [0], dtype=torch.long
                 ),  # start_pos, what token of output are we on.
             )
+            return (positional_inputs, {})
 
     def _transform_for_pre_quantization(self, checkpoint):
         assert hasattr(self.args, "preq_mode"), "preq_mode must be specified"
