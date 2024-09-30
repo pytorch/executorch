@@ -301,6 +301,35 @@ TEST_F(VulkanComputeAPITest, virtual_transpose_test) {
   }
 }
 
+TEST_F(VulkanComputeAPITest, view_of_view_test) {
+  constexpr int N = 3;
+  constexpr int C = 5;
+  constexpr int H = 17;
+  constexpr int W = 19;
+
+  std::vector<int64_t> sizes = {N, C, H, W};
+
+  vTensor t1 = vTensor(
+      context(), sizes, vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked);
+
+  vTensor t2 = vTensor(t1);
+  EXPECT_TRUE(t2.sizes() == sizes);
+  vTensor t3 = vTensor(t2);
+  EXPECT_TRUE(t2.sizes() == sizes);
+
+  t2.virtual_transpose(1, 2);
+  std::vector<int64_t> expected_t2_sizes = {N, H, C, W};
+  EXPECT_TRUE(t2.sizes() == expected_t2_sizes);
+
+  // Because t3 was created before t2's metadata was updated, we need to first
+  // update t3's metadata to match t2's metadata. Then the transpose will yield
+  // the correct metadata.
+  t3.virtual_clone(t2);
+  t3.virtual_transpose(2, 3);
+  std::vector<int64_t> expected_t3_sizes = {N, H, W, C};
+  EXPECT_TRUE(t3.sizes() == expected_t3_sizes);
+}
+
 utils::ivec3 make_temp_ivec3(int x, int y, int z) {
   return utils::ivec3{x, y, z};
 }
@@ -1314,7 +1343,7 @@ TEST(VulkanComputeGraphTest, test_graph_view_of_view) {
   opFn(graph, {t2, height, width, t3});
   std::vector<int64_t> t3_sizes = graph.sizes_of(t3);
   std::vector<int64_t> expected_t3_sizes = {N, H, W, C};
-  EXPECT_TRUE(t2_sizes == expected_t2_sizes);
+  EXPECT_TRUE(t3_sizes == expected_t3_sizes);
 }
 
 TEST(VulkanComputeGraphTest, test_simple_graph) {
