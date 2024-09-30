@@ -35,40 +35,53 @@ void add_softmax_node(
     ValueRef dim,
     ValueRef out,
     bool log_softmax) {
-  ValueRef in_arg = prepack_if_tensor_ref(graph, in);
-  vTensorPtr t_in = graph.get_tensor(in_arg);
-  int64_t in_dim = t_in->dim();
+  VK_CHECK_COND(
+      graph.dim_of(in) < 4 || graph.size_at<int>(0, in) == 1,
+      "Vulkan softmax does not support batches > 1 at the moment.");
 
-  int64_t softmax_dim = graph.extract_scalar<int64_t>(dim);
-  softmax_dim = normalize(softmax_dim, in_dim);
+  const int64_t ndim = graph.dim_of(in);
 
-  vTensorPtr t_out = graph.get_tensor(out);
+  int32_t reduce_dim = graph.extract_scalar<int32_t>(dim);
+  reduce_dim = normalize(reduce_dim, ndim);
+  reduce_dim = nchw_dim_to_whcn_dim(reduce_dim, ndim);
 
   vkapi::ShaderInfo shader_descriptor;
-  std::string kernel_name = in_dim - softmax_dim == 3
-      ? "softmax_channel"
-      : "softmax_batch_height_width";
+  std::string kernel_name = "softmax";
   kernel_name.reserve(kShaderNameReserve);
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
   if (log_softmax) {
     kernel_name = "log_" + kernel_name;
+  }
+
+  utils::uvec3 global_wg_size = graph.logical_limits_of(out);
+  global_wg_size[reduce_dim] = 1;
+
+  utils::uvec3 local_wg_size{1, 1, 1};
+  local_wg_size[reduce_dim] = 16;
+  const int other_dim_1 = (reduce_dim + 1) % 3;
+  const int other_dim_2 = (reduce_dim + 2) % 3;
+  int32_t group_dim;
+  if (global_wg_size[other_dim_1] > global_wg_size[other_dim_2]) {
+    local_wg_size[other_dim_1] = 4;
+    group_dim = other_dim_1;
+  } else {
+    local_wg_size[other_dim_2] = 4;
+    group_dim = other_dim_2;
   }
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       // shader_descriptor,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      global_wg_size,
+      local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
-       {in_arg, vkapi::MemoryAccessType::READ}},
+       {in, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->logical_limits_ubo(),
-       t_in->sizes_ubo(),
-       graph.create_params_buffer(utils::make_ivec2({in_dim, softmax_dim}))},
+      {graph.logical_limits_ubo(out), graph.sizes_ubo(in)},
       // Specialization Constants
-      {},
+      {graph.packed_dim_of(out), reduce_dim, group_dim},
       // Resizing Logic
       resize_softmax_node));
 }
