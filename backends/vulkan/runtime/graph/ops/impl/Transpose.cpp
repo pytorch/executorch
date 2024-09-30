@@ -62,6 +62,8 @@ void add_transpose_view_node(
   const int64_t dim1 = graph.extract_scalar<int64_t>(dim1_ref);
 
   check_transpose_view_args(graph, input_ref, dim0, dim1, out_ref);
+  const vTensorPtr in = graph.get_tensor(input_ref);
+  graph.get_tensor(out_ref)->virtual_clone(*in);
   graph.get_tensor(out_ref)->virtual_transpose(dim0, dim1);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(

@@ -104,7 +104,7 @@ class vTensorStorage final {
    * because this behaviour is unsafe, since the original tensor may be
    * destroyed before the copy is destroyed.
    */
-  vTensorStorage(const vTensorStorage& other, const int64_t buffer_offset = 0);
+  vTensorStorage(vTensorStorage& other, const int64_t buffer_offset = 0);
 
  public:
   // To discourage creating copies, the assignment operator is still deleted.
@@ -134,6 +134,8 @@ class vTensorStorage final {
 
   // Last Access - used to insert memory barriers
   LastAccess last_access_;
+  // Indicates whether copies of this vTensorStorage have been made
+  bool has_copies_;
 
  private:
   // Registers underlying memory for cleanup
@@ -152,6 +154,11 @@ class vTensorStorage final {
   inline VkFormat texture_format() {
     return image_.format();
   }
+
+  /*
+   * Check if the underlying resource is a copy of another resource
+   */
+  bool is_copy() const;
 
   /*
    * Used for checking if this vTensorStorage is a copy of another instance
@@ -185,7 +192,7 @@ class vTensor final {
    * Once created, the sizes and strides of the aliased vTensor can be changed
    * using the `virtual_reconfigure` member function.
    */
-  vTensor(const vTensor& other);
+  vTensor(vTensor& other);
 
   /*
    * This constructor allows for the creation of a vTensor that references the
@@ -202,7 +209,7 @@ class vTensor final {
    * buffer.
    */
   vTensor(
-      const vTensor& other,
+      vTensor& other,
       const std::vector<int64_t>& sizes,
       const std::vector<int64_t>& dim_order,
       const int64_t offset_numel = 0);
@@ -510,6 +517,11 @@ class vTensor final {
   void virtual_reconfigure(
       const std::vector<int64_t>& new_sizes,
       const std::vector<int64_t>& new_dim_order);
+
+  /*
+   * Set all metadata of this tensor to match the metadata of another tensor.
+   */
+  void virtual_clone(const vTensor& other);
 
   /*
    * Perform a virtual resize of the vTensor by modifying the size metadata that
