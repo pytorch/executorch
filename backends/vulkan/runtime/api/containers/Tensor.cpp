@@ -444,6 +444,7 @@ vTensor::vTensor(
   }
 }
 
+// NOLINTNEXTLINE
 vTensor::vTensor(vTensor& other)
     : dtype_(other.dtype_),
       // Copy tensor size metadata

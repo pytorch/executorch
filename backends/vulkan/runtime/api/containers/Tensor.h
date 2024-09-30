@@ -183,6 +183,8 @@ class vTensor final {
       const utils::GPUMemoryLayout memory_layout = utils::kChannelsPacked,
       const bool allocate_memory = true);
 
+  vTensor(const vTensor& other) = delete;
+
   /*
    * This constructor allows for the creation of a vTensor that references the
    * same buffer resource of another vTensor, with the same sizes and strides
