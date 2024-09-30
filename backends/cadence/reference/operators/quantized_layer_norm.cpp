@@ -13,7 +13,8 @@
 #include <cmath>
 #include <tuple>
 
-using Tensor = exec_aten::Tensor;
+using executorch::aten::Tensor;
+using executorch::runtime::getLeadingDims;
 using executorch::runtime::KernelRuntimeContext;
 
 namespace impl {
