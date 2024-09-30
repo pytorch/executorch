@@ -98,7 +98,8 @@ using namespace ::executorch::runtime;
               const auto sizes = tensor_meta->sizes();
               tensors.emplace_back(ones({sizes.begin(), sizes.end()},
                                         tensor_meta->scalar_type()));
-              inputs.emplace_back(tensors.back());
+              XCTAssertEqual(module->set_input(tensors.back(), index),
+                             Error::Ok);
             } break;
             default:
               XCTFail("Unsupported tag %i at input %d", *input_tag, index);
@@ -110,7 +111,7 @@ using namespace ::executorch::runtime;
           ]
                             options:XCTMeasureOptions.defaultOptions
                               block:^{
-                                XCTAssertEqual(module->forward(inputs).error(),
+                                XCTAssertEqual(module->forward().error(),
                                                Error::Ok);
                               }];
         });
