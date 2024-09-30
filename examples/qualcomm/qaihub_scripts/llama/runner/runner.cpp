@@ -29,8 +29,16 @@
 #include "arm_neon.h"
 #endif
 
-namespace torch {
-namespace executor {
+using executorch::aten::Tensor;
+using executorch::extension::Module;
+using executorch::extension::llm::Sampler;
+using executorch::extension::llm::time_in_ms;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Result;
+
+namespace example {
 
 namespace {
 static constexpr auto kTopp = 0.9f;
@@ -66,12 +74,12 @@ Runner::Runner(
 
 // load tokenizer
 #if defined(QAIHUB_LLAMA3_RUNNER)
-  tokenizer_ = get_tiktoken_for_llama();
+  tokenizer_ = example::get_tiktoken_for_llama();
   tokenizer_->load(tokenizer_path_);
   eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
   version_ = LlamaVersion::kLlama3;
 #else
-  tokenizer_ = std::make_unique<BPETokenizer>();
+  tokenizer_ = std::make_unique<executorch::extension::llm::BPETokenizer>();
   tokenizer_->load(tokenizer_path_);
   version_ = LlamaVersion::kLlama2;
 #endif
@@ -170,15 +178,14 @@ Error Runner::generate(
   std::vector<std::vector<Tensor>> input_tensors, output_tensors;
   std::vector<std::vector<EValue>> inputs;
   if (!is_loaded()) {
-    stats_.model_load_start_ms = util::time_in_ms();
+    stats_.model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
     for (int i = 0; i < modules_.size(); ++i) {
       input_tensors.emplace_back(io_mem_->get_input_tensors(i));
       output_tensors.emplace_back(io_mem_->get_output_tensors(i));
       for (size_t j = 0; j < output_tensors[i].size(); ++j) {
         ET_CHECK_MSG(
-            modules_[i]->set_output_data_ptr(output_tensors[i][j], j) ==
-                Error::Ok,
+            modules_[i]->set_output(output_tensors[i][j], j) == Error::Ok,
             "failed to set output tensor for module %d's %zu'th output",
             i,
             j);
@@ -186,10 +193,10 @@ Error Runner::generate(
       inputs.emplace_back(
           std::vector<EValue>(begin(input_tensors[i]), end(input_tensors[i])));
     }
-    stats_.model_load_end_ms = util::time_in_ms();
+    stats_.model_load_end_ms = time_in_ms();
   }
 
-  stats_.inference_start_ms = util::time_in_ms();
+  stats_.inference_start_ms = time_in_ms();
   seq_len = (seq_len > 0 && seq_len <= max_seq_len_) ? seq_len : max_seq_len_;
 
   std::string post_process_prompt;
@@ -276,16 +283,15 @@ Error Runner::generate(
     Tensor& logits_tensor = output_tensors.back().back();
 
     if (pos == num_prompt_tokens) {
-      stats_.first_token_ms = util::time_in_ms();
+      stats_.first_token_ms = time_in_ms();
     } else if (pos == num_prompt_tokens - 1) {
-      stats_.prompt_eval_end_ms = util::time_in_ms();
+      stats_.prompt_eval_end_ms = time_in_ms();
     }
 
-    long sample_start_time_ms = util::time_in_ms();
+    long sample_start_time_ms = time_in_ms();
     prev_token = cur_token;
     cur_token = logitsToToken(logits_tensor);
-    stats_.aggregate_sampling_time_ms +=
-        util::time_in_ms() - sample_start_time_ms;
+    stats_.aggregate_sampling_time_ms += time_in_ms() - sample_start_time_ms;
 
     if (pos < num_prompt_tokens - 1) {
       cur_token = prompt_tokens[pos + 1];
@@ -304,7 +310,7 @@ Error Runner::generate(
       break;
     }
   }
-  stats_.inference_end_ms = util::time_in_ms();
+  stats_.inference_end_ms = time_in_ms();
 
   if (pos == seq_len) {
     ET_LOG(Info, "\nSequence length (%i tokens) reached!", seq_len);
@@ -406,5 +412,4 @@ std::vector<Result<MethodMeta>> Runner::get_methods_meta() {
   }
   return methods_meta;
 }
-} // namespace executor
-} // namespace torch
+} // namespace example

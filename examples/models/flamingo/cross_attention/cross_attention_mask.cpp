@@ -11,7 +11,11 @@
 #include <algorithm>
 #include <string>
 
-namespace torch::executor {
+namespace example {
+
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::aten::TensorImpl;
 
 // Fowrward declaration needed for ARM compilers.
 int32_t safe_size_t_to_sizes_type(size_t value);
@@ -166,4 +170,4 @@ std::vector<executorch::extension::TensorPtr> cross_attention_mask(
   return cross_attention_masks;
 }
 
-} // namespace torch::executor
+} // namespace example

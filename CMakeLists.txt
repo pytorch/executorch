@@ -183,6 +183,8 @@ option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
 
 option(EXECUTORCH_BUILD_EXTENSION_TENSOR "Build the Tensor extension" OFF)
 
+option(EXECUTORCH_BUILD_EXTENSION_TRAINING "Build the training extension" OFF)
+
 option(EXECUTORCH_BUILD_GTESTS "Build googletest based test binaries" OFF)
 
 option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
@@ -197,7 +199,7 @@ option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 
 option(EXECUTORCH_BUILD_KERNELS_QUANTIZED "Build the quantized kernels" OFF)
 
-option(EXECUTORCH_BUILD_SDK "Build the ExecuTorch Developer Tools")
+option(EXECUTORCH_BUILD_DEVTOOLS "Build the ExecuTorch Developer Tools")
 
 option(EXECUTORCH_BUILD_SIZE_TEST "Build the size test" OFF)
 
@@ -456,7 +458,7 @@ endif()
 add_subdirectory(schema)
 
 #
-# executorch_no_prim_ops: Minimal runtime library
+# executorch_core: Minimal runtime library
 #
 # The bare-minimum runtime library, supporting the Program and Method
 # interfaces. Does not contain any operators, including primitive ops. Does not
@@ -464,14 +466,14 @@ add_subdirectory(schema)
 #
 
 # Remove any PAL-definition files from the sources.
-list(FILTER _executorch_no_prim_ops__srcs EXCLUDE REGEX
+list(FILTER _executorch_core__srcs EXCLUDE REGEX
      "runtime/platform/default/[^/]*.cpp$"
 )
 
 # Add the source file that maps to the requested default PAL implementation.
 if(EXECUTORCH_PAL_DEFAULT MATCHES "^(posix|minimal)$")
   message(STATUS "executorch: Using PAL default '${EXECUTORCH_PAL_DEFAULT}'")
-  list(APPEND _executorch_no_prim_ops__srcs
+  list(APPEND _executorch_core__srcs
        "runtime/platform/default/${EXECUTORCH_PAL_DEFAULT}.cpp"
   )
 else()
@@ -481,45 +483,49 @@ else()
   )
 endif()
 
-add_library(executorch_no_prim_ops ${_executorch_no_prim_ops__srcs})
-target_link_libraries(executorch_no_prim_ops PRIVATE program_schema)
+add_library(executorch_core ${_executorch_core__srcs})
+
+# Legacy name alias.
+add_library(executorch_no_prim_ops ALIAS executorch_core)
+
+target_link_libraries(executorch_core PRIVATE program_schema)
 if(EXECUTORCH_USE_DL)
   # Check if dl exists for this toolchain and only then link it.
   find_library(DL_LIBRARY_EXISTS NAMES dl)
   # Check if the library was found
   if(DL_LIBRARY_EXISTS)
-    target_link_libraries(executorch_no_prim_ops PRIVATE dl) # For dladdr()
+    target_link_libraries(executorch_core PRIVATE dl) # For dladdr()
   endif()
 endif()
 target_include_directories(
-  executorch_no_prim_ops PUBLIC ${_common_include_directories}
+  executorch_core PUBLIC ${_common_include_directories}
 )
-target_compile_options(executorch_no_prim_ops PUBLIC ${_common_compile_options})
+target_compile_options(executorch_core PUBLIC ${_common_compile_options})
 if(MAX_KERNEL_NUM)
   target_compile_definitions(
-    executorch_no_prim_ops PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
+    executorch_core PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
   )
 endif()
 
 if(EXECUTORCH_BUILD_PYBIND AND APPLE)
   # shared version
   add_library(
-    executorch_no_prim_ops_shared SHARED ${_executorch_no_prim_ops__srcs}
+    executorch_core_shared SHARED ${_executorch_core__srcs}
   )
-  target_link_libraries(executorch_no_prim_ops_shared PRIVATE program_schema)
+  target_link_libraries(executorch_core_shared PRIVATE program_schema)
   if(DL_LIBRARY_EXISTS)
     # For dladdr()
-    target_link_libraries(executorch_no_prim_ops_shared PRIVATE dl)
+    target_link_libraries(executorch_core_shared PRIVATE dl)
   endif()
   target_include_directories(
-    executorch_no_prim_ops_shared PUBLIC ${_common_include_directories}
+    executorch_core_shared PUBLIC ${_common_include_directories}
   )
   target_compile_options(
-    executorch_no_prim_ops_shared PUBLIC ${_common_compile_options}
+    executorch_core_shared PUBLIC ${_common_compile_options}
   )
   if(MAX_KERNEL_NUM)
     target_compile_definitions(
-      executorch_no_prim_ops_shared PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
+      executorch_core_shared PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
     )
   endif()
 endif()
@@ -532,7 +538,7 @@ endif()
 # any backends.
 #
 add_library(executorch ${_executorch__srcs})
-target_link_libraries(executorch PRIVATE executorch_no_prim_ops)
+target_link_libraries(executorch PRIVATE executorch_core)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
 target_compile_options(executorch PUBLIC ${_common_compile_options})
 target_link_options_shared_lib(executorch)
@@ -568,7 +574,7 @@ endif()
 # Install `executorch` library as well as `executorch-config.cmake` under
 # ${CMAKE_INSTALL_PREFIX}/
 install(
-  TARGETS executorch executorch_no_prim_ops
+  TARGETS executorch executorch_core
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}
@@ -616,7 +622,7 @@ if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
 endif()
 
-if(EXECUTORCH_BUILD_SDK)
+if(EXECUTORCH_BUILD_DEVTOOLS)
   set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
       ON
       CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE
@@ -634,6 +640,10 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/training)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
@@ -658,7 +668,7 @@ if(EXECUTORCH_BUILD_PYBIND)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
   endif()
 
-  if(NOT EXECUTORCH_BUILD_SDK)
+  if(NOT EXECUTORCH_BUILD_DEVTOOLS)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
   endif()
 
@@ -674,10 +684,15 @@ if(EXECUTORCH_BUILD_PYBIND)
       etdump
       executorch
       extension_data_loader
-      portable_ops_lib
       util
       torch
   )
+
+  if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+    list(APPEND _dep_libs optimized_native_cpu_ops_lib)
+  else()
+    list(APPEND _dep_libs portable_ops_lib)
+  endif()
 
   if(EXECUTORCH_BUILD_COREML)
     list(APPEND _dep_libs coremldelegate)

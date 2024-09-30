@@ -13,8 +13,7 @@
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 
-namespace torch {
-namespace executor {
+namespace example {
 
 /**
  * Computes the cross-attention mask for text + image inputs. Text tokens that
@@ -61,11 +60,10 @@ namespace executor {
  */
 std::vector<::executorch::extension::TensorPtr> cross_attention_mask(
     const std::vector<int>& tokens,
-    const std::vector<Tensor>& images,
+    const std::vector<::executorch::aten::Tensor>& images,
     size_t tile_size,
     size_t patch_size,
     int image_token_id,
     std::vector<std::vector<int>>& out);
 
-} // namespace executor
-} // namespace torch
+} // namespace example

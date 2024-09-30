@@ -15,7 +15,13 @@
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/log.h>
 
-namespace torch::executor {
+using executorch::aten::ScalarType;
+using executorch::extension::Module;
+using executorch::extension::llm::BPETokenizer;
+using executorch::extension::llm::Sampler;
+using executorch::runtime::Error;
+
+namespace example {
 
 #define SAMPLER_TOP 0.9f
 #define ENDOFTEXT_TOKEN 32000
@@ -48,17 +54,8 @@ void Runner::generate(const std::string& prompt, std::size_t max_seq_len) {
   ET_CHECK_MSG(
       encode_res.error() == Error::Ok, "Failed to encode %s", prompt.c_str());
   auto input_tokens = encode_res.get();
-
-  std::cout << "Prefilling tokens ..." << std::endl;
-  for (auto token : input_tokens) {
-    std::cout << token << " ";
-  }
-  std::cout << std::endl;
-  std::cout.flush();
   auto prev_token = input_tokens.back();
   auto current_token = prefill(input_tokens);
-
-  std::cout << "Generating tokens ..." << std::endl;
   std::cout << tokenizer_->decode(prev_token, current_token).get();
   std::cout.flush();
 
@@ -81,7 +78,7 @@ uint64_t Runner::logits_to_token(const exec_aten::Tensor& logits_tensor) {
 }
 
 uint64_t Runner::prefill(std::vector<uint64_t>& tokens) {
-  auto result = module_->forward(from_blob(
+  auto result = module_->forward(executorch::extension::from_blob(
       tokens.data(),
       {1, static_cast<exec_aten::SizesType>(tokens.size())},
       ScalarType::Long));
@@ -91,7 +88,8 @@ uint64_t Runner::prefill(std::vector<uint64_t>& tokens) {
 }
 
 uint64_t Runner::run_model_step(uint64_t token) {
-  auto result = module_->forward(from_blob(&token, {1, 1}, ScalarType::Long));
+  auto result = module_->forward(
+      executorch::extension::from_blob(&token, {1, 1}, ScalarType::Long));
   ET_CHECK_MSG(
       result.error() == Error::Ok,
       "Failed to run forward() for token %" PRIu64,
@@ -100,4 +98,4 @@ uint64_t Runner::run_model_step(uint64_t token) {
   return logits_to_token(result.get()[0].toTensor());
 }
 
-} // namespace torch::executor
+} // namespace example

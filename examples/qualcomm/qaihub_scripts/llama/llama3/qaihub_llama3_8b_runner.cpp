@@ -54,8 +54,6 @@ DEFINE_double(logits_scale, 0.0, "Path to logits scale file");
 DEFINE_int32(logits_offset, 0, "Path to logits offset file");
 
 int main(int argc, char** argv) {
-  using namespace torch::executor;
-
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   std::vector<std::string> models_path = {
@@ -68,7 +66,7 @@ int main(int argc, char** argv) {
       FLAGS_freq_cos_path, FLAGS_freq_sin_path};
 
   // create llama runner
-  Runner runner(
+  example::Runner runner(
       models_path,
       pos_embs_path,
       {4, 8, 8, 8, 4},

@@ -86,6 +86,7 @@ void ThreadPool::run(
       // pthreadpool_parallelize_1d() cannot go out of scope until
       // pthreadpool_parallelize_1d() returns.
       [](void* const context, const size_t item) {
+        NoThreadPoolGuard guard;
         reinterpret_cast<Context*>(context)->fn(item);
       },
       &context,

@@ -67,6 +67,7 @@ class SimpleADB:
         host_id=None,
         error_only=False,
         shared_buffer=False,
+        dump_intermediate_outputs=False,
         runner="examples/qualcomm/executor_runner/qnn_executor_runner",
     ):
         self.qnn_sdk = qnn_sdk
@@ -78,6 +79,8 @@ class SimpleADB:
         self.working_dir = Path(self.pte_path[0]).parent.absolute()
         self.input_list_filename = "input_list.txt"
         self.etdump_path = f"{self.workspace}/etdump.etdp"
+        self.dump_intermediate_outputs = dump_intermediate_outputs
+        self.debug_output_path = f"{self.workspace}/debug_output.bin"
         self.output_folder = f"{self.workspace}/outputs"
         self.arch_table = {
             "SM8650": "75",
@@ -153,13 +156,17 @@ class SimpleADB:
                     f"--input_list_path {self.input_list_filename}",
                     f"--etdump_path {self.etdump_path}",
                     "--shared_buffer" if self.shared_buffer else "",
+                    f"--debug_output_path {self.debug_output_path}",
+                    (
+                        "--dump_intermediate_outputs"
+                        if self.dump_intermediate_outputs
+                        else ""
+                    ),
                 ]
             )
             qnn_executor_runner_cmds = " ".join(
                 [
                     f"cd {self.workspace} &&",
-                    "export ADSP_LIBRARY_PATH=. &&",
-                    "export LD_LIBRARY_PATH=. &&",
                     f"./qnn_executor_runner {qnn_executor_runner_args}",
                 ]
             )
@@ -175,6 +182,12 @@ class SimpleADB:
 
     def pull_etdump(self, output_path, callback=None):
         self._adb(["pull", self.etdump_path, output_path])
+        if callback:
+            callback()
+
+    def pull_debug_output(self, etdump_path, debug_ouput_path, callback=None):
+        self._adb(["pull", self.etdump_path, etdump_path])
+        self._adb(["pull", self.debug_output_path, debug_ouput_path])
         if callback:
             callback()
 
@@ -227,6 +240,7 @@ def build_executorch_binary(
     shared_buffer=False,
     metadata=None,
     act_observer=MovingAverageMinMaxObserver,
+    dump_intermediate_outputs=False,
 ):
     if quant_dtype is not None:
         quantizer = make_quantizer(
@@ -259,6 +273,7 @@ def build_executorch_binary(
             soc_model=getattr(QcomChipset, soc_model),
             backend_options=backend_options,
             shared_buffer=shared_buffer,
+            dump_intermediate_outputs=dump_intermediate_outputs,
         ),
         skip_node_id_set,
         skip_node_op_set,
@@ -270,7 +285,6 @@ def build_executorch_binary(
         # Therefore, won't want to pre-allocate
         # by memory manager in runtime.
         memory_planning_pass=MemoryPlanningPass(
-            memory_planning_algo="greedy",
             alloc_graph_input=not shared_buffer,
             alloc_graph_output=not shared_buffer,
         ),
@@ -432,19 +446,18 @@ def setup_common_args_and_variables():
         default=False,
     )
 
+    parser.add_argument(
+        "--dump_intermediate_outputs",
+        help="If specified, enable dump intermediate outputs",
+        action="store_true",
+        default=False,
+    )
+
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
     # So maybe it's fine to just use the environment.
     if "QNN_SDK_ROOT" not in os.environ:
         raise RuntimeError("Environment variable QNN_SDK_ROOT must be set")
     print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
-
-    if "LD_LIBRARY_PATH" not in os.environ:
-        print(
-            "[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
-            "not found happen, please follow setup.md to set environment."
-        )
-    else:
-        print(f"LD_LIBRARY_PATH={os.getenv('LD_LIBRARY_PATH')}")
 
     return parser
 

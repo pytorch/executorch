@@ -63,6 +63,7 @@ class Llama2Model(EagerModelBase):
         self.use_sdpa_with_kv_cache_op = kwargs.get("use_sdpa_with_kv_cache", False)
         self.generate_full_logits = kwargs.get("generate_full_logits", False)
         self.enable_dynamic_shape = kwargs.get("enable_dynamic_shape", False)
+        self.output_prune_map_path = kwargs.get("output_prune_map_path", None)
 
         self.max_seq_len = kwargs.get("max_seq_len", 128)
         self.args = kwargs.get("args", None)
@@ -141,6 +142,12 @@ the checkpoint format to avoid generating faulty models.
                 )
         with open(params_path, "r") as f:
             params = json.loads(f.read())
+        output_prune_map = None
+        if self.output_prune_map_path is not None:
+            with open(self.output_prune_map_path, "r") as f:
+                output_prune_map = json.load(f)
+            # change keys from string to int (json only supports string keys)
+            output_prune_map = {int(k): v for (k, v) in output_prune_map.items()}
         max_seq_len = self.max_seq_len
         max_batch_size = 1
         model_args: ModelArgs = ModelArgs(
@@ -149,6 +156,7 @@ the checkpoint format to avoid generating faulty models.
             use_kv_cache=self.use_kv_cache,
             use_sdpa_with_kv_cache_op=self.use_sdpa_with_kv_cache_op,
             generate_full_logits=self.generate_full_logits,
+            output_prune_map=output_prune_map,
             enable_dynamic_shape=self.enable_dynamic_shape,
             **params,
         )
@@ -183,16 +191,20 @@ the checkpoint format to avoid generating faulty models.
             )
         elif hasattr(self.args, "use_spin_quant") and self.args.use_spin_quant:
             print("Using SPIN quantization.")
-            assert hasattr(self.args, "group_size"), "group_size must be specified"
+            assert hasattr(self.args, "spin_qmode"), "spin_qmode must be specified"
+            assert self.args.spin_qmode in [
+                "8da4w",
+                "8da4w_output_8da8w",
+            ], f"Quantization mode {self.args.spin_qmode} is not compatible with SpinQuant."
             assert hasattr(
-                self.args, "quantization_mode"
-            ), "quantization_mode must be specified"
+                self.args, "spin_group_size"
+            ), "spin_group_size must be specified"
             assert hasattr(
                 self.args, "dtype_override"
             ), "dtype_override must be specified"
             from .source_transformation.spin_quant import (
                 sanitize_checkpoint_from_spinquant,
-                transform_for_spinquant,
+                transform_linear_for_spinquant,
             )
 
             mapping = {
@@ -201,18 +213,52 @@ the checkpoint format to avoid generating faulty models.
                 "bf16": torch.bfloat16,
             }
 
-            self.model_ = transform_for_spinquant(
+            # Transform the output layer first if needed.
+            if self.args.spin_qmode == "8da4w_output_8da8w":
+                from .source_transformation.spin_quant import (
+                    transform_output_linear_for_spinquant,
+                )
+
+                self.model_ = transform_output_linear_for_spinquant(
+                    module=self.model_,
+                    checkpoint=checkpoint,
+                    dtype=mapping[self.args.dtype_override],
+                )
+
+            self.model_ = transform_linear_for_spinquant(
                 self.model_,
                 checkpoint,
-                self.args.group_size,
-                self.args.quantization_mode,
+                self.args.spin_group_size,
                 mapping[self.args.dtype_override],
             )
 
-            sanitize_checkpoint_from_spinquant(
-                checkpoint,
-                self.args.group_size,
-            )
+            embedding_bit_width, embedding_group_size = None, None
+            if hasattr(self.args, "spin_embedding_quantize"):
+                embedding_bit_width, embedding_group_size = (
+                    self.args.spin_embedding_quantize.split(",")
+                )
+                from .source_transformation.spin_quant import (
+                    transform_embedding_for_spinquant,
+                )
+
+                if (
+                    embedding_group_size == "none"
+                    or embedding_group_size == "None"
+                    or embedding_group_size == "0"
+                ):
+                    embedding_group_size = None
+                else:
+                    embedding_group_size = int(embedding_group_size)
+
+                self.model_ = transform_embedding_for_spinquant(
+                    self.model_,
+                    checkpoint,
+                    mapping[self.args.dtype_override],
+                    int(embedding_bit_width),
+                    embedding_group_size,
+                )
+
+            sanitize_checkpoint_from_spinquant(checkpoint)
 
         # assign=True: load params/buffers by assignment instead of performing an in-place copy.
         # Because we are using device="meta", tensors do not have memory associated with them
@@ -229,6 +275,12 @@ the checkpoint format to avoid generating faulty models.
             print("============= unexpected keys ================")
             print(unexpected)
             print("============= /unexpected ================")
+
+        # prune the output layer if output_prune_map is provided
+        if output_prune_map is not None:
+            from .source_transformation.prune_output import prune_output_vocab
+
+            self.model_ = prune_output_vocab(self.model_, output_prune_map)
 
     def get_eager_model(self):
         if self.dtype:

@@ -43,7 +43,6 @@
 		03729F132BB2042B00152F2E /* sampler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F112BB2042B00152F2E /* sampler.cpp */; };
 		03729F162BB2043600152F2E /* bpe_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F142BB2043600152F2E /* bpe_tokenizer.cpp */; };
 		03729F172BB2043600152F2E /* tokenizer.h in Headers */ = {isa = PBXBuildFile; fileRef = 03729F152BB2043600152F2E /* tokenizer.h */; };
-		0372C3112C893FE900CD942A /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0372C3102C893FE900CD942A /* CoreGraphics.framework */; };
 		0372C3142C89418E00CD942A /* llava_runner.h in Headers */ = {isa = PBXBuildFile; fileRef = 0372C3122C89418E00CD942A /* llava_runner.h */; };
 		0372C3152C89418E00CD942A /* llava_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 0372C3132C89418E00CD942A /* llava_runner.cpp */; };
 		038D678C2C482C1E00B88CF2 /* llama_tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 038D678A2C482C1D00B88CF2 /* llama_tiktoken.cpp */; };
@@ -56,6 +55,7 @@
 		03D03DAB2C7823830088D6A7 /* text_decoder_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D03DA92C7823830088D6A7 /* text_decoder_runner.cpp */; };
 		03D03DAC2C7823830088D6A7 /* text_decoder_runner.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D03DAA2C7823830088D6A7 /* text_decoder_runner.h */; };
 		03DDA0FB2BD6368100D234B3 /* base64.h in Headers */ = {isa = PBXBuildFile; fileRef = 03DDA0FA2BD6368100D234B3 /* base64.h */; };
+		26A6A4282C8A3769005A761E /* ImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26A6A4272C8A3769005A761E /* ImagePicker.swift */; };
 		84DD94742C8105EB00C765A6 /* LLaMAPerfBenchmarkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84DD94732C8105EB00C765A6 /* LLaMAPerfBenchmarkApp.swift */; };
 		84DD94812C81060E00C765A6 /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD94802C81060E00C765A6 /* backend_coreml */; };
 		84DD94832C81060E00C765A6 /* backend_coreml_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD94822C81060E00C765A6 /* backend_coreml_debug */; };
@@ -162,6 +162,7 @@
 		03D03DA92C7823830088D6A7 /* text_decoder_runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = text_decoder_runner.cpp; sourceTree = "<group>"; };
 		03D03DAA2C7823830088D6A7 /* text_decoder_runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = text_decoder_runner.h; sourceTree = "<group>"; };
 		03DDA0FA2BD6368100D234B3 /* base64.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = base64.h; path = ../../../../extension/llm/tokenizer/base64.h; sourceTree = "<group>"; };
+		26A6A4272C8A3769005A761E /* ImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePicker.swift; sourceTree = "<group>"; };
 		84DD94712C8105EB00C765A6 /* LLaMAPerfBenchmark.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LLaMAPerfBenchmark.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		84DD94732C8105EB00C765A6 /* LLaMAPerfBenchmarkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLaMAPerfBenchmarkApp.swift; sourceTree = "<group>"; };
 		84DD94A72C8107AB00C765A6 /* LLaMAPerfBenchmark.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LLaMAPerfBenchmark.entitlements; sourceTree = "<group>"; };
@@ -182,13 +183,13 @@
 				03312C352BBFC940002106EF /* backend_xnnpack in Frameworks */,
 				03312C372BBFC940002106EF /* backend_xnnpack_debug in Frameworks */,
 				03312C1B2BBFC940002106EF /* backend_coreml_debug in Frameworks */,
-				03729EDB2BB1F8DE00152F2E /* LLaMARunner.framework in Frameworks */,
 				03312C2B2BBFC940002106EF /* kernels_optimized_debug in Frameworks */,
 				03312C2F2BBFC940002106EF /* kernels_portable_debug in Frameworks */,
 				03312C292BBFC940002106EF /* kernels_optimized in Frameworks */,
 				03312C192BBFC940002106EF /* backend_coreml in Frameworks */,
 				03312C332BBFC940002106EF /* kernels_quantized_debug in Frameworks */,
 				03312C1F2BBFC940002106EF /* kernels_custom_debug in Frameworks */,
+				03729EDB2BB1F8DE00152F2E /* LLaMARunner.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -196,7 +197,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0372C3112C893FE900CD942A /* CoreGraphics.framework in Frameworks */,
 				03312C3E2BBFD076002106EF /* executorch_debug in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -253,6 +253,7 @@
 				0324D6862BAACB6900DEF36F /* MessageView.swift */,
 				0324D6872BAACB6900DEF36F /* ResourceManager.swift */,
 				0324D6882BAACB6900DEF36F /* ResourceMonitor.swift */,
+				26A6A4272C8A3769005A761E /* ImagePicker.swift */,
 			);
 			path = Application;
 			sourceTree = "<group>";
@@ -645,6 +646,7 @@
 				0324D6922BAACB6900DEF36F /* ResourceManager.swift in Sources */,
 				0324D68C2BAACB6900DEF36F /* ContentView.swift in Sources */,
 				0324D6902BAACB6900DEF36F /* MessageListView.swift in Sources */,
+				26A6A4282C8A3769005A761E /* ImagePicker.swift in Sources */,
 				0324D6912BAACB6900DEF36F /* MessageView.swift in Sources */,
 				0324D68B2BAACB6900DEF36F /* App.swift in Sources */,
 			);
@@ -860,7 +862,7 @@
 				OTHER_LDFLAGS = "";
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-ios-debug.a",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_optimized-ios-debug.a",
 					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-ios-debug.a",
 					"-force_load",
@@ -874,7 +876,7 @@
 				);
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-simulator-debug.a",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_optimized-simulator-debug.a",
 					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-simulator-debug.a",
 					"-force_load",
@@ -922,7 +924,7 @@
 				OTHER_LDFLAGS = "";
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-ios-release.a",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_optimized-ios-release.a",
 					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-ios-release.a",
 					"-force_load",
@@ -936,7 +938,7 @@
 				);
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-simulator-release.a",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_optimized-simulator-release.a",
 					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-simulator-release.a",
 					"-force_load",
@@ -1093,6 +1095,8 @@
 				MARKETING_VERSION = 1.0;
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
 					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_optimized-ios-debug.a",
+					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-ios-debug.a",
 					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-ios-debug.a",
@@ -1106,6 +1110,8 @@
 					"$(BUILT_PRODUCTS_DIR)/libbackend_mps-ios-debug.a",
 				);
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_optimized-simulator-debug.a",
 					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-simulator-debug.a",
 					"-force_load",
@@ -1280,8 +1286,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
-				branch = latest;
-				kind = branch;
+				kind = revision;
+				revision = bdf3f5a1047c73ef61bb3e956d1d4528de743077;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

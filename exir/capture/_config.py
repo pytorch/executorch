@@ -56,9 +56,7 @@ class ExecutorchBackendConfig:
 
     # A single memory planning pass can be defined for all the programs in the
     # EdgeProgramManager or can be defined per program.
-    memory_planning_pass: Union[PassType, Dict[str, PassType]] = MemoryPlanningPass(
-        "greedy"
-    )
+    memory_planning_pass: Union[PassType, Dict[str, PassType]] = MemoryPlanningPass()
     to_out_var_pass: PassType = ToOutVarPass(ignore_to_out_var_failure=False)
     dynamic_memory_planning_mode: DynamicMemoryPlanningMode = (
         DynamicMemoryPlanningMode.UPPER_BOUND

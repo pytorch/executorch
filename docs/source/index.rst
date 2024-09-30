@@ -94,7 +94,8 @@ Topics in this section will help you get started with ExecuTorch.
    tutorials/export-to-executorch-tutorial
    running-a-model-cpp-tutorial
    extension-module
-   tutorials/sdk-integration-tutorial
+   extension-tensor
+   tutorials/devtools-integration-tutorial
    apple-runtime
    demo-apps-ios
    demo-apps-android
@@ -117,6 +118,9 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    llm/getting-started
+   llm/llama-demo-android
+   llm/build-run-llama3-qualcomm-ai-engine-direct-backend
+   llm/llama-demo-ios
 
 .. toctree::
    :glob:
@@ -196,15 +200,16 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Developer Tools
    :hidden:
 
-   sdk-overview
+   devtools-overview
    sdk-bundled-io
    sdk-etrecord
    sdk-etdump
    sdk-profiling
    sdk-debugging
    sdk-inspector
+   memory-planning-inspection
    sdk-delegate-integration
-   sdk-tutorial
+   devtools-tutorial
 
 .. toctree::
    :glob:
@@ -244,10 +249,17 @@ ExecuTorch tutorials.
    :tags:
 
 .. customcarditem::
+   :header: Managing Tensor Memory in C++ Tutorial
+   :card_description: A tutorial for managing the dynamic memory when working with tensors.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: extension-tensor.html
+   :tags:
+
+.. customcarditem::
    :header: Using the ExecuTorch Developer Tools to Profile a Model
    :card_description: A tutorial for using the ExecuTorch Developer Tools to profile and analyze a model with linkage back to source code.
    :image: _static/img/generic-pytorch-logo.png
-   :link: tutorials/sdk-integration-tutorial.html
+   :link: tutorials/devtools-integration-tutorial.html
    :tags: devtools
 
 .. customcarditem::

@@ -24,6 +24,7 @@
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/runtime/core/data_loader.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/kernel/operator_registry.h>
@@ -52,6 +53,16 @@
       snprintf(msg_buf, sizeof(msg_buf), message, ##__VA_ARGS__); \
       /* pybind will convert this to a python exception. */       \
       throw std::runtime_error(msg_buf);                          \
+    }                                                             \
+  })
+
+#define THROW_INDEX_IF_ERROR(error, message, ...)                 \
+  ({                                                              \
+    if ((error) != Error::Ok) {                                   \
+      char msg_buf[128];                                          \
+      snprintf(msg_buf, sizeof(msg_buf), message, ##__VA_ARGS__); \
+      /* pybind will convert this to a python exception. */       \
+      throw std::out_of_range(msg_buf);                           \
     }                                                             \
   })
 
@@ -129,7 +140,7 @@ void setup_output_storage(
     const std::vector<Span<uint8_t>>& output_storages) {
   if (output_storages.size() != method.outputs_size()) {
     THROW_IF_ERROR(
-        Error(),
+        Error::InvalidArgument,
         "number of output storages %zu does not match number of outputs %zu",
         output_storages.size(),
         method.outputs_size());
@@ -238,10 +249,10 @@ class Module final {
       const std::vector<EValue>& args,
       const std::optional<std::vector<Span<uint8_t>>>& output_storages =
           std::nullopt) {
-    auto& method = methods_[method_name];
+    auto& method = get_method(method_name);
     exec_aten::ArrayRef<EValue> input_evalue_list(args.data(), args.size());
 
-    Error set_inputs_status = method->set_inputs(input_evalue_list);
+    Error set_inputs_status = method.set_inputs(input_evalue_list);
     THROW_IF_ERROR(
         set_inputs_status,
         "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
@@ -262,9 +273,9 @@ class Module final {
         c10::autograd_dispatch_keyset);
 #endif
     if (output_storages) {
-      setup_output_storage(*method, *output_storages);
+      setup_output_storage(method, *output_storages);
     }
-    Error execute_status = method->execute();
+    Error execute_status = method.execute();
     THROW_IF_ERROR(
         execute_status,
         "method->execute() failed with error 0x%" PRIx32,
@@ -291,7 +302,9 @@ class Module final {
   Method& get_method(const std::string& method_name) {
     if (methods_.count(method_name) == 0) {
       THROW_IF_ERROR(
-          Error(), "no such method in program: %s", method_name.c_str());
+          Error::InvalidArgument,
+          "no such method in program: %s",
+          method_name.c_str());
     }
     return *methods_[method_name].get();
   }
@@ -446,6 +459,119 @@ struct PyBundledModule final {
   const py::bytes bundled_program_ptr_;
   const void* program_ptr_;
   size_t program_len_;
+};
+
+/// Expose a subset of TensorInfo information to python.
+struct PyTensorInfo final {
+  explicit PyTensorInfo(
+      std::shared_ptr<Module> module,
+      torch::executor::TensorInfo info)
+      : module_(std::move(module)), info_(info) {}
+
+  py::tuple sizes() const {
+    const auto shape = info_.sizes();
+    py::tuple tup(shape.size());
+    for (size_t i = 0; i < shape.size(); ++i) {
+      tup[i] = py::cast(shape[i]);
+    }
+    return tup;
+  }
+
+  int8_t dtype() const {
+    return static_cast<std::underlying_type<exec_aten::ScalarType>::type>(
+        info_.scalar_type());
+  }
+
+  bool is_memory_planned() const {
+    return info_.is_memory_planned();
+  }
+
+  size_t nbytes() const {
+    return info_.nbytes();
+  }
+
+  std::string repr() const {
+    std::string size_str = "[";
+    for (const auto& d : info_.sizes()) {
+      size_str.append(std::to_string(d));
+      size_str.append(", ");
+    }
+    if (size_str.length() >= 2) {
+      // Pop the last two characters (command and space) and add close bracket.
+      size_str.pop_back();
+      size_str.pop_back();
+    }
+    size_str.append("]");
+    return "TensorInfo(sizes=" + size_str + ", dtype=" +
+        std::string(executorch::runtime::toString(info_.scalar_type())) +
+        ", is_memory_planned=" +
+        (info_.is_memory_planned() ? "True" : "False") +
+        ", nbytes=" + std::to_string(info_.nbytes()) + ")";
+  }
+
+ private:
+  // TensorInfo relies on module to be alive.
+  std::shared_ptr<Module> module_;
+  torch::executor::TensorInfo info_;
+};
+
+/// Expose a subset of MethodMeta information to python.
+struct PyMethodMeta final {
+  explicit PyMethodMeta(
+      std::shared_ptr<Module> module,
+      torch::executor::MethodMeta meta)
+      : module_(std::move(module)), meta_(meta) {}
+
+  const char* name() const {
+    return meta_.name();
+  }
+
+  size_t num_inputs() const {
+    return meta_.num_inputs();
+  }
+
+  std::unique_ptr<PyTensorInfo> input_tensor_meta(size_t index) const {
+    const auto result = meta_.input_tensor_meta(index);
+    THROW_INDEX_IF_ERROR(
+        result.error(), "Cannot get input tensor meta at %zu", index);
+    return std::make_unique<PyTensorInfo>(module_, result.get());
+  }
+
+  size_t num_outputs() const {
+    return meta_.num_outputs();
+  }
+
+  std::unique_ptr<PyTensorInfo> output_tensor_meta(size_t index) const {
+    const auto result = meta_.output_tensor_meta(index);
+    THROW_INDEX_IF_ERROR(
+        result.error(), "Cannot get output tensor meta at %zu", index);
+    return std::make_unique<PyTensorInfo>(module_, result.get());
+  }
+
+  py::str repr() const {
+    py::list input_meta_strs;
+    for (size_t i = 0; i < meta_.num_inputs(); ++i) {
+      input_meta_strs.append(py::str(input_tensor_meta(i)->repr()));
+    }
+    py::list output_meta_strs;
+    for (size_t i = 0; i < meta_.num_outputs(); ++i) {
+      output_meta_strs.append(py::str(output_tensor_meta(i)->repr()));
+    }
+    // Add quotes to be more similar to Python's repr for strings.
+    py::str format =
+        "MethodMeta(name='{}', num_inputs={}, input_tensor_meta={}, num_outputs={}, output_tensor_meta={})";
+    return format.format(
+        std::string(meta_.name()),
+        std::to_string(meta_.num_inputs()),
+        input_meta_strs,
+        std::to_string(meta_.num_outputs()),
+        output_meta_strs);
+  }
+
+ private:
+  // Must keep the Module object alive or else the meta object is invalidated.
+  std::shared_ptr<Module> module_;
+  torch::executor::MethodMeta meta_;
 };
 
 struct PyModule final {
@@ -751,8 +877,13 @@ struct PyModule final {
     return list;
   }
 
+  std::unique_ptr<PyMethodMeta> method_meta(const std::string method_name) {
+    auto& method = module_->get_method(method_name);
+    return std::make_unique<PyMethodMeta>(module_, method.method_meta());
+  }
+
  private:
-  std::unique_ptr<Module> module_;
+  std::shared_ptr<Module> module_;
   // Need to keep-alive output storages until they can be compared in case of
   // bundled programs.
   std::vector<std::vector<uint8_t>> output_storages_;
@@ -867,6 +998,11 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("clone_outputs") = true,
           call_guard)
       .def(
+          "method_meta",
+          &PyModule::method_meta,
+          py::arg("method_name"),
+          call_guard)
+      .def(
           "run_method",
           &PyModule::run_method,
           py::arg("method_name"),
@@ -900,6 +1036,27 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           call_guard);
 
   py::class_<PyBundledModule>(m, "BundledModule");
+  py::class_<PyTensorInfo>(m, "TensorInfo")
+      .def("sizes", &PyTensorInfo::sizes, call_guard)
+      .def("dtype", &PyTensorInfo::dtype, call_guard)
+      .def("is_memory_planned", &PyTensorInfo::is_memory_planned, call_guard)
+      .def("nbytes", &PyTensorInfo::nbytes, call_guard)
+      .def("__repr__", &PyTensorInfo::repr, call_guard);
+  py::class_<PyMethodMeta>(m, "MethodMeta")
+      .def("name", &PyMethodMeta::name, call_guard)
+      .def("num_inputs", &PyMethodMeta::num_inputs, call_guard)
+      .def("num_outputs", &PyMethodMeta::num_outputs, call_guard)
+      .def(
+          "input_tensor_meta",
+          &PyMethodMeta::input_tensor_meta,
+          py::arg("index"),
+          call_guard)
+      .def(
+          "output_tensor_meta",
+          &PyMethodMeta::output_tensor_meta,
+          py::arg("index"),
+          call_guard)
+      .def("__repr__", &PyMethodMeta::repr, call_guard);
 }
 
 } // namespace pybindings

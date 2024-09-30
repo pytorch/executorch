@@ -68,6 +68,9 @@ function(executorch_print_configuration_summary)
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TENSOR      : "
                  "${EXECUTORCH_BUILD_EXTENSION_TENSOR}"
   )
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TRAINING      : "
+                 "${EXECUTORCH_BUILD_EXTENSION_TRAINING}"
+  )
   message(
     STATUS
       "  EXECUTORCH_BUILD_FLATC                 : ${EXECUTORCH_BUILD_FLATC}"
@@ -100,7 +103,7 @@ function(executorch_print_configuration_summary)
                  "${EXECUTORCH_BUILD_KERNELS_QUANTIZED}"
   )
   message(
-    STATUS "  EXECUTORCH_BUILD_SDK                   : ${EXECUTORCH_BUILD_SDK}"
+    STATUS "  EXECUTORCH_BUILD_DEVTOOLS              : ${EXECUTORCH_BUILD_DEVTOOLS}"
   )
   message(
     STATUS
@@ -184,11 +187,20 @@ function(extract_sources sources_file)
       set(executorch_root ${CMAKE_CURRENT_SOURCE_DIR})
     endif()
 
+    if(ANDROID_ABI)
+      if("${ANDROID_ABI}" STREQUAL "arm64-v8a")
+        set(target_platforms_arg "--target-platforms=shim//:android-arm64")
+      elseif("${ANDROID_ABI}" STREQUAL "x86_64")
+        set(target_platforms_arg "--target-platforms=shim//:android-x86_64")
+      else()
+        message(FATAL_ERROR "Unsupported ANDROID_ABI setting ${ANDROID_ABI}. Please add it here!")
+      endif()
+    endif()
     execute_process(
       COMMAND
         ${PYTHON_EXECUTABLE} ${executorch_root}/build/extract_sources.py
         --config=${executorch_root}/build/cmake_deps.toml --out=${sources_file}
-        --buck2=${BUCK2}
+        --buck2=${BUCK2} ${target_platforms_arg}
       OUTPUT_VARIABLE gen_srcs_output
       ERROR_VARIABLE gen_srcs_error
       RESULT_VARIABLE gen_srcs_exit_code

@@ -6,10 +6,12 @@
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -65,7 +67,7 @@ def _get_input_names(program: ExportedProgram) -> list[str]:
 
 
 def _get_input_quantization_params(
-    program: ExportedProgram, input_names: list[str]
+    program: ExportedProgram,
 ) -> list[QuantizationParams]:
     """
     Get input QuantizationParams in a program, maximum one per input to the program.
@@ -78,6 +80,7 @@ def _get_input_quantization_params(
     """
 
     quant_params = []
+    input_names = _get_input_names(program)
     num_inputs = len(input_names)
     for node in program.graph.nodes:
         if (
@@ -177,16 +180,19 @@ class RunnerUtil:
 
         self._has_init_run = False
 
-    def init_run(self, exported_program: ExportedProgram, is_quantized: bool):
-        self.input_names = _get_input_names(exported_program)
+    def init_run(
+        self,
+        exported_program: ExportedProgram,
+        edge_program: ExportedProgram,
+        is_quantized: bool,
+    ):
+        self.input_names = _get_input_names(edge_program)
         self.output_node = _get_output_node(exported_program)
         self.output_name = self.output_node.name
         self.is_quantized = is_quantized
 
         if is_quantized:
-            self.qp_input = _get_input_quantization_params(
-                exported_program, self.input_names
-            )
+            self.qp_input = _get_input_quantization_params(exported_program)
             self.qp_output = _get_output_quantization_params(
                 exported_program, self.output_node
             )
@@ -224,7 +230,9 @@ class RunnerUtil:
                 os.path.join(self.intermediate_path, f"{name}.bin"),
             )
         elf_path = os.path.join(
-            "cmake-out", "arm_semihosting_executor_runner", "arm_executor_runner"
+            "cmake-out",
+            "arm_semihosting_executor_runner_corstone-300",
+            "arm_executor_runner",
         )
         assert os.path.exists(
             elf_path
@@ -261,7 +269,12 @@ class RunnerUtil:
         ]
         result = _run_cmd(command_args, check=False)
         result_stdout = result.stdout.decode()
-        if "Hard fault" in result_stdout or len(result.stderr) > 0:
+
+        error_regex = r"(^[EF][: ].*$)|(^.*Hard fault.*$)|(^.*Assertion.*$)"
+
+        # Check for errors in the output
+        # regex to check for error or fault messages in stdout from FVP
+        if re.compile(error_regex, re.MULTILINE).search(result_stdout):
             raise RuntimeError(
                 f"Corstone simulation failed, log: \n {result_stdout}\n{result.stderr.decode()}"
             )
@@ -325,7 +338,18 @@ class RunnerUtil:
             self._has_init_run
         ), "RunnerUtil needs to be initialized using init_run() before running tosa reference."
 
-        desc_file_path = os.path.join(self.intermediate_path, "desc.json")
+        all_desc_file_paths = [
+            str(path) for path in Path(self.intermediate_path).glob("desc*.json")
+        ]
+        assert (
+            all_desc_file_paths
+        ), f"No TOSA description file found in '{self.intermediate_path}'."
+        if len(all_desc_file_paths) != 1:
+            raise NotImplementedError(
+                "Graphs with more than one partition are currently not supported."
+            )
+
+        desc_file_path = all_desc_file_paths[0]
         assert os.path.exists(
             desc_file_path
         ), f"desc_file_path: {desc_file_path} does not exist"
@@ -391,11 +415,11 @@ class RunnerUtil:
 def prep_data_for_save(
     data, is_quantized: bool, input_name: str, quant_param: QuantizationParams
 ):
-    data_np = data.detach().numpy().astype(np.float32)
+    data_np = np.array(data.detach(), order="C").astype(np.float32)
 
     if is_quantized:
         assert (
-            quant_param.node_name == input_name
+            quant_param.node_name in input_name
         ), "These quantization params do not match the input tensor name"
         data_np = (
             ((data_np / np.float32(quant_param.scale)) + quant_param.zp)
@@ -488,7 +512,10 @@ def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
     with open(tosa_input_file, "wb") as f:
         f.write(tosa_fb)
 
-    tosa_schema_file = "./backends/arm/third-party/serialization_lib/schema/tosa.fbs"
+    arm_backend_path = os.path.realpath(os.path.dirname(__file__) + "/..")
+    tosa_schema_file = os.path.join(
+        arm_backend_path, "third-party/serialization_lib/schema/tosa.fbs"
+    )
     assert os.path.exists(
         tosa_schema_file
     ), f"tosa_schema_file: {tosa_schema_file} does not exist"

@@ -19,6 +19,7 @@
 #include "executorch/runtime/backend/interface.h"
 #include "executorch/runtime/core/error.h"
 #include "executorch/runtime/core/evalue.h"
+#include "executorch/runtime/core/exec_aten/util/dim_order_util.h"
 #include "executorch/runtime/core/exec_aten/util/scalar_type_util.h"
 
 using namespace std;
@@ -142,6 +143,15 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
             "Input %d expected Integer (4 byte) or Char (1 byte) integer inputs, got ScalarType id %s",
             i,
             toString(tensor_in.scalar_type()));
+        return Error::InvalidProgram;
+      }
+      supported = is_contiguous_dim_order(
+          tensor_in.dim_order().data(), tensor_in.dim());
+      if (!supported) {
+        ET_LOG(
+            Error,
+            "Input %d expected contiguous dim_order, but got non-contiguous dim_order",
+            i);
         return Error::InvalidProgram;
       }
 
@@ -281,18 +291,27 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
       }
     }
     if (!permuted_shape) {
-      // Error check matching shapes in the general case
+      // Check the number of elements in each tensor match
+      int tensor_count = 1;
+      int io_count = 1;
+
       for (int i = 0; i < tensor.dim(); i++) {
-        if (tensor.size(i) != io->shape[i]) {
-          ET_LOG(Error, "Tensor input/output %d mismatched shape", index);
-          ET_LOG(
-              Error,
-              "dimension %d mismatch, %zd != %d",
-              index,
-              tensor.size(i),
-              io->shape[i]);
-          return Error::InvalidProgram;
-        }
+        tensor_count = tensor_count * tensor.size(i);
+      }
+
+      // The VelaIO type has a shape of fixed size 4
+      for (int i = 0; i < 4; i++) {
+        io_count = io_count * io->shape[i];
+      }
+
+      if (tensor_count != io_count) {
+        ET_LOG(Error, "Input tensor sizes do not match");
+        ET_LOG(
+            Error,
+            "Program expects %d elements but got %d",
+            io_count,
+            tensor_count);
+        return Error::InvalidProgram;
       }
     }
     *is_permuted = permuted_shape;

@@ -30,6 +30,8 @@ set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
 target_link_options_shared_lib(executorch)
 
+add_library(executorch_jni SHARED jni/jni_layer.cpp)
+
 set(link_libraries)
 list(
   APPEND
@@ -58,13 +60,21 @@ else()
   list(APPEND link_libraries portable_ops_lib portable_kernels)
   target_link_options_shared_lib(portable_ops_lib)
 endif()
+
+if(TARGET quantized_kernels)
+  list(APPEND link_libraries quantized_kernels quantized_ops_lib)
+  target_link_options_shared_lib(quantized_ops_lib)
+endif()
+
 if(TARGET qnn_executorch_backend)
   list(APPEND link_libraries qnn_executorch_backend)
 endif()
+
 if(TARGET xnnpack_backend)
   target_link_options_shared_lib(xnnpack_backend)
   list(APPEND link_libraries xnnpack_backend XNNPACK pthreadpool cpuinfo)
 endif()
+
 if(TARGET vulkan_backend)
   target_link_options_shared_lib(vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
@@ -79,7 +89,27 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   target_link_options_shared_lib(custom_ops)
 endif()
 
-add_library(executorch_jni SHARED jni/jni_layer.cpp)
+if(TARGET pthreadpool)
+  target_compile_definitions(executorch_jni PRIVATE ET_USE_THREADPOOL=1)
+  target_include_directories(
+    executorch_jni
+    PUBLIC
+      ${CMAKE_CURRENT_SOURCE_DIR}/../../backends/xnnpack/third-party/cpuinfo/include
+  )
+  target_include_directories(
+    executorch_jni
+    PUBLIC
+      ${CMAKE_CURRENT_SOURCE_DIR}/../../backends/xnnpack/third-party/pthreadpool/include
+  )
+endif()
+
+if(EXECUTORCH_JNI_CUSTOM_LIBRARY)
+  list(APPEND link_libraries ${EXECUTORCH_JNI_CUSTOM_LIBRARY})
+  target_link_libraries(
+    executorch_jni -Wl,--whole-archive ${EXECUTORCH_JNI_CUSTOM_LIBRARY}
+    -Wl,--no-whole-archive
+  )
+endif()
 
 if(EXECUTORCH_BUILD_LLAMA_JNI)
   target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp)
@@ -116,11 +146,6 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   list(APPEND link_libraries neuron_backend libneuron_buffer_allocator)
 endif()
 
-if(TARGET quantized_kernels)
-  list(APPEND link_libraries quantized_kernels quantized_ops_lib)
-  target_link_options_shared_lib(quantized_ops_lib)
-endif()
-
 target_include_directories(
   executorch_jni PRIVATE ${_common_include_directories}
 )
@@ -128,17 +153,3 @@ target_include_directories(
 target_compile_options(executorch_jni PUBLIC ${_common_compile_options})
 
 target_link_libraries(executorch_jni ${link_libraries})
-
-if(TARGET pthreadpool)
-  target_compile_definitions(executorch_jni PRIVATE ET_USE_THREADPOOL=1)
-  target_include_directories(
-    executorch_jni
-    PUBLIC
-      ${CMAKE_CURRENT_SOURCE_DIR}/../../backends/xnnpack/third-party/cpuinfo/include
-  )
-  target_include_directories(
-    executorch_jni
-    PUBLIC
-      ${CMAKE_CURRENT_SOURCE_DIR}/../../backends/xnnpack/third-party/pthreadpool/include
-  )
-endif()

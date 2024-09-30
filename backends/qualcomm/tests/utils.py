@@ -27,8 +27,7 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QcomChipset,
 )
 from executorch.backends.qualcomm.utils.utils import capture_program
-from executorch.devtools import generate_etrecord
-from executorch.devtools.inspector import Inspector
+from executorch.devtools import generate_etrecord, Inspector
 from executorch.examples.qualcomm.utils import (
     generate_inputs,
     make_output_dir,
@@ -181,13 +180,14 @@ class TestQNN(unittest.TestCase):
 
         return input_list, ref_outputs, pte_fname
 
-    def verify_output(
+    def verify_output(  # noqa: C901
         self,
         module: torch.nn.Module,
         sample_inputs: Tuple[torch.Tensor],
         executorch_prog: ExecutorchProgram | LoweredBackendModule,
         etrecord_path: str = "etrecord.bin",
         expected_profile_events: int = -1,
+        expected_intermediate_events: int = -1,
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
             buffer = (
@@ -211,6 +211,7 @@ class TestQNN(unittest.TestCase):
             output_dir = f"{tmp_dir}/outputs"
             outputs = []
             etdump_path = f"{tmp_dir}/etdump.etdp"
+            debug_output_path = f"{tmp_dir}/debug_output.bin"
 
             def post_process():
                 for i, f in enumerate(sorted(os.listdir(output_dir))):
@@ -224,6 +225,16 @@ class TestQNN(unittest.TestCase):
                 self.assertTrue(
                     len(inspector.to_dataframe().index) == expected_profile_events
                 )
+
+            def validate_intermediate_tensor():
+                inspector = Inspector(
+                    etdump_path=etdump_path, debug_buffer_path=debug_output_path
+                )
+                for event_block in inspector.event_blocks:
+                    if event_block.name == "Execute":
+                        self.assertTrue(
+                            len(event_block.events) == expected_intermediate_events
+                        )
 
             if self.enable_x86_64:
                 generate_inputs(tmp_dir, "input_list.txt", [sample_inputs], input_list)
@@ -277,6 +288,9 @@ class TestQNN(unittest.TestCase):
                 # Verify the etdump
                 if expected_profile_events != -1:
                     validate_profile()
+
+                if expected_intermediate_events != -1:
+                    validate_intermediate_tensor()
             else:
                 adb = SimpleADB(
                     qnn_sdk=os.getenv("QNN_SDK_ROOT"),
@@ -287,6 +301,9 @@ class TestQNN(unittest.TestCase):
                     host_id=self.host,
                     soc_model=self.model,
                     error_only=self.error_only,
+                    dump_intermediate_outputs=(
+                        True if expected_intermediate_events != -1 else False
+                    ),
                 )
                 adb.push(inputs=[sample_inputs], input_list=input_list)
                 adb.execute()
@@ -296,12 +313,20 @@ class TestQNN(unittest.TestCase):
                 if expected_profile_events != -1:
                     adb.pull_etdump(etdump_path, callback=validate_profile)
 
+                if expected_intermediate_events != -1:
+                    adb.pull_debug_output(
+                        etdump_path,
+                        debug_output_path,
+                        callback=validate_intermediate_tensor,
+                    )
+
     def lower_module_and_test_output(
         self,
         module: torch.nn.Module,
         sample_inputs: Tuple[torch.Tensor],
         expected_partitions: int = 1,
         expected_profile_events: int = -1,
+        expected_intermediate_events: int = -1,
         assert_output_equal: bool = True,
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
@@ -325,7 +350,6 @@ class TestQNN(unittest.TestCase):
                 # Therefore, won't want to pre-allocate
                 # by memory manager in runtime.
                 memory_planning_pass=MemoryPlanningPass(
-                    memory_planning_algo="greedy",
                     alloc_graph_input=not self.shared_buffer,
                     alloc_graph_output=not self.shared_buffer,
                 ),
@@ -346,11 +370,19 @@ class TestQNN(unittest.TestCase):
         etrecord_path = "etrecord.bin"
         if self.enable_profile:
             generate_etrecord(etrecord_path, edge_copy, exec_prog)
-
         # Check numerics
-        if assert_output_equal or expected_profile_events != -1:
+        if (
+            assert_output_equal
+            or expected_profile_events != -1
+            or expected_intermediate_events != -1
+        ):
             self.verify_output(
-                module, sample_inputs, exec_prog, etrecord_path, expected_profile_events
+                module,
+                sample_inputs,
+                exec_prog,
+                etrecord_path,
+                expected_profile_events,
+                expected_intermediate_events,
             )
 
     def get_qdq_module(

@@ -311,7 +311,6 @@ class SingleLlama:
             # Therefore, won't want to pre-allocate
             # by memory manager in runtime.
             memory_planning_pass=MemoryPlanningPass(
-                memory_planning_algo="greedy",
                 alloc_graph_input=False,
                 alloc_graph_output=False,
             ),
@@ -424,8 +423,6 @@ def inference(args, pre_gen_pte=""):
     runner_cmd = " ".join(
         [
             f"cd {workspace} &&",
-            "export ADSP_LIBRARY_PATH=. &&",
-            "export LD_LIBRARY_PATH=. &&",
             f"./qnn_llama_runner {runner_args}",
         ]
     )

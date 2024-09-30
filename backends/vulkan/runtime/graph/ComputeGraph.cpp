@@ -198,6 +198,32 @@ std::vector<int64_t> ComputeGraph::sizes_of(const ValueRef idx) const {
   VK_THROW("Could not get sizes of value with type ", val.type());
 }
 
+int64_t ComputeGraph::dim_of(const ValueRef idx) const {
+  const Value& val = values_.at(idx);
+  if (val.isTensor()) {
+    return val.toConstTensor().dim();
+  } else if (val.isTensorRef()) {
+    return val.toConstTensorRef().sizes.size();
+  }
+  VK_THROW("Could not get dim of value with type ", val.type());
+}
+
+std::vector<int64_t> ComputeGraph::dim_order_of(const ValueRef idx) const {
+  const Value& val = values_.at(idx);
+  if (val.isTensor()) {
+    return val.toConstTensor().dim_order();
+  }
+  VK_THROW("Could not get dim order of value with type ", val.type());
+}
+
+std::vector<int64_t> ComputeGraph::strides_of(const ValueRef idx) const {
+  const Value& val = values_.at(idx);
+  if (val.isTensor()) {
+    return val.toConstTensor().strides();
+  }
+  VK_THROW("Could not get strides of value with type ", val.type());
+}
+
 vkapi::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
   const Value& val = values_.at(idx);
   if (val.isTensor()) {
@@ -390,6 +416,10 @@ void ComputeGraph::set_symint(const ValueRef idx, const int32_t val) {
   get_symint(idx)->set(val);
 }
 
+int32_t ComputeGraph::read_symint(const ValueRef idx) {
+  return get_symint(idx)->get();
+}
+
 SharedObject& ComputeGraph::get_shared_object(const int64_t idx) {
   if (idx >= shared_objects_.size()) {
     shared_objects_.resize(static_cast<size_t>(idx + 1));
@@ -428,7 +458,7 @@ utils::uvec3 ComputeGraph::create_global_wg_size(const ValueRef idx) {
   if (is_buffer_storage(idx)) {
     return {uint32_t(numel_of(idx)), 1u, 1u};
   }
-  return image_extents_of(idx);
+  return logical_limits_of(idx);
 }
 
 utils::uvec3 ComputeGraph::create_local_wg_size(

@@ -35,6 +35,13 @@ enum MemoryAccessType : MemoryAccessFlags {
   WRITE = 1u << 1u,
 };
 
+static constexpr MemoryAccessFlags kReadWrite =
+    MemoryAccessType::WRITE | MemoryAccessType::READ;
+
+static constexpr MemoryAccessFlags kRead = MemoryAccessType::READ;
+
+static constexpr MemoryAccessFlags kWrite = MemoryAccessType::WRITE;
+
 class VulkanBuffer final {
  public:
   struct BufferProperties final {
@@ -114,13 +121,7 @@ class VulkanBuffer final {
     return memory_.allocation;
   }
 
-  inline VmaAllocationInfo allocation_info() const {
-    return memory_.allocation_info;
-  }
-
-  inline VmaAllocationCreateInfo allocation_create_info() const {
-    return VmaAllocationCreateInfo(memory_.create_info);
-  }
+  VmaAllocationInfo allocation_info() const;
 
   inline VkBuffer handle() const {
     return handle_;

@@ -52,10 +52,17 @@ Allocator::Allocator(Allocator&& other) noexcept
 }
 
 Allocator::~Allocator() {
-  if (VK_NULL_HANDLE == allocator_) {
+  if (allocator_ == VK_NULL_HANDLE) {
     return;
   }
   vmaDestroyAllocator(allocator_);
+}
+
+VmaAllocationCreateInfo Allocator::gpuonly_resource_create_info() {
+  VmaAllocationCreateInfo alloc_create_info = {};
+  alloc_create_info.flags = DEFAULT_ALLOCATION_STRATEGY;
+  alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+  return alloc_create_info;
 }
 
 Allocation Allocator::create_allocation(
@@ -103,9 +110,7 @@ VulkanImage Allocator::create_image(
         (VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
   }
 
-  VmaAllocationCreateInfo alloc_create_info = {};
-  alloc_create_info.flags = DEFAULT_ALLOCATION_STRATEGY;
-  alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+  VmaAllocationCreateInfo alloc_create_info = gpuonly_resource_create_info();
 
   const VulkanImage::ImageProperties image_props{
       image_type,
@@ -157,10 +162,7 @@ VulkanBuffer Allocator::create_storage_buffer(
     const bool allocate_memory) {
   const VkBufferUsageFlags buffer_usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 
-  VmaAllocationCreateInfo alloc_create_info = {};
-  alloc_create_info.flags = DEFAULT_ALLOCATION_STRATEGY;
-  alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
+  VmaAllocationCreateInfo alloc_create_info = gpuonly_resource_create_info();
   return VulkanBuffer(
       allocator_, size, alloc_create_info, buffer_usage, allocate_memory);
 }

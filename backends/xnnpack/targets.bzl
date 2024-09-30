@@ -1,6 +1,17 @@
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+def _get_preprocessor_flags():
+    """
+    Disable if someone explictly specified a config option,
+    else Enable otherwise
+    """
+    if native.read_config("executorch", "xnnpack_workspace_sharing", "1") == "0":
+        return []
+
+    # Enable if not disabled through config
+    return ["-DENABLE_XNNPACK_SHARED_WORKSPACE"]
+
 def define_common_targets():
     runtime.cxx_library(
         name = "dynamic_quant_utils",
@@ -38,9 +49,7 @@ def define_common_targets():
         preprocessor_flags = [
             # Uncomment to enable per operator timings
             # "-DENABLE_XNNPACK_PROFILING",
-            # Uncomment to enable workspace sharing across delegates
-            # "-DENABLE_XNNPACK_SHARED_WORKSPACE"
-        ],
+        ] + _get_preprocessor_flags(),
         exported_deps = [
             "//executorch/runtime/backend:interface",
         ],

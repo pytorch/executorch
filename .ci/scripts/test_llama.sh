@@ -11,7 +11,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 MODEL_NAME=$1 # stories110M
 BUILD_TOOL=$2 # buck2 or cmake
-DTYPE=$3 # fp16 or fp32
+DTYPE=$3 # fp16, bf16, or fp32
 MODE=${4:-"xnnpack+custom"} # portable or xnnpack+custom or xnnpack+custom+qe
 UPLOAD_DIR=${5:-}
 if [[ $# -lt 4 ]]; then # Assuming 4 mandatory args
@@ -29,7 +29,7 @@ if [[ -z "${BUILD_TOOL:-}" ]]; then
 fi
 
 if [[ -z "${DTYPE:-}" ]]; then
-  echo "Missing dtype, choose fp16 or fp32, exiting..."
+  echo "Missing dtype, choose fp16, bf16, or fp32, exiting..."
   exit 1
 fi
 
@@ -174,6 +174,8 @@ fi
 EXPORTED_MODEL_NAME="llama2"
 if [[ "${DTYPE}" == "fp16" ]]; then
   EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}_h"
+elif [[ "${DTYPE}" == "bf16" ]]; then
+  EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}_bf"
 elif [[ "${DTYPE}" == "fp32" ]]; then
   :
 else
@@ -186,7 +188,7 @@ EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}.pte"
 echo "Exporting ${EXPORTED_MODEL_NAME}"
 EXPORT_ARGS="-c ${CHECKPOINT_FILE_NAME} -p ${PARAMS} -d ${DTYPE} -n ${EXPORTED_MODEL_NAME} -kv"
 if [[ "${XNNPACK}" == "ON" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} -X -qmode 8da4w -G 128"
+  EXPORT_ARGS="${EXPORT_ARGS} -X --xnnpack-extended-ops -qmode 8da4w -G 128"
 fi
 if [[ "${CUSTOM}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} --use_sdpa_with_kv_cache"
