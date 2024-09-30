@@ -23,7 +23,6 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 )
 
 from executorch.backends.arm.test.runner_utils import (
-    _get_input_names,
     _get_input_quantization_params,
     _get_output_node,
     _get_output_quantization_params,
@@ -241,15 +240,18 @@ class ArmTester(Tester):
             self.runner_util is not None
         ), "self.tosa_test_util is not initialized, cannot use run_method()"
         assert (
-            self.stages[self.stage_name(tester.Export)] is not None
-        ), "To compare outputs, at least the Export stage needs to be run."
+            self.stages[self.stage_name(tester.ToEdge)] is not None
+        ), "To compare outputs, at least the ToEdge stage needs to be run."
 
         stage = stage or self.cur
         test_stage = self.stages[stage]
         is_quantized = self.stages[self.stage_name(tester.Quantize)] is not None
-        self.runner_util.init_run(
-            self.stages[self.stage_name(tester.Export)].artifact, is_quantized
-        )
+
+        exported_program = self.stages[self.stage_name(tester.Export)].artifact
+        edge_program = self.stages[
+            self.stage_name(tester.ToEdge)
+        ].artifact.exported_program()
+        self.runner_util.init_run(exported_program, edge_program, is_quantized)
 
         if is_quantized:
             reference_stage = self.stages[self.stage_name(tester.Quantize)]
@@ -395,11 +397,8 @@ class ArmTester(Tester):
             export_stage = self.stages.get(self.stage_name(tester.Export), None)
             quantize_stage = self.stages.get(self.stage_name(tester.Quantize), None)
             if export_stage is not None and quantize_stage is not None:
-                input_names = _get_input_names(export_stage.artifact)
                 output_node = _get_output_node(export_stage.artifact)
-                qp_input = _get_input_quantization_params(
-                    export_stage.artifact, input_names
-                )
+                qp_input = _get_input_quantization_params(export_stage.artifact)
                 qp_output = _get_output_quantization_params(
                     export_stage.artifact, output_node
                 )
