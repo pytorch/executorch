@@ -22,7 +22,6 @@ def define_common_targets():
                 "op_update_quantized_cache.h",
             ],
             exported_deps = [
-                ":update_quantized_cache",
                 "//executorch/runtime/kernel:kernel_includes",
                 "//executorch/kernels/portable/cpu:scalar_utils",
                 "//executorch/kernels/optimized:libblas{}".format(mkl_dep),
