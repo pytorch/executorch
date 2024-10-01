@@ -10,8 +10,7 @@
 #include <executorch/test/utils/DeathTest.h>
 #include <gtest/gtest.h>
 
-namespace torch {
-namespace executor {
+using executorch::runtime::etensor::Scalar;
 
 TEST(ScalarTest, ToScalarType) {
   Scalar s_d((double)3.141);
@@ -46,5 +45,3 @@ TEST(ScalarTest, IntConstructor) {
   EXPECT_EQ(s_int.to<int64_t>(), s_int32.to<int64_t>());
   EXPECT_EQ(s_int32.to<int64_t>(), s_int64.to<int64_t>());
 }
-} // namespace executor
-} // namespace torch
