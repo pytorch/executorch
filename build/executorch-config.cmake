@@ -50,7 +50,11 @@ set(lib_list
     extension_threadpool
     extension_training
     xnnpack_backend
+    # Start XNNPACK Lib Deps
     XNNPACK
+    microkernels-prod
+    kleidiai
+    # End XNNPACK Lib Deps
     cpuinfo
     pthreadpool
     vulkan_backend

@@ -6,6 +6,7 @@
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -229,7 +230,9 @@ class RunnerUtil:
                 os.path.join(self.intermediate_path, f"{name}.bin"),
             )
         elf_path = os.path.join(
-            "cmake-out", "arm_semihosting_executor_runner", "arm_executor_runner"
+            "cmake-out",
+            "arm_semihosting_executor_runner_corstone-300",
+            "arm_executor_runner",
         )
         assert os.path.exists(
             elf_path
@@ -266,7 +269,12 @@ class RunnerUtil:
         ]
         result = _run_cmd(command_args, check=False)
         result_stdout = result.stdout.decode()
-        if "Hard fault" in result_stdout or len(result.stderr) > 0:
+
+        error_regex = r"(^[EF][: ].*$)|(^.*Hard fault.*$)|(^.*Assertion.*$)"
+
+        # Check for errors in the output
+        # regex to check for error or fault messages in stdout from FVP
+        if re.compile(error_regex, re.MULTILINE).search(result_stdout):
             raise RuntimeError(
                 f"Corstone simulation failed, log: \n {result_stdout}\n{result.stderr.decode()}"
             )

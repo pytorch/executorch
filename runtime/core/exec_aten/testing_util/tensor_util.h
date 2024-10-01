@@ -335,23 +335,25 @@ MATCHER_P(IsListEqualTo, other, "") {
  * These functions must be declared in the original namespaces of their
  * associated types so that C++ can find them.
  */
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 /**
  * Prints the ScalarType to the stream as a human-readable string.
  *
  * See also executorch::runtime::toString(ScalarType t) in ScalarTypeUtil.h.
  */
-std::ostream& operator<<(std::ostream& os, const exec_aten::ScalarType& t);
+std::ostream& operator<<(std::ostream& os, const ScalarType& t);
 
 /**
  * Prints the Tensor to the stream as a human-readable string.
  */
-std::ostream& operator<<(std::ostream& os, const exec_aten::Tensor& t);
+std::ostream& operator<<(std::ostream& os, const Tensor& t);
 
-} // namespace executor
-} // namespace torch
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch
 
 #endif // !USE_ATEN_LIB
 

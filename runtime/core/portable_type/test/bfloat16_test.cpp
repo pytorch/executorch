@@ -1,8 +1,18 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #include <executorch/runtime/core/portable_type/bfloat16.h>
 
 #include <gtest/gtest.h>
 
-using torch::executor::BFloat16;
+using executorch::runtime::etensor::BFloat16;
+using executorch::runtime::etensor::internal::f32_from_bits;
+using executorch::runtime::etensor::internal::round_to_nearest_even;
 
 namespace {
 float float_from_bytes(uint32_t sign, uint32_t exponent, uint32_t fraction) {
@@ -21,6 +31,13 @@ float float_from_bytes(uint32_t sign, uint32_t exponent, uint32_t fraction) {
   return res;
 }
 
+// Opposite of f32_from_bits.
+uint16_t bits_from_f32(float src) {
+  uint32_t res = 0;
+  std::memcpy(&res, &src, sizeof(res));
+  return res >> 16;
+}
+
 TEST(BFloat16Conversion, FloatToBFloat16AndBack) {
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,cppcoreguidelines-avoid-magic-numbers,modernize-avoid-c-arrays)
   float in[100];
@@ -35,8 +52,8 @@ TEST(BFloat16Conversion, FloatToBFloat16AndBack) {
   float out[100];
 
   for (int i = 0; i < 100; ++i) {
-    bfloats[i].x = torch::executor::internal::bits_from_f32(in[i]);
-    out[i] = torch::executor::internal::f32_from_bits(bfloats[i].x);
+    bfloats[i].x = bits_from_f32(in[i]);
+    out[i] = f32_from_bits(bfloats[i].x);
 
     // The relative error should be less than 1/(2^7) since BFloat16
     // has 7 bits mantissa.
@@ -58,8 +75,8 @@ TEST(BFloat16Conversion, FloatToBFloat16RNEAndBack) {
   float out[100];
 
   for (int i = 0; i < 100; ++i) {
-    bfloats[i].x = torch::executor::internal::round_to_nearest_even(in[i]);
-    out[i] = torch::executor::internal::f32_from_bits(bfloats[i].x);
+    bfloats[i].x = round_to_nearest_even(in[i]);
+    out[i] = f32_from_bits(bfloats[i].x);
 
     // The relative error should be less than 1/(2^7) since BFloat16
     // has 7 bits mantissa.
@@ -72,7 +89,7 @@ TEST(BFloat16Conversion, NaN) {
   EXPECT_TRUE(std::isnan(inNaN));
 
   BFloat16 a = BFloat16(inNaN);
-  float out = torch::executor::internal::f32_from_bits(a.x);
+  float out = f32_from_bits(a.x);
 
   EXPECT_TRUE(std::isnan(out));
 }
@@ -82,7 +99,7 @@ TEST(BFloat16Conversion, Inf) {
   EXPECT_TRUE(std::isinf(inInf));
 
   BFloat16 a = BFloat16(inInf);
-  float out = torch::executor::internal::f32_from_bits(a.x);
+  float out = f32_from_bits(a.x);
 
   EXPECT_TRUE(std::isinf(out));
 }
@@ -91,7 +108,7 @@ TEST(BFloat16Conversion, SmallestDenormal) {
   float in = std::numeric_limits<float>::denorm_min(); // The smallest non-zero
                                                        // subnormal number
   BFloat16 a = BFloat16(in);
-  float out = torch::executor::internal::f32_from_bits(a.x);
+  float out = f32_from_bits(a.x);
 
   EXPECT_FLOAT_EQ(in, out);
 }
@@ -112,10 +129,10 @@ TEST(BFloat16Math, Addition) {
 
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
   BFloat16 b;
-  b.x = torch::executor::internal::bits_from_f32(input);
+  b.x = bits_from_f32(input);
   b = b + b;
 
-  float res = torch::executor::internal::f32_from_bits(b.x);
+  float res = f32_from_bits(b.x);
   EXPECT_EQ(res, expected);
 }
 
@@ -135,10 +152,10 @@ TEST(BFloat16Math, Subtraction) {
 
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
   BFloat16 b;
-  b.x = torch::executor::internal::bits_from_f32(input);
+  b.x = bits_from_f32(input);
   b = b - 5;
 
-  float res = torch::executor::internal::f32_from_bits(b.x);
+  float res = f32_from_bits(b.x);
   EXPECT_EQ(res, expected);
 }
 
@@ -174,7 +191,7 @@ class BFloat16Test : public ::testing::Test,
 
 TEST_P(BFloat16Test, BFloat16RNETest) {
   float value = BinaryToFloat(GetParam().input);
-  uint16_t rounded = torch::executor::internal::round_to_nearest_even(value);
+  uint16_t rounded = round_to_nearest_even(value);
   EXPECT_EQ(GetParam().rne, rounded);
 }
 
