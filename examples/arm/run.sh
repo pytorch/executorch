@@ -118,8 +118,7 @@ function build_quantization_aot_lib()
         -Bcmake-out-aot-lib \
         "${et_root_dir}"
 
-    n=$(nproc)
-    cmake --build cmake-out-aot-lib -j"$((n - 5))" -- quantized_ops_aot_lib
+    cmake --build cmake-out-aot-lib --parallel -- quantized_ops_aot_lib
 }
 
 
@@ -147,8 +146,7 @@ function build_executorch() {
 
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
-    n=$(nproc)
-    cmake --build ${et_build_dir} -j"$((n - 5))" --target install --config Release
+    cmake --build ${et_build_dir} --parallel --target install --config Release
 
     cmake                                                 \
         -DCMAKE_INSTALL_PREFIX=${et_build_dir}            \
@@ -158,7 +156,7 @@ function build_executorch() {
         -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
         -B"${et_build_dir}"/examples/arm                  \
         "${et_root_dir}"/examples/arm
-    cmake --build ${et_build_dir}/examples/arm -- -j"$((n - 5))"
+    cmake --build ${et_build_dir}/examples/arm --parallel --
 
     set +x
 
@@ -189,8 +187,7 @@ function build_executorch_runner() {
 	  -DPYTHON_EXECUTABLE=$(which python3)
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
-    n=$(nproc)
-    cmake --build ${executor_runner_path}/cmake-out -- -j"$((n - 5))" arm_executor_runner
+    cmake --build ${executor_runner_path}/cmake-out --parallel -- arm_executor_runner
     echo "[${FUNCNAME[0]}] Generated baremetal elf file:"
     find ${executor_runner_path}/cmake-out -name "arm_executor_runner"
     echo "executable_text: $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec size {} \; | grep -v filename | awk '{print $1}') bytes"
