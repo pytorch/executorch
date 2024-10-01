@@ -1,3 +1,9 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import unittest
 
 import torch
@@ -57,11 +63,9 @@ class SDPAWithQuantizedKVCacheTest(unittest.TestCase):
         self.quantized_sdpa = SDPACustom(self.quantized_kv_cache, self.dim)
         float_out = self.float_sdpa(input_pos, q, k, v, 1, self.seq_len, None)
         quantized_out = self.quantized_sdpa(input_pos, q, k, v, 1, self.seq_len, None)
-        self.assertTrue(
-            torch.allclose(
-                float_out,
-                quantized_out,
-            )
+        torch.testing.assert_close(
+            float_out,
+            quantized_out,
         )
 
         input_pos = torch.tensor([3], dtype=torch.int64)
@@ -69,11 +73,9 @@ class SDPAWithQuantizedKVCacheTest(unittest.TestCase):
         q, k, v = self._init_kv()
         float_out = self.float_sdpa(input_pos, q, k, v, 1, self.seq_len, None)
         quantized_out = self.quantized_sdpa(input_pos, q, k, v, 1, self.seq_len, None)
-        self.assertTrue(
-            torch.allclose(
-                float_out,
-                quantized_out,
-                rtol=1e-03,
-                atol=1e-03,
-            )
+        torch.testing.assert_close(
+            float_out,
+            quantized_out,
+            rtol=1e-03,
+            atol=1e-03,
         )
