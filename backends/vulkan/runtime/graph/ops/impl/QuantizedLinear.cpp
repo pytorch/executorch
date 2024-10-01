@@ -94,7 +94,20 @@ void add_q_8w_linear_node(
          graph.strides_ubo(q_mat2),
          graph.strides_ubo(scales)});
   } else {
-    ubos.append({graph.logical_limits_ubo(out), graph.sizes_ubo(mat1)});
+    ubos.append(
+        {graph.sizes_ubo(out),
+         graph.logical_limits_ubo(out),
+         graph.axis_map_ubo(out),
+         graph.sizes_ubo(mat1),
+         graph.axis_map_ubo(mat1),
+         graph.axis_map_ubo(q_mat2)});
+  }
+
+  vkapi::SpecVarList spec_vars;
+  if (graph.is_buffer_storage(out)) {
+    spec_vars = {};
+  } else {
+    spec_vars = {graph.packed_dim_of(out)};
   }
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
@@ -108,7 +121,7 @@ void add_q_8w_linear_node(
       // Shader params buffers
       ubos,
       // Specialization Constants
-      {},
+      spec_vars,
       // Resizing Logic
       resize_qlinear_node));
 }
