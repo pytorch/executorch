@@ -191,14 +191,7 @@ def get_executable_name(name: str) -> str:
 class _BaseExtension(Extension):
     """A base class that maps an abstract source to an abstract destination."""
 
-    def __init__(
-        self,
-        src: str,
-        dst: str,
-        name: str,
-        is_cmake_built: bool = True,
-        dst_is_dir: bool = False,
-    ):
+    def __init__(self, src: str, dst: str, name: str):
         # Source path; semantics defined by the subclass.
         self.src: str = src
 
@@ -213,14 +206,6 @@ class _BaseExtension(Extension):
         # that doesn't look like a module path.
         self.name: str = name
 
-        # If True, the file is built by cmake. If False, the file is copied from
-        # the source tree.
-        self.is_cmake_built: bool = is_cmake_built
-
-        # If True, the destination is a directory. If False, the destination is a
-        # file.
-        self.dst_is_dir: bool = dst_is_dir
-
         super().__init__(name=self.name, sources=[])
 
     def src_path(self, installer: "InstallerBuildExt") -> Path:
@@ -230,25 +215,26 @@ class _BaseExtension(Extension):
             installer: The InstallerBuildExt instance that is installing the
                 file.
         """
-        if self.is_cmake_built:
-            # Share the cmake-out location with CustomBuild.
-            cmake_cache_dir = Path(
-                installer.get_finalized_command("build").cmake_cache_dir
-            )
+        # Share the cmake-out location with CustomBuild.
+        cmake_cache_dir = Path(installer.get_finalized_command("build").cmake_cache_dir)
 
-            cfg = get_build_type(installer.debug)
+        cfg = get_build_type(installer.debug)
 
-            if os.name == "nt":
-                # Replace %BUILD_TYPE% with the current build type.
-                self.src = self.src.replace("%BUILD_TYPE%", cfg)
-            else:
-                # Remove %BUILD_TYPE% from the path.
-                self.src = self.src.replace("/%BUILD_TYPE%", "")
-
-            # Construct the full source path, do not resolve globs.
-            return cmake_cache_dir / Path(self.src)
+        if os.name == "nt":
+            # Replace %BUILD_TYPE% with the current build type.
+            self.src = self.src.replace("%BUILD_TYPE%", cfg)
         else:
-            return Path(self.src)
+            # Remove %BUILD_TYPE% from the path.
+            self.src = self.src.replace("/%BUILD_TYPE%", "")
+
+        # Construct the full source path, resolving globs. If there are no glob
+        # pattern characters, this will just ensure that the source file exists.
+        srcs = tuple(cmake_cache_dir.glob(self.src))
+        if len(srcs) != 1:
+            raise ValueError(
+                f"Expected exactly one file matching '{self.src}'; found {repr(srcs)}"
+            )
+        return srcs[0]
 
 
 class BuiltFile(_BaseExtension):
@@ -316,49 +302,6 @@ class BuiltFile(_BaseExtension):
             return dst_root / Path(self.dst)
 
 
-class HeaderFile(_BaseExtension):
-    """An extension that installs headers in a directory.
-
-    This isn't technically a `build_ext` style python extension, but there's no
-    dedicated command for installing arbitrary data. It's convenient to use
-    this, though, because it lets us manage the files to install as entries in
-    `ext_modules`.
-    """
-
-    def __init__(
-        self,
-        src_dir: str,
-        src_name: str = "*.h",
-        dst_dir: str = "executorch/include/executorch/",
-    ):
-        """Initializes a BuiltFile.
-
-        Args:
-            src_dir: The directory of the headers to install, relative to the root
-                ExecuTorch source directory. Under the hood, we recursively glob all
-                the headers using `*.h` patterns.
-            src_name: The name of the header to install. If not specified, all the
-                headers in the src_dir will be installed.
-            dst_dir: The directory to install to, relative to the root of the pip
-                package. If not specified, defaults to `executorch/include/executorch/`.
-        """
-        src = os.path.join(src_dir, src_name)
-        assert dst_dir.endswith("/"), f"dst_dir must end with '/', got {dst_dir}"
-        super().__init__(
-            src=src, dst=dst_dir, name=src_name, is_cmake_built=False, dst_is_dir=True
-        )
-
-    def dst_path(self, installer: "InstallerBuildExt") -> Path:
-        """Returns the path to the destination file.
-
-        Args:
-            installer: The InstallerBuildExt instance that is installing the
-                file.
-        """
-        dst_root = Path(installer.build_lib).resolve()
-        return dst_root / Path(self.dst)
-
-
 class BuiltExtension(_BaseExtension):
     """An extension that installs a python extension that was built by cmake."""
 
@@ -421,29 +364,19 @@ class InstallerBuildExt(build_ext):
         src_file: Path = ext.src_path(self)
         dst_file: Path = ext.dst_path(self)
 
+        # Ensure that the destination directory exists.
+        self.mkpath(os.fspath(dst_file.parent))
+
         # Copy the file.
-        src_list = src_file.parent.rglob(src_file.name)
-        for src in src_list:
-            if ext.dst_is_dir:
-                # Destination is a prefix directory. Copy the file to the
-                # destination directory.
-                dst = dst_file / src
-            else:
-                # Destination is a file. Copy the file to the destination file.
-                dst = dst_file
+        self.copy_file(os.fspath(src_file), os.fspath(dst_file))
 
-            # Ensure that the destination directory exists.
-            self.mkpath(os.fspath(dst.parent))
-
-            self.copy_file(os.fspath(src), os.fspath(dst))
-
-            # Ensure that the destination file is writable, even if the source was
-            # not. build_py does this by passing preserve_mode=False to copy_file,
-            # but that would clobber the X bit on any executables. TODO(dbort): This
-            # probably won't work on Windows.
-            if not os.access(src, os.W_OK):
-                # Make the file writable. This should respect the umask.
-                os.chmod(src, os.stat(src).st_mode | 0o222)
+        # Ensure that the destination file is writable, even if the source was
+        # not. build_py does this by passing preserve_mode=False to copy_file,
+        # but that would clobber the X bit on any executables. TODO(dbort): This
+        # probably won't work on Windows.
+        if not os.access(src_file, os.W_OK):
+            # Make the file writable. This should respect the umask.
+            os.chmod(src_file, os.stat(src_file).st_mode | 0o222)
 
 
 class CustomBuildPy(build_py):
@@ -491,6 +424,25 @@ class CustomBuildPy(build_py):
                 "devtools/bundled_program/serialize/scalar_type.fbs",
             ),
         ]
+        # Copy all the necessary headers into include/executorch/ so that they can
+        # be found in the pip package. This is the subset of headers that are
+        # essential for building custom ops extensions.
+        # TODO: Use cmake to gather the headers instead of hard-coding them here.
+        # For example: https://discourse.cmake.org/t/installing-headers-the-modern-
+        # way-regurgitated-and-revisited/3238/3
+        for include_dir in [
+            "runtime/core/",
+            "runtime/kernel/",
+            "runtime/platform/",
+            "extension/kernel_util/",
+            "extension/tensor/",
+            "extension/threadpool/",
+        ]:
+            src_list = Path(include_dir).rglob("*.h")
+            for src in src_list:
+                src_to_dst.append(
+                    (str(src), os.path.join("include/executorch", str(src)))
+                )
         for src, dst in src_to_dst:
             dst = os.path.join(dst_root, dst)
 
@@ -685,26 +637,6 @@ class CustomBuild(build):
 def get_ext_modules() -> List[Extension]:
     """Returns the set of extension modules to build."""
     ext_modules = []
-
-    # Copy all the necessary headers into include/executorch/ so that they can
-    # be found in the pip package. This is the subset of headers that are
-    # essential for building custom ops extensions.
-    # TODO: Use cmake to gather the headers instead of hard-coding them here.
-    # For example: https://discourse.cmake.org/t/installing-headers-the-modern-
-    # way-regurgitated-and-revisited/3238/3
-    for include_dir in [
-        "runtime/core/",
-        "runtime/kernel/",
-        "runtime/platform/",
-        "extension/kernel_util/",
-        "extension/tensor/",
-        "extension/threadpool/",
-    ]:
-        ext_modules.append(
-            HeaderFile(
-                src_dir=include_dir,
-            )
-        )
     if ShouldBuild.flatc():
         ext_modules.append(
             BuiltFile(
