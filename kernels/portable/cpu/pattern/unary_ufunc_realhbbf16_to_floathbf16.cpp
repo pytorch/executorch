@@ -15,7 +15,7 @@ namespace executor {
 namespace native {
 namespace internal {
 
-Tensor& unary_ufunc_realhb_to_floath(
+Tensor& unary_ufunc_realhbbf16_to_floathbf16(
     double (*fn)(double),
     KernelRuntimeContext& ctx,
     const Tensor& in,
@@ -38,8 +38,8 @@ Tensor& unary_ufunc_realhb_to_floath(
   const auto in_type = in.scalar_type();
   const auto out_type = out.scalar_type();
 
-  ET_SWITCH_REALHB_TYPES(in_type, ctx, __func__, CTYPE_IN, [&] {
-    ET_SWITCH_FLOATH_TYPES(out_type, ctx, __func__, CTYPE_OUT, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, __func__, CTYPE_IN, [&] {
+    ET_SWITCH_FLOATHBF16_TYPES(out_type, ctx, __func__, CTYPE_OUT, [&] {
       apply_unary_map_fn(
           [fn](const CTYPE_IN val_in) {
             CTYPE_OUT xi = static_cast<CTYPE_OUT>(val_in);

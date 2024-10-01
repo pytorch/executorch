@@ -7,7 +7,7 @@
  */
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
-#include <executorch/kernels/test/UnaryUfuncRealHBToFloatHTest.h>
+#include <executorch/kernels/test/UnaryUfuncRealHBBF16ToFloatHBF16Test.h>
 
 #include <gtest/gtest.h>
 
@@ -18,7 +18,7 @@ using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 class OpLogOutTest
-    : public torch::executor::testing::UnaryUfuncRealHBToFloatHTest {
+    : public torch::executor::testing::UnaryUfuncRealHBBF16ToFloatHBF16Test {
  protected:
   Tensor& op_out(const Tensor& self, Tensor& out) override {
     return torch::executor::aten::log_outf(context_, self, out);

@@ -24,6 +24,10 @@ constexpr double kDefaultAtol = 1e-8;
 // https://en.wikipedia.org/wiki/Half-precision_floating-point_format,
 // float16 has about 3.3 digits of precision.
 constexpr double kDefaultHalfAtol = 1e-3;
+
+// Following similar reasoning to float16, BFloat16 has
+// math.log10(2**8) = 2.4 digits of precision.
+constexpr double kDefaultBFloat16Atol = 1e-2;
 } // namespace internal
 
 /**
