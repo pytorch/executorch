@@ -63,7 +63,7 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbedding) {
 
   out = tf.zeros({3, 4});
   auto context = KernelRuntimeContext();
-  torch::executor::native::quantized_embedding_4bit_out(
+  torch::executor::native::quantized_embedding_2bit_out(
       context,
       qweight,
       weight_scales,

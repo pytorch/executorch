@@ -141,7 +141,7 @@ static inline int32_t weight_value(const unsigned char* w_data, int32_t index) {
  * them in out. Weight will always be uint8
  */
 template <typename CTYPE_PARAMS, typename CTYPE_OUT>
-void embedding_4bit_per_channel(
+void embedding_2bit_per_channel(
     const Tensor& weight,
     const Tensor& weight_scales,
     const optional<Tensor>& opt_weight_zero_points,
@@ -210,7 +210,7 @@ void resize_out_tensor(
   torch::executor::Error err = resize_tensor(out, output_size);
   ET_CHECK_MSG(
       err == torch::executor::Error::Ok,
-      "Failed to resize out Tensor in quantized_embedding_4bit_out");
+      "Failed to resize out Tensor in quantized_embedding_2bit_out");
 }
 
 } // namespace
@@ -220,7 +220,7 @@ void resize_out_tensor(
  * them in out. The weight is quantized per channel, with a scale and zero_point
  * for each embedding.
  *
- * Corresponds as the out variant to torch.ops.quantized.embedding_4bit
+ * Corresponds as the out variant to torch.ops.quantized.embedding_2bit
  *
  * NOTE: quant_min, quant_max, and Dtype are not used in computation, but rather
  * metadata that is passed around which can be useful for pattern matching. See
@@ -273,7 +273,7 @@ Tensor& quantized_embedding_2bit_out(
   // wrapper
   (void)context;
   resize_out_tensor(weight, indices, out);
-  return quantized_embedding_4bit_out(
+  return quantized_embedding_2bit_out(
       weight,
       weight_scales,
       opt_weight_zero_points,
@@ -309,10 +309,10 @@ Tensor& quantized_embedding_2bit_dtype_out(
   ScalarType params_type = weight_scales.scalar_type();
   ScalarType out_type = out.scalar_type();
 
-  constexpr auto name = "quantized_decomposed::embedding_4bit.dtype_out";
+  constexpr auto name = "quantized_decomposed::embedding_2bit.dtype_out";
   ET_SWITCH_TWO_TYPES(Float, Half, params_type, ctx, name, CTYPE_P, [&]() {
     ET_SWITCH_TWO_TYPES(Float, Half, out_type, ctx, name, CTYPE_OUT, [&]() {
-      embedding_4bit_per_channel<CTYPE_P, CTYPE_OUT>(
+      embedding_2bit_per_channel<CTYPE_P, CTYPE_OUT>(
           weight, weight_scales, opt_weight_zero_points, indices, out);
     });
   });
