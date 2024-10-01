@@ -20,7 +20,7 @@ namespace torch::executor::testing {
 // Generic test harness for ops that use unary_ufunc_realhb_to_floath
 // -- in other words, ops that just apply an elementwise function
 // mapping to a float or half.
-class UnaryUfuncRealHBToFloatHTest : public OperatorTest {
+class UnaryUfuncRealHBBF16ToFloatHBF16Test : public OperatorTest {
  protected:
   // Implement this to call the torch::executor::aten::op_outf function for the
   // op.
@@ -69,7 +69,15 @@ class UnaryUfuncRealHBToFloatHTest : public OperatorTest {
     op_out(tf_in.make({1, 6}, test_vector), out);
 
     auto expected = tf_out.make({1, 6}, expected_vector);
-    if (IN_DTYPE == ScalarType::Half || OUT_DTYPE == ScalarType::Half) {
+    if (IN_DTYPE == ScalarType::BFloat16 || OUT_DTYPE == ScalarType::BFloat16) {
+      double rtol = executorch::runtime::testing::internal::kDefaultRtol;
+      // It appears we need a higher tolerance for at least some ATen
+      // tests, like aten_op_acosh_test.
+      if (get_supported_features()->is_aten) {
+        rtol = 3e-3;
+      }
+      EXPECT_TENSOR_CLOSE_WITH_TOL(out, expected, rtol, executorch::runtime::testing::internal::kDefaultBFloat16Atol);
+    } else if (IN_DTYPE == ScalarType::Half || OUT_DTYPE == ScalarType::Half) {
       double rtol = executorch::runtime::testing::internal::kDefaultRtol;
       // It appears we need a higher tolerance for at least some ATen
       // tests, like aten_op_acosh_test.
@@ -105,11 +113,15 @@ class UnaryUfuncRealHBToFloatHTest : public OperatorTest {
 
   void test_all_real_input_half_output_static_dynamism_support();
 
+  void test_all_real_input_bfloat16_output_static_dynamism_support();
+
   void test_all_real_input_float_output_static_dynamism_support();
 
   void test_all_real_input_double_output_static_dynamism_support();
 
   void test_all_real_input_half_output_bound_dynamism_support();
+
+  void test_all_real_input_bfloat16_output_bound_dynamism_support();
 
   void test_all_real_input_float_output_bound_dynamism_support();
 
@@ -122,52 +134,56 @@ class UnaryUfuncRealHBToFloatHTest : public OperatorTest {
   void test_non_float_output_dtype_dies();
 };
 
-#define IMPLEMENT_UNARY_UFUNC_REALHB_TO_FLOATH_TEST(TestName)        \
-  torch::executor::testing::SupportedFeatures*                       \
-  TestName::get_supported_features() const {                         \
-    return torch::executor::testing::SupportedFeatures::get();       \
-  }                                                                  \
-  TEST_F(TestName, HandleBoolInput) {                                \
-    test_bool_input();                                               \
-  }                                                                  \
-  TEST_F(TestName, AllRealInputHalfOutputStaticDynamismSupport) {    \
-    test_all_real_input_half_output_static_dynamism_support();       \
-  }                                                                  \
-                                                                     \
-  TEST_F(TestName, AllRealInputFloatOutputStaticDynamismSupport) {   \
-    test_all_real_input_float_output_static_dynamism_support();      \
-  }                                                                  \
-                                                                     \
-  TEST_F(TestName, AllRealInputDoubleOutputStaticDynamismSupport) {  \
-    test_all_real_input_double_output_static_dynamism_support();     \
-  }                                                                  \
-                                                                     \
-  TEST_F(TestName, AllRealInputHalfOutputBoundDynamismSupport) {     \
-    test_all_real_input_half_output_bound_dynamism_support();        \
-  }                                                                  \
-                                                                     \
-  TEST_F(TestName, AllRealInputFloatOutputBoundDynamismSupport) {    \
-    test_all_real_input_float_output_bound_dynamism_support();       \
-  }                                                                  \
-                                                                     \
-  TEST_F(TestName, AllRealInputDoubleOutputBoundDynamismSupport) {   \
-    test_all_real_input_double_output_bound_dynamism_support();      \
-  }                                                                  \
-                                                                     \
-  TEST_F(TestName, AllRealInputFloatOutputUnboundDynamismSupport) {  \
-    test_all_real_input_float_output_unbound_dynamism_support();     \
-  }                                                                  \
-                                                                     \
-  TEST_F(TestName, AllRealInputDoubleOutputUnboundDynamismSupport) { \
-    test_all_real_input_double_output_unbound_dynamism_support();    \
-  }                                                                  \
-                                                                     \
-  TEST_F(TestName, AllNonFloatOutputDTypeDies) {                     \
-    test_non_float_output_dtype_dies();                              \
-  }                                                                  \
-                                                                     \
-  TEST_F(TestName, MismatchedInputShapesDies) {                      \
-    test_mismatched_input_shapes_dies();                             \
+#define IMPLEMENT_UNARY_UFUNC_REALHB_TO_FLOATH_TEST(TestName)         \
+  torch::executor::testing::SupportedFeatures*                        \
+  TestName::get_supported_features() const {                          \
+    return torch::executor::testing::SupportedFeatures::get();        \
+  }                                                                   \
+  TEST_F(TestName, HandleBoolInput) {                                 \
+    test_bool_input();                                                \
+  }                                                                   \
+  TEST_F(TestName, AllRealInputHalfOutputStaticDynamismSupport) {     \
+    test_all_real_input_half_output_static_dynamism_support();        \
+  }                                                                   \
+                                                                      \
+  TEST_F(TestName, AllRealInputBFloat16OutputStaticDynamismSupport) { \
+    test_all_real_input_bfloat16_output_static_dynamism_support();    \
+  }                                                                   \
+                                                                      \
+  TEST_F(TestName, AllRealInputFloatOutputStaticDynamismSupport) {    \
+    test_all_real_input_float_output_static_dynamism_support();       \
+  }                                                                   \
+                                                                      \
+  TEST_F(TestName, AllRealInputDoubleOutputStaticDynamismSupport) {   \
+    test_all_real_input_double_output_static_dynamism_support();      \
+  }                                                                   \
+                                                                      \
+  TEST_F(TestName, AllRealInputBFloat16OutputBoundDynamismSupport) {  \
+    test_all_real_input_bfloat16_output_bound_dynamism_support();     \
+  }                                                                   \
+                                                                      \
+  TEST_F(TestName, AllRealInputFloatOutputBoundDynamismSupport) {     \
+    test_all_real_input_float_output_bound_dynamism_support();        \
+  }                                                                   \
+                                                                      \
+  TEST_F(TestName, AllRealInputDoubleOutputBoundDynamismSupport) {    \
+    test_all_real_input_double_output_bound_dynamism_support();       \
+  }                                                                   \
+                                                                      \
+  TEST_F(TestName, AllRealInputFloatOutputUnboundDynamismSupport) {   \
+    test_all_real_input_float_output_unbound_dynamism_support();      \
+  }                                                                   \
+                                                                      \
+  TEST_F(TestName, AllRealInputDoubleOutputUnboundDynamismSupport) {  \
+    test_all_real_input_double_output_unbound_dynamism_support();     \
+  }                                                                   \
+                                                                      \
+  TEST_F(TestName, AllNonFloatOutputDTypeDies) {                      \
+    test_non_float_output_dtype_dies();                               \
+  }                                                                   \
+                                                                      \
+  TEST_F(TestName, MismatchedInputShapesDies) {                       \
+    test_mismatched_input_shapes_dies();                              \
   }
 
 } // namespace torch::executor::testing

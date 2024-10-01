@@ -44,11 +44,11 @@ def define_common_targets():
         runtime.cxx_library(
             name = "test_util" + aten_suffix,
             srcs = [
-                "UnaryUfuncRealHBToFloatHTest.cpp",
+                "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp",
             ],
             exported_headers = [
                 "TestUtil.h",
-                "UnaryUfuncRealHBToFloatHTest.h",
+                "UnaryUfuncRealHBBF16ToFloatHBF16Test.h",
             ],
             visibility = [
                 "//executorch/kernels/...",
