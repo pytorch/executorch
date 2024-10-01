@@ -66,7 +66,7 @@ class RmsNormVisitor(NodeVisitor):
             is_input_tensor=False,
         )
 
-        # Fake node, nn moudle seems to be inconsistant with document
+        # Fake node, nn module seems to be inconsistant with document
         bias_tensor = torch.zeros(weight_tensor.shape)
         bias_node = torch.fx.Node(
             node.graph,

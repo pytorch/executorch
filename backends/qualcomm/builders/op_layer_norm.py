@@ -8,10 +8,10 @@ import warnings
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
-
 import numpy as np
 import torch
-from executorch.backends.qualcomm.utils.constants import QCOM_DATA
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA, QCOM_QUANT_ATTRS
+from executorch.exir.dialects._ops import ops as exir_ops
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpLayerNorm, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -63,15 +63,39 @@ class LayerNormVisitor(NodeVisitor):
             is_input_tensor=False,
         )
 
-        bias_node = node.args[3]
-        bias_tensor = get_parameter(bias_node, self.edge_program)
-        bias_tensor_wrapper = self.define_tensor(
-            bias_node,
-            bias_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
-            nodes_to_wrappers,
-            is_input_tensor=False,
-        )
+        layer_norm_input_tensors = [input_tensor_wrapper, weight_tensor_wrapper]
+
+        # TODO: Remove this in future QNN release. We don't need dummy bias tensor.
+        if node.args[3] is None:
+            bias_tensor = torch.zeros(weight_tensor.shape)
+            bias_node = torch.fx.Node(
+                node.graph,
+                node.name + "_runtime_bias",
+                "call_function",
+                exir_ops.edge.aten.tensor.default,
+                (),  # args
+                {},  # kwargs
+            )
+            if quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
+                bias_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
+            bias_tensor_wrapper = self.define_tensor(
+                bias_node,
+                bias_tensor,
+                PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+                nodes_to_wrappers,
+                is_input_tensor=False,
+            )
+        else:
+            bias_node = node.args[3]
+            bias_tensor = get_parameter(bias_node, self.edge_program)
+            bias_tensor_wrapper = self.define_tensor(
+                bias_node,
+                bias_tensor,
+                PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+                nodes_to_wrappers,
+                is_input_tensor=False,
+            )
+        layer_norm_input_tensors.append(bias_tensor_wrapper)
 
         epsilon = node.args[4]
 
@@ -89,9 +113,8 @@ class LayerNormVisitor(NodeVisitor):
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpLayerNorm.op_name,
         )
-        layer_norm_op.AddInputTensors(
-            [input_tensor_wrapper, weight_tensor_wrapper, bias_tensor_wrapper]
-        )
+
+        layer_norm_op.AddInputTensors(layer_norm_input_tensors)
         layer_norm_op.AddOutputTensors([output_tensor_wrapper])
         layer_norm_op.AddScalarParam(
             OpLayerNorm.param_epsilon,
