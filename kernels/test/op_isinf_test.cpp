@@ -25,66 +25,29 @@ class OpIsInfTest : public OperatorTest {
   Tensor& op_isinf_out(const Tensor& self, Tensor& out) {
     return torch::executor::aten::isinf_outf(context_, self, out);
   }
+
+  template <ScalarType DTYPE>
+  void test_sanity_check() {
+    TensorFactory<DTYPE> tf;
+    TensorFactory<ScalarType::Bool> tfb;
+
+    using CTYPE = typename TensorFactory<DTYPE>::ctype;
+    Tensor in = tf.make(
+        {1, 5}, {-1, 0, 1, NAN, std::numeric_limits<CTYPE>::infinity()});
+    Tensor out = tfb.zeros({1, 5});
+    Tensor expected = tfb.make({1, 5}, {false, false, false, false, true});
+
+    Tensor ret = op_isinf_out(in, out);
+
+    EXPECT_TENSOR_EQ(out, ret);
+    EXPECT_TENSOR_EQ(out, expected);
+  }
 };
 
-TEST_F(OpIsInfTest, SanityCheckFloat) {
-  TensorFactory<ScalarType::Float> tf;
-  TensorFactory<ScalarType::Bool> tfb;
-
-  Tensor in = tf.make(
-      {1, 5}, {-1.0, 0.0, 1.0, NAN, std::numeric_limits<float>::infinity()});
-  Tensor out = tfb.zeros({1, 5});
-  Tensor expected = tfb.make({1, 5}, {false, false, false, false, true});
-
-  Tensor ret = op_isinf_out(in, out);
-
-  EXPECT_TENSOR_EQ(out, ret);
-  EXPECT_TENSOR_EQ(out, expected);
-}
-
-TEST_F(OpIsInfTest, SanityCheckHalf) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
-  }
-  TensorFactory<ScalarType::Half> tf;
-  TensorFactory<ScalarType::Bool> tfb;
-
-  Tensor in = tf.make(
-      {1, 5}, {-1.0, 0.0, 1.0, NAN, std::numeric_limits<float>::infinity()});
-  Tensor out = tfb.zeros({1, 5});
-  Tensor expected = tfb.make({1, 5}, {false, false, false, false, true});
-
-  Tensor ret = op_isinf_out(in, out);
-
-  EXPECT_TENSOR_EQ(out, ret);
-  EXPECT_TENSOR_EQ(out, expected);
-}
-
-TEST_F(OpIsInfTest, SanityCheckByte) {
-  TensorFactory<ScalarType::Byte> tf;
-  TensorFactory<ScalarType::Bool> tfb;
-
-  Tensor in = tf.make({1, 5}, {1, 2, 3, 4, 5});
-  Tensor out = tfb.zeros({1, 5});
-  Tensor expected = tfb.make({1, 5}, {false, false, false, false, false});
-
-  Tensor ret = op_isinf_out(in, out);
-
-  EXPECT_TENSOR_EQ(out, ret);
-  EXPECT_TENSOR_EQ(out, expected);
-}
-
-TEST_F(OpIsInfTest, SanityCheckBool) {
-  TensorFactory<ScalarType::Bool> tfb;
-
-  Tensor in = tfb.make({1, 5}, {true, false, true, true, false});
-  Tensor out = tfb.zeros({1, 5});
-  Tensor expected = tfb.make({1, 5}, {false, false, false, false, false});
-
-  Tensor ret = op_isinf_out(in, out);
-
-  EXPECT_TENSOR_EQ(out, ret);
-  EXPECT_TENSOR_EQ(out, expected);
+TEST_F(OpIsInfTest, SanityCheck) {
+#define TEST_ENTRY(ctype, dtype) test_sanity_check<ScalarType::dtype>();
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }
 
 TEST_F(OpIsInfTest, SanityCheckOutDtype) {
