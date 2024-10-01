@@ -4,7 +4,7 @@
 capabilities across mobile and edge devices including wearables, embedded
 devices and microcontrollers. It is part of the PyTorch Edge ecosystem and
 enables efficient deployment of PyTorch models to edge devices.
-
+qwerqwer
 Key value propositions of ExecuTorch are:
 
 - **Portability:** Compatibility with a wide variety of computing platforms,
