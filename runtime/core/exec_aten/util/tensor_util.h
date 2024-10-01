@@ -567,7 +567,7 @@ inline bool tensors_have_same_dtype(
 
 inline bool tensor_is_rank(exec_aten::Tensor t, size_t rank) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      t.dim() == rank,
+      static_cast<size_t>(t.dim()) == rank,
       "Expected tensor.dim() to be %zu, but got %zu",
       static_cast<size_t>(rank),
       static_cast<size_t>(t.dim()));
@@ -579,7 +579,7 @@ inline bool tensor_has_rank_greater_or_equal_to(
     exec_aten::Tensor t,
     size_t rank) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      t.dim() >= rank,
+      static_cast<size_t>(t.dim()) >= rank,
       "Expected tensor.dim() to be >= %zu, but got %zu",
       static_cast<size_t>(rank),
       static_cast<size_t>(t.dim()));
@@ -591,7 +591,7 @@ inline bool tensor_has_rank_smaller_or_equal_to(
     exec_aten::Tensor t,
     size_t rank) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      t.dim() <= rank,
+      static_cast<size_t>(t.dim()) <= rank,
       "Expected tensor.dim() to be <= %zu, but got %zu",
       static_cast<size_t>(rank),
       static_cast<size_t>(t.dim()));
@@ -647,12 +647,12 @@ inline bool tensors_have_same_size_at_dims(
     exec_aten::Tensor b,
     size_t dim_b) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      dim_a < a.dim(),
+      dim_a < static_cast<size_t>(a.dim()),
       "Cannot retrieve dim %zu from tensor with dim %zu",
       static_cast<size_t>(dim_a),
       static_cast<size_t>(a.dim()));
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      dim_b < b.dim(),
+      dim_b < static_cast<size_t>(b.dim()),
       "Cannot retrieve dim %zu from tensor with dim %zu",
       static_cast<size_t>(dim_b),
       static_cast<size_t>(b.dim()));
@@ -682,7 +682,7 @@ inline bool tensors_have_same_shape(exec_aten::Tensor a, exec_aten::Tensor b) {
         static_cast<size_t>(b.numel()),
         static_cast<size_t>(a.dim()),
         static_cast<size_t>(b.dim()));
-    for (size_t d = 0; d < ET_MIN2(a.dim(), b.dim()); ++d) {
+    for (size_t d = 0; d < static_cast<size_t>(ET_MIN2(a.dim(), b.dim())); ++d) {
       ET_LOG(
           Error,
           "    size(%zu): (%zu, %zu)",
@@ -719,7 +719,7 @@ inline bool tensors_have_same_shape(
         static_cast<size_t>(a.dim()),
         static_cast<size_t>(b.dim()),
         static_cast<size_t>(c.dim()));
-    for (size_t d = 0; d < ET_MIN3(a.dim(), b.dim(), c.dim()); ++d) {
+    for (size_t d = 0; d < static_cast<size_t>(ET_MIN3(a.dim(), b.dim(), c.dim())); ++d) {
       ET_LOG(
           Error,
           "    size(%zu): (%zu, %zu, %zu)",
@@ -782,7 +782,7 @@ inline bool tensors_have_same_strides(
         ET_TENSOR_CHECK_PREFIX__ ": dim=(%zu, %zu)",
         static_cast<size_t>(a.dim()),
         static_cast<size_t>(b.dim()));
-    for (size_t d = 0; d < ET_MIN2(a.dim(), b.dim()); ++d) {
+    for (size_t d = 0; d < static_cast<size_t>(ET_MIN2(a.dim(), b.dim())); ++d) {
       ET_LOG(
           Error,
           "    stride(%zu): (%zu, %zu)",
@@ -807,7 +807,7 @@ inline bool tensors_have_same_strides(
         static_cast<size_t>(a.dim()),
         static_cast<size_t>(b.dim()),
         static_cast<size_t>(c.dim()));
-    for (size_t d = 0; d < ET_MIN3(a.dim(), b.dim(), c.dim()); ++d) {
+    for (size_t d = 0; d < static_cast<size_t>(ET_MIN3(a.dim(), b.dim(), c.dim())); ++d) {
       ET_LOG(
           Error,
           "    stride(%zu): (%zu, %zu, %zu)",
@@ -880,7 +880,7 @@ inline size_t getLeadingDims(const exec_aten::Tensor& tensor, int64_t dim) {
       dim,
       ssize_t(tensor.dim()));
   size_t dims = 1;
-  for (size_t i = 0; i < dim; ++i) {
+  for (size_t i = 0; i < static_cast<size_t>(dim); ++i) {
     dims *= static_cast<size_t>(tensor.size(i));
   }
   return dims;
@@ -895,7 +895,7 @@ inline size_t getTrailingDims(const exec_aten::Tensor& tensor, int64_t dim) {
       dim,
       ssize_t(tensor.dim()));
   size_t dims = 1;
-  for (size_t i = dim + 1; i < tensor.dim(); ++i) {
+  for (size_t i = dim + 1; i < static_cast<size_t>(tensor.dim()); ++i) {
     dims *= static_cast<size_t>(tensor.size(i));
   }
   return dims;
@@ -968,7 +968,7 @@ inline void indexToCoordinate(
     const exec_aten::Tensor& tensor,
     size_t index,
     size_t* coordinate) {
-  ET_CHECK(index < tensor.numel());
+  ET_CHECK(index < static_cast<size_t>(tensor.numel()));
   for (auto i = 0; i < tensor.dim(); ++i) {
     auto dim = tensor.dim() - 1 - i;
     size_t dim_size = tensor.size(dim);
