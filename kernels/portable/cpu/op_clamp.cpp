@@ -66,6 +66,10 @@ ET_NODISCARD bool check_bounds(
   return is_valid;
 }
 
+template <typename To, typename From>
+To load_and_convert(const void* fromPtr) {
+  return static_cast<To>(*reinterpret_cast<const From*>(fromPtr));
+}
 } // namespace
 
 Tensor& clamp_out(
@@ -218,24 +222,15 @@ Tensor& clamp_tensor_out(
     using ToCtypeOutFn = CTYPE_OUT (*)(const void*);
     ToCtypeOutFn in_to_out;
     ET_SWITCH_REALHB_TYPES(in_type, ctx, name, CTYPE_IN, [&]() {
-      in_to_out = [](const void* inPtr) {
-        return static_cast<CTYPE_OUT>(
-            *reinterpret_cast<const CTYPE_IN*>(inPtr));
-      };
+      in_to_out = load_and_convert<CTYPE_OUT, CTYPE_IN>;
     });
     ToCtypeOutFn min_to_out;
     ET_SWITCH_REALHB_TYPES(min_type, ctx, name, CTYPE_MIN, [&]() {
-      min_to_out = [](const void* minPtr) {
-        return static_cast<CTYPE_OUT>(
-            *reinterpret_cast<const CTYPE_MIN*>(minPtr));
-      };
+      min_to_out = load_and_convert<CTYPE_OUT, CTYPE_MIN>;
     });
     ToCtypeOutFn max_to_out;
     ET_SWITCH_REALHB_TYPES(max_type, ctx, name, CTYPE_MAX, [&]() {
-      max_to_out = [](const void* maxPtr) {
-        return static_cast<CTYPE_OUT>(
-            *reinterpret_cast<const CTYPE_MAX*>(maxPtr));
-      };
+      max_to_out = load_and_convert<CTYPE_OUT, CTYPE_MAX>;
     });
 
     apply_ternary_elementwise_fn<CTYPE_OUT>(
