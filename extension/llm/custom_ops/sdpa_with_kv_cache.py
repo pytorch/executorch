@@ -17,6 +17,7 @@ import torch
 
 from torch.library import impl
 
+# TODO rename this file to custom_ops_meta_registration.py
 try:
     op = torch.ops.llama.sdpa_with_kv_cache.default
     assert op is not None
@@ -138,3 +139,54 @@ def fast_hadamard_transform_meta(mat):
     # assert(mat.shape[-1] == 128 or mat.shape[-1] == 14336, "unexpected input size for llama3 demo!")
     # assert(mat.is_contiguous(), "input matrix must be contiguous currently!")
     return torch.empty_like(mat)
+
+
+def _validate_update_cache_params(
+    value,
+    cache,
+    start_pos,
+):
+    seq_len = value.size(1)
+    assert (
+        value.dim() == 4
+    ), f"Expected value to be 4 dimensional but got {value.dim()} dimensions."
+
+    assert (
+        value.dtype == cache.dtype
+    ), f"Expected value and cache to be of the same type but got value type {value.dtype} and cache type {cache.dtype}"
+
+    for i in [0, 2, 3]:
+        assert value.size(i) == cache.size(
+            i
+        ), f"Expected value and cache to have same size in dimension {i} but got {value.size(i)} and {cache.size(i)}"
+
+    torch._check_is_size(start_pos)
+    # Setting to arbitrary limit of 256 for now since there is no way
+    # to plumb this information from model config
+    torch._check(start_pos < cache.size(1))
+    assert start_pos < cache.size(
+        1
+    ), f"Start position {start_pos} must be less than sequence length {cache.size(1)}"
+
+    torch._check((start_pos + seq_len) < cache.size(1))
+    assert (start_pos + seq_len) < cache.size(
+        1
+    ), f"Start position  + length = {start_pos + seq_len} must be less than sequence length {cache.size(1)}"
+
+
+@impl(custom_ops_lib, "update_quantized_cache", "Meta")
+def update_quantized_cache_meta(
+    value,
+    cache,
+    start_pos,
+):
+    _validate_update_cache_params(
+        value,
+        cache,
+        start_pos,
+    )
+
+    # Update cache doesnt really return anything but I dont know a better
+    # workaround. Should we just return cache instead? But I am afraid that
+    # will result in extra memory allocation
+    return torch.empty((1,), dtype=value.dtype, device="meta")
