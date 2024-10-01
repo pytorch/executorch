@@ -9,7 +9,7 @@
 #include <executorch/backends/xnnpack/runtime/XNNExecutor.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <gtest/gtest.h>
-#include <xnnpack/subgraph.h>
+#include <xnnpack.h>
 
 using torch::executor::Error;
 using torch::executor::EValue;
@@ -26,7 +26,7 @@ TEST(XNNExecutorTest, ArgumentWithTooManyDimensions) {
   std::unique_ptr<xnn_subgraph, decltype(&xnn_delete_subgraph)> auto_subgraph(
       subgraph, xnn_delete_subgraph);
 
-  auto input_id = XNN_INVALID_NODE_ID;
+  auto input_id = XNN_INVALID_VALUE_ID;
   std::vector<size_t> dims = {
       1,
   };
@@ -43,9 +43,9 @@ TEST(XNNExecutorTest, ArgumentWithTooManyDimensions) {
           /*external_id=*/0,
           /*flags=*/XNN_VALUE_FLAG_EXTERNAL_INPUT,
           &input_id));
-  ASSERT_NE(input_id, XNN_INVALID_NODE_ID);
+  ASSERT_NE(input_id, XNN_INVALID_VALUE_ID);
 
-  auto output_id = XNN_INVALID_NODE_ID;
+  auto output_id = XNN_INVALID_VALUE_ID;
   ASSERT_EQ(
       xnn_status_success,
       xnn_define_quantized_tensor_value(
@@ -59,7 +59,7 @@ TEST(XNNExecutorTest, ArgumentWithTooManyDimensions) {
           /*external_id=*/0,
           /*flags=*/XNN_VALUE_FLAG_EXTERNAL_OUTPUT,
           &output_id));
-  ASSERT_NE(output_id, XNN_INVALID_NODE_ID);
+  ASSERT_NE(output_id, XNN_INVALID_VALUE_ID);
 
   ASSERT_EQ(
       xnn_status_success,
