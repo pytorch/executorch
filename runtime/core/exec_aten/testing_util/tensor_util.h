@@ -11,6 +11,8 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <gmock/gmock.h> // For MATCHER_P
 
+#include <optional>
+
 namespace executorch {
 namespace runtime {
 namespace testing {
@@ -18,6 +20,10 @@ namespace testing {
 namespace internal {
 constexpr double kDefaultRtol = 1e-5;
 constexpr double kDefaultAtol = 1e-8;
+// Per
+// https://en.wikipedia.org/wiki/Half-precision_floating-point_format,
+// float16 has about 3.3 digits of precision.
+constexpr double kDefaultHalfAtol = 1e-3;
 } // namespace internal
 
 /**
@@ -61,7 +67,7 @@ bool tensors_are_close(
     const exec_aten::Tensor& a,
     const exec_aten::Tensor& b,
     double rtol = internal::kDefaultRtol,
-    double atol = internal::kDefaultAtol);
+    std::optional<double> opt_atol = std::nullopt);
 
 /**
  * Returns true if the tensors are of the same numel and dtype, and if all
@@ -92,7 +98,7 @@ bool tensor_data_is_close(
     const exec_aten::Tensor& a,
     const exec_aten::Tensor& b,
     double rtol = internal::kDefaultRtol,
-    double atol = internal::kDefaultAtol);
+    std::optional<double> opt_atol = std::nullopt);
 
 /**
  * Returns true if the two lists are of the same length, and
@@ -105,7 +111,7 @@ bool tensor_lists_are_close(
     const exec_aten::Tensor* tensors_b,
     size_t num_tensors_b,
     double rtol = internal::kDefaultRtol,
-    double atol = internal::kDefaultAtol);
+    std::optional<double> opt_atol = std::nullopt);
 
 /**
  * Lets gtest users write `EXPECT_THAT(tensor1, IsCloseTo(tensor2))` or
