@@ -146,6 +146,7 @@ class LLMEdgeManager:
 
         if self.verbose:
             logging.info(f"Applied source transforms: {self.applied_source_transforms}")
+        logging.info(f"Model after source transforms: {self.model}")
         return self
 
     def _get_dynamic_shape(self) -> Any:

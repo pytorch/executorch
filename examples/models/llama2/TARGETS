@@ -74,6 +74,7 @@ runtime.python_library(
         "source_transformation/apply_spin_quant_r1_r2.py",
         "source_transformation/prune_output.py",
         "source_transformation/quantize.py",
+        "source_transformation/quantized_kv_cache.py",
         "source_transformation/rms_norm.py",
         "source_transformation/rope.py",
         "source_transformation/sdpa.py",
@@ -144,5 +145,29 @@ runtime.python_library(
         "//executorch/extension/llm/export:export_lib",
         "//executorch/extension/llm/tokenizer:tokenizer_py_lib",
         "//executorch/extension/pybindings:portable_lib",
+    ],
+)
+
+runtime.python_library(
+    name = "quantized_kv_cache",
+    srcs = [
+        "source_transformation/quantized_kv_cache.py",
+    ],
+    _is_external_target = True,
+    visibility = ["//executorch/..."],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_test(
+    name = "quantized_kv_cache_test",
+    srcs = [
+        "source_transformation/test_quantized_kv_cache.py",
+    ],
+    deps = [
+        ":quantized_kv_cache",
+        "//caffe2:torch",
+        "//executorch/examples/models/llama2:llama_transformer",
     ],
 )
