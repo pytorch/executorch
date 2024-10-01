@@ -519,14 +519,17 @@ class EmbeddingQuantHandler(QuantHandler):
         self.group_size = group_size
         self.bitwidth = bitwidth
         self.packed = packed
-        if (bitwidth != 4) and packed:
-            raise RuntimeError("pack only works with bitsize 4")
+        if (bitwidth not in [2, 4]) and packed:
+            raise RuntimeError("pack only works with bitsize 2, 4")
 
     @torch.no_grad()
     def create_quantized_state_dict(self, packed=False) -> Dict:
         cur_state_dict = self.mod.state_dict()
 
-        if self.bitwidth == 4:
+        if self.bitwidth == 2:
+            range_min = -2
+            range_max = 1
+        elif self.bitwidth == 4:
             range_min = -8
             range_max = 7
         elif self.bitwidth == 8:
@@ -555,17 +558,30 @@ class EmbeddingQuantHandler(QuantHandler):
                 )
 
                 if packed:
-                    if weight.shape[-1] % 2 != 0:
-                        raise RuntimeError("automatic padding not implemented yet")
-
-                    weight_range_shifted = weight.add(8).view(torch.uint8)
-                    weight_view = weight_range_shifted.view(
-                        weight.shape[0], weight.shape[1] // 2, 2
-                    )
-                    weight_even = weight_view[:, :, 0] * 16  # left shift 4
-                    weight_odd = weight_view[:, :, 1]
-                    weight_packed = weight_even + weight_odd
-                    weight = weight_packed
+                    if self.bitwidth == 2:
+                        if weight.shape[-1] % 4 != 0:
+                            raise RuntimeError("automatic padding not implemented yet")
+                        weight_range_shifted = weight.add(2).view(torch.uint8)
+                        weight_view = weight_range_shifted.view(
+                            weight.shape[0], weight.shape[1] // 4, 4
+                        )
+                        weight_0 = weight_view[:, :, 0]
+                        weight_1 = weight_view[:, :, 1] << 2
+                        weight_2 = weight_view[:, :, 2] << 4
+                        weight_3 = weight_view[:, :, 3] << 6
+                        weight_packed = weight_0 + weight_1 + weight_2 + weight_3
+                        weight = weight_packed
+                    elif self.bitwidth == 4:
+                        if weight.shape[-1] % 2 != 0:
+                            raise RuntimeError("automatic padding not implemented yet")
+                        weight_range_shifted = weight.add(8).view(torch.uint8)
+                        weight_view = weight_range_shifted.view(
+                            weight.shape[0], weight.shape[1] // 2, 2
+                        )
+                        weight_even = weight_view[:, :, 0] * 16  # left shift 4
+                        weight_odd = weight_view[:, :, 1]
+                        weight_packed = weight_even + weight_odd
+                        weight = weight_packed
 
                 weight = weight.to(device=self.device)
                 scales = scales.to(device=self.device)
@@ -658,7 +674,7 @@ def get_quant_embedding_transform(args):
         model,
         bitwidth=bitwidth,
         group_size=group_size,
-        packed=(bitwidth == 4),
+        packed=(bitwidth in [2, 4]),
     ).quantized_model()
 
 
