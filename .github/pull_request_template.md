@@ -1,11 +1,9 @@
 ### Summary
 [PLEASE REMOVE] Describe the goal of this PR and any add any relevant context.
 
+[PLEASE REMOVE] If this PR closes an issue, please add a `Closes #<issue-id>` line.
+
+[PLEASE REMOVE] If this PR introduces a fix or feature that should be the upcoming release notes, please add the following "Release notes: <area>" label.
+
 ### Test plan
 [PLEASE REMOVE] How did you test this PR? Please write down any manual commands you used and note down tests that you have written.
-
-### Issue(s) fixed
-[PLEASE REMOVE] List all issues fixed (e.g. "closes #ISSUE_NUMBER"), separate by newlines, that this PR addresses.
-
-### Changelog
-[PLEASE REMOVE] If this PR introduces a fix or feature that should be the upcoming release notes, please add the following "Release notes: <area>" label.
