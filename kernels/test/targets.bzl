@@ -15,7 +15,11 @@ def make_example_generated_op_test_target():
     Makes a test for kernels/test/util generated_op_test() helper
     Here we use portable kernel. Try with `buck test xplat/executorch/kernels/test:op_<>_test`
     """
-    op_test_cpp_files = native.glob(["op_*_test.cpp"])
+    op_test_cpp_files = native.glob(
+        ["op_*_test.cpp"],
+        # linear has no portable op.
+        exclude = ["op_linear_test.cpp"],
+    )
 
     # The op name is from the beginning to the part without `_test.cpp` (:-9)
     op_to_test = [f[:-9] for f in op_test_cpp_files]
@@ -39,23 +43,32 @@ def define_common_targets():
         aten_suffix = "_aten" if aten_kernel else ""
         runtime.cxx_library(
             name = "test_util" + aten_suffix,
+            srcs = [
+                "UnaryUfuncRealHBToFloatHTest.cpp",
+            ],
             exported_headers = [
                 "TestUtil.h",
+                "UnaryUfuncRealHBToFloatHTest.h",
             ],
             visibility = [
                 "//executorch/kernels/...",
                 "@EXECUTORCH_CLIENTS",
             ],
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_kernel else [],
+            exported_deps = [
+                ":supported_features_header",
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
+                "//executorch/runtime/kernel:kernel_includes",
+                "//executorch/test/utils:utils" + aten_suffix,
+            ],
             fbcode_exported_deps = [
                 "//common/init:init",
                 "//common/gtest:gtest",
-                "//executorch/runtime/kernel:kernel_includes",
             ],
             xplat_exported_deps = [
                 "//xplat/folly:init_init",
                 "//third-party/googletest:gtest_main",
-                "//executorch/runtime/kernel:kernel_includes",
             ],
         )
 
