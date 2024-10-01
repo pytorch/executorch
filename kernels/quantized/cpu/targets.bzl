@@ -24,6 +24,9 @@ _QUANT_OPS = (
         name = "op_embedding",
     ),
     op_target(
+        name = "op_embedding2b",
+    ),
+    op_target(
         name = "op_embedding4b",
     ),
     op_target(
