@@ -48,16 +48,10 @@ void resize_matmul_node(
   const int out_rows = mat2_is_transposed ? utils::val_at(-2, mat2->sizes())
                                           : utils::val_at(-1, mat2->sizes());
 
-  std::vector<int64_t> new_out_sizes(3);
-  if (mat1->sizes().size() == 2) {
-    new_out_sizes.resize(2);
-    new_out_sizes.at(0) = out_cols;
-    new_out_sizes.at(1) = out_rows;
-  } else {
-    new_out_sizes.at(0) = mat1->sizes().at(0);
-    new_out_sizes.at(1) = out_cols;
-    new_out_sizes.at(2) = out_rows;
-  }
+  const int64_t out_dim = out->dim();
+  std::vector<int64_t> new_out_sizes = mat1->sizes();
+  new_out_sizes.at(out_dim - 1) = out_rows;
+  new_out_sizes.at(out_dim - 2) = out_cols;
 
   out->virtual_resize(new_out_sizes);
 }
