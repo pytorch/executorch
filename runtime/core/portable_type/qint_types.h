@@ -10,8 +10,9 @@
 
 #include <cstdint>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 /**
  * qint8 is for signed 8 bit quantized Tensors
@@ -65,5 +66,18 @@ struct alignas(1) quint2x4 {
   explicit quint2x4(uint8_t val) : val_(val) {}
 };
 
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::etensor::qint32;
+using ::executorch::runtime::etensor::qint8;
+using ::executorch::runtime::etensor::quint2x4;
+using ::executorch::runtime::etensor::quint4x2;
+using ::executorch::runtime::etensor::quint8;
 } // namespace executor
 } // namespace torch

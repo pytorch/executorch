@@ -4,9 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 
 import pytest
@@ -37,6 +39,7 @@ def pytest_configure(config):
                 "Tests are run with --arm_run_corstone300 but corstone300 FVP is not installed."
             )
         _enabled_options.append("corstone300")
+    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 
 def pytest_collection_modifyitems(config, items):
