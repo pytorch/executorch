@@ -900,29 +900,30 @@ def get_split_tensor_inputs():
 def get_softmax_inputs():
     test_suite = VkTestSuite(
         [
-            ((S1), 0, False),
-            ((S1), -1, False),
-            ((S, S1), 0, False),
-            ((S, S1), 1, False),
-            ((S, S1), -1, False),
-            ((S, S1), -2, False),
+            ((L), 0, False),
+            ((L), -1, False),
+            ((M, L), 0, False),
+            ((M, L), 1, False),
+            ((L, M), -1, False),
+            ((M, L), -2, False),
             ((S, S1, S2), 0, False),
             ((S, S1, S2), 1, False),
             ((S, S1, S2), 2, False),
             ((S, S1, S2), -1, False),
             ((S, S1, S2), -2, False),
             ((S, S1, S2), -3, False),
-            ((XS, S, S1, S2), 0, False),
-            ((XS, S, S1, S2), 1, False),
-            ((XS, S, S1, S2), 2, False),
-            ((XS, S, S1, S2), 3, False),
-            ((XS, S, S1, S2), -1, False),
-            ((XS, S, S1, S2), -2, False),
-            ((XS, S, S1, S2), -3, False),
-            ((XS, S, S1, S2), -4, False),
+            ((1, S, S1, S2), 1, False),
+            ((1, S, S1, S2), 2, False),
+            ((1, S, S1, S2), 3, False),
+            ((1, S, S1, S2), -1, False),
+            ((1, S, S1, S2), -2, False),
+            ((1, S, S1, S2), -3, False),
+            # Test batches > 1 where the reduction dim is not the concat dim
+            ((S, S2, S1, 128), -1, False),
         ]
     )
     test_suite.layouts = [
+        "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
     return test_suite
