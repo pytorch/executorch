@@ -10,7 +10,7 @@
 
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include "kernels.h"
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 
 namespace torch {
 namespace executor {
@@ -36,33 +36,33 @@ Tensor& sigmoid_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
   
-  int fall_back = 0;
+  bool optimized = 1;
   if((in_type != ScalarType::Float) || (out_type != ScalarType::Float))
-      fall_back = 1;
+      optimized = 0;
   
-  if(!fall_back)
+  if(optimized)
   {
     float* data_in = in.mutable_data_ptr<float>();
     float* data_out = out.mutable_data_ptr<float>();
     xa_nn_vec_sigmoid_f32_f32(data_out, data_in, in.numel());
+    
+    return out;
   }
-  else
-  {
-    ET_SWITCH_REALHB_TYPES(in_type, ctx, "sigmoid.out", CTYPE_IN, [&]() {
-      ET_SWITCH_FLOATH_TYPES(out_type, ctx, "sigmoid.out", CTYPE_OUT, [&]() {
-        apply_unary_map_fn(
-            [](const CTYPE_IN val_in) {
-              // perform math in double to preserve precision
-              double in_casted = static_cast<double>(val_in);
-              double out_val = 1.0 / (1.0 + exp(-in_casted));
-              return static_cast<CTYPE_OUT>(out_val);
-            },
-            in.const_data_ptr<CTYPE_IN>(),
-            out.mutable_data_ptr<CTYPE_OUT>(),
-            in.numel());
-      });
-    }); 
-  }
+
+  ET_SWITCH_REALHB_TYPES(in_type, ctx, "sigmoid.out", CTYPE_IN, [&]() {
+    ET_SWITCH_FLOATH_TYPES(out_type, ctx, "sigmoid.out", CTYPE_OUT, [&]() {
+      apply_unary_map_fn(
+          [](const CTYPE_IN val_in) {
+            // perform math in double to preserve precision
+            double in_casted = static_cast<double>(val_in);
+            double out_val = 1.0 / (1.0 + exp(-in_casted));
+            return static_cast<CTYPE_OUT>(out_val);
+          },
+          in.const_data_ptr<CTYPE_IN>(),
+          out.mutable_data_ptr<CTYPE_OUT>(),
+          in.numel());
+    });
+  }); 
 
   return out;
 }

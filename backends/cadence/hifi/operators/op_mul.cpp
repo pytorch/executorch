@@ -11,9 +11,8 @@
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
-#include "kernels.h"
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 
-#define NNLIB_MAX_DIM 4  /* Add fallback if broadcast and dim > 4 */
 
 namespace torch {
 namespace executor { 
@@ -79,27 +78,28 @@ mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
   ScalarType b_type = b.scalar_type();
   ScalarType common_type = promoteTypes(a_type, b_type, /*half_to_float*/ true);
   ScalarType out_type = out.scalar_type();
+  constexpr int kNnlibMaxDim = 4;  /*fallback if broadcast and dim > 4 */
   
   int a_dim = a.dim(), b_dim = b.dim(), out_dim = out.dim();
-  int fall_back = 0;
+  bool optimized = 1;
   /*find broadcast*/
-  const int a_is_broadcasted = !out.sizes().equals(a.sizes());
-  const int b_is_broadcasted = !out.sizes().equals(b.sizes());
-  const int broadcast = (a_is_broadcasted || b_is_broadcasted);
+  const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
+  const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
+  const bool broadcast = (a_is_broadcasted || b_is_broadcasted);
   int max_dim = a.dim() > b.dim() ? a.dim() : b.dim();
   max_dim = out.dim() > max_dim ? out.dim() : max_dim;
 
   
   if((a_type != ScalarType::Float) || (b_type != ScalarType::Float))
-      fall_back = 1;
+    optimized = 0;
   
   if( (a_dim == 0) || (b_dim == 0) )
-    fall_back = 1;
+    optimized = 0;
   
-  if((broadcast == 1) && (max_dim > NNLIB_MAX_DIM))
-      fall_back = 1;
+  if((broadcast == 1) && (max_dim > kNnlibMaxDim))
+    optimized = 0;
 
-  if(!fall_back)
+  if(optimized)
   {
     float* a_data = a.mutable_data_ptr<float>();
     float* b_data = b.mutable_data_ptr<float>();
@@ -107,18 +107,18 @@ mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
 
     if(broadcast == 1)
     {
-       int out_shape[NNLIB_MAX_DIM];
-       int inp1_shape[NNLIB_MAX_DIM];
-       int inp2_shape[NNLIB_MAX_DIM];
-       for(int i = 0; i < NNLIB_MAX_DIM; i++)
+       int out_shape[kNnlibMaxDim];
+       int inp1_shape[kNnlibMaxDim];
+       int inp2_shape[kNnlibMaxDim];
+       for(int i = 0; i < kNnlibMaxDim; i++)
        {
           out_shape[i] = 1;
           inp1_shape[i] = 1;
           inp2_shape[i] = 1;
        }
-       int off_o = NNLIB_MAX_DIM - out.dim();
-       int off_a = NNLIB_MAX_DIM - a.dim();
-       int off_b = NNLIB_MAX_DIM - b.dim();
+       int off_o = kNnlibMaxDim - out.dim();
+       int off_a = kNnlibMaxDim - a.dim();
+       int off_b = kNnlibMaxDim - b.dim();
        for(int i = 0; i < out.dim(); i++){
             out_shape[i+off_o] = out.size(i);}
        for(int i = 0; i < a.dim(); i++)
@@ -132,26 +132,26 @@ mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
     {
         xa_nn_elm_mul_f32xf32_f32(out_data, a_data, b_data, out.numel());
     }
-  }
-  else
-  {
-    ET_SWITCH_REALHB_TYPES(a_type, ctx, "mul.out", CTYPE_A, [&]() {
-      ET_SWITCH_REALHB_TYPES(b_type, ctx, "mul.out", CTYPE_B, [&]() {
-        using CTYPE_IN = typename torch::executor::
-            promote_types<CTYPE_A, CTYPE_B, /*half_to_float*/ true>::type;
-        ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
-        ET_SWITCH_REALHB_TYPES(out_type, ctx, "mul.out", CTYPE_OUT, [&]() {
-          MulInner<
-              can_cast<CTYPE_IN, CTYPE_OUT>::value,
-              CTYPE_A,
-              CTYPE_B,
-              CTYPE_IN,
-              CTYPE_OUT>::run(a, b, out); 
-        });
-      });
-    }); 
+    
+    return out;
   }
 
+  ET_SWITCH_REALHB_TYPES(a_type, ctx, "mul.out", CTYPE_A, [&]() {
+    ET_SWITCH_REALHB_TYPES(b_type, ctx, "mul.out", CTYPE_B, [&]() {
+      using CTYPE_IN = typename torch::executor::
+          promote_types<CTYPE_A, CTYPE_B, /*half_to_float*/ true>::type;
+      ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
+      ET_SWITCH_REALHB_TYPES(out_type, ctx, "mul.out", CTYPE_OUT, [&]() {
+        MulInner<
+            can_cast<CTYPE_IN, CTYPE_OUT>::value,
+            CTYPE_A,
+            CTYPE_B,
+            CTYPE_IN,
+            CTYPE_OUT>::run(a, b, out); 
+      });
+    });
+  });
+  
   return out;
 }
 
@@ -160,7 +160,6 @@ Tensor& mul_scalar_out(
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {
-  (void)ctx;
 
   // Resize for dynamic shape
   ET_KERNEL_CHECK_MSG(
@@ -180,6 +179,8 @@ Tensor& mul_scalar_out(
 
   ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
 
+  /*When Half first compute the result in float precision 
+    and then downcast to half*/
   if (common_type == ScalarType::Half) {
     common_type = ScalarType::Float;
   }

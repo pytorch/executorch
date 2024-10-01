@@ -9,82 +9,140 @@
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
+#include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
-#include "kernels.h"
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 
 namespace torch {
 namespace executor {
 namespace native {
+namespace {
 
-#define NNLIB_MAX_DIM 4  /* Add fallback if broadcast and dim > 4 */
+template <
+    bool can_cast,
+    typename CTYPE_A,
+    typename CTYPE_B,
+    typename CTYPE_IN,
+    typename CTYPE_OUT>
+struct AddInner;
+
+template <
+    typename CTYPE_A,
+    typename CTYPE_B,
+    typename CTYPE_IN,
+    typename CTYPE_OUT>
+struct AddInner<true, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT> {
+  static void
+  run(const Tensor& a, const Tensor& b, CTYPE_IN alpha_val, Tensor& out) {
+    apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
+        // NOLINTNEXTLINE(facebook-hte-ConstantArgumentPassByValue)
+        [alpha_val](const CTYPE_A val_a, const CTYPE_B val_b) {
+          CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+          CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
+          CTYPE_IN value = a_casted + alpha_val * b_casted;
+
+          return static_cast<CTYPE_OUT>(value);
+        },
+        a,
+        b,
+        out);
+  }
+};
+
+template <typename CTYPE_IN>
+struct ReportCanCastBug {
+  static void run(const Tensor&, const Tensor&, CTYPE_IN, Tensor&) {
+    ET_DCHECK_MSG(false, "BUG: canCast should have been checked above");
+  }
+};
+
+template <
+    typename CTYPE_A,
+    typename CTYPE_B,
+    typename CTYPE_IN,
+    typename CTYPE_OUT>
+struct AddInner<false, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT>
+    : public ReportCanCastBug<CTYPE_IN> {};
+
+} // namespace
 
 Tensor& add_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     const Scalar& alpha,
     Tensor& out) {
-  (void)ctx;
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_to_broadcast_target_size(a, b, out) == Error::Ok,
+      InvalidArgument,
+      out);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      executorch::runtime::tensor_is_realhbbf16_type(out),
+      InvalidArgument,
+      out);
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
-  ScalarType common_type = promoteTypes(a_type, b_type);
+  ScalarType alpha_type = utils::get_scalar_dtype(alpha);
+  ScalarType common_type = promoteTypes(a_type, b_type, /*half_to_float*/ true);
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK_MSG(a_type == ScalarType::Float, "Input tensor not a float.\n");
-  ET_CHECK_MSG(b_type == ScalarType::Float, "Input tensor not a float.\n");
-  ET_CHECK_MSG(out_type == ScalarType::Float, "Output tensor not a float.\n");
+  ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx, check_alpha_type(alpha_type, common_type), InvalidArgument, out);
+      
+  float alpha_val;
+  utils::extract_scalar(alpha, &alpha_val);
 
-  ET_CHECK(canCast(common_type, out_type));
-
-  using CTYPE_A = float;
-  using CTYPE_B = float;
-  using CTYPE_IN = float;
-  using CTYPE_OUT = float;
-  CTYPE_IN alpha_val;
-  ET_EXTRACT_SCALAR(alpha, alpha_val);
-
+  constexpr auto name = "add.out";
+  constexpr int kNnlibMaxDim = 4; /*fallback if broadcast and dim > 4 */
+  
   int a_dim = a.dim(), b_dim = b.dim(), out_dim = out.dim();
-  int fall_back = 0;
+  bool optimized = 1;
   /*find broadcast*/
-  const int a_is_broadcasted = !out.sizes().equals(a.sizes());
-  const int b_is_broadcasted = !out.sizes().equals(b.sizes());
-  const int broadcast = (a_is_broadcasted || b_is_broadcasted);
+  const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
+  const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
+  const bool broadcast = (a_is_broadcasted || b_is_broadcasted);
   int max_dim = a.dim() > b.dim() ? a.dim() : b.dim();
   max_dim = out.dim() > max_dim ? out.dim() : max_dim;
   
-  if( (out_type != ScalarType::Float) || (alpha_val != 1.0))
-    fall_back = 1;
+  if((out_type != ScalarType::Float) || (alpha_val != 1.0))
+    optimized = 0;
   
-  if( (a_dim == 0) || (b_dim == 0) )
-    fall_back = 1;
+  if((a_dim == 0) || (b_dim == 0) )
+    optimized = 0;
 
-  if((broadcast == 1) && (max_dim > NNLIB_MAX_DIM))
-    fall_back = 1;
+  if((broadcast == 1) && (max_dim > kNnlibMaxDim))
+    optimized = 0;
 
 
-  if (!fall_back)
+  if(optimized)
   {
       const float* const a_data = a.const_data_ptr<float>();
       const float* const b_data = b.const_data_ptr<float>();
       float* const out_data = out.mutable_data_ptr<float>();
       if(broadcast == 1)
       {
-         int out_shape[NNLIB_MAX_DIM];
-         int inp1_shape[NNLIB_MAX_DIM];
-         int inp2_shape[NNLIB_MAX_DIM];
+         int out_shape[kNnlibMaxDim];
+         int inp1_shape[kNnlibMaxDim];
+         int inp2_shape[kNnlibMaxDim];
          
-         for(int i = 0; i < NNLIB_MAX_DIM; i++)
+         for(int i = 0; i < kNnlibMaxDim; i++)
          {
             out_shape[i] = 1;
             inp1_shape[i] = 1;
             inp2_shape[i] = 1;
          }
                   
-         int off_o = NNLIB_MAX_DIM - out.dim();
-         int off_a = NNLIB_MAX_DIM - a.dim();
-         int off_b = NNLIB_MAX_DIM - b.dim();
+         int off_o = kNnlibMaxDim - out.dim();
+         int off_a = kNnlibMaxDim - a.dim();
+         int off_b = kNnlibMaxDim - b.dim();
          
          for(int i = 0; i < out.dim(); i++)
              out_shape[i+off_o] = out.size(i);
@@ -97,23 +155,108 @@ Tensor& add_out(
                                                 b_data, inp2_shape);
       }                      
       else
+      {
         xa_nn_elm_add_f32xf32_f32(out_data, a_data, b_data, out.numel());
-      
-  }
-  else
-  {
-      apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-      [alpha_val](const CTYPE_A val_a, const CTYPE_B val_b) {
-        CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-        CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-        CTYPE_IN value = a_casted + alpha_val * b_casted;
+      }
 
-        return static_cast<CTYPE_OUT>(value);
-      },
-      a,
-      b,
-      out);
+      return out;
   }
+  
+  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
+    ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
+      using CTYPE_IN = typename torch::executor::
+          promote_types<CTYPE_A, CTYPE_B, /*half_to_float*/ true>::type;
+      ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
+      CTYPE_IN alpha_val;
+      utils::extract_scalar(alpha, &alpha_val);
+
+      ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
+        AddInner<
+            can_cast<CTYPE_IN, CTYPE_OUT>::value,
+            CTYPE_A,
+            CTYPE_B,
+            CTYPE_IN,
+            CTYPE_OUT>::run(a, b, alpha_val, out);
+      });
+    });
+  });
+
+  return out;
+}
+
+Tensor& add_scalar_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Scalar& b,
+    const Scalar& alpha,
+    Tensor& out) {
+
+  // Resize for dynamic shape
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, a.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
+
+  ET_KERNEL_CHECK(
+      ctx,
+      executorch::runtime::tensor_is_realhbbf16_type(out),
+      InvalidArgument,
+      out);
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
+
+  ScalarType a_type = a.scalar_type();
+  ScalarType b_type = utils::get_scalar_dtype(b);
+  ScalarType alpha_type = utils::get_scalar_dtype(alpha);
+  ScalarType common_type =
+      utils::promote_type_with_scalar(a_type, b, /*half_to_float*/ false);
+  ScalarType out_type = out.scalar_type();
+
+  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx, check_alpha_type(alpha_type, common_type), InvalidArgument, out);
+
+  /*When Half first compute the result in float precision 
+  and then downcast to half*/
+  if (common_type == ScalarType::Half) {
+    common_type = ScalarType::Float;
+  }
+
+  constexpr auto name = "add.Scalar_out";
+
+  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
+    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
+      using CTYPE_IN = typename utils::promote_type_with_scalar_type<
+          CTYPE_A,
+          CTYPE_B,
+          /*half_to_float*/ true>::type;
+      ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
+
+      CTYPE_B b_val;
+      utils::extract_scalar(b, &b_val);
+      CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
+
+      CTYPE_IN alpha_val;
+      utils::extract_scalar(alpha, &alpha_val);
+
+      using CTYPE_OUT = typename std::conditional<
+          std::is_same<CTYPE_A, internal::F2>::value,
+          internal::F2,
+          CTYPE_IN>::type;
+
+      apply_unary_map_fn(
+          [b_casted, alpha_val](const CTYPE_A val_a) {
+            CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+            CTYPE_IN value = a_casted + alpha_val * b_casted;
+            return static_cast<CTYPE_OUT>(value);
+          },
+          a.const_data_ptr<CTYPE_A>(),
+          out.mutable_data_ptr<CTYPE_OUT>(),
+          out.numel());
+    });
+  });
 
   return out;
 }
