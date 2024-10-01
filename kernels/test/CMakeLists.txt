@@ -241,6 +241,7 @@ set(_optimized_kernels_test_sources
     "op_native_layer_norm_test.cpp"
     "op_neg_test.cpp"
     "op_sub_test.cpp"
+    "UnaryUfuncRealHBToFloatHTest.cpp"
     ${CMAKE_CURRENT_BINARY_DIR}/include/portable/executorch/kernels/test/supported_features.cpp
 )
 
