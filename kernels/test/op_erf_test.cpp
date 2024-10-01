@@ -8,7 +8,7 @@
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
-#include <executorch/kernels/test/UnaryUfuncRealHBToFloatHTest.h>
+#include <executorch/kernels/test/UnaryUfuncRealHBBF16ToFloatHBF16Test.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -21,7 +21,7 @@ using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpErfOutTest
-    : public torch::executor::testing::UnaryUfuncRealHBToFloatHTest {
+    : public torch::executor::testing::UnaryUfuncRealHBBF16ToFloatHBF16Test {
  protected:
   Tensor& op_out(const Tensor& self, Tensor& out) override {
     return torch::executor::aten::erf_outf(context_, self, out);
