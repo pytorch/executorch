@@ -77,15 +77,15 @@ using namespace ::executorch::runtime;
                                        modelName,
                                        deviceInfo]);
         IMP testLoadImplementation = imp_implementationWithBlock(^(id _self) {
-          auto __block module = std::make_unique<Module>(modelPath.UTF8String);
           [_self measureWithMetrics:@[
             [XCTClockMetric new],
             [XCTMemoryMetric new],
           ]
                             options:XCTMeasureOptions.defaultOptions
                               block:^{
-                                XCTAssertEqual(module->load_method("forward"),
-                                               Error::Ok);
+                                XCTAssertEqual(
+                                    Module(modelPath.UTF8String).load_forward(),
+                                    Error::Ok);
                               }];
         });
         class_addMethod(
@@ -107,7 +107,7 @@ using namespace ::executorch::runtime;
           const auto num_inputs = method_meta->num_inputs();
           XCTAssertGreaterThan(num_inputs, 0);
 
-          std::vector<TensorPtr> __block tensors;
+          std::vector<TensorPtr> tensors;
           tensors.reserve(num_inputs);
 
           for (auto index = 0; index < num_inputs; ++index) {
