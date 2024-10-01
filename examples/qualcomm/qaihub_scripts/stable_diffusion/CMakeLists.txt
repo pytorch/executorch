@@ -21,7 +21,7 @@ target_include_directories(
 target_link_libraries(
   qaihub_stable_diffusion_runner
   qnn_executorch_backend
-  executorch_no_prim_ops
+  executorch_core
   extension_data_loader
   extension_module
   extension_tensor

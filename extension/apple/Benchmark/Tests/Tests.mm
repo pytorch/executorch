@@ -77,15 +77,15 @@ using namespace ::executorch::runtime;
                                        modelName,
                                        deviceInfo]);
         IMP testLoadImplementation = imp_implementationWithBlock(^(id _self) {
-          auto __block module = std::make_unique<Module>(modelPath.UTF8String);
           [_self measureWithMetrics:@[
             [XCTClockMetric new],
             [XCTMemoryMetric new],
           ]
                             options:XCTMeasureOptions.defaultOptions
                               block:^{
-                                XCTAssertEqual(module->load_method("forward"),
-                                               Error::Ok);
+                                XCTAssertEqual(
+                                    Module(modelPath.UTF8String).load_forward(),
+                                    Error::Ok);
                               }];
         });
         class_addMethod(
@@ -107,7 +107,7 @@ using namespace ::executorch::runtime;
           const auto num_inputs = method_meta->num_inputs();
           XCTAssertGreaterThan(num_inputs, 0);
 
-          std::vector<TensorPtr> __block tensors;
+          std::vector<TensorPtr> tensors;
           tensors.reserve(num_inputs);
 
           for (auto index = 0; index < num_inputs; ++index) {
@@ -122,7 +122,8 @@ using namespace ::executorch::runtime;
               const auto sizes = tensor_meta->sizes();
               tensors.emplace_back(ones({sizes.begin(), sizes.end()},
                                         tensor_meta->scalar_type()));
-              module.set_input(tensors.back(), index);
+              XCTAssertEqual(module->set_input(tensors.back(), index),
+                             Error::Ok);
             } break;
             default:
               XCTFail("Unsupported tag %i at input %d", *input_tag, index);
@@ -134,7 +135,7 @@ using namespace ::executorch::runtime;
           ]
                             options:XCTMeasureOptions.defaultOptions
                               block:^{
-                                XCTAssertEqual(module->forward(inputs).error(),
+                                XCTAssertEqual(module->forward().error(),
                                                Error::Ok);
                               }];
         });
