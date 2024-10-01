@@ -17,20 +17,22 @@
 
 using namespace ::testing;
 
-namespace torch {
-namespace executor {
-
+using executorch::runtime::ArrayRef;
+using executorch::runtime::Error;
+using executorch::runtime::TensorShapeDynamism;
+using executorch::runtime::etensor::ScalarType;
+using executorch::runtime::etensor::TensorImpl;
 using SizesType = TensorImpl::SizesType;
 using DimOrderType = TensorImpl::DimOrderType;
 using StridesType = TensorImpl::StridesType;
-using torch::executor::internal::resize_tensor_impl;
+using executorch::runtime::internal::resize_tensor_impl;
 
 class TensorImplTest : public ::testing::Test {
  protected:
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
@@ -446,6 +448,3 @@ TEST_F(TensorImplTest, TestResizingTensorToZeroAndBack) {
   EXPECT_GT(t.numel(), 0);
   EXPECT_EQ(t.data(), data);
 }
-
-} // namespace executor
-} // namespace torch

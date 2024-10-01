@@ -35,6 +35,8 @@ struct SymInt final {
 
   void set(const int32_t val);
 
+  int32_t get();
+
   void operator=(const int32_t val);
 };
 

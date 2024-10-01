@@ -9,8 +9,9 @@
 #pragma once
 #include <cstdint>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 /**
  * bits1x8 is an uninterpreted dtype of a tensor with 1 bit (packed to byte
@@ -65,5 +66,18 @@ struct alignas(2) bits16 {
   explicit bits16(uint16_t val) : val_(val) {}
 };
 
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::etensor::bits16;
+using ::executorch::runtime::etensor::bits1x8;
+using ::executorch::runtime::etensor::bits2x4;
+using ::executorch::runtime::etensor::bits4x2;
+using ::executorch::runtime::etensor::bits8;
 } // namespace executor
 } // namespace torch
