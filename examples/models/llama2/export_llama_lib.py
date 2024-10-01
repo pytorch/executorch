@@ -312,16 +312,6 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
     parser.add_argument(
-        "--coreml-enable-state",
-        action="store_true",
-        help="This option is only for coreml, and is only supported for MacOS15+/iOS18+",
-    )
-    parser.add_argument(
-        "--coreml-preserve-sdpa",
-        action="store_true",
-        help="This option is only for coreml: Preserve sdpa in torch edge program to use coreml iOS18.sdpa op",
-    )
-    parser.add_argument(
         "--coreml-quantize",
         default=None,
         choices=["b4w"],
