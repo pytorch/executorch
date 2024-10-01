@@ -95,28 +95,32 @@ public class MessageAdapter extends ArrayAdapter<Message> {
   public ArrayList<Message> getRecentSavedTextMessages(int numOfLatestPromptMessages) {
     ArrayList<Message> recentMessages = new ArrayList<Message>();
     int lastIndex = savedMessages.size() - 1;
-    Message messageToAdd = savedMessages.get(lastIndex);
-    int oldPromptID = messageToAdd.getPromptID();
+    // In most cases lastIndex >=0 .
+    // A situation where the user clears chat history and enters prompt. Causes lastIndex=-1 .
+    if (lastIndex >= 0) {
+      Message messageToAdd = savedMessages.get(lastIndex);
+      int oldPromptID = messageToAdd.getPromptID();
 
-    for (int i = 0; i < savedMessages.size(); i++) {
-      messageToAdd = savedMessages.get(lastIndex - i);
-      if (messageToAdd.getMessageType() != MessageType.SYSTEM) {
-        if (messageToAdd.getPromptID() != oldPromptID) {
-          numOfLatestPromptMessages--;
-          oldPromptID = messageToAdd.getPromptID();
-        }
-        if (numOfLatestPromptMessages > 0) {
-          if (messageToAdd.getMessageType() == MessageType.TEXT) {
-            recentMessages.add(messageToAdd);
+      for (int i = 0; i < savedMessages.size(); i++) {
+        messageToAdd = savedMessages.get(lastIndex - i);
+        if (messageToAdd.getMessageType() != MessageType.SYSTEM) {
+          if (messageToAdd.getPromptID() != oldPromptID) {
+            numOfLatestPromptMessages--;
+            oldPromptID = messageToAdd.getPromptID();
           }
-        } else {
-          break;
+          if (numOfLatestPromptMessages > 0) {
+            if (messageToAdd.getMessageType() == MessageType.TEXT) {
+              recentMessages.add(messageToAdd);
+            }
+          } else {
+            break;
+          }
         }
       }
+      // To place the order in [input1, output1, input2, output2...]
+      Collections.reverse(recentMessages);
     }
 
-    // To place the order in [input1, output1, input2, output2...]
-    Collections.reverse(recentMessages);
     return recentMessages;
   }
 

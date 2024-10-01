@@ -12,8 +12,6 @@
 // @lint-ignore CLANGTIDY facebook-unused-include-check
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
-#include <array>
-
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 
 namespace torch {
