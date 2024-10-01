@@ -218,6 +218,10 @@ Tensor& clamp_tensor_out(
     ET_SWITCH_REALHB_TYPES(min_type, ctx, name, CTYPE_MIN, [&]() {
       ET_SWITCH_REALHB_TYPES(max_type, ctx, name, CTYPE_MAX, [&]() {
         ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
+          using CTYPE_MINMAX = typename torch::executor::
+              promote_types<CTYPE_MIN, CTYPE_MAX>::type;
+          using CTYPE = typename torch::executor::
+              promote_types<CTYPE_IN, CTYPE_MINMAX>::type;
           apply_ternary_elementwise_fn<
               CTYPE_IN,
               CTYPE_MIN,
@@ -227,16 +231,16 @@ Tensor& clamp_tensor_out(
                   const CTYPE_IN val_in,
                   const CTYPE_MIN val_min,
                   const CTYPE_MAX val_max) {
-                CTYPE_OUT val_out = static_cast<CTYPE_OUT>(val_in);
+                CTYPE val_out = static_cast<CTYPE>(val_in);
                 if (has_min) {
-                  val_out = utils::max_override(
-                      val_out, static_cast<CTYPE_OUT>(val_min));
+                  val_out =
+                      utils::max_override(val_out, static_cast<CTYPE>(val_min));
                 }
                 if (has_max) {
-                  val_out = utils::min_override(
-                      val_out, static_cast<CTYPE_OUT>(val_max));
+                  val_out =
+                      utils::min_override(val_out, static_cast<CTYPE>(val_max));
                 }
-                return val_out;
+                return static_cast<CTYPE_OUT>(val_out);
               },
               in,
               min,
