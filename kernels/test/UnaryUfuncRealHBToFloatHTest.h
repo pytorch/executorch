@@ -69,7 +69,17 @@ class UnaryUfuncRealHBToFloatHTest : public OperatorTest {
     op_out(tf_in.make({1, 6}, test_vector), out);
 
     auto expected = tf_out.make({1, 6}, expected_vector);
-    EXPECT_TENSOR_CLOSE(out, expected);
+    if (IN_DTYPE == ScalarType::Half || OUT_DTYPE == ScalarType::Half) {
+      double rtol = executorch::runtime::testing::internal::kDefaultRtol;
+      // It appears we need a higher tolerance for at least some ATen
+      // tests, like aten_op_acosh_test.
+      if (get_supported_features()->is_aten) {
+        rtol = 1e-3;
+      }
+      EXPECT_TENSOR_CLOSE_WITH_TOL(out, expected, rtol, executorch::runtime::testing::internal::kDefaultHalfAtol);
+    } else {
+      EXPECT_TENSOR_CLOSE(out, expected);
+    }
     // clang-format on
   }
 

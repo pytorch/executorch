@@ -38,9 +38,6 @@ void UnaryUfuncRealHBToFloatHTest::test_mismatched_input_shapes_dies() {
 
 void UnaryUfuncRealHBToFloatHTest::
     test_all_real_input_half_output_static_dynamism_support() {
-  if (get_supported_features()->is_aten) {
-    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
-  }
 #define TEST_ENTRY(ctype, dtype)    \
   test_floating_point_op_out<       \
       exec_aten::ScalarType::dtype, \
@@ -55,7 +52,7 @@ void UnaryUfuncRealHBToFloatHTest::
   test_floating_point_op_out<       \
       exec_aten::ScalarType::dtype, \
       exec_aten::ScalarType::Float>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
@@ -65,15 +62,12 @@ void UnaryUfuncRealHBToFloatHTest::
   test_floating_point_op_out<       \
       exec_aten::ScalarType::dtype, \
       exec_aten::ScalarType::Double>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
 void UnaryUfuncRealHBToFloatHTest::
     test_all_real_input_half_output_bound_dynamism_support() {
-  if (get_supported_features()->is_aten) {
-    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
-  }
 #define TEST_ENTRY(ctype, dtype)    \
   test_floating_point_op_out<       \
       exec_aten::ScalarType::dtype, \
@@ -90,7 +84,7 @@ void UnaryUfuncRealHBToFloatHTest::
       exec_aten::ScalarType::dtype,  \
       exec_aten::ScalarType::Float>( \
       {10, 10}, exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
@@ -101,7 +95,7 @@ void UnaryUfuncRealHBToFloatHTest::
       exec_aten::ScalarType::dtype,   \
       exec_aten::ScalarType::Double>( \
       {10, 10}, exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
@@ -115,7 +109,7 @@ void UnaryUfuncRealHBToFloatHTest::
       exec_aten::ScalarType::dtype,  \
       exec_aten::ScalarType::Float>( \
       {1, 1}, exec_aten::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
@@ -129,7 +123,7 @@ void UnaryUfuncRealHBToFloatHTest::
       exec_aten::ScalarType::dtype,   \
       exec_aten::ScalarType::Double>( \
       {1, 1}, exec_aten::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
