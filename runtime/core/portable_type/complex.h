@@ -10,8 +10,9 @@
 
 #include <executorch/runtime/core/portable_type/half.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 /**
  * An implementation of complex numbers, compatible with c10/util/complex.h from
@@ -32,5 +33,14 @@ struct alignas(4) complex<Half> {
   Half imag_;
 };
 
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::etensor::complex;
 } // namespace executor
 } // namespace torch

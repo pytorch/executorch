@@ -52,8 +52,8 @@ class ArmCompileSpecBuilder:
     def ethosu_compile_spec(
         self,
         config: str,
-        system_config: Optional[str] = None,
-        memory_mode: Optional[str] = None,
+        system_config: str,
+        memory_mode: str,
         extra_flags: Optional[str] = None,
         config_ini: Optional[str] = "Arm/vela.ini",
     ) -> "ArmCompileSpecBuilder":
@@ -217,7 +217,7 @@ class ArmBackend(BackendDetails):
         # const data directly. Path created and data written only in debug builds.
         tosa_graph = ts.TosaSerializer(artifact_path)
         graph_module = ArmPassManager().transform_to_backend_pipeline(
-            graph_module=edge_program.graph_module, compile_spec=compile_spec
+            exported_program=edge_program, compile_spec=compile_spec
         )
 
         node_visitors = get_node_visitors(edge_program)

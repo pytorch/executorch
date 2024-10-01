@@ -264,8 +264,8 @@ TEST_F(VulkanComputeAPITest, virtual_transpose_test) {
   // (dim0, dim1), new_sizes, new_dim_order, new_axis_map, new_packed_dim_idx
   std::vector<std::vector<std::vector<int64_t>>> test_cases = {
       {{2, 3}, {7, 9, 13, 11}, {0, 1, 3, 2}, {1, 0, 2, 2}, {1}},
-      {{2, 1}, {7, 11, 9, 13}, {0, 2, 1, 3}, {0, 2, 1, 2}, {0}},
-      {{1, 3}, {7, 13, 11, 9}, {0, 3, 2, 1}, {2, 1, 0, 2}, {2}},
+      {{2, 1}, {7, 11, 9, 13}, {0, 2, 1, 3}, {0, 2, 1, 1}, {0}},
+      {{1, 3}, {7, 13, 11, 9}, {0, 3, 2, 1}, {2, 1, 0, 0}, {2}},
   };
 
   for (const auto& test_case : test_cases) {
@@ -299,6 +299,35 @@ TEST_F(VulkanComputeAPITest, virtual_transpose_test) {
       EXPECT_TRUE(a_texture.packed_dim() == expected_packed_dim);
     }
   }
+}
+
+TEST_F(VulkanComputeAPITest, view_of_view_test) {
+  constexpr int N = 3;
+  constexpr int C = 5;
+  constexpr int H = 17;
+  constexpr int W = 19;
+
+  std::vector<int64_t> sizes = {N, C, H, W};
+
+  vTensor t1 = vTensor(
+      context(), sizes, vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked);
+
+  vTensor t2 = vTensor(t1);
+  EXPECT_TRUE(t2.sizes() == sizes);
+  vTensor t3 = vTensor(t2);
+  EXPECT_TRUE(t2.sizes() == sizes);
+
+  t2.virtual_transpose(1, 2);
+  std::vector<int64_t> expected_t2_sizes = {N, H, C, W};
+  EXPECT_TRUE(t2.sizes() == expected_t2_sizes);
+
+  // Because t3 was created before t2's metadata was updated, we need to first
+  // update t3's metadata to match t2's metadata. Then the transpose will yield
+  // the correct metadata.
+  t3.virtual_clone(t2);
+  t3.virtual_transpose(2, 3);
+  std::vector<int64_t> expected_t3_sizes = {N, H, W, C};
+  EXPECT_TRUE(t3.sizes() == expected_t3_sizes);
 }
 
 utils::ivec3 make_temp_ivec3(int x, int y, int z) {
@@ -1274,6 +1303,49 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_view) {
   }
 }
 
+TEST(VulkanComputeGraphTest, test_graph_view_of_view) {
+  GraphConfig config;
+  config.set_storage_type_override(utils::kTexture3D);
+  ComputeGraph graph(config);
+
+  constexpr int N = 3;
+  constexpr int C = 5;
+  constexpr int H = 17;
+  constexpr int W = 19;
+
+  std::vector<int64_t> orig_sizes = {N, C, H, W};
+
+  // Test a common view of view usage pattern. In delegate execution, the values
+  // of the graph are created first; then operators are added. As a result,
+  // creating views of views is a bit tricky because metadata updates to a view
+  // does not update the metadata of the view's views. Nonetheless, view
+  // operators have an implicit assumption that the metadata of the output is
+  // equivalent to the metadata of the input. Therefore, view operators must
+  // account for unseen updates to the input view by first calling
+  // `virtual_clone()` to make the output equivalent to the input before.
+  // modifying metadata.
+
+  ValueRef t1 = graph.add_tensor(orig_sizes, vkapi::kFloat);
+  ValueRef t2 = graph.add_tensor_view(t1);
+  ValueRef t3 = graph.add_tensor_view(t2);
+
+  ValueRef channels = graph.add_scalar<int64_t>(1);
+  ValueRef height = graph.add_scalar<int64_t>(2);
+  ValueRef width = graph.add_scalar<int64_t>(3);
+
+  auto opFn = VK_GET_OP_FN("aten.transpose.int");
+
+  opFn(graph, {t1, channels, height, t2});
+  std::vector<int64_t> t2_sizes = graph.sizes_of(t2);
+  std::vector<int64_t> expected_t2_sizes = {N, H, C, W};
+  EXPECT_TRUE(t2_sizes == expected_t2_sizes);
+
+  opFn(graph, {t2, height, width, t3});
+  std::vector<int64_t> t3_sizes = graph.sizes_of(t3);
+  std::vector<int64_t> expected_t3_sizes = {N, H, W, C};
+  EXPECT_TRUE(t3_sizes == expected_t3_sizes);
+}
+
 TEST(VulkanComputeGraphTest, test_simple_graph) {
   GraphConfig config;
   ComputeGraph graph(config);
@@ -1360,6 +1432,9 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
   for (float i = 5.0f; i < 30.0f; i += 10.0f) {
     int scalar_val = i - 3.0f;
     graph.set_symint(scalar, scalar_val);
+
+    int32_t scalar_val_read = graph.read_symint(scalar);
+    EXPECT_TRUE(scalar_val_read == scalar_val);
 
     float val_a = i + 2.0f;
     float val_out = val_a + scalar_val;
@@ -2932,7 +3007,7 @@ void test_int4pack_mm(
       int4mm_pack_weights(mat2_size, B_quant_data.data());
 
   IOValueRef B_int4 =
-      graph.add_input_tensor(mat2_q_size, vkapi::kQInt8, storage_type);
+      graph.add_input_tensor(mat2_q_size, vkapi::kQInt8, utils::kBuffer);
   graph.copy_into_staging(
       B_int4.staging, B_int4_data.data(), B_int4_data.size());
 
@@ -2940,8 +3015,18 @@ void test_int4pack_mm(
 
   // Random scales and zeroes. Keep scales small to avoid overflow and zeroes in
   // int4 range
-  IOValueRef scales_and_zeros =
-      graph.add_input_tensor({2, N, k_groups}, vkapi::kFloat, storage_type);
+  IOValueRef scales_and_zeros;
+
+  if (storage_type == utils::kBuffer) {
+    scales_and_zeros.value = graph.add_tensor(
+        {2, N, k_groups}, vkapi::kFloat, storage_type, utils::kWidthPacked);
+  } else {
+    scales_and_zeros.value = graph.add_tensor(
+        {2, N, k_groups}, vkapi::kFloat, storage_type, utils::kChannelsPacked);
+  }
+
+  scales_and_zeros.staging = graph.set_input_tensor(scales_and_zeros.value);
+
   std::vector<float> s_data(graph.numel_of(scales_and_zeros.value));
   const int zeros_stride = s_data.size() / 2;
   for (size_t i = 0; i < zeros_stride; i++) {
@@ -3003,7 +3088,7 @@ void test_int4pack_mm(
       out_deq.staging, out_deq_data.data(), out_deq_data.size());
 
   for (int i = 0; i < out_int4_data.size(); i++) {
-    CHECK_VALUE(out_int4_data, i, out_deq_data[i]);
+    EXPECT_TRUE(check_close(out_int4_data[i], out_deq_data[i]));
   }
 }
 
@@ -3027,5 +3112,96 @@ TEST(VulkanComputeGraphOpsTest, int4pack_mm_test) {
 
     // Irregular matrices, multiple groups per row
     test_int4pack_mm({37, 256, 19}, 64, storage_type);
+  }
+}
+
+void test_transpose_view_mm(
+    const int B,
+    const int M,
+    const int K,
+    const int N,
+    utils::StorageType storage_type) {
+  GraphConfig config;
+  config.set_storage_type_override(storage_type);
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> mat1_size = {M, K};
+  std::vector<int64_t> mat2_t_size = {N, K};
+  std::vector<int64_t> out_size = {M, N};
+
+  std::vector<int64_t> mat1_small_size = {M - 4, K - 3};
+  std::vector<int64_t> mat2_t_small_size = {N - 1, K - 3};
+
+  if (B > 1) {
+    mat1_size.resize(3);
+    mat1_size = {B, M, K};
+    mat2_t_size.resize(3);
+    mat2_t_size = {B, N, K};
+    out_size.resize(3);
+    out_size = {B, M, N};
+
+    mat1_small_size.resize(3);
+    mat1_small_size = {B, M - 4, K - 3};
+    mat2_t_small_size.resize(3);
+    mat2_t_small_size = {B, N - 1, K - 3};
+  }
+
+  // Build graph
+
+  IOValueRef mat1 =
+      graph.add_input_tensor(mat1_size, vkapi::kFloat, utils::kWidthPacked);
+  IOValueRef mat2_transpose =
+      graph.add_input_tensor(mat2_t_size, vkapi::kFloat, utils::kWidthPacked);
+
+  ValueRef mat2 = graph.add_tensor_view(mat2_transpose.value);
+
+  ValueRef dim0;
+  ValueRef dim1;
+
+  if (B > 1) {
+    dim0 = graph.add_scalar<int64_t>(1);
+    dim1 = graph.add_scalar<int64_t>(2);
+  } else {
+    dim0 = graph.add_scalar<int64_t>(0);
+    dim1 = graph.add_scalar<int64_t>(1);
+  }
+
+  IOValueRef out;
+  out.value = graph.add_tensor(out_size, vkapi::kFloat, utils::kWidthPacked);
+
+  VK_GET_OP_FN("aten.transpose.int")
+  (graph, {mat2_transpose.value, dim0, dim1, mat2});
+  VK_GET_OP_FN("aten.mm.default")(graph, {mat1.value, mat2, out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+
+  for (int i = 1; i < 4; i++) {
+    float val_mat1 = i;
+    float val_mat2 = i + 1;
+    float val_out = K * (val_mat1 * val_mat2);
+
+    // Try at full size
+    graph.resize_input(0, mat1_size);
+    graph.resize_input(1, mat2_t_size);
+    graph.propagate_resize();
+    execute_graph_and_check_output(graph, {val_mat1, val_mat2}, {val_out});
+
+    // Try at reduced sizes
+    val_out = (K - 3) * (val_mat1 * val_mat2);
+    graph.resize_input(0, mat1_small_size);
+    graph.resize_input(1, mat2_t_small_size);
+    graph.propagate_resize();
+    execute_graph_and_check_output(graph, {val_mat1, val_mat2}, {val_out});
+  }
+}
+
+TEST(VulkanComputeGraphOpsTest, test_transpose_with_mm) {
+  for (auto storage_type : {utils::kBuffer, utils::kTexture3D}) {
+    test_transpose_view_mm(2, 7, 17, 5, storage_type);
   }
 }

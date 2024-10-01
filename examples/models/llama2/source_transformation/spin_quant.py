@@ -9,7 +9,7 @@
 # Helper functions for tranforming the model to be able to run SpinQuant.
 # See https://github.com/facebookresearch/SpinQuant for more details about SpinQuant.
 
-from typing import Any
+from typing import Any, Optional
 
 import torch
 
@@ -19,6 +19,8 @@ from executorch.examples.models.llama2.llama_transformer import FeedForward
 from torch import nn
 from torchao.quantization.GPTQ import _check_linear_int4_k, Int8DynActInt4WeightLinear
 from torchao.quantization.quant_api import _replace_with_custom_fn_if_matches_filter
+
+from .quantize import Int8DynActInt8WeightLinear, QuantizedGroupEmbedding
 
 
 def _inject_fast_hadamard_transform_cuda_for_spin_quant(module: torch.nn.Module):
@@ -100,7 +102,7 @@ def _replace_linear_with_linear_8da4w_for_spin_quant(
 ):
     def filter_fn(child: torch.nn.Module, cur_fqn: str) -> bool:
         # Only replace linear layers where the checkpoint contains explicit scales
-        scales_key = f"{cur_fqn}.scale"
+        scales_key = f"{cur_fqn}.scales"
         if isinstance(child, nn.Linear) and scales_key in checkpoint:
             assert _check_linear_int4_k(child.in_features, group_size)
             assert checkpoint[f"{cur_fqn}.weight"].dtype == torch.int8
@@ -123,24 +125,20 @@ def _replace_linear_with_linear_8da4w_for_spin_quant(
     _replace_with_custom_fn_if_matches_filter(module, replacement_fn, filter_fn)
 
 
-def transform_for_spinquant(
+def transform_linear_for_spinquant(
     module: torch.nn.Module,
     checkpoint: Any,
     group_size: int,
-    quantization_mode: str,
     dtype: torch.dtype,
 ) -> torch.nn.Module:
     """
     Transform the model to be able to load SpinQuant checkpoints that
-    are quantized with the given group size and quantization mode.
+    are quantized with the given group size and quantization mode for
+    linear layers.
     """
 
     if group_size not in [32, 64, 128, 256]:
         raise ValueError(f"Group size {group_size} is not supported for SpinQuant.")
-    if quantization_mode not in ["8da4w"]:
-        raise ValueError(
-            f"Quantization mode {quantization_mode} is not compatible with SpinQuant."
-        )
     _replace_linear_with_linear_8da4w_for_spin_quant(
         module,
         checkpoint,
@@ -151,30 +149,113 @@ def transform_for_spinquant(
     return module
 
 
+def _replace_output_linear_with_linear_int8_for_spinquant(
+    module: torch.nn.Module,
+    checkpoint: Any,
+    dtype: torch.dtype,
+):
+    def filter_fn(child: torch.nn.Module, cur_fqn: str) -> bool:
+        scales_key = f"{cur_fqn}.scales"
+        if (
+            isinstance(child, nn.Linear)
+            and scales_key in checkpoint
+            and "output" in cur_fqn
+        ):
+            assert checkpoint[f"{cur_fqn}.weight"].dtype == torch.int8
+            assert checkpoint[scales_key].dtype == dtype
+            return True
+        return False
+
+    def replacement_fn(child: torch.nn.Module) -> torch.nn.Module:
+        new_linear = Int8DynActInt8WeightLinear(
+            device=child.weight.device,
+            in_features=child.in_features,
+            out_features=child.out_features,
+            precision=dtype,
+            bias=False,
+        )
+        return new_linear
+
+    _replace_with_custom_fn_if_matches_filter(module, replacement_fn, filter_fn)
+
+
+def transform_output_linear_for_spinquant(
+    module: torch.nn.Module,
+    checkpoint: Any,
+    dtype: torch.dtype,
+) -> torch.nn.Module:
+    """
+    Transform the model to be able to load SpinQuant checkpoints that
+    has the output layer quantized per-channel.
+    """
+    _replace_output_linear_with_linear_int8_for_spinquant(
+        module,
+        checkpoint,
+        dtype,
+    )
+    return module
+
+
+def _replace_embedding_with_quantized_group_embedding_for_spinquant(
+    module: torch.nn.Module,
+    checkpoint: Any,
+    dtype: torch.dtype,
+    bit_width: int,
+    group_size: Optional[int] = None,
+):
+    def filter_fn(child: torch.nn.Module, cur_fqn: str) -> bool:
+        # Only replace embedding layers where the checkpoint contains explicit scales
+        scales_key = f"{cur_fqn}.scales"
+        if isinstance(child, nn.Embedding) and scales_key in checkpoint:
+            assert checkpoint[f"{cur_fqn}.weight"].dtype == torch.int8
+            assert checkpoint[scales_key].dtype == torch.float32
+            return True
+        return False
+
+    def replacement_fn(child: torch.nn.Module) -> torch.nn.Module:
+        new_embedding = QuantizedGroupEmbedding(
+            device=child.weight.device,
+            vocab_size=child.weight.shape[0],
+            embedding_dim=child.weight.shape[1],
+            group_size=group_size,
+            dtype=dtype,
+            packed=False,  # TODO(lunwenh): support packed embedding for SpinQuant
+        )
+        return new_embedding
+
+    _replace_with_custom_fn_if_matches_filter(module, replacement_fn, filter_fn)
+
+
+def transform_embedding_for_spinquant(
+    module: torch.nn.Module,
+    checkpoint: Any,
+    dtype: torch.dtype,
+    bit_width: int,
+    group_size: Optional[int] = None,
+) -> torch.nn.Module:
+    """
+    Transform the model to be able to load SpinQuant checkpoints that
+    are quantized with the given bit_width and group size for embedding.
+    """
+    if group_size is not None and group_size not in [0, 32, 64, 128, 256]:
+        raise ValueError(f"Group size {group_size} is not supported for SpinQuant.")
+    _replace_embedding_with_quantized_group_embedding_for_spinquant(
+        module,
+        checkpoint,
+        dtype,
+        bit_width,
+        group_size,
+    )
+    return module
+
+
 def sanitize_checkpoint_from_spinquant(
     checkpoint: Any,
-    group_size: int,
 ):
     """
     Sanitize the SpinQuant checkpoint.
-        - Renames 'scale' to 'scales'
-        - Groups scales
-        - Removes 'o_weight'
         - Converts all tensors to contiguous format
+        - Squeeze all tensors
     """
-    keys_to_rename = []
-    keys_to_remove = []
-    for k, _ in checkpoint.items():
-        if k.endswith(".scale"):
-            new_key = k + "s"
-            keys_to_rename.append((k, new_key))
-        if k.endswith(".o_weight"):
-            keys_to_remove.append(k)
-
-    for old_key, new_key in keys_to_rename:
-        old_val = checkpoint.pop(old_key)
-        checkpoint[new_key] = old_val if group_size == -1 else old_val[:, ::group_size]
-    for k in keys_to_remove:
-        checkpoint.pop(k)
     for k, v in checkpoint.items():
-        checkpoint[k] = v.contiguous()
+        checkpoint[k] = torch.squeeze(v.contiguous())

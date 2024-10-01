@@ -282,6 +282,12 @@ class ComputeGraph final {
     VK_THROW("Could not get sizes of value with type ", val.type());
   }
 
+  int64_t dim_of(const ValueRef idx) const;
+
+  std::vector<int64_t> dim_order_of(const ValueRef idx) const;
+
+  std::vector<int64_t> strides_of(const ValueRef idx) const;
+
   vkapi::ScalarType dtype_of(const ValueRef idx) const;
 
   inline const utils::ivec3& logical_limits_of(const ValueRef idx) const {
@@ -314,6 +320,10 @@ class ComputeGraph final {
 
   inline int32_t packed_dim_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().packed_dim();
+  }
+
+  inline int32_t concat_dim_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().concat_dim();
   }
 
   inline vkapi::BufferBindInfo sizes_ubo(const ValueRef idx) {
@@ -529,6 +539,8 @@ class ComputeGraph final {
   vkapi::BufferBindInfo get_or_create_int_param_buffer(const ValueRef idx);
 
   void set_symint(const ValueRef idx, const int32_t val);
+
+  int32_t read_symint(const ValueRef idx);
 
   /*
    * Convenience function to add an input tensor along with its staging buffer

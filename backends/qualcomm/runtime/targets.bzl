@@ -25,10 +25,10 @@ def define_common_targets():
         deps = [
             "fbsource//third-party/qualcomm/qnn:api",
             "//executorch/runtime/backend:interface",
-            "//executorch/runtime/core:core",
         ],
         exported_deps = [
             "//executorch/backends/qualcomm:schema",
+            "//executorch/runtime/core:core",
         ],
     )
 
@@ -55,6 +55,9 @@ def define_common_targets():
         link_whole = True,  # needed for executorch/examples/models/llama2:main to register QnnBackend
         platforms = [ANDROID],
         visibility = ["@EXECUTORCH_CLIENTS"],
+        resources = {
+            "qnn_lib": "fbsource//third-party/qualcomm/qnn/qnn-2.25:qnn_offline_compile_libs",
+        },
         deps = [
             "fbsource//third-party/qualcomm/qnn:api",
             ":logging",
@@ -64,5 +67,9 @@ def define_common_targets():
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
             "//executorch/extension/tensor:tensor",
+        ],
+        exported_deps = [
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core:event_tracer",
         ],
     )

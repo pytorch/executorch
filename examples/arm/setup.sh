@@ -76,7 +76,7 @@ fi
 
 # ethos-u
 ethos_u_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u"
-ethos_u_base_rev="24.05"
+ethos_u_base_rev="24.08"
 
 ########
 ### Mandatory user args
@@ -163,7 +163,7 @@ function patch_repo() {
     name="$(basename $repo_dir)"
     echo -e "[${FUNCNAME[0]}] Preparing ${name}..."
     cd $repo_dir
-
+    git fetch
     git reset --hard ${base_rev}
 
     patch_dir=${script_dir}/ethos-u-setup/${name}/patches/
@@ -216,7 +216,7 @@ function setup_vela() {
     if [[ ! -e ethos-u-vela ]]; then
         git clone https://review.mlplatform.org/ml/ethos-u/ethos-u-vela
         repo_dir="${root_dir}/ethos-u-vela"
-        base_rev=d362f5443f67b1e6213a9d8f124edff758efac96
+        base_rev=fe0eaa55c5ed319f78c01978f3b40eb11a9bcb38
         patch_repo
     fi
     cd "${root_dir}/ethos-u-vela"
@@ -261,7 +261,7 @@ setup_ethos_u
 
 # Patch the ethos-u dev environment to include executorch application
 repo_dir="${root_dir}/ethos-u/core_platform"
-base_rev=204210b1074071532627da9dc69950d058a809f4
+base_rev=b728c774158248ba2cad8e78a515809e1eb9b77f
 patch_repo
 
 # Setup the tosa_reference_model
