@@ -24,7 +24,6 @@ Check out the [Getting Started](https://pytorch.org/executorch/stable/getting-st
 
 Check out the examples of [Llama](./examples/models/llama2/README.md), [Llava](./examples/models/llava/README.md) and [other models](./examples/README.md) running on edge devices using ExecuTorch.
 
-
 **[UPDATE - 09/25]** We have added support for running [Llama 3.2 1B/3B](./examples/models/llama2/README.md) models via ExecuTorch.
 
 ## Feedback
@@ -62,8 +61,7 @@ executorch
 |   ├── operator                    #  Operator node manipulation utilities.
 |   ├── passes                      #  Built-in compiler passes.
 |   ├── program                     #  Export artifacts.
-|   ├── serde                       #  Graph module
-serialization/deserialization.
+|   ├── serde                       #  Graph module serialization/deserialization.
 |   ├── verification                #  IR verification.
 ├── extension                       #  Extensions built on top of the runtime.
 |   ├── android                     #  ExecuTorch wrappers for Android apps.
@@ -78,8 +76,7 @@ serialization/deserialization.
 |   ├── parallel                    #  C++ threadpool integration.
 |   ├── pybindings                  #  Python API for executorch runtime.
 |   ├── pytree                      #  C++ and Python flattening and unflattening lib for pytrees.
-|   ├── runner_util                 #  Helpers for writing C++ PTE-execution
-tools.
+|   ├── runner_util                 #  Helpers for writing C++ PTE-execution tools.
 |   ├── testing_util                #  Helpers for writing C++ tests.
 |   ├── training                    #  Experimental libraries for on-device training
 ├── kernels                         #  1st party kernel implementations.
@@ -95,8 +92,7 @@ tools.
 |   ├── executor                    #  Model loading, initalization, and execution.
 |   ├── kernel                      #  Kernel registration and management.
 |   ├── platform                    #  Layer between architecture specific code and portable C++.
-├── schema                          #  ExecuTorch PTE file format flatbuffer
-schemas.
+├── schema                          #  ExecuTorch PTE file format flatbuffer schemas.
 ├── scripts                         #  Utility scripts for size management, dependency management, etc.
 ├── devtools                        #  Model profiling, debugging, and introspection.
 ├── shim                            #  Compatibility layer between OSS and Internal builds
