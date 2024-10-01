@@ -146,7 +146,10 @@ def is_share_obs_or_fq_op(op: Callable) -> bool:
         torch.ops.aten.permute.default,
         torch.ops.aten.permute_copy.default,
         torch.ops.aten.squeeze.dim,
+        torch.ops.aten.squeeze.dims,
+        torch.ops.aten.squeeze.default,
         torch.ops.aten.squeeze_copy.dim,
+        torch.ops.aten.unsqueeze.default,
         # TODO: remove?
         torch.ops.aten.adaptive_avg_pool2d.default,
         torch.ops.aten.view_copy.default,
