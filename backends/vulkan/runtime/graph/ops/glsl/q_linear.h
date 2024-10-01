@@ -47,34 +47,32 @@ FLOAT_T q_8w_linear(const ivec4 out_idx, const int K) {
 
 #else // USING_TEXTURE
 
-VEC4_T q_8w_linear(const ivec3 out_pos, const int K) {
-  ivec3 mat1_pos = ivec3(0, out_pos.yz);
-  ivec3 qmat2_pos = ivec3(0, out_pos.x * 4, 0);
+vec4 q_8w_linear(const ivec3 out_lpos) {
+  ivec3 mat1_pos = lpos_to_pos(ivec3(0, out_lpos.yz), mat1_axis_map);
 
-  VEC4_T outtex = VEC4_T(0);
+  vec4 texel = vec4(0);
+  const int K = divup4(mat1_sizes.x);
 
-  const ivec3 scales_pos = ivec3(out_pos.x, 0, 0);
-  const VEC4_T scales = load_texel(t_scales, scales_pos);
+  // Scales is a 1D texture so we don't need to apply axis mapping
+  const ivec3 scales_pos = ivec3(out_lpos.x, 0, 0);
+  const vec4 scales = load_texel(t_scales, scales_pos);
 
-  for (int i = 0; i < K; i += 4) {
-    const VEC4_T mat1_tex = load_texel(t_mat1, mat1_pos);
+  for (int i = 0; i < K; ++i) {
+    const vec4 mat1_tex = texelFetch(t_mat1, mat1_pos, 0);
 
-    const VEC4_T sums = VEC4_T(
-        dot(mat1_tex, load_texel(t_qmat2, qmat2_pos) * scales.x),
-        dot(mat1_tex,
-            load_texel(t_qmat2, qmat2_pos + ivec3(0, 1, 0)) * scales.y),
-        dot(mat1_tex,
-            load_texel(t_qmat2, qmat2_pos + ivec3(0, 2, 0)) * scales.z),
-        dot(mat1_tex,
-            load_texel(t_qmat2, qmat2_pos + ivec3(0, 3, 0)) * scales.w));
+    vec4 sums;
+    for (int r = 0; r < 4; ++r) {
+      ivec3 qmat2_pos =
+          lpos_to_pos(ivec3(i, out_lpos.x * 4 + r, 0), qmat2_axis_map);
 
-    outtex += sums;
+      sums[r] = dot(mat1_tex, texelFetch(t_qmat2, qmat2_pos, 0) * scales[r]);
+    }
 
-    mat1_pos.x++;
-    qmat2_pos.x++;
+    texel += sums;
+    mat1_pos[mat1_axis_map.x]++;
   }
 
-  return outtex;
+  return texel;
 }
 
 #endif // USING_BUFFER
