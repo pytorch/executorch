@@ -941,7 +941,13 @@ def annotate_bmm(node: Node, quantization_config: QuantizationConfig) -> None:
     node.meta["source_fn_stack"] = [(node, torch.bmm)]
 
 
-@register_annotator([torch.ops.aten.conv2d.default, torch.ops.aten.conv1d.default])
+@register_annotator(
+    [
+        torch.ops.aten.conv2d.default,
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.conv_transpose2d.input,
+    ]
+)
 def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return
