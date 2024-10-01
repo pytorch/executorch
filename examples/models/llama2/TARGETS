@@ -160,13 +160,44 @@ runtime.python_library(
     ],
 )
 
+runtime.python_library(
+    name = "sdpa",
+    srcs = [
+        "source_transformation/sdpa.py",
+    ],
+    _is_external_target = True,
+    visibility = ["//executorch/..."],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
 runtime.python_test(
     name = "quantized_kv_cache_test",
     srcs = [
         "source_transformation/test_quantized_kv_cache.py",
     ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+    ],
     deps = [
         ":quantized_kv_cache",
+        "//caffe2:torch",
+        "//executorch/examples/models/llama2:llama_transformer",
+    ],
+)
+
+runtime.python_test(
+    name = "quantized_sdpa_with_kv_cache_test",
+    srcs = [
+        "source_transformation/test_sdpa_with_quantized_kv_cache.py",
+    ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+    ],
+    deps = [
+        ":quantized_kv_cache",
+        ":sdpa",
         "//caffe2:torch",
         "//executorch/examples/models/llama2:llama_transformer",
     ],
