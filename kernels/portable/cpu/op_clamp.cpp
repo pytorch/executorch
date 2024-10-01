@@ -218,30 +218,36 @@ Tensor& clamp_tensor_out(
     ET_SWITCH_REALHB_TYPES(min_type, ctx, name, CTYPE_MIN, [&]() {
       ET_SWITCH_REALHB_TYPES(max_type, ctx, name, CTYPE_MAX, [&]() {
         ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
-          apply_ternary_elementwise_fn<
-              CTYPE_IN,
-              CTYPE_MIN,
-              CTYPE_MAX,
-              CTYPE_OUT>(
+          apply_ternary_elementwise_fn<CTYPE_OUT>(
               [has_min, has_max](
-                  const CTYPE_IN val_in,
-                  const CTYPE_MIN val_min,
-                  const CTYPE_MAX val_max) {
-                CTYPE_OUT val_out = static_cast<CTYPE_OUT>(val_in);
+                  const CTYPE_OUT val_in,
+                  const CTYPE_OUT val_min,
+                  const CTYPE_OUT val_max) {
+                CTYPE_OUT val_out = val_in;
                 if (has_min) {
-                  val_out = utils::max_override(
-                      val_out, static_cast<CTYPE_OUT>(val_min));
+                  val_out = utils::max_override(val_out, val_min);
                 }
                 if (has_max) {
-                  val_out = utils::min_override(
-                      val_out, static_cast<CTYPE_OUT>(val_max));
+                  val_out = utils::min_override(val_out, val_max);
                 }
                 return val_out;
               },
               in,
               min,
               max,
-              out);
+              out,
+              [](const void* inPtr) {
+                return static_cast<CTYPE_OUT>(
+                    *reinterpret_cast<const CTYPE_IN*>(inPtr));
+              },
+              [](const void* minPtr) {
+                return static_cast<CTYPE_OUT>(
+                    *reinterpret_cast<const CTYPE_MIN*>(minPtr));
+              },
+              [](const void* maxPtr) {
+                return static_cast<CTYPE_OUT>(
+                    *reinterpret_cast<const CTYPE_MAX*>(maxPtr));
+              });
         });
       });
     });
