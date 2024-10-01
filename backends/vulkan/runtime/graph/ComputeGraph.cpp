@@ -416,6 +416,10 @@ void ComputeGraph::set_symint(const ValueRef idx, const int32_t val) {
   get_symint(idx)->set(val);
 }
 
+int32_t ComputeGraph::read_symint(const ValueRef idx) {
+  return get_symint(idx)->get();
+}
+
 SharedObject& ComputeGraph::get_shared_object(const int64_t idx) {
   if (idx >= shared_objects_.size()) {
     shared_objects_.resize(static_cast<size_t>(idx + 1));
