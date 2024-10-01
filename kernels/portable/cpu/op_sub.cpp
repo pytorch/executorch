@@ -66,6 +66,55 @@ struct SubInner<false, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT>
 
 } // namespace
 
+namespace {
+template <
+    bool can_cast,
+    typename CTYPE_A,
+    typename CTYPE_B,
+    typename CTYPE_IN,
+    typename CTYPE_OUT>
+struct SubInner;
+
+template <
+    typename CTYPE_A,
+    typename CTYPE_B,
+    typename CTYPE_IN,
+    typename CTYPE_OUT>
+struct SubInner<true, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT> {
+  static void
+  run(const Tensor& a, const Tensor& b, CTYPE_IN alpha_val, Tensor& out) {
+    apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
+        // NOLINTNEXTLINE(facebook-hte-ConstantArgumentPassByValue)
+        [alpha_val](const CTYPE_A val_a, const CTYPE_B val_b) {
+          CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+          CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
+          CTYPE_IN value = a_casted - alpha_val * b_casted;
+
+          return static_cast<CTYPE_OUT>(value);
+        },
+        a,
+        b,
+        out);
+  }
+};
+
+template <typename CTYPE_IN>
+struct ReportCanCastBug {
+  static void run(const Tensor&, const Tensor&, CTYPE_IN, Tensor&) {
+    ET_DCHECK_MSG(false, "BUG: canCast should have been checked above");
+  }
+};
+
+template <
+    typename CTYPE_A,
+    typename CTYPE_B,
+    typename CTYPE_IN,
+    typename CTYPE_OUT>
+struct SubInner<false, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT>
+    : public ReportCanCastBug<CTYPE_IN> {};
+
+} // namespace
+
 Tensor& sub_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
