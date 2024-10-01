@@ -65,6 +65,14 @@ runtime.python_binary(
     ],
 )
 
+runtime.command_alias(
+    name = "export_llama_qnn",
+    env = {
+        "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-2.25:qnn_offline_compile_libs)",
+    },
+    exe = ":export_llama",
+)
+
 runtime.python_library(
     name = "export_library",
     srcs = [
