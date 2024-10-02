@@ -2,9 +2,7 @@ load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
     "ANDROID",
 )
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-
 
 # Construct the input and output file names. All input and output files rely on scalar_type file.
 SCHEMA_NAME = "schema"
@@ -56,6 +54,7 @@ def define_common_targets():
         [OUTPUT_SCHEMA_HEADER],
         OUTPUT_SCHEMA_HEADER,
     )
+
     # Header-only library target with the generate executorch program schema header.
     runtime.cxx_library(
         name = "schema",
@@ -77,7 +76,6 @@ def define_common_targets():
         platforms = [ANDROID],
     )
 
-
     runtime.cxx_library(
         name = "qnn_executorch_backend",
         srcs = [],
@@ -92,17 +90,5 @@ def define_common_targets():
         ],
         exported_deps = [
             ":schema",
-        ],
-    )
-    
-    runtime.python_library(
-        name = "preprocess",
-        srcs = ["qnn_preprocess.py"],
-        deps = [
-            "//executorch/backends/qualcomm/passes:passes",
-        ],
-        visibility = [
-            "//executorch/backends/qualcomm/...",
-            "@EXECUTORCH_CLIENTS",
         ],
     )
