@@ -13,7 +13,7 @@ We provide access to all the profiling data via the Python [Inspector API](./sdk
 
 ## Steps to Profile a Model in ExecuTorch
 
-1. [Optional] Generate an [ETRecord](./sdk-etrecord.rst) while you're exporting your model. If provided this will enable users to link back profiling details to eager model source code (with stack traces and module hierarchy).
+1. [Optional] Generate an [ETRecord](./etrecord.rst) while you're exporting your model. If provided this will enable users to link back profiling details to eager model source code (with stack traces and module hierarchy).
 2.  Build the runtime with the pre-processor flags that enable profiling. Detailed in the [ETDump documentation](./sdk-etdump.md).
 3. Run your Program on the ExecuTorch runtime and generate an [ETDump](./sdk-etdump.md).
 4. Create an instance of the [Inspector API](./sdk-inspector.rst) by passing in the ETDump you have sourced from the runtime along with the optionally generated ETRecord from step 1.

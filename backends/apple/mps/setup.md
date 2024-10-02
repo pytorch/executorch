@@ -111,7 +111,7 @@ python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --no-use_fp
 ```
 
 ### Profiling:
-1. [Optional] Generate an [ETRecord](./sdk-etrecord.rst) while you're exporting your model.
+1. [Optional] Generate an [ETRecord](./etrecord.rst) while you're exporting your model.
 ```bash
 cd executorch
 python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --generate_etrecord -b
