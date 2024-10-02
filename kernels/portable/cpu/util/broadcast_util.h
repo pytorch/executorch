@@ -326,18 +326,16 @@ inline void apply_binary_elementwise_fn(
  * void(CTYPE_COMMON, void*), convert the given element to CTYPE_OUT,
  * and store it to the given location.
  */
-template <
-    typename CTYPE_COMMON,
-    typename Op>
+template <typename CTYPE_COMMON, typename Op>
 inline void apply_ternary_elementwise_fn(
     const Op& compute_fun,
     const Tensor& a,
     const Tensor& b,
     const Tensor& c,
     const Tensor& out,
-    CTYPE_COMMON(*load_a_to_common)(const void*),
-    CTYPE_COMMON(*load_b_to_common)(const void*),
-    CTYPE_COMMON(*load_c_to_common)(const void*),
+    CTYPE_COMMON (*load_a_to_common)(const void*),
+    CTYPE_COMMON (*load_b_to_common)(const void*),
+    CTYPE_COMMON (*load_c_to_common)(const void*),
     void (*store_common_to_out)(CTYPE_COMMON, void*)) {
   const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
   const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
