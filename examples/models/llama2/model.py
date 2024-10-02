@@ -13,7 +13,6 @@ from pathlib import Path
 import torch
 
 from executorch.examples.models.llama2.llama_transformer import ModelArgs, Transformer
-from executorch.extension.llm.export.builder import DType
 
 try:
     from .fairseq2 import convert_to_llama_checkpoint
@@ -292,6 +291,12 @@ the checkpoint format to avoid generating faulty models.
             transform_linear_for_pre_quantization,
         )
 
+        mapping = {
+            "fp32": torch.float32,
+            "fp16": torch.float16,
+            "bf16": torch.bfloat16,
+        }
+
         # Transform the output layer first if needed.
         if self.args.preq_mode == "8da4w_output_8da8w":
             from .source_transformation.pre_quantization import (
@@ -301,14 +306,14 @@ the checkpoint format to avoid generating faulty models.
             self.model_ = transform_output_linear_for_pre_quantization(
                 module=self.model_,
                 checkpoint=checkpoint,
-                dtype=DType[self.args.dtype_override].to_torch_dtype(),
+                dtype=mapping[self.args.dtype_override],
             )
 
         self.model_ = transform_linear_for_pre_quantization(
             self.model_,
             checkpoint,
             self.args.preq_group_size,
-            DType[self.args.dtype_override].to_torch_dtype(),
+            mapping[self.args.dtype_override],
         )
 
         embedding_bit_width, embedding_group_size = None, None
@@ -332,7 +337,7 @@ the checkpoint format to avoid generating faulty models.
             self.model_ = transform_embedding_for_pre_quantization(
                 self.model_,
                 checkpoint,
-                DType[self.args.dtype_override].to_torch_dtype(),
+                mapping[self.args.dtype_override],
                 int(embedding_bit_width),
                 embedding_group_size,
             )
