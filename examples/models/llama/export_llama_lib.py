@@ -50,6 +50,8 @@ from .source_transformation.apply_spin_quant_r1_r2 import (
     fuse_layer_norms,
     get_model_with_r1_r2,
 )
+
+from .source_transformation.attention import replace_attention_to_attention_sha
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
@@ -173,6 +175,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--checkpoint_dir",
         default=None,
         help="checkpoint directory. Use with a sharded checkpoint, not for the standard llama2 model. Note, checkpoint_dir takes precedence over checkpoint if both are set.",
+    )
+
+    parser.add_argument(
+        "--use_qnn_sha",
+        action="store_true",
+        help="Change multi head attention to multiple single head attention for qnn backend (Qualcomm)",
     )
 
     parser.add_argument(
@@ -947,15 +955,27 @@ def _get_source_transforms(  # noqa
                 convert_linear_to_conv2d,
             )
 
-            transforms.append(replace_kv_cache_with_simple_kv_cache)
-            transforms.append(replace_sdpa_with_flex_sdpa)
-            transforms.append(replace_causal_mask)
-            transforms.append(replace_rms_norm_with_native_rms_norm)
-            if args.optimized_rotation_path:
-                transforms.append(fuse_layer_norms)
-                transforms.append(get_model_with_r1_r2(args.optimized_rotation_path))
-            # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
-            transforms.append(convert_linear_to_conv2d)
+            if args.use_qnn_sha:
+                if args.optimized_rotation_path:
+                    transforms.append(fuse_layer_norms)
+                    transforms.append(
+                        get_model_with_r1_r2(args.optimized_rotation_path)
+                    )
+                transforms.append(replace_attention_to_attention_sha)
+                transforms.append(replace_causal_mask)
+                transforms.append(replace_rms_norm_with_native_rms_norm)
+                transforms.append(convert_linear_to_conv2d)
+            else:
+                transforms.append(replace_kv_cache_with_simple_kv_cache)
+                transforms.append(replace_sdpa_with_flex_sdpa)
+                transforms.append(replace_causal_mask)
+                transforms.append(replace_rms_norm_with_native_rms_norm)
+                if args.optimized_rotation_path:
+                    transforms.append(fuse_layer_norms)
+                    transforms.append(
+                        get_model_with_r1_r2(args.optimized_rotation_path)
+                    )
+                transforms.append(convert_linear_to_conv2d)
 
         elif args.mps:
             # Currently mps doesn't support sdpa op, use the simpler decomposition
