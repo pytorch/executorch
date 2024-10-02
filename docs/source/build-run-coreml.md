@@ -108,7 +108,7 @@ cd executorch
 ./coreml_executor_runner --model_path mv3_coreml_all.pte --profile_model --etdump_path etdump.etdp
 ```
 
-4. Create an instance of the [Inspector API](./sdk-inspector.rst) by passing in the [ETDump](./etdump.md) you have sourced from the runtime along with the optionally generated [ETRecord](./etrecord.rst) from step 1 or execute the following command in your terminal to display the profiling data table.
+4. Create an instance of the [Inspector API](./model-inspector.rst) by passing in the [ETDump](./etdump.md) you have sourced from the runtime along with the optionally generated [ETRecord](./etrecord.rst) from step 1 or execute the following command in your terminal to display the profiling data table.
 ```bash
 python examples/apple/coreml/scripts/inspector_cli.py --etdump_path etdump.etdp --etrecord_path mv3_coreml.bin
 ```
