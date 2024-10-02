@@ -391,25 +391,25 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--spin_qmode",
+        "--preq_mode",
         type=str,
         default=None,
         choices=["8da4w", "8da4w_output_8da8w"],
-        help="Quantization mode for SpinQuant. Only support 8da4w and 8da4w_output_8da8w right now.",
+        help="Quantization mode used for pre-quantized checkpoint. Only support 8da4w and 8da4w_output_8da8w right now.",
     )
 
     parser.add_argument(
-        "--spin_group_size",
+        "--preq_group_size",
         type=int,
         default=32,
-        help="group_size for SpinQuant weight quantization",
+        help="group_size for pre-quantized checkpoint weight quantization",
     )
 
     parser.add_argument(
-        "--spin_embedding_quantize",
+        "--preq_embedding_quantize",
         default="8,0",
         type=str,
-        help="type of embedding quantization for SpinQuant, '<bitwidth>,<groupsize>', e.g., '8,1024'.",
+        help="type of embedding quantization for pre-quantized checkpoint, '<bitwidth>,<groupsize>', e.g., '8,1024'.",
     )
 
     parser.add_argument(
