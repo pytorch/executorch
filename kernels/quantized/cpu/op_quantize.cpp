@@ -241,8 +241,6 @@ Tensor& quantize_per_channel_out(
     int64_t quant_max,
     ScalarType dtype,
     Tensor& out) {
-  torch::executor::Error err = resize_tensor(out, input.sizes());
-
   // normalize axis
   ET_CHECK_MSG(
       tensor_has_dim(input, axis),
@@ -253,10 +251,6 @@ Tensor& quantize_per_channel_out(
   if (axis < 0) {
     axis += nonzero_dim(input);
   }
-
-  ET_CHECK_MSG(
-      err == torch::executor::Error::Ok,
-      "Failed to resize out Tensor in quantize_per_channel_out");
 
   ET_CHECK_MSG(
       scale.scalar_type() == ScalarType::Double,
@@ -368,8 +362,75 @@ Tensor& quantize_per_channel_out(
     ScalarType dtype,
     Tensor& out) {
   (void)context;
+  torch::executor::Error err = resize_tensor(out, input.sizes());
+  ET_CHECK_MSG(
+      err == torch::executor::Error::Ok,
+      "Failed to resize out Tensor in quantize_per_channel_out");
+
   return quantize_per_channel_out(
       input, scale, zero_point, axis, quant_min, quant_max, dtype, out);
+}
+
+Tensor& quantize_per_token_out(
+    const Tensor& input,
+    const Tensor& scale,
+    const Tensor& zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  size_t num_tokens = 1;
+  for (size_t i = 0; i < input.dim() - 1; i++) {
+    num_tokens *= input.size(i);
+  }
+// This unfortunate change is needed because we compile op_quantize for aten
+// mode as well
+#ifdef USE_ATEN_LIB
+  std::vector<int64_t> sizes(2);
+  sizes[0] = num_tokens;
+  sizes[1] = input.size(input.dim() - 1);
+  Tensor reshaped_input = at::from_blob(
+      input.mutable_data_ptr(), sizes, at::TensorOptions(input.scalar_type()));
+#else
+  std::array<exec_aten::DimOrderType, 2> input_dim_order{0, 1};
+  std::array<exec_aten::SizesType, 2> input_sizes;
+  input_sizes[0] = num_tokens;
+  input_sizes[1] = input.size(input.dim() - 1);
+  std::array<exec_aten::StridesType, 2> input_strides;
+  dim_order_to_stride_nocheck(
+      input_sizes.data(), input_dim_order.data(), 2, input_strides.data());
+  void* input_data = input.mutable_data_ptr();
+  TensorImpl reshaped_input_impl = TensorImpl(
+      input.scalar_type(),
+      2,
+      input_sizes.data(),
+      input_data,
+      input_dim_order.data(),
+      input_strides.data(),
+      TensorShapeDynamism::STATIC);
+  Tensor reshaped_input(&reshaped_input_impl);
+  torch::executor::Error err = resize_tensor(out, input.sizes());
+  ET_CHECK_MSG(
+      err == torch::executor::Error::Ok,
+      "Failed to resize out Tensor in quantize_per_channel_out");
+#endif
+
+  return quantize_per_channel_out(
+      reshaped_input, scale, zero_point, 0, quant_min, quant_max, dtype, out);
+}
+
+Tensor& quantize_per_token_out(
+    RuntimeContext& context,
+    const Tensor& input,
+    const Tensor& scale,
+    const Tensor& zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  (void)context;
+  return quantize_per_token_out(
+      input, scale, zero_point, quant_min, quant_max, dtype, out);
 }
 } // namespace native
 } // namespace executor
