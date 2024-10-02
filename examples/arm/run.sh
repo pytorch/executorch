@@ -229,7 +229,7 @@ function run_fvp() {
     elif [[ ${target} == *"ethos-u85"*  ]]; then
 	${fvp_model}                                            \
 	    -C mps4_board.subsystem.cpu0.CFGITCMSZ=11           \
-	    -C mps4_board.subsystem.ethosu.num_macs=128         \
+	    -C mps4_board.subsystem.ethosu.num_macs=${num_macs} \
 	    -C mps4_board.visualisation.disable-visualisation=1 \
 	    -C vis_hdlcd.disable_visualisation=1                \
 	    -C mps4_board.telnetterminal0.start_telnet=0        \
