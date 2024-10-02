@@ -13,6 +13,7 @@ from pathlib import Path
 import torch
 
 from executorch.examples.models.llama2.llama_transformer import ModelArgs, Transformer
+from executorch.extension.llm.export.builder import DType
 
 try:
     from .fairseq2 import convert_to_llama_checkpoint
@@ -191,72 +192,30 @@ the checkpoint format to avoid generating faulty models.
             )
         elif hasattr(self.args, "use_spin_quant") and self.args.use_spin_quant:
             print("Using SPIN quantization.")
-            assert hasattr(self.args, "preq_mode"), "preq_mode must be specified"
-            assert self.args.preq_mode in [
-                "8da4w",
-                "8da4w_output_8da8w",
-            ], f"Quantization mode {self.args.preq_mode} is not compatible with SpinQuant."
-            assert hasattr(
-                self.args, "preq_group_size"
-            ), "preq_group_size must be specified"
-            assert hasattr(
-                self.args, "dtype_override"
-            ), "dtype_override must be specified"
+            self._transform_for_pre_quantization(checkpoint)
+
             from .source_transformation.pre_quantization import (
                 sanitize_checkpoint_from_pre_quantization,
-                transform_linear_for_pre_quantization,
             )
 
-            mapping = {
-                "fp32": torch.float32,
-                "fp16": torch.float16,
-                "bf16": torch.bfloat16,
-            }
-
-            # Transform the output layer first if needed.
-            if self.args.preq_mode == "8da4w_output_8da8w":
-                from .source_transformation.pre_quantization import (
-                    transform_output_linear_for_pre_quantization,
+            sanitize_checkpoint_from_pre_quantization(checkpoint)
+        elif hasattr(self.args, "use_qat") and self.args.use_qat:
+            print("Using QAT quantization.")
+            self._transform_for_pre_quantization(checkpoint)
+            if hasattr(self.args, "use_lora") and self.args.use_lora:
+                from .source_transformation.lora import (
+                    transform_linear_for_lora_after_quantization,
                 )
 
-                self.model_ = transform_output_linear_for_pre_quantization(
-                    module=self.model_,
-                    checkpoint=checkpoint,
-                    dtype=mapping[self.args.dtype_override],
-                )
-
-            self.model_ = transform_linear_for_pre_quantization(
-                self.model_,
-                checkpoint,
-                self.args.preq_group_size,
-                mapping[self.args.dtype_override],
-            )
-
-            embedding_bit_width, embedding_group_size = None, None
-            if hasattr(self.args, "preq_embedding_quantize"):
-                embedding_bit_width, embedding_group_size = (
-                    self.args.preq_embedding_quantize.split(",")
-                )
-                from .source_transformation.pre_quantization import (
-                    transform_embedding_for_pre_quantization,
-                )
-
-                if (
-                    embedding_group_size == "none"
-                    or embedding_group_size == "None"
-                    or embedding_group_size == "0"
-                ):
-                    embedding_group_size = None
-                else:
-                    embedding_group_size = int(embedding_group_size)
-
-                self.model_ = transform_embedding_for_pre_quantization(
+                self.model_ = transform_linear_for_lora_after_quantization(
                     self.model_,
                     checkpoint,
-                    mapping[self.args.dtype_override],
-                    int(embedding_bit_width),
-                    embedding_group_size,
+                    self.args.use_lora,
                 )
+
+            from .source_transformation.pre_quantization import (
+                sanitize_checkpoint_from_pre_quantization,
+            )
 
             sanitize_checkpoint_from_pre_quantization(checkpoint)
 
@@ -317,4 +276,63 @@ the checkpoint format to avoid generating faulty models.
                 torch.tensor(
                     [0], dtype=torch.long
                 ),  # start_pos, what token of output are we on.
+            )
+
+    def _transform_for_pre_quantization(self, checkpoint):
+        assert hasattr(self.args, "preq_mode"), "preq_mode must be specified"
+        assert self.args.preq_mode in [
+            "8da4w",
+            "8da4w_output_8da8w",
+        ], f"Quantization mode {self.args.preq_mode} is not compatible with SpinQuant."
+        assert hasattr(
+            self.args, "preq_group_size"
+        ), "preq_group_size must be specified"
+        assert hasattr(self.args, "dtype_override"), "dtype_override must be specified"
+        from .source_transformation.pre_quantization import (
+            transform_linear_for_pre_quantization,
+        )
+
+        # Transform the output layer first if needed.
+        if self.args.preq_mode == "8da4w_output_8da8w":
+            from .source_transformation.pre_quantization import (
+                transform_output_linear_for_pre_quantization,
+            )
+
+            self.model_ = transform_output_linear_for_pre_quantization(
+                module=self.model_,
+                checkpoint=checkpoint,
+                dtype=DType[self.args.dtype_override].to_torch_dtype(),
+            )
+
+        self.model_ = transform_linear_for_pre_quantization(
+            self.model_,
+            checkpoint,
+            self.args.preq_group_size,
+            DType[self.args.dtype_override].to_torch_dtype(),
+        )
+
+        embedding_bit_width, embedding_group_size = None, None
+        if hasattr(self.args, "preq_embedding_quantize"):
+            embedding_bit_width, embedding_group_size = (
+                self.args.preq_embedding_quantize.split(",")
+            )
+            from .source_transformation.pre_quantization import (
+                transform_embedding_for_pre_quantization,
+            )
+
+            if (
+                embedding_group_size == "none"
+                or embedding_group_size == "None"
+                or embedding_group_size == "0"
+            ):
+                embedding_group_size = None
+            else:
+                embedding_group_size = int(embedding_group_size)
+
+            self.model_ = transform_embedding_for_pre_quantization(
+                self.model_,
+                checkpoint,
+                DType[self.args.dtype_override].to_torch_dtype(),
+                int(embedding_bit_width),
+                embedding_group_size,
             )
