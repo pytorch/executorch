@@ -49,6 +49,7 @@ libXNNPACK.a,\
 libcpuinfo.a,\
 libpthreadpool.a,\
 libxnnpack_backend.a,\
+libmicrokernels-prod.a,\
 :"
 
 FRAMEWORK_KERNELS_CUSTOM="kernels_custom:\

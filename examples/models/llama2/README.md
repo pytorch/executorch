@@ -162,13 +162,13 @@ python -m examples.models.llama2.export_llama \
    --params "${LLAMA_PARAMS:?}" \
    --use_sdpa_with_kv_cache \
    -X \
-   --spin_qmode 8da4w_output_8da8w \
-   --spin_group_size 32 \
+   --preq_mode 8da4w_output_8da8w \
+   --preq_group_size 32 \
    --max_seq_length 2048 \
    --output_name "llama3_2.pte" \
    -kv \
    -d fp32 \
-   --spin_embedding_quantize 8,0 \
+   --preq_embedding_quantize 8,0 \
    --use_spin_quant native \
    --metadata '{"append_eos_to_prompt": 0, "get_bos_id":128000, "get_eos_ids":[128009, 128001], "get_n_bos": 0, "get_n_eos": 0}'
 ```
@@ -332,6 +332,8 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
 
 For Llama2 and stories models, pass the converted `tokenizer.bin` file instead of `tokenizer.model`.
 
+To build for CoreML backend and validate on Mac, replace `-DEXECUTORCH_BUILD_XNNPACK=ON` with `-DEXECUTORCH_BUILD_COREML=ON`
+
 ## Step 5: Run benchmark on Android phone
 
 **1. Build llama runner binary for Android**
@@ -417,6 +419,10 @@ for each backend ([CoreML](https://pytorch.org/executorch/main/build-run-coreml.
 - QNN: `python -m examples.models.llama2.export_llama -kv --disable_dynamic_shape --qnn -c stories110M.pt -p params.json `
 
 The iOS LLAMA app supports the CoreML and MPS model and the Android LLAMA app supports the QNN model. On Android, it also allow to cross compiler the llama runner binary, push to the device and run.
+
+For CoreML, there are 2 additional optional arguments:
+* `--coreml-ios`: Specify the minimum iOS version to deploy (and turn on available optimizations). E.g. `--coreml-ios 18` will turn on [in-place KV cache](https://developer.apple.com/documentation/coreml/mlstate?language=objc) and [fused scaled dot product attention kernel](https://apple.github.io/coremltools/source/coremltools.converters.mil.mil.ops.defs.html#coremltools.converters.mil.mil.ops.defs.iOS18.transformers.scaled_dot_product_attention) (the resulting model will then need at least iOS 18 to run, though)
+* `--coreml-quantize`: Use [quantization tailored for CoreML](https://apple.github.io/coremltools/docs-guides/source/opt-quantization-overview.html). E.g. `--coreml-quantize b4w` will perform per-block 4-bit weight-only quantization in a way tailored for CoreML
 
 # What is coming next?
 ## Quantization

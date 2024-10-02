@@ -6,6 +6,7 @@
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -176,6 +177,7 @@ class RunnerUtil:
         self.qp_input: list[QuantizationParams] = None
         self.qp_output: QuantizationParams = None
         self.timeout = 120
+        self.target_board: str = None
 
         self._has_init_run = False
 
@@ -184,11 +186,17 @@ class RunnerUtil:
         exported_program: ExportedProgram,
         edge_program: ExportedProgram,
         is_quantized: bool,
+        target_board: str,
     ):
+
+        if target_board not in ["corstone-300", "corstone-320"]:
+            raise RuntimeError(f"Unknown target board: {target_board}")
+
         self.input_names = _get_input_names(edge_program)
         self.output_node = _get_output_node(exported_program)
         self.output_name = self.output_node.name
         self.is_quantized = is_quantized
+        self.target_board = target_board
 
         if is_quantized:
             self.qp_input = _get_input_quantization_params(exported_program)
@@ -204,7 +212,7 @@ class RunnerUtil:
     def set_timeout(self, timeout: int):
         self.timeout = timeout
 
-    def run_corstone300(
+    def run_corstone(
         self,
         inputs: Tuple[torch.Tensor],
     ) -> list[torch.Tensor]:
@@ -229,7 +237,9 @@ class RunnerUtil:
                 os.path.join(self.intermediate_path, f"{name}.bin"),
             )
         elf_path = os.path.join(
-            "cmake-out", "arm_semihosting_executor_runner", "arm_executor_runner"
+            "cmake-out",
+            f"arm_semihosting_executor_runner_{self.target_board}",
+            "arm_executor_runner",
         )
         assert os.path.exists(
             elf_path
@@ -239,39 +249,76 @@ class RunnerUtil:
         for input_path in input_paths:
             cmd_line += f" -i {input_path}"
 
-        command_args = [
-            "FVP_Corstone_SSE-300_Ethos-U55",
-            "-C",
-            "ethosu.num_macs=128",
-            "-C",
-            "mps3_board.visualisation.disable-visualisation=1",
-            "-C",
-            "mps3_board.telnetterminal0.start_telnet=0",
-            "-C",
-            "mps3_board.uart0.out_file='-'",
-            "-C",
-            "cpu0.CFGITCMSZ=11",
-            "-C",
-            "cpu0.semihosting-enable=1",
-            "-C",
-            "cpu0.semihosting-stack_base=0",
-            "-C",
-            "cpu0.semihosting-heap_limit=0",
-            "-C",
-            f"cpu0.semihosting-cmd_line='{cmd_line}'",
-            "-a",
-            elf_path,
-            "--timelimit",
-            f"{self.timeout}",
-        ]
-        result = _run_cmd(command_args, check=False)
-        result_stdout = result.stdout.decode()
-        if "Hard fault" in result_stdout or len(result.stderr) > 0:
+        command_args = {
+            "corstone-300": [
+                "FVP_Corstone_SSE-300_Ethos-U55",
+                "-C",
+                "ethosu.num_macs=128",
+                "-C",
+                "mps3_board.visualisation.disable-visualisation=1",
+                "-C",
+                "mps3_board.telnetterminal0.start_telnet=0",
+                "-C",
+                "mps3_board.uart0.out_file='-'",
+                "-C",
+                "cpu0.CFGITCMSZ=11",
+                "-C",
+                "cpu0.semihosting-enable=1",
+                "-C",
+                "cpu0.semihosting-stack_base=0",
+                "-C",
+                "cpu0.semihosting-heap_limit=0",
+                "-C",
+                f"cpu0.semihosting-cmd_line='{cmd_line}'",
+                "-a",
+                elf_path,
+                "--timelimit",
+                f"{self.timeout}",
+            ],
+            "corstone-320": [
+                "FVP_Corstone_SSE-320",
+                "-C",
+                "mps4_board.subsystem.ethosu.num_macs=128",
+                "-C",
+                "mps4_board.visualisation.disable-visualisation=1",
+                "-C",
+                "mps4_board.telnetterminal0.start_telnet=0",
+                "-C",
+                "mps4_board.uart0.out_file='-'",
+                "-C",
+                "mps4_board.uart0.unbuffered_output=1",
+                "-C",
+                "mps4_board.uart0.shutdown_on_eot=1",
+                "-C",
+                "mps4_board.subsystem.cpu0.semihosting-enable=1",
+                "-C",
+                "mps4_board.subsystem.cpu0.semihosting-stack_base=0",
+                "-C",
+                "mps4_board.subsystem.cpu0.semihosting-heap_limit=0",
+                "-C",
+                f"mps4_board.subsystem.cpu0.semihosting-cmd_line='{cmd_line}'",
+                "-a",
+                elf_path,
+                "--timelimit",
+                f"{self.timeout}",
+            ],
+        }
+
+        result = _run_cmd(command_args[self.target_board], check=False)
+        if result.returncode != 0:
             raise RuntimeError(
-                f"Corstone simulation failed, log: \n {result_stdout}\n{result.stderr.decode()}"
+                f"Failed to run {command_args[self.target_board]}\nError: {result.stderr.decode()}"
             )
-        elif "E [" in result_stdout:
-            logger.error(result_stdout)
+        result_stdout = result.stdout.decode()
+
+        error_regex = r"(^[EF][: ].*$)|(^.*Hard fault.*$)|(^.*Assertion.*$)"
+
+        # Check for errors in the output
+        # regex to check for error or fault messages in stdout from FVP
+        if re.compile(error_regex, re.MULTILINE).search(result_stdout):
+            raise RuntimeError(
+                f"Corstone simulation failed:\ncmd: {command_args[self.target_board]}\n, log: \n {result_stdout}\n{result.stderr.decode()}"
+            )
 
         tosa_ref_output = np.fromfile(out_path_with_suffix, dtype=np.float32)
         output_shape = self.output_node.args[0][0].meta["val"].shape

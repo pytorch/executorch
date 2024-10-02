@@ -45,20 +45,28 @@ function verify_md5() {
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 
 if [[ "${ARCH}" == "x86_64" ]]; then
-    # FVP
-    fvp_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64.tgz?rev=018659bd574f4e7b95fa647e7836ccf4&hash=22A79103C6FA5FFA7AFF3BE0447F3FF9"
-    fvp_model_dir="Linux64_GCC-9.3"
-    fvp_md5_checksum="98e93b949d0fbac977292d8668d34523"
+    # FVPs
+    corstone300_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64.tgz?rev=018659bd574f4e7b95fa647e7836ccf4&hash=22A79103C6FA5FFA7AFF3BE0447F3FF9"
+    corstone300_model_dir="Linux64_GCC-9.3"
+    corstone300_md5_checksum="98e93b949d0fbac977292d8668d34523"
+
+    corstone320_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-320/FVP_Corstone_SSE-320_11.27_25_Linux64.tgz?rev=a507bffc219a4d5792f1192ab7002d89&hash=D9A824AA8227D2E679C9B9787FF4E8B6FBE3D7C6"
+    corstone320_model_dir="Linux64_GCC-9.3"
+    corstone320_md5_checksum="3deb3c68f9b2d145833f15374203514d"
 
     # toochain
     toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi.tar.xz"
     toolchain_dir="arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi"
     toolchain_md5_checksum="00ebb1b70b1f88906c61206457eacb61"
 elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
-    # FVP
-    fvp_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64_armv8l.tgz?rev=9cc6e9a32bb947ca9b21fa162144cb01&hash=7657A4CF27D42E892E3F08D452AAB073"
-    fvp_model_dir="Linux64_armv8l_GCC-9.3"
-    fvp_md5_checksum="cbbabbe39b07939cff7a3738e1492ef1"
+    # FVPs
+    corstone300_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64_armv8l.tgz?rev=9cc6e9a32bb947ca9b21fa162144cb01&hash=7657A4CF27D42E892E3F08D452AAB073"
+    corstone300_model_dir="Linux64_armv8l_GCC-9.3"
+    corstone300_md5_checksum="cbbabbe39b07939cff7a3738e1492ef1"
+
+    corstone320_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-320/FVP_Corstone_SSE-320_11.27_25_Linux64_armv8l.tgz?rev=b6ebe0923cb84f739e017385fd3c333c&hash=8965C4B98E2FF7F792A099B08831FE3CB6120493"
+    corstone320_model_dir="Linux64_armv8l_GCC-9.3"
+    corstone320_md5_checksum="3889f1d80a6d9861ea4aa6f1c88dd0ae"
 
     # toochain
     if [[ "${OS}" == "Darwin" ]]; then
@@ -76,7 +84,7 @@ fi
 
 # ethos-u
 ethos_u_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u"
-ethos_u_base_rev="24.05"
+ethos_u_base_rev="24.08"
 
 ########
 ### Mandatory user args
@@ -105,26 +113,50 @@ function setup_fvp() {
     fi
 
     # Download and install the Corstone 300 FVP simulator platform
-    cd "${root_dir}"
-    if [[ ! -e FVP_cs300.tgz ]]; then
-        echo "[${FUNCNAME[0]}] Downloading FVP ..."
-        curl --output FVP_cs300.tgz "${fvp_url}"
-        verify_md5 ${fvp_md5_checksum} FVP_cs300.tgz
-    fi
+    fvps=("corstone300" "corstone320")
 
-    echo "[${FUNCNAME[0]}] Installing FVP ..."
-    rm -rf FVP
-    mkdir -p FVP
-    cd FVP
-    tar xf ../FVP_cs300.tgz
-    ./FVP_Corstone_SSE-300.sh --i-agree-to-the-contained-eula --force --destination ./ --quiet --no-interactive
+    for fvp in "${fvps[@]}"; do
+        cd "${root_dir}"
+        if [[ ! -e "FVP_${fvp}.tgz" ]]; then
+            echo "[${FUNCNAME[0]}] Downloading FVP ${fvp}..."
+            url_variable=${fvp}_url
+            fvp_url=${!url_variable}
+            curl --output "FVP_${fvp}.tgz" "${fvp_url}"
+            md5_variable=${fvp}_md5_checksum
+            fvp_md5_checksum=${!md5_variable}
+            verify_md5 ${fvp_md5_checksum} FVP_${fvp}.tgz
+        fi
 
-    fvp_bin_path="$(cd models/${fvp_model_dir} && pwd)"
-    export PATH=${PATH}:${fvp_bin_path}
+        echo "[${FUNCNAME[0]}] Installing FVP ${fvp}..."
+        rm -rf FVP-${fvp}
+        mkdir -p FVP-${fvp}
+        cd FVP-${fvp}
+        tar xf ../FVP_${fvp}.tgz
 
-    hash FVP_Corstone_SSE-300_Ethos-U55
-    echo "export PATH=\${PATH}:${fvp_bin_path}" >> ${setup_path_script}
+        # Install the FVP
+        case ${fvp} in
+            corstone300)
+                ./FVP_Corstone_SSE-300.sh --i-agree-to-the-contained-eula --force --destination ./ --quiet --no-interactive
+                ;;
+            corstone320)
+                ./FVP_Corstone_SSE-320.sh --i-agree-to-the-contained-eula --force --destination ./ --quiet --no-interactive
+                ;;
+            *)
+                echo "[${FUNCNAME[0]}] Error: Unknown FVP model ${fvp}. Exiting."
+                exit 1
+                ;;
+        esac
 
+        model_dir_variable=${fvp}_model_dir
+        fvp_model_dir=${!model_dir_variable}
+        fvp_bin_path="$(cd models/${fvp_model_dir} && pwd)"
+        export PATH=${PATH}:${fvp_bin_path}
+
+        echo "export PATH=\${PATH}:${fvp_bin_path}" >> ${setup_path_script}
+    done
+
+    # Fixup for Corstone-320 python dependency
+    echo "export LD_LIBRARY_PATH=${root_dir}/FVP-corstone320/python/lib/" >> ${setup_path_script}
 }
 
 function setup_toolchain() {
@@ -163,7 +195,7 @@ function patch_repo() {
     name="$(basename $repo_dir)"
     echo -e "[${FUNCNAME[0]}] Preparing ${name}..."
     cd $repo_dir
-
+    git fetch
     git reset --hard ${base_rev}
 
     patch_dir=${script_dir}/ethos-u-setup/${name}/patches/
@@ -261,7 +293,7 @@ setup_ethos_u
 
 # Patch the ethos-u dev environment to include executorch application
 repo_dir="${root_dir}/ethos-u/core_platform"
-base_rev=204210b1074071532627da9dc69950d058a809f4
+base_rev=b728c774158248ba2cad8e78a515809e1eb9b77f
 patch_repo
 
 # Setup the tosa_reference_model

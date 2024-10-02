@@ -70,6 +70,11 @@ template <typename To, typename From>
 To load_and_convert(const void* fromPtr) {
   return static_cast<To>(*reinterpret_cast<const From*>(fromPtr));
 }
+
+template <typename To, typename From>
+void convert_and_store(From f, void* dst) {
+  *reinterpret_cast<To*>(dst) = static_cast<To>(f);
+}
 } // namespace
 
 Tensor& clamp_out(
@@ -218,27 +223,30 @@ Tensor& clamp_tensor_out(
 
   constexpr auto name = "clamp.Tensor_out";
 
-  ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
-    using ToCtypeOutFn = CTYPE_OUT (*)(const void*);
-    ToCtypeOutFn in_to_out;
+  ET_SWITCH_REALHB_TYPES(common_type, ctx, name, CTYPE_COMMON, [&]() {
+    using ToCtypeCommonFn = CTYPE_COMMON (*)(const void*);
+    ToCtypeCommonFn in_to_common;
     ET_SWITCH_REALHB_TYPES(in_type, ctx, name, CTYPE_IN, [&]() {
-      in_to_out = load_and_convert<CTYPE_OUT, CTYPE_IN>;
+      in_to_common = load_and_convert<CTYPE_COMMON, CTYPE_IN>;
     });
-    ToCtypeOutFn min_to_out;
+    ToCtypeCommonFn min_to_common;
     ET_SWITCH_REALHB_TYPES(min_type, ctx, name, CTYPE_MIN, [&]() {
-      min_to_out = load_and_convert<CTYPE_OUT, CTYPE_MIN>;
+      min_to_common = load_and_convert<CTYPE_COMMON, CTYPE_MIN>;
     });
-    ToCtypeOutFn max_to_out;
+    ToCtypeCommonFn max_to_common;
     ET_SWITCH_REALHB_TYPES(max_type, ctx, name, CTYPE_MAX, [&]() {
-      max_to_out = load_and_convert<CTYPE_OUT, CTYPE_MAX>;
+      max_to_common = load_and_convert<CTYPE_COMMON, CTYPE_MAX>;
     });
-
-    apply_ternary_elementwise_fn<CTYPE_OUT>(
+    void (*common_to_out)(CTYPE_COMMON, void*);
+    ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
+      common_to_out = convert_and_store<CTYPE_OUT, CTYPE_COMMON>;
+    });
+    apply_ternary_elementwise_fn<CTYPE_COMMON>(
         [has_min, has_max](
-            const CTYPE_OUT val_in,
-            const CTYPE_OUT val_min,
-            const CTYPE_OUT val_max) {
-          CTYPE_OUT val_out = val_in;
+            const CTYPE_COMMON val_in,
+            const CTYPE_COMMON val_min,
+            const CTYPE_COMMON val_max) {
+          CTYPE_COMMON val_out = val_in;
           if (has_min) {
             val_out = utils::max_override(val_out, val_min);
           }
@@ -251,9 +259,10 @@ Tensor& clamp_tensor_out(
         min,
         max,
         out,
-        in_to_out,
-        min_to_out,
-        max_to_out);
+        in_to_common,
+        min_to_common,
+        max_to_common,
+        common_to_out);
   });
 
   return out;

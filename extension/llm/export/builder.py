@@ -146,6 +146,7 @@ class LLMEdgeManager:
 
         if self.verbose:
             logging.info(f"Applied source transforms: {self.applied_source_transforms}")
+        logging.info(f"Model after source transforms: {self.model}")
         return self
 
     def _get_dynamic_shape(self) -> Any:
@@ -209,7 +210,9 @@ class LLMEdgeManager:
             from executorch.examples.models.llama2.eval_llama_lib import (
                 GraphModuleEvalWrapper,
             )
-            from executorch.examples.models.llama2.evaluate import evaluate_model
+            from executorch.examples.models.llama2.evaluate import (  # pyre-ignore[21]
+                evaluate_model,
+            )
         except ImportError:
             raise ImportError(
                 "Please install the llm eval dependency via examples/models/llama2/install_requirements.sh"
