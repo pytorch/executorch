@@ -162,13 +162,13 @@ python -m examples.models.llama2.export_llama \
    --params "${LLAMA_PARAMS:?}" \
    --use_sdpa_with_kv_cache \
    -X \
-   --spin_qmode 8da4w_output_8da8w \
-   --spin_group_size 32 \
+   --preq_mode 8da4w_output_8da8w \
+   --preq_group_size 32 \
    --max_seq_length 2048 \
    --output_name "llama3_2.pte" \
    -kv \
    -d fp32 \
-   --spin_embedding_quantize 8,0 \
+   --preq_embedding_quantize 8,0 \
    --use_spin_quant native \
    --metadata '{"append_eos_to_prompt": 0, "get_bos_id":128000, "get_eos_ids":[128009, 128001], "get_n_bos": 0, "get_n_eos": 0}'
 ```
