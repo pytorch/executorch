@@ -754,6 +754,74 @@ void update_cache(
   }
 }
 
+} // anonymous namespace
+
+Tensor& flash_attention_kernel_out(
+    RuntimeContext& ctx,
+    const Tensor& query,
+    const Tensor& key,
+    const Tensor& value,
+    const optional<Tensor>& attn_mask,
+    const double dropout_p,
+    const bool is_causal,
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const optional<double> scale,
+    Tensor& output) {
+  (void)ctx;
+  ET_KERNEL_CHECK(
+      ctx,
+      validate_flash_attention_args(query, key, value, attn_mask),
+      InvalidArgument,
+      output);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(output, query.sizes()) == Error::Ok,
+      InvalidArgument,
+      output);
+
+  auto q_seq_len = query.size(2);
+
+  ET_SWITCH_FLOAT_TYPES(
+      query.scalar_type(), ctx, "flash_attention", CTYPE, [&] {
+        // TODO we need to re-evaluate this for ARM CPUs
+        // And there can be many so instead of templatizing
+        // we might consider another appraoch
+        if (q_seq_len >= 768) {
+          cpu_flash_attention<CTYPE, 256, 512>(
+              output,
+              query,
+              key,
+              value,
+              dropout_p,
+              is_causal,
+              attn_mask,
+              scale);
+        } else if (q_seq_len >= 192) {
+          cpu_flash_attention<CTYPE, 64, 512>(
+              output,
+              query,
+              key,
+              value,
+              dropout_p,
+              is_causal,
+              attn_mask,
+              scale);
+        } else {
+          cpu_flash_attention<CTYPE, 32, 512>(
+              output,
+              query,
+              key,
+              value,
+              dropout_p,
+              is_causal,
+              attn_mask,
+              scale);
+        }
+      });
+  return output;
+}
+
 /*
   Input params
   @param[in] q_projected Projected query with query weights.
@@ -900,74 +968,6 @@ Tensor& custom_sdpa_out(
   });
   return output;
 }
-} // anonymous namespace
-
-Tensor& flash_attention_kernel_out(
-    KernelRuntimeContext& ctx,
-    const Tensor& query,
-    const Tensor& key,
-    const Tensor& value,
-    const optional<Tensor>& attn_mask,
-    const double dropout_p,
-    const bool is_causal,
-    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const optional<double> scale,
-    Tensor& output) {
-  (void)ctx;
-  ET_KERNEL_CHECK(
-      ctx,
-      validate_flash_attention_args(query, key, value, attn_mask),
-      InvalidArgument,
-      output);
-
-  ET_KERNEL_CHECK(
-      ctx,
-      resize_tensor(output, query.sizes()) == Error::Ok,
-      InvalidArgument,
-      output);
-
-  auto q_seq_len = query.size(2);
-
-  ET_SWITCH_FLOAT_TYPES(
-      query.scalar_type(), ctx, "flash_attention", CTYPE, [&] {
-        // TODO we need to re-evaluate this for ARM CPUs
-        // And there can be many so instead of templatizing
-        // we might consider another appraoch
-        if (q_seq_len >= 768) {
-          cpu_flash_attention<CTYPE, 256, 512>(
-              output,
-              query,
-              key,
-              value,
-              dropout_p,
-              is_causal,
-              attn_mask,
-              scale);
-        } else if (q_seq_len >= 192) {
-          cpu_flash_attention<CTYPE, 64, 512>(
-              output,
-              query,
-              key,
-              value,
-              dropout_p,
-              is_causal,
-              attn_mask,
-              scale);
-        } else {
-          cpu_flash_attention<CTYPE, 32, 512>(
-              output,
-              query,
-              key,
-              value,
-              dropout_p,
-              is_causal,
-              attn_mask,
-              scale);
-        }
-      });
-  return output;
-}
-
 /*
   Input params
   @param[in] q_projected Projected query with query weights.
@@ -1033,3 +1033,8 @@ EXECUTORCH_LIBRARY(
     llama,
     "sdpa_with_kv_cache.out",
     torch::executor::native::sdpa_with_kv_cache_out);
+
+EXECUTORCH_LIBRARY(
+    llama,
+    "custom_sdpa.out",
+    torch::executor::native::custom_sdpa_out);
