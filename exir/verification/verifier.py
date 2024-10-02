@@ -7,6 +7,7 @@
 import itertools
 import operator
 import types
+from contextlib import nullcontext
 from typing import Any, List, Optional, Tuple, Type
 
 import torch
@@ -19,6 +20,7 @@ from executorch.exir.verification.arg_validator import (
     RunHigherOrderOperatorError,
 )
 from torch._dispatch.python import enable_python_dispatcher
+from torch._export.utils import _detect_fake_mode_from_gm
 
 from torch._export.verifier import SpecViolationError, Verifier
 from torch._ops import OpOverload
@@ -161,8 +163,9 @@ def _get_inputs(graph_module: GraphModule) -> List[Optional[FakeTensor]]:
 def _check_tensor_args_matching_op_allowed_dtype(gm: GraphModule) -> None:
     validator = EdgeOpArgValidator(gm)
     inputs = _get_inputs(gm)
+    fake_mode = _detect_fake_mode_from_gm(gm) or nullcontext()
     try:
-        with enable_python_dispatcher():
+        with enable_python_dispatcher(), fake_mode:
             validator.run(*inputs)
     except RunHigherOrderOperatorError:
         # NB: ignore higher order operator in the graph.
