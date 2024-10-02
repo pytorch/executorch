@@ -136,7 +136,7 @@ def _load_for_executorch(
     Args:
         path: File path to the ExecuTorch program as a string.
         enable_etdump: If true, enables an ETDump which can store profiling information.
-            See documentation at https://pytorch.org/executorch/stable/sdk-etdump.html
+            See documentation at https://pytorch.org/executorch/stable/etdump.html
             for how to use it.
         debug_buffer_size: If non-zero, enables a debug buffer which can store
             intermediate results of each instruction in the ExecuTorch program.
