@@ -5,7 +5,7 @@ Overview
 --------
 
 The Inspector APIs provide a convenient interface for analyzing the
-contents of `ETRecord <sdk-etrecord.html>`__ and
+contents of `ETRecord <etrecord.html>`__ and
 `ETDump <sdk-etdump.html>`__, helping developers get insights about model
 architecture and performance statistics. It’s built on top of the `EventBlock Class <#eventblock-class>`__ data structure,
 which organizes a group of `Event <#event-class>`__\ s for easy access to details of profiling events.
