@@ -66,15 +66,6 @@ ET_NODISCARD bool check_bounds(
   return is_valid;
 }
 
-template <typename To, typename From>
-To load_and_convert(const void* fromPtr) {
-  return static_cast<To>(*reinterpret_cast<const From*>(fromPtr));
-}
-
-template <typename To, typename From>
-void convert_and_store(From f, void* dst) {
-  *reinterpret_cast<To*>(dst) = static_cast<To>(f);
-}
 } // namespace
 
 Tensor& clamp_out(
@@ -221,26 +212,9 @@ Tensor& clamp_tensor_out(
 
   ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
 
-  constexpr auto name = "clamp.Tensor_out";
+  static constexpr const char op_name[] = "clamp.Tensor_out";
 
-  ET_SWITCH_REALHB_TYPES(common_type, ctx, name, CTYPE_COMMON, [&]() {
-    using ToCtypeCommonFn = CTYPE_COMMON (*)(const void*);
-    ToCtypeCommonFn in_to_common;
-    ET_SWITCH_REALHB_TYPES(in_type, ctx, name, CTYPE_IN, [&]() {
-      in_to_common = load_and_convert<CTYPE_COMMON, CTYPE_IN>;
-    });
-    ToCtypeCommonFn min_to_common;
-    ET_SWITCH_REALHB_TYPES(min_type, ctx, name, CTYPE_MIN, [&]() {
-      min_to_common = load_and_convert<CTYPE_COMMON, CTYPE_MIN>;
-    });
-    ToCtypeCommonFn max_to_common;
-    ET_SWITCH_REALHB_TYPES(max_type, ctx, name, CTYPE_MAX, [&]() {
-      max_to_common = load_and_convert<CTYPE_COMMON, CTYPE_MAX>;
-    });
-    void (*common_to_out)(CTYPE_COMMON, void*);
-    ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
-      common_to_out = convert_and_store<CTYPE_OUT, CTYPE_COMMON>;
-    });
+  ET_SWITCH_REALHB_TYPES(common_type, ctx, op_name, CTYPE_COMMON, [&]() {
     apply_ternary_elementwise_fn<CTYPE_COMMON>(
         [has_min, has_max](
             const CTYPE_COMMON val_in,
@@ -259,10 +233,10 @@ Tensor& clamp_tensor_out(
         min,
         max,
         out,
-        in_to_common,
-        min_to_common,
-        max_to_common,
-        common_to_out);
+        get_load_to_common_fn_realhbbf16<CTYPE_COMMON, op_name>(in),
+        get_load_to_common_fn_realhbbf16<CTYPE_COMMON, op_name>(min),
+        get_load_to_common_fn_realhbbf16<CTYPE_COMMON, op_name>(max),
+        get_store_common_to_tensor_fn_realhbbf16<CTYPE_COMMON, op_name>(out));
   });
 
   return out;

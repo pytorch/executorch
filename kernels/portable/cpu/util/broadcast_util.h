@@ -270,6 +270,46 @@ size_t linearize_access_indexes(
 // Mapping with broadcasting
 //
 
+namespace internal {
+template <typename To, typename From>
+To load_and_convert(const void* fromPtr) {
+  return static_cast<To>(*reinterpret_cast<const From*>(fromPtr));
+}
+
+template <typename To, typename From>
+void convert_and_store(From f, void* dst) {
+  *reinterpret_cast<To*>(dst) = static_cast<To>(f);
+}
+} // namespace internal
+
+template <typename CTYPE_COMMON>
+using load_to_common_fn = CTYPE_COMMON (*)(const void*);
+
+template <typename CTYPE_COMMON, const char* op_name>
+load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn_realhbbf16(
+    const Tensor& t) {
+  CTYPE_COMMON (*result)(const void*) = nullptr;
+  ET_SWITCH_REALHBBF16_TYPES(
+      t.scalar_type(), unused, op_name, TENSOR_CTYPE, [&]() {
+        result = internal::load_and_convert<CTYPE_COMMON, TENSOR_CTYPE>;
+      });
+  return result;
+}
+
+template <typename CTYPE_COMMON>
+using store_common_to_tensor_fn = void (*)(CTYPE_COMMON, void*);
+
+template <typename CTYPE_COMMON, const char* op_name>
+store_common_to_tensor_fn<CTYPE_COMMON>
+get_store_common_to_tensor_fn_realhbbf16(const Tensor& t) {
+  void (*result)(CTYPE_COMMON, void*) = nullptr;
+  ET_SWITCH_REALHBBF16_TYPES(
+      t.scalar_type(), unused, op_name, TENSOR_CTYPE, [&]() {
+        result = internal::convert_and_store<TENSOR_CTYPE, CTYPE_COMMON>;
+      });
+  return result;
+}
+
 /**
  * Useful for binary elementwise operators. For each element of the inputs,
  * perform a computation and write to the corresponding element of the output.
