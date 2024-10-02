@@ -98,14 +98,26 @@ void ThreadPool::run(
 // Make this part threadsafe: TODO(kimishpatel)
 ThreadPool* get_threadpool() {
   ET_CHECK_MSG(cpuinfo_initialize(), "cpuinfo initialization failed");
+
+/*
+ * For ARM devices, use core_count/2 as a sane default to avoid running on
+ * small cores. This gives significant speedups on heterogeneous mobile SOCs.
+ * For other archs (esp. x86), use all cores.
+ */
+#if defined(__arm__) || defined(__aarch64__) || defined(_M_ARM) || \
+    defined(_M_ARM64)
+  int num_threads = cpuinfo_get_processors_count() / 2;
+#else
   int num_threads = cpuinfo_get_processors_count();
+#endif
+
   /*
-   * For llvm-tsan, holding limit for the number of locks for a single thread
-   * is 63 (because of comparison < 64 instead of <=). pthreadpool's worst
-   * case is the number of threads in a pool. So we want to limit the threadpool
-   * size to 64 when running with tsan. However, sometimes it is tricky to
-   * detect if we are running under tsan, for now capping the default
-   * threadcount to the tsan limit unconditionally.
+   * For llvm-tsan, holding limit for the number of locks for a single
+   * thread is 63 (because of comparison < 64 instead of <=). pthreadpool's
+   * worst case is the number of threads in a pool. So we want to limit the
+   * threadpool size to 64 when running with tsan. However, sometimes it is
+   * tricky to detect if we are running under tsan, for now capping the
+   * default threadcount to the tsan limit unconditionally.
    */
   constexpr int tsan_thread_limit = 63;
   num_threads = std::min(num_threads, tsan_thread_limit);
