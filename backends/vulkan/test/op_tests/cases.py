@@ -747,6 +747,27 @@ def get_repeat_inputs():
     return test_suite
 
 
+@register_test_suite("aten.repeat_interleave.self_int")
+def get_repeat_interleave_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((4, 32, 256), 3, -2),
+            # Test repeat on each non-packed dim
+            ((16, 32, 64), 5, -2),
+            ((16, 32, 64), 5, -3),
+            # Test batched inputs
+            ((3, 5, 32, 64), 4, -2),
+            ((3, 5, 32, 64), 4, -3),
+        ]
+    )
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
+    test_suite.dtypes = ["at::kFloat"]
+    return test_suite
+
+
 @register_test_suite("aten.cat.default")
 def get_cat_inputs():
     # TensorList must be specified as list of tuples
