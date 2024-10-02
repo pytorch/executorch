@@ -4,7 +4,7 @@ Profiling in ExecuTorch gives users access to these runtime metrics:
 - Model Load Time.
 - Operator Level Execution Time.
 - Delegate Execution Time.
-  - If the delegate that the user is calling into has been integrated with the [Developer Tools](./sdk-delegate-integration.md), then users will also be able to access delegated operator execution time.
+  - If the delegate that the user is calling into has been integrated with the [Developer Tools](./delegate-debugging.md), then users will also be able to access delegated operator execution time.
 - End-to-end Inference Execution Time.
 
 One uniqe aspect of ExecuTorch Profiling is the ability to link every runtime executed operator back to the exact line of python code from which this operator originated. This capability enables users to easily identify hotspots in their model, source them back to the exact line of Python code, and optimize if chosen to.
