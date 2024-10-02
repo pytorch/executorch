@@ -68,6 +68,7 @@ add_custom_target(
 )
 
 set(all_test_sources
+    "BinaryLogicalOpTest.cpp"
     "op__to_dim_order_copy_test.cpp"
     "op_abs_test.cpp"
     "op_acos_test.cpp"

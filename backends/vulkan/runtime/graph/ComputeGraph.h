@@ -374,6 +374,10 @@ class ComputeGraph final {
     }
   }
 
+  std::string extract_string(const ValueRef idx) {
+    return values_.at(idx).toString();
+  }
+
   template <
       typename T,
       typename std::enable_if<
