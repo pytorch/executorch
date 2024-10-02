@@ -124,7 +124,7 @@ from unittest.mock import patch
 # ---------------
 #
 # Next step is to generate an ``ETDump``. ``ETDump`` contains runtime results
-# from executing a `Bundled Program Model <../sdk-bundled-io.html>`__.
+# from executing a `Bundled Program Model <../bundled-io.html>`__.
 #
 # In this tutorial, a `Bundled Program` is created from the example model above.
 
