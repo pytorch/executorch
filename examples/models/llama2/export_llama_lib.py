@@ -890,9 +890,7 @@ def _get_source_transforms(  # noqa
         transforms.append(replace_sdpa_with_custom_op)
 
     if args.quantize_kv_cache:
-        assert (
-            args.use_kv_cache and not args.use_sdpa_with_kv_cache
-        ), "quantize_kv_cache requires use_kv_cache=True and use_sdpa_with_kv_cache=False"
+        assert args.use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
         transforms.append(replace_kv_cache_with_quantized_kv_cache)
 
     if args.use_kv_cache:
