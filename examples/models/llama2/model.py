@@ -191,20 +191,20 @@ the checkpoint format to avoid generating faulty models.
             )
         elif hasattr(self.args, "use_spin_quant") and self.args.use_spin_quant:
             print("Using SPIN quantization.")
-            assert hasattr(self.args, "spin_qmode"), "spin_qmode must be specified"
-            assert self.args.spin_qmode in [
+            assert hasattr(self.args, "preq_mode"), "preq_mode must be specified"
+            assert self.args.preq_mode in [
                 "8da4w",
                 "8da4w_output_8da8w",
-            ], f"Quantization mode {self.args.spin_qmode} is not compatible with SpinQuant."
+            ], f"Quantization mode {self.args.preq_mode} is not compatible with SpinQuant."
             assert hasattr(
-                self.args, "spin_group_size"
-            ), "spin_group_size must be specified"
+                self.args, "preq_group_size"
+            ), "preq_group_size must be specified"
             assert hasattr(
                 self.args, "dtype_override"
             ), "dtype_override must be specified"
-            from .source_transformation.spin_quant import (
-                sanitize_checkpoint_from_spinquant,
-                transform_linear_for_spinquant,
+            from .source_transformation.pre_quantization import (
+                sanitize_checkpoint_from_pre_quantization,
+                transform_linear_for_pre_quantization,
             )
 
             mapping = {
@@ -214,31 +214,31 @@ the checkpoint format to avoid generating faulty models.
             }
 
             # Transform the output layer first if needed.
-            if self.args.spin_qmode == "8da4w_output_8da8w":
-                from .source_transformation.spin_quant import (
-                    transform_output_linear_for_spinquant,
+            if self.args.preq_mode == "8da4w_output_8da8w":
+                from .source_transformation.pre_quantization import (
+                    transform_output_linear_for_pre_quantization,
                 )
 
-                self.model_ = transform_output_linear_for_spinquant(
+                self.model_ = transform_output_linear_for_pre_quantization(
                     module=self.model_,
                     checkpoint=checkpoint,
                     dtype=mapping[self.args.dtype_override],
                 )
 
-            self.model_ = transform_linear_for_spinquant(
+            self.model_ = transform_linear_for_pre_quantization(
                 self.model_,
                 checkpoint,
-                self.args.spin_group_size,
+                self.args.preq_group_size,
                 mapping[self.args.dtype_override],
             )
 
             embedding_bit_width, embedding_group_size = None, None
-            if hasattr(self.args, "spin_embedding_quantize"):
+            if hasattr(self.args, "preq_embedding_quantize"):
                 embedding_bit_width, embedding_group_size = (
-                    self.args.spin_embedding_quantize.split(",")
+                    self.args.preq_embedding_quantize.split(",")
                 )
-                from .source_transformation.spin_quant import (
-                    transform_embedding_for_spinquant,
+                from .source_transformation.pre_quantization import (
+                    transform_embedding_for_pre_quantization,
                 )
 
                 if (
@@ -250,7 +250,7 @@ the checkpoint format to avoid generating faulty models.
                 else:
                     embedding_group_size = int(embedding_group_size)
 
-                self.model_ = transform_embedding_for_spinquant(
+                self.model_ = transform_embedding_for_pre_quantization(
                     self.model_,
                     checkpoint,
                     mapping[self.args.dtype_override],
@@ -258,7 +258,7 @@ the checkpoint format to avoid generating faulty models.
                     embedding_group_size,
                 )
 
-            sanitize_checkpoint_from_spinquant(checkpoint)
+            sanitize_checkpoint_from_pre_quantization(checkpoint)
 
         # assign=True: load params/buffers by assignment instead of performing an in-place copy.
         # Because we are using device="meta", tensors do not have memory associated with them

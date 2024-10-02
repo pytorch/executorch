@@ -8,19 +8,19 @@ import unittest
 
 import torch
 from executorch.examples.models.llama2.llama_transformer import ModelArgs, Transformer
+from executorch.examples.models.llama2.source_transformation.pre_quantization import (
+    sanitize_checkpoint_from_pre_quantization,
+    transform_embedding_for_pre_quantization,
+    transform_linear_for_pre_quantization,
+    transform_output_linear_for_pre_quantization,
+)
 from executorch.examples.models.llama2.source_transformation.quantize import (
     dynamically_quantize_per_channel,
-)
-from executorch.examples.models.llama2.source_transformation.spin_quant import (
-    sanitize_checkpoint_from_spinquant,
-    transform_embedding_for_spinquant,
-    transform_linear_for_spinquant,
-    transform_output_linear_for_spinquant,
 )
 from torchao.quantization.utils import group_quantize_tensor_symmetric
 
 
-class SpinQuantTests(unittest.TestCase):
+class PreQuantizationTests(unittest.TestCase):
 
     def _prepare_dummy_model(self) -> Transformer:
         model_args = ModelArgs(
@@ -42,7 +42,7 @@ class SpinQuantTests(unittest.TestCase):
 
         return model
 
-    def test_transform_linear_for_spinquant(self):
+    def test_transform_linear_for_pre_quantization(self):
 
         # Step 1: Create llama class with dummy weights
         model = self._prepare_dummy_model()
@@ -69,14 +69,13 @@ class SpinQuantTests(unittest.TestCase):
 
         # Step 3:
         # Transform the model so that it is compatible with the new checkpoint
-        transform_linear_for_spinquant(
+        transform_linear_for_pre_quantization(
             model,
             checkpoint,
             32,
-            "8da4w",
             torch.float32,
         )
-        sanitize_checkpoint_from_spinquant(checkpoint)
+        sanitize_checkpoint_from_pre_quantization(checkpoint)
 
         model.load_state_dict(
             checkpoint,
@@ -91,7 +90,7 @@ class SpinQuantTests(unittest.TestCase):
             # have to iterate over the keys.
             self.assertTrue(torch.allclose(new_checkpoint[k], v))
 
-    def test_transform_output_linear_for_spinquant(self):
+    def test_transform_output_linear_for_pre_quantization(self):
         # Step 1: Create llama class with dummy weights
         model = self._prepare_dummy_model()
         checkpoint = model.state_dict()
@@ -114,12 +113,12 @@ class SpinQuantTests(unittest.TestCase):
 
         # Step 3:
         # Transform the model so that it is compatible with the new checkpoint
-        transform_output_linear_for_spinquant(
+        transform_output_linear_for_pre_quantization(
             model,
             checkpoint,
             torch.float32,
         )
-        sanitize_checkpoint_from_spinquant(checkpoint)
+        sanitize_checkpoint_from_pre_quantization(checkpoint)
 
         model.load_state_dict(
             checkpoint,
@@ -134,7 +133,7 @@ class SpinQuantTests(unittest.TestCase):
             # have to iterate over the keys.
             self.assertTrue(torch.allclose(new_checkpoint[k], v))
 
-    def test_transform_embedding_for_spinquant(self):
+    def test_transform_embedding_for_pre_quantization(self):
 
         # Step 1: Create llama class with dummy weights
         model = self._prepare_dummy_model()
@@ -162,14 +161,14 @@ class SpinQuantTests(unittest.TestCase):
 
         # Step 3:
         # Transform the model so that it is compatible with the new checkpoint
-        transform_embedding_for_spinquant(
+        transform_embedding_for_pre_quantization(
             model,
             checkpoint,
             torch.float32,
             n_bit,
             group_size,
         )
-        sanitize_checkpoint_from_spinquant(checkpoint)
+        sanitize_checkpoint_from_pre_quantization(checkpoint)
 
         model.load_state_dict(
             checkpoint,
