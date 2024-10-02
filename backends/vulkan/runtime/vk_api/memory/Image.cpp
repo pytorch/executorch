@@ -122,7 +122,7 @@ VulkanImage::VulkanImage(
       allocator_(vma_allocator),
       memory_{},
       owns_memory_{allocate_memory},
-      owns_view_{false},
+      owns_view_(false),
       is_copy_(false),
       handles_{
           VK_NULL_HANDLE,
