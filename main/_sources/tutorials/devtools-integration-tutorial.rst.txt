@@ -32,7 +32,7 @@ models.
 This tutorial will show a full end-to-end flow of how to utilize the Developer Tools to profile a model.
 Specifically, it will:
 
-1. Generate the artifacts consumed by the Developer Tools (`ETRecord <../sdk-etrecord.html>`__, `ETDump <../sdk-etdump.html>`__).
+1. Generate the artifacts consumed by the Developer Tools (`ETRecord <../etrecord.html>`__, `ETDump <../sdk-etdump.html>`__).
 2. Create an Inspector class consuming these artifacts.
 3. Utilize the Inspector class to analyze the model profiling result.
 
@@ -147,7 +147,7 @@ Generate ETDump
 ---------------
 
 Next step is to generate an ``ETDump``. ``ETDump`` contains runtime results
-from executing a `Bundled Program Model <../sdk-bundled-io.html>`__.
+from executing a `Bundled Program Model <../bundled-io.html>`__.
 
 In this tutorial, a `Bundled Program` is created from the example model above.
 
@@ -399,14 +399,14 @@ Links Mentioned
 ^^^^^^^^^^^^^^^
 
 - `ExecuTorch Developer Tools Overview <../devtools-overview.html>`__
-- `ETRecord <../sdk-etrecord.html>`__
+- `ETRecord <../etrecord.html>`__
 - `ETDump <../sdk-etdump.html>`__
 - `Inspector <../sdk-inspector.html>`__
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.429 seconds)
+   **Total running time of the script:** (0 minutes 1.663 seconds)
 
 
 .. _sphx_glr_download_tutorials_devtools-integration-tutorial.py:

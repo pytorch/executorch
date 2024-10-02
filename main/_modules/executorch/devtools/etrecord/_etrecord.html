@@ -384,14 +384,14 @@
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../sdk-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
@@ -633,7 +633,7 @@
     <span class="k">return</span> <span class="n">reference_outputs</span>
 
 
-<div class="viewcode-block" id="generate_etrecord"><a class="viewcode-back" href="../../../../sdk-etrecord.html#executorch.devtools.etrecord._etrecord.generate_etrecord">[docs]</a><span class="k">def</span> <span class="nf">generate_etrecord</span><span class="p">(</span>
+<div class="viewcode-block" id="generate_etrecord"><a class="viewcode-back" href="../../../../etrecord.html#executorch.devtools.etrecord._etrecord.generate_etrecord">[docs]</a><span class="k">def</span> <span class="nf">generate_etrecord</span><span class="p">(</span>
     <span class="n">et_record</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span><span class="p">,</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">IO</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]],</span>
     <span class="n">edge_dialect_program</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">EdgeProgramManager</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">],</span>
     <span class="n">executorch_program</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>

@@ -384,14 +384,14 @@
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../sdk-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
@@ -555,7 +555,7 @@
 
 
 <span class="c1"># from bundled program to flatbuffer</span>
-<div class="viewcode-block" id="serialize_from_bundled_program_to_flatbuffer"><a class="viewcode-back" href="../../../../sdk-bundled-io.html#executorch.devtools.bundled_program.serialize.serialize_from_bundled_program_to_flatbuffer">[docs]</a><span class="k">def</span> <span class="nf">serialize_from_bundled_program_to_flatbuffer</span><span class="p">(</span>
+<div class="viewcode-block" id="serialize_from_bundled_program_to_flatbuffer"><a class="viewcode-back" href="../../../../bundled-io.html#executorch.devtools.bundled_program.serialize.serialize_from_bundled_program_to_flatbuffer">[docs]</a><span class="k">def</span> <span class="nf">serialize_from_bundled_program_to_flatbuffer</span><span class="p">(</span>
     <span class="n">bundled_program</span><span class="p">:</span> <span class="n">BundledProgram</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
@@ -583,7 +583,7 @@
 <span class="c1"># 2. the mis-exposion of schema.bundled_program. all classes in schema should not directly</span>
 <span class="c1">#    interact with user, but the deserialization api returns one.</span>
 <span class="c1"># TODO(T170042248): Solve the above issues.</span>
-<div class="viewcode-block" id="deserialize_from_flatbuffer_to_bundled_program"><a class="viewcode-back" href="../../../../sdk-bundled-io.html#executorch.devtools.bundled_program.serialize.deserialize_from_flatbuffer_to_bundled_program">[docs]</a><span class="k">def</span> <span class="nf">deserialize_from_flatbuffer_to_bundled_program</span><span class="p">(</span>
+<div class="viewcode-block" id="deserialize_from_flatbuffer_to_bundled_program"><a class="viewcode-back" href="../../../../bundled-io.html#executorch.devtools.bundled_program.serialize.deserialize_from_flatbuffer_to_bundled_program">[docs]</a><span class="k">def</span> <span class="nf">deserialize_from_flatbuffer_to_bundled_program</span><span class="p">(</span>
     <span class="n">flatbuffer</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledProgram</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>

@@ -389,14 +389,14 @@
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
@@ -622,7 +622,7 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scri
 <div class="section" id="profiling">
 <h3>Profiling:<a class="headerlink" href="#profiling" title="Permalink to this heading">¶</a></h3>
 <ol class="arabic simple">
-<li><p>[Optional] Generate an <a class="reference internal" href="sdk-etrecord.html"><span class="doc std std-doc">ETRecord</span></a> while you’re exporting your model.</p></li>
+<li><p>[Optional] Generate an <a class="reference internal" href="etrecord.html"><span class="doc std std-doc">ETRecord</span></a> while you’re exporting your model.</p></li>
 </ol>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
 python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span><span class="w"> </span>--generate_etrecord<span class="w"> </span>-b

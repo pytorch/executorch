@@ -396,14 +396,14 @@
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
@@ -1211,7 +1211,7 @@ To see a more detailed view, use the <code class="docutils literal notranslate">
 <h4>Prerequisites<a class="headerlink" href="#id1" title="Permalink to this heading">¶</a></h4>
 <div class="section" id="etrecord-generation-optional">
 <h5>ETRecord generation (Optional)<a class="headerlink" href="#etrecord-generation-optional" title="Permalink to this heading">¶</a></h5>
-<p>An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see <a class="reference internal" href="../sdk-etrecord.html"><span class="doc std std-doc">the ETRecord docs</span></a>.</p>
+<p>An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see <a class="reference internal" href="../etrecord.html"><span class="doc std std-doc">the ETRecord docs</span></a>.</p>
 <p>In your export script, after calling <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>, call <code class="docutils literal notranslate"><span class="pre">generate_etrecord()</span></code> with the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and the <code class="docutils literal notranslate"><span class="pre">ExecuTorchProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>. Make sure to copy the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code>, as the call to <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> mutates the graph in-place.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">copy</span>
 <span class="kn">from</span> <span class="nn">executorch.devtools</span> <span class="kn">import</span> <span class="n">generate_etrecord</span>

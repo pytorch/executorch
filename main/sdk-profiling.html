@@ -386,14 +386,14 @@
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
@@ -485,7 +485,7 @@
 <li><p>Operator Level Execution Time.</p></li>
 <li><p>Delegate Execution Time.</p>
 <ul>
-<li><p>If the delegate that the user is calling into has been integrated with the <a class="reference internal" href="sdk-delegate-integration.html"><span class="doc std std-doc">Developer Tools</span></a>, then users will also be able to access delegated operator execution time.</p></li>
+<li><p>If the delegate that the user is calling into has been integrated with the <a class="reference internal" href="delegate-debugging.html"><span class="doc std std-doc">Developer Tools</span></a>, then users will also be able to access delegated operator execution time.</p></li>
 </ul>
 </li>
 <li><p>End-to-end Inference Execution Time.</p></li>
@@ -495,7 +495,7 @@
 <div class="section" id="steps-to-profile-a-model-in-executorch">
 <h2>Steps to Profile a Model in ExecuTorch<a class="headerlink" href="#steps-to-profile-a-model-in-executorch" title="Permalink to this heading">¶</a></h2>
 <ol class="arabic simple">
-<li><p>[Optional] Generate an <a class="reference internal" href="sdk-etrecord.html"><span class="doc std std-doc">ETRecord</span></a> while you’re exporting your model. If provided this will enable users to link back profiling details to eager model source code (with stack traces and module hierarchy).</p></li>
+<li><p>[Optional] Generate an <a class="reference internal" href="etrecord.html"><span class="doc std std-doc">ETRecord</span></a> while you’re exporting your model. If provided this will enable users to link back profiling details to eager model source code (with stack traces and module hierarchy).</p></li>
 <li><p>Build the runtime with the pre-processor flags that enable profiling. Detailed in the <a class="reference internal" href="sdk-etdump.html"><span class="doc std std-doc">ETDump documentation</span></a>.</p></li>
 <li><p>Run your Program on the ExecuTorch runtime and generate an <a class="reference internal" href="sdk-etdump.html"><span class="doc std std-doc">ETDump</span></a>.</p></li>
 <li><p>Create an instance of the <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API</span></a> by passing in the ETDump you have sourced from the runtime along with the optionally generated ETRecord from step 1.</p>
