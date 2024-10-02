@@ -6,13 +6,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <gtest/gtest.h>
+#include <executorch/extension/threadpool/threadpool.h>
+
 #include <mutex>
 #include <numeric>
 #include <random>
 
-#include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/extension/threadpool/threadpool_guard.h>
+
+#include <gtest/gtest.h>
 
 using namespace ::testing;
 
@@ -63,7 +65,7 @@ void run_lambda_with_size(
     size_t grain_size) {
   size_t num_grains = div_round_up(range, grain_size);
 
-  auto threadpool = torch::executorch::threadpool::get_threadpool();
+  auto threadpool = ::executorch::extension::threadpool::get_threadpool();
   threadpool->run(f, range);
 }
 } // namespace
@@ -82,7 +84,7 @@ TEST(ThreadPoolTest, ParallelAdd) {
     }
   };
 
-  auto threadpool = torch::executorch::threadpool::get_threadpool();
+  auto threadpool = ::executorch::extension::threadpool::get_threadpool();
   EXPECT_GT(threadpool->get_thread_count(), 1);
 
   generate_add_test_inputs(a, b, c_ref, c, vector_size);
@@ -125,7 +127,7 @@ TEST(ThreadPoolTest, ParallelReduce) {
     }
   };
 
-  auto threadpool = torch::executorch::threadpool::get_threadpool();
+  auto threadpool = ::executorch::extension::threadpool::get_threadpool();
   EXPECT_GT(threadpool->get_thread_count(), 1);
 
   generate_reduce_test_inputs(a, c_ref, vector_size);
@@ -142,27 +144,30 @@ TEST(ThreadPoolTest, ParallelReduce) {
 // Copied from
 // caffe2/aten/src/ATen/test/test_thread_pool_guard.cp
 TEST(TestNoThreadPoolGuard, TestThreadPoolGuard) {
-  auto threadpool_ptr = torch::executorch::threadpool::get_pthreadpool();
+  auto threadpool_ptr = ::executorch::extension::threadpool::get_pthreadpool();
 
   ASSERT_NE(threadpool_ptr, nullptr);
   {
-    torch::executorch::threadpool::NoThreadPoolGuard g1;
-    auto threadpool_ptr1 = torch::executorch::threadpool::get_pthreadpool();
+    ::executorch::extension::threadpool::NoThreadPoolGuard g1;
+    auto threadpool_ptr1 =
+        ::executorch::extension::threadpool::get_pthreadpool();
     ASSERT_EQ(threadpool_ptr1, nullptr);
 
     {
-      torch::executorch::threadpool::NoThreadPoolGuard g2;
-      auto threadpool_ptr2 = torch::executorch::threadpool::get_pthreadpool();
+      ::executorch::extension::threadpool::NoThreadPoolGuard g2;
+      auto threadpool_ptr2 =
+          ::executorch::extension::threadpool::get_pthreadpool();
       ASSERT_EQ(threadpool_ptr2, nullptr);
     }
 
     // Guard should restore prev value (nullptr)
-    auto threadpool_ptr3 = torch::executorch::threadpool::get_pthreadpool();
+    auto threadpool_ptr3 =
+        ::executorch::extension::threadpool::get_pthreadpool();
     ASSERT_EQ(threadpool_ptr3, nullptr);
   }
 
   // Guard should restore prev value (pthreadpool_)
-  auto threadpool_ptr4 = torch::executorch::threadpool::get_pthreadpool();
+  auto threadpool_ptr4 = ::executorch::extension::threadpool::get_pthreadpool();
   ASSERT_NE(threadpool_ptr4, nullptr);
   ASSERT_EQ(threadpool_ptr4, threadpool_ptr);
 }
@@ -170,18 +175,19 @@ TEST(TestNoThreadPoolGuard, TestThreadPoolGuard) {
 TEST(TestNoThreadPoolGuard, TestRunWithGuard) {
   const std::vector<int64_t> array = {1, 2, 3};
 
-  auto pool = torch::executorch::threadpool::get_threadpool();
+  auto pool = ::executorch::extension::threadpool::get_threadpool();
   int64_t inner = 0;
   {
     // Run on same thread
-    torch::executorch::threadpool::NoThreadPoolGuard g1;
+    ::executorch::extension::threadpool::NoThreadPoolGuard g1;
     auto fn = [&array, &inner](const size_t task_id) {
       inner += array[task_id];
     };
     pool->run(fn, 3);
 
     // confirm the guard is on
-    auto threadpool_ptr = torch::executorch::threadpool::get_pthreadpool();
+    auto threadpool_ptr =
+        ::executorch::extension::threadpool::get_pthreadpool();
     ASSERT_EQ(threadpool_ptr, nullptr);
   }
   ASSERT_EQ(inner, 6);
