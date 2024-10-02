@@ -280,7 +280,6 @@ template <typename To, typename From>
 void convert_and_store(From f, void* dst) {
   *reinterpret_cast<To*>(dst) = static_cast<To>(f);
 }
-} // namespace internal
 
 template <typename CTYPE_COMMON>
 using load_to_common_fn = CTYPE_COMMON (*)(const void*);
@@ -293,6 +292,15 @@ load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn_realhbbf16(
       t.scalar_type(), unused, op_name, TENSOR_CTYPE, [&]() {
         result = internal::load_and_convert<CTYPE_COMMON, TENSOR_CTYPE>;
       });
+  return result;
+}
+
+template <typename CTYPE_COMMON, const char* op_name>
+load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn_bool_or_byte(const Tensor& t) {
+  CTYPE_COMMON (*result)(const void*) = nullptr;
+  ET_SWITCH_TWO_TYPES(Bool, Byte, t.scalar_type(), unused, op_name, TENSOR_CTYPE, [&]() {
+        result = internal::load_and_convert<CTYPE_COMMON, TENSOR_CTYPE>;
+  });
   return result;
 }
 
@@ -309,6 +317,72 @@ get_store_common_to_tensor_fn_realhbbf16(const Tensor& t) {
       });
   return result;
 }
+
+template <typename CTYPE_COMMON, const char* op_name>
+store_common_to_tensor_fn<CTYPE_COMMON>
+get_store_common_to_tensor_fn_bool_or_byte(const Tensor& t) {
+  void (*result)(CTYPE_COMMON, void*) = nullptr;
+  ET_SWITCH_TWO_TYPES(Bool, Byte,
+      t.scalar_type(), unused, op_name, TENSOR_CTYPE, [&]() {
+        result = internal::convert_and_store<TENSOR_CTYPE, CTYPE_COMMON>;
+      });
+  return result;
+}
+} // namespace internal
+
+enum class SupportedTensorDtypes {
+  REALHBBF16,
+  BOOL_OR_BYTE,
+  SAME_AS_COMMON,
+};
+
+namespace internal {
+template <typename CTYPE_COMMON, const char* op_name>
+load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn(
+    const Tensor& t,
+    SupportedTensorDtypes dtypes) {
+  switch (dtypes) {
+    case SupportedTensorDtypes::REALHBBF16:
+      return get_load_to_common_fn_realhbbf16<CTYPE_COMMON, op_name>(t);
+    case SupportedTensorDtypes::BOOL_OR_BYTE:
+      return get_load_to_common_fn_bool_or_byte<CTYPE_COMMON, op_name>(t);
+    case SupportedTensorDtypes::SAME_AS_COMMON: {
+      constexpr auto common_scalar_type = CppTypeToScalarType<CTYPE_COMMON>::value;
+      ET_CHECK_MSG(
+          t.scalar_type() == common_scalar_type,
+          "Unhandled dtype %s for %s",
+          ::executorch::runtime::toString(common_scalar_type),
+          op_name);
+      return internal::load_and_convert<CTYPE_COMMON, CTYPE_COMMON>;
+    }
+  }
+  ET_CHECK(false);
+  return nullptr;
+}
+
+template <typename CTYPE_COMMON, const char* op_name>
+store_common_to_tensor_fn<CTYPE_COMMON> get_store_common_to_tensor_fn(
+    const Tensor& t,
+    SupportedTensorDtypes dtypes) {
+  switch (dtypes) {
+    case SupportedTensorDtypes::REALHBBF16:
+      return get_store_common_to_tensor_fn_realhbbf16<CTYPE_COMMON, op_name>(t);
+    case SupportedTensorDtypes::BOOL_OR_BYTE:
+      return get_store_common_to_tensor_fn_bool_or_byte<CTYPE_COMMON, op_name>(t);
+    case SupportedTensorDtypes::SAME_AS_COMMON: {
+      constexpr auto common_scalar_type = CppTypeToScalarType<CTYPE_COMMON>::value;
+      ET_CHECK_MSG(
+          t.scalar_type() == common_scalar_type,
+          "Unhandled dtype %s for %s",
+          ::executorch::runtime::toString(common_scalar_type),
+          op_name);
+      return internal::convert_and_store<CTYPE_COMMON, CTYPE_COMMON>;
+    }
+  }
+  ET_CHECK(false);
+  return nullptr;
+}
+} // namespace internal
 
 /**
  * Useful for binary elementwise operators. For each element of the inputs,
@@ -356,33 +430,45 @@ inline void apply_binary_elementwise_fn(
  *
  * In order to mitigate build time cost (straightforwardly |CTYPE_A| *
  * |CTYPE_B| * |CTYPE_C| * |CTYPE_OUT|), all arguments to compute_fun
- * are passed as CTYPE_COMMON. We require compute_fun to return
- * CTYPE_COMMON, and we require loading conversion functions from each
- * input type to CTYPE_COMMON and a storing conversion from
- * CTYPE_COMMON to CTYPE_OUT be provided. Each conversion function
- * must take a void* pointing to an element of the corresponding
- * tensor, load that element, and convert it to CTYPE_COMMON. The
- * storing conversion function must have the signature
- * void(CTYPE_COMMON, void*), convert the given element to CTYPE_OUT,
- * and store it to the given location.
+ * are passed as CTYPE_COMMON.
+ *
+ * Each tensor's supported dtypes set must be provided. The tensor
+ * will be checked to ensure that its dtype falls into that set.
+ *
+ * op_name is used to support dtype selective build, as with the
+ * ET_SWITCH family of macros. Note: because of C++17 quirks, you
+ * can't pass a string literal for op_name. Instead, you should do the
+ * following:
+ *
+ * static constexpr const char op_name[] = "my_op";
+ * apply_ternary_elementwise_fn<CTYPE_COMMON, op_name>.
  */
-template <typename CTYPE_COMMON, typename Op>
+template <typename CTYPE_COMMON, const char* op_name, typename Op>
 inline void apply_ternary_elementwise_fn(
     const Op& compute_fun,
     const Tensor& a,
+    SupportedTensorDtypes a_dtypes,
     const Tensor& b,
+    SupportedTensorDtypes b_dtypes,
     const Tensor& c,
+    SupportedTensorDtypes c_dtypes,
     const Tensor& out,
-    CTYPE_COMMON (*load_a_to_common)(const void*),
-    CTYPE_COMMON (*load_b_to_common)(const void*),
-    CTYPE_COMMON (*load_c_to_common)(const void*),
-    void (*store_common_to_out)(CTYPE_COMMON, void*)) {
+    SupportedTensorDtypes out_dtypes) {
   const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
   const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
   const bool c_is_broadcasted = !out.sizes().equals(c.sizes());
   const bool any_is_broadcasted =
       (a_is_broadcasted || b_is_broadcasted || c_is_broadcasted);
 
+  const auto load_a_to_common =
+      internal::get_load_to_common_fn<CTYPE_COMMON, op_name>(a, a_dtypes);
+  const auto load_b_to_common =
+      internal::get_load_to_common_fn<CTYPE_COMMON, op_name>(b, b_dtypes);
+  const auto load_c_to_common =
+      internal::get_load_to_common_fn<CTYPE_COMMON, op_name>(c, c_dtypes);
+  const auto store_common_to_out =
+      internal::get_store_common_to_tensor_fn<CTYPE_COMMON, op_name>(
+          out, out_dtypes);
   const char* const data_a = reinterpret_cast<const char*>(a.const_data_ptr());
   const char* const data_b = reinterpret_cast<const char*>(b.const_data_ptr());
   const char* const data_c = reinterpret_cast<const char*>(c.const_data_ptr());

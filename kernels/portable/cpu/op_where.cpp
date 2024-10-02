@@ -38,29 +38,25 @@ Tensor& where_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(cond, a, b, out), InvalidArgument, out);
 
-  constexpr auto name = "where.self_out";
+  static constexpr const char op_name[] = "where.self_out";
 
   ET_CHECK_MSG(
       cond_type == ScalarType::Bool || cond_type == ScalarType::Byte,
       "Unhandled dtype %s for where.self_out",
       torch::executor::toString(cond_type));
-  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
-    ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
-      using CTYPE_OUT =
-          typename torch::executor::promote_types<CTYPE_A, CTYPE_B>::type;
-      apply_ternary_elementwise_fn<CTYPE_OUT>(
-          [](const CTYPE_OUT val_a,
-             const CTYPE_OUT val_b,
-             const CTYPE_OUT val_c) { return val_c ? val_a : val_b; },
+  ET_SWITCH_REALHBBF16_TYPES(common_type, ctx, op_name, CTYPE_COMMON, [&]() {
+    apply_ternary_elementwise_fn<CTYPE_COMMON, op_name>(
+          [](const CTYPE_COMMON val_a,
+             const CTYPE_COMMON val_b,
+             const CTYPE_COMMON val_c) { return val_c ? val_a : val_b; },
           a,
+          SupportedTensorDtypes::REALHBBF16,
           b,
+          SupportedTensorDtypes::REALHBBF16,
           cond,
+          SupportedTensorDtypes::BOOL_OR_BYTE,
           out,
-          internal::load_and_convert<CTYPE_OUT, CTYPE_A>,
-          internal::load_and_convert<CTYPE_OUT, CTYPE_B>,
-          internal::load_and_convert<CTYPE_OUT, uint8_t>,
-          internal::convert_and_store<CTYPE_OUT, CTYPE_OUT>);
-    });
+          SupportedTensorDtypes::SAME_AS_COMMON);
   });
 
   return out;
