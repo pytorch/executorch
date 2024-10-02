@@ -121,6 +121,7 @@ void test_vulkan_sdpa(
     const int base_sequence_len,
     const int embedding_dim,
     const int num_heads,
+    const int num_kv_heads,
     const int batch_size,
     const int max_seq_len,
     at::ScalarType dtype = at::kFloat) {
@@ -129,13 +130,15 @@ void test_vulkan_sdpa(
   // K and V caches
 
   at::Tensor k_cache = at::zeros(
-      {batch_size, max_seq_len, num_heads, head_dim},
+      {batch_size, max_seq_len, num_kv_heads, head_dim},
       at::device(at::kCPU).dtype(dtype));
 
   at::Tensor v_cache = at::zeros_like(k_cache);
 
   // Reference input data
-  at::Tensor q = at::empty_like(k_cache);
+  at::Tensor q = at::empty(
+      {batch_size, max_seq_len, num_heads, head_dim},
+      at::device(at::kCPU).dtype(dtype));
   at::Tensor k = at::empty_like(k_cache);
   at::Tensor v = at::empty_like(k_cache);
 
@@ -219,8 +222,10 @@ void test_vulkan_sdpa(
     q = at::rand(
         {batch_size, seq_len, num_heads, head_dim},
         at::device(at::kCPU).dtype(dtype));
-    k = at::rand_like(q);
-    v = at::rand_like(q);
+    k = at::rand(
+        {batch_size, seq_len, num_kv_heads, head_dim},
+        at::device(at::kCPU).dtype(dtype));
+    v = at::rand_like(k);
 
     at::Tensor reference_out = torch::executor::native::sdpa_with_kv_cache_aten(
         q, k, v, k_cache, v_cache, input_pos, seq_len, {}, 0.0, true, {});
@@ -264,12 +269,33 @@ void test_vulkan_sdpa(
   }
 }
 
+TEST(VulkanSDPATest, test_sdpa_op_small_params) {
+  // Test SDPA with LLaMA3 model parameters
+  const int starting_input_pos = 0;
+  const int base_sequence_len = 3;
+  const int embedding_dim = 18;
+  const int num_heads = 6;
+  const int num_kv_heads = 2;
+  const int batch_size = 1;
+  const int max_seq_len = 12;
+
+  test_vulkan_sdpa(
+      starting_input_pos,
+      base_sequence_len,
+      embedding_dim,
+      num_heads,
+      num_kv_heads,
+      batch_size,
+      max_seq_len);
+}
+
 TEST(VulkanSDPATest, test_sdpa_op_llama3_params) {
   // Test SDPA with LLaMA3 model parameters
   const int starting_input_pos = 0;
   const int base_sequence_len = 3;
   const int embedding_dim = 2048;
-  const int num_heads = 8;
+  const int num_heads = 32;
+  const int num_kv_heads = 8;
   const int batch_size = 1;
   const int max_seq_len = 128;
 
@@ -278,6 +304,7 @@ TEST(VulkanSDPATest, test_sdpa_op_llama3_params) {
       base_sequence_len,
       embedding_dim,
       num_heads,
+      num_kv_heads,
       batch_size,
       max_seq_len);
 }

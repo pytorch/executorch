@@ -53,7 +53,11 @@ from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
 )
+from .source_transformation.quantized_kv_cache import (
+    replace_kv_cache_with_quantized_kv_cache,
+)
 from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
+
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
 from .source_transformation.sdpa import (
     replace_causal_mask,
@@ -205,6 +209,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=False,
         action="store_true",
         help="Whether or not to export a model using kv cache",
+    )
+    parser.add_argument(
+        "--quantize_kv_cache",
+        default=False,
+        action="store_true",
+        help="Whether or not to export a model using int8 per token quantized kv cache",
     )
     parser.add_argument(
         "--num_sharding",
@@ -381,25 +391,25 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--spin_qmode",
+        "--preq_mode",
         type=str,
         default=None,
         choices=["8da4w", "8da4w_output_8da8w"],
-        help="Quantization mode for SpinQuant. Only support 8da4w and 8da4w_output_8da8w right now.",
+        help="Quantization mode used for pre-quantized checkpoint. Only support 8da4w and 8da4w_output_8da8w right now.",
     )
 
     parser.add_argument(
-        "--spin_group_size",
+        "--preq_group_size",
         type=int,
         default=32,
-        help="group_size for SpinQuant weight quantization",
+        help="group_size for pre-quantized checkpoint weight quantization",
     )
 
     parser.add_argument(
-        "--spin_embedding_quantize",
+        "--preq_embedding_quantize",
         default="8,0",
         type=str,
-        help="type of embedding quantization for SpinQuant, '<bitwidth>,<groupsize>', e.g., '8,1024'.",
+        help="type of embedding quantization for pre-quantized checkpoint, '<bitwidth>,<groupsize>', e.g., '8,1024'.",
     )
 
     parser.add_argument(
@@ -460,7 +470,6 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
 
     Returns a LLMEdgeManager prior to calling export_to_edge with quantizers
     """
-
     # load model from checkpoint and params.json
     checkpoint_path = canonical_path(args.checkpoint) if args.checkpoint else None
     checkpoint_dir = (
@@ -879,6 +888,10 @@ def _get_source_transforms(  # noqa
 
     if args.use_sdpa_with_kv_cache:
         transforms.append(replace_sdpa_with_custom_op)
+
+    if args.quantize_kv_cache:
+        assert args.use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
+        transforms.append(replace_kv_cache_with_quantized_kv_cache)
 
     if args.use_kv_cache:
         if args.qnn:

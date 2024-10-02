@@ -11,6 +11,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/MatMul.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/RepeatInterleave.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Slice.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Softmax.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Transpose.h>
@@ -212,22 +213,41 @@ void sdpa_with_kv_cache_impl(
   add_cache_slice_view_node(
       graph, v_cache, input_pos_symint, q_projected, v_cache_sliced);
 
-  // Transpose sequence and head dims
-  const ValueRef q_transposed = graph.add_tensor_view(q_projected);
-  const ValueRef k_transposed = graph.add_tensor_view(k_cache_sliced);
-  const ValueRef v_transposed = graph.add_tensor_view(v_cache_sliced);
-
+  // Scalar values for various dims
   const ValueRef channels = graph.add_scalar<int64_t>(1);
   const ValueRef height = graph.add_scalar<int64_t>(2);
+  const ValueRef width = graph.add_scalar<int64_t>(3);
+
+  // Repeat interleave
+  const int64_t num_heads = graph.size_at<int64_t>(2, q_projected);
+  const int64_t num_kv_heads = graph.size_at<int64_t>(2, k_projected);
+
+  const ValueRef num_repeats =
+      graph.add_scalar<int64_t>(num_heads / num_kv_heads);
+
+  TmpTensor k_cache_sliced_repeated(
+      &graph, graph.sizes_of(q_projected), graph.dtype_of(k_cache_sliced));
+  TmpTensor v_cache_sliced_repeated(
+      &graph, graph.sizes_of(q_projected), graph.dtype_of(v_cache_sliced));
+
+  add_repeat_interleave_node(
+      graph, k_cache_sliced, num_repeats, height, k_cache_sliced_repeated);
+  add_repeat_interleave_node(
+      graph, v_cache_sliced, num_repeats, height, v_cache_sliced_repeated);
+
+  // Transpose sequence and head dims
+  const ValueRef q_transposed = graph.add_tensor_view(q_projected);
+  const ValueRef k_transposed = graph.add_tensor_view(k_cache_sliced_repeated);
+  const ValueRef v_transposed = graph.add_tensor_view(v_cache_sliced_repeated);
+
   add_transpose_view_node(graph, q_projected, channels, height, q_transposed);
   add_transpose_view_node(
-      graph, k_cache_sliced, channels, height, k_transposed);
+      graph, k_cache_sliced_repeated, channels, height, k_transposed);
   add_transpose_view_node(
-      graph, v_cache_sliced, channels, height, v_transposed);
+      graph, v_cache_sliced_repeated, channels, height, v_transposed);
 
   // Transpose K again to prepare for matmul
   const ValueRef k_transposed_2 = graph.add_tensor_view(k_transposed);
-  const ValueRef width = graph.add_scalar<int64_t>(3);
   add_transpose_view_node(graph, k_transposed, height, width, k_transposed_2);
 
   // Initialize attn_weight to the maximum possible size
