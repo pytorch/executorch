@@ -28,7 +28,7 @@ void resize_repeat_interleave_node(
 
   std::vector<int64_t> new_sizes = in->sizes();
   repeat_dim = normalize(repeat_dim, new_sizes.size());
-  new_sizes[repeat_dim] *= nrepeats;
+  new_sizes.at(repeat_dim) *= nrepeats;
 
   out->virtual_resize(new_sizes);
 }
