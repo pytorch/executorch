@@ -98,6 +98,7 @@ VulkanImage::VulkanImage()
       allocator_(VK_NULL_HANDLE),
       memory_{},
       owns_memory_(false),
+      owns_view_(false),
       is_copy_(false),
       handles_{
           VK_NULL_HANDLE,
@@ -121,6 +122,7 @@ VulkanImage::VulkanImage(
       allocator_(vma_allocator),
       memory_{},
       owns_memory_{allocate_memory},
+      owns_view_{false},
       is_copy_(false),
       handles_{
           VK_NULL_HANDLE,
@@ -168,6 +170,7 @@ VulkanImage::VulkanImage(
         &(memory_.allocation),
         nullptr));
     // Only create the image view if the image has been bound to memory
+    owns_view_ = true;
     create_image_view();
   } else {
     VK_CHECK(vkCreateImage(
@@ -182,6 +185,7 @@ VulkanImage::VulkanImage(const VulkanImage& other) noexcept
       allocator_(other.allocator_),
       memory_(other.memory_),
       owns_memory_{false},
+      owns_view_{false},
       is_copy_(true),
       handles_(other.handles_),
       layout_(other.layout_) {}
@@ -193,6 +197,7 @@ VulkanImage::VulkanImage(VulkanImage&& other) noexcept
       allocator_(other.allocator_),
       memory_(std::move(other.memory_)),
       owns_memory_(other.owns_memory_),
+      owns_view_(other.owns_view_),
       is_copy_(other.is_copy_),
       handles_(other.handles_),
       layout_(other.layout_) {
@@ -225,15 +230,15 @@ VulkanImage& VulkanImage::operator=(VulkanImage&& other) noexcept {
 }
 
 VulkanImage::~VulkanImage() {
+  if (owns_view_ && handles_.image_view != VK_NULL_HANDLE) {
+    vkDestroyImageView(this->device(), handles_.image_view, nullptr);
+  }
+
   // Do not destroy any resources if this class instance is a copy of another
   // class instance, since this means that this class instance does not have
   // ownership of the underlying resource.
   if (is_copy_) {
     return;
-  }
-
-  if (handles_.image_view != VK_NULL_HANDLE) {
-    vkDestroyImageView(this->device(), handles_.image_view, nullptr);
   }
 
   if (handles_.image != VK_NULL_HANDLE) {
