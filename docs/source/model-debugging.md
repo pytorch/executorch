@@ -35,7 +35,7 @@ For a real example reflecting the steps below, please refer to [example_runner.c
 
 
 ### Accessing the debug outputs post run using the Inspector API's
-Once a model has been run, using the generated ETDump and debug buffers, users can leverage the [Inspector API's](./sdk-inspector.rst) to inspect these debug outputs.
+Once a model has been run, using the generated ETDump and debug buffers, users can leverage the [Inspector API's](./model-inspector.rst) to inspect these debug outputs.
 
 ```python
 from executorch.devtools import Inspector
