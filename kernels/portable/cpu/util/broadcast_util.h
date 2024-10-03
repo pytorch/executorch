@@ -313,29 +313,44 @@ inline void apply_binary_elementwise_fn(
  * Useful for ternary elementwise operators. For each element of the inputs,
  * perform a computation and write to the corresponding element of the output.
  * Tensor broadcasting is applied wherever it is required.
+ *
+ * In order to mitigate build time cost (straightforwardly |CTYPE_A| *
+ * |CTYPE_B| * |CTYPE_C| * |CTYPE_OUT|), all arguments to compute_fun
+ * are passed as CTYPE_COMMON. We require compute_fun to return
+ * CTYPE_COMMON, and we require loading conversion functions from each
+ * input type to CTYPE_COMMON and a storing conversion from
+ * CTYPE_COMMON to CTYPE_OUT be provided. Each conversion function
+ * must take a void* pointing to an element of the corresponding
+ * tensor, load that element, and convert it to CTYPE_COMMON. The
+ * storing conversion function must have the signature
+ * void(CTYPE_COMMON, void*), convert the given element to CTYPE_OUT,
+ * and store it to the given location.
  */
-template <
-    typename CTYPE_A,
-    typename CTYPE_B,
-    typename CTYPE_C,
-    typename CTYPE_OUT,
-    typename Op>
+template <typename CTYPE_COMMON, typename Op>
 inline void apply_ternary_elementwise_fn(
     const Op& compute_fun,
     const Tensor& a,
     const Tensor& b,
     const Tensor& c,
-    const Tensor& out) {
+    const Tensor& out,
+    CTYPE_COMMON (*load_a_to_common)(const void*),
+    CTYPE_COMMON (*load_b_to_common)(const void*),
+    CTYPE_COMMON (*load_c_to_common)(const void*),
+    void (*store_common_to_out)(CTYPE_COMMON, void*)) {
   const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
   const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
   const bool c_is_broadcasted = !out.sizes().equals(c.sizes());
   const bool any_is_broadcasted =
       (a_is_broadcasted || b_is_broadcasted || c_is_broadcasted);
 
-  const CTYPE_A* const data_a = a.const_data_ptr<CTYPE_A>();
-  const CTYPE_B* const data_b = b.const_data_ptr<CTYPE_B>();
-  const CTYPE_C* const data_c = c.const_data_ptr<CTYPE_C>();
-  CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
+  const char* const data_a = reinterpret_cast<const char*>(a.const_data_ptr());
+  const char* const data_b = reinterpret_cast<const char*>(b.const_data_ptr());
+  const char* const data_c = reinterpret_cast<const char*>(c.const_data_ptr());
+  const auto a_element_size = a.element_size();
+  const auto b_element_size = b.element_size();
+  const auto c_element_size = c.element_size();
+  const auto out_element_size = out.element_size();
+  char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
 
   for (size_t i = 0; i < out.numel(); ++i) {
     size_t a_linear_index = i;
@@ -357,8 +372,11 @@ inline void apply_ternary_elementwise_fn(
       }
     }
 
-    data_out[i] = compute_fun(
-        data_a[a_linear_index], data_b[b_linear_index], data_c[c_linear_index]);
+    auto result = compute_fun(
+        load_a_to_common(&data_a[a_linear_index * a_element_size]),
+        load_b_to_common(&data_b[b_linear_index * b_element_size]),
+        load_c_to_common(&data_c[c_linear_index * c_element_size]));
+    store_common_to_out(result, &data_out[i * out_element_size]);
   }
 }
 
