@@ -48,16 +48,29 @@ Tensor& where_out(
     ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
       using CTYPE_OUT =
           typename torch::executor::promote_types<CTYPE_A, CTYPE_B>::type;
-      apply_ternary_elementwise_fn<CTYPE_A, CTYPE_B, uint8_t, CTYPE_OUT>(
-          [](const CTYPE_A val_a, const CTYPE_B val_b, const uint8_t val_c) {
-            CTYPE_OUT a_casted = static_cast<CTYPE_OUT>(val_a);
-            CTYPE_OUT b_casted = static_cast<CTYPE_OUT>(val_b);
-            return val_c ? a_casted : b_casted;
-          },
+      apply_ternary_elementwise_fn<CTYPE_OUT>(
+          [](const CTYPE_OUT val_a,
+             const CTYPE_OUT val_b,
+             const CTYPE_OUT val_c) { return val_c ? val_a : val_b; },
           a,
           b,
           cond,
-          out);
+          out,
+          [](const void* a_ptr) {
+            return static_cast<CTYPE_OUT>(
+                *reinterpret_cast<const CTYPE_A*>(a_ptr));
+          },
+          [](const void* b_ptr) {
+            return static_cast<CTYPE_OUT>(
+                *reinterpret_cast<const CTYPE_B*>(b_ptr));
+          },
+          [](const void* c_ptr) {
+            return static_cast<CTYPE_OUT>(
+                *reinterpret_cast<const uint8_t*>(c_ptr));
+          },
+          [](CTYPE_OUT result, void* out) {
+            *reinterpret_cast<CTYPE_OUT*>(out) = result;
+          });
     });
   });
 
