@@ -18,7 +18,7 @@ them to debug and visualize their model.
 * Delegate debug handle maps
 
 The ``ETRecord`` object itself is intended to be opaque to users and they should not access any components inside it directly.
-It should be provided to the `Inspector API <sdk-inspector.html>`__ to link back performance and debug data sourced from the runtime back to the Python source code.
+It should be provided to the `Inspector API <model-inspector.html>`__ to link back performance and debug data sourced from the runtime back to the Python source code.
 
 Generating an ``ETRecord``
 --------------------------
@@ -37,4 +37,4 @@ they are interested in working with via our tooling.
 Using an ``ETRecord``
 ---------------------
 
-Pass the ``ETRecord`` as an optional argument into the `Inspector API <sdk-inspector.html>`__ to access this data and  do post-run analysis.
+Pass the ``ETRecord`` as an optional argument into the `Inspector API <model-inspector.html>`__ to access this data and  do post-run analysis.
