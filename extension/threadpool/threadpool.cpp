@@ -7,18 +7,17 @@
  */
 
 #include <executorch/extension/threadpool/threadpool.h>
-#include <executorch/extension/threadpool/threadpool_guard.h>
-#include <executorch/runtime/platform/assert.h>
+
 #include <algorithm>
-
-#include <cpuinfo.h>
-
 #include <atomic>
 #include <memory>
 
-namespace torch {
-namespace executorch {
-namespace threadpool {
+#include <executorch/extension/threadpool/threadpool_guard.h>
+#include <executorch/runtime/platform/assert.h>
+
+#include <cpuinfo.h>
+
+namespace executorch::extension::threadpool {
 
 #if !(defined(WIN32))
 namespace {
@@ -138,6 +137,4 @@ pthreadpool_t get_pthreadpool() {
   return threadpool->threadpool_.get();
 }
 
-} // namespace threadpool
-} // namespace executorch
-} // namespace torch
+} // namespace executorch::extension::threadpool
