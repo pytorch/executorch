@@ -391,25 +391,42 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--spin_qmode",
+        "-qat",
+        "--use_qat",
+        default=False,
+        action="store_true",
+        help="Whether the checkpoin is pre-quantized with QAT or not.",
+    )
+
+    parser.add_argument(
+        "-lora",
+        "--use_lora",
+        type=int,
+        default=0,
+        help="Whether the checkpoint contains LoRA adaptors or not. 0: no LoRA adaptors; "
+        "otherwise, it means the rank of LoRA adaptors. Currently it only works if QAT is enabled.",
+    )
+
+    parser.add_argument(
+        "--preq_mode",
         type=str,
         default=None,
         choices=["8da4w", "8da4w_output_8da8w"],
-        help="Quantization mode for SpinQuant. Only support 8da4w and 8da4w_output_8da8w right now.",
+        help="Quantization mode used for pre-quantized checkpoint. Only support 8da4w and 8da4w_output_8da8w right now.",
     )
 
     parser.add_argument(
-        "--spin_group_size",
+        "--preq_group_size",
         type=int,
         default=32,
-        help="group_size for SpinQuant weight quantization",
+        help="group_size for pre-quantized checkpoint weight quantization",
     )
 
     parser.add_argument(
-        "--spin_embedding_quantize",
+        "--preq_embedding_quantize",
         default="8,0",
         type=str,
-        help="type of embedding quantization for SpinQuant, '<bitwidth>,<groupsize>', e.g., '8,1024'.",
+        help="type of embedding quantization for pre-quantized checkpoint, '<bitwidth>,<groupsize>', e.g., '8,1024'.",
     )
 
     parser.add_argument(

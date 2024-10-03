@@ -34,9 +34,9 @@ Tensor& binary_ufunc_realb_realb_to_realb_logical(
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, __func__, CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, __func__, CTYPE_B, [&]() {
-      ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, __func__, CTYPE_OUT, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, __func__, CTYPE_A, [&]() {
+    ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, __func__, CTYPE_B, [&]() {
+      ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, __func__, CTYPE_OUT, [&]() {
         apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
             [fn](const CTYPE_A val_a, const CTYPE_B val_b) {
               bool a_casted = static_cast<bool>(val_a);
