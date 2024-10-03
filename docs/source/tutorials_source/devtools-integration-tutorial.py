@@ -213,7 +213,7 @@ inspector_patch_print.stop()
 # Analyzing with an Inspector
 # ---------------------------
 #
-# ``Inspector`` provides 2 ways of accessing ingested information: `EventBlocks <../sdk-inspector#eventblock-class>`__
+# ``Inspector`` provides 2 ways of accessing ingested information: `EventBlocks <../model-inspector#eventblock-class>`__
 # and ``DataFrames``. These mediums give users the ability to perform custom
 # analysis about their model performance.
 #
@@ -282,7 +282,7 @@ print(inspector.find_total_for_module("L__self___conv2"))
 
 ######################################################################
 # Note: ``find_total_for_module`` is a special first class method of
-# `Inspector <../sdk-inspector.html>`__
+# `Inspector <../model-inspector.html>`__
 
 ######################################################################
 # Conclusion
@@ -298,4 +298,4 @@ print(inspector.find_total_for_module("L__self___conv2"))
 # - `ExecuTorch Developer Tools Overview <../devtools-overview.html>`__
 # - `ETRecord <../etrecord.html>`__
 # - `ETDump <../etdump.html>`__
-# - `Inspector <../sdk-inspector.html>`__
+# - `Inspector <../model-inspector.html>`__

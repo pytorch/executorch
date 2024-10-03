@@ -206,7 +206,7 @@ Topics in this section will help you get started with ExecuTorch.
    etdump
    sdk-profiling
    model-debugging
-   sdk-inspector
+   model-inspector
    memory-planning-inspection
    delegate-debugging
    devtools-tutorial

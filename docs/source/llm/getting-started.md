@@ -843,7 +843,7 @@ This prints the performance data in a tabular format in “inspector_out.txt”,
 ![](../_static/img/llm_manual_print_data_tabular.png)
 <a href="../_static/img/llm_manual_print_data_tabular.png" target="_blank">View in full size</a>
 
-To learn more about the Inspector and the rich functionality it provides, see the [Inspector API Reference](../sdk-inspector.md).
+To learn more about the Inspector and the rich functionality it provides, see the [Inspector API Reference](../model-inspector.md).
 
 ## Custom Kernels
 With the ExecuTorch custom operator APIs, custom operator and kernel authors can easily bring in their kernel into PyTorch/ExecuTorch.
