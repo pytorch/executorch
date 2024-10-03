@@ -204,7 +204,7 @@ Topics in this section will help you get started with ExecuTorch.
    bundled-io
    etrecord
    etdump
-   sdk-profiling
+   runtime-profiling
    model-debugging
    model-inspector
    memory-planning-inspection
