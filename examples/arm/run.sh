@@ -71,6 +71,12 @@ et_root_dir=$(cd ${script_dir}/../.. && pwd)
 et_build_dir=${et_root_dir}/cmake-out
 
 fvp_model=FVP_Corstone_SSE-300_Ethos-U55
+if [[ ${target} =~ "ethos-u85" ]]
+then
+    echo "target is ethos-u85 variant so switching to CS320 FVP"
+    fvp_model=FVP_Corstone_SSE-320
+fi
+
 toolchain_cmake=${script_dir}/ethos-u-setup/arm-none-eabi-gcc.cmake
 _setup_msg="please refer to ${script_dir}/ethos-u-setup/setup.sh to properly install necessary tools."
 
@@ -82,8 +88,7 @@ function generate_pte_file() {
 
     local model_filename=${model}_arm_${target}.pte
     if [[ "${model_compiler_flags}" == *"--delegate"* ]]; then
-	# Name aligned with default aot_arm_compiler output - run.sh only supports
-	# running on Corstone-300 with Ethos-U55 FVP at the moment.
+	# Name aligned with default aot_arm_compiler output
         model_filename=${model}_arm_delegate_${target}.pte
     fi
     cd $et_root_dir
@@ -92,8 +97,9 @@ function generate_pte_file() {
     pte_file=$(realpath ${output_folder}/${model_filename})
     rm -f "${pte_file}"
 
+    SO_EXT=$(python3 -c 'import platform; print({"Darwin": "dylib", "Linux": "so", "Windows": "dll"}.get(platform.system(), None))')
     # We are using the aot_lib from build_quantization_aot_lib below
-    SO_LIB=$(find cmake-out-aot-lib -name libquantized_ops_aot_lib.so)
+    SO_LIB=$(find cmake-out-aot-lib -name libquantized_ops_aot_lib.${SO_EXT})
 
     python3 -m examples.arm.aot_arm_compiler --model_name="${model}" --target=${target} ${model_compiler_flags} --output ${output_folder} --so_library="$SO_LIB" 1>&2
     [[ -f ${pte_file} ]] || { >&2 echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
@@ -118,8 +124,7 @@ function build_quantization_aot_lib()
         -Bcmake-out-aot-lib \
         "${et_root_dir}"
 
-    n=$(nproc)
-    cmake --build cmake-out-aot-lib -j"$((n - 5))" -- quantized_ops_aot_lib
+    cmake --build cmake-out-aot-lib --parallel -- quantized_ops_aot_lib
 }
 
 
@@ -147,8 +152,7 @@ function build_executorch() {
 
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
-    n=$(nproc)
-    cmake --build ${et_build_dir} -j"$((n - 5))" --target install --config Release
+    cmake --build ${et_build_dir} --parallel --target install --config Release
 
     cmake                                                 \
         -DCMAKE_INSTALL_PREFIX=${et_build_dir}            \
@@ -158,7 +162,7 @@ function build_executorch() {
         -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
         -B"${et_build_dir}"/examples/arm                  \
         "${et_root_dir}"/examples/arm
-    cmake --build ${et_build_dir}/examples/arm -- -j"$((n - 5))"
+    cmake --build ${et_build_dir}/examples/arm --parallel --
 
     set +x
 
@@ -174,13 +178,16 @@ function build_executorch_runner() {
     local pte=${1}
     if [[ ${target} == *"ethos-u55"*  ]]; then
         local target_cpu=cortex-m55
+	local target_board=corstone-300
     else
         local target_cpu=cortex-m85
+	local target_board=corstone-320
     fi
     cd ${script_dir}/executor_runner
-    cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} \
+    cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}     \
 	  -DTARGET_CPU=${target_cpu}                    \
-      -DETHOSU_TARGET_NPU_CONFIG=${target}          \
+	  -DTARGET_BOARD=${target_board}                \
+	  -DETHOSU_TARGET_NPU_CONFIG=${target}          \
 	  -B ${executor_runner_path}/cmake-out          \
 	  -DETHOS_SDK_PATH:PATH=${ethos_u_root_dir}     \
 	  -DET_DIR_PATH:PATH=${et_root_dir}             \
@@ -189,8 +196,7 @@ function build_executorch_runner() {
 	  -DPYTHON_EXECUTABLE=$(which python3)
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
-    n=$(nproc)
-    cmake --build ${executor_runner_path}/cmake-out -- -j"$((n - 5))" arm_executor_runner
+    cmake --build ${executor_runner_path}/cmake-out --parallel -- arm_executor_runner
     echo "[${FUNCNAME[0]}] Generated baremetal elf file:"
     find ${executor_runner_path}/cmake-out -name "arm_executor_runner"
     echo "executable_text: $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec size {} \; | grep -v filename | awk '{print $1}') bytes"
@@ -205,9 +211,10 @@ function run_fvp() {
     elf=$(find ${executor_runner_path} -name "${elf_name}")
     [[ ! -f $elf ]] && { echo "[${FUNCNAME[0]}]: Unable to find executor_runner elf: ${elf}"; exit 1; }
     num_macs=$(echo ${target} | cut -d - -f 3)
+
     if [[ ${target} == *"ethos-u55"*  ]]; then
-        echo "Running ${elf} for ${target} run with FVP_Corstone_SSE-300_Ethos-U55 num_macs:${num_macs}"
-        FVP_Corstone_SSE-300_Ethos-U55                          \
+        echo "Running ${elf} for ${target} run with FVP:${fvp_model} num_macs:${num_macs}"
+        ${fvp_model}                                            \
             -C cpu0.CFGITCMSZ=11                                \
             -C ethosu.num_macs=${num_macs}                      \
             -C mps3_board.visualisation.disable-visualisation=1 \
@@ -217,6 +224,17 @@ function run_fvp() {
             -a "${elf}"                                         \
             --timelimit 120 || true # seconds
         echo "[${FUNCNAME[0]} Simulation complete, $?"
+    elif [[ ${target} == *"ethos-u85"*  ]]; then
+	${fvp_model}                                            \
+	    -C mps4_board.subsystem.cpu0.CFGITCMSZ=11           \
+	    -C mps4_board.subsystem.ethosu.num_macs=${num_macs} \
+	    -C mps4_board.visualisation.disable-visualisation=1 \
+	    -C vis_hdlcd.disable_visualisation=1                \
+	    -C mps4_board.telnetterminal0.start_telnet=0        \
+	    -C mps4_board.uart0.out_file='-'                    \
+	    -C mps4_board.uart0.shutdown_on_eot=1               \
+            -a "${elf}"                                         \
+            --timelimit 120 || true # seconds
     else
         echo "Running ${elf} for ${target} is not supported"
         exit 1

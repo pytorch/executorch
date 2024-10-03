@@ -49,32 +49,43 @@ def et_operator_library(
         model = None,
         include_all_operators = False,
         ops_schema_yaml_target = None,
+        server_generated_yaml_target = None,
         **kwargs):
-    genrule_cmd = [
-        "$(exe //executorch/codegen/tools:gen_oplist)",
-        "--output_path=${OUT}",
-    ]
-    if ops_schema_yaml_target:
-        genrule_cmd.append(
-            "--ops_schema_yaml_path=$(location {})".format(ops_schema_yaml_target),
-        )
-    if ops:
-        genrule_cmd.append(
-            "--root_ops=" + ",".join(ops),
-        )
-    if ops_dict:
-        ops_dict_json = struct_to_json(ops_dict)
-        genrule_cmd.append(
-            "--ops_dict='{}'".format(ops_dict_json),
-        )
-    if model:
-        genrule_cmd.append(
-            "--model_file_path=$(location {})".format(model),
-        )
-    if include_all_operators:
-        genrule_cmd.append(
-            "--include_all_operators",
-        )
+    # do a dummy copy if server_generated_yaml_target is set
+    if server_generated_yaml_target:
+        if include_all_operators or ops_schema_yaml_target or model or ops or ops_dict:
+            fail("Since server_generated_yaml_target is set, ops, ops_dict, include_all_operators and ops_schema_yaml_target shouldn't be set.")
+        genrule_cmd = [
+            "cp",
+            "$(location {})".format(server_generated_yaml_target),
+            "$OUT",
+        ]
+    else:
+        genrule_cmd = [
+            "$(exe //executorch/codegen/tools:gen_oplist)",
+            "--output_path=${OUT}",
+        ]
+        if ops_schema_yaml_target:
+            genrule_cmd.append(
+                "--ops_schema_yaml_path=$(location {})".format(ops_schema_yaml_target),
+            )
+        if ops:
+            genrule_cmd.append(
+                "--root_ops=" + ",".join(ops),
+            )
+        if ops_dict:
+            ops_dict_json = struct_to_json(ops_dict)
+            genrule_cmd.append(
+                "--ops_dict='{}'".format(ops_dict_json),
+            )
+        if model:
+            genrule_cmd.append(
+                "--model_file_path=$(location {})".format(model),
+            )
+        if include_all_operators:
+            genrule_cmd.append(
+                "--include_all_operators",
+            )
 
     # TODO(larryliu0820): Remove usages of this flag.
     if "define_static_targets" in kwargs:
