@@ -6,17 +6,16 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/runtime/platform/assert.h>
+#include <executorch/extension/threadpool/cpuinfo_utils.h>
+
 #include <fstream>
 #include <mutex>
 #include <string>
 #include <vector>
 
-#include "cpuinfo_utils.h"
+#include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executorch {
-namespace cpuinfo {
+namespace executorch::extension::cpuinfo {
 
 // Ignore revisions (last digit (4 LSBs))
 #define CPUINFO_ARM_MIDR_CORTEX_A520 UINT32_C(0x410FD800)
@@ -171,6 +170,4 @@ uint32_t get_num_performant_cores() {
   }
 }
 
-} // namespace cpuinfo
-} // namespace executorch
-} // namespace torch
+} // namespace executorch::extension::cpuinfo

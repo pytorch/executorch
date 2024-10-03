@@ -124,8 +124,11 @@ class TestSimpleSplit(unittest.TestCase):
         self._test_split_tosa_MI_pipeline(self.SplitWithSizes(), test_data)
 
     @parameterized.expand(Split.test_data)
-    def test_split_n_out_tosa_MI(self, test_data: test_data_t):
+    def test_split_one_out_tosa_MI(self, test_data: test_data_t):
         self._test_split_tosa_MI_pipeline(self.SplitSingleOut(), test_data)
+
+    @parameterized.expand(Split.test_data)
+    def test_split_two_out_tosa_MI(self, test_data: test_data_t):
         self._test_split_tosa_MI_pipeline(self.SplitTwoOut(), test_data)
 
     @parameterized.expand(Split.test_data)
