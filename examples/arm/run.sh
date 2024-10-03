@@ -92,8 +92,9 @@ function generate_pte_file() {
     pte_file=$(realpath ${output_folder}/${model_filename})
     rm -f "${pte_file}"
 
+    SO_EXT=$(python3 -c 'import platform; print({"Darwin": "dylib", "Linux": "so", "Windows": "dll"}.get(platform.system(), None))')
     # We are using the aot_lib from build_quantization_aot_lib below
-    SO_LIB=$(find cmake-out-aot-lib -name libquantized_ops_aot_lib.so)
+    SO_LIB=$(find cmake-out-aot-lib -name libquantized_ops_aot_lib.${SO_EXT})
 
     python3 -m examples.arm.aot_arm_compiler --model_name="${model}" --target=${target} ${model_compiler_flags} --output ${output_folder} --so_library="$SO_LIB" 1>&2
     [[ -f ${pte_file} ]] || { >&2 echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
