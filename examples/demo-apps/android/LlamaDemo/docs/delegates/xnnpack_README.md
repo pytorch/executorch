@@ -135,6 +135,7 @@ export ANDROID_NDK=<path_to_android_ndk>
 export ANDROID_ABI=arm64-v8a
 ```
 *Note: <path_to_android_ndk> is the root for the NDK, which is usually under ~/Library/Android/sdk/ndk/XX.Y.ZZZZZ for macOS, and contains NOTICE and README.md. We use <path_to_android_ndk>/build/cmake/android.toolchain.cmake for CMake to cross-compile.*
+
 3. Build the Android Java extension code:
 ```
 pushd extension/android
