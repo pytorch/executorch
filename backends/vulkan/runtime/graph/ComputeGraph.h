@@ -378,6 +378,19 @@ class ComputeGraph final {
     return values_.at(idx).toString();
   }
 
+  template <
+      typename T,
+      typename std::enable_if<
+          std::is_integral<T>::value && std::is_signed<T>::value,
+          int>::type = 0>
+  T extract_whcn_dim(const ValueRef idx, const int64_t ndim) {
+    T dim = extract_scalar<T>(idx);
+    // Normalize dim to account for negative indexing
+    dim = (dim % ndim + ndim) % ndim;
+    // Assume original value is NCHW ordering, obtain the WHCN ordering
+    return ndim - 1 - dim;
+  }
+
   //
   // Utility functions
   //
