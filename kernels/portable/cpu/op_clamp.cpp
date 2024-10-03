@@ -215,7 +215,7 @@ Tensor& clamp_tensor_out(
   static constexpr const char op_name[] = "clamp.Tensor_out";
 
   ET_SWITCH_REALHB_TYPES(common_type, ctx, op_name, CTYPE_COMMON, [&]() {
-    apply_ternary_elementwise_fn<CTYPE_COMMON>(
+    apply_ternary_elementwise_fn<CTYPE_COMMON, op_name>(
         [has_min, has_max](
             const CTYPE_COMMON val_in,
             const CTYPE_COMMON val_min,
@@ -230,13 +230,13 @@ Tensor& clamp_tensor_out(
           return val_out;
         },
         in,
+        SupportedTensorDtypes::REALHBBF16,
         min,
+        SupportedTensorDtypes::REALHBBF16,
         max,
+        SupportedTensorDtypes::REALHBBF16,
         out,
-        get_load_to_common_fn_realhbbf16<CTYPE_COMMON, op_name>(in),
-        get_load_to_common_fn_realhbbf16<CTYPE_COMMON, op_name>(min),
-        get_load_to_common_fn_realhbbf16<CTYPE_COMMON, op_name>(max),
-        get_store_common_to_tensor_fn_realhbbf16<CTYPE_COMMON, op_name>(out));
+        SupportedTensorDtypes::REALHBBF16);
   });
 
   return out;
