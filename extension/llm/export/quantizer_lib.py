@@ -148,6 +148,7 @@ def get_qnn_quantizer(
     try:
         from executorch.backends.qualcomm.quantizer.custom_annotation import (  # pyre-fixme[21]
             custom_annotate_llama_matmul_16a8w,
+            custom_annotate_matmul_16a8w,
         )
 
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.quantizer.quantizer`
@@ -199,7 +200,8 @@ def get_qnn_quantizer(
         )
         qnn_quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
-        custom_annotations = (custom_annotate_llama_matmul_16a8w,)
+        # custom_annotations = (custom_annotate_llama_matmul_16a8w,)
+        custom_annotations = (custom_annotate_matmul_16a8w,)
     else:
         raise AssertionError(
             f"No support for quant type {quant_config}. Support 8a8w, 16a16w and 16a4w."
@@ -209,11 +211,11 @@ def get_qnn_quantizer(
         quantization_mode is None
     ), "Currently qnn backend only supports QnnQuantizer via pt2e flow"
     qnn_quantizer.add_custom_quant_annotations(custom_annotations)
-    qnn_quantizer.add_discard_ops(
-        [
-            torch.ops.aten.embedding.default,
-        ]
-    )
+    # qnn_quantizer.add_discard_ops(
+    #     [
+    #         torch.ops.aten.embedding.default,
+    #     ]
+    # )
 
     return qnn_quantizer, quant_dtype
 

@@ -53,21 +53,23 @@ from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
 )
-from .source_transformation.quantized_kv_cache import (
-    replace_kv_cache_with_quantized_kv_cache,
-)
+
+# from .source_transformation.quantized_kv_cache import (
+#     replace_kv_cache_with_quantized_kv_cache,
+# )
 from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
 
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
-from .source_transformation.sdpa import (
-    replace_causal_mask,
-    replace_kv_cache_with_coreml_kv_cache,
-    replace_kv_cache_with_simple_kv_cache,
-    replace_sdpa_with_coreml_sdpa,
-    replace_sdpa_with_custom_op,
-    replace_sdpa_with_flex_sdpa,
-    replace_sdpa_with_simple_sdpa,
-)
+
+# from .source_transformation.sdpa import (
+#     replace_causal_mask,
+#     replace_kv_cache_with_coreml_kv_cache,
+#     replace_kv_cache_with_simple_kv_cache,
+#     replace_sdpa_with_coreml_sdpa,
+#     replace_sdpa_with_custom_op,
+#     replace_sdpa_with_flex_sdpa,
+#     replace_sdpa_with_simple_sdpa,
+# )
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -910,23 +912,20 @@ def _get_source_transforms(  # noqa
         assert args.use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
         transforms.append(replace_kv_cache_with_quantized_kv_cache)
 
+    if args.qnn:
+        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
+        from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
+
+        # transforms.append(replace_kv_cache_with_simple_kv_cache)
+        # transforms.append(replace_sdpa_with_flex_sdpa)
+        # transforms.append(replace_causal_mask)
+        transforms.append(replace_rms_norm_with_native_rms_norm)
+        if args.optimized_rotation_path:
+            transforms.append(fuse_layer_norms)
+            transforms.append(get_model_with_r1_r2(args.optimized_rotation_path))
+        transforms.append(convert_linear_to_conv2d)
     if args.use_kv_cache:
-        if args.qnn:
-            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
-            from executorch.backends.qualcomm.utils.utils import (
-                convert_linear_to_conv2d,
-            )
-
-            transforms.append(replace_kv_cache_with_simple_kv_cache)
-            transforms.append(replace_sdpa_with_flex_sdpa)
-            transforms.append(replace_causal_mask)
-            transforms.append(replace_rms_norm_with_native_rms_norm)
-            if args.optimized_rotation_path:
-                transforms.append(fuse_layer_norms)
-                transforms.append(get_model_with_r1_r2(args.optimized_rotation_path))
-            transforms.append(convert_linear_to_conv2d)
-
-        elif args.mps:
+        if args.mps:
             # Currently mps doesn't support sdpa op, use the simpler decomposition
             # to get free perf gain.
             transforms.append(replace_sdpa_with_simple_sdpa)

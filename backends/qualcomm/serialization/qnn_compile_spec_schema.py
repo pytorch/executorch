@@ -34,6 +34,7 @@ class QcomChipset(IntEnum):
     SM8475 = 42  # v69
     SM8550 = 43  # v73
     SM8650 = 57  # v75
+    SSG2115P = 46  # v73... I wish I can know where the number comes from...
 
 
 @dataclass
@@ -47,6 +48,7 @@ _soc_info_table = {
     QcomChipset.SM8475: SocInfo(QcomChipset.SM8475, HtpInfo(HtpArch.V69, 8)),
     QcomChipset.SM8550: SocInfo(QcomChipset.SM8550, HtpInfo(HtpArch.V73, 8)),
     QcomChipset.SM8650: SocInfo(QcomChipset.SM8650, HtpInfo(HtpArch.V75, 8)),
+    QcomChipset.SSG2115P: SocInfo(QcomChipset.SSG2115P, HtpInfo(HtpArch.V73, 2)),
 }
 
 

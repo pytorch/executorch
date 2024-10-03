@@ -41,7 +41,7 @@ def _to_core_aten(
         model, example_inputs, dynamic_shapes=dynamic_shapes, strict=strict
     )
     if verbose:
-        logging.info(f"Core ATen graph:\n{core_aten_ep.graph}")
+        print(f"Core ATen graph:\n{core_aten_ep.graph}")
     return core_aten_ep
 
 
@@ -62,7 +62,7 @@ def _core_aten_to_edge(
         compile_config=edge_compile_config,
     )
     if verbose:
-        logging.info(f"Exported graph:\n{edge_manager.exported_program()}")
+        print(f"Exported graph:\n{edge_manager.exported_program()}")
     return edge_manager
 
 
@@ -117,7 +117,7 @@ def save_pte_program(
     try:
         with open(filename, "wb") as file:
             prog.write_to_file(file)
-            logging.info(f"Saved exported program to {filename}")
+            print(f"Saved exported program to {filename}")
     except Exception as e:
         logging.error(f"Error while saving to {filename}: {e}")
 

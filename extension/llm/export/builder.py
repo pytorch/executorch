@@ -9,6 +9,7 @@
 # ExecuTorch.
 
 import logging
+import os
 from enum import Enum
 from typing import Any, Callable, List, Optional
 
@@ -34,6 +35,7 @@ from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 from torch.nn.attention import SDPBackend
+from tqdm import tqdm
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -150,6 +152,7 @@ class LLMEdgeManager:
         return self
 
     def _get_dynamic_shape(self) -> Any:
+        return None
         if self.dynamic_shapes:
             return self.dynamic_shapes
 
