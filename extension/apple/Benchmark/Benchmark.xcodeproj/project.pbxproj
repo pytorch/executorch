@@ -8,7 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		03B2D3682C8A515A0046936E /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03B2D3672C8A515A0046936E /* App.swift */; };
-		03B2D37A2C8A515C0046936E /* Tests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 03B2D3792C8A515C0046936E /* Tests.mm */; };
+		03B0118E2CAC567900054791 /* DynamicTestCase.m in Sources */ = {isa = PBXBuildFile; fileRef = 03B0118C2CAC567900054791 /* DynamicTestCase.m */; };
+		03B011912CAD114E00054791 /* ResourceTestCase.m in Sources */ = {isa = PBXBuildFile; fileRef = 03B011902CAD114E00054791 /* ResourceTestCase.m */; };
+		03B2D37A2C8A515C0046936E /* GenericTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 03B2D3792C8A515C0046936E /* GenericTests.mm */; };
 		03C7FA382C8AA3EC00E6E9AE /* Models in Resources */ = {isa = PBXBuildFile; fileRef = 03C7FA322C8AA24200E6E9AE /* Models */; };
 		03DD00A92C8FE44600FE4619 /* backend_coreml.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD00992C8FE44600FE4619 /* backend_coreml.xcframework */; };
 		03DD00AA2C8FE44600FE4619 /* kernels_custom.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD009A2C8FE44600FE4619 /* kernels_custom.xcframework */; };
@@ -24,7 +26,6 @@
 		03ED6D152C8AAFFF00F2D6EE /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D142C8AAFFF00F2D6EE /* Metal.framework */; };
 		03ED6D172C8AB00500F2D6EE /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D162C8AB00500F2D6EE /* CoreML.framework */; };
 		03ED6D192C8AB00A00F2D6EE /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D182C8AB00A00F2D6EE /* Accelerate.framework */; };
-		8493389C2C9918950071ABAD /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8493389B2C9918950071ABAD /* UIKit.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -44,7 +45,11 @@
 		03B2D3672C8A515A0046936E /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		03B2D36D2C8A515B0046936E /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		03B2D3752C8A515C0046936E /* Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		03B2D3792C8A515C0046936E /* Tests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Tests.mm; sourceTree = "<group>"; };
+		03B0118B2CAC567900054791 /* DynamicTestCase.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = DynamicTestCase.h; sourceTree = "<group>"; };
+		03B0118C2CAC567900054791 /* DynamicTestCase.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DynamicTestCase.m; sourceTree = "<group>"; };
+		03B0118F2CAD114E00054791 /* ResourceTestCase.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ResourceTestCase.h; sourceTree = "<group>"; };
+		03B011902CAD114E00054791 /* ResourceTestCase.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ResourceTestCase.m; sourceTree = "<group>"; };
+		03B2D3792C8A515C0046936E /* GenericTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GenericTests.mm; sourceTree = "<group>"; };
 		03C7FA322C8AA24200E6E9AE /* Models */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Models; sourceTree = SOURCE_ROOT; };
 		03DD00992C8FE44600FE4619 /* backend_coreml.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = backend_coreml.xcframework; path = Frameworks/backend_coreml.xcframework; sourceTree = "<group>"; };
 		03DD009A2C8FE44600FE4619 /* kernels_custom.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = kernels_custom.xcframework; path = Frameworks/kernels_custom.xcframework; sourceTree = "<group>"; };
@@ -79,7 +84,6 @@
 				03ED6D172C8AB00500F2D6EE /* CoreML.framework in Frameworks */,
 				03ED6D152C8AAFFF00F2D6EE /* Metal.framework in Frameworks */,
 				03ED6D132C8AAFF700F2D6EE /* MetalPerformanceShaders.framework in Frameworks */,
-				8493389C2C9918950071ABAD /* UIKit.framework in Frameworks */,
 				03ED6D112C8AAFF200F2D6EE /* MetalPerformanceShadersGraph.framework in Frameworks */,
 				03ED6D0F2C8AAFE900F2D6EE /* libsqlite3.0.tbd in Frameworks */,
 				03DD00A92C8FE44600FE4619 /* backend_coreml.xcframework in Frameworks */,
@@ -103,6 +107,7 @@
 				03ED6CEB2C8AAF5300F2D6EE /* Frameworks */,
 				03C7FA322C8AA24200E6E9AE /* Models */,
 				03B2D3782C8A515C0046936E /* Tests */,
+				03B0118D2CAC567900054791 /* TestUtils */,
 				03B2D3652C8A515A0046936E /* Products */,
 			);
 			sourceTree = "<group>";
@@ -128,12 +133,23 @@
 		03B2D3782C8A515C0046936E /* Tests */ = {
 			isa = PBXGroup;
 			children = (
-				03B2D3792C8A515C0046936E /* Tests.mm */,
+				03B2D3792C8A515C0046936E /* GenericTests.mm */,
 				03B019502C8A80D30044D558 /* Tests.xcconfig */,
 				037C96A02C8A570B00B3DF38 /* Tests.xctestplan */,
 			);
 			path = Tests;
 			sourceTree = SOURCE_ROOT;
+		};
+		03B0118D2CAC567900054791 /* TestUtils */ = {
+			isa = PBXGroup;
+			children = (
+				03B0118B2CAC567900054791 /* DynamicTestCase.h */,
+				03B0118C2CAC567900054791 /* DynamicTestCase.m */,
+				03B0118F2CAD114E00054791 /* ResourceTestCase.h */,
+				03B011902CAD114E00054791 /* ResourceTestCase.m */,
+			);
+			path = TestUtils;
+			sourceTree = "<group>";
 		};
 		03ED6CEB2C8AAF5300F2D6EE /* Frameworks */ = {
 			isa = PBXGroup;
@@ -264,7 +280,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				03B2D37A2C8A515C0046936E /* Tests.mm in Sources */,
+				03B0118E2CAC567900054791 /* DynamicTestCase.m in Sources */,
+				03B011912CAD114E00054791 /* ResourceTestCase.m in Sources */,
+				03B2D37A2C8A515C0046936E /* GenericTests.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -414,6 +432,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.Benchmark;
 				PRODUCT_NAME = Benchmark;
+				REGISTER_APP_GROUPS = NO;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -448,6 +467,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.Benchmark;
 				PRODUCT_NAME = Benchmark;
+				REGISTER_APP_GROUPS = NO;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -472,6 +492,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.BenchmarkTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = NO;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -497,6 +518,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.BenchmarkTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = NO;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;

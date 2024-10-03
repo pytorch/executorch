@@ -296,11 +296,13 @@ load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn_realhbbf16(
 }
 
 template <typename CTYPE_COMMON, const char* op_name>
-load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn_bool_or_byte(const Tensor& t) {
+load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn_bool_or_byte(
+    const Tensor& t) {
   CTYPE_COMMON (*result)(const void*) = nullptr;
-  ET_SWITCH_TWO_TYPES(Bool, Byte, t.scalar_type(), unused, op_name, TENSOR_CTYPE, [&]() {
+  ET_SWITCH_TWO_TYPES(
+      Bool, Byte, t.scalar_type(), unused, op_name, TENSOR_CTYPE, [&]() {
         result = internal::load_and_convert<CTYPE_COMMON, TENSOR_CTYPE>;
-  });
+      });
   return result;
 }
 
@@ -322,8 +324,8 @@ template <typename CTYPE_COMMON, const char* op_name>
 store_common_to_tensor_fn<CTYPE_COMMON>
 get_store_common_to_tensor_fn_bool_or_byte(const Tensor& t) {
   void (*result)(CTYPE_COMMON, void*) = nullptr;
-  ET_SWITCH_TWO_TYPES(Bool, Byte,
-      t.scalar_type(), unused, op_name, TENSOR_CTYPE, [&]() {
+  ET_SWITCH_TWO_TYPES(
+      Bool, Byte, t.scalar_type(), unused, op_name, TENSOR_CTYPE, [&]() {
         result = internal::convert_and_store<TENSOR_CTYPE, CTYPE_COMMON>;
       });
   return result;
@@ -347,7 +349,8 @@ load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn(
     case SupportedTensorDtypes::BOOL_OR_BYTE:
       return get_load_to_common_fn_bool_or_byte<CTYPE_COMMON, op_name>(t);
     case SupportedTensorDtypes::SAME_AS_COMMON: {
-      constexpr auto common_scalar_type = CppTypeToScalarType<CTYPE_COMMON>::value;
+      constexpr auto common_scalar_type =
+          CppTypeToScalarType<CTYPE_COMMON>::value;
       ET_CHECK_MSG(
           t.scalar_type() == common_scalar_type,
           "Unhandled dtype %s for %s",
@@ -368,9 +371,11 @@ store_common_to_tensor_fn<CTYPE_COMMON> get_store_common_to_tensor_fn(
     case SupportedTensorDtypes::REALHBBF16:
       return get_store_common_to_tensor_fn_realhbbf16<CTYPE_COMMON, op_name>(t);
     case SupportedTensorDtypes::BOOL_OR_BYTE:
-      return get_store_common_to_tensor_fn_bool_or_byte<CTYPE_COMMON, op_name>(t);
+      return get_store_common_to_tensor_fn_bool_or_byte<CTYPE_COMMON, op_name>(
+          t);
     case SupportedTensorDtypes::SAME_AS_COMMON: {
-      constexpr auto common_scalar_type = CppTypeToScalarType<CTYPE_COMMON>::value;
+      constexpr auto common_scalar_type =
+          CppTypeToScalarType<CTYPE_COMMON>::value;
       ET_CHECK_MSG(
           t.scalar_type() == common_scalar_type,
           "Unhandled dtype %s for %s",

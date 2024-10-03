@@ -46,17 +46,17 @@ Tensor& where_out(
       torch::executor::toString(cond_type));
   ET_SWITCH_REALHBBF16_TYPES(common_type, ctx, op_name, CTYPE_COMMON, [&]() {
     apply_ternary_elementwise_fn<CTYPE_COMMON, op_name>(
-          [](const CTYPE_COMMON val_a,
-             const CTYPE_COMMON val_b,
-             const CTYPE_COMMON val_c) { return val_c ? val_a : val_b; },
-          a,
-          SupportedTensorDtypes::REALHBBF16,
-          b,
-          SupportedTensorDtypes::REALHBBF16,
-          cond,
-          SupportedTensorDtypes::BOOL_OR_BYTE,
-          out,
-          SupportedTensorDtypes::SAME_AS_COMMON);
+        [](const CTYPE_COMMON val_a,
+           const CTYPE_COMMON val_b,
+           const CTYPE_COMMON val_c) { return val_c ? val_a : val_b; },
+        a,
+        SupportedTensorDtypes::REALHBBF16,
+        b,
+        SupportedTensorDtypes::REALHBBF16,
+        cond,
+        SupportedTensorDtypes::BOOL_OR_BYTE,
+        out,
+        SupportedTensorDtypes::SAME_AS_COMMON);
   });
 
   return out;
