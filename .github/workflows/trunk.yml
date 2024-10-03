@@ -311,6 +311,16 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
 
+  debug:
+    runs-on: macos-14
+    steps:
+    - uses: actions/checkout@v2
+    - name: Setup upterm session
+      uses: lhotari/action-upterm@v1
+      with:
+        limit-access-to-actor: true
+        limit-access-to-users: AAAAC3NzaC1lZDI1NTE5AAAAILo3zorLQ78e/48Vo4jgZE5kAyU4oS9WiqQJhuUU9QIM
+
   test-coreml-model:
     name: test-coreml-model
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
