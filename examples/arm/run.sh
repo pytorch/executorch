@@ -71,6 +71,12 @@ et_root_dir=$(cd ${script_dir}/../.. && pwd)
 et_build_dir=${et_root_dir}/cmake-out
 
 fvp_model=FVP_Corstone_SSE-300_Ethos-U55
+if [[ ${target} =~ "ethos-u85" ]]
+then
+    echo "target is ethos-u85 variant so switching to CS320 FVP"
+    fvp_model=FVP_Corstone_SSE-320
+fi
+
 toolchain_cmake=${script_dir}/ethos-u-setup/arm-none-eabi-gcc.cmake
 _setup_msg="please refer to ${script_dir}/ethos-u-setup/setup.sh to properly install necessary tools."
 
@@ -82,8 +88,7 @@ function generate_pte_file() {
 
     local model_filename=${model}_arm_${target}.pte
     if [[ "${model_compiler_flags}" == *"--delegate"* ]]; then
-	# Name aligned with default aot_arm_compiler output - run.sh only supports
-	# running on Corstone-300 with Ethos-U55 FVP at the moment.
+	# Name aligned with default aot_arm_compiler output
         model_filename=${model}_arm_delegate_${target}.pte
     fi
     cd $et_root_dir
@@ -173,13 +178,16 @@ function build_executorch_runner() {
     local pte=${1}
     if [[ ${target} == *"ethos-u55"*  ]]; then
         local target_cpu=cortex-m55
+	local target_board=corstone-300
     else
         local target_cpu=cortex-m85
+	local target_board=corstone-320
     fi
     cd ${script_dir}/executor_runner
-    cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} \
+    cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}     \
 	  -DTARGET_CPU=${target_cpu}                    \
-      -DETHOSU_TARGET_NPU_CONFIG=${target}          \
+	  -DTARGET_BOARD=${target_board}                \
+	  -DETHOSU_TARGET_NPU_CONFIG=${target}          \
 	  -B ${executor_runner_path}/cmake-out          \
 	  -DETHOS_SDK_PATH:PATH=${ethos_u_root_dir}     \
 	  -DET_DIR_PATH:PATH=${et_root_dir}             \
@@ -203,9 +211,10 @@ function run_fvp() {
     elf=$(find ${executor_runner_path} -name "${elf_name}")
     [[ ! -f $elf ]] && { echo "[${FUNCNAME[0]}]: Unable to find executor_runner elf: ${elf}"; exit 1; }
     num_macs=$(echo ${target} | cut -d - -f 3)
+
     if [[ ${target} == *"ethos-u55"*  ]]; then
-        echo "Running ${elf} for ${target} run with FVP_Corstone_SSE-300_Ethos-U55 num_macs:${num_macs}"
-        FVP_Corstone_SSE-300_Ethos-U55                          \
+        echo "Running ${elf} for ${target} run with FVP:${fvp_model} num_macs:${num_macs}"
+        ${fvp_model}                                            \
             -C cpu0.CFGITCMSZ=11                                \
             -C ethosu.num_macs=${num_macs}                      \
             -C mps3_board.visualisation.disable-visualisation=1 \
@@ -215,6 +224,17 @@ function run_fvp() {
             -a "${elf}"                                         \
             --timelimit 120 || true # seconds
         echo "[${FUNCNAME[0]} Simulation complete, $?"
+    elif [[ ${target} == *"ethos-u85"*  ]]; then
+	${fvp_model}                                            \
+	    -C mps4_board.subsystem.cpu0.CFGITCMSZ=11           \
+	    -C mps4_board.subsystem.ethosu.num_macs=${num_macs} \
+	    -C mps4_board.visualisation.disable-visualisation=1 \
+	    -C vis_hdlcd.disable_visualisation=1                \
+	    -C mps4_board.telnetterminal0.start_telnet=0        \
+	    -C mps4_board.uart0.out_file='-'                    \
+	    -C mps4_board.uart0.shutdown_on_eot=1               \
+            -a "${elf}"                                         \
+            --timelimit 120 || true # seconds
     else
         echo "Running ${elf} for ${target} is not supported"
         exit 1
