@@ -391,6 +391,23 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "-qat",
+        "--use_qat",
+        default=False,
+        action="store_true",
+        help="Whether the checkpoin is pre-quantized with QAT or not.",
+    )
+
+    parser.add_argument(
+        "-lora",
+        "--use_lora",
+        type=int,
+        default=0,
+        help="Whether the checkpoint contains LoRA adaptors or not. 0: no LoRA adaptors; "
+        "otherwise, it means the rank of LoRA adaptors. Currently it only works if QAT is enabled.",
+    )
+
+    parser.add_argument(
         "--preq_mode",
         type=str,
         default=None,
