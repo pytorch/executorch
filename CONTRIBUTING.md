@@ -242,14 +242,19 @@ for basics.
    - Give the PR a clear and thorough description. Don't just describe what the PR
      does: the diff will do that. Explain *why* you are making this change, in a
      way that will make sense to someone years from now.
-   - Add the line `Test Plan:` (with that spelling, capitalization, and trailing
-     colon character), followed by lines containing repeatable instructions for
+   - Explain how you have tested your changes by including repeatable instructions for
      testing the PR.
      - If you added tests, this can be as simple as the command you used to run the
        tests.
      - If you tested the PR manually, include the steps and the outputs. Help a
        future editor understand how to test the code that you're modifying
        today.
+   - If your PR contains or is representative of a feature/bug fix that should be
+     called out in the release notes, please add a label for "Release notes: <area>",
+	 where <area> describes which part of ExecuTorch the change pertains to, e.g.
+	 "Release notes: runtime". A few of these areas include  "runtime", "backends",
+	 and "build". If you aren't sure whether to add a release label, you should
+	 probably still add one since it immensely facilitates release management.
    - See https://github.com/pytorch/executorch/pull/3612 for an example PR that
      follows this advice.
 1. Before asking for a review, ensure that all [CI (continuous integration)
