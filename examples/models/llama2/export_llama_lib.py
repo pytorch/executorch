@@ -661,10 +661,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
-            # TODO: Need to remove this once we have better way to handle buffer size
-            canonicalize_program(
-                builder.edge_manager.exported_program(), custom_buffer_size=542048256
-            )
+            canonicalize_program(builder.edge_manager.exported_program())
 
         builder = builder.to_executorch()
 
@@ -681,10 +678,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
-            # TODO: Need to remove this once we have better way to handle buffer size
-            canonicalize_program(
-                builder.edge_manager.exported_program(), custom_buffer_size=542048256
-            )
+            canonicalize_program(builder.edge_manager.exported_program())
 
         builder = builder.to_executorch()
 

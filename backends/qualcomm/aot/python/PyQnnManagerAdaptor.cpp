@@ -35,7 +35,8 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .def("IsTensorDump", &PyQnnManager::IsTensorDump)
       .def("AllocateTensor", &PyQnnManager::AllocateTensor)
       .def("GetGraphInputs", &PyQnnManager::GetGraphInputs)
-      .def("GetGraphOutputs", &PyQnnManager::GetGraphOutputs);
+      .def("GetGraphOutputs", &PyQnnManager::GetGraphOutputs)
+      .def("GetSpillFillBufferSize", &PyQnnManager::GetSpillFillBufferSize);
 }
 } // namespace qnn
 } // namespace executor

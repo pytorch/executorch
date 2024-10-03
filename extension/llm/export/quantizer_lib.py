@@ -209,11 +209,6 @@ def get_qnn_quantizer(
         quantization_mode is None
     ), "Currently qnn backend only supports QnnQuantizer via pt2e flow"
     qnn_quantizer.add_custom_quant_annotations(custom_annotations)
-    qnn_quantizer.add_discard_ops(
-        [
-            torch.ops.aten.embedding.default,
-        ]
-    )
 
     return qnn_quantizer, quant_dtype
 

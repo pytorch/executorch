@@ -284,6 +284,10 @@ Error QnnManager::Init() {
     ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_ != nullptr, Internal, "Failed to load Qnn backend.")
     ET_CHECK_OR_RETURN_ERROR(
+        backend_params_ptr_->qnn_backend_cache_ptr_->Configure() == Error::Ok,
+        Internal,
+        "Fail to configure Qnn backend cache");
+    ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_->qnn_backend_ptr_->Configure() == Error::Ok,
         Internal,
         "Fail to configure Qnn backend");
