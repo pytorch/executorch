@@ -250,8 +250,8 @@ for basics.
        future editor understand how to test the code that you're modifying
        today.
    - If your PR contains or is representative of a feature/bug fix that should be
-     called out in the release notes, please add a label for "Release notes: <area>",
-	 where <area> describes which part of ExecuTorch the change pertains to, e.g.
+     called out in the release notes, please add a label for "Release notes: \<area\>",
+	 where \<area\> describes which part of ExecuTorch the change pertains to, e.g.
 	 "Release notes: runtime". A few of these areas include  "runtime", "backends",
 	 and "build". If you aren't sure whether to add a release label, you should
 	 probably still add one since it immensely facilitates release management.
