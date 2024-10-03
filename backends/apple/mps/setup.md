@@ -116,7 +116,7 @@ python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --no-use_fp
 cd executorch
 python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --generate_etrecord -b
 ```
-2. Run your Program on the ExecuTorch runtime and generate an [ETDump](./sdk-etdump.md).
+2. Run your Program on the ExecuTorch runtime and generate an [ETDump](./etdump.md).
 ```
 ./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_bundled_fp16.pte --bundled_program --dump-outputs
 ```
