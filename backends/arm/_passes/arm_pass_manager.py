@@ -27,6 +27,7 @@ from executorch.backends.arm._passes.scalars_to_attribute_pass import (
     ScalarsToAttributePass,
 )
 from executorch.backends.arm._passes.size_adjust_conv2d_pass import SizeAdjustConv2DPass
+from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_manager import PassManager
@@ -42,6 +43,7 @@ class ArmPassManager(PassManager):
     ):
         """Apply passes before transforming program to backend"""
         self.add_pass(CastInt64ToInt32Pass(exported_program))
+        self.add_pass(RemoveGetItemPass())
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(RemoveClonePass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
