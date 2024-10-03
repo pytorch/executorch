@@ -56,21 +56,10 @@ Tensor& where_out(
           b,
           cond,
           out,
-          [](const void* a_ptr) {
-            return static_cast<CTYPE_OUT>(
-                *reinterpret_cast<const CTYPE_A*>(a_ptr));
-          },
-          [](const void* b_ptr) {
-            return static_cast<CTYPE_OUT>(
-                *reinterpret_cast<const CTYPE_B*>(b_ptr));
-          },
-          [](const void* c_ptr) {
-            return static_cast<CTYPE_OUT>(
-                *reinterpret_cast<const uint8_t*>(c_ptr));
-          },
-          [](CTYPE_OUT result, void* out) {
-            *reinterpret_cast<CTYPE_OUT*>(out) = result;
-          });
+          internal::load_and_convert<CTYPE_OUT, CTYPE_A>,
+          internal::load_and_convert<CTYPE_OUT, CTYPE_B>,
+          internal::load_and_convert<CTYPE_OUT, uint8_t>,
+          internal::convert_and_store<CTYPE_OUT, CTYPE_OUT>);
     });
   });
 
