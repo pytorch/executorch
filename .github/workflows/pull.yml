@@ -441,3 +441,14 @@ jobs:
 
         # run e2e (export, tokenizer and runner)
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_phi_3_mini.sh
+
+  debug:
+    runs-on: macos-14
+    steps:
+    - uses: actions/checkout@v2
+    - name: Setup upterm session
+      uses: lhotari/action-upterm@v1
+      with:
+        limit-access-to-actor: true
+        limit-access-to-users: AAAAC3NzaC1lZDI1NTE5AAAAILo3zorLQ78e/48Vo4jgZE5kAyU4oS9WiqQJhuUU9QIM
+
