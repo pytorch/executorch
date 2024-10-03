@@ -142,7 +142,9 @@ LLAMA_PARAMS=path/to/params.json
 python -m examples.models.llama2.export_llama \
   --checkpoint "${LLAMA_CHECKPOINT:?}" \
   --params "${LLAMA_PARAMS:?}" \
-  -kv -X \
+  -kv \
+  --use_sdpa_with_kv_cache \
+  -X \
   -d bf16 \
   --metadata '{"append_eos_to_prompt": 0, "get_bos_id":128000, "get_eos_ids":[128009, 128001], "get_n_bos": 0, "get_n_eos": 0}' \
   --output_name="llama3_2.pte"
