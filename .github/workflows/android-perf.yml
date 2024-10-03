@@ -176,9 +176,9 @@ jobs:
         fi
         echo "::endgroup::"
 
-  build-llm-demo:
-    name: build-llm-demo
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.5
+  build-benchmark-app:
+    name: build-benchmark-app
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     needs: set-parameters
     with:
       runner: linux.2xlarge
@@ -211,7 +211,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/mobile_job.yml@release/2.5
     needs:
       - set-parameters
-      - build-llm-demo
+      - build-benchmark-app
       - export-models
     strategy:
       matrix:
@@ -226,10 +226,6 @@ jobs:
       # This is the ARN of ExecuTorch project on AWS
       project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
       device-pool-arn: ${{ matrix.device }}
-      # Uploaded to S3 from the previous job, the name of the app comes from the project itself.
-      # Unlike models there are limited numbers of build flavor for apps, and the model controls whether it should build with bpe/tiktoken tokenizer.
-      # It's okay to build all possible apps with all possible flavors in job "build-llm-demo". However, in this job, once a model is given, there is only
-      # one app+flavor that could load and run the model.
       android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug.apk
       android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug-androidTest.apk
       # NB: Need to set the default spec here so that it works for periodic too
