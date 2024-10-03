@@ -450,5 +450,4 @@ jobs:
       uses: lhotari/action-upterm@v1
       with:
         limit-access-to-actor: true
-        limit-access-to-users: AAAAC3NzaC1lZDI1NTE5AAAAILo3zorLQ78e/48Vo4jgZE5kAyU4oS9WiqQJhuUU9QIM
 
