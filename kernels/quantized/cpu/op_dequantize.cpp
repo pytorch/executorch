@@ -152,6 +152,19 @@ void dequantize_optimized(
   }
 }
 
+float get_scale(const Tensor& scale, size_t channel_ix) {
+  ET_CHECK_MSG(
+      (scale.scalar_type() == ScalarType::Double) ||
+          (scale.scalar_type() == ScalarType::Float),
+      "scale.scalar_type() %" PRId8 " is not double or float type",
+      static_cast<int8_t>(scale.scalar_type()));
+  if (scale.scalar_type() == ScalarType::Double) {
+    return static_cast<float>(scale.const_data_ptr<double>()[channel_ix]);
+  } else {
+    return scale.const_data_ptr<float>()[channel_ix];
+  }
+}
+
 bool can_use_optimized_dequantize_per_channel(
     const Tensor& in,
     const ScalarType in_dtype,
@@ -197,13 +210,12 @@ void dequantize_per_channel_optimized(
   if (opt_zero_points.has_value()) {
     zero_points_data = opt_zero_points.value().const_data_ptr<int64_t>();
   }
-  const double* scales_data = scales.const_data_ptr<double>();
   const StridesType axis_stride = in.strides()[axis];
   const StridesType outer_stride = in.size(axis) * axis_stride;
   apply_over_unpacked_dim(
       [in_data,
        out_data,
-       scales_data,
+       &scales,
        zero_points_data,
        axis_stride,
        outer_stride,
@@ -212,7 +224,7 @@ void dequantize_per_channel_optimized(
           SizesType numel, SizesType outer_idx, SizesType unpacked_dim_idx) {
         const int8_t* in_data_local =
             in_data + outer_idx * outer_stride + unpacked_dim_idx * axis_stride;
-        const double scale = scales_data[unpacked_dim_idx];
+        const double scale = get_scale(scales, unpacked_dim_idx);
         const int64_t zero_point = zero_points_data != nullptr
             ? zero_points_data[unpacked_dim_idx]
             : 0;
@@ -336,19 +348,6 @@ Tensor& dequantize_per_tensor_tensor_args_out(
       out_dtype,
       out);
   return out;
-}
-
-float get_scale(const Tensor& scale, size_t channel_ix) {
-  ET_CHECK_MSG(
-      (scale.scalar_type() == ScalarType::Double) ||
-          (scale.scalar_type() == ScalarType::Float),
-      "scale.scalar_type() %" PRId8 " is not double or float type",
-      static_cast<int8_t>(scale.scalar_type()));
-  if (scale.scalar_type() == ScalarType::Double) {
-    return static_cast<float>(scale.const_data_ptr<double>()[channel_ix]);
-  } else {
-    return scale.const_data_ptr<float>()[channel_ix];
-  }
 }
 
 Tensor& dequantize_per_channel_out(
