@@ -398,10 +398,10 @@
 <li class="toctree-l1"><a class="reference internal" href="../devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../model-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
@@ -1229,7 +1229,7 @@ To see a more detailed view, use the <code class="docutils literal notranslate">
 </div>
 <div class="section" id="etdump-generation">
 <h5>ETDump generation<a class="headerlink" href="#etdump-generation" title="Permalink to this heading">¶</a></h5>
-<p>An ETDump is an artifact generated at runtime containing a trace of the model execution. For more information, see <a class="reference internal" href="../sdk-etdump.html"><span class="doc std std-doc">the ETDump docs</span></a>.</p>
+<p>An ETDump is an artifact generated at runtime containing a trace of the model execution. For more information, see <a class="reference internal" href="../etdump.html"><span class="doc std std-doc">the ETDump docs</span></a>.</p>
 <p>Include the ETDump header in your code.</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// main.cpp</span>
 
@@ -1292,7 +1292,7 @@ model runs in a single trace, if desired.</p>
 <p>This prints the performance data in a tabular format in “inspector_out.txt”, with each row being a profiling event. Top rows look like this:
 <img alt="" src="../_images/llm_manual_print_data_tabular.png" />
 <a href="../_static/img/llm_manual_print_data_tabular.png" target="_blank">View in full size</a></p>
-<p>To learn more about the Inspector and the rich functionality it provides, see the <a class="reference internal" href="../sdk-inspector.html"><span class="doc std std-doc">Inspector API Reference</span></a>.</p>
+<p>To learn more about the Inspector and the rich functionality it provides, see the <a class="reference internal" href="../model-inspector.html"><span class="doc std std-doc">Inspector API Reference</span></a>.</p>
 </div>
 </div>
 </div>

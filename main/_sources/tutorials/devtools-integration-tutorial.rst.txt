@@ -32,7 +32,7 @@ models.
 This tutorial will show a full end-to-end flow of how to utilize the Developer Tools to profile a model.
 Specifically, it will:
 
-1. Generate the artifacts consumed by the Developer Tools (`ETRecord <../etrecord.html>`__, `ETDump <../sdk-etdump.html>`__).
+1. Generate the artifacts consumed by the Developer Tools (`ETRecord <../etrecord.html>`__, `ETDump <../etdump.html>`__).
 2. Create an Inspector class consuming these artifacts.
 3. Utilize the Inspector class to analyze the model profiling result.
 
@@ -256,7 +256,7 @@ To visualize all runtime events, call Inspector's ``print_data_tabular``.
 Analyzing with an Inspector
 ---------------------------
 
-``Inspector`` provides 2 ways of accessing ingested information: `EventBlocks <../sdk-inspector#eventblock-class>`__
+``Inspector`` provides 2 ways of accessing ingested information: `EventBlocks <../model-inspector#eventblock-class>`__
 and ``DataFrames``. These mediums give users the ability to perform custom
 analysis about their model performance.
 
@@ -384,7 +384,7 @@ If a user wants the total runtime of a module, they can use
 .. GENERATED FROM PYTHON SOURCE LINES 284-286
 
 Note: ``find_total_for_module`` is a special first class method of
-`Inspector <../sdk-inspector.html>`__
+`Inspector <../model-inspector.html>`__
 
 .. GENERATED FROM PYTHON SOURCE LINES 288-302
 
@@ -400,13 +400,13 @@ Links Mentioned
 
 - `ExecuTorch Developer Tools Overview <../devtools-overview.html>`__
 - `ETRecord <../etrecord.html>`__
-- `ETDump <../sdk-etdump.html>`__
-- `Inspector <../sdk-inspector.html>`__
+- `ETDump <../etdump.html>`__
+- `Inspector <../model-inspector.html>`__
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.587 seconds)
+   **Total running time of the script:** (0 minutes 1.316 seconds)
 
 
 .. _sphx_glr_download_tutorials_devtools-integration-tutorial.py:

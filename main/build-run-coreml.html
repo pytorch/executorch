@@ -391,10 +391,10 @@
 <li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
@@ -607,7 +607,7 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.coreml.s
 </pre></div>
 </div>
 <ol class="arabic simple" start="3">
-<li><p>Run and generate an <a class="reference internal" href="sdk-etdump.html"><span class="doc std std-doc">ETDump</span></a>.</p></li>
+<li><p>Run and generate an <a class="reference internal" href="etdump.html"><span class="doc std std-doc">ETDump</span></a>.</p></li>
 </ol>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
 
@@ -616,7 +616,7 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.coreml.s
 </pre></div>
 </div>
 <ol class="arabic simple" start="4">
-<li><p>Create an instance of the <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API</span></a> by passing in the <a class="reference internal" href="sdk-etdump.html"><span class="doc std std-doc">ETDump</span></a> you have sourced from the runtime along with the optionally generated <a class="reference internal" href="etrecord.html"><span class="doc std std-doc">ETRecord</span></a> from step 1 or execute the following command in your terminal to display the profiling data table.</p></li>
+<li><p>Create an instance of the <a class="reference internal" href="model-inspector.html"><span class="doc std std-doc">Inspector API</span></a> by passing in the <a class="reference internal" href="etdump.html"><span class="doc std std-doc">ETDump</span></a> you have sourced from the runtime along with the optionally generated <a class="reference internal" href="etrecord.html"><span class="doc std std-doc">ETRecord</span></a> from step 1 or execute the following command in your terminal to display the profiling data table.</p></li>
 </ol>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python<span class="w"> </span>examples/apple/coreml/scripts/inspector_cli.py<span class="w"> </span>--etdump_path<span class="w"> </span>etdump.etdp<span class="w"> </span>--etrecord_path<span class="w"> </span>mv3_coreml.bin
 </pre></div>

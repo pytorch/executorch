@@ -42,7 +42,7 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Prerequisite | ETDump - ExecuTorch Dump" href="sdk-etdump.html" />
+    <link rel="next" title="Prerequisite | ETDump - ExecuTorch Dump" href="etdump.html" />
     <link rel="prev" title="Bundled Program – a Tool for ExecuTorch Model Validation" href="bundled-io.html" />
 
 
@@ -388,10 +388,10 @@
 <li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Prerequisite | ETRecord - ExecuTorch Record</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
@@ -494,7 +494,7 @@ them to debug and visualize their model.</p>
 <li><p>Delegate debug handle maps</p></li>
 </ul>
 <p>The <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> object itself is intended to be opaque to users and they should not access any components inside it directly.
-It should be provided to the <a class="reference external" href="sdk-inspector.html">Inspector API</a> to link back performance and debug data sourced from the runtime back to the Python source code.</p>
+It should be provided to the <a class="reference external" href="model-inspector.html">Inspector API</a> to link back performance and debug data sourced from the runtime back to the Python source code.</p>
 </div>
 <div class="section" id="generating-an-etrecord">
 <h2>Generating an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code><a class="headerlink" href="#generating-an-etrecord" title="Permalink to this heading">¶</a></h2>
@@ -537,7 +537,7 @@ output of <cite>torch.export()</cite> or <cite>exir.to_edge()</cite>.</p></li>
 </div>
 <div class="section" id="using-an-etrecord">
 <h2>Using an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code><a class="headerlink" href="#using-an-etrecord" title="Permalink to this heading">¶</a></h2>
-<p>Pass the <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> as an optional argument into the <a class="reference external" href="sdk-inspector.html">Inspector API</a> to access this data and  do post-run analysis.</p>
+<p>Pass the <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> as an optional argument into the <a class="reference external" href="model-inspector.html">Inspector API</a> to access this data and  do post-run analysis.</p>
 </div>
 </div>
 
@@ -549,7 +549,7 @@ output of <cite>torch.export()</cite> or <cite>exir.to_edge()</cite>.</p></li>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="sdk-etdump.html" class="btn btn-neutral float-right" title="Prerequisite | ETDump - ExecuTorch Dump" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="etdump.html" class="btn btn-neutral float-right" title="Prerequisite | ETDump - ExecuTorch Dump" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
         <a href="bundled-io.html" class="btn btn-neutral" title="Bundled Program – a Tool for ExecuTorch Model Validation" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>

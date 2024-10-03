@@ -388,10 +388,10 @@
 <li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
@@ -592,7 +592,7 @@ With <strong>generated identifiers</strong>, the builder will auto-assign a <str
 </div>
 <div class="section" id="surfacing-custom-metadata-from-delegate-events">
 <h2>Surfacing custom metadata from delegate events<a class="headerlink" href="#surfacing-custom-metadata-from-delegate-events" title="Permalink to this heading">¶</a></h2>
-<p>As seen in the runtime logging API’s above, users can log an array of bytes along with their delegate profiling event. We make this data available for users in post processing via the <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API</span></a>.</p>
+<p>As seen in the runtime logging API’s above, users can log an array of bytes along with their delegate profiling event. We make this data available for users in post processing via the <a class="reference internal" href="model-inspector.html"><span class="doc std std-doc">Inspector API</span></a>.</p>
 <p>Users can pass a metadata parser when creating an instance of the Inspector. The parser is a callable that deserializes the data and returns a list of strings or a dictionary containing key-value pairs. The deserialized data is then added back to the corresponding event in the event block for user consumption. Here’s an example of how to write this parser:</p>
 <p>NOTE: The input to the deserializer is a list where each entry is a series of bytes (essentially each entry is an immutable bytearray). Users are expected to iterate over this list, deserialize each entry and then return it in the expected format which is either a list of strings, or a dict.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">Inspector</span><span class="p">(</span>

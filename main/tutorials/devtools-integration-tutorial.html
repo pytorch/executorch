@@ -388,10 +388,10 @@
 <li class="toctree-l1"><a class="reference internal" href="../devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../model-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
@@ -513,7 +513,7 @@ models.</p>
 <p>This tutorial will show a full end-to-end flow of how to utilize the Developer Tools to profile a model.
 Specifically, it will:</p>
 <ol class="arabic simple">
-<li><p>Generate the artifacts consumed by the Developer Tools (<a class="reference external" href="../etrecord.html">ETRecord</a>, <a class="reference external" href="../sdk-etdump.html">ETDump</a>).</p></li>
+<li><p>Generate the artifacts consumed by the Developer Tools (<a class="reference external" href="../etrecord.html">ETRecord</a>, <a class="reference external" href="../etdump.html">ETDump</a>).</p></li>
 <li><p>Create an Inspector class consuming these artifacts.</p></li>
 <li><p>Utilize the Inspector class to analyze the model profiling result.</p></li>
 </ol>
@@ -674,7 +674,7 @@ the Inspector will show runtime results without operator correlation.</p>
 </div>
 <div class="section" id="analyzing-with-an-inspector">
 <h2>Analyzing with an Inspector<a class="headerlink" href="#analyzing-with-an-inspector" title="Permalink to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">Inspector</span></code> provides 2 ways of accessing ingested information: <a class="reference external" href="../sdk-inspector#eventblock-class">EventBlocks</a>
+<p><code class="docutils literal notranslate"><span class="pre">Inspector</span></code> provides 2 ways of accessing ingested information: <a class="reference external" href="../model-inspector#eventblock-class">EventBlocks</a>
 and <code class="docutils literal notranslate"><span class="pre">DataFrames</span></code>. These mediums give users the ability to perform custom
 analysis about their model performance.</p>
 <p>Below are examples usages, with both <code class="docutils literal notranslate"><span class="pre">EventBlock</span></code> and <code class="docutils literal notranslate"><span class="pre">DataFrame</span></code> approaches.</p>
@@ -742,7 +742,7 @@ slowest <code class="docutils literal notranslate"><span class="pre">convolution
 </pre></div>
 </div>
 <p>Note: <code class="docutils literal notranslate"><span class="pre">find_total_for_module</span></code> is a special first class method of
-<a class="reference external" href="../sdk-inspector.html">Inspector</a></p>
+<a class="reference external" href="../model-inspector.html">Inspector</a></p>
 </div>
 <div class="section" id="conclusion">
 <h2>Conclusion<a class="headerlink" href="#conclusion" title="Permalink to this heading">¶</a></h2>
@@ -754,10 +754,10 @@ to analyze the model run results.</p>
 <ul class="simple">
 <li><p><a class="reference external" href="../devtools-overview.html">ExecuTorch Developer Tools Overview</a></p></li>
 <li><p><a class="reference external" href="../etrecord.html">ETRecord</a></p></li>
-<li><p><a class="reference external" href="../sdk-etdump.html">ETDump</a></p></li>
-<li><p><a class="reference external" href="../sdk-inspector.html">Inspector</a></p></li>
+<li><p><a class="reference external" href="../etdump.html">ETDump</a></p></li>
+<li><p><a class="reference external" href="../model-inspector.html">Inspector</a></p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.587 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.316 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-devtools-integration-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/19eb0a842fd17829284e2ef09d1cda78/devtools-integration-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">devtools-integration-tutorial.py</span></code></a></p>

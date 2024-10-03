@@ -388,10 +388,10 @@
 <li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
@@ -594,7 +594,7 @@
 </div>
 <div class="section" id="profile-the-module">
 <h3>Profile the Module<a class="headerlink" href="#profile-the-module" title="Permalink to this heading">¶</a></h3>
-<p>Use <a class="reference internal" href="sdk-etdump.html"><span class="doc std std-doc">ExecuTorch Dump</span></a> to trace model execution. Create an instance of the <code class="docutils literal notranslate"><span class="pre">ETDumpGen</span></code> class and pass it to the <code class="docutils literal notranslate"><span class="pre">Module</span></code> constructor. After executing a method, save the <code class="docutils literal notranslate"><span class="pre">ETDump</span></code> to a file for further analysis. You can capture multiple executions in a single trace if desired.</p>
+<p>Use <a class="reference internal" href="etdump.html"><span class="doc std std-doc">ExecuTorch Dump</span></a> to trace model execution. Create an instance of the <code class="docutils literal notranslate"><span class="pre">ETDumpGen</span></code> class and pass it to the <code class="docutils literal notranslate"><span class="pre">Module</span></code> constructor. After executing a method, save the <code class="docutils literal notranslate"><span class="pre">ETDump</span></code> to a file for further analysis. You can capture multiple executions in a single trace if desired.</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;fstream&gt;</span>
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;memory&gt;</span>
 

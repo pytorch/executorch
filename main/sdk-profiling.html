@@ -42,8 +42,6 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Debugging Models in ExecuTorch" href="sdk-debugging.html" />
-    <link rel="prev" title="Prerequisite | ETDump - ExecuTorch Dump" href="sdk-etdump.html" />
 
 
   <!-- Google Tag Manager -->
@@ -384,14 +382,14 @@
 <li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debug Backend Delegate</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
-<ul class="current">
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
@@ -479,33 +477,7 @@
               
   <div class="section" id="profiling-models-in-executorch">
 <h1>Profiling Models in ExecuTorch<a class="headerlink" href="#profiling-models-in-executorch" title="Permalink to this heading">¶</a></h1>
-<p>Profiling in ExecuTorch gives users access to these runtime metrics:</p>
-<ul class="simple">
-<li><p>Model Load Time.</p></li>
-<li><p>Operator Level Execution Time.</p></li>
-<li><p>Delegate Execution Time.</p>
-<ul>
-<li><p>If the delegate that the user is calling into has been integrated with the <a class="reference internal" href="delegate-debugging.html"><span class="doc std std-doc">Developer Tools</span></a>, then users will also be able to access delegated operator execution time.</p></li>
-</ul>
-</li>
-<li><p>End-to-end Inference Execution Time.</p></li>
-</ul>
-<p>One uniqe aspect of ExecuTorch Profiling is the ability to link every runtime executed operator back to the exact line of python code from which this operator originated. This capability enables users to easily identify hotspots in their model, source them back to the exact line of Python code, and optimize if chosen to.</p>
-<p>We provide access to all the profiling data via the Python <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API</span></a>. The data mentioned above can be accessed through these interfaces, allowing users to perform any post-run analysis of their choice.</p>
-<div class="section" id="steps-to-profile-a-model-in-executorch">
-<h2>Steps to Profile a Model in ExecuTorch<a class="headerlink" href="#steps-to-profile-a-model-in-executorch" title="Permalink to this heading">¶</a></h2>
-<ol class="arabic simple">
-<li><p>[Optional] Generate an <a class="reference internal" href="etrecord.html"><span class="doc std std-doc">ETRecord</span></a> while you’re exporting your model. If provided this will enable users to link back profiling details to eager model source code (with stack traces and module hierarchy).</p></li>
-<li><p>Build the runtime with the pre-processor flags that enable profiling. Detailed in the <a class="reference internal" href="sdk-etdump.html"><span class="doc std std-doc">ETDump documentation</span></a>.</p></li>
-<li><p>Run your Program on the ExecuTorch runtime and generate an <a class="reference internal" href="sdk-etdump.html"><span class="doc std std-doc">ETDump</span></a>.</p></li>
-<li><p>Create an instance of the <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API</span></a> by passing in the ETDump you have sourced from the runtime along with the optionally generated ETRecord from step 1.</p>
-<ul class="simple">
-<li><p>Through the Inspector API, users can do a wide range of analysis varying from printing out performance details to doing more finer granular calculation on module level.</p></li>
-</ul>
-</li>
-</ol>
-<p>Please refer to the <a class="reference internal" href="tutorials/devtools-integration-tutorial.html"><span class="doc std std-doc">Developer Tools tutorial</span></a> for a step-by-step walkthrough of the above process on a sample model.</p>
-</div>
+<p>Please update your link to <a class="reference external" href="https://pytorch.org/executorch/main/runtime-profiling.html">https://pytorch.org/executorch/main/runtime-profiling.html</a>. This URL will be deleted after v0.4.0.</p>
 </div>
 
 
@@ -513,15 +485,6 @@
              
             </div>
             <footer>
-  
-    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
-      
-        <a href="sdk-debugging.html" class="btn btn-neutral float-right" title="Debugging Models in ExecuTorch" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
-      
-      
-        <a href="sdk-etdump.html" class="btn btn-neutral" title="Prerequisite | ETDump - ExecuTorch Dump" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
-      
-    </div>
   
 
   
@@ -553,10 +516,7 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Profiling Models in ExecuTorch</a><ul>
-<li><a class="reference internal" href="#steps-to-profile-a-model-in-executorch">Steps to Profile a Model in ExecuTorch</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#">Profiling Models in ExecuTorch</a></li>
 </ul>
 
             </div>

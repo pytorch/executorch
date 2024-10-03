@@ -386,10 +386,10 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../sdk-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../model-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
@@ -767,7 +767,7 @@
         <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span>
 
 
-<div class="viewcode-block" id="Event"><a class="viewcode-back" href="../../../../sdk-inspector.html#executorch.devtools.inspector.Event">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="Event"><a class="viewcode-back" href="../../../../model-inspector.html#executorch.devtools.inspector.Event">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">Event</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    An Event corresponds to an operator instance with perf data retrieved from the runtime and other metadata from `ETRecord`.</span>
@@ -1135,7 +1135,7 @@
                     <span class="bp">self</span><span class="o">.</span><span class="n">op_types</span> <span class="o">+=</span> <span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">op</span><span class="p">]</span></div>
 
 
-<div class="viewcode-block" id="EventBlock"><a class="viewcode-back" href="../../../../sdk-inspector.html#executorch.devtools.inspector.EventBlock">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="EventBlock"><a class="viewcode-back" href="../../../../model-inspector.html#executorch.devtools.inspector.EventBlock">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">EventBlock</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    An `EventBlock` contains a collection of events associated with a particular profiling/debugging block retrieved from the runtime.</span>
