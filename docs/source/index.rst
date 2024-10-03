@@ -201,14 +201,14 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    devtools-overview
-   sdk-bundled-io
-   sdk-etrecord
-   sdk-etdump
-   sdk-profiling
-   sdk-debugging
-   sdk-inspector
+   bundled-io
+   etrecord
+   etdump
+   runtime-profiling
+   model-debugging
+   model-inspector
    memory-planning-inspection
-   sdk-delegate-integration
+   delegate-debugging
    devtools-tutorial
 
 .. toctree::
