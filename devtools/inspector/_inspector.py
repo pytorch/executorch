@@ -967,6 +967,7 @@ class Inspector:
     def __init__(
         self,
         etdump_path: Optional[str] = None,
+        etdump_data: Optional[bytes] = None,
         etrecord: Optional[Union[ETRecord, str]] = None,
         source_time_scale: TimeScale = TimeScale.NS,
         target_time_scale: TimeScale = TimeScale.MS,
@@ -980,11 +981,12 @@ class Inspector:
         enable_module_hierarchy: bool = False,
     ) -> None:
         r"""
-        Initialize an `Inspector` instance with the underlying `EventBlock`\ s populated with data from the provided ETDump path
+        Initialize an `Inspector` instance with the underlying `EventBlock`\ s populated with data from the provided ETDump path or binary,
         and optional ETRecord path.
 
         Args:
-            etdump_path: Path to the ETDump file.
+            etdump_path: Path to the ETDump file. Either this parameter or etdump_data should be provided.
+            etdump_data: ETDump binary. Either this parameter or etdump_path should be provided.
             etrecord: Optional ETRecord object or path to the ETRecord file.
             source_time_scale: The time scale of the performance data retrieved from the runtime. The default time hook implentation in the runtime returns NS.
             target_time_scale: The target time scale to which the users want their performance data converted to. Defaults to MS.
@@ -1025,8 +1027,13 @@ class Inspector:
         else:
             raise TypeError("Unsupported ETRecord type")
 
+        if (etdump_path is None) == (etdump_data is None):
+            raise ValueError(
+                "Expecting exactly one of etdump_path or etdump_data to be specified."
+            )
+
         # Create EventBlocks from ETDump
-        etdump = gen_etdump_object(etdump_path=etdump_path)
+        etdump = gen_etdump_object(etdump_path=etdump_path, etdump_data=etdump_data)
         if debug_buffer_path is not None:
             with open(debug_buffer_path, "rb") as f:
                 output_buffer = f.read()

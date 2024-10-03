@@ -3146,12 +3146,12 @@ void test_transpose_view_mm(
     mat2_t_small_size = {B, N - 1, K - 3};
   }
 
-  // Build graph
+  // Build graph; use shared objects to test views of shared objects
 
   IOValueRef mat1 =
-      graph.add_input_tensor(mat1_size, vkapi::kFloat, utils::kWidthPacked);
-  IOValueRef mat2_transpose =
-      graph.add_input_tensor(mat2_t_size, vkapi::kFloat, utils::kWidthPacked);
+      graph.add_input_tensor(mat1_size, vkapi::kFloat, utils::kWidthPacked, 0);
+  IOValueRef mat2_transpose = graph.add_input_tensor(
+      mat2_t_size, vkapi::kFloat, utils::kWidthPacked, 1);
 
   ValueRef mat2 = graph.add_tensor_view(mat2_transpose.value);
 
@@ -3167,7 +3167,7 @@ void test_transpose_view_mm(
   }
 
   IOValueRef out;
-  out.value = graph.add_tensor(out_size, vkapi::kFloat, utils::kWidthPacked);
+  out.value = graph.add_tensor(out_size, vkapi::kFloat, utils::kWidthPacked, 2);
 
   VK_GET_OP_FN("aten.transpose.int")
   (graph, {mat2_transpose.value, dim0, dim1, mat2});

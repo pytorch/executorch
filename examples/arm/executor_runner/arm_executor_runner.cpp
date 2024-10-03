@@ -135,6 +135,44 @@ void et_pal_emit_log_message(
 
 namespace {
 
+// Setup our own allocator that can show some extra stuff like used and free
+// memory info
+class ArmMemoryAllocator : public executorch::runtime::MemoryAllocator {
+ public:
+  ArmMemoryAllocator(uint32_t size, uint8_t* base_address)
+      : MemoryAllocator(size, base_address), used_(0) {}
+
+  void* allocate(size_t size, size_t alignment = kDefaultAlignment) override {
+    void* ret = executorch::runtime::MemoryAllocator::allocate(size, alignment);
+    if (ret != nullptr) {
+      // Align with the same code as in MemoryAllocator::allocate() to keep
+      // used_ "in sync" As alignment is expected to be power of 2 (checked by
+      // MemoryAllocator::allocate()) we can check it the lower bits
+      // (same as alignment - 1) is zero or not.
+      if ((size & (alignment - 1)) == 0) {
+        // Already aligned.
+        used_ += size;
+      } else {
+        used_ = (used_ | (alignment - 1)) + 1 + size;
+      }
+    }
+    return ret;
+  }
+
+  // Returns the used size of the allocator's memory buffer.
+  size_t used_size() const {
+    return used_;
+  }
+
+  // Returns the free size of the allocator's memory buffer.
+  size_t free_size() const {
+    return executorch::runtime::MemoryAllocator::size() - used_;
+  }
+
+ private:
+  size_t used_;
+};
+
 Result<BufferCleanup> prepare_input_tensors(
     Method& method,
     MemoryAllocator& allocator,
@@ -291,7 +329,7 @@ int main(int argc, const char* argv[]) {
 
 #ifdef SEMIHOSTING
   const char* output_basename = nullptr;
-  MemoryAllocator input_file_allocator(
+  ArmMemoryAllocator input_file_allocator(
       input_file_allocation_pool_size, input_file_allocation_pool);
 
   /* parse input parameters */
@@ -354,12 +392,14 @@ int main(int argc, const char* argv[]) {
         (unsigned int)method_meta.error());
   }
 
-  MemoryAllocator method_allocator(
+  ArmMemoryAllocator method_allocator(
       method_allocation_pool_size, method_allocation_pool);
 
   std::vector<uint8_t*> planned_buffers; // Owns the memory
   std::vector<Span<uint8_t>> planned_spans; // Passed to the allocator
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
+
+  size_t planned_buffer_membase = method_allocator.used_size();
 
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
     size_t buffer_size =
@@ -373,14 +413,19 @@ int main(int argc, const char* argv[]) {
     planned_spans.push_back({planned_buffers.back(), buffer_size});
   }
 
+  size_t planned_buffer_memsize =
+      method_allocator.used_size() - planned_buffer_membase;
+
   HierarchicalAllocator planned_memory(
       {planned_spans.data(), planned_spans.size()});
 
-  MemoryAllocator temp_allocator(
+  ArmMemoryAllocator temp_allocator(
       temp_allocation_pool_size, temp_allocation_pool);
 
   MemoryManager memory_manager(
       &method_allocator, &planned_memory, &temp_allocator);
+
+  size_t method_loaded_membase = method_allocator.used_size();
 
   Result<Method> method = program->load_method(method_name, &memory_manager);
   if (!method.ok()) {
@@ -390,9 +435,12 @@ int main(int argc, const char* argv[]) {
         method_name,
         method.error());
   }
+  size_t method_loaded_memsize =
+      method_allocator.used_size() - method_loaded_membase;
   ET_LOG(Info, "Method loaded.");
 
   ET_LOG(Info, "Preparing inputs...");
+  size_t input_membase = method_allocator.used_size();
 
   auto inputs =
       ::prepare_input_tensors(*method, method_allocator, input_buffers);
@@ -404,12 +452,52 @@ int main(int argc, const char* argv[]) {
         method_name,
         inputs.error());
   }
+  size_t input_memsize = method_allocator.used_size() - input_membase;
   ET_LOG(Info, "Input prepared.");
 
   ET_LOG(Info, "Starting the model execution...");
+  size_t executor_membase = method_allocator.used_size();
   StartMeasurements();
   Error status = method->execute();
   StopMeasurements();
+  size_t executor_memsize = method_allocator.used_size() - executor_membase;
+
+  ET_LOG(Info, "model_pte_loaded_size:     %lu bytes.", pte_size);
+#ifdef SEMIHOSTING
+  if (input_file_allocator.size() > 0) {
+    ET_LOG(
+        Info,
+        "input_file_allocator_used: %zu / %zu free: %zu ( used: %zu %% ) ",
+        input_file_allocator.used_size(),
+        input_file_allocator.size(),
+        input_file_allocator.free_size(),
+        100 * input_file_allocator.used_size() / input_file_allocator.size());
+  }
+#endif
+  if (method_allocator.size() != 0) {
+    size_t method_allocator_used = method_allocator.used_size();
+    ET_LOG(
+        Info,
+        "method_allocator_used:     %zu / %zu  free: %zu ( used: %zu %% ) ",
+        method_allocator_used,
+        method_allocator.size(),
+        method_allocator.free_size(),
+        100 * method_allocator_used / method_allocator.size());
+    ET_LOG(
+        Info, "method_allocator_planned:  %zu bytes", planned_buffer_memsize);
+    ET_LOG(Info, "method_allocator_loaded:   %zu bytes", method_loaded_memsize);
+    ET_LOG(Info, "method_allocator_input:    %zu bytes", input_memsize);
+    ET_LOG(Info, "method_allocator_executor: %zu bytes", executor_memsize);
+  }
+  if (temp_allocator.size() > 0) {
+    ET_LOG(
+        Info,
+        "temp_allocator_used:       %zu / %zu free: %zu ( used: %zu %% ) ",
+        temp_allocator.used_size(),
+        temp_allocator.size(),
+        temp_allocator.free_size(),
+        100 * temp_allocator.used_size() / temp_allocator.size());
+  }
 
   if (status != Error::Ok) {
     ET_LOG(

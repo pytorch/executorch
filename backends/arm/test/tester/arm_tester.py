@@ -98,7 +98,7 @@ class Serialize(tester.Serialize):
         self.runner.set_timeout(timeout)
 
     def run_artifact(self, inputs):
-        return self.runner.run_corstone300(inputs)
+        return self.runner.run_corstone(inputs)
 
     def dump_artifact(self, path_to_dump: Optional[str]):
         if not path_to_dump:
@@ -226,6 +226,7 @@ class ArmTester(Tester):
         self,
         inputs: Optional[Tuple[torch.Tensor]] = None,
         stage: Optional[str] = None,
+        target_board: Optional[str] = "corstone-300",
         num_runs=1,
         atol=1e-03,
         rtol=1e-03,
@@ -260,7 +261,12 @@ class ArmTester(Tester):
         edge_program = self.stages[
             self.stage_name(tester.ToEdge)
         ].artifact.exported_program()
-        self.runner_util.init_run(exported_program, edge_program, is_quantized)
+        self.runner_util.init_run(
+            exported_program,
+            edge_program,
+            is_quantized,
+            target_board,
+        )
 
         if is_quantized:
             reference_stage = self.stages[self.stage_name(tester.Quantize)]
