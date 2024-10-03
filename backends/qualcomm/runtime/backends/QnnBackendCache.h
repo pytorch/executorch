@@ -23,9 +23,9 @@ class QnnBackendCache {
     DESERIALIZE = 2,
     ONLINE_PREPARE = 3,
   };
-  explicit QnnBackendCache(const QnnExecuTorchContextBinary& qnn_context_blob);
-
-  ~QnnBackendCache();
+  explicit QnnBackendCache(const QnnExecuTorchContextBinary& qnn_context_blob)
+      : qnn_context_blob_(qnn_context_blob){};
+  virtual ~QnnBackendCache();
   QnnBackendCache(const QnnBackendCache&) = delete;
   QnnBackendCache(QnnBackendCache&&) = delete;
   QnnBackendCache& operator=(const QnnBackendCache&) = delete;
@@ -50,6 +50,14 @@ class QnnBackendCache {
   std::string GetGraphName() {
     return graph_name_;
   }
+
+  Error Configure();
+
+ protected:
+  virtual Error RetrieveBackendBinaryInfo(
+      const QnnSystemContext_BinaryInfo_t* binaryinfo) {
+    return Error::Ok;
+  };
 
  private:
   Error GetQnnGraphInfoFromBinary();

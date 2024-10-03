@@ -22,13 +22,12 @@ class QnnContext {
       const QnnImplementation& implementation,
       QnnBackend* backend,
       QnnDevice* device,
-      const QnnExecuTorchContextBinary& qnn_context_blob)
+      QnnBackendCache* cache)
       : handle_(nullptr),
         implementation_(implementation),
         backend_(backend),
-        device_(device) {
-    cache_ = std::make_unique<QnnBackendCache>(qnn_context_blob);
-  }
+        device_(device),
+        cache_(cache) {}
 
   virtual ~QnnContext();
   Error Configure();
@@ -67,7 +66,7 @@ class QnnContext {
   const QnnImplementation& implementation_;
   QnnBackend* backend_;
   QnnDevice* device_;
-  std::unique_ptr<QnnBackendCache> cache_;
+  QnnBackendCache* cache_;
   std::vector<char> binary_buffer_;
 };
 } // namespace qnn

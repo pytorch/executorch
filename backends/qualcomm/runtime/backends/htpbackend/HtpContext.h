@@ -22,9 +22,9 @@ class HtpContext : public QnnContext {
       const QnnImplementation& implementation,
       QnnBackend* backend,
       QnnDevice* device,
-      const QnnExecuTorchContextBinary& qnn_context_blob,
+      QnnBackendCache* cache,
       const QnnExecuTorchHtpBackendOptions* htp_options)
-      : QnnContext(implementation, backend, device, qnn_context_blob) {
+      : QnnContext(implementation, backend, device, cache) {
     htp_context_custom_config_ =
         std::make_unique<HtpContextCustomConfig>(this, htp_options);
   }

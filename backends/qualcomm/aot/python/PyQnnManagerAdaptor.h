@@ -177,6 +177,10 @@ class PyQnnManager {
     return ret;
   }
 
+  uint64_t GetSpillFillBufferSize() {
+    return qnn_manager_->GetSpillFillBufferSize();
+  }
+
  private:
   // Store the bytes object instead of a raw pointer so that this module will
   // keep the bytes alive.

@@ -208,16 +208,28 @@ def canonicalize_program(
                     == QnnExecuTorchBackendType.kHtpBackend
                     and options.backend_options.htp_options.use_multi_contexts
                 ):
-                    max_sf_buf_size = max(max_sf_buf_size, len(m.processed_bytes))
+                    qnn_mgr = PyQnnManagerAdaptor.QnnManager(
+                        m.compile_specs[0].value, m.processed_bytes
+                    )
+                    assert qnn_mgr.Init().value == 0, "failed to load context binary"
+                    max_sf_buf_size = max(
+                        max_sf_buf_size, qnn_mgr.GetSpillFillBufferSize()
+                    )
                     module_map[m] = options
+                    qnn_mgr.Destroy()
             return max_sf_buf_size, module_map
 
         def process_lowered_module(module):
+            qnn_mgr = PyQnnManagerAdaptor.QnnManager(
+                module.compile_specs[0].value, module.processed_bytes
+            )
+            assert qnn_mgr.Init().value == 0, "failed to load context binary"
             spill_fill_size = (
-                len(module.processed_bytes)
+                qnn_mgr.GetSpillFillBufferSize()
                 if custom_buffer_size is None
                 else custom_buffer_size
             )
+            qnn_mgr.Destroy()
             return spill_fill_size, {
                 module: convert_to_option(module.compile_specs[0].value)
             }
