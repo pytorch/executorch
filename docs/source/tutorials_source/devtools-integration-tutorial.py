@@ -20,7 +20,7 @@ Using the ExecuTorch Developer Tools to Profile a Model
 # This tutorial will show a full end-to-end flow of how to utilize the Developer Tools to profile a model.
 # Specifically, it will:
 #
-# 1. Generate the artifacts consumed by the Developer Tools (`ETRecord <../sdk-etrecord.html>`__, `ETDump <../sdk-etdump.html>`__).
+# 1. Generate the artifacts consumed by the Developer Tools (`ETRecord <../etrecord.html>`__, `ETDump <../sdk-etdump.html>`__).
 # 2. Create an Inspector class consuming these artifacts.
 # 3. Utilize the Inspector class to analyze the model profiling result.
 
@@ -296,6 +296,6 @@ print(inspector.find_total_for_module("L__self___conv2"))
 # ^^^^^^^^^^^^^^^
 #
 # - `ExecuTorch Developer Tools Overview <../devtools-overview.html>`__
-# - `ETRecord <../sdk-etrecord.html>`__
+# - `ETRecord <../etrecord.html>`__
 # - `ETDump <../sdk-etdump.html>`__
 # - `Inspector <../sdk-inspector.html>`__
