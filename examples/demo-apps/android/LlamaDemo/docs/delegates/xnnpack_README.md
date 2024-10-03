@@ -16,7 +16,11 @@ Phone verified: OnePlus 12, OnePlus 9 Pro. Samsung S23 (Llama only), Samsung S24
 
 ## Prerequisites
 * Install [Java 17 JDK](https://www.oracle.com/java/technologies/javase/jdk17-archive-downloads.html).
-* Install the [Android SDK API Level 34](https://developer.android.com/about/versions/15/setup-sdk) and [Android NDK 26.3.11579264](https://developer.android.com/studio/projects/install-ndk).
+* Install the [Android SDK API Level 34](https://developer.android.com/about/versions/15/setup-sdk) and [Android NDK 26.3.11579264](https://developer.android.com/studio/projects/install-ndk). **WARNING** NDK r27 will cause issues like:
+  ```
+  java.lang.UnsatisfiedLinkError: dlopen failed: cannot locate symbol "_ZTVNSt6__ndk114basic_ifstreamIcNS_11char_traitsIcEEEE" referenced by "/data/app/~~F5IwquaXUZPdLpSEYA-JGA==/com.example.executorchllamademo-FSyx80gEhsQCsxz7hvS2Ew==/lib/arm64/libexecutorch.so"...
+  ```
+  Please downgrade to version 26.3.11579264.
 * If you have Android Studio set up, you can install them with
   * Android Studio Settings -> Language & Frameworks -> Android SDK -> SDK Platforms -> Check the row with API Level 34.
   * Android Studio Settings -> Language & Frameworks -> Android SDK -> SDK Tools -> Check NDK (Side by side) row.
