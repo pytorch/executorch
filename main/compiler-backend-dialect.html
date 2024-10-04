@@ -620,6 +620,18 @@
 <li><p>backend: executor</p></li>
 </ul>
 </li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::truediv.int(Scalar</span> <span class="pre">a,</span> <span class="pre">Scalar</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">Scalar</span></code></p>
+<ul>
+<li><p>pattern: builtin.div</p></li>
+<li><p>backend: executor</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::sym_float.Scalar(Scalar</span> <span class="pre">a)</span> <span class="pre">-&gt;</span> <span class="pre">Scalar</span></code></p>
+<ul>
+<li><p>pattern: builtin.float</p></li>
+<li><p>backend: executor</p></li>
+</ul>
+</li>
 <li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::gt.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code></p>
 <ul>
 <li><p>pattern: builtin.gt</p></li>
@@ -647,6 +659,18 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::eq.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code></p>
 <ul>
 <li><p>pattern: builtin.eq</p></li>
+<li><p>backend: executor</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::mod.Scalar(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">SymInt</span></code></p>
+<ul>
+<li><p>pattern: builtin.divmod</p></li>
+<li><p>backend: executor</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::neg.Scalar(Scalar</span> <span class="pre">a)</span> <span class="pre">-&gt;</span> <span class="pre">Scalar</span></code></p>
+<ul>
+<li><p>pattern: operator.ne</p></li>
 <li><p>backend: executor</p></li>
 </ul>
 </li>
