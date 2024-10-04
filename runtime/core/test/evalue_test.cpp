@@ -16,9 +16,6 @@
 
 using namespace ::testing;
 
-namespace torch {
-namespace executor {
-
 using exec_aten::ScalarType;
 using executorch::runtime::BoxedEvalueList;
 using executorch::runtime::EValue;
@@ -30,7 +27,7 @@ class EValueTest : public ::testing::Test {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
@@ -276,6 +273,3 @@ TEST_F(EValueTest, ConstructFromNullPtrAborts) {
 
   ET_EXPECT_DEATH({ EValue evalue(null_ptr); }, "");
 }
-
-} // namespace executor
-} // namespace torch
