@@ -444,6 +444,8 @@ jobs:
 
   debug:
     uses: ./.github/workflows/macos-job.yml
+    strategy:
+      fail-fast: false
     with:
       runner: macos-m1-stable
       python-version: '3.11'
