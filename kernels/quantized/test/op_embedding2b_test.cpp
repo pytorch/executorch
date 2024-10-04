@@ -148,7 +148,6 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbeddingDeath2) {
   Tensor indices = tfl.make({3}, {0, 2, 1});
   Tensor out = tf.zeros({3, 4});
 
-  Tensor out = tf.zeros({3, 4});
   ET_EXPECT_DEATH(
       quantized_embedding_2bit_out(
           qweight,
