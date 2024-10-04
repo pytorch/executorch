@@ -322,7 +322,7 @@ void record_reference_matmul(
   _(uint8_t, Byte)                \
   _(int8_t, Char)                 \
   _(int32_t, Int)                 \
-  _(exec_aten::Half, Half)        \
+  _(executorch::aten::Half, Half) \
   _(float, Float)                 \
   _(int8_t, QInt8)
 

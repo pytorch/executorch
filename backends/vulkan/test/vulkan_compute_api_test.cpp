@@ -485,7 +485,7 @@ TEST_F(VulkanComputeAPITest, test_buffer_float16) {
   if (!context()->adapter_ptr()->has_full_float16_buffers_support()) {
     GTEST_SKIP();
   }
-  test_storage_buffer_type<exec_aten::Half, vkapi::kHalf>(16);
+  test_storage_buffer_type<executorch::aten::Half, vkapi::kHalf>(16);
 }
 
 TEST_F(VulkanComputeAPITest, test_buffer_int8) {
@@ -567,7 +567,7 @@ TEST_F(VulkanComputeAPITest, buffer_tensor_sanity_check) {
             run_buffer_tensor_sanity_check<float>(a);
             break;
           case vkapi::kHalf:
-            run_buffer_tensor_sanity_check<exec_aten::Half>(a);
+            run_buffer_tensor_sanity_check<executorch::aten::Half>(a);
             break;
           case vkapi::kChar:
             run_buffer_tensor_sanity_check<int8_t>(a);
@@ -2399,7 +2399,7 @@ TEST(VulkanToFromGPUShaderTest, round_trip_tests) {
 
   for (auto& sizes : to_test) {
     RUN_TESTS(float, vkapi::kFloat)
-    RUN_TESTS(exec_aten::Half, vkapi::kHalf)
+    RUN_TESTS(executorch::aten::Half, vkapi::kHalf)
   }
 
   for (auto& sizes : to_test_int8) {
