@@ -69,16 +69,18 @@ static void generateCombinations(
 
   for (NSBundle *bundle in self.bundles) {
     for (NSString *directory in self.directories) {
+      NSArray<NSURL *> *resourceURLs =
+          [bundle URLsForResourcesWithExtension:nil subdirectory:directory];
+      if (!resourceURLs.count) {
+        continue;
+      };
       NSMutableDictionary<NSString *, NSMutableArray<NSString *> *>
           *matchesByResource = [NSMutableDictionary new];
-      NSString *dirPath =
-          [bundle.resourcePath stringByAppendingPathComponent:directory];
-      NSArray<NSString *> *files =
-          [NSFileManager.defaultManager contentsOfDirectoryAtPath:dirPath
-                                                            error:nil]
-              ?: @[];
-      for (NSString *file in files) {
-        NSString *fullPath = [dirPath stringByAppendingPathComponent:file];
+
+      for (NSURL *url in resourceURLs) {
+        NSString *file = url.lastPathComponent;
+        NSString *fullPath = url.path;
+
         for (NSString *key in sortedKeys) {
           if (predicates[key](file)) {
             matchesByResource[key] =
