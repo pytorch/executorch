@@ -1649,6 +1649,20 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    def test_vulkan_backend_flip(self):
+        class FlipModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.flip(x, [0, 1, 2, 3])
+
+        self.lower_module_and_test_output(
+            FlipModule(),
+            (torch.arange(48).reshape(2, 3, 4, 2),),
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
     def test_vulkan_backend_conv_with_clamp(self):
         class ConvWithClampModule(torch.nn.Module):
             def __init__(self):
