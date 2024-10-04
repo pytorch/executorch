@@ -29,6 +29,7 @@ _QUANT_OPS = (
     ),
     op_target(
         name = "op_embedding4b",
+        deps = ["//executorch/kernels/quantized/cpu:embeddingxb"],
     ),
     op_target(
         name = "op_mixed_mm",

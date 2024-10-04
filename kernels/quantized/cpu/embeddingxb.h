@@ -55,8 +55,7 @@ Tensor& quantized_embedding_xbit_dtype_out(
     Tensor& out,
     int weight_nbit);
 
-
-    Tensor& quantized_embedding_xbit_dtype_out(
+Tensor& quantized_embedding_xbit_dtype_out(
     KernelRuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
@@ -67,7 +66,6 @@ Tensor& quantized_embedding_xbit_dtype_out(
     exec_aten::optional<ScalarType> out_dtype,
     Tensor& out,
     int weight_nbit);
-
 
 } // namespace native
 } // namespace executor

@@ -21,23 +21,22 @@ using ScalarType = exec_aten::ScalarType;
 
 namespace {
 
-
-static inline int32_t weight_value(const unsigned char* w_data, int32_t index, int32_t weight_nbit) {
+static inline int32_t
+weight_value(const unsigned char* w_data, int32_t index, int32_t weight_nbit) {
   if (weight_nbit == 2) {
     int32_t subbyte = index % 4;
-  index >>= 2;
-  switch (subbyte) {
-    case 0:
-      return (int32_t)(w_data[index] & 3) - 2;
-    case 1:
-      return (int32_t)((w_data[index] & 12) >> 2) - 2;
-    case 2:
-      return (int32_t)((w_data[index] & 48) >> 4) - 2;
-    case 3:
-      return (int32_t)((w_data[index] & 192) >> 6) - 2;
-  }
-  }
-  else if (weight_nbit == 4) {
+    index >>= 2;
+    switch (subbyte) {
+      case 0:
+        return (int32_t)(w_data[index] & 3) - 2;
+      case 1:
+        return (int32_t)((w_data[index] & 12) >> 2) - 2;
+      case 2:
+        return (int32_t)((w_data[index] & 48) >> 4) - 2;
+      case 3:
+        return (int32_t)((w_data[index] & 192) >> 6) - 2;
+    }
+  } else if (weight_nbit == 4) {
     int32_t odd = index & 1;
     index >>= 1;
     if (odd) {
@@ -46,10 +45,11 @@ static inline int32_t weight_value(const unsigned char* w_data, int32_t index, i
       return (int32_t)((w_data[index] >> 4) & 0x0F) - 8;
     }
   }
-
 }
 
-static inline int32_t get_embedding_dim(int32_t packed_dim, int32_t weight_nbit) {
+static inline int32_t get_embedding_dim(
+    int32_t packed_dim,
+    int32_t weight_nbit) {
   assert(8 % weight_nbit == 0);
   int packed_values_per_byte = 8 / weight_nbit;
   return packed_dim * packed_values_per_byte;
@@ -68,7 +68,7 @@ void check_embedding_xbit_args(
     exec_aten::optional<ScalarType> out_dtype,
     Tensor& out,
     int weight_nbit) {
-      ET_CHECK_MSG(8 % weight_nbit == 0, "nbit must divide 8");
+  ET_CHECK_MSG(8 % weight_nbit == 0, "nbit must divide 8");
 
   ET_CHECK_MSG(
       weight.dim() == 2, "weight must be 2D but got() %zd dims", weight.dim());
@@ -158,8 +158,6 @@ void check_embedding_xbit_args(
   }
 }
 
-
-
 /**
  * Retrieves the embeddings specified by indices, dequantizes them, and stores
  * them in out. Weight will always be uint8
@@ -172,7 +170,6 @@ void embedding_xbit_per_channel(
     const Tensor& indices,
     Tensor& out,
     int weight_nbit) {
-
   auto embedding_dim = get_embedding_dim(weight.size(1), weight_nbit);
 
   int32_t num_groups_per_channel = 1;
@@ -283,7 +280,12 @@ Tensor& quantized_embedding_xbit_out(
   constexpr auto name = "quantized_decomposed::embedding_xbit.out";
   ET_SWITCH_TWO_TYPES(Float, Half, out_type, ctx, name, CTYPE_OUT, [&]() {
     embedding_xbit_per_channel<CTYPE_OUT, CTYPE_OUT>(
-        weight, weight_scales, opt_weight_zero_points, indices, out, weight_nbit);
+        weight,
+        weight_scales,
+        opt_weight_zero_points,
+        indices,
+        out,
+        weight_nbit);
   });
 
   return out;
@@ -346,7 +348,12 @@ Tensor& quantized_embedding_xbit_dtype_out(
   ET_SWITCH_TWO_TYPES(Float, Half, params_type, ctx, name, CTYPE_P, [&]() {
     ET_SWITCH_TWO_TYPES(Float, Half, out_type, ctx, name, CTYPE_OUT, [&]() {
       embedding_xbit_per_channel<CTYPE_P, CTYPE_OUT>(
-          weight, weight_scales, opt_weight_zero_points, indices, out, weight_nbit);
+          weight,
+          weight_scales,
+          opt_weight_zero_points,
+          indices,
+          out,
+          weight_nbit);
     });
   });
 
