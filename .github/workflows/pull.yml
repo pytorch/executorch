@@ -27,7 +27,7 @@ jobs:
         BUILD_TOOL=cmake
         BACKEND=coreml
 
-        cd pytorch/executorch
+        # cd pytorch/executorch
         bash .ci/scripts/setup-conda.sh
 
         # xcode-select --install
