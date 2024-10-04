@@ -27,17 +27,20 @@ jobs:
         BUILD_TOOL=cmake
         BACKEND=coreml
 
-        # bash .ci/scripts/setup-conda.sh
+        cd pytorch/executorch
+        bash .ci/scripts/setup-conda.sh
+
+        xcode-select --install
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        # PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
-        # PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
         echo "Finishing installing coreml."
 
         # Build and test coreml model
-        # MODELS=(mv3 ic4 resnet50 edsr mobilebert w2l)
-        # for MODEL_NAME in "${MODELS[@]}"; do
-        #   echo "::group::Exporting coreml model: $MODEL_NAME"
-        #   PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
-        #   echo "::endgroup::"
-        # done
+        MODELS=(mv3 ic4 resnet50 edsr mobilebert w2l)
+        for MODEL_NAME in "${MODELS[@]}"; do
+          echo "::group::Exporting coreml model: $MODEL_NAME"
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
+          echo "::endgroup::"
+        done
