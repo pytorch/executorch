@@ -36,10 +36,6 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 
 from executorch.exir.program._program import _copy_module
 
-from torch.export._remove_auto_functionalized_pass import (
-    unsafe_remove_auto_functionalized_pass,
-)
-
 DEFAULT_DEBUG_HANDLE = 65535
 
 
@@ -52,8 +48,6 @@ class VulkanBackend(BackendDetails):
         program: ExportedProgram,
         module_compile_spec: List[CompileSpec],
     ) -> PreprocessResult:
-        program = unsafe_remove_auto_functionalized_pass(program)
-
         passes = [
             RemoveCloneOpsTransform(),
             AddmmToLinearTransform(),

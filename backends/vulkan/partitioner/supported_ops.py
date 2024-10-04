@@ -84,8 +84,6 @@ SUPPORTS_DYNAMIC_SHAPE = [
     # Convolution ops
     exir_ops.edge.aten.convolution.default,
     exir_ops.edge.et_vk.conv_with_clamp.default,
-    # Custom ops
-    "llama::sdpa_with_kv_cache",
 ]
 
 NO_DYNAMIC_SHAPE = [
