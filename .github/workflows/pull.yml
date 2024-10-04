@@ -443,7 +443,6 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_phi_3_mini.sh
 
   debug:
-    runs-on: macos-13-xlarge
     uses: ./.github/workflows/macos-job.yml
     with:
       runner: macos-m1-stable

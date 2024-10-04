@@ -1,200 +1,167 @@
-name: Set up conda environment for testing
+name: Run a macOS job
 
-description: Clean workspace and check out PyTorch
+on:
+  workflow_call:
+    inputs:
+      script:
+        description: 'Script to utilize'
+        default: "python setup.py bdist_wheel"
+        type: string
+      timeout:
+        description: 'Timeout for the job (in minutes)'
+        default: 30
+        type: number
+      runner:
+        description: 'Runner type to utilize'
+        default: "macos-12"
+        type: string
+      upload-artifact:
+        description: 'Name to give artifacts uploaded from ${RUNNER_ARTIFACT_DIR}'
+        default: ""
+        type: string
+      download-artifact:
+        description: 'Name to download artifacts to ${RUNNER_ARTIFACT_DIR}'
+        default: ""
+        type: string
+      repository:
+        description: 'Repository to checkout, defaults to ""'
+        default: ""
+        type: string
+      fetch-depth:
+        description: 'Number of commits to fetch, defaults to 1 similar to actions/checkout'
+        default: 1
+        type: number
+      submodules:
+        description:
+          Same as actions/checkout, set to `true` to checkout submodules or `recursive` to
+          recursively checkout everything
+        default: ""
+        type: string
+      ref:
+        description: 'Reference to checkout, defaults to "nightly"'
+        default: ""
+        type: string
+      test-infra-repository:
+        description: "Test infra repository to use"
+        default: "pytorch/test-infra"
+        type: string
+      test-infra-ref:
+        description: "Test infra reference to use"
+        default: ""
+        type: string
+      job-name:
+        description: "Name for the job, which is displayed in the GitHub UI"
+        default: "macos-job"
+        type: string
+      continue-on-error:
+        description: "Prevents a job from failing when a step fails. Set to true to allow a job to pass when exec script step fails."
+        default: false
+        type: boolean
+      binary-matrix:
+        description: "If we are calling this workflow with binary build matrix entry, will initialize matrix entries and env vars"
+        required: false
+        default: ''
+        type: string
 
-inputs:
-  python-version:
-    description: If set to any value, dont use sudo to clean the workspace
-    required: false
-    type: string
-    default: "3.9"
-  miniconda-version:
-    description: Miniconda version to install
-    required: false
-    type: string
-    default: "23.1.0-1"
-  environment-file:
-    description: Environment file to install dependencies from
-    required: false
-    type: string
-    default: ""
-  pip-requirements-file:
-    description: An optional pip requirements file to be installed in the conda environment
-    required: false
-    type: string
-    default: ""
-
-runs:
-  using: composite
-  steps:
-      # Use the same trick from https://github.com/marketplace/actions/setup-miniconda
-      # to refresh the cache daily. This is kind of optional though
-      - name: Get date
-        id: get-date
-        shell: bash
+jobs:
+  job:
+    name: ${{ inputs.job-name }}
+    env:
+      REPOSITORY: ${{ inputs.repository || github.repository }}
+      SCRIPT: ${{ inputs.script }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout }}
+    steps:
+      - name: Clean workspace
         run: |
-          echo "today=$(/bin/date -u '+%Y%m%d')d" >> "${GITHUB_OUTPUT}"
+          echo "::group::Cleanup debug output"
+          rm -rfv "${GITHUB_WORKSPACE}"
+          mkdir -p "${GITHUB_WORKSPACE}"
+          echo "::endgroup::"
 
-      - name: Setup miniconda cache
-        id: miniconda-cache
-        uses: actions/cache@v3
+      - name: Checkout repository (${{ inputs.test-infra-repository }}@${{ inputs.test-infra-ref }})
+        uses: actions/checkout@v3
         with:
-          path: ${{ runner.temp }}/miniconda
-          key: miniconda-${{ runner.os }}-${{ runner.arch }}-${{ inputs.python-version }}-${{ steps.get-date.outputs.today }}
+          # Support the use case where we need to checkout someone's fork
+          repository: ${{ inputs.test-infra-repository }}
+          ref: ${{ inputs.test-infra-ref }}
+          path: test-infra
 
-      - name: Install miniconda (${{ inputs.miniconda-version }})
-        if: steps.miniconda-cache.outputs.cache-hit != 'true'
-        env:
-          MINICONDA_VERSION: ${{ inputs.miniconda-version }}
+      - name: Setup miniconda
+        uses: ./.github/actions/setup-miniconda
+
+      - name: Checkout repository (${{ inputs.repository || github.repository }}@${{ inputs.ref }})
+        uses: actions/checkout@v3
+        with:
+          # Support the use case where we need to checkout someone's fork
+          repository: ${{ inputs.repository || github.repository }}
+          ref: ${{ inputs.ref || github.ref }}
+          path: ${{ inputs.repository || github.repository }}
+          fetch-depth: ${{ inputs.fetch-depth }}
+          submodules: ${{ inputs.submodules }}
+
+      - name: Setup useful environment variables
+        working-directory: ${{ inputs.repository }}
+        run: |
+          RUNNER_ARTIFACT_DIR="${RUNNER_TEMP}/artifacts"
+          mkdir -p "${RUNNER_ARTIFACT_DIR}"
+          echo "RUNNER_ARTIFACT_DIR=${RUNNER_ARTIFACT_DIR}" >> "${GITHUB_ENV}"
+
+          RUNNER_TEST_RESULTS_DIR="${RUNNER_TEMP}/test-results"
+          mkdir -p "${RUNNER_TEST_RESULTS_DIR}"
+          echo "RUNNER_TEST_RESULTS_DIR=${RUNNER_TEST_RESULTS_DIR}" >> "${GITHUB_ENV}"
+
+      - name: Download artifacts (if any)
+        uses: actions/download-artifact@v3
+        if: ${{ inputs.download-artifact != '' }}
+        with:
+          name: ${{ inputs.download-artifact }}
+          path: ${{ runner.temp }}/artifacts/
+
+      - name: Run script
         shell: bash -l {0}
+        continue-on-error: ${{ inputs.continue-on-error }}
+        working-directory: ${{ inputs.repository }}
         run: |
-          MINICONDA_INSTALL_PATH="${RUNNER_TEMP}/miniconda"
-          mkdir -p "${MINICONDA_INSTALL_PATH}"
-          case ${RUNNER_OS}-${RUNNER_ARCH} in
-            Linux-X64)
-              MINICONDA_ARCH="Linux-x86_64"
-              ;;
-            macOS-ARM64)
-              MINICONDA_ARCH="MacOSX-arm64"
-              ;;
-            macOS-X64)
-              MINICONDA_ARCH="MacOSX-x86_64"
-              ;;
-            *)
-            echo "::error::Platform ${RUNNER_OS}-${RUNNER_ARCH} currently unsupported using this action"
-              exit 1
-              ;;
-          esac
-          MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-py39_${MINICONDA_VERSION}-${MINICONDA_ARCH}.sh"
-          curl -fsSL "${MINICONDA_URL}" -o "${MINICONDA_INSTALL_PATH}/miniconda.sh"
-          bash "${MINICONDA_INSTALL_PATH}/miniconda.sh" -b -u -p "${MINICONDA_INSTALL_PATH}"
-          rm -rf "${MINICONDA_INSTALL_PATH}/miniconda.sh"
+          {
+            echo "#!/usr/bin/env bash";
+            echo "set -eou pipefail";
+            # Source conda so it's available to the script environment
+            echo 'eval "$(conda shell.bash hook)"';
+            echo "${SCRIPT}";
+          } > "${RUNNER_TEMP}/exec_script"
+          while read line; do
+            eval "export ${line}"
+          done < "${RUNNER_TEMP}/github_env_${GITHUB_RUN_ID}"
+          bash "${RUNNER_TEMP}/exec_script"
 
-      - name: Update GitHub path to include miniconda install
-        shell: bash
-        run: |
-          set -x
-
-          MINICONDA_INSTALL_PATH="${RUNNER_TEMP}/miniconda"
-          echo "${MINICONDA_INSTALL_PATH}/bin" >> $GITHUB_PATH
-          # NB: GITHUB_PATH has a lower priority than PATH, so also set the path
-          # here to make sure that the correct conda is used
-          echo "PATH=${MINICONDA_INSTALL_PATH}/bin:${PATH}" >> $GITHUB_ENV
-
-      # When the environment-file or pip-requirements-file inputs are not set or are set to invalid paths, the hashFiles
-      # function will return an empty string without failing the step. This works out nicely and we can have a various
-      # combination of cache key such as:
-      # - Both are missing or invalid: miniconda-env-macOS-ARM64-20221022d--
-      # - Both are set: miniconda-env-macOS-ARM64-20221022d-HASH(environment-file)-HASH(pip-requirements-file)
-      # - The first one is missing or invalid: miniconda-env-macOS-ARM64-20221022d--HASH(pip-requirements-file)
-      # - The second one is missing or invalid: miniconda-env-macOS-ARM64-20221022d-HASH(environment-file)-
-      #
-      # There is no need to skip or run actions/cache with complicated logic
-      - name: Setup miniconda env cache
-        id: miniconda-env-cache
-        uses: actions/cache@v3
+      - name: Surface failing tests
+        if: always()
+        uses: pmeier/pytest-results-action@v0.3.0
         with:
-          path: ${{ runner.temp }}/conda-python-${{ inputs.python-version }}
-          key: miniconda-env-${{ runner.os }}-${{ runner.arch }}-${{ inputs.python-version }}-${{ steps.get-date.outputs.today }}-${{ hashFiles(inputs.environment-file) }}-${{ hashFiles(inputs.pip-requirements-file) }}
+          path: ${{ env.RUNNER_TEST_RESULTS_DIR }}
+          fail-on-empty: false
 
-      - name: Setup conda environment with python (v${{ inputs.python-version }})
-        if: steps.miniconda-env-cache.outcome == 'success' && steps.miniconda-env-cache.outputs.cache-hit != 'true'
-        shell: bash
+      - name: Check if there are potential artifacts and move them to the correct artifact location
+        shell: bash -l {0}
+        working-directory: ${{ inputs.repository }}
+        id: check-artifacts
+        if: ${{ inputs.upload-artifact != '' }}
         env:
-          PYTHON_VERSION: ${{ inputs.python-version }}
-          ENV_FILE: ${{ inputs.environment-file }}
-          PIP_REQUIREMENTS_FILE: ${{ inputs.pip-requirements-file }}
+          UPLOAD_ARTIFACT_NAME: ${{ inputs.upload-artifact }}
         run: |
-          set -x
-
-          CONDA_BASE_ENV="${RUNNER_TEMP}/conda-python-${PYTHON_VERSION}"
-          ENV_FILE_FLAG=""
-          if [[ -f "${ENV_FILE}" ]]; then
-            ENV_FILE_FLAG="--file ${ENV_FILE}"
-          elif [[ -n "${ENV_FILE}" ]]; then
-            echo "::warning::Specified env file (${ENV_FILE}) not found, not going to include it"
+          # If the default execution path is followed then we should get a wheel in the dist/ folder
+          # attempt to just grab whatever is in there and scoop it all up
+          if find "dist/" -name "*.whl" >/dev/null 2>/dev/null; then
+            mv -v dist/*.whl "${RUNNER_ARTIFACT_DIR}/"
           fi
+          # Set to fail upload step if there are no files for upload and expected files for upload
+          echo 'if-no-files-found=error' >> "${GITHUB_OUTPUT}"
 
-          CONDA_EXTRA_FLAGS=""
-          if [[ "${PYTHON_VERSION}" == "3.11" ]]; then
-            CONDA_EXTRA_FLAGS=" -c pytorch-nightly"
-          fi
-
-          # Print the conda we are using here in case we need debugging information
-          CONDA_RUNTIME=$(which conda)
-          "${CONDA_RUNTIME}" --version
-
-          "${CONDA_RUNTIME}" create \
-            --yes --quiet \
-            --prefix "${CONDA_BASE_ENV}" \
-            ${ENV_FILE_FLAG} \
-            python="${PYTHON_VERSION}" \
-            cmake=3.22 \
-            ninja=1.10 \
-            pkg-config=0.29 \
-            wheel=0.37 \
-            ${CONDA_EXTRA_FLAGS}
-
-          if [[ -f "${PIP_REQUIREMENTS_FILE}" ]]; then
-            "${CONDA_RUNTIME}" run -p "${CONDA_BASE_ENV}" --no-capture-output python3 -mpip install -r "${PIP_REQUIREMENTS_FILE}"
-          elif [[ -n "${PIP_REQUIREMENTS_FILE}" ]]; then
-            echo "::warning::Specified pip requirements file (${PIP_REQUIREMENTS_FILE}) not found, not going to include it"
-          fi
-
-      - name: Clone the base conda environment and update GitHub env
-        shell: bash
-        env:
-          PYTHON_VERSION: ${{ inputs.python-version }}
-          CONDA_BASE_ENV: ${{ runner.temp }}/conda-python-${{ inputs.python-version }}
-          PIP_REQUIREMENTS_FILE: ${{ inputs.pip-requirements-file }}
-        run: |
-          set -x
-
-          # Print the conda we are using here in case we need debugging information
-          CONDA_RUNTIME=$(which conda)
-          "${CONDA_RUNTIME}" --version
-
-          CONDA_ENV="${RUNNER_TEMP}/conda_environment_${GITHUB_RUN_ID}"
-          "${CONDA_RUNTIME}" create \
-            --yes --quiet \
-            --prefix "${CONDA_ENV}" \
-            --clone "${CONDA_BASE_ENV}"
-
-          set +e
-          # NB: Cloning sometimes doesn't copied pip dependencies (untracked files) over. If this
-          # happens, let's attempt to install the pip requirements directly on top of the cloned
-          # environment. This is to make sure that no dependency is missing.
-          UNTRACKED_FILES_COUNT=$("${CONDA_RUNTIME}" package -p "${CONDA_ENV}" -u | grep -v "^#" | wc -l | xargs)
-          set -e
-
-          if [[ -z "${UNTRACKED_FILES_COUNT}" ]] || [[ "${UNTRACKED_FILES_COUNT}" == "0" ]]; then
-            if [[ -f "${PIP_REQUIREMENTS_FILE}" ]]; then
-              # NB: Force reinstall and don't use the cache, as the installation would still fail
-              # when reporting that all requirements have been satisfied
-              "${CONDA_RUNTIME}" run -p "${CONDA_ENV}" --no-capture-output python3 -mpip install --ignore-installed --no-cache-dir -r "${PIP_REQUIREMENTS_FILE}"
-            elif [[ -n "${PIP_REQUIREMENTS_FILE}" ]]; then
-              echo "::warning::Specified pip requirements file (${PIP_REQUIREMENTS_FILE}) not found, not going to include it"
-            fi
-          fi
-
-          echo "CONDA_ENV=${CONDA_ENV}" >> "${GITHUB_ENV}"
-          echo "CONDA_RUN=${CONDA_RUNTIME} run -p ${CONDA_ENV} --no-capture-output" >> "${GITHUB_ENV}"
-          if [[ "${PYTHON_VERSION}" == "3.11" ]]; then
-            # TODO: Remove me, when more packages will be available on default channel
-            echo "CONDA_INSTALL=${CONDA_RUNTIME} install --yes --quiet -p ${CONDA_ENV} -c pytorch-nightly" >> "${GITHUB_ENV}"
-          else
-            echo "CONDA_INSTALL=${CONDA_RUNTIME} install --yes --quiet -p ${CONDA_ENV}" >> "${GITHUB_ENV}"
-          fi
-
-      - name: Reset channel priority
-        shell: bash
-        run: |
-          CONDA_RUNTIME=$(which conda)
-
-          set -euxo pipefail
-          "${CONDA_RUNTIME}" config --set channel_priority false
-
-      - name: Setup upterm session
-        uses: owenthereal/action-upterm@v1
+      - name: Upload artifacts to GitHub (if any)
+        uses: actions/upload-artifact@v3
+        if: ${{ inputs.upload-artifact != '' }}
         with:
-          limit-access-to-actor: true
+          name: ${{ inputs.upload-artifact }}
+          path: ${{ runner.temp }}/artifacts/
+          if-no-files-found: ${{ steps.check-artifacts.outputs.if-no-files-found }}
