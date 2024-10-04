@@ -2681,6 +2681,44 @@ class TestExampleScript(TestQNN):
                 for k, v in cpu.items():
                     self.assertLessEqual(abs(v[0] - htp[k][0]), 5)
 
+    def test_wav2letter(self):
+        if not self.required_envs([self.pretrained_weight]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/wav2letter.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--pretrained_weight",
+            self.pretrained_weight,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertLessEqual(msg["wer"], 0.5)
+                self.assertLessEqual(msg["cer"], 0.25)
+
     def test_export_example(self):
         if not self.required_envs([self.model_name]):
             self.skipTest("missing required envs")
