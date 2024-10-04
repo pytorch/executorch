@@ -169,9 +169,16 @@ def register_dynamic_shape_ops(ops: OpList):
         ops[op].supports_dynamic_shape = True
 
 
+def register_custom_ops(ops: OpList):
+    for op in CUSTOM_OPS:
+        ops[op].supports_dynamic_shape = True
+        ops[op].supports_texture = True
+
+
 def enumerate_supported_ops():
     ops = OpList()
     register_prim_ops(ops)
     register_no_dynamic_shape_ops(ops)
     register_dynamic_shape_ops(ops)
+    register_custom_ops(ops)
     return ops
