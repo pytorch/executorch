@@ -15,6 +15,11 @@ on:
         description: 'Runner type to utilize'
         default: "macos-12"
         type: string
+      python-version:
+        description: If set to any value, dont use sudo to clean the workspace
+        required: false
+        type: string
+        default: "3.9"
       upload-artifact:
         description: 'Name to give artifacts uploaded from ${RUNNER_ARTIFACT_DIR}'
         default: ""
