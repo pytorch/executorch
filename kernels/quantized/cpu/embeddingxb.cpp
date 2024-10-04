@@ -8,9 +8,9 @@
 
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <algorithm>
+#include <cassert>
 #include <cinttypes>
 #include <cmath>
-#include <cassert>
 
 namespace torch {
 namespace executor {

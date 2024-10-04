@@ -85,12 +85,12 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbedding) {
   //  0, -1, -2, 0, -> 2, 1, 0, 2 -> 10 01 00 10 -> 146
   // -2,  -1, 0, 1, -> 0, 1, 2, 3 -> 00 01 10 11 -> 27
 
-  Tensor qweight = tfb.make({3, 1}, {59, 146, 27});
+  qweight = tfb.make({3, 1}, {59, 146, 27});
 
-  Tensor indices = tfl.make({3}, {0, 2, 1});
+  indices = tfl.make({3}, {0, 2, 1});
 
-  Tensor out = tf.zeros({3, 4});
-  Tensor expected = tf.make(
+  out = tf.zeros({3, 4});
+  expected = tf.make(
       {3, 4},
       {-1.5, 0.0, -2.0, -1.0, 0.0, 2.5, 3.0, 6.0, 0.0, -1.5, -6.0, -2.0});
 
