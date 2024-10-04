@@ -11,10 +11,10 @@
 #include <gtest/gtest.h>
 #include <xnnpack/subgraph.h>
 
-using torch::executor::Error;
-using torch::executor::EValue;
-using torch::executor::testing::TensorFactory;
-using torch::executor::xnnpack::delegate::XNNExecutor;
+using executorch::backends::xnnpack::delegate::XNNExecutor;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::testing::TensorFactory;
 
 TEST(XNNExecutorTest, ArgumentWithTooManyDimensions) {
   XNNExecutor executor;
@@ -76,7 +76,7 @@ TEST(XNNExecutorTest, ArgumentWithTooManyDimensions) {
               1,
           }),
       Error::Ok);
-  TensorFactory<exec_aten::ScalarType::Int> tf;
+  TensorFactory<executorch::aten::ScalarType::Int> tf;
   auto input_tensor = tf.make({1, 1, 1, 1, 1, 1, 1, 1, 1}, {42});
   ASSERT_EQ(input_tensor.dim(), 9);
   auto output_tensor = tf.make(
