@@ -54,15 +54,15 @@ using namespace ::executorch::runtime;
         SEL testLoadSelector = NSSelectorFromString([NSString
             stringWithFormat:@"test_load_%@_%@", directoryName, modelName]);
         IMP testLoadImplementation = imp_implementationWithBlock(^(id _self) {
-          auto __block module = std::make_unique<Module>(modelPath.UTF8String);
           [_self measureWithMetrics:@[
             [XCTClockMetric new],
             [XCTMemoryMetric new],
           ]
                             options:XCTMeasureOptions.defaultOptions
                               block:^{
-                                XCTAssertEqual(module->load_method("forward"),
-                                               Error::Ok);
+                                XCTAssertEqual(
+                                    Module(modelPath.UTF8String).load_forward(),
+                                    Error::Ok);
                               }];
         });
         class_addMethod(
@@ -81,7 +81,7 @@ using namespace ::executorch::runtime;
           const auto num_inputs = method_meta->num_inputs();
           XCTAssertGreaterThan(num_inputs, 0);
 
-          std::vector<TensorPtr> __block tensors;
+          std::vector<TensorPtr> tensors;
           tensors.reserve(num_inputs);
           std::vector<EValue> __block inputs;
           inputs.reserve(num_inputs);
