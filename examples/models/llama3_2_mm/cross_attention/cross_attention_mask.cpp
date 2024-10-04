@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/examples/models/flamingo/cross_attention/cross_attention_mask.h>
+#include <executorch/examples/models/llama3_2_mm/cross_attention/cross_attention_mask.h>
 
 #include <algorithm>
 #include <string>

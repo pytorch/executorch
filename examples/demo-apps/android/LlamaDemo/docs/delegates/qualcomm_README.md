@@ -6,13 +6,13 @@ More specifically, it covers:
 2. Building and linking libraries that are required to inference on-device for Android platform using Qualcomm AI accelerators.
 3. Building the Android demo app itself.
 
-Verified on Linux CentOS, QNN SDK [v2.26](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.26.0.240828.zip), python 3.10, Android SDK r27 and r26b.
+Verified on Linux CentOS, QNN SDK [v2.26](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.26.0.240828.zip), python 3.10, Android SDK r26c.
 
 Phone verified: OnePlus 12, Samsung 24+, Samsung 23
 
 ## Prerequisites
 * Download and unzip QNN SDK [v2.26](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.26.0.240828.zip)
-* Download and unzip Android SDK [r27](https://developer.android.com/ndk/downloads)
+* Download and unzip Android SDK [r26](https://developer.android.com/ndk/downloads)
 * Android phone with Snapdragon8 Gen3 (SM8650) or Gen2 (SM8550). Gen 1 and lower SoC might be supported but not fully validated.
 * Desired Llama model weights in .PTH format. You can download them on HuggingFace ([Example](https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct)).
 
@@ -40,7 +40,7 @@ Install dependencies
 ## Setup QNN
 ```
 # Set these variables correctly for your environment
-export ANDROID_NDK_ROOT=$HOME/android-ndk-r27 # Download android SDK and unzip to home directory
+export ANDROID_NDK_ROOT=$HOME/android-ndk-r26 # Download android SDK and unzip to home directory
 export QNN_SDK_ROOT=$HOME/Your-SDK-Root #Folder contains lib
 export EXECUTORCH_ROOT=$HOME/repos/executorch
 export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/:$LD_LIBRARY_PATH
