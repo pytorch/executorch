@@ -37,28 +37,27 @@ Tensor& eq_tensor_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "eq.Scalar_out", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(
-        Bool, b_type, ctx, "eq.Scalar_out", CTYPE_B, [&]() {
-          using CTYPE_IN =
-              typename torch::executor::promote_types<CTYPE_A, CTYPE_B>::type;
-          ET_DCHECK(
-              CppTypeToScalarType<CTYPE_IN>::value ==
-              promoteTypes(a_type, b_type));
-          ET_SWITCH_REAL_TYPES_AND(
-              Bool, out_type, ctx, "eq.Scalar_out", CTYPE_OUT, [&]() {
-                apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-                    [](const CTYPE_A val_a, const CTYPE_B val_b) {
-                      CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                      CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                      bool value = a_casted == b_casted;
-                      return static_cast<CTYPE_OUT>(value);
-                    },
-                    a,
-                    b,
-                    out);
-              });
-        });
+  constexpr auto name = "eq.Tensor_out";
+
+  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
+    ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
+      using CTYPE_IN =
+          typename torch::executor::promote_types<CTYPE_A, CTYPE_B>::type;
+      ET_DCHECK(
+          CppTypeToScalarType<CTYPE_IN>::value == promoteTypes(a_type, b_type));
+      ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
+        apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
+            [](const CTYPE_A val_a, const CTYPE_B val_b) {
+              CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+              CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
+              bool value = a_casted == b_casted;
+              return static_cast<CTYPE_OUT>(value);
+            },
+            a,
+            b,
+            out);
+      });
+    });
   });
 
   return out;
@@ -86,27 +85,28 @@ Tensor& eq_scalar_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "eq.Scalar_out", CTYPE_A, [&]() {
-    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "eq.Scalar_out", CTYPE_B, [&]() {
+  constexpr auto name = "eq.Scalar_out";
+
+  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
+    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
       using CTYPE_IN =
           typename torch::executor::promote_types<CTYPE_A, CTYPE_B>::type;
       ET_DCHECK(
           CppTypeToScalarType<CTYPE_IN>::value == promoteTypes(a_type, b_type));
-      ET_SWITCH_REAL_TYPES_AND(
-          Bool, out_type, ctx, "eq.Scalar_out", CTYPE_OUT, [&]() {
-            CTYPE_B val_b = 0;
-            utils::extract_scalar(b, &val_b);
-            apply_unary_map_fn(
-                [val_b](const CTYPE_A val_a) {
-                  CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                  CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                  bool value = a_casted == b_casted;
-                  return static_cast<CTYPE_OUT>(value);
-                },
-                a.const_data_ptr<CTYPE_A>(),
-                out.mutable_data_ptr<CTYPE_OUT>(),
-                out.numel());
-          });
+      ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
+        CTYPE_B val_b = 0;
+        utils::extract_scalar(b, &val_b);
+        apply_unary_map_fn(
+            [val_b](const CTYPE_A val_a) {
+              CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+              CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
+              bool value = a_casted == b_casted;
+              return static_cast<CTYPE_OUT>(value);
+            },
+            a.const_data_ptr<CTYPE_A>(),
+            out.mutable_data_ptr<CTYPE_OUT>(),
+            out.numel());
+      });
     });
   });
 
