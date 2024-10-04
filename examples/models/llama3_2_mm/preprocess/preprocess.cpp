@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include "executorch/examples/models/flamingo/preprocess/preprocess.h"
+#include "executorch/examples/models/llama3_2_mm/preprocess/preprocess.h"
 
 #include <algorithm>
 #include <cassert>
