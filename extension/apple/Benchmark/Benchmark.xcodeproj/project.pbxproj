@@ -7,11 +7,19 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		03B2D3682C8A515A0046936E /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03B2D3672C8A515A0046936E /* App.swift */; };
+		032A73CA2CAFBA8600932D36 /* LLaMATests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 032A73C82CAFBA8600932D36 /* LLaMATests.mm */; };
+		032A74182CAFBB7800932D36 /* text_decoder_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A73DB2CAFBB7800932D36 /* text_decoder_runner.cpp */; };
+		032A741A2CAFBB7800932D36 /* bpe_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A73FA2CAFBB7800932D36 /* bpe_tokenizer.cpp */; };
+		032A741D2CAFBB7800932D36 /* text_prefiller.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A73DD2CAFBB7800932D36 /* text_prefiller.cpp */; };
+		032A741E2CAFBB7800932D36 /* tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A73FE2CAFBB7800932D36 /* tiktoken.cpp */; };
+		032A741F2CAFBB7800932D36 /* sampler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A73E62CAFBB7800932D36 /* sampler.cpp */; };
+		032A74232CAFC1B300932D36 /* runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A74222CAFC1B300932D36 /* runner.cpp */; };
+		032A74262CAFC34800932D36 /* llama_tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A74252CAFC34800932D36 /* llama_tiktoken.cpp */; };
+		0351D9D72CAFC9A200607121 /* Resources in Resources */ = {isa = PBXBuildFile; fileRef = 03C7FA322C8AA24200E6E9AE /* Resources */; };
 		03B0118E2CAC567900054791 /* DynamicTestCase.m in Sources */ = {isa = PBXBuildFile; fileRef = 03B0118C2CAC567900054791 /* DynamicTestCase.m */; };
 		03B011912CAD114E00054791 /* ResourceTestCase.m in Sources */ = {isa = PBXBuildFile; fileRef = 03B011902CAD114E00054791 /* ResourceTestCase.m */; };
+		03B2D3682C8A515A0046936E /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03B2D3672C8A515A0046936E /* App.swift */; };
 		03B2D37A2C8A515C0046936E /* GenericTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 03B2D3792C8A515C0046936E /* GenericTests.mm */; };
-		03C7FA382C8AA3EC00E6E9AE /* Resources in Resources */ = {isa = PBXBuildFile; fileRef = 03C7FA322C8AA24200E6E9AE /* Resources */; };
 		03DD00A92C8FE44600FE4619 /* backend_coreml.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD00992C8FE44600FE4619 /* backend_coreml.xcframework */; };
 		03DD00AA2C8FE44600FE4619 /* kernels_custom.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD009A2C8FE44600FE4619 /* kernels_custom.xcframework */; };
 		03DD00AF2C8FE44600FE4619 /* kernels_portable.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD009F2C8FE44600FE4619 /* kernels_portable.xcframework */; };
@@ -39,16 +47,39 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		032A73C82CAFBA8600932D36 /* LLaMATests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LLaMATests.mm; sourceTree = "<group>"; };
+		032A73D42CAFBB7800932D36 /* image.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = image.h; sourceTree = "<group>"; };
+		032A73D52CAFBB7800932D36 /* image_prefiller.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = image_prefiller.h; sourceTree = "<group>"; };
+		032A73D62CAFBB7800932D36 /* multimodal_runner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = multimodal_runner.h; sourceTree = "<group>"; };
+		032A73D72CAFBB7800932D36 /* stats.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = stats.h; sourceTree = "<group>"; };
+		032A73DA2CAFBB7800932D36 /* text_decoder_runner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = text_decoder_runner.h; sourceTree = "<group>"; };
+		032A73DB2CAFBB7800932D36 /* text_decoder_runner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = text_decoder_runner.cpp; sourceTree = "<group>"; };
+		032A73DC2CAFBB7800932D36 /* text_prefiller.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = text_prefiller.h; sourceTree = "<group>"; };
+		032A73DD2CAFBB7800932D36 /* text_prefiller.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = text_prefiller.cpp; sourceTree = "<group>"; };
+		032A73DE2CAFBB7800932D36 /* text_token_generator.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = text_token_generator.h; sourceTree = "<group>"; };
+		032A73DF2CAFBB7800932D36 /* util.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = util.h; sourceTree = "<group>"; };
+		032A73E52CAFBB7800932D36 /* sampler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sampler.h; sourceTree = "<group>"; };
+		032A73E62CAFBB7800932D36 /* sampler.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = sampler.cpp; sourceTree = "<group>"; };
+		032A73F82CAFBB7800932D36 /* base64.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = base64.h; sourceTree = "<group>"; };
+		032A73F92CAFBB7800932D36 /* bpe_tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bpe_tokenizer.h; sourceTree = "<group>"; };
+		032A73FA2CAFBB7800932D36 /* bpe_tokenizer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = bpe_tokenizer.cpp; sourceTree = "<group>"; };
+		032A73FD2CAFBB7800932D36 /* tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tiktoken.h; sourceTree = "<group>"; };
+		032A73FE2CAFBB7800932D36 /* tiktoken.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = tiktoken.cpp; sourceTree = "<group>"; };
+		032A73FF2CAFBB7800932D36 /* tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tokenizer.h; sourceTree = "<group>"; };
+		032A74212CAFC1B300932D36 /* runner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = runner.h; path = ../../../examples/models/llama2/runner/runner.h; sourceTree = SOURCE_ROOT; };
+		032A74222CAFC1B300932D36 /* runner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = runner.cpp; path = ../../../examples/models/llama2/runner/runner.cpp; sourceTree = SOURCE_ROOT; };
+		032A74242CAFC34800932D36 /* llama_tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = llama_tiktoken.h; path = ../../../examples/models/llama2/tokenizer/llama_tiktoken.h; sourceTree = SOURCE_ROOT; };
+		032A74252CAFC34800932D36 /* llama_tiktoken.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = llama_tiktoken.cpp; path = ../../../examples/models/llama2/tokenizer/llama_tiktoken.cpp; sourceTree = SOURCE_ROOT; };
 		037C96A02C8A570B00B3DF38 /* Tests.xctestplan */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = Tests.xctestplan; sourceTree = "<group>"; };
+		03B0118B2CAC567900054791 /* DynamicTestCase.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = DynamicTestCase.h; sourceTree = "<group>"; };
+		03B0118C2CAC567900054791 /* DynamicTestCase.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DynamicTestCase.m; sourceTree = "<group>"; };
+		03B0118F2CAD114E00054791 /* ResourceTestCase.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ResourceTestCase.h; sourceTree = "<group>"; };
+		03B011902CAD114E00054791 /* ResourceTestCase.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ResourceTestCase.m; sourceTree = "<group>"; };
 		03B019502C8A80D30044D558 /* Tests.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; path = Tests.xcconfig; sourceTree = "<group>"; };
 		03B2D3642C8A515A0046936E /* Benchmark.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Benchmark.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		03B2D3672C8A515A0046936E /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		03B2D36D2C8A515B0046936E /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		03B2D3752C8A515C0046936E /* Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		03B0118B2CAC567900054791 /* DynamicTestCase.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = DynamicTestCase.h; sourceTree = "<group>"; };
-		03B0118C2CAC567900054791 /* DynamicTestCase.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DynamicTestCase.m; sourceTree = "<group>"; };
-		03B0118F2CAD114E00054791 /* ResourceTestCase.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ResourceTestCase.h; sourceTree = "<group>"; };
-		03B011902CAD114E00054791 /* ResourceTestCase.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ResourceTestCase.m; sourceTree = "<group>"; };
 		03B2D3792C8A515C0046936E /* GenericTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GenericTests.mm; sourceTree = "<group>"; };
 		03C7FA322C8AA24200E6E9AE /* Resources */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources; sourceTree = SOURCE_ROOT; };
 		03DD00992C8FE44600FE4619 /* backend_coreml.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = backend_coreml.xcframework; path = Frameworks/backend_coreml.xcframework; sourceTree = "<group>"; };
@@ -65,7 +96,6 @@
 		03ED6D142C8AAFFF00F2D6EE /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/Metal.framework; sourceTree = DEVELOPER_DIR; };
 		03ED6D162C8AB00500F2D6EE /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/CoreML.framework; sourceTree = DEVELOPER_DIR; };
 		03ED6D182C8AB00A00F2D6EE /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/Accelerate.framework; sourceTree = DEVELOPER_DIR; };
-		8493389B2C9918950071ABAD /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/UIKit.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -100,6 +130,74 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		032A73C92CAFBA8600932D36 /* LLaMA */ = {
+			isa = PBXGroup;
+			children = (
+				032A73E02CAFBB7800932D36 /* runner */,
+				032A73E92CAFBB7800932D36 /* sampler */,
+				032A74022CAFBB7800932D36 /* tokenizer */,
+				032A73C82CAFBA8600932D36 /* LLaMATests.mm */,
+			);
+			path = LLaMA;
+			sourceTree = "<group>";
+		};
+		032A73E02CAFBB7800932D36 /* runner */ = {
+			isa = PBXGroup;
+			children = (
+				032A73D42CAFBB7800932D36 /* image.h */,
+				032A73D52CAFBB7800932D36 /* image_prefiller.h */,
+				032A73D62CAFBB7800932D36 /* multimodal_runner.h */,
+				032A74212CAFC1B300932D36 /* runner.h */,
+				032A74222CAFC1B300932D36 /* runner.cpp */,
+				032A73D72CAFBB7800932D36 /* stats.h */,
+				032A73DA2CAFBB7800932D36 /* text_decoder_runner.h */,
+				032A73DB2CAFBB7800932D36 /* text_decoder_runner.cpp */,
+				032A73DC2CAFBB7800932D36 /* text_prefiller.h */,
+				032A73DD2CAFBB7800932D36 /* text_prefiller.cpp */,
+				032A73DE2CAFBB7800932D36 /* text_token_generator.h */,
+				032A73DF2CAFBB7800932D36 /* util.h */,
+			);
+			name = runner;
+			path = ../../llm/runner;
+			sourceTree = SOURCE_ROOT;
+		};
+		032A73E92CAFBB7800932D36 /* sampler */ = {
+			isa = PBXGroup;
+			children = (
+				032A73E52CAFBB7800932D36 /* sampler.h */,
+				032A73E62CAFBB7800932D36 /* sampler.cpp */,
+			);
+			name = sampler;
+			path = ../../llm/sampler;
+			sourceTree = SOURCE_ROOT;
+		};
+		032A74022CAFBB7800932D36 /* tokenizer */ = {
+			isa = PBXGroup;
+			children = (
+				032A73F82CAFBB7800932D36 /* base64.h */,
+				032A73F92CAFBB7800932D36 /* bpe_tokenizer.h */,
+				032A73FA2CAFBB7800932D36 /* bpe_tokenizer.cpp */,
+				032A74242CAFC34800932D36 /* llama_tiktoken.h */,
+				032A74252CAFC34800932D36 /* llama_tiktoken.cpp */,
+				032A73FD2CAFBB7800932D36 /* tiktoken.h */,
+				032A73FE2CAFBB7800932D36 /* tiktoken.cpp */,
+				032A73FF2CAFBB7800932D36 /* tokenizer.h */,
+			);
+			name = tokenizer;
+			path = ../../llm/tokenizer;
+			sourceTree = SOURCE_ROOT;
+		};
+		03B0118D2CAC567900054791 /* TestUtils */ = {
+			isa = PBXGroup;
+			children = (
+				03B0118B2CAC567900054791 /* DynamicTestCase.h */,
+				03B0118C2CAC567900054791 /* DynamicTestCase.m */,
+				03B0118F2CAD114E00054791 /* ResourceTestCase.h */,
+				03B011902CAD114E00054791 /* ResourceTestCase.m */,
+			);
+			path = TestUtils;
+			sourceTree = "<group>";
+		};
 		03B2D35B2C8A515A0046936E = {
 			isa = PBXGroup;
 			children = (
@@ -133,6 +231,7 @@
 		03B2D3782C8A515C0046936E /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				032A73C92CAFBA8600932D36 /* LLaMA */,
 				03B2D3792C8A515C0046936E /* GenericTests.mm */,
 				03B019502C8A80D30044D558 /* Tests.xcconfig */,
 				037C96A02C8A570B00B3DF38 /* Tests.xctestplan */,
@@ -140,21 +239,9 @@
 			path = Tests;
 			sourceTree = SOURCE_ROOT;
 		};
-		03B0118D2CAC567900054791 /* TestUtils */ = {
-			isa = PBXGroup;
-			children = (
-				03B0118B2CAC567900054791 /* DynamicTestCase.h */,
-				03B0118C2CAC567900054791 /* DynamicTestCase.m */,
-				03B0118F2CAD114E00054791 /* ResourceTestCase.h */,
-				03B011902CAD114E00054791 /* ResourceTestCase.m */,
-			);
-			path = TestUtils;
-			sourceTree = "<group>";
-		};
 		03ED6CEB2C8AAF5300F2D6EE /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				8493389B2C9918950071ABAD /* UIKit.framework */,
 				03ED6D182C8AB00A00F2D6EE /* Accelerate.framework */,
 				03ED6D162C8AB00500F2D6EE /* CoreML.framework */,
 				03ED6D142C8AAFFF00F2D6EE /* Metal.framework */,
@@ -182,7 +269,6 @@
 			buildPhases = (
 				03B2D3602C8A515A0046936E /* Sources */,
 				03B2D3612C8A515A0046936E /* Frameworks */,
-				03B2D3622C8A515A0046936E /* Resources */,
 			);
 			buildRules = (
 			);
@@ -197,9 +283,10 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 03B2D38C2C8A515C0046936E /* Build configuration list for PBXNativeTarget "Tests" */;
 			buildPhases = (
+				032A74202CAFBE6200932D36 /* Build Cmake Dependencies */,
 				03B2D3712C8A515C0046936E /* Sources */,
 				03B2D3722C8A515C0046936E /* Frameworks */,
-				03B2D3732C8A515C0046936E /* Resources */,
+				0351D9D62CAFC99C00607121 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -250,22 +337,36 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		03B2D3622C8A515A0046936E /* Resources */ = {
+		0351D9D62CAFC99C00607121 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		03B2D3732C8A515C0046936E /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				03C7FA382C8AA3EC00E6E9AE /* Resources in Resources */,
+				0351D9D72CAFC9A200607121 /* Resources in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		032A74202CAFBE6200932D36 /* Build Cmake Dependencies */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Cmake Dependencies";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n\nif ! command -v cmake &> /dev/null\nthen\n    echo \"Cmake not found, please install Cmake. \\n1. Download Cmake.app from https://cmake.org/download with version > 3.19. \\n2. Install it to Applications/ folder and run sudo /Applications/CMake.app/Contents/bin/cmake-gui --install to install CMake commandline tools.\"\n    exit 1\nfi\n\nCMAKE_DIR=\"$TEMP_DIR/cmake\"\nrm -rf \"$CMAKE_DIR\"\n\nPLATFORM=\"SIMULATORARM64\"\nDEPLOYMENT_TARGET=\"17.0\"\n\nif [[ \"$PLATFORM_NAME\" == *\"iphoneos\"* ]]; then\n  PLATFORM=\"OS64\"\nelif [[ \"$PLATFORM_NAME\" == *\"macos\"* ]]; then\n  PLATFORM=\"MAC_ARM64\"\n  DEPLOYMENT_TARGET=\"10.15\"\nfi\n\ncmake_build() {\n    local src_dir=$1\n    local target=$2\n    shift 2\n    local extra_args=(\"$@\")\n    local build_dir=\"$CMAKE_DIR/build/$(basename \"$src_dir\")\"\n\n    mkdir -p \"$build_dir\" && cd \"$build_dir\"\n\n    if [[ \"$PLATFORM\" == \"MAC_ARM64\" ]]; then\n        extra_args+=(-DCMAKE_INSTALL_BUNDLEDIR=\"${CMAKE_DIR}/bin\")\n        extra_args+=(-DCMAKE_MACOSX_BUNDLE=OFF)\n    fi\n    cmake -G Xcode \\\n          -DCMAKE_BUILD_TYPE=\"Release\" \\\n          -DCMAKE_CXX_STANDARD=17 \\\n          -DCMAKE_TOOLCHAIN_FILE=\"$SRCROOT/../../../third-party/ios-cmake/ios.toolchain.cmake\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD=\"c++17\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY=\"libc++\" \\\n          -DPLATFORM=\"$PLATFORM\" \\\n          -DDEPLOYMENT_TARGET=\"$DEPLOYMENT_TARGET\" \\\n          -DCMAKE_INSTALL_PREFIX=\"$CMAKE_DIR\" \\\n          \"${extra_args[@]}\" \\\n          \"$src_dir\"\n    cmake --build . --config \"Release\" --target \"$target\"\n    if [[ \"$target\" == \"install\" ]]; then\n        cmake --install . --prefix \"$CMAKE_DIR\"\n    fi\n}\n\ncmake_build \"$SRCROOT/../../llm/third-party/abseil-cpp\" \"install\" \\\n    -DABSL_PROPAGATE_CXX_STD=ON\n\ncmake_build \"$SRCROOT/../../llm/third-party/re2\" \"install\"\n\ncmake_build \"$SRCROOT/../../llm/third-party/sentencepiece\" \"sentencepiece-static\" \\\n    -DSPM_ENABLE_SHARED=OFF\n\necho \"$(find $CMAKE_DIR/lib -name \"*.a\" | sed -E 's|^.*/lib([^/]+)\\.a|-l\\1|g' | tr '\\n' ' ')\" > \"$CMAKE_DIR/linker_flags\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		03B2D3602C8A515A0046936E /* Sources */ = {
@@ -281,8 +382,16 @@
 			buildActionMask = 2147483647;
 			files = (
 				03B0118E2CAC567900054791 /* DynamicTestCase.m in Sources */,
+				032A74182CAFBB7800932D36 /* text_decoder_runner.cpp in Sources */,
+				032A741A2CAFBB7800932D36 /* bpe_tokenizer.cpp in Sources */,
+				032A741D2CAFBB7800932D36 /* text_prefiller.cpp in Sources */,
+				032A741E2CAFBB7800932D36 /* tiktoken.cpp in Sources */,
+				032A741F2CAFBB7800932D36 /* sampler.cpp in Sources */,
 				03B011912CAD114E00054791 /* ResourceTestCase.m in Sources */,
+				032A74232CAFC1B300932D36 /* runner.cpp in Sources */,
 				03B2D37A2C8A515C0046936E /* GenericTests.mm in Sources */,
+				032A73CA2CAFBA8600932D36 /* LLaMATests.mm in Sources */,
+				032A74262CAFC34800932D36 /* llama_tiktoken.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -434,7 +543,7 @@
 				PRODUCT_NAME = Benchmark;
 				REGISTER_APP_GROUPS = NO;
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -469,7 +578,7 @@
 				PRODUCT_NAME = Benchmark;
 				REGISTER_APP_GROUPS = NO;
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -494,7 +603,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
@@ -520,7 +629,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
