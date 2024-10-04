@@ -108,6 +108,30 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         return False
 
+    def is_in_local_scalar_dense_chain(self, node: torch.fx.Node) -> bool:
+        """
+        Scalar tensors are usually converted to scalar values in the graph via`
+        scalar_tensor[0].item()` in Python, which translates to a chain of
+        `local_scalar_dense(torch.select.int(scalar_tensor, 0, 0))` in the graph.
+        This function marks the entire chain as supported by the Vulkan delegate.
+
+        Later, within vulkan_preprocess there will be a graph transform which
+        replaces the chain with passing in the scalar tensor directly.
+        """
+        if node.target == exir_ops.edge.aten.select_copy.int:
+            if len(node.users) != 1:
+                return False
+            if node.args[0].meta["val"].numel() != 1:
+                return False
+
+            user = list(node.users.keys())[0]
+            return user.target == torch.ops.aten._local_scalar_dense.default
+
+        if node.target == torch.ops.aten._local_scalar_dense.default:
+            return True
+
+        return False
+
     def is_node_supported(
         self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
     ) -> bool:
@@ -126,6 +150,9 @@ class VulkanSupportedOperators(OperatorSupportBase):
             target = first_arg.name()
 
         if self.is_linear_permute(node):
+            return True
+
+        if self.is_in_local_scalar_dense_chain(node):
             return True
 
         if target not in VulkanSupportedOperators._ops:
