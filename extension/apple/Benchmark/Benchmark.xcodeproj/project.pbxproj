@@ -11,7 +11,7 @@
 		03B0118E2CAC567900054791 /* DynamicTestCase.m in Sources */ = {isa = PBXBuildFile; fileRef = 03B0118C2CAC567900054791 /* DynamicTestCase.m */; };
 		03B011912CAD114E00054791 /* ResourceTestCase.m in Sources */ = {isa = PBXBuildFile; fileRef = 03B011902CAD114E00054791 /* ResourceTestCase.m */; };
 		03B2D37A2C8A515C0046936E /* GenericTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 03B2D3792C8A515C0046936E /* GenericTests.mm */; };
-		03C7FA382C8AA3EC00E6E9AE /* Models in Resources */ = {isa = PBXBuildFile; fileRef = 03C7FA322C8AA24200E6E9AE /* Models */; };
+		03C7FA382C8AA3EC00E6E9AE /* Resources in Resources */ = {isa = PBXBuildFile; fileRef = 03C7FA322C8AA24200E6E9AE /* Resources */; };
 		03DD00A92C8FE44600FE4619 /* backend_coreml.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD00992C8FE44600FE4619 /* backend_coreml.xcframework */; };
 		03DD00AA2C8FE44600FE4619 /* kernels_custom.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD009A2C8FE44600FE4619 /* kernels_custom.xcframework */; };
 		03DD00AF2C8FE44600FE4619 /* kernels_portable.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD009F2C8FE44600FE4619 /* kernels_portable.xcframework */; };
@@ -50,7 +50,7 @@
 		03B0118F2CAD114E00054791 /* ResourceTestCase.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ResourceTestCase.h; sourceTree = "<group>"; };
 		03B011902CAD114E00054791 /* ResourceTestCase.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ResourceTestCase.m; sourceTree = "<group>"; };
 		03B2D3792C8A515C0046936E /* GenericTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GenericTests.mm; sourceTree = "<group>"; };
-		03C7FA322C8AA24200E6E9AE /* Models */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Models; sourceTree = SOURCE_ROOT; };
+		03C7FA322C8AA24200E6E9AE /* Resources */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources; sourceTree = SOURCE_ROOT; };
 		03DD00992C8FE44600FE4619 /* backend_coreml.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = backend_coreml.xcframework; path = Frameworks/backend_coreml.xcframework; sourceTree = "<group>"; };
 		03DD009A2C8FE44600FE4619 /* kernels_custom.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = kernels_custom.xcframework; path = Frameworks/kernels_custom.xcframework; sourceTree = "<group>"; };
 		03DD009F2C8FE44600FE4619 /* kernels_portable.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = kernels_portable.xcframework; path = Frameworks/kernels_portable.xcframework; sourceTree = "<group>"; };
@@ -105,7 +105,7 @@
 			children = (
 				03B2D3662C8A515A0046936E /* App */,
 				03ED6CEB2C8AAF5300F2D6EE /* Frameworks */,
-				03C7FA322C8AA24200E6E9AE /* Models */,
+				03C7FA322C8AA24200E6E9AE /* Resources */,
 				03B2D3782C8A515C0046936E /* Tests */,
 				03B0118D2CAC567900054791 /* TestUtils */,
 				03B2D3652C8A515A0046936E /* Products */,
@@ -261,7 +261,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				03C7FA382C8AA3EC00E6E9AE /* Models in Resources */,
+				03C7FA382C8AA3EC00E6E9AE /* Resources in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

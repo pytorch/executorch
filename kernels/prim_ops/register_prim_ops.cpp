@@ -286,6 +286,21 @@ static Kernel prim_ops[] = {
           out = EValue(a.toInt() % b.toInt());
         }),
 
+    // executorch_prim::mod.Scalar(Scalar, Scalar) -> Scalar
+    Kernel(
+        "executorch_prim::mod.Scalar",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          if (a.isInt() && b.isInt()) {
+            out = EValue(a.toInt() % b.toInt());
+          } else {
+            ET_CHECK_MSG(false, "%zu, %zu", (size_t)a.tag, (size_t)b.tag);
+          }
+        }),
+
     // executorch_prim::et_copy_index.tensor(tensor, tensor) -> tensor
     Kernel("executorch_prim::et_copy_index.tensor", &et_copy_index),
     // executorch_prim::et_view.default(Tensor, int[]) -> Tensor
