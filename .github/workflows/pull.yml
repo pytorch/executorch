@@ -30,7 +30,7 @@ jobs:
         cd pytorch/executorch
         bash .ci/scripts/setup-conda.sh
 
-        xcode-select --install
+        # xcode-select --install
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
