@@ -206,7 +206,7 @@ def embedding_2bit(
     group_size = (4 * weight.size(1)) // (
         weight_scales.size(1) if weight_scales.dim() == 2 else 1
     )
-    weight_0 = (weight & 3)
+    weight_0 = weight & 3
     weight_1 = (weight & 12) >> 2
     weight_2 = (weight & 48) >> 4
     weight_3 = (weight & 192) >> 6
@@ -261,7 +261,7 @@ def embedding_2bit_dtype(
     group_size = (4 * weight.size(1)) // (
         weight_scales.size(1) if weight_scales.dim() == 2 else 1
     )
-    weight_0 = (weight & 3)
+    weight_0 = weight & 3
     weight_1 = (weight & 12) >> 2
     weight_2 = (weight & 48) >> 4
     weight_3 = (weight & 192) >> 6

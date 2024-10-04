@@ -25,6 +25,7 @@ _QUANT_OPS = (
     ),
     op_target(
         name = "op_embedding2b",
+        deps = ["//executorch/kernels/quantized/cpu:embeddingxb"],
     ),
     op_target(
         name = "op_embedding4b",
@@ -66,6 +67,15 @@ def define_common_targets():
             "//executorch/extension/pybindings/test/...",
         ],
         exported_deps = quant_op_targets,
+    )
+
+    runtime.cxx_library(
+        name = "embeddingxb",
+        srcs = ["embeddingxb.cpp"],
+        headers = ["embeddingxb.h"],
+         visibility = [
+            "//executorch/kernels/quantized/...",
+         ],
     )
 
     runtime.cxx_library(

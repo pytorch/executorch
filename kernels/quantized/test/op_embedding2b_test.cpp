@@ -47,8 +47,9 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbedding) {
   Tensor indices = tfl.make({3}, {0, 2, 1});
 
   Tensor out = tf.zeros({3, 4});
-  Tensor expected = tf.make( 
-      {3, 4}, {-1.5, 0.0, -0.5, 0.0, -3.0, -1.5, 0.0, 1.5, -2.0, -3.0, -4.0, -2.0});
+  Tensor expected = tf.make(
+      {3, 4},
+      {-1.5, 0.0, -0.5, 0.0, -3.0, -1.5, 0.0, 1.5, -2.0, -3.0, -4.0, -2.0});
 
   quantized_embedding_2bit_out(
       qweight,
@@ -76,7 +77,7 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbedding) {
   EXPECT_TENSOR_EQ(out, expected);
 
   // Groupwise quantization. groupsize = 2
-  
+
   weight_scales = tf.make({3, 2}, {0.5, 1.0, 1.5, 2.0, 2.5, 3.0});
   weight_zero_points = tf.make({3, 2}, {1, -2, 0, 1, -2, -1});
 
@@ -89,8 +90,9 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbedding) {
   Tensor indices = tfl.make({3}, {0, 2, 1});
 
   Tensor out = tf.zeros({3, 4});
-  Tensor expected = tf.make( 
-      {3, 4}, {-1.5, 0.0, -2.0, -1.0, 0.0, 2.5, 3.0, 6.0, 0.0, -1.5, -6.0, -2.0});
+  Tensor expected = tf.make(
+      {3, 4},
+      {-1.5, 0.0, -2.0, -1.0, 0.0, 2.5, 3.0, 6.0, 0.0, -1.5, -6.0, -2.0});
 
   quantized_embedding_2bit_out(
       qweight,
