@@ -501,9 +501,15 @@
 </div>
 <div class="section" id="apis">
 <h2>APIs<a class="headerlink" href="#apis" title="Permalink to this heading">¶</a></h2>
-<p>We expose build macros for CMake, to allow users specifying op info:</p>
-<p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/build/Codegen.cmake#L12">gen_selected_ops</a></p>
-<p>Build macros take the following inputs:</p>
+<p>We expose a CMake macro <code class="docutils literal notranslate"><span class="pre">[gen_selected_ops](https://github.com/pytorch/executorch/blob/main/build/Codegen.cmake#L12)</span></code>, to allow users specifying op info:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">gen_selected_ops</span><span class="p">(</span>
+  <span class="n">LIB_NAME</span>         <span class="c1"># the name of the selective build operator library to be generated</span>
+  <span class="n">OPS_SCHEMA_YAML</span>  <span class="c1"># path to a yaml file containing operators to be selected</span>
+  <span class="n">ROOT_OPS</span>         <span class="c1"># comma separated operator names to be selected</span>
+  <span class="n">INCLUDE_ALL_OPS</span>  <span class="c1"># boolean flag to include all operators</span>
+<span class="p">)</span>
+</pre></div>
+</div>
 <div class="section" id="select-all-ops">
 <h3>Select all ops<a class="headerlink" href="#select-all-ops" title="Permalink to this heading">¶</a></h3>
 <p>If this input is set to true, it means we are registering all the kernels from all the kernel libraries linked into the application. If set to true it is effectively turning off selective build mode.</p>
