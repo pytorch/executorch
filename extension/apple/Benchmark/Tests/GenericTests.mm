@@ -29,8 +29,8 @@ using namespace ::executorch::runtime;
 
 + (NSArray<NSString *> *)directories {
   return @[
-    @"Models",
-    @"aatp/data",
+    @"Resources",
+    @"aatp/data", // AWS Farm devides look at this subdirectory.
   ];
 }
 
