@@ -53,6 +53,7 @@ from . import (  # noqa
     add_annotator,
     cat_annotator,
     conv_annotator,
+    generic_annotator,
     linear_annotator,
     max_pool2d_annotator,
     mm_annotator,
