@@ -119,19 +119,13 @@ class VulkanSupportedOperators(OperatorSupportBase):
     def _is_node_supported(
         self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
     ) -> bool:
-        target = node.target
-        if node.target == torch.ops.higher_order.auto_functionalized:
-            first_arg = node.args[0]
-            assert isinstance(first_arg, torch._ops.OpOverload)
-            target = first_arg.name()
-
         if self.is_linear_permute(node):
             return True
 
-        if target not in VulkanSupportedOperators._ops:
+        if node.target not in VulkanSupportedOperators._ops:
             return False
 
-        features = VulkanSupportedOperators._ops[target]
+        features = VulkanSupportedOperators._ops[node.target]
 
         if self.require_dynamic_shapes and not features.supports_dynamic_shape:
             return False
