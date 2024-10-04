@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 import torch
-from executorch.backends.arm.scripts.arm_model_evaluator import GenericModelEvaluator
+from executorch.backends.arm.util.arm_model_evaluator import GenericModelEvaluator
 
 random.seed(0)
 

@@ -22,7 +22,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
-from executorch.backends.arm.scripts.arm_model_evaluator import GenericModelEvaluator
+from executorch.backends.arm.util.arm_model_evaluator import GenericModelEvaluator
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 
