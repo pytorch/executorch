@@ -73,10 +73,10 @@ def define_common_targets():
     runtime.cxx_library(
         name = "embeddingxb",
         srcs = ["embeddingxb.cpp"],
-        headers = ["embeddingxb.h"],
-         visibility = [
+        exported_headers = ["embeddingxb.h"],
+        visibility = [
             "//executorch/kernels/quantized/...",
-         ],
+        ],
     )
 
     runtime.cxx_library(
