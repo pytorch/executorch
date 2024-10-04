@@ -45,19 +45,19 @@ class TestDelegateMapBuilder(unittest.TestCase):
     def test_basic_generated_identifier(self):
         delegate_builder = DelegateMappingBuilder(generated_identifiers=True)
 
-        expected_mapping = {0: (0, 1, 2, 3)}
+        expected_mapping = {0: (1, 2, 3, 4)}
         self.assertEqual(
             delegate_builder.insert_delegate_mapping_entry(nodes=self.nodes), 0
         )
         self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
 
-        expected_mapping = {0: (0, 1, 2, 3), 1: (0,)}
+        expected_mapping = {0: (1, 2, 3, 4), 1: (1,)}
         self.assertEqual(
             delegate_builder.insert_delegate_mapping_entry(nodes=self.nodes[0]), 1
         )
         self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
 
-        expected_mapping = {0: (0, 1, 2, 3), 1: (0,), 2: (1,)}
+        expected_mapping = {0: (1, 2, 3, 4), 1: (1,), 2: (2,)}
         self.assertEqual(
             delegate_builder.insert_delegate_mapping_entry(handles=self.handles[2]),
             2,
@@ -65,10 +65,10 @@ class TestDelegateMapBuilder(unittest.TestCase):
         self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
 
         expected_mapping = {
-            0: (0, 1, 2, 3),
-            1: (0,),
-            2: (1,),
-            3: (0, 1, 2, 3),
+            0: (1, 2, 3, 4),
+            1: (1,),
+            2: (2,),
+            3: (1, 2, 3, 4),
         }
         self.assertEqual(
             delegate_builder.insert_delegate_mapping_entry(handles=self.handles), 3
@@ -144,7 +144,7 @@ class TestDelegateMapBuilder(unittest.TestCase):
         self.assertEqual(len(debug_handle_map), 5)
         # Check to see that all the delegate debug indexes in the range [0,2] are present.
         self.assertTrue(
-            all(element in debug_handle_map.keys() for element in [0, 1, 2, 3])
+            all(element in debug_handle_map.keys() for element in [1, 2, 3, 4])
         )
 
         class CompositeModule(torch.nn.Module):
@@ -200,7 +200,7 @@ class TestDelegateMapBuilder(unittest.TestCase):
 
         # Entry with a list of nodes
         iden_1 = next(identifiers)
-        expected_mapping = {iden_1: (0, 1, 2, 3)}
+        expected_mapping = {iden_1: (1, 2, 3, 4)}
         self.assertEqual(
             delegate_builder_nodes.insert_delegate_mapping_entry(
                 nodes=self.nodes, identifier=iden_1
@@ -222,7 +222,7 @@ class TestDelegateMapBuilder(unittest.TestCase):
 
         # Entry with a single node
         iden_2 = next(identifiers)
-        expected_mapping = {iden_1: (0, 1, 2, 3), iden_2: (0,)}
+        expected_mapping = {iden_1: (1, 2, 3, 4), iden_2: (1,)}
         self.assertEqual(
             delegate_builder_nodes.insert_delegate_mapping_entry(
                 nodes=self.nodes[0], identifier=iden_2
