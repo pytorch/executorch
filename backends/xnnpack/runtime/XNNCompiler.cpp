@@ -1776,14 +1776,14 @@ ET_NODISCARD Error XNNCompiler::compileModel(
       subgraph.get(),
       /*weight_cache=*/nullptr, // TODO - support weight cache
       workspace,
-      torch::executorch::threadpool::get_pthreadpool(),
+      ::executorch::extension::threadpool::get_pthreadpool(),
       runtime_flags,
       &runtime_ptr);
 #else
   status = xnn_create_runtime_v3(
       subgraph.get(),
       /*weight_cache=*/nullptr, // TODO - support weight cache
-      torch::executorch::threadpool::get_pthreadpool(),
+      ::executorch::extension::threadpool::get_pthreadpool(),
       runtime_flags,
       &runtime_ptr);
 #endif
