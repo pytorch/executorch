@@ -30,7 +30,7 @@ using namespace ::executorch::runtime;
 + (NSArray<NSString *> *)directories {
   return @[
     @"Resources",
-    @"aatp/data", // AWS Farm devides look at this subdirectory.
+    @"aatp/data", // AWS Farm devices look for resources here.
   ];
 }
 
