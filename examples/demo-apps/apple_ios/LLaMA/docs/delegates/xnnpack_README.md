@@ -80,7 +80,7 @@ python -m executorch.examples.models.llava.export_llava --pte-name llava.pte --w
 
 ## Configure the XCode Project
 
-### Install CMake
+### 1. Install CMake
 Download and open the macOS .dmg installer at https://cmake.org/download and move the Cmake app to /Applications folder.
 Install Cmake command line tools:
 
@@ -88,58 +88,119 @@ Install Cmake command line tools:
 sudo /Applications/CMake.app/Contents/bin/cmake-gui --install
 ```
 
+### 2. Add ExecuTorch Runtime Package
 
-### Swift Package Manager
-The prebuilt ExecuTorch runtime, backend, and kernels are available as a Swift PM package.
+There are two options to add ExecuTorch runtime package into your XCode project:
 
-### Xcode
-Open the project in Xcode.In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the ExecuTorch repo into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version, e.g., “0.3.0”, or just use the “latest” branch name for the latest stable build.
+- [Recommended] Prebuilt package (via Swift Package Manager)
+- Manually build the package locally and link them
 
-Note: If you're running into any issues related to package dependencies, quit Xcode entirely, delete the whole executorch repo, clean the caches by running the command below in terminal and clone the repo again.
+
+### 2.1 [Recommended] Prebuilt package (via Swift Package Manager)
+
+The current XCode project is pre-configured to automatically download and link the latest prebuilt package via Swift Package Manager.
+
+If you have an old ExecuTorch package cached before in XCode, or are running into any package dependencies issues (incorrect checksum hash, missing package, outdated package), close XCode and run the following command in terminal inside your ExecuTorch directory
 
 ```
 rm -rf \
   ~/Library/org.swift.swiftpm \
   ~/Library/Caches/org.swift.swiftpm \
   ~/Library/Caches/com.apple.dt.Xcode \
-  ~/Library/Developer/Xcode/DerivedData
+  ~/Library/Developer/Xcode/DerivedData \
+  examples/demo-apps/apple_ios/LLaMA/LLaMA.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
 ```
 
-Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.
+The command above will clear all the package cache, and when you re-open the XCode project, it should re-download the latest package and link them correctly.
 
-Note: To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the executorch_debug framework. For optimal performance, always link against the Release version of the deliverables (those without the _debug suffix), which have all logging overhead removed.
+#### (Optional) Changing the prebuilt package version
+While we recommended using the latest prebuilt package pre-configured with the XCode project, you can also change the package version manually to your desired version.
 
-For more details integrating and Running ExecuTorch on Apple Platforms, checkout this [link](https://pytorch.org/executorch/main/apple-runtime.html).
+Go to Project Navigator, click on LLaMA. `Project --> LLaMA --> Package Dependencies`, and update the package dependencies to any of the available options below:
 
-<p align="center">
-<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_swift_pm.png" alt="iOS LLaMA App Swift PM" style="width:600px">
-</p>
+- Branch --> latest
+- Branch --> 0.4.0
+- Branch --> 0.3.0
+- Commit --> (Specify the commit hash, for example: `bdf3f5a1047c73ef61bb3e956d1d4528de743077`. Full list [here](https://github.com/pytorch/executorch/commits/latest/))
 
-Then select which ExecuTorch framework should link against which target.
+
+### 2.2 Manually build the package locally and link them
+
+Note: You should only use this step if the prebuilt package doesn't work for your usecase (For example, you require the latest PRs from main, where there are no pre-built package yet)
+
+If you need to manually build the package, run the following command in your terminal
+```
+# Install a compatible version of Buck2
+BUCK2_RELEASE_DATE="2024-05-15"
+BUCK2_ARCHIVE="buck2-aarch64-apple-darwin.zst"
+BUCK2=".venv/bin/buck2"
+
+curl -LO "https://github.com/facebook/buck2/releases/download/$BUCK2_RELEASE_DATE/$BUCK2_ARCHIVE"
+zstd -cdq "$BUCK2_ARCHIVE" > "$BUCK2" && chmod +x "$BUCK2"
+rm "$BUCK2_ARCHIVE"
+
+./build/build_apple_frameworks.sh --buck2="$(realpath $BUCK2)" --coreml --custom --mps --optimized --portable --quantized --xnnpack
+```
+
+ After the build finishes successfully, the resulting frameworks can be found in the `cmake-out` directory. Copy them to your project and link them against your targets.
+
+The following packages should be linked in your app target `LLaMA` (left side, LLaMA --> General --> select LLaMA under "TARGETS" --> scroll down to "Frameworks, Libraries, and Embedded Content")
+- backend_coreml
+- backend_mps
+- backend_xnnpack
+- kernels_custom
+- kernels_optimized
+- kernels_portable
+- kernels_quantized
+
+The following package should be linked in your target app `LLaMARunner` (left side, LLaMA --> General --> select LLaMARunner under "TARGETS" --> scroll down to "Frameworks and Libraries")
+- executorch
 
 <p align="center">
 <img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" style="width:600px">
 </p>
 
-Click “Run” to build the app and run in on your iPhone.
+If you cannot add the package into your app target (it's greyed out), it might have been linked before. You can verify it by checking it from your target app `(LLaMA / LLaMARunner) --> Build Phases --> Link Binary With Libraries`.
 
-## Pushing Model and Tokenizer
 
-### Copy the model to Simulator
+
+ More details on integrating and Running ExecuTorch on Apple Platforms, check out the detailed guide [here](https://pytorch.org/executorch/main/apple-runtime.html#local-build).
+
+### 3. Configure Build Schemes
+
+The project has two build configurations:
+- Debug
+- [Recommended] Release
+
+Navigate to `Product --> Scheme --> Edit Scheme --> Info --> Build Configuration` and update the configuration to "Release".
+
+We recommend that you only use the Debug build scheme during development, where you might need to access additional logs. Debug build has logging overhead and will impact inferencing performance, while release build has compiler optimizations enabled and all logging overhead removed.
+
+For more details integrating and Running ExecuTorch on Apple Platforms or building the package locally, checkout this [link](https://pytorch.org/executorch/main/apple-runtime.html).
+
+### 4. Build and Run the project
+
+Click the "play" button on top right of your XCode app, or navigate to `Product --> Run` to build and run the app on your phone.
+
+### 5. Pushing Model and Tokenizer
+
+There are two options to copy the model (.pte) and tokenizer files (.model) to your app, depending on whether you are running it on a simulator or device.
+
+#### 5.1 Copy the model and tokenizer to Simulator
 * Drag&drop the model and tokenizer files onto the Simulator window and save them somewhere inside the iLLaMA folder.
 * Pick the files in the app dialog, type a prompt and click the arrow-up button.
 
-### Copy the model to Device
-* Wire-connect the device and open the contents in Finder.
+#### 5.2 Copy the model and tokenizer to Device
+* Plug the device into your Mac and open the contents in Finder.
 * Navigate to the Files tab and drag & drop the model and tokenizer files onto the iLLaMA folder.
 * Wait until the files are copied.
 
+### 6. Try out the app
 Open the iLLaMA app, click the settings button at the top left of the app to select the model and tokenizer files. When the app successfully runs on your device, you should see something like below:
 
 <p align="center">
 <img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app.jpg" alt="iOS LLaMA App" style="width:300px">
 </p>
-
 
 
 For Llava 1.5 models, you can select and image (via image/camera selector button) before typing prompt and send button.
