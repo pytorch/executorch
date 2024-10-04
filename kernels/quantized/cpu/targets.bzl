@@ -77,6 +77,7 @@ def define_common_targets():
         visibility = [
             "//executorch/kernels/quantized/...",
         ],
+        deps = ["//executorch/runtime/kernel:kernel_includes"],
     )
 
     runtime.cxx_library(
