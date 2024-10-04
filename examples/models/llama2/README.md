@@ -85,10 +85,10 @@ We have verified running Llama 2 7B [mobile applications](#step-6-build-mobile-a
 ### Llama 3.2 1B and 3B
 Llama 3.2 1B and 3B performance was measured on the OnePlus 12 device. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on) for generating 128 tokens.
 
-|Model  | 4bit(*) via SpinQuant
-|--------| ---------------
-|1B  | 53.41 tokens/second |
-|3B | 22.98 tokens/second |
+|Model  | bf16 | 4bit(*) via SpinQuant
+|--------| ---------------------- | ---------------
+|1B  | 19.4 tokens/second | 53.41 tokens/second |
+|3B | 7.76 tokens/second | 22.98 tokens/second |
 
 (*) With SpinQuant, we currently quantize 4-bit groupwise (with groupsize 32) weight, 8bit dynamic activation of all the linear layers of the model, except embedding and output layers. The embedding and output layers are quantized as 8-bit per-channel weight and 8-bit dynamic activation.
 
