@@ -32,6 +32,7 @@ enum QcomChipset: int {
   SM8450 = 36,
   SM8475 = 42,
   SM8550 = 43,
+  SSG2115P = 46,
   SM8650 = 57,
 }
 
@@ -170,7 +171,7 @@ table QnnExecuTorchOptions {
 
   /// Profiling level of the delegate and the backend. Default is off.
   profile_level:QnnExecuTorchProfileLevel;
-  
+
   /// Enables usage of shared buffer between application and backend for graph I/O.
   shared_buffer:bool;
 
