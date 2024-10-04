@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import csv
 import io
 import itertools
 import json
@@ -4569,20 +4570,38 @@ class TestQNNFloatingPointUtils(TestQNN):
             saver=False,
         )
 
-    def test_qnn_backend_dump_intermediate_outputs(self):
+    def test_qnn_backend_dump_intermediate_outputs_topk(self):
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             dump_intermediate_outputs=True,
         )
-        module = Relu()  # noqa: F405
-        sample_input = (torch.randn([2, 5, 1, 3]),)
+        module = TopKandIndex()  # noqa: F405
+        sample_input = (torch.randn(3, 10),)
         self.lower_module_and_test_output(
             module,
             sample_input,
             expected_partitions=1,
-            expected_intermediate_events=3,
+            expected_intermediate_events=7,
+            expected_compared_events=5,
+        )
+
+    def test_qnn_backend_dump_intermediate_outputs_simple_model(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=True)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+            dump_intermediate_outputs=True,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+            expected_intermediate_events=20,
+            expected_compared_events=16,
         )
 
     def test_qnn_backend_skip_node_id(self):
@@ -5143,21 +5162,40 @@ class TestQNNQuantizedUtils(TestQNN):
             saver=False,
         )
 
-    def test_qnn_backend_dump_intermediate_outputs(self):
+    def test_qnn_backend_dump_intermediate_outputs_simple_model(self):
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             dump_intermediate_outputs=True,
         )
-        module = Relu()  # noqa: F405
-        sample_input = (torch.randn([2, 5, 1, 3]),)
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(
             module,
             sample_input,
             expected_partitions=1,
-            expected_intermediate_events=5,
+            expected_intermediate_events=21,
+            expected_compared_events=14,
+        )
+
+    def test_qnn_backend_dump_intermediate_outputs_topk(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+            dump_intermediate_outputs=True,
+        )
+        module = TopKandIndex()  # noqa: F405
+        sample_input = (torch.randn(3, 10),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+            expected_intermediate_events=8,
+            expected_compared_events=5,
         )
 
     def test_qnn_backend_dynamic_shape(self):
@@ -8406,81 +8444,6 @@ class TestUtilsScript(TestQNN):
             ]
         )
 
-    def test_custom_op(self):
-        if not self.required_envs([self.op_package_dir]):
-            self.skipTest("missing required envs")
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/custom_op/custom_ops_1.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--device",
-            self.device,
-            "--model",
-            self.model,
-            "--target",
-            self.target,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-            "--op_package_dir",
-            self.op_package_dir,
-            "--build_op_package",
-        ]
-        if self.host:
-            cmds.extend(["--host", self.host])
-        if self.enable_x86_64:
-            cmds.extend(["--enable_x86_64"])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            self.assertTrue(msg["is_close"])
-
-    def test_debugger_generate_optrace(self):
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/util_scripts/qairt_visualizer_demo.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--device",
-            self.device,
-            "--model",
-            self.model,
-            "--target",
-            self.target,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-        ]
-        if self.host:
-            cmds.extend(["--host", self.host])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                for _, (optrace, qhas) in msg["binaries_trace"].items():
-                    with open(optrace, "r") as optrace_file:
-                        optrace_data = json.load(optrace_file)
-                        for row in optrace_data:
-                            self.assertIn("pid", row)
-                    with open(qhas, "r") as qhas_file:
-                        qhas_data = json.load(qhas_file)
-                        self.assertIn("data", qhas_data)
-
     def test_cli(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             sample_input = torch.randn(1, 2, 3, 4)
@@ -8622,6 +8585,145 @@ class TestUtilsScript(TestQNN):
             device_output = torch.load(output_file, weights_only=True)
             golden_output = ep.module()(sample_input, sample_input2)
             self._assert_outputs_equal(golden_output, device_output)
+    
+    def test_custom_op(self):
+        if not self.required_envs([self.op_package_dir]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/custom_op/custom_ops_1.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--target",
+            self.target,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--op_package_dir",
+            self.op_package_dir,
+            "--build_op_package",
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+        if self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertTrue(msg["is_close"])
+    
+    def test_debugger_generate_optrace(self):
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/util_scripts/qairt_visualizer_demo.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--target",
+            self.target,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                for _, (optrace, qhas) in msg["binaries_trace"].items():
+                    with open(optrace, "r") as optrace_file:
+                        optrace_data = json.load(optrace_file)
+                        for row in optrace_data:
+                            self.assertIn("pid", row)
+                    with open(qhas, "r") as qhas_file:
+                        qhas_data = json.load(qhas_file)
+                        self.assertIn("data", qhas_data)
+    
+    def test_intermediate_debugger(self):
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/util_scripts/qnn_intermediate_debugger_demo.py",
+            "--artifact",
+            self.artifact_dir,
+            "--dataset",
+            self.image_dataset,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--dump_intermediate_outputs",
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                svg_path = msg["svg_path"]
+                csv_path = msg["csv_path"]
+                min_accepted = 235
+                max_accepted = 241
+                # Having a +- 3 tolerance, expecting 238 events
+                assert os.path.exists(svg_path), f"Unable to find SVG file: {svg_path}"
+                assert os.path.exists(csv_path), f"Unable to find CSV file: {csv_path}"
+
+                csv_valid_count = 0
+                with open(csv_path, mode="r", newline="") as csv_file:
+                    reader = csv.reader(csv_file)
+                    header = next(reader)
+                    index = header.index("is_valid_score")
+                    for row in reader:
+                        if len(row) > index and row[index].strip().upper() == "TRUE":
+                            csv_valid_count += 1
+                # We assume csv_valid_count == compared_events, since all compared events meet metric's threshold
+                assert (
+                    min_accepted <= csv_valid_count <= max_accepted
+                ), f"Expected CSV events with valid score is outside of expected range, number of valid score events found: {csv_valid_count}"
+
+                svg_valid_count = 0
+                with open(svg_path, "r", encoding="utf-8") as svg_file:
+                    for line in svg_file:
+                        svg_valid_count += line.count("is_valid_score=True")
+                # We assume svg_valid_count == compared_events, since all compared events meet metric's threshold
+                assert (
+                    min_accepted <= svg_valid_count <= max_accepted
+                ), f"Expected SVG events with valid score is outside of expected range, number of valid score events found: {svg_valid_count}"
+                print(
+                    f"CSV valid count: {csv_valid_count}. SVG valid count: {svg_valid_count}"
+                )
 
 
 def setup_environment():

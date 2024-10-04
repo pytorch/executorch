@@ -20,10 +20,12 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
-
 import torch
 import torchao
 import transformers
+from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import (
+    QNNIntermediateDebugger,
+)
 from executorch.backends.qualcomm.quantizer.quantizer import (
     ModuleQConfig,
     QnnQuantizer,
@@ -40,6 +42,7 @@ from executorch.backends.qualcomm.utils.utils import (
     get_soc_to_arch_map,
     to_edge_transform_and_lower_to_qnn,
 )
+from executorch.exir.backend.utils import get_delegates
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torchao.quantization.pt2e import MovingAverageMinMaxObserver
@@ -399,6 +402,7 @@ def build_executorch_binary(
     shared_buffer=False,
     metadata=None,
     dump_intermediate_outputs=False,
+    qnn_intermediate_debugger: QNNIntermediateDebugger = None,
     passes_job=None,
     passes_dependency=None,
     qat_training_data=None,
@@ -481,6 +485,17 @@ def build_executorch_binary(
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
         )
+
+    if qnn_intermediate_debugger:
+        lowered_module_nodes = get_delegates(edge_prog_mgr.exported_program().graph)
+        assert len(lowered_module_nodes) == 1, "Length not correct"
+
+        lowered_module_node = lowered_module_nodes[0]
+        lower_module = getattr(
+            edge_prog_mgr.exported_program().graph_module, lowered_module_node.name
+        )
+        edge_module = lower_module.original_module.module()
+        qnn_intermediate_debugger.set_edge_module(edge_module=edge_module)
 
     executorch_config = ExecutorchBackendConfig(
         # For shared buffer, user must pass the memory address
@@ -824,7 +839,7 @@ def setup_common_args_and_variables():
     parser.add_argument(
         "-S",
         "--skip_delegate_node_ids",
-        help="If specified, skip delegation for the specified node based on node ids. Node ids should be seperated by comma. e.g., aten_relu_default_10,aten_relu_default_2",
+        help="If specified, skip delegation for the specified node based on node ids. Node ids should be separated by comma. e.g., aten_relu_default_10,aten_relu_default_2",
         default=None,
         type=str,
     )
@@ -832,7 +847,7 @@ def setup_common_args_and_variables():
     parser.add_argument(
         "-f",
         "--skip_delegate_node_ops",
-        help="If specified, skip delegation for the specified op. Node ops should be seperated by comma. e.g., aten.add.Tensor,aten.relu.default",
+        help="If specified, skip delegation for the specified op. Node ops should be separated by comma. e.g., aten.add.Tensor,aten.relu.default",
         default=None,
         type=str,
     )
@@ -867,6 +882,7 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
+        "-D",
         "--dump_intermediate_outputs",
         help="If specified, enable dump intermediate outputs",
         action="store_true",
