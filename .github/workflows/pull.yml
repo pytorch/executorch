@@ -444,9 +444,28 @@ jobs:
 
   debug:
     runs-on: macos-13-xlarge
-    steps:
-    - uses: actions/checkout@v2
-    - name: Setup upterm session
-      uses: owenthereal/action-upterm@v1
-      with:
-        limit-access-to-actor: true
+    uses: ./.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-m1-stable
+      python-version: '3.11'
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        BUILD_TOOL=cmake
+        BACKEND=coreml
+
+        bash .ci/scripts/setup-conda.sh
+
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
+        echo "Finishing installing coreml."
+
+        # Build and test coreml model
+        MODELS=(mv3 ic4 resnet50 edsr mobilebert w2l)
+        for MODEL_NAME in "${MODELS[@]}"; do
+          echo "::group::Exporting coreml model: $MODEL_NAME"
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
+          echo "::endgroup::"
+        done
