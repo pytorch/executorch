@@ -444,9 +444,9 @@ jobs:
 
   debug:
     runs-on: macos-14
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     steps:
     - uses: actions/checkout@v2
+    - uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     - name: Setup upterm session
       uses: owenthereal/action-upterm@v1
       with:
