@@ -95,7 +95,7 @@ def _load_for_executorch_from_bundled_program(
 ) -> ExecuTorchModule:
     """Same as _load_for_executorch, but takes a bundled program instead of a file path.
 
-    See https://pytorch.org/executorch/stable/sdk-bundled-io.html for documentation.
+    See https://pytorch.org/executorch/stable/bundled-io.html for documentation.
 
     .. warning::
 
