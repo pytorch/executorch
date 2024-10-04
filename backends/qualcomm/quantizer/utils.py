@@ -1055,17 +1055,25 @@ def annotate_layer_norm(node: Node, quantization_config: QuantizationConfig) -> 
 
     if _is_annotated([node]):
         return
+    input_act_qspec = quantization_config.input_activation
 
     _annotate_input_qspec_map(
         node,
         act_node,
-        quantization_config.input_activation,
+        input_act_qspec,
     )
-    _annotate_input_qspec_map(
-        node,
-        weight_node,
-        quantization_config.input_activation,
-    )
+    if input_act_qspec.dtype == torch.int32:
+        _annotate_input_qspec_map(
+            node,
+            weight_node,
+            get_default_16bit_qnn_ptq_config().weight,
+        )
+    else:
+        _annotate_input_qspec_map(
+            node,
+            weight_node,
+            input_act_qspec,
+        )
     nodes_to_mark_annotated = [node, weight_node]
     if bias_node:
         _annotate_input_qspec_map(
