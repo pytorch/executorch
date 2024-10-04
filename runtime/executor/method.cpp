@@ -572,8 +572,8 @@ Result<Method> Method::load(
 
 Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
   EXECUTORCH_SCOPE_PROF("Method::init");
-  internal::EventTracerProfileScope event_tracer_profile_scope =
-      internal::EventTracerProfileScope(event_tracer_, "Method::init");
+  internal::EventTracerProfileMethodScope event_tracer_profile_scope =
+      internal::EventTracerProfileMethodScope(event_tracer_, "Method::init");
   ET_CHECK_OR_RETURN_ERROR(
       // Don't use !initialized() here because we also want to fail on the
       // InitializationFailed state.
@@ -1022,8 +1022,8 @@ Error Method::execute_instruction() {
   switch (instruction->instr_args_type()) {
     case executorch_flatbuffer::InstructionArguments::KernelCall: {
       EXECUTORCH_SCOPE_PROF("OPERATOR_CALL");
-      internal::EventTracerProfileScope event_tracer_scope =
-          internal::EventTracerProfileScope(event_tracer_, "OPERATOR_CALL");
+      internal::EventTracerProfileOpScope event_tracer_op_scope =
+          internal::EventTracerProfileOpScope(event_tracer_, "OPERATOR_CALL");
       // TODO(T147221312): Also expose tensor resizer via the context.
       KernelRuntimeContext context(event_tracer_, temp_allocator_);
       auto args = chain.argument_lists_[step_state_.instr_idx];
@@ -1057,8 +1057,8 @@ Error Method::execute_instruction() {
     } break;
     case executorch_flatbuffer::InstructionArguments::DelegateCall: {
       EXECUTORCH_SCOPE_PROF("DELEGATE_CALL");
-      internal::EventTracerProfileScope event_tracer_profile_scope =
-          internal::EventTracerProfileScope(event_tracer_, "DELEGATE_CALL");
+      internal::EventTracerProfileOpScope event_tracer_op_scope =
+          internal::EventTracerProfileOpScope(event_tracer_, "DELEGATE_CALL");
       // We know that instr_args_as_DelegateCall is non-null because it was
       // checked at init time.
       auto delegate_idx =
@@ -1101,8 +1101,8 @@ Error Method::execute_instruction() {
     } break;
     case executorch_flatbuffer::InstructionArguments::JumpFalseCall: {
       EXECUTORCH_SCOPE_PROF("JF_CALL");
-      internal::EventTracerProfileScope event_tracer_profile_scope =
-          internal::EventTracerProfileScope(event_tracer_, "JF_CALL");
+      internal::EventTracerProfileOpScope event_tracer_op_scope =
+          internal::EventTracerProfileOpScope(event_tracer_, "JF_CALL");
       // We know that instr_args_as_JumpFalseCall is non-null because it was
       // checked at init time.
       auto jf_call = instruction->instr_args_as_JumpFalseCall();
@@ -1120,8 +1120,8 @@ Error Method::execute_instruction() {
     } break;
     case executorch_flatbuffer::InstructionArguments::MoveCall: {
       EXECUTORCH_SCOPE_PROF("MOVE_CALL");
-      internal::EventTracerProfileScope event_tracer_profile_scope =
-          internal::EventTracerProfileScope(event_tracer_, "MOVE_CALL");
+      internal::EventTracerProfileOpScope event_tracer_op_scope =
+          internal::EventTracerProfileOpScope(event_tracer_, "MOVE_CALL");
       // We know that instr_args_as_MoveCall is non-null because it was checked
       // at init time.
       auto move_call = instruction->instr_args_as_MoveCall();
@@ -1129,8 +1129,8 @@ Error Method::execute_instruction() {
     } break;
     case executorch_flatbuffer::InstructionArguments::FreeCall: {
       EXECUTORCH_SCOPE_PROF("FREE_CALL");
-      internal::EventTracerProfileScope event_tracer_profile_scope =
-          internal::EventTracerProfileScope(event_tracer_, "FREE_CALL");
+      internal::EventTracerProfileOpScope event_tracer_op_scope =
+          internal::EventTracerProfileOpScope(event_tracer_, "FREE_CALL");
       // We know that instr_args_as_FreeCall is non-null because it was checked
       // at init time.
       auto free_call = instruction->instr_args_as_FreeCall();
@@ -1191,8 +1191,8 @@ Error Method::step() {
           static_cast<int32_t>(step_state_.chain_idx),
           static_cast<uint32_t>(step_state_.instr_idx));
   EXECUTORCH_SCOPE_PROF("Method::step");
-  internal::EventTracerProfileScope event_tracer_profile_scope =
-      internal::EventTracerProfileScope(event_tracer_, "Method::step");
+  internal::EventTracerProfileMethodScope event_tracer_profile_scope =
+      internal::EventTracerProfileMethodScope(event_tracer_, "Method::step");
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
       InvalidState,
@@ -1233,8 +1233,8 @@ Error Method::experimental_step() {
 
 Error Method::execute() {
   internal::event_tracer_create_event_block(event_tracer_, "Execute");
-  internal::EventTracerProfileScope event_tracer_profile_scope =
-      internal::EventTracerProfileScope(event_tracer_, "Method::execute");
+  internal::EventTracerProfileMethodScope event_tracer_profile_scope =
+      internal::EventTracerProfileMethodScope(event_tracer_, "Method::execute");
   EXECUTORCH_SCOPE_PROF("Method::execute");
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
