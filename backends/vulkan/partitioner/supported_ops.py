@@ -48,7 +48,7 @@ PRIM_OPS = [
 ]
 
 SUPPORTS_DYNAMIC_SHAPE = [
-    # Binary broadcasting operators
+    # Binary broadcasting
     exir_ops.edge.aten.add.Tensor,
     exir_ops.edge.aten.sub.Tensor,
     exir_ops.edge.aten.minimum.default,
@@ -56,7 +56,7 @@ SUPPORTS_DYNAMIC_SHAPE = [
     exir_ops.edge.aten.div.Tensor,
     exir_ops.edge.aten.div.Tensor_mode,
     exir_ops.edge.aten.pow.Tensor_Tensor,
-    # Unary elementwise operators
+    # Unary elementwise
     exir_ops.edge.aten.abs.default,
     exir_ops.edge.aten.clamp.default,
     exir_ops.edge.aten.cos.default,
@@ -70,46 +70,46 @@ SUPPORTS_DYNAMIC_SHAPE = [
     exir_ops.edge.aten.sin.default,
     exir_ops.edge.aten.sqrt.default,
     exir_ops.edge.aten.tanh.default,
-    # Matrix Multiplication Operators
+    # Matrix Multiplication
     exir_ops.edge.aten.bmm.default,
     exir_ops.edge.aten.mm.default,
     exir_ops.edge.aten.addmm.default,
     exir_ops.edge.aten.linear.default,
-    # Reduction operators
+    # Reduction
     exir_ops.edge.aten._log_softmax.default,
     exir_ops.edge.aten._softmax.default,
-    # 2D Pooling ops
+    # 2D Pooling
     exir_ops.edge.aten.avg_pool2d.default,
     exir_ops.edge.aten.max_pool2d_with_indices.default,
-    # Convolution ops
+    # Convolution
     exir_ops.edge.aten.convolution.default,
     exir_ops.edge.et_vk.conv_with_clamp.default,
 ]
 
 NO_DYNAMIC_SHAPE = [
-    # Reduction operators
+    # Reduction
     exir_ops.edge.aten.mean.dim,
     exir_ops.edge.aten.sum.dim_IntList,
-    # Normalization operators
+    # Normalization
     exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
     exir_ops.edge.aten.native_layer_norm.default,
-    # Shape Manipulation operators
+    # Shape Manipulation
     exir_ops.edge.aten.squeeze_copy.dims,
     exir_ops.edge.aten.unsqueeze_copy.default,
     exir_ops.edge.aten.view_copy.default,
     exir_ops.edge.aten.permute_copy.default,
     exir_ops.edge.aten.t_copy.default,
-    # Indexing and lookup operators
+    # Indexing and lookup
     exir_ops.edge.aten.embedding.default,
     exir_ops.edge.aten.index_select.default,
     exir_ops.edge.aten.select_copy.int,
     exir_ops.edge.aten.slice_copy.Tensor,
-    # Tensor combination operators
+    # Tensor combination
     exir_ops.edge.aten.cat.default,
     exir_ops.edge.aten.split_with_sizes_copy.default,
     exir_ops.edge.aten.split.Tensor,
     exir_ops.edge.aten.repeat.default,
-    # Tensor creation operators
+    # Tensor creation
     exir_ops.edge.aten.arange.start_step,
     exir_ops.edge.aten.clone.default,
     exir_ops.edge.aten.constant_pad_nd.default,
