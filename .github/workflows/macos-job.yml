@@ -15,19 +15,15 @@ on:
         description: 'Runner type to utilize'
         default: "macos-12"
         type: string
+      python-version:
+        description: If set to any value, dont use sudo to clean the workspace
+        required: false
+        type: string
+        default: "3.9"
       upload-artifact:
-        description: |
-          Name to give artifacts uploaded from ${RUNNER_ARTIFACT_DIR}, all the wheel files
-          under dist/ and any files under artifacts-to-be-uploaded/ will be uploaded
+        description: 'Name to give artifacts uploaded from ${RUNNER_ARTIFACT_DIR}'
         default: ""
         type: string
-      upload-artifact-to-s3:
-        description: |
-          Upload the artifact to S3 instead of GitHub. This is used for large artifacts like
-          exported model
-        required: false
-        default: false
-        type: boolean
       download-artifact:
         description: 'Name to download artifacts to ${RUNNER_ARTIFACT_DIR}'
         default: ""
@@ -71,15 +67,6 @@ on:
         required: false
         default: ''
         type: string
-      secrets-env:
-        description: "List of secrets to be exported to environment variables"
-        type: string
-        default: ''
-      python-version:
-        description: Set the python version used in the job
-        required: false
-        type: string
-        default: "3.9"
 
 jobs:
   job:
@@ -107,8 +94,6 @@ jobs:
 
       - name: Setup miniconda
         uses: ./test-infra/.github/actions/setup-miniconda
-        with:
-          python-version: ${{ inputs.python-version }}
 
       - name: Checkout repository (${{ inputs.repository || github.repository }}@${{ inputs.ref }})
         uses: actions/checkout@v3
@@ -121,7 +106,7 @@ jobs:
           submodules: ${{ inputs.submodules }}
 
       - name: Setup useful environment variables
-        working-directory: ${{ inputs.repository || github.repository }}
+        working-directory: ${{ inputs.repository }}
         run: |
           RUNNER_ARTIFACT_DIR="${RUNNER_TEMP}/artifacts"
           mkdir -p "${RUNNER_ARTIFACT_DIR}"
@@ -138,19 +123,10 @@ jobs:
           name: ${{ inputs.download-artifact }}
           path: ${{ runner.temp }}/artifacts/
 
-      - name: Export matrix variables (if any)
-        uses: ./test-infra/.github/actions/export-matrix-variables
-        if: ${{ inputs.binary-matrix != '' }}
-        with:
-          binary-matrix: ${{ inputs.binary-matrix }}
-          target-os: "macos"
-
       - name: Run script
         shell: bash -l {0}
         continue-on-error: ${{ inputs.continue-on-error }}
-        working-directory: ${{ inputs.repository || github.repository }}
-        env:
-          ALL_SECRETS: ${{ toJSON(secrets) }}
+        working-directory: ${{ inputs.repository }}
         run: |
           {
             echo "#!/usr/bin/env bash";
@@ -162,7 +138,7 @@ jobs:
           while read line; do
             eval "export ${line}"
           done < "${RUNNER_TEMP}/github_env_${GITHUB_RUN_ID}"
-          python3 "${{ github.workspace }}/test-infra/.github/scripts/run_with_env_secrets.py" "${{ inputs.secrets-env }}"
+          bash "${RUNNER_TEMP}/exec_script"
 
       - name: Surface failing tests
         if: always()
@@ -171,11 +147,16 @@ jobs:
           path: ${{ env.RUNNER_TEST_RESULTS_DIR }}
           fail-on-empty: false
 
+      - name: Setup upterm session
+        uses: owenthereal/action-upterm@v1
+        with:
+          limit-access-to-actor: true
+
       - name: Check if there are potential artifacts and move them to the correct artifact location
         shell: bash -l {0}
-        working-directory: ${{ inputs.repository || github.repository }}
+        working-directory: ${{ inputs.repository }}
         id: check-artifacts
-        if: ${{ always() && inputs.upload-artifact != '' }}
+        if: ${{ inputs.upload-artifact != '' }}
         env:
           UPLOAD_ARTIFACT_NAME: ${{ inputs.upload-artifact }}
         run: |
@@ -184,35 +165,13 @@ jobs:
           if find "dist/" -name "*.whl" >/dev/null 2>/dev/null; then
             mv -v dist/*.whl "${RUNNER_ARTIFACT_DIR}/"
           fi
-          if [[ -d "artifacts-to-be-uploaded" ]]; then
-            mv -v artifacts-to-be-uploaded/* "${RUNNER_ARTIFACT_DIR}/"
-          fi
           # Set to fail upload step if there are no files for upload and expected files for upload
           echo 'if-no-files-found=error' >> "${GITHUB_OUTPUT}"
 
-      # NB: Keep this for compatibility with existing jobs and also keep in mind that only
-      # our AWS runners have access to S3
       - name: Upload artifacts to GitHub (if any)
         uses: actions/upload-artifact@v3
-        if: ${{ always() && inputs.upload-artifact != '' && !inputs.upload-artifact-to-s3 }}
+        if: ${{ inputs.upload-artifact != '' }}
         with:
           name: ${{ inputs.upload-artifact }}
           path: ${{ runner.temp }}/artifacts/
           if-no-files-found: ${{ steps.check-artifacts.outputs.if-no-files-found }}
-
-      # NB: This only works with our AWS runners
-      - name: Upload artifacts to S3 (if any)
-        uses: seemethere/upload-artifact-s3@v5
-        if: ${{ always() && inputs.upload-artifact != '' && inputs.upload-artifact-to-s3 }}
-        with:
-          retention-days: 14
-          s3-bucket: gha-artifacts
-          s3-prefix: |
-            ${{ env.REPOSITORY }}/${{ github.run_id }}/artifacts
-          if-no-files-found: ${{ steps.check-artifacts.outputs.if-no-files-found }}
-          path: ${{ runner.temp }}/artifacts/
-
-      - name: Clean up disk space
-        if: always()
-        continue-on-error: true
-        uses: ./test-infra/.github/actions/check-disk-space
