@@ -17,6 +17,10 @@ from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.backends.transforms.mean_to_sum_div import MeanToSumDiv
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 
+from executorch.backends.vulkan.passes.remove_local_scalar_dense_ops import (
+    RemoveLocalScalarDenseOpsTransform,
+)
+
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     serialize_vulkan_graph,
@@ -57,6 +61,7 @@ class VulkanBackend(BackendDetails):
             MeanToSumDiv(),
             SpecPropPass(),
             ConstraintBasedSymShapeEvalPass(),
+            RemoveLocalScalarDenseOpsTransform(),
             MemoryPlanningPass(),
         ]
 
