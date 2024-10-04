@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cinttypes>
 #include <cmath>
+#include <cassert>
 
 namespace torch {
 namespace executor {
