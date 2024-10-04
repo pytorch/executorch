@@ -444,7 +444,7 @@ jobs:
 
   debug:
     runs-on: macos-13-xlarge
-    uses: ./.github/workflows/macos_job.yml
+    uses: ./.github/workflows/macos-job.yml
     with:
       runner: macos-m1-stable
       python-version: '3.11'
