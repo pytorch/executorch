@@ -235,15 +235,14 @@ function(resolve_buck2)
     OUTPUT_VARIABLE resolve_buck2_output
     ERROR_VARIABLE resolve_buck2_error
     RESULT_VARIABLE resolve_buck2_exit_code
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WORKING_DIRECTORY ${executorch_root}
     OUTPUT_STRIP_TRAILING_WHITESPACE
   )
 
+  # $BUCK2 is a copy of the var from the parent scope. This block will set
+  # $buck2 to the value we want to return.
   if(resolve_buck2_exit_code EQUAL 0)
-    set(BUCK2
-        ${resolve_buck2_output}
-        PARENT_SCOPE
-    )
+    set(buck2 ${resolve_buck2_output})
     message(STATUS "Resolved buck2 as ${resolve_buck2_output}.")
   elseif(resolve_buck2_exit_code EQUAL 2)
     # Wrong buck version used. Stop here to ensure that the user sees the error.
@@ -254,17 +253,22 @@ function(resolve_buck2)
     message(WARNING "${resolve_buck2_error}")
 
     if("${BUCK2}" STREQUAL "")
-      set(BUCK2
-          "buck2"
-          PARENT_SCOPE
-      )
+      set(buck2 "buck2")
     endif()
   endif()
+
+  # Update the var in the parent scope. Note that this does not modify our
+  # local $BUCK2 value.
+  set(BUCK2 "${buck2}" PARENT_SCOPE)
 
   # The buck2 daemon can get stuck. Killing it can help.
   message(STATUS "Killing buck2 daemon")
   execute_process(
-    COMMAND "${BUCK2} kill" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    # Note that we need to use the local buck2 variable. BUCK2 is only set in
+    # the parent scope, and can still be empty in this scope.
+    COMMAND "${buck2} kill"
+    WORKING_DIRECTORY ${executorch_root}
+    COMMAND_ECHO STDOUT
   )
 endfunction()
 
