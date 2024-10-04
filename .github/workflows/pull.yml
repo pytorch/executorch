@@ -443,7 +443,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_phi_3_mini.sh
 
   debug:
-    runner: macos-13-xlarge
+    runs-on: macos-13-xlarge
     steps:
     - uses: actions/checkout@v2
     - name: Setup upterm session
