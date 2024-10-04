@@ -58,45 +58,45 @@ using namespace ::executorch::runtime;
 }
 
 + (NSDictionary<NSString *, BOOL (^)(NSString *)> *)predicates {
-  return @{@"model" : ^BOOL(NSString *filename){
+  return @{
+    @"model" : ^BOOL(NSString *filename){
       return [filename hasSuffix:@".pte"] && [filename containsString:@"llama"];
-}
-, @"tokenizer" : ^BOOL(NSString *filename) {
-  return [filename isEqual:@"tokenizer.model"];
-},
-}
-;
+    },
+    @"tokenizer" : ^BOOL(NSString *filename) {
+      return [filename isEqual:@"tokenizer.model"];
+    },
+  };
 }
 
 + (NSDictionary<NSString *, void (^)(XCTestCase *)> *)dynamicTestsForResources:
     (NSDictionary<NSString *, NSString *> *)resources {
   NSString *modelPath = resources[@"model"];
   NSString *tokenizerPath = resources[@"tokenizer"];
-  return @{@"generate" : ^(XCTestCase *testCase){
+  return @{
+    @"generate" : ^(XCTestCase *testCase){
       auto __block runner = std::make_unique<example::Runner>(
           modelPath.UTF8String, tokenizerPath.UTF8String);
-  const auto status = runner->load();
-  if (status != Error::Ok) {
-    XCTFail("Load failed with error %i", status);
-    return;
-  }
-  TokensPerSecondMetric *tokensPerSecondMetric = [TokensPerSecondMetric new];
-  [testCase measureWithMetrics:@[ tokensPerSecondMetric, [XCTMemoryMetric new] ]
-                         block:^{
-                           tokensPerSecondMetric.tokenCount = 0;
-                           const auto status = runner->generate(
-                               "Once upon a time",
-                               128,
-                               [=](const std::string &token) {
-                                 tokensPerSecondMetric.tokenCount++;
-                               },
-                               nullptr,
-                               false);
-                           XCTAssertEqual(status, Error::Ok);
-                         }];
-}
-}
-;
+      const auto status = runner->load();
+      if (status != Error::Ok) {
+        XCTFail("Load failed with error %i", status);
+        return;
+      }
+      TokensPerSecondMetric *tokensPerSecondMetric = [TokensPerSecondMetric new];
+      [testCase measureWithMetrics:@[ tokensPerSecondMetric, [XCTMemoryMetric new] ]
+                            block:^{
+                              tokensPerSecondMetric.tokenCount = 0;
+                              const auto status = runner->generate(
+                                  "Once upon a time",
+                                  128,
+                                  [=](const std::string &token) {
+                                    tokensPerSecondMetric.tokenCount++;
+                                  },
+                                  nullptr,
+                                  false);
+                              XCTAssertEqual(status, Error::Ok);
+                            }];
+    },
+  };
 }
 
 @end
