@@ -51,25 +51,14 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbedding) {
       {3, 4},
       {-1.5, 0.0, -0.5, 0.0, -3.0, -1.5, 0.0, 1.5, -2.0, -3.0, -4.0, -2.0});
 
-Expected:
-  is equal to ETensor(
-      sizes = {3, 4},
-      dtype = Float,
-      data = {-1.5, 0, -0.5, 0, -3, -1.5, 0, 1.5, -2, -3, -4, -2}) Actual
-      : ETensor(
-            sizes = {3, 4},
-            dtype = Float,
-            data = {0, -0.5, 0, -1.5, 1.5, 0, -1.5, -3, 2, 0, 1, 2})(
-            of type executorch::runtime::etensor::Tensor)
-
-            quantized_embedding_2bit_out(
-                qweight,
-                weight_scales,
-                weight_zero_points,
-                quant_min,
-                quant_max,
-                indices,
-                out);
+  quantized_embedding_2bit_out(
+      qweight,
+      weight_scales,
+      weight_zero_points,
+      quant_min,
+      quant_max,
+      indices,
+      out);
 
   EXPECT_TENSOR_EQ(out, expected);
 
