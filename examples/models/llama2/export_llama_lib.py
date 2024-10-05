@@ -79,7 +79,7 @@ verbosity_setting = None
 
 
 EXECUTORCH_DEFINED_MODELS = ["llama2", "llama3", "llama3_1", "llama3_2"]
-TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
+TORCHTUNE_DEFINED_MODELS = []
 
 
 class WeightType(Enum):
@@ -800,8 +800,7 @@ def _load_llama_model(
         modelname = "llama2"
         model_class_name = "Llama2Model"
     elif modelname in TORCHTUNE_DEFINED_MODELS:
-        if modelname == "llama3_2_vision":
-            model_class_name = "Llama3_2Decoder"
+        raise NotImplementedError("Torchtune Llama models are not yet supported in ExecuTorch export.")
     else:
         raise ValueError(f"{modelname} is not a valid Llama model.")
 
