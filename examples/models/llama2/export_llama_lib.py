@@ -78,6 +78,10 @@ pkg_name = __name__
 verbosity_setting = None
 
 
+EXECUTORCH_DEFINED_MODELS = ["llama2", "llama3", "llama3_1", "llama3_2"]
+TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
+
+
 class WeightType(Enum):
     LLAMA = "LLAMA"
     FAIRSEQ2 = "FAIRSEQ2"
@@ -113,11 +117,11 @@ def build_model(
     else:
         output_dir_path = "."
 
-    argString = f"--checkpoint par:{modelname}_ckpt.pt --params par:{modelname}_params.json {extra_opts} --output-dir {output_dir_path}"
+    argString = f"--model {modelname} --checkpoint par:{modelname}_ckpt.pt --params par:{modelname}_params.json {extra_opts} --output-dir {output_dir_path}"
     parser = build_args_parser()
     args = parser.parse_args(shlex.split(argString))
     # pkg_name = resource_pkg_name
-    return export_llama(modelname, args)
+    return export_llama(args)
 
 
 def build_args_parser() -> argparse.ArgumentParser:
@@ -127,6 +131,12 @@ def build_args_parser() -> argparse.ArgumentParser:
     # parser.add_argument(
     #     "-q", "--quantized_ckpt", default=None, help="quantized checkpoint file"
     # )
+    parser.add_argument(
+        "--model",
+        default="llama2",
+        choices=EXECUTORCH_DEFINED_MODELS + TORCHTUNE_DEFINED_MODELS,
+        help="The Lllama model to export. llama2, llama3, llama3_1, llama3_2 share the same architecture, so they are technically interchangeable, given you provide the checkpoint file for the desired version.",
+    )
     parser.add_argument(
         "-E",
         "--embedding-quantize",
@@ -458,13 +468,13 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
         return return_val
 
 
-def export_llama(modelname, args) -> str:
+def export_llama(args) -> str:
     if args.profile_path is not None:
         try:
             from executorch.util.python_profiler import CProfilerFlameGraph
 
             with CProfilerFlameGraph(args.profile_path):
-                builder = _export_llama(modelname, args)
+                builder = _export_llama(args)
                 assert (
                     filename := builder.get_saved_pte_filename()
                 ) is not None, "Fail to get file name from builder"
@@ -475,14 +485,14 @@ def export_llama(modelname, args) -> str:
             )
             return ""
     else:
-        builder = _export_llama(modelname, args)
+        builder = _export_llama(args)
         assert (
             filename := builder.get_saved_pte_filename()
         ) is not None, "Fail to get file name from builder"
         return filename
 
 
-def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
+def _prepare_for_llama_export(args) -> LLMEdgeManager:
     """
     Helper function for export_llama. Loads the model from checkpoint and params,
     and sets up a LLMEdgeManager with initial transforms and dtype conversion.
@@ -508,7 +518,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
 
     return (
         _load_llama_model(
-            modelname=modelname,
+            args.model,
             checkpoint=checkpoint_path,
             checkpoint_dir=checkpoint_dir,
             params_path=params_path,
@@ -530,7 +540,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             args=args,
         )
         .set_output_dir(output_dir_path)
-        .source_transform(_get_source_transforms(modelname, dtype_override, args))
+        .source_transform(_get_source_transforms(args.model, dtype_override, args))
     )
 
 
@@ -574,13 +584,13 @@ def _validate_args(args):
         raise ValueError("Model shard is only supported with qnn backend now.")
 
 
-def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
+def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
     _validate_args(args)
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
 
     # export_to_edge
     builder_exported_to_edge = (
-        _prepare_for_llama_export(modelname, args)
+        _prepare_for_llama_export(args)
         .capture_pre_autograd_graph()
         .pt2e_quantize(quantizers)
         .export_to_edge()
@@ -748,8 +758,8 @@ def _load_llama_model_metadata(
 
 
 def _load_llama_model(
+    modelname: str,
     *,
-    modelname: str = "llama2",
     checkpoint: Optional[str] = None,
     checkpoint_dir: Optional[str] = None,
     params_path: str,
@@ -776,26 +786,41 @@ def _load_llama_model(
     Returns:
         An instance of LLMEdgeManager which contains the eager mode model.
     """
+
     assert (
         checkpoint or checkpoint_dir
     ) and params_path, "Both checkpoint/checkpoint_dir and params can't be empty"
     logging.info(
         f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}"
     )
-    model, example_inputs, example_kwarg_inputs, _ = EagerModelFactory.create_model(
-        "llama2",
-        "Llama2Model",
-        checkpoint=checkpoint,
-        checkpoint_dir=checkpoint_dir,
-        params=params_path,
-        use_kv_cache=use_kv_cache,
-        use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
-        generate_full_logits=generate_full_logits,
-        fairseq2=weight_type == WeightType.FAIRSEQ2,
-        max_seq_len=max_seq_len,
-        enable_dynamic_shape=enable_dynamic_shape,
-        output_prune_map_path=output_prune_map_path,
-        args=args,
+
+    if modelname in EXECUTORCH_DEFINED_MODELS:
+        # Set to llama2 because all models in EXECUTORCH_DEFINED_MODELS share the same archteciture as
+        # defined in example/models/llama2.
+        modelname = "llama2"
+        model_class_name = "Llama2Model"
+    elif modelname in TORCHTUNE_DEFINED_MODELS:
+        if modelname == "llama3_2_vision":
+            model_class_name = "Llama3_2Decoder"
+    else:
+        raise ValueError(f"{modelname} is not a valid Llama model.")
+
+    model, example_inputs, example_kwarg_inputs, _ = (
+        EagerModelFactory.create_model(
+            modelname,
+            model_class_name,
+            checkpoint=checkpoint,
+            checkpoint_dir=checkpoint_dir,
+            params=params_path,
+            use_kv_cache=use_kv_cache,
+            use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
+            generate_full_logits=generate_full_logits,
+            fairseq2=weight_type == WeightType.FAIRSEQ2,
+            max_seq_len=max_seq_len,
+            enable_dynamic_shape=enable_dynamic_shape,
+            output_prune_map_path=output_prune_map_path,
+            args=args,
+        )
     )
     if dtype_override:
         assert isinstance(

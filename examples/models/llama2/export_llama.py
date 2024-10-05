@@ -20,10 +20,9 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 def main() -> None:
     seed = 42
     torch.manual_seed(seed)
-    modelname = "llama2"
     parser = build_args_parser()
     args = parser.parse_args()
-    export_llama(modelname, args)
+    export_llama(args)
 
 
 if __name__ == "__main__":
