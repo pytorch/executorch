@@ -39,10 +39,10 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbedding) {
   Tensor weight_zero_points = tf.make({3}, {1, -2, 0});
 
   // -2,  1,  0, 1, -> 0, 3, 2, 3 -> (reverse) 11 10 11 00 -> 236
-  //  0, -1, -2, 0, -> 2, 1, 0, 2 -> (reverse) 10 01 00 10 -> 146
+  //  0, -1, -2, 0, -> 2, 1, 0, 2 -> (reverse) 10 00 01 10 -> 134
   // -2,  -1, 0, 1, -> 0, 1, 2, 3 -> (reverse) 11 10 01 00 -> 228
 
-  Tensor qweight = tfb.make({3, 1}, {236, 146, 228});
+  Tensor qweight = tfb.make({3, 1}, {236, 134, 228});
 
   Tensor indices = tfl.make({3}, {0, 2, 1});
 
@@ -82,10 +82,10 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbedding) {
   weight_zero_points = tf.make({3, 2}, {1, -2, 0, 1, -2, -1});
 
   // -2,  1,  0, 1, -> 0, 3, 2, 3 -> (reverse) 11 10 11 00 -> 236
-  //  0, -1, -2, 0, -> 2, 1, 0, 2 -> (reverse) 10 01 00 10 -> 146
+  //  0, -1, -2, 0, -> 2, 1, 0, 2 -> (reverse) 10 00 01 10 -> 134
   // -2,  -1, 0, 1, -> 0, 1, 2, 3 -> (reverse) 11 10 01 00 -> 228
 
-  qweight = tfb.make({3, 1}, {236, 146, 228});
+  qweight = tfb.make({3, 1}, {236, 134, 228});
 
   indices = tfl.make({3}, {0, 2, 1});
 
@@ -117,7 +117,7 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbeddingDeath1) {
 
   Tensor weight_scales = tf.make({4}, {0.5, 1.0, 1.5, 3.3});
   Tensor weight_zero_points = tf.make({4}, {1, -2, 1, 0});
-  Tensor qweight = tfb.make({3, 1}, {236, 146, 228});
+  Tensor qweight = tfb.make({3, 1}, {236, 134, 228});
   Tensor indices = tfl.make({3}, {0, 2, 1});
   Tensor out = tf.zeros({3, 4});
 
@@ -144,7 +144,7 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbeddingDeath2) {
 
   Tensor weight_scales = tf.make({2}, {0.5, 1.0});
   Tensor weight_zero_points = tf.make({2}, {1, -2});
-  Tensor qweight = tfb.make({3, 1}, {236, 146, 228});
+  Tensor qweight = tfb.make({3, 1}, {236, 134, 228});
   Tensor indices = tfl.make({3}, {0, 2, 1});
   Tensor out = tf.zeros({3, 4});
 
