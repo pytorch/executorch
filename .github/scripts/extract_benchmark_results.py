@@ -129,6 +129,10 @@ def extract_android_benchmark_results(
     except error.HTTPError:
         warning(f"Fail to {artifact_type} {artifact_s3_url}")
         return []
+    except json.decoder.JSONDecodeError:
+        # This is to handle the case where there is no benchmark results
+        warning(f"Fail to load the benchmark results from {artifact_s3_url}")
+        return []
 
 
 def extract_job_id(artifacts_filename: str) -> int:
