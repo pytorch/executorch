@@ -35,8 +35,10 @@ ${layout_declare_ubo(B, "float", "scale")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-// Negative infinity is represented by having all exponent bits be 1
-#define NEGATIVE_INF 0xFF800000
+// Negative infinity is represented by having sign bit be 1, all exponent bits
+// be 1, all mantissa bits be 0.
+#define NEGATIVE_INF_BITS 0xFF800000
+const float negative_infinity = NEGATIVE_INF_BITS;
 
 #ifdef USING_BUFFER
 
@@ -82,7 +84,7 @@ void main() {
   if (attn_weight_idx.x <= attn_weight_idx.y + input_pos) {
     attn_weight[attn_weight_id] = attn_weight[attn_weight_id] * scale_conv;
   } else {
-    attn_weight[attn_weight_id] = T(NEGATIVE_INF);
+    attn_weight[attn_weight_id] = T(negative_infinity);
   }
 }
 
@@ -108,7 +110,7 @@ void main() {
   // Mask out the upper triangular of attn_weight to -inf
   [[unroll]] for (int i = 0; i < 4; ++i) {
     if (attn_weight_pos.x * 4 + i > attn_weight_pos.y + input_pos) {
-      outtex[i] = NEGATIVE_INF;
+      outtex[i] = negative_infinity;
     }
   }
 
