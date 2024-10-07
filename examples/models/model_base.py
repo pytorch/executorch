@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 from abc import ABC, abstractmethod
-from typing import Dict, Tuple
 
 import torch
 
@@ -38,11 +37,11 @@ class EagerModelBase(ABC):
         raise NotImplementedError("get_eager_model")
 
     @abstractmethod
-    def get_example_inputs(self) -> Tuple[Tuple, Dict]:
+    def get_example_inputs(self):
         """
         Abstract method to provide example inputs for the model.
 
         Returns:
-            Tuple[Tuple, Dict]: The positional inputs (Tuple) and the kwarg inputs (Dict).
+            Any: Example inputs that can be used for testing and tracing.
         """
         raise NotImplementedError("get_example_inputs")
