@@ -704,7 +704,30 @@ def get_clone_inputs():
 
 @register_test_suite("aten.repeat.default")
 def get_repeat_inputs():
-    test_suite = VkTestSuite(
+    test_suite_2d = VkTestSuite(
+        [
+            # Repeat channels only (most challenging case)
+            ((3, XS, S), [2, 1, 1]),
+            ((7, XS, S), [4, 1, 1]),
+            # More other cases
+            ((2, 3), [1, 4]),
+            ((2, 3), [4, 1]),
+            ((2, 3), [4, 4]),
+            ((S1, S2, S2), [1, 3, 1]),
+            ((S1, S2, S2), [1, 3, 3]),
+            ((S1, S2, S2), [3, 3, 1]),
+            ((S1, S2, S2), [3, 3, 3]),
+            # Expanding cases
+            ((2, 3), [3, 1, 4]),
+        ]
+    )
+    test_suite_2d.layouts = ["utils::kChannelsPacked"]
+    test_suite_2d.storage_types = ["utils::kTexture2D"]
+    test_suite_2d.data_gen = "make_seq_tensor"
+    test_suite_2d.dtypes = ["at::kFloat"]
+    test_suite_2d.test_name_suffix = "2d"
+
+    test_suite_3d = VkTestSuite(
         [
             # Repeat channels only (most challenging case)
             ((3, XS, S), [2, 1, 1]),
@@ -739,13 +762,13 @@ def get_repeat_inputs():
             ((2, 3), [3, 3, 2, 4]),
         ]
     )
-    test_suite.layouts = [
-        "utils::kChannelsPacked",
-    ]
-    test_suite.storage_types = ["utils::kTexture2D", "utils::kTexture3D"]
-    test_suite.data_gen = "make_seq_tensor"
-    test_suite.dtypes = ["at::kFloat"]
-    return test_suite
+    test_suite_3d.layouts = ["utils::kChannelsPacked"]
+    test_suite_3d.storage_types = ["utils::kTexture3D"]
+    test_suite_3d.data_gen = "make_seq_tensor"
+    test_suite_3d.dtypes = ["at::kFloat"]
+    test_suite_2d.test_name_suffix = "3d"
+
+    return [test_suite_2d, test_suite_3d]
 
 
 @register_test_suite("aten.repeat_interleave.self_int")
@@ -1164,7 +1187,7 @@ def get_squeeze_copy_dim_inputs():
 
 @register_test_suite("aten.flip.default")
 def get_flip_inputs():
-    Test = namedtuple("VkIndexSelectTest", ["self", "dim"])
+    Test = namedtuple("Flip", ["self", "dim"])
     Test.__new__.__defaults__ = (None, 0)
 
     test_cases = [
