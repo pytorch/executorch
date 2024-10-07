@@ -367,7 +367,7 @@ void cpu_flash_attention(
   int64_t qSlice = (qSize - 1) / qSplitSize + 1;
 #ifdef ET_USE_THREADPOOL
   int64_t num_thread =
-      torch::executorch::threadpool::get_threadpool()->get_thread_count();
+      ::executorch::extension::threadpool::get_threadpool()->get_thread_count();
 #else
   int64_t num_thread = 1;
 #endif

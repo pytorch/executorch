@@ -9,7 +9,7 @@
 
 set -eu
 
-if [[ "${1:-'.'}" == "-h" || "${#}" -eq 0 || "${#}" -gt 2 ]]; then
+if [[ "${1:-'.'}" == "-h" || "${#}" -gt 2 ]]; then
     echo "Usage: $(basename $0) <--i-agree-to-the-contained-eula> [path-to-a-scratch-dir]"
     echo "Supplied args: $*"
     exit 1
@@ -89,10 +89,16 @@ ethos_u_base_rev="24.08"
 ########
 ### Mandatory user args
 ########
-eula_acceptance="${1:-'.'}"; shift
+eula_acceptance="${1:-'.'}"
 if [[ "${eula_acceptance}" != "--i-agree-to-the-contained-eula" ]]; then
-    echo "Must pass first positional argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP. Exiting!"
-    exit 1
+    if [[ ${ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA} != "True" ]]; then
+	echo "Must pass first positional argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP. Exiting!"
+	exit 1
+    else
+	echo "Arm EULA for FVP agreed to with ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True environment variable"
+    fi
+else
+    shift; # drop this arg
 fi
 
 ########
@@ -109,6 +115,8 @@ root_dir=$(realpath ${root_dir})
 function setup_fvp() {
     if [[ "${OS}" != "Linux" ]]; then
         echo "[${FUNCNAME[0]}] Warning: FVP only supported with Linux OS, skipping FVP setup..."
+        echo "[${FUNCNAME[0]}] Warning: For MacOS, using https://github.com/Arm-Examples/FVPs-on-Mac is recommended."
+        echo "[${FUNCNAME[0]}] Warning:   Follow the instructions and make sure the path is set correctly." 
         return 1
     fi
 

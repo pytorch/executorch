@@ -212,43 +212,31 @@ Tensor& clamp_tensor_out(
 
   ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
 
-  constexpr auto name = "clamp.Tensor_out";
+  static constexpr const char op_name[] = "clamp.Tensor_out";
 
-  ET_SWITCH_REALHB_TYPES(in_type, ctx, name, CTYPE_IN, [&]() {
-    ET_SWITCH_REALHB_TYPES(min_type, ctx, name, CTYPE_MIN, [&]() {
-      ET_SWITCH_REALHB_TYPES(max_type, ctx, name, CTYPE_MAX, [&]() {
-        ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
-          using CTYPE_MINMAX = typename torch::executor::
-              promote_types<CTYPE_MIN, CTYPE_MAX>::type;
-          using CTYPE = typename torch::executor::
-              promote_types<CTYPE_IN, CTYPE_MINMAX>::type;
-          apply_ternary_elementwise_fn<
-              CTYPE_IN,
-              CTYPE_MIN,
-              CTYPE_MAX,
-              CTYPE_OUT>(
-              [has_min, has_max](
-                  const CTYPE_IN val_in,
-                  const CTYPE_MIN val_min,
-                  const CTYPE_MAX val_max) {
-                CTYPE val_out = static_cast<CTYPE>(val_in);
-                if (has_min) {
-                  val_out =
-                      utils::max_override(val_out, static_cast<CTYPE>(val_min));
-                }
-                if (has_max) {
-                  val_out =
-                      utils::min_override(val_out, static_cast<CTYPE>(val_max));
-                }
-                return static_cast<CTYPE_OUT>(val_out);
-              },
-              in,
-              min,
-              max,
-              out);
-        });
-      });
-    });
+  ET_SWITCH_REALHB_TYPES(common_type, ctx, op_name, CTYPE_COMMON, [&]() {
+    apply_ternary_elementwise_fn<CTYPE_COMMON, op_name>(
+        [has_min, has_max](
+            const CTYPE_COMMON val_in,
+            const CTYPE_COMMON val_min,
+            const CTYPE_COMMON val_max) {
+          CTYPE_COMMON val_out = val_in;
+          if (has_min) {
+            val_out = utils::max_override(val_out, val_min);
+          }
+          if (has_max) {
+            val_out = utils::min_override(val_out, val_max);
+          }
+          return val_out;
+        },
+        in,
+        SupportedTensorDtypes::REALHBBF16,
+        min,
+        SupportedTensorDtypes::REALHBBF16,
+        max,
+        SupportedTensorDtypes::REALHBBF16,
+        out,
+        SupportedTensorDtypes::REALHBBF16);
   });
 
   return out;

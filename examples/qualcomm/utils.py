@@ -83,6 +83,7 @@ class SimpleADB:
         self.debug_output_path = f"{self.workspace}/debug_output.bin"
         self.output_folder = f"{self.workspace}/outputs"
         self.arch_table = {
+            "SSG2115P": "73",
             "SM8650": "75",
             "SM8550": "73",
             "SM8475": "69",

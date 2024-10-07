@@ -145,6 +145,12 @@ There are the backend operators currently using `bind_pattern_to_op` API.
 * `executorch_prims::floordiv.int(SymInt a, SymInt b) -> SymInt`
   * pattern: builtin.floordiv
   * backend: executor
+* `executorch_prims::truediv.int(Scalar a, Scalar b) -> Scalar`
+  * pattern: builtin.div
+  * backend: executor
+* `executorch_prims::sym_float.Scalar(Scalar a) -> Scalar`
+  * pattern: builtin.float
+  * backend: executor
 * `executorch_prims::gt.int(SymInt a, SymInt b) -> bool`
   * pattern: builtin.gt
   * backend: executor
@@ -159,6 +165,12 @@ There are the backend operators currently using `bind_pattern_to_op` API.
   * backend: executor
 * `executorch_prims::eq.int(SymInt a, SymInt b) -> bool`
   * pattern: builtin.eq
+  * backend: executor
+* `executorch_prims::mod.Scalar(SymInt a, SymInt b) -> SymInt`
+  * pattern: builtin.divmod
+  * backend: executor
+* `executorch_prims::neg.Scalar(Scalar a) -> Scalar`
+  * pattern: operator.ne
   * backend: executor
 * `quantized_decomposed::embedding_byte(Tensor weight, Tensor weight_scales, Tensor weight_zero_points, int weight_quant_min, int weight_quant_max, Tensor indices) -> Tensor`
   * pattern: [source](https://github.com/pytorch/executorch/blob/main/exir/passes/_quant_patterns_and_replacements.py)

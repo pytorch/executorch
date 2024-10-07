@@ -152,12 +152,32 @@ class TestSigmoid(unittest.TestCase):
     def test_sigmoid_tosa_BI(self, test_name: str, test_data: torch.Tensor):
         self._test_sigmoid_tosa_BI_pipeline(self.Sigmoid(), (test_data,))
 
+    def test_add_sigmoid_tosa_MI(self):
+        self._test_sigmoid_tosa_MI_pipeline(self.AddSigmoid(), (test_data_suite[0][1],))
+
+    @unittest.skip(
+        reason="Started to fails when PyTorch 2.5->2.6 https://github.com/pytorch/executorch/issues/5832"
+    )
     def test_add_sigmoid_tosa_BI(self):
         self._test_sigmoid_tosa_BI_pipeline(self.AddSigmoid(), (test_data_suite[0][1],))
 
+    def test_sigmoid_add_tosa_MI(self):
+        self._test_sigmoid_tosa_MI_pipeline(self.SigmoidAdd(), (test_data_suite[0][1],))
+
+    @unittest.skip(
+        reason="Started to fails when PyTorch 2.5->2.6 https://github.com/pytorch/executorch/issues/5832"
+    )
     def test_sigmoid_add_tosa_BI(self):
         self._test_sigmoid_tosa_BI_pipeline(self.SigmoidAdd(), (test_data_suite[0][1],))
 
+    def test_sigmoid_add_sigmoid_tosa_MI(self):
+        self._test_sigmoid_tosa_MI_pipeline(
+            self.SigmoidAddSigmoid(), (test_data_suite[4][1], test_data_suite[3][1])
+        )
+
+    @unittest.skip(
+        reason="Started to fails when PyTorch 2.5->2.6 https://github.com/pytorch/executorch/issues/5832"
+    )
     def test_sigmoid_add_sigmoid_tosa_BI(self):
         self._test_sigmoid_tosa_BI_pipeline(
             self.SigmoidAddSigmoid(), (test_data_suite[4][1], test_data_suite[3][1])
