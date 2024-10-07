@@ -24,18 +24,42 @@ ${layout_declare_tensor(B, "rw", "attn_weight", DTYPE, STORAGE)}
 $if STORAGE == "buffer":
   ${layout_declare_ubo(B, "ivec4", "attn_weight_sizes")}
   ${layout_declare_ubo(B, "ivec4", "attn_weight_strides")}
-  ${layout_declare_ubo(B, "ivec4", "q_projected_sizes")}
-  ${layout_declare_ubo(B, "int", "input_pos")}
 $else:
   ${layout_declare_ubo(B, "ivec3", "attn_weight_limits")}
-  ${layout_declare_ubo(B, "ivec4", "q_projected_sizes")}
-  ${layout_declare_ubo(B, "int", "input_pos")}
+
+${layout_declare_ubo(B, "int", "input_pos")}
+${layout_declare_ubo(B, "float", "scale")}
+
 
 #include "indexing_utils.h"
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+// Negative infinity is represented by having all exponent bits be 1
+#define NEGATIVE_INF 0xFF800000
+
 #ifdef USING_BUFFER
+
+/*
+ * This implementations applies a scale and mask to the attention weight tensor
+ * of an SDPA block. The sizes of the attention weight is
+ * (batch_size, n_heads, seq_len, input_pos + seq_len)
+ * Conceptually the weights represent the relationship between each token in the
+ * sequence with each token preceding it.
+ *
+ * The scale applied is 1.0 / sqrt(head_dim_length)
+ *
+ * The mask applied is a bit more complicated. Imagine you create a square
+ * matrix of size (input_pos + seq_len, input_pos + seq_len), and then set the
+ * lower triangular section of the matrix to -inf. Then, slice the matrix along
+ * the row dimension starting from input_pos to input_pos + seq_len. You end up
+ * with a partial mask with size (seq_len, input_pos + seq_len). This is the
+ * mask that is applied to the attention weight.
+ *
+ * In the shader, instead of generating the mask, the index of the elment is
+ * inspected to determine if it would have been masked. Given an element at
+ * tensor index (n, c, h, w), it would be masked if w < h + input_pos.
+ */
 
 /***************************
  ** Buffer Implementation **
@@ -52,14 +76,13 @@ void main() {
     return;
   }
 
-  const T scale = T(1.0 / sqrt(float(q_projected_sizes.x)));
+  const T scale_conv = T(scale);
 
   const int attn_weight_id = tidx_to_bufi(attn_weight_idx, attn_weight_strides);
   if (attn_weight_idx.x <= attn_weight_idx.y + input_pos) {
-    attn_weight[attn_weight_id] = attn_weight[attn_weight_id] * scale;
+    attn_weight[attn_weight_id] = attn_weight[attn_weight_id] * scale_conv;
   } else {
-    // No keyword for -inf. Must "create" it by division by 0.
-    attn_weight[attn_weight_id] = T(-1.0 / 0.0);
+    attn_weight[attn_weight_id] = T(NEGATIVE_INF);
   }
 }
 
@@ -70,7 +93,8 @@ void main() {
  ****************************/
 
 /*
- * This implementation assumes that the packed dim of the attn_weight is 0.
+ * This implementation assumes that the attention weight is width packed, i.e.
+ * the packed dim of the attn_weight is 0.
  */
 void main() {
   const ivec3 attn_weight_pos = ivec3(gl_GlobalInvocationID);
@@ -79,14 +103,12 @@ void main() {
     return;
   }
 
-  const float scale = float(1.0 / sqrt(float(q_projected_sizes.x)));
-
   vec4 outtex = imageLoad(attn_weight, attn_weight_pos) * scale;
 
   // Mask out the upper triangular of attn_weight to -inf
   [[unroll]] for (int i = 0; i < 4; ++i) {
     if (attn_weight_pos.x * 4 + i > attn_weight_pos.y + input_pos) {
-      outtex[i] = float(-1.0 / 0.0);
+      outtex[i] = NEGATIVE_INF;
     }
   }
 

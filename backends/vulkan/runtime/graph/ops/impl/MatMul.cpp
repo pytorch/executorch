@@ -49,7 +49,7 @@ void resize_matmul_node(
                                           : utils::val_at(-1, mat2->sizes());
 
   const int64_t out_dim = out->dim();
-  std::vector<int64_t> new_out_sizes = mat1->sizes();
+  std::vector<int64_t> new_out_sizes(mat1->sizes());
   new_out_sizes.at(out_dim - 1) = out_rows;
   new_out_sizes.at(out_dim - 2) = out_cols;
 

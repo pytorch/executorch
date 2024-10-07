@@ -752,7 +752,7 @@ Through the ExecuTorch Developer Tools, users are able to profile model executio
 
 ##### ETRecord generation (Optional)
 
-An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see [the ETRecord docs](../sdk-etrecord.md).
+An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see [the ETRecord docs](../etrecord.md).
 
 
 In your export script, after calling `to_edge()` and `to_executorch()`, call `generate_etrecord()` with the `EdgeProgramManager` from `to_edge()` and the `ExecuTorchProgramManager` from `to_executorch()`. Make sure to copy the `EdgeProgramManager`, as the call to `to_backend()` mutates the graph in-place.
@@ -774,7 +774,7 @@ Run the export script and the ETRecord will be generated as `etrecord.bin`.
 
 ##### ETDump generation
 
-An ETDump is an artifact generated at runtime containing a trace of the model execution. For more information, see [the ETDump docs](../sdk-etdump.md).
+An ETDump is an artifact generated at runtime containing a trace of the model execution. For more information, see [the ETDump docs](../etdump.md).
 
 Include the ETDump header in your code.
 ```cpp
@@ -843,7 +843,7 @@ This prints the performance data in a tabular format in “inspector_out.txt”,
 ![](../_static/img/llm_manual_print_data_tabular.png)
 <a href="../_static/img/llm_manual_print_data_tabular.png" target="_blank">View in full size</a>
 
-To learn more about the Inspector and the rich functionality it provides, see the [Inspector API Reference](../sdk-inspector.md).
+To learn more about the Inspector and the rich functionality it provides, see the [Inspector API Reference](../model-inspector.md).
 
 ## Custom Kernels
 With the ExecuTorch custom operator APIs, custom operator and kernel authors can easily bring in their kernel into PyTorch/ExecuTorch.

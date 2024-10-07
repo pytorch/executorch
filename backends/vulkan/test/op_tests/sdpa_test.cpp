@@ -98,6 +98,170 @@ at::Tensor sdpa_with_kv_cache_aten(
 } // namespace executor
 } // namespace torch
 
+//
+// Reference Implementation
+//
+
+/*
+ * Converts a boolean mask to an additive mask. Values that are false are
+ * converted to -inf, and values that are true are converted to 0.
+ */
+at::Tensor convert_boolean_attn_mask(
+    const at::Tensor& attn_mask,
+    caffe2::TypeMeta dtype) {
+  // Convert boolean mask to additive mask; need to invert mask to indicate what
+  // to mask *out*.
+  if (attn_mask.dtype() == at::kBool) {
+    return at::where(
+        attn_mask.logical_not(),
+        -std::numeric_limits<double>::infinity(),
+        at::scalar_tensor(
+            0.0, at::TensorOptions().dtype(dtype).device(attn_mask.device())));
+  }
+  // Otherwise, attn_mask represents an additive attention tensor
+  return attn_mask;
+}
+
+/*
+ * Construct an attention mask for SDPA.
+ * 1. Construct a square matrix of ones with each dim equal to start_pos +
+ *    seq_len
+ * 2. Keep the lower triangular elements as 1 and set the rest to 0
+ * 3. Slice the mask to keep only seq_len rows starting from input_pos
+ * 4. Convert the mask to an additive mask
+ */
+at::Tensor construct_attention_mask(
+    const at::Tensor& q,
+    const at::Tensor& k_cache,
+    const int start_pos) {
+  const int max_seq_len = k_cache.size(1);
+  const int seq_len = q.size(1);
+
+  const int length = start_pos + seq_len;
+  at::Tensor attn_mask_base =
+      at::ones({length, length}, q.options().dtype(at::kBool)).tril();
+
+  at::Tensor attn_mask_sliced =
+      at::slice(attn_mask_base, 0, start_pos, start_pos + seq_len);
+
+  attn_mask_sliced = convert_boolean_attn_mask(attn_mask_sliced, q.dtype());
+  return attn_mask_sliced;
+}
+
+/*
+ * Reference implementation of SDPA
+ */
+at::Tensor sdpa_reference_impl(
+    const at::Tensor& q_projected,
+    const at::Tensor& k_projected,
+    const at::Tensor& v_projected,
+    at::Tensor& key_cache,
+    at::Tensor& value_cache,
+    const int64_t start_pos,
+    const int64_t seq_len,
+    const c10::optional<at::Tensor> __attn_mask_ignored,
+    const double dropout_p,
+    const bool is_causal,
+    const c10::optional<double> scale) {
+  at::Tensor attn_mask =
+      construct_attention_mask(q_projected, key_cache, start_pos);
+
+  // Cache update
+  at::Tensor key_cache_updated = at::slice_scatter(
+      key_cache, k_projected, 1, start_pos, start_pos + k_projected.size(1));
+  at::Tensor value_cache_updated = at::slice_scatter(
+      value_cache, v_projected, 1, start_pos, start_pos + v_projected.size(1));
+
+  // Write back to input
+  key_cache = key_cache_updated;
+  value_cache = value_cache_updated;
+
+  at::Tensor key_cache_sliced =
+      at::slice(key_cache_updated, 1, 0, start_pos + q_projected.size(1));
+
+  at::Tensor value_cache_sliced =
+      at::slice(value_cache_updated, 1, 0, start_pos + q_projected.size(1));
+
+  // Since n_heads may not be the same as n_kv_heads, the sliced k and v cache
+  // matrices need to be "expanded" to match
+  const int num_repeats = q_projected.size(2) / key_cache.size(2);
+  at::Tensor key_cache_sliced_repeated =
+      at::repeat_interleave(key_cache_sliced, num_repeats, 2);
+  at::Tensor value_cache_sliced_repeated =
+      at::repeat_interleave(value_cache_sliced, num_repeats, 2);
+
+  at::Tensor q_transposed = q_projected.transpose(1, 2);
+  at::Tensor k_transposed = key_cache_sliced_repeated.transpose(1, 2);
+  at::Tensor v_transposed = value_cache_sliced_repeated.transpose(1, 2);
+
+  at::Tensor k_transposed_2 = k_transposed.transpose(-2, -1);
+  at::Tensor attn_weight_prescale = at::matmul(q_transposed, k_transposed_2);
+
+  float scale_factor = 1.0 / sqrt(q_transposed.size(-1));
+  at::Tensor attn_weight = attn_weight_prescale * scale_factor + attn_mask;
+
+  at::Tensor attn_weight_softmax = at::softmax(attn_weight, -1);
+  at::Tensor out = at::matmul(attn_weight_softmax, v_transposed);
+
+  return out.transpose(1, 2);
+}
+
+//
+// Test functions
+//
+
+void test_reference_sdpa(
+    const int start_input_pos,
+    const int sequence_len,
+    const int embedding_dim,
+    const int num_heads,
+    const int num_kv_heads,
+    const int batch_size,
+    const int max_seq_len,
+    at::ScalarType dtype = at::kFloat) {
+  const int head_dim = embedding_dim / num_heads;
+
+  // K and V caches. Need an extra set for the reference implementation
+
+  at::Tensor k_cache = at::zeros(
+      {batch_size, max_seq_len, num_kv_heads, head_dim},
+      at::device(at::kCPU).dtype(dtype));
+  at::Tensor v_cache = at::zeros_like(k_cache);
+
+  at::Tensor k_cache_ref = at::zeros_like(k_cache);
+  at::Tensor v_cache_ref = at::zeros_like(v_cache);
+
+  for (int input_pos = start_input_pos; input_pos + sequence_len < max_seq_len;
+       input_pos += sequence_len) {
+    at::Tensor q = at::rand(
+        {batch_size, sequence_len, num_heads, head_dim},
+        at::device(at::kCPU).dtype(dtype));
+    at::Tensor k = at::rand(
+        {batch_size, sequence_len, num_kv_heads, head_dim},
+        at::device(at::kCPU).dtype(dtype));
+    at::Tensor v = at::rand_like(k);
+
+    at::Tensor reference_impl_out = sdpa_reference_impl(
+        q, k, v, k_cache, v_cache, input_pos, sequence_len, {}, 0.0, true, {});
+
+    at::Tensor reference_out =
+        torch::executor::native::sdpa_with_kv_cache_aten(
+        q,
+        k,
+        v,
+        k_cache_ref,
+        v_cache_ref,
+        input_pos,
+        sequence_len,
+        {},
+        0.0,
+        true,
+        {});
+
+    ASSERT_TRUE(at::allclose(reference_impl_out, reference_out));
+  }
+}
+
 vkcompute::vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
   using namespace vkcompute;
   switch (at_scalartype) {
@@ -124,9 +288,11 @@ void test_vulkan_sdpa(
     const int num_kv_heads,
     const int batch_size,
     const int max_seq_len,
+    const bool dynamic_seq_len = true,
     at::ScalarType dtype = at::kFloat) {
   const int head_dim = embedding_dim / num_heads;
 
+  const int init_seq_len = dynamic_seq_len ? max_seq_len : base_sequence_len;
   // K and V caches
 
   at::Tensor k_cache = at::zeros(
@@ -137,10 +303,12 @@ void test_vulkan_sdpa(
 
   // Reference input data
   at::Tensor q = at::empty(
-      {batch_size, max_seq_len, num_heads, head_dim},
+      {batch_size, init_seq_len, num_heads, head_dim},
       at::device(at::kCPU).dtype(dtype));
-  at::Tensor k = at::empty_like(k_cache);
-  at::Tensor v = at::empty_like(k_cache);
+  at::Tensor k = at::empty(
+      {batch_size, init_seq_len, num_kv_heads, head_dim},
+      at::device(at::kCPU).dtype(dtype));
+  at::Tensor v = at::empty_like(k);
 
   // Get reference output
   at::Tensor out = at::empty_like(q);
@@ -179,7 +347,7 @@ void test_vulkan_sdpa(
   const ValueRef r_out = graph.add_tensor(
       out.sizes().vec(), from_at_scalartype(out.scalar_type()));
 
-  VK_GET_OP_FN("llama.sdpa_with_kv_cache")
+  VK_GET_OP_FN("sdpa_with_kv_cache.default")
   (graph,
    {
        r_q.value,
@@ -227,7 +395,7 @@ void test_vulkan_sdpa(
         at::device(at::kCPU).dtype(dtype));
     v = at::rand_like(k);
 
-    at::Tensor reference_out = torch::executor::native::sdpa_with_kv_cache_aten(
+    at::Tensor reference_out = sdpa_reference_impl(
         q, k, v, k_cache, v_cache, input_pos, seq_len, {}, 0.0, true, {});
 
     graph.set_symint(r_input_pos_symint, input_pos);
@@ -264,13 +432,33 @@ void test_vulkan_sdpa(
     }
     ASSERT_TRUE(output_correct);
 
-    // Vary sequence length between iterations
-    seq_len = base_sequence_len + (i % 3);
+    if (dynamic_seq_len) {
+      seq_len = base_sequence_len + (i % 3);
+    }
   }
 }
 
 TEST(VulkanSDPATest, test_sdpa_op_small_params) {
-  // Test SDPA with LLaMA3 model parameters
+  const int starting_input_pos = 0;
+  const int base_sequence_len = 3;
+  const int embedding_dim = 18;
+  const int num_heads = 6;
+  const int num_kv_heads = 2;
+  const int batch_size = 1;
+  const int max_seq_len = 7;
+
+  test_vulkan_sdpa(
+      starting_input_pos,
+      base_sequence_len,
+      embedding_dim,
+      num_heads,
+      num_kv_heads,
+      batch_size,
+      max_seq_len,
+      false);
+}
+
+TEST(VulkanSDPATest, test_sdpa_op_small_params_dynamic) {
   const int starting_input_pos = 0;
   const int base_sequence_len = 3;
   const int embedding_dim = 18;
@@ -289,8 +477,7 @@ TEST(VulkanSDPATest, test_sdpa_op_small_params) {
       max_seq_len);
 }
 
-TEST(VulkanSDPATest, test_sdpa_op_llama3_params) {
-  // Test SDPA with LLaMA3 model parameters
+TEST(VulkanSDPATest, test_sdpa_op_llama3_params_dynamic) {
   const int starting_input_pos = 0;
   const int base_sequence_len = 3;
   const int embedding_dim = 2048;
@@ -300,6 +487,25 @@ TEST(VulkanSDPATest, test_sdpa_op_llama3_params) {
   const int max_seq_len = 128;
 
   test_vulkan_sdpa(
+      starting_input_pos,
+      base_sequence_len,
+      embedding_dim,
+      num_heads,
+      num_kv_heads,
+      batch_size,
+      max_seq_len);
+}
+
+TEST(VulkanSDPATest, test_reference_impl) {
+  const int starting_input_pos = 0;
+  const int base_sequence_len = 3;
+  const int embedding_dim = 2048;
+  const int num_heads = 32;
+  const int num_kv_heads = 8;
+  const int batch_size = 1;
+  const int max_seq_len = 128;
+
+  test_reference_sdpa(
       starting_input_pos,
       base_sequence_len,
       embedding_dim,

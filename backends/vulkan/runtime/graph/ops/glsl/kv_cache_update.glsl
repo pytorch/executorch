@@ -27,7 +27,6 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 /*
  * t_cache will have sizes of (max_batch_size, max_seq_len, n_heads, head_dim).
  * t_projected will have sizes of (batch_size, seq_len, n_heads, head_dim).
- * input_pos is a scalar tensor containing one value.
  *
  * The cache update inserts the values of t_projected into t_cache at the index
  * specified by input_pos at the seq_len dimension. It is equivalent to calling
@@ -46,6 +45,8 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 void main() {
   int projected_bufi = int(gl_GlobalInvocationID.x);
+  // Bump cache index forward by input_pos elements along the seq_len dimension.
+  // cache_strides contains the strides of the cache tensor.
   int cache_bufi = input_pos * cache_strides.z + projected_bufi;
   if (projected_bufi >= projected_numel) {
     return;
@@ -59,6 +60,8 @@ void main() {
  ** Texture Implementation **
  ****************************/
 
+// Note that this shader assumes the that tensors are width packed, i.e.
+// packed_dim = 0
 void main() {
   const ivec3 projected_pos = ivec3(gl_GlobalInvocationID);
 

@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.examples.models.flamingo.preprocess.export_preprocess_lib import (
+from executorch.examples.models.llama3_2_mm.preprocess.export_preprocess_lib import (
     export_preprocess,
     get_example_inputs,
     lower_to_executorch_preprocess,

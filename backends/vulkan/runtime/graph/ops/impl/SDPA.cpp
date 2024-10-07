@@ -75,6 +75,9 @@ void add_attn_weight_scale_and_mask_node(
   add_storage_type_suffix(kernel_name, graph.storage_type_of(attn_weight));
   add_dtype_suffix(kernel_name, graph.dtype_of(attn_weight));
 
+  const int32_t head_dim_size = graph.size_at<int32_t>(-1, q_projected);
+  const float scale_val = 1.0f / sqrt(static_cast<float>(head_dim_size));
+
   utils::uvec3 global_size;
   utils::uvec3 local_size;
   vkapi::ParamsBindList param_ubos;
@@ -89,14 +92,14 @@ void add_attn_weight_scale_and_mask_node(
     param_ubos = {
         graph.sizes_ubo(attn_weight),
         graph.strides_ubo(attn_weight),
-        graph.sizes_ubo(q_projected)};
+        graph.create_params_buffer(scale_val)};
   } else {
     global_size = graph.logical_limits_of(attn_weight);
 
     param_ubos = {
         graph.logical_limits_ubo(attn_weight),
-        graph.sizes_ubo(q_projected),
-        graph.get_or_create_int_param_buffer(input_pos_symint)};
+        graph.get_or_create_int_param_buffer(input_pos_symint),
+        graph.create_params_buffer(scale_val)};
   }
 
   local_size = graph.create_local_wg_size(global_size);
@@ -147,9 +150,12 @@ void add_cache_slice_view_node(
     ValueRef cache,
     ValueRef input_pos_symint,
     ValueRef q_projected,
-    ValueRef cache_sliced) {
+    ValueRef cache_sliced,
+    const int64_t max_seq_len) {
   std::vector<int64_t> slice_sizes =
       get_cache_slice_sizes(graph, cache, input_pos_symint, q_projected);
+  // Initialize the slice to the maximum possible size to start
+  slice_sizes.at(1) = max_seq_len;
 
   graph.get_tensor(cache_sliced)->virtual_resize(slice_sizes);
 
@@ -191,15 +197,37 @@ void sdpa_with_kv_cache_impl(
 
   // Unused variables
   (void)sequence_len;
-  (void)attn_mask;
-  (void)dropout_p;
-  (void)is_causal;
-  (void)scale;
+
+  // Batches must be 1
+  VK_CHECK_COND(graph.size_at<int32_t>(-4, q_projected) == 1);
+  VK_CHECK_COND(graph.size_at<int32_t>(-4, k_projected) == 1);
+  VK_CHECK_COND(graph.size_at<int32_t>(-4, v_projected) == 1);
+  // k and v projected must have the same shape
+  VK_CHECK_COND(graph.sizes_of(k_projected) == graph.sizes_of(v_projected));
+  // head dim must match between tensors
+  VK_CHECK_COND(
+      graph.size_at<int32_t>(-1, q_projected) ==
+      graph.size_at<int32_t>(-1, k_projected));
+  // All tensors must have the packed dim be the width (head) dimension
+  VK_CHECK_COND(graph.packed_dim_of(q_projected) == WHCN::kWidthDim);
+  VK_CHECK_COND(graph.packed_dim_of(k_projected) == WHCN::kWidthDim);
+  VK_CHECK_COND(graph.packed_dim_of(v_projected) == WHCN::kWidthDim);
+  // Some variables are not supported yet
+  VK_CHECK_COND(
+      graph.val_is_none(dropout_p) ||
+      graph.extract_scalar<double>(dropout_p) == 0);
+  VK_CHECK_COND(graph.val_is_none(scale));
+  // is_causal is assumed to be true in the current implementation.
+  VK_CHECK_COND(
+      graph.val_is_none(is_causal) || graph.extract_scalar<bool>(is_causal));
+  VK_CHECK_COND(graph.val_is_none(attn_mask));
 
   const ValueRef k_cache =
       prepack_if_tensor_ref(graph, k_cache_data, utils::kWidthPacked);
   const ValueRef v_cache =
       prepack_if_tensor_ref(graph, v_cache_data, utils::kWidthPacked);
+
+  const int32_t max_seq_len = graph.size_at<int32_t>(1, k_cache);
 
   add_kv_cache_update_node(graph, input_pos_symint, k_projected, k_cache);
   add_kv_cache_update_node(graph, input_pos_symint, v_projected, v_cache);
@@ -208,9 +236,19 @@ void sdpa_with_kv_cache_impl(
   const ValueRef k_cache_sliced = graph.add_tensor_view(k_cache);
   const ValueRef v_cache_sliced = graph.add_tensor_view(v_cache);
   add_cache_slice_view_node(
-      graph, k_cache, input_pos_symint, q_projected, k_cache_sliced);
+      graph,
+      k_cache,
+      input_pos_symint,
+      q_projected,
+      k_cache_sliced,
+      max_seq_len);
   add_cache_slice_view_node(
-      graph, v_cache, input_pos_symint, q_projected, v_cache_sliced);
+      graph,
+      v_cache,
+      input_pos_symint,
+      q_projected,
+      v_cache_sliced,
+      max_seq_len);
 
   // Scalar values for various dims
   const ValueRef channels = graph.add_scalar<int64_t>(1);
@@ -224,10 +262,13 @@ void sdpa_with_kv_cache_impl(
   const ValueRef num_repeats =
       graph.add_scalar<int64_t>(num_heads / num_kv_heads);
 
+  std::vector<int64_t> cache_slice_repeated_sizes(graph.sizes_of(q_projected));
+  cache_slice_repeated_sizes.at(1) = max_seq_len;
+
   TmpTensor k_cache_sliced_repeated(
-      &graph, graph.sizes_of(q_projected), graph.dtype_of(k_cache_sliced));
+      &graph, cache_slice_repeated_sizes, graph.dtype_of(k_cache_sliced));
   TmpTensor v_cache_sliced_repeated(
-      &graph, graph.sizes_of(q_projected), graph.dtype_of(v_cache_sliced));
+      &graph, cache_slice_repeated_sizes, graph.dtype_of(v_cache_sliced));
 
   add_repeat_interleave_node(
       graph, k_cache_sliced, num_repeats, height, k_cache_sliced_repeated);
@@ -251,7 +292,6 @@ void sdpa_with_kv_cache_impl(
 
   // Initialize attn_weight to the maximum possible size
   std::vector<int64_t> attn_weight_full_sizes = graph.sizes_of(q_transposed);
-  const int64_t max_seq_len = graph.size_at<int64_t>(1, k_cache);
   attn_weight_full_sizes.at(2) = max_seq_len;
   attn_weight_full_sizes.at(3) = max_seq_len;
   TmpTensor attn_weight(
@@ -292,7 +332,7 @@ void sdpa_with_kv_cache_impl(
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(llama.sdpa_with_kv_cache, sdpa_with_kv_cache_impl);
+  VK_REGISTER_OP(sdpa_with_kv_cache.default, sdpa_with_kv_cache_impl);
 }
 
 } // namespace vkcompute
