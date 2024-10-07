@@ -244,8 +244,7 @@ void test_reference_sdpa(
     at::Tensor reference_impl_out = sdpa_reference_impl(
         q, k, v, k_cache, v_cache, input_pos, sequence_len, {}, 0.0, true, {});
 
-    at::Tensor reference_out =
-        torch::executor::native::sdpa_with_kv_cache_aten(
+    at::Tensor reference_out = torch::executor::native::sdpa_with_kv_cache_aten(
         q,
         k,
         v,
