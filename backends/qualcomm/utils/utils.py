@@ -277,6 +277,7 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
 def _transform(
     edge_program: ExportedProgram, custom_pass_config: Set[str] = None
 ) -> None:
+    custom_pass_config = custom_pass_config or {}
     # currently ExirExportedProgram.transform does not accept
     # changes of input number which was caused by FoldQDQ
     # apply passes one by one here to avoid IR capture failure
@@ -311,7 +312,7 @@ def _transform(
 def capture_program(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
-    custom_pass_config: Dict[str, bool] = None,
+    custom_pass_config: Set[str] = None,
 ) -> exir.ExirExportedProgram:
     ep = torch.export.export(module, inputs)
     decomposed_ep = ep.run_decompositions(get_decomp_table())
@@ -323,7 +324,7 @@ def capture_program(
     core_ep = ExirExportedProgram(decomposed_ep, False)
     core_ep.transform(ConvertBinaryOpsWithScalar())
     edge_ep = core_ep.to_edge(qnn_edge_config())
-    _transform(edge_ep.exported_program, custom_pass_config or {})
+    _transform(edge_ep.exported_program, custom_pass_config)
     return edge_ep
 
 
