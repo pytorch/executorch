@@ -766,7 +766,7 @@ def get_repeat_inputs():
     test_suite_3d.storage_types = ["utils::kTexture3D"]
     test_suite_3d.data_gen = "make_seq_tensor"
     test_suite_3d.dtypes = ["at::kFloat"]
-    test_suite_2d.test_name_suffix = "3d"
+    test_suite_3d.test_name_suffix = "3d"
 
     return [test_suite_2d, test_suite_3d]
 
