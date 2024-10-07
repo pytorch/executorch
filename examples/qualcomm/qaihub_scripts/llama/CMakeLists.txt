@@ -32,7 +32,7 @@ target_include_directories(
 target_link_libraries(
   qaihub_llama2_7b_runner
   qnn_executorch_backend
-  executorch_no_prim_ops
+  executorch_core
   extension_data_loader
   extension_module
   extension_tensor
@@ -90,7 +90,7 @@ target_include_directories(
 target_link_libraries(
   qaihub_llama3_8b_runner
   qnn_executorch_backend
-  executorch_no_prim_ops
+  executorch_core
   extension_data_loader
   extension_module
   extension_tensor

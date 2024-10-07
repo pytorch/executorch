@@ -29,7 +29,7 @@ PLATFORM_TARGET=("17.0" "17.0" "10.15")
 
 FRAMEWORK_EXECUTORCH="executorch:\
 libexecutorch.a,\
-libexecutorch_no_prim_ops.a,\
+libexecutorch_core.a,\
 libextension_apple.a,\
 libextension_data_loader.a,\
 libextension_module.a,\
