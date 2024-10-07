@@ -742,6 +742,7 @@ def get_repeat_inputs():
     test_suite.layouts = [
         "utils::kChannelsPacked",
     ]
+    test_suite.storage_types = ["utils::kTexture2D", "utils::kTexture3D"]
     test_suite.data_gen = "make_seq_tensor"
     test_suite.dtypes = ["at::kFloat"]
     return test_suite

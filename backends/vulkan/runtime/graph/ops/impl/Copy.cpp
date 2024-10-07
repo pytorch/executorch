@@ -31,6 +31,7 @@ void add_copy_offset_node(
   std::string kernel_name = "copy_offset";
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
+  add_storage_type_suffix(kernel_name, *t_out);
 
   const struct Block final {
     alignas(16) ivec3 range;
@@ -115,6 +116,7 @@ void add_copy_channel_offset_node(
   std::string kernel_name = "copy_channel_offset";
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
+  add_storage_type_suffix(kernel_name, *t_out);
 
   int32_t out_channels = dim_at<kChannel4D>(out_sizes);
 
