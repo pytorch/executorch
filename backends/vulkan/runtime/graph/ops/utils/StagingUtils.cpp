@@ -15,7 +15,7 @@
 
 namespace vkcompute {
 
-bool is_8bit(vkapi::ScalarType dtype) {
+bool is_bitw8(vkapi::ScalarType dtype) {
   return dtype == vkapi::kByte || dtype == vkapi::kChar ||
       dtype == vkapi::kQInt8 || dtype == vkapi::kQUInt8;
 }
@@ -26,9 +26,9 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
-  if (is_8bit(v_dst.dtype()) && v_dst.storage_type() != utils::kBuffer &&
+  if (is_bitw8(v_dst.dtype()) && v_dst.storage_type() != utils::kBuffer &&
       !int8_buffer_enabled) {
-    kernel_name = "nchw_to_int8_image_noint8";
+    kernel_name = "nchw_to_bitw8_image_nobitw8buffer";
     add_dtype_suffix(kernel_name, v_dst);
     add_storage_type_suffix(kernel_name, v_dst);
     return VK_KERNEL_FROM_STR(kernel_name);
@@ -53,9 +53,9 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
-  if (is_8bit(v_src.dtype()) && v_src.storage_type() != utils::kBuffer &&
+  if (is_bitw8(v_src.dtype()) && v_src.storage_type() != utils::kBuffer &&
       !int8_buffer_enabled) {
-    kernel_name = "int8_image_to_nchw_noint8";
+    kernel_name = "bitw8_image_to_nchw_nobitw8buffer";
     add_dtype_suffix(kernel_name, v_src);
     add_storage_type_suffix(kernel_name, v_src);
     return VK_KERNEL_FROM_STR(kernel_name);

@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-nchw_to_int8_image_noint8:
+bitw8_image_to_nchw_nobitw8buffer:
   parameter_names_with_default_values:
     STORAGE: texture3d
     DTYPE: int8
@@ -16,4 +16,4 @@ nchw_to_int8_image_noint8:
       - VALUE: texture2d
       - VALUE: texture3d
   shader_variants:
-    - NAME: nchw_to_int8_image_noint8
+    - NAME: bitw8_image_to_nchw_nobitw8buffer
