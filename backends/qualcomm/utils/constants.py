@@ -25,6 +25,7 @@ QCOM_SCALES = "scales"
 QCOM_SCALE_OFFSET = "scale_offset"
 QCOM_ZERO_POINT = "zero_point"
 QCOM_ZERO_POINTS = "zero_points"
+QCOM_PASS_EXPAND_BROADCAST_SHAPE = "expand_broadcast_shape"
 
 # constants in backends/qualcomm/tests
 QCOM_ANNOTATION = "annotation"
