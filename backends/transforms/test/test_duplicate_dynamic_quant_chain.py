@@ -8,7 +8,6 @@ import copy
 import unittest
 
 import torch
-import torch._export as export
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
@@ -59,10 +58,10 @@ class TestDuplicateDynamicQuantChainPass(QuantizationTestCase):
 
         # program capture
         m = copy.deepcopy(m_eager)
-        m = export.capture_pre_autograd_graph(
+        m = torch.export.export_for_training(
             m,
             example_inputs,
-        )
+        ).module()
 
         m = prepare_pt2e(m, quantizer)
         # Calibrate
