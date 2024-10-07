@@ -318,6 +318,7 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="#conclusion">Conclusion</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
@@ -480,7 +481,7 @@
   <div class="section" id="running-an-executorch-model-using-the-module-extension-in-c">
 <h1>Running an ExecuTorch Model Using the Module Extension in C++<a class="headerlink" href="#running-an-executorch-model-using-the-module-extension-in-c" title="Permalink to this heading">¶</a></h1>
 <p><strong>Author:</strong> <a class="reference external" href="https://github.com/shoumikhin">Anthony Shoumikhin</a></p>
-<p>In the <a class="reference internal" href="running-a-model-cpp-tutorial.html"><span class="doc std std-doc">Running an ExecuTorch Model in C++ Tutorial</span></a>, we explored the lower-level ExecuTorch APIs for running an exported model. While these APIs offer zero overhead, great flexibility, and control, they can be verbose and complex for regular use. To simplify this and resemble PyTorch’s eager mode in Python, we introduce the Module facade APIs over the regular ExecuTorch runtime APIs. The Module APIs provide the same flexibility but default to commonly used components like <code class="docutils literal notranslate"><span class="pre">DataLoader</span></code> and <code class="docutils literal notranslate"><span class="pre">MemoryAllocator</span></code>, hiding most intricate details.</p>
+<p>In the <a class="reference internal" href="running-a-model-cpp-tutorial.html"><span class="doc std std-doc">Running an ExecuTorch Model in C++ Tutorial</span></a>, we explored the lower-level ExecuTorch APIs for running an exported model. While these APIs offer zero overhead, great flexibility, and control, they can be verbose and complex for regular use. To simplify this and resemble PyTorch’s eager mode in Python, we introduce the <code class="docutils literal notranslate"><span class="pre">Module</span></code> facade APIs over the regular ExecuTorch runtime APIs. The <code class="docutils literal notranslate"><span class="pre">Module</span></code> APIs provide the same flexibility but default to commonly used components like <code class="docutils literal notranslate"><span class="pre">DataLoader</span></code> and <code class="docutils literal notranslate"><span class="pre">MemoryAllocator</span></code>, hiding most intricate details.</p>
 <div class="section" id="example">
 <h2>Example<a class="headerlink" href="#example" title="Permalink to this heading">¶</a></h2>
 <p>Let’s see how we can run the <code class="docutils literal notranslate"><span class="pre">SimpleConv</span></code> model generated from the <a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">Exporting to ExecuTorch tutorial</span></a> using the <code class="docutils literal notranslate"><span class="pre">Module</span></code> and <a class="reference internal" href="extension-tensor.html"><span class="doc std std-doc"><code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code></span></a> APIs:</p>
@@ -512,7 +513,7 @@
 <h2>APIs<a class="headerlink" href="#apis" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="creating-a-module">
 <h3>Creating a Module<a class="headerlink" href="#creating-a-module" title="Permalink to this heading">¶</a></h3>
-<p>Creating a <code class="docutils literal notranslate"><span class="pre">Module</span></code> object is an extremely fast operation that does not involve significant processing time or memory allocation. The actual loading of a <code class="docutils literal notranslate"><span class="pre">Program</span></code> and a <code class="docutils literal notranslate"><span class="pre">Method</span></code> happens lazily on the first inference unless explicitly requested with a dedicated API.</p>
+<p>Creating a <code class="docutils literal notranslate"><span class="pre">Module</span></code> object is a fast operation that does not involve significant processing time or memory allocation. The actual loading of a <code class="docutils literal notranslate"><span class="pre">Program</span></code> and a <code class="docutils literal notranslate"><span class="pre">Method</span></code> happens lazily on the first inference unless explicitly requested with a dedicated API.</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">&quot;/path/to/model.pte&quot;</span><span class="p">);</span>
 </pre></div>
 </div>
@@ -531,26 +532,26 @@
 <span class="n">assert</span><span class="p">(</span><span class="k">module</span><span class="p">.</span><span class="n">is_method_loaded</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">));</span>
 </pre></div>
 </div>
-<p>Note: the <code class="docutils literal notranslate"><span class="pre">Program</span></code> is loaded automatically before any <code class="docutils literal notranslate"><span class="pre">Method</span></code> is loaded. Subsequent attempts to load them have no effect if one of the previous attempts was successful.</p>
-<p>You can also force-load the “forward” method with a convenience syntax:</p>
+<p>You can also use the convenience function to load the <code class="docutils literal notranslate"><span class="pre">forward</span></code> method:</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">error</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">load_forward</span><span class="p">();</span>
 
 <span class="n">assert</span><span class="p">(</span><span class="k">module</span><span class="p">.</span><span class="n">is_method_loaded</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">));</span>
 </pre></div>
 </div>
+<p><strong>Note:</strong> The <code class="docutils literal notranslate"><span class="pre">Program</span></code> is loaded automatically before any <code class="docutils literal notranslate"><span class="pre">Method</span></code> is loaded. Subsequent attempts to load them have no effect if a previous attempt was successful.</p>
 </div>
 <div class="section" id="querying-for-metadata">
 <h3>Querying for Metadata<a class="headerlink" href="#querying-for-metadata" title="Permalink to this heading">¶</a></h3>
-<p>Get a set of method names that a Module contains using the <code class="docutils literal notranslate"><span class="pre">method_names()</span></code> function:</p>
+<p>Get a set of method names that a <code class="docutils literal notranslate"><span class="pre">Module</span></code> contains using the <code class="docutils literal notranslate"><span class="pre">method_names()</span></code> function:</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">method_names</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">method_names</span><span class="p">();</span>
 
 <span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">method_names</span><span class="p">.</span><span class="n">ok</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
-<span class="w">  </span><span class="n">assert</span><span class="p">(</span><span class="n">method_names</span><span class="p">.</span><span class="n">count</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">));</span>
+<span class="w">  </span><span class="n">assert</span><span class="p">(</span><span class="n">method_names</span><span class="o">-&gt;</span><span class="n">count</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">));</span>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p>Note: <code class="docutils literal notranslate"><span class="pre">method_names()</span></code> will try to force-load the <code class="docutils literal notranslate"><span class="pre">Program</span></code> when called the first time.</p>
-<p>Introspect miscellaneous metadata about a particular method via <code class="docutils literal notranslate"><span class="pre">MethodMeta</span></code> struct returned by <code class="docutils literal notranslate"><span class="pre">method_meta()</span></code> function:</p>
+<p><strong>Note:</strong> <code class="docutils literal notranslate"><span class="pre">method_names()</span></code> will force-load the <code class="docutils literal notranslate"><span class="pre">Program</span></code> when called for the first time.</p>
+<p>To introspect miscellaneous metadata about a particular method, use the <code class="docutils literal notranslate"><span class="pre">method_meta()</span></code> function, which returns a <code class="docutils literal notranslate"><span class="pre">MethodMeta</span></code> struct:</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">method_meta</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">method_meta</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">);</span>
 
 <span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">method_meta</span><span class="p">.</span><span class="n">ok</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
@@ -558,43 +559,102 @@
 <span class="w">  </span><span class="n">assert</span><span class="p">(</span><span class="n">method_meta</span><span class="o">-&gt;</span><span class="n">num_inputs</span><span class="p">()</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
 
 <span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">input_meta</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">method_meta</span><span class="o">-&gt;</span><span class="n">input_tensor_meta</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
-
 <span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">input_meta</span><span class="p">.</span><span class="n">ok</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="n">assert</span><span class="p">(</span><span class="n">input_meta</span><span class="o">-&gt;</span><span class="n">scalar_type</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Float</span><span class="p">);</span>
 <span class="w">  </span><span class="p">}</span>
-<span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">output_meta</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">method_meta</span><span class="o">-&gt;</span><span class="n">output_tensor_meta</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
 
+<span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">output_meta</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">method_meta</span><span class="o">-&gt;</span><span class="n">output_tensor_meta</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
 <span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">output_meta</span><span class="p">.</span><span class="n">ok</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="n">assert</span><span class="p">(</span><span class="n">output_meta</span><span class="o">-&gt;</span><span class="n">sizes</span><span class="p">().</span><span class="n">size</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p>Note: <code class="docutils literal notranslate"><span class="pre">method_meta()</span></code> will try to force-load the <code class="docutils literal notranslate"><span class="pre">Method</span></code> when called for the first time.</p>
+<p><strong>Note:</strong> <code class="docutils literal notranslate"><span class="pre">method_meta()</span></code> will also force-load the <code class="docutils literal notranslate"><span class="pre">Method</span></code> the first time it is called.</p>
 </div>
-<div class="section" id="perform-an-inference">
-<h3>Perform an Inference<a class="headerlink" href="#perform-an-inference" title="Permalink to this heading">¶</a></h3>
-<p>Assuming that the <code class="docutils literal notranslate"><span class="pre">Program</span></code>’s method names and their input format is known ahead of time, we rarely need to query for those and can run the methods directly by name using the <code class="docutils literal notranslate"><span class="pre">execute()</span></code> function:</p>
-<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Tensor</span><span class="p">(</span><span class="o">&amp;</span><span class="n">tensor</span><span class="p">));</span>
+<div class="section" id="performing-an-inference">
+<h3>Performing an Inference<a class="headerlink" href="#performing-an-inference" title="Permalink to this heading">¶</a></h3>
+<p>Assuming the <code class="docutils literal notranslate"><span class="pre">Program</span></code>’s method names and their input format are known ahead of time, you can run methods directly by name using the <code class="docutils literal notranslate"><span class="pre">execute()</span></code> function:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">tensor</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>Which can also be simplified for the standard <code class="docutils literal notranslate"><span class="pre">forward()</span></code> method name as:</p>
-<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">Tensor</span><span class="p">(</span><span class="o">&amp;</span><span class="n">tensor</span><span class="p">));</span>
+<p>For the standard <code class="docutils literal notranslate"><span class="pre">forward()</span></code> method, the above can be simplified:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">tensor</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>Note: <code class="docutils literal notranslate"><span class="pre">execute()</span></code> or <code class="docutils literal notranslate"><span class="pre">forward()</span></code> will try to force load the <code class="docutils literal notranslate"><span class="pre">Program</span></code> and the <code class="docutils literal notranslate"><span class="pre">Method</span></code> when called for the first time. Therefore, the first inference will take more time than subsequent ones as it loads the model lazily and prepares it for execution unless the <code class="docutils literal notranslate"><span class="pre">Program</span></code> or <code class="docutils literal notranslate"><span class="pre">Method</span></code> was loaded explicitly earlier using the corresponding functions.</p>
+<p><strong>Note:</strong> <code class="docutils literal notranslate"><span class="pre">execute()</span></code> or <code class="docutils literal notranslate"><span class="pre">forward()</span></code> will load the <code class="docutils literal notranslate"><span class="pre">Program</span></code> and the <code class="docutils literal notranslate"><span class="pre">Method</span></code> the first time they are called. Therefore, the first inference will take longer, as the model is loaded lazily and prepared for execution unless it was explicitly loaded earlier.</p>
+</div>
+<div class="section" id="setting-input-and-output">
+<h3>Setting Input and Output<a class="headerlink" href="#setting-input-and-output" title="Permalink to this heading">¶</a></h3>
+<p>You can set individual input and output values for methods with the following APIs.</p>
+<div class="section" id="setting-inputs">
+<h4>Setting Inputs<a class="headerlink" href="#setting-inputs" title="Permalink to this heading">¶</a></h4>
+<p>Inputs can be any <code class="docutils literal notranslate"><span class="pre">EValue</span></code>, which includes tensors, scalars, lists, and other supported types. To set a specific input value for a method:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">module</span><span class="p">.</span><span class="n">set_input</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">input_value</span><span class="p">,</span><span class="w"> </span><span class="n">input_index</span><span class="p">);</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">input_value</span></code> is an <code class="docutils literal notranslate"><span class="pre">EValue</span></code> representing the input you want to set.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">input_index</span></code> is the zero-based index of the input to set.</p></li>
+</ul>
+<p>For example, to set the first input tensor:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">module</span><span class="p">.</span><span class="n">set_input</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">tensor_value</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>You can also set multiple inputs at once:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="n">runtime</span><span class="o">::</span><span class="n">EValue</span><span class="o">&gt;</span><span class="w"> </span><span class="n">inputs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="n">input1</span><span class="p">,</span><span class="w"> </span><span class="n">input2</span><span class="p">,</span><span class="w"> </span><span class="n">input3</span><span class="p">};</span>
+<span class="k">module</span><span class="p">.</span><span class="n">set_inputs</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">inputs</span><span class="p">);</span>
+</pre></div>
+</div>
+<p><strong>Note:</strong> You can skip the method name argument for the <code class="docutils literal notranslate"><span class="pre">forward()</span></code> method.</p>
+<p>By pre-setting all inputs, you can perform an inference without passing any arguments:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">forward</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Or just setting and then passing the inputs partially:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// Set the second input ahead of time.</span>
+<span class="k">module</span><span class="p">.</span><span class="n">set_input</span><span class="p">(</span><span class="n">input_value_1</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
+
+<span class="c1">// Execute the method, providing the first input at call time.</span>
+<span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">input_value_0</span><span class="p">);</span>
+</pre></div>
+</div>
+<p><strong>Note:</strong> The pre-set inputs are stored in the <code class="docutils literal notranslate"><span class="pre">Module</span></code> and can be reused multiple times for the next executions.</p>
+<p>Don’t forget to clear or reset the inputs if you don’t need them anymore by setting them to default-constructed <code class="docutils literal notranslate"><span class="pre">EValue</span></code>:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">module</span><span class="p">.</span><span class="n">set_input</span><span class="p">(</span><span class="n">runtime</span><span class="o">::</span><span class="n">EValue</span><span class="p">(),</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="setting-outputs">
+<h4>Setting Outputs<a class="headerlink" href="#setting-outputs" title="Permalink to this heading">¶</a></h4>
+<p>Only outputs of type Tensor can be set at runtime, and they must not be memory-planned at model export time. Memory-planned tensors are preallocated during model export and cannot be replaced.</p>
+<p>To set the output tensor for a specific method:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">module</span><span class="p">.</span><span class="n">set_output</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">output_tensor</span><span class="p">,</span><span class="w"> </span><span class="n">output_index</span><span class="p">);</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">output_tensor</span></code> is an <code class="docutils literal notranslate"><span class="pre">EValue</span></code> containing the tensor you want to set as the output.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">output_index</span></code> is the zero-based index of the output to set.</p></li>
+</ul>
+<p><strong>Note:</strong> Ensure that the output tensor you’re setting matches the expected shape and data type of the method’s output.</p>
+<p>You can skip the method name for <code class="docutils literal notranslate"><span class="pre">forward()</span></code> and the index for the first output:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">module</span><span class="p">.</span><span class="n">set_output</span><span class="p">(</span><span class="n">output_tensor</span><span class="p">);</span>
+</pre></div>
+</div>
+<p><strong>Note:</strong> The pre-set outputs are stored in the <code class="docutils literal notranslate"><span class="pre">Module</span></code> and can be reused multiple times for the next executions, just like inputs.</p>
+</div>
 </div>
 <div class="section" id="result-and-error-types">
 <h3>Result and Error Types<a class="headerlink" href="#result-and-error-types" title="Permalink to this heading">¶</a></h3>
-<p>Most of the ExecuTorch APIs, including those described above, return either <code class="docutils literal notranslate"><span class="pre">Result</span></code> or <code class="docutils literal notranslate"><span class="pre">Error</span></code> types. Let’s understand what those are:</p>
+<p>Most of the ExecuTorch APIs return either <code class="docutils literal notranslate"><span class="pre">Result</span></code> or <code class="docutils literal notranslate"><span class="pre">Error</span></code> types:</p>
 <ul class="simple">
-<li><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/core/error.h"><code class="docutils literal notranslate"><span class="pre">Error</span></code></a> is a C++ enum containing a collection of valid error codes, where the default is <code class="docutils literal notranslate"><span class="pre">Error::Ok</span></code>, denoting success.</p></li>
-<li><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/core/result.h"><code class="docutils literal notranslate"><span class="pre">Result</span></code></a> can hold either an <code class="docutils literal notranslate"><span class="pre">Error</span></code> if the operation has failed or a payload, i.e., the actual result of the operation like an <code class="docutils literal notranslate"><span class="pre">EValue</span></code> wrapping a <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> or any other standard C++ data type if the operation succeeded. To check if <code class="docutils literal notranslate"><span class="pre">Result</span></code> has a valid value, call the <code class="docutils literal notranslate"><span class="pre">ok()</span></code> function. To get the <code class="docutils literal notranslate"><span class="pre">Error</span></code> use the <code class="docutils literal notranslate"><span class="pre">error()</span></code> function, and to get the actual data, use the overloaded <code class="docutils literal notranslate"><span class="pre">get()</span></code> function or dereferencing pointer operators like <code class="docutils literal notranslate"><span class="pre">*</span></code> and <code class="docutils literal notranslate"><span class="pre">-&gt;</span></code>.</p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/core/error.h"><code class="docutils literal notranslate"><span class="pre">Error</span></code></a> is a C++ enum containing valid error codes. The default is <code class="docutils literal notranslate"><span class="pre">Error::Ok</span></code>, denoting success.</p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/core/result.h"><code class="docutils literal notranslate"><span class="pre">Result</span></code></a> can hold either an <code class="docutils literal notranslate"><span class="pre">Error</span></code> if the operation fails, or a payload such as an <code class="docutils literal notranslate"><span class="pre">EValue</span></code> wrapping a <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> if successful. To check if a <code class="docutils literal notranslate"><span class="pre">Result</span></code> is valid, call <code class="docutils literal notranslate"><span class="pre">ok()</span></code>. To retrieve the <code class="docutils literal notranslate"><span class="pre">Error</span></code>, use <code class="docutils literal notranslate"><span class="pre">error()</span></code>, and to get the data, use <code class="docutils literal notranslate"><span class="pre">get()</span></code> or dereference operators like <code class="docutils literal notranslate"><span class="pre">*</span></code> and <code class="docutils literal notranslate"><span class="pre">-&gt;</span></code>.</p></li>
 </ul>
 </div>
-<div class="section" id="profile-the-module">
-<h3>Profile the Module<a class="headerlink" href="#profile-the-module" title="Permalink to this heading">¶</a></h3>
-<p>Use <a class="reference internal" href="etdump.html"><span class="doc std std-doc">ExecuTorch Dump</span></a> to trace model execution. Create an instance of the <code class="docutils literal notranslate"><span class="pre">ETDumpGen</span></code> class and pass it to the <code class="docutils literal notranslate"><span class="pre">Module</span></code> constructor. After executing a method, save the <code class="docutils literal notranslate"><span class="pre">ETDump</span></code> to a file for further analysis. You can capture multiple executions in a single trace if desired.</p>
+<div class="section" id="profiling-the-module">
+<h3>Profiling the Module<a class="headerlink" href="#profiling-the-module" title="Permalink to this heading">¶</a></h3>
+<p>Use <a class="reference internal" href="etdump.html"><span class="doc std std-doc">ExecuTorch Dump</span></a> to trace model execution. Create an <code class="docutils literal notranslate"><span class="pre">ETDumpGen</span></code> instance and pass it to the <code class="docutils literal notranslate"><span class="pre">Module</span></code> constructor. After executing a method, save the <code class="docutils literal notranslate"><span class="pre">ETDump</span></code> data to a file for further analysis:</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;fstream&gt;</span>
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;memory&gt;</span>
 
@@ -605,7 +665,7 @@
 
 <span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">&quot;/path/to/model.pte&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Module</span><span class="o">::</span><span class="n">LoadMode</span><span class="o">::</span><span class="n">MmapUseMlock</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">make_unique</span><span class="o">&lt;</span><span class="n">ETDumpGen</span><span class="o">&gt;</span><span class="p">());</span>
 
-<span class="c1">// Execute a method, e.g. module.forward(...); or module.execute(&quot;my_method&quot;, ...);</span>
+<span class="c1">// Execute a method, e.g., module.forward(...); or module.execute(&quot;my_method&quot;, ...);</span>
 
 <span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">etdump</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">dynamic_cast</span><span class="o">&lt;</span><span class="n">ETDumpGen</span><span class="o">*&gt;</span><span class="p">(</span><span class="k">module</span><span class="p">.</span><span class="n">event_tracer</span><span class="p">()))</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">trace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">etdump</span><span class="o">-&gt;</span><span class="n">get_etdump_data</span><span class="p">();</span>
@@ -623,6 +683,10 @@
 </div>
 </div>
 </div>
+</div>
+<div class="section" id="conclusion">
+<h1>Conclusion<a class="headerlink" href="#conclusion" title="Permalink to this heading">¶</a></h1>
+<p>The <code class="docutils literal notranslate"><span class="pre">Module</span></code> APIs provide a simplified interface for running ExecuTorch models in C++, closely resembling the experience of PyTorch’s eager mode. By abstracting away the complexities of the lower-level runtime APIs, developers can focus on model execution without worrying about the underlying details.</p>
 </div>
 
 
@@ -676,13 +740,19 @@
 <li><a class="reference internal" href="#creating-a-module">Creating a Module</a></li>
 <li><a class="reference internal" href="#force-loading-a-method">Force-Loading a Method</a></li>
 <li><a class="reference internal" href="#querying-for-metadata">Querying for Metadata</a></li>
-<li><a class="reference internal" href="#perform-an-inference">Perform an Inference</a></li>
+<li><a class="reference internal" href="#performing-an-inference">Performing an Inference</a></li>
+<li><a class="reference internal" href="#setting-input-and-output">Setting Input and Output</a><ul>
+<li><a class="reference internal" href="#setting-inputs">Setting Inputs</a></li>
+<li><a class="reference internal" href="#setting-outputs">Setting Outputs</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#result-and-error-types">Result and Error Types</a></li>
-<li><a class="reference internal" href="#profile-the-module">Profile the Module</a></li>
+<li><a class="reference internal" href="#profiling-the-module">Profiling the Module</a></li>
 </ul>
 </li>
 </ul>
 </li>
+<li><a class="reference internal" href="#conclusion">Conclusion</a></li>
 </ul>
 
             </div>
