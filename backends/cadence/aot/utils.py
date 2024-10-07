@@ -8,10 +8,12 @@
 
 import logging
 import operator
+import os
 from typing import Dict, List, Tuple
 
 import torch
-from executorch.exir import memory
+
+from executorch.exir import ExecutorchProgramManager, memory
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from tabulate import tabulate
@@ -185,3 +187,36 @@ def model_gm_has_SDPA(model_gm: torch.fx.GraphModule) -> bool:
             if node.target == torch.ops.aten.scaled_dot_product_attention.default:
                 return True
     return False
+
+
+def save_pte_program(
+    prog: ExecutorchProgramManager, model_name: str, output_dir: str = ""
+) -> None:
+    if model_name.endswith(".pte"):
+        filename = model_name
+    else:
+        filename = os.path.join(output_dir, f"{model_name}.pte")
+
+    try:
+        with open(filename, "wb") as file:
+            prog.write_to_file(file)
+            logging.info(f"Saved exported program to {filename}")
+    except Exception as e:
+        logging.error(f"Error while saving to {filename}: {e}")
+
+
+def save_bpte_program(
+    buffer: bytes,
+    model_name: str,
+    output_dir: str = "",
+) -> None:
+    if model_name.endswith(".bpte"):
+        filename = model_name
+    else:
+        filename = os.path.join(output_dir, f"{model_name}.bpte")
+    try:
+        with open(filename, "wb") as f:
+            f.write(buffer)
+        logging.info(f"Saved exported program to {filename}")
+    except Exception as e:
+        logging.error(f"Error while saving to {output_dir}: {e}")
