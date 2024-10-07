@@ -355,7 +355,7 @@ Error Runner::generate(
     stats_.model_load_start_ms = util::time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
     stats_.model_load_end_ms = util::time_in_ms();
-    ET_LOG(Info, "[NEW ADDED] init took %ld ms", stats_.model_load_end_ms-stats_.model_load_start_ms);
+    ET_LOG(Info, "[Time consuming during load() function] init took %ld ms", stats_.model_load_end_ms-stats_.model_load_start_ms);
   }
 
   // First token time only measures the time it takes to encode the prompt and

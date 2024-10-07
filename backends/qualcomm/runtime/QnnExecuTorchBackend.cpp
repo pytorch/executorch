@@ -175,7 +175,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
   auto end = std::chrono::high_resolution_clock::now();
   auto int_s = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-  std::cout << "[NEW ADDED] Init Time: " << int_s.count() << " milliseconds"
+  std::cout << "[Time consuming during init in QnnBackend] Init Time: " << int_s.count() << " milliseconds"
             << std::endl;
   ET_CHECK_OR_RETURN_ERROR(
         qnn_manager->ProfileInitData() == Error::Ok,
