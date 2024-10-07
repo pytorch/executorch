@@ -11,11 +11,11 @@ from typing import cast, Dict, List, Optional, Tuple
 import torch
 from executorch.backends.transforms import get_shape
 
-from executorch.backends.xnnpack.operators.quant_params import QuantParams
-
-from executorch.backends.xnnpack.passes.channels_last_tagged_reshape_pass import (
+from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass import (
     ChannelsLastTaggedReshapePass,
 )
+
+from executorch.backends.xnnpack.operators.quant_params import QuantParams
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     ConstantDataOffset,
