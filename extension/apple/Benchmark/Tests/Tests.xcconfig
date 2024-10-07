@@ -1,4 +1,12 @@
+HEADER_SEARCH_PATHS[sdk=iphonesimulator*] = $(inherited) \
+$(SRCROOT)/../../../.. \
+$(TEMP_DIR)/cmake/include
+
+LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*] = $(inherited) \
+$(TEMP_DIR)/cmake/lib
+
 OTHER_LDFLAGS[sdk=iphonesimulator*] = $(inherited) \
+@$(TEMP_DIR)/cmake/linker_flags \
 -force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-simulator-release.a \
 -force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml-simulator-release.a \
 -force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps-simulator-release.a \
@@ -7,7 +15,15 @@ OTHER_LDFLAGS[sdk=iphonesimulator*] = $(inherited) \
 -force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized-simulator-release.a \
 -force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized-simulator-release.a
 
+HEADER_SEARCH_PATHS[sdk=iphoneos*] = $(inherited) \
+$(SRCROOT)/../../../.. \
+$(TEMP_DIR)/cmake/include
+
+LIBRARY_SEARCH_PATHS[sdk=iphoneos*] = $(inherited) \
+$(TEMP_DIR)/cmake/lib
+
 OTHER_LDFLAGS[sdk=iphoneos*] = $(inherited) \
+@$(TEMP_DIR)/cmake/linker_flags \
 -force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-ios-release.a \
 -force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml-ios-release.a \
 -force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps-ios-release.a \
@@ -16,7 +32,15 @@ OTHER_LDFLAGS[sdk=iphoneos*] = $(inherited) \
 -force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized-ios-release.a \
 -force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized-ios-release.a
 
+HEADER_SEARCH_PATHS[sdk=macos*] = $(inherited) \
+$(SRCROOT)/../../../.. \
+$(TEMP_DIR)/cmake/include
+
+LIBRARY_SEARCH_PATHS[sdk=macos*] = $(inherited) \
+$(TEMP_DIR)/cmake/lib
+
 OTHER_LDFLAGS[sdk=macos*] = $(inherited) \
+@$(TEMP_DIR)/cmake/linker_flags \
 -force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-macos-release.a \
 -force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml-macos-release.a \
 -force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps-macos-release.a \

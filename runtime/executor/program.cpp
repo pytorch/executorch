@@ -241,8 +241,9 @@ Result<Method> Program::load_method(
     EventTracer* event_tracer) const {
   EXECUTORCH_SCOPE_PROF("Program::load_method");
   internal::event_tracer_create_event_block(event_tracer, "Default");
-  internal::EventTracerProfileScope event_tracer_scope =
-      internal::EventTracerProfileScope(event_tracer, "Program::load_method");
+  internal::EventTracerProfileMethodScope event_tracer_scope =
+      internal::EventTracerProfileMethodScope(
+          event_tracer, "Program::load_method");
   // If we can't create a MethodMeta for the Method, the Method is corrupt;
   // Method::method_meta() assumes success, so we must fail here.
   Result<MethodMeta> meta = method_meta(method_name);
