@@ -121,6 +121,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
         if node.target == exir_ops.edge.aten.select_copy.int:
             if len(node.users) != 1:
                 return False
+            # pyre-ignore
             if node.args[0].meta["val"].numel() != 1:
                 return False
 
