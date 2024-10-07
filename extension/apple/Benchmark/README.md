@@ -1,8 +1,8 @@
-# Executorch Benchmark App for Apple Platforms
+# ExecuTorch Benchmark App for Apple Platforms
 
 ## Introduction
 
-The **Benchmark App** is a tool designed to help developers measure the performance of PyTorch models on Apple devices using the Executorch runtime.
+The **Benchmark App** is a tool designed to help developers measure the performance of PyTorch models on Apple devices using the ExecuTorch runtime.
 It provides a flexible framework for dynamically generating and running performance tests on your models, allowing you to assess metrics such as load times, inference speeds, memory usage, and more.
 
 <p align="center">
@@ -21,7 +21,7 @@ It provides a flexible framework for dynamically generating and running performa
 
 ### Get the Code
 
-To get started, clone the Executorch repository and cd into the source code directory:
+To get started, clone the ExecuTorch repository and cd into the source code directory:
 
 ```bash
 git clone https://github.com/pytorch/executorch.git --depth 1 --recurse-submodules --shallow-submodules
@@ -32,7 +32,7 @@ This command performs a shallow clone to speed up the process.
 
 ### Set Up the Frameworks
 
-The Benchmark App relies on prebuilt Executorch frameworks.
+The Benchmark App relies on prebuilt ExecuTorch frameworks.
 You have two options:
 
 <details>
@@ -364,4 +364,4 @@ Also, set up app signing to run locally.
 
 ## Conclusion
 
-The Executorch Benchmark App provides a flexible and powerful framework for testing and measuring the performance of PyTorch models on Apple devices. By leveraging dynamic test generation, you can easily add your models and resources to assess their performance metrics. Whether you're optimizing existing models or developing new ones, this tool can help you gain valuable insights into their runtime behavior.
+The ExecuTorch Benchmark App provides a flexible and powerful framework for testing and measuring the performance of PyTorch models on Apple devices. By leveraging dynamic test generation, you can easily add your models and resources to assess their performance metrics. Whether you're optimizing existing models or developing new ones, this tool can help you gain valuable insights into their runtime behavior.
