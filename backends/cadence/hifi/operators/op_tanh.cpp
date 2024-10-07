@@ -11,9 +11,15 @@
 #include <cmath>
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 
-namespace torch {
-namespace executor {
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
+using executorch::aten::RuntimeContext;
+using torch::executor::Error;
+
+namespace impl {
+namespace HiFi { 
 namespace native {
+
 
 Tensor& tanh_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
@@ -29,10 +35,10 @@ Tensor& tanh_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
     return out;
   }
 
-  return internal::unary_ufunc_realhb_to_floath(std::tanh, ctx, in, out);
+  return torch::executor::native::internal::unary_ufunc_realhb_to_floath(std::tanh, ctx, in, out);
 
 }
 
+} // namespace impl
+} // namespace HiFi
 } // namespace native
-} // namespace executor
-} // namespace torch

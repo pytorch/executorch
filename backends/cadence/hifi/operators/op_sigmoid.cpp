@@ -12,8 +12,13 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 
-namespace torch {
-namespace executor {
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
+using executorch::aten::RuntimeContext;
+using torch::executor::Error;
+
+namespace impl {
+namespace HiFi { 
 namespace native {
 
 using Tensor = exec_aten::Tensor;
@@ -51,7 +56,7 @@ Tensor& sigmoid_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   ET_SWITCH_REALHB_TYPES(in_type, ctx, "sigmoid.out", CTYPE_IN, [&]() {
     ET_SWITCH_FLOATH_TYPES(out_type, ctx, "sigmoid.out", CTYPE_OUT, [&]() {
-      apply_unary_map_fn(
+      torch::executor::apply_unary_map_fn(
           [](const CTYPE_IN val_in) {
             // perform math in double to preserve precision
             double in_casted = static_cast<double>(val_in);
@@ -67,6 +72,6 @@ Tensor& sigmoid_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   return out;
 }
 
+} // namespace impl
+} // namespace HiFi
 } // namespace native
-} // namespace executor
-} // namespace torch
