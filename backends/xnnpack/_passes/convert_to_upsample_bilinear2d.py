@@ -5,8 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.partition.graphs import bilinear_2d
-from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.utils import check_or_raise
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.infra.pass_base import PassResult
