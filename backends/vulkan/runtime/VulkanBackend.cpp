@@ -418,6 +418,26 @@ bool maybe_resize_input(
   return should_resize;
 }
 
+bool maybe_update_scalar_tensor(
+    ComputeGraph* graph,
+    const ValueRef ref,
+    executorch::aten::Tensor& scalar_tensor_src) {
+  const int32_t cur_val = graph->read_symint(ref);
+  int32_t scalar_tensor_val = 0;
+  exec_aten::ScalarType dtype = scalar_tensor_src.scalar_type();
+  if (dtype == exec_aten::ScalarType::Int) {
+    scalar_tensor_val = *scalar_tensor_src.const_data_ptr<int32_t>();
+  } else if (dtype == exec_aten::ScalarType::Long) {
+    scalar_tensor_val = int32_t(*scalar_tensor_src.const_data_ptr<int64_t>());
+  }
+  bool was_updated = false;
+  if (scalar_tensor_val != cur_val) {
+    graph->set_symint(ref, scalar_tensor_val);
+    was_updated = true;
+  }
+  return was_updated;
+}
+
 void maybe_resize_output(
     ComputeGraph* graph,
     const size_t output_i,
@@ -504,7 +524,8 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 
     Error err = compileModel(processed->data(), compute_graph);
 
-    // This backend does not need its processed data after compiling the model.
+    // This backend does not need its processed data after compiling the
+    // model.
     processed->Free();
 
     if (err != Error::Ok) {
@@ -536,28 +557,15 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             args[i]->toTensor().const_data_ptr(),
             args[i]->toTensor().numel());
       } else if (compute_graph->val_is_symint(iref)) {
-        int32_t scalar_tensor_val = 0;
-        const int32_t cur_val = compute_graph->read_symint(iref);
-        if (args[i]->isTensor()) {
-          exec_aten::Tensor& scalar_tensor_src = args[i]->toTensor();
-          exec_aten::ScalarType dtype = scalar_tensor_src.scalar_type();
-          if (dtype == exec_aten::ScalarType::Int) {
-            scalar_tensor_val = *scalar_tensor_src.const_data_ptr<int32_t>();
-          } else if (dtype == exec_aten::ScalarType::Long) {
-            scalar_tensor_val =
-                int32_t(*scalar_tensor_src.const_data_ptr<int64_t>());
-          }
-          if (scalar_tensor_val != cur_val) {
-            compute_graph->set_symint(iref, scalar_tensor_val);
-            // Since symint inputs may impact tensor's sizes, trigger a resize
-            // if any symbolic integer shapes are updated.
-            should_propagate_resize = true;
-          }
-        } else {
-          VK_THROW(
-              "Cannot handle symint arg to graph that is not derived from a "
-              "scalar tensor at the moment.");
-        }
+        VK_CHECK_COND(
+            args[i]->isTensor(),
+            "Cannot handle symint arg to graph that is not derived from a "
+            "scalar tensor at the moment.");
+        bool was_updated = maybe_update_scalar_tensor(
+            compute_graph, iref, args[i]->toTensor());
+        // Since symint inputs may impact tensor's sizes, trigger a resize if
+        // any symbolic integer shapes are updated.
+        should_propagate_resize = should_propagate_resize || was_updated;
       } else {
         VK_THROW(
             "Could not handle input with type ",
