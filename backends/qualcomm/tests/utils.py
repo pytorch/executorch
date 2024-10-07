@@ -118,6 +118,7 @@ class TestQNN(unittest.TestCase):
     model: QcomChipset = None
     compiler_specs: List[CompileSpec] = None
     arch_table = {
+        "SSG2115P": QcomChipset.SSG2115P,
         "SM8650": QcomChipset.SM8650,
         "SM8550": QcomChipset.SM8550,
         "SM8475": QcomChipset.SM8475,

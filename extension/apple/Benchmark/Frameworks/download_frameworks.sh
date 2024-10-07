@@ -16,9 +16,11 @@ frameworks=(
   "kernels_quantized"
 )
 
+cd "$(dirname "$0")" || exit
+
 for framework in "${frameworks[@]}"; do
-  rm -f "${f}-latest.zip"
-  rm -rf "${f}.xcframework"
+  rm -f "${framework}-latest.zip"
+  rm -rf "${framework}.xcframework"
   curl -sSLO "https://ossci-ios.s3.amazonaws.com/executorch/${framework}-latest.zip" && \
   unzip -q "${framework}-latest.zip" && \
   rm "${framework}-latest.zip"

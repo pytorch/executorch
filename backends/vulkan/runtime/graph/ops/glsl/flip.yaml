@@ -7,5 +7,7 @@ flip:
       - VALUE: half
       - VALUE: float
       - VALUE: int
+      - VALUE: int8
+      - VALUE: uint8
   shader_variants:
     - NAME: flip

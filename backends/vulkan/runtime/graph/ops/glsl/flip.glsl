@@ -71,7 +71,7 @@ void main() {
       src_p = src_c % 4;
     }
 
-    VEC4_T in_texel = texelFetch(t_in, ivec3(src_x, src_y, src_z), 0);
+    VEC4_T in_texel = VEC4_T(texelFetch(t_in, ivec3(src_x, src_y, src_z), 0));
     out_texel[p] = in_texel[src_p];
   }
   imageStore(t_out, pos, out_texel);
