@@ -76,7 +76,7 @@ void add_attn_weight_scale_and_mask_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(attn_weight));
 
   const int32_t head_dim_size = graph.size_at<int32_t>(-1, q_projected);
-  const float scale_val = 1.0f / sqrt(static_cast<float>(head_dim_size));
+  const float scale_val = 1.0f / std::sqrt(static_cast<float>(head_dim_size));
 
   utils::uvec3 global_size;
   utils::uvec3 local_size;
