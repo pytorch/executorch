@@ -160,7 +160,7 @@ target_link_libraries(
 )
 target_link_libraries(
   qnn_context PRIVATE qnn_implementation qnn_logger qnn_backend qnn_device
-                      qnn_backend_cache
+                      qnn_backend_cache qnn_profiler
 )
 target_link_libraries(
   qnn_graph PRIVATE qnn_executorch_logging qnn_implementation qnn_context

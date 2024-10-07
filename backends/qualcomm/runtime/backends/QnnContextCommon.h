@@ -11,6 +11,7 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCache.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnDeviceCommon.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnProfiler.h>
 
 #include <memory>
 namespace torch {
@@ -22,16 +23,21 @@ class QnnContext {
       const QnnImplementation& implementation,
       QnnBackend* backend,
       QnnDevice* device,
-      const QnnExecuTorchContextBinary& qnn_context_blob)
+      const QnnExecuTorchContextBinary& qnn_context_blob,
+      const QnnExecuTorchProfileLevel& profile_level)
       : handle_(nullptr),
         implementation_(implementation),
         backend_(backend),
-        device_(device) {
+        device_(device),
+        profile_level_(profile_level) {
     cache_ = std::make_unique<QnnBackendCache>(qnn_context_blob);
   }
 
   virtual ~QnnContext();
   Error Configure();
+  Qnn_ErrorHandle_t ProfileInitData() {
+    return profile_->ProfileData(nullptr);
+  };
 
   Qnn_ContextHandle_t GetHandle() const {
     return handle_;
@@ -68,6 +74,8 @@ class QnnContext {
   QnnBackend* backend_;
   QnnDevice* device_;
   std::unique_ptr<QnnBackendCache> cache_;
+  QnnExecuTorchProfileLevel profile_level_;
+  std::unique_ptr<QnnProfile> profile_;
   std::vector<char> binary_buffer_;
 };
 } // namespace qnn

@@ -418,6 +418,20 @@ Error QnnManager::ProfileExecuteData(EventTracer* event_tracer) {
   return Error::Ok;
 }
 
+Error QnnManager::ProfileInitData() {
+  Qnn_ErrorHandle_t error = QNN_SUCCESS;
+  if (options_->profile_level() != QnnExecuTorchProfileLevel::kProfileOff) {
+    error =
+        backend_params_ptr_->qnn_context_ptr_->ProfileInitData();
+    if (error != QNN_SUCCESS) {
+      QNN_EXECUTORCH_LOG_ERROR(
+          " Failed to profile. Error %d", QNN_GET_ERROR_CODE(error));
+      return Error::Internal;
+    }
+  }
+  return Error::Ok;
+}
+
 void QnnManager::Destroy() {
   QNN_EXECUTORCH_LOG_INFO("Destroy Qnn backend parameters");
   backend_params_ptr_.reset(new BackendConfigParameters());

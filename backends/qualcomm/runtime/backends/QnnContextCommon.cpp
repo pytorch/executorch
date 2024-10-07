@@ -15,7 +15,7 @@ QnnContext::~QnnContext() {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   if (handle_ != nullptr) {
     QNN_EXECUTORCH_LOG_INFO("Destroy Qnn context");
-    error = qnn_interface.qnn_context_free(handle_, /*profile=*/nullptr);
+    error = qnn_interface.qnn_context_free(handle_, profile_->GetHandle());
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_ERROR(
           "Failed to free QNN "
@@ -32,6 +32,8 @@ Error QnnContext::Configure() {
   // create qnn context
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
+  profile_ =
+      std::make_unique<QnnProfile>(implementation_, backend_, profile_level_);
 
   std::vector<const QnnContext_Config_t*> temp_context_config;
   ET_CHECK_OR_RETURN_ERROR(
@@ -49,7 +51,7 @@ Error QnnContext::Configure() {
         qnn_context_blob.buffer,
         qnn_context_blob.nbytes,
         &handle_,
-        /*profile=*/nullptr);
+        profile_->GetHandle());
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_ERROR(
           "Can't create context from "

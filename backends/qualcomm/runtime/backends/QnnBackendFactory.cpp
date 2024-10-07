@@ -61,6 +61,7 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
           backend_params->qnn_backend_ptr_.get(),
           backend_params->qnn_device_ptr_.get(),
           qnn_context_blob,
+          options->profile_level(),
           htp_options);
 
       backend_params->qnn_graph_ptr_ = std::make_unique<HtpGraph>(

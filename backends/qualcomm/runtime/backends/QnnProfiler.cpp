@@ -88,15 +88,21 @@ Qnn_ErrorHandle_t QnnProfile::ProfileData(EventTracer* event_tracer) {
         if (sub_event_data.type == QNN_PROFILE_EVENTTYPE_NODE &&
             (sub_event_data.unit == QNN_PROFILE_EVENTUNIT_MICROSEC ||
              sub_event_data.unit == QNN_PROFILE_EVENTUNIT_CYCLES)) {
-          torch::executor::event_tracer_log_profiling_delegate(
+          if(event_tracer!=nullptr){
+            torch::executor::event_tracer_log_profiling_delegate(
               event_tracer,
               sub_event_data.identifier,
               /*delegate_debug_id=*/
               static_cast<torch::executor::DebugHandle>(-1),
               0,
               sub_event_data.value);
+          }
+          
         }
       }
+    } else {
+      if(event_data.unit == QNN_PROFILE_EVENTUNIT_MICROSEC)
+        QNN_EXECUTORCH_LOG_INFO("Type: %d, Init Event Name: %s, Event Data: %d us", event_data.type, event_data.identifier, event_data.value );
     }
   }
   return error;

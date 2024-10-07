@@ -11,6 +11,8 @@
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/schema_generated.h>
+#include <chrono>
+#include <iostream>
 namespace torch {
 namespace executor {
 // ========== Public method implementations =========================
@@ -21,6 +23,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
     BackendInitContext& context,
     FreeableBuffer* processed,
     ArrayRef<CompileSpec> compile_specs) const {
+  auto start = std::chrono::high_resolution_clock::now();
   // covert SizedBuffer to qnn ExecuTorch option
   QnnExecuTorchContextBinary qnn_context_blob;
   const qnn_delegate::QnnExecuTorchOptions* qnn_executorch_options = nullptr;
@@ -169,6 +172,15 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
         Internal,
         "Fail to allocate tensor");
   }
+  auto end = std::chrono::high_resolution_clock::now();
+  auto int_s = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+  std::cout << "[NEW ADDED] Init Time: " << int_s.count() << " milliseconds"
+            << std::endl;
+  ET_CHECK_OR_RETURN_ERROR(
+        qnn_manager->ProfileInitData() == Error::Ok,
+        Internal,
+        "Fail to allocate tensor");
   return qnn_manager;
 }
 

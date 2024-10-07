@@ -41,6 +41,7 @@ class QnnManager {
       EventTracer* event_tracer);
 
   Error ProfileExecuteData(EventTracer* event_tracer);
+  Error ProfileInitData();
 
   void Destroy();
 
