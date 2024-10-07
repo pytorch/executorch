@@ -46,7 +46,6 @@ public class EValue {
   private static final int TYPE_CODE_LIST_DOUBLE = 7;
   private static final int TYPE_CODE_LIST_INT = 8;
   private static final int TYPE_CODE_LIST_TENSOR = 9;
-  private static final int TYPE_CODE_LIST_SCALAR = 10;
   private static final int TYPE_CODE_LIST_OPTIONAL_TENSOR = 11;
 
   private String[] TYPE_NAMES = {
@@ -65,7 +64,7 @@ public class EValue {
   };
 
   @DoNotStrip private final int mTypeCode;
-  @DoNotStrip private Object mData;
+  @DoNotStrip private Object mData; // data
 
   @DoNotStrip
   private EValue(int typeCode) {
