@@ -25,12 +25,14 @@ target="ethos-u55-128"
 output_folder_set=false
 output_folder="."
 build_only=false
+portable_kernels="aten::_softmax.out"
 
 help() {
     echo "Usage: $(basename $0) [options]"
     echo "Options:"
     echo "  --model_name=<MODEL>                   Model to run, can be a builtin, examples/models or a filename Default to all builtin models"
     echo "  --aot_arm_compiler_flags=<FLAGS>       Only used if --model_name is used Default: ${aot_arm_compiler_flags}"
+    echo "  --portable_kernels=<OPS>               Comma separated list of portable (non delagated) kernels to include Default: ${portable_kernels}"
     echo "  --target=<TARGET>                      Target to build and run for Default: ${target}"
     echo "  --output=<FOLDER>                      Output folder Default: ${output_folder}"
     echo "  --build_only                           Only build, don't run FVP"
@@ -43,6 +45,7 @@ for arg in "$@"; do
       -h|--help) help ;;
       --model_name=*) model_name="${arg#*=}";;
       --aot_arm_compiler_flags=*) aot_arm_compiler_flags="${arg#*=}";;
+      --portable_kernels=*) portable_kernels="${arg#*=}";;
       --target=*) target="${arg#*=}";;
       --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
       --build_only) build_only=true ;;
@@ -79,6 +82,13 @@ fi
 
 toolchain_cmake=${script_dir}/ethos-u-setup/arm-none-eabi-gcc.cmake
 _setup_msg="please refer to ${script_dir}/ethos-u-setup/setup.sh to properly install necessary tools."
+
+if ! [[ $portable_kernels =~ ^((^|,)aten::[a-zA-Z0-9_]+\.out)*$ ]]; then
+    echo " ERROR: specified argument --portable_kernels=${portable_kernels}"
+    echo "        is in the wrong format please use \"aten::<OP1>.out,aten::<OP2>.out,...\""
+    echo "        e.g. \"aten::_softmax.out,aten::add.out\""
+    exit 1
+fi
 
 # Generate a pte file
 function generate_pte_file() {
@@ -157,7 +167,7 @@ function build_executorch() {
     cmake                                                 \
         -DCMAKE_INSTALL_PREFIX=${et_build_dir}            \
         -DCMAKE_BUILD_TYPE=Release                        \
-        -DEXECUTORCH_SELECT_OPS_LIST="aten::_softmax.out" \
+        -DEXECUTORCH_SELECT_OPS_LIST=${portable_kernels}  \
         -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
         -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
         -B"${et_build_dir}"/examples/arm                  \

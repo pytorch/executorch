@@ -16,10 +16,14 @@
 #pragma clang diagnostic ignored "-Wmissing-prototypes"
 #pragma clang diagnostic ignored "-Wglobal-constructors"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace xnnpack {
 namespace delegate {
+
+using executorch::runtime::Error;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::Result;
 
 /*
  * Provide compile-time allocation.
@@ -1811,5 +1815,5 @@ ET_NODISCARD Error XNNCompiler::compileModel(
 
 } // namespace delegate
 } // namespace xnnpack
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

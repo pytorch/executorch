@@ -48,6 +48,7 @@ from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 soc_to_chipset_map = {
+    "SSG2115P": QcomChipset.SSG2115P,
     "SM8650": QcomChipset.SM8650,
     "SM8550": QcomChipset.SM8550,
     "SM8475": QcomChipset.SM8475,
