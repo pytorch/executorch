@@ -637,6 +637,10 @@ cmake<span class="w"> </span>--build<span class="w"> </span><span class="nv">$PW
 <span class="c1"># The filename might vary depending on your Python and host version.</span>
 cp<span class="w"> </span>-f<span class="w"> </span>backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/backends/qualcomm/python
 cp<span class="w"> </span>-f<span class="w"> </span>backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/backends/qualcomm/python
+
+<span class="c1"># Workaround for fbs files in exir/_serialize</span>
+cp<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/schema/program.fbs<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/exir/_serialize/program.fbs
+cp<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/schema/scalar_type.fbs<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/exir/_serialize/scalar_type.fbs
 </pre></div>
 </div>
 </div>
@@ -691,9 +695,6 @@ ls<span class="w"> </span>examples/qualcomm
 <p>Refer to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/deeplab_v3.py">this script</a> for the exact flow.
 We use deeplab-v3-resnet101 as an example in this tutorial. Run below commands to compile:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
-<span class="c1"># Workaround for fbs files in exir/_serialize</span>
-cp<span class="w"> </span>schema/program.fbs<span class="w"> </span>exir/_serialize/program.fbs
-cp<span class="w"> </span>schema/scalar_type.fbs<span class="w"> </span>exir/_serialize/scalar_type.fbs
 
 python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>build-android<span class="w"> </span>-m<span class="w"> </span>SM8550<span class="w"> </span>--compile_only<span class="w"> </span>--download
 </pre></div>
