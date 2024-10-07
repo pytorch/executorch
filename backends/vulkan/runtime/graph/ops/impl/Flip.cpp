@@ -65,8 +65,8 @@ void add_flip_node(
       graph.create_local_wg_size(out),
       // Inputs and Outputs
       {
-          {out, vkapi::MemoryAccessType::WRITE},
-          {in, vkapi::MemoryAccessType::READ},
+          {out, vkapi::kWrite},
+          {in, vkapi::kRead},
       },
       // Parameter buffers
       {
