@@ -1163,7 +1163,7 @@ def get_squeeze_copy_dim_inputs():
 
 @register_test_suite("aten.flip.default")
 def get_flip_inputs():
-    Test = namedtuple("VkIndexSelectTest", ["self", "dim"])
+    Test = namedtuple("Flip", ["self", "dim"])
     Test.__new__.__defaults__ = (None, 0)
 
     test_cases = [
