@@ -14,7 +14,7 @@ import zipfile
 from argparse import Action, ArgumentParser, Namespace
 from io import BytesIO
 from logging import info, warning
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 from urllib import error, request
 
 
@@ -23,6 +23,15 @@ logging.basicConfig(level=logging.INFO)
 
 BENCHMARK_RESULTS_FILENAME = "benchmark_results.json"
 ARTIFACTS_FILENAME_REGEX = re.compile(r"(android|ios)-artifacts-(?P<job_id>\d+).json")
+
+# iOS-related regexes and variables
+IOS_TEST_SPEC_REGEX = re.compile(
+    r"Test Case\s+'-\[(?P<test_class>\w+)\s+(?P<test_name>\w+)\]'\s+measured\s+\[(?P<metric>.+)\]\s+average:\s+(?P<value>[\d\.]+),"
+)
+IOS_TEST_NAME_REGEX = re.compile(
+    r"test_(?P<method>forward|load|generate)_(?P<model_name>\w+)_pte.*iOS_(?P<ios_ver>\w+)_iPhone(?P<iphone_ver>\w+)"
+)
+IOS_MODEL_NAME_REGEX = re.compile(r"(?P<model>[^_]+)_(?P<backend>[^_]+)_(?P<dtype>\w+)")
 
 
 class ValidateArtifacts(Action):
@@ -135,6 +144,130 @@ def extract_android_benchmark_results(
         return []
 
 
+def initialize_ios_metadata(test_name: str) -> Dict[str, any]:
+    """
+    Extract the benchmark metadata from the test name, for example:
+        test_forward_llama2_pte_iOS_17_2_1_iPhone15_4
+        test_load_resnet50_xnnpack_q8_pte_iOS_17_2_1_iPhone15_4
+    """
+    m = IOS_TEST_NAME_REGEX.match(test_name)
+    if not m:
+        return {}
+
+    method = m.group("method")
+    model_name = m.group("model_name")
+    ios_ver = m.group("ios_ver").replace("_", ".")
+    iphone_ver = m.group("iphone_ver").replace("_", ".")
+
+    # NB: This looks brittle, but unless we can return iOS benchmark results in JSON
+    # format by the test, the mapping is needed to match with Android test
+    if method == "load":
+        metric = "model_load_time(ms)"
+    elif method == "forward":
+        metric = (
+            "generate_time(ms)"
+            if "llama" in model_name
+            else "avg_inference_latency(ms)"
+        )
+    elif method == "generate":
+        metric = "token_per_sec"
+
+    backend = ""
+    quantization = "unknown"
+
+    m = IOS_MODEL_NAME_REGEX.match(model_name)
+    if m:
+        backend = m.group("backend")
+        quantization = m.group("dtype")
+        model_name = m.group("model")
+
+    return {
+        "benchmarkModel": {
+            "backend": backend,
+            "quantization": quantization,
+            "name": model_name,
+        },
+        "deviceInfo": {
+            "arch": f"iPhone {iphone_ver}",
+            "device": f"iPhone {iphone_ver}",
+            "os": f"iOS {ios_ver}",
+            "availMem": 0,
+            "totalMem": 0,
+        },
+        "metric": metric,
+        # These fields will be populated later by extract_ios_metric
+        "actualValue": 0,
+        "targetValue": 0,
+    }
+
+
+def extract_ios_metric(
+    benchmark_result: Dict[str, Any],
+    test_name: str,
+    metric_name: str,
+    metric_value: float,
+) -> Dict[str, Any]:
+    """
+    Map the metric name from iOS xcresult to the benchmark result
+    """
+    if metric_name == "Clock Monotonic Time, s":
+        # The benchmark value is in ms
+        benchmark_result["actualValue"] = metric_value * 1000
+    elif metric_name == "Tokens Per Second, t/s":
+        benchmark_result["actualValue"] = metric_value
+
+    return benchmark_result
+
+
+def extract_ios_benchmark_results(
+    job_name: str, artifact_type: str, artifact_s3_url: str
+) -> List:
+    """
+    The benchmark results from iOS are currently from xcresult, which could either
+    be parsed from CUSTOMER_ARTIFACT or get from the test spec output. The latter
+    is probably easier to process
+    """
+    if artifact_type != "TESTSPEC_OUTPUT":
+        return []
+
+    try:
+        benchmark_results = []
+
+        with request.urlopen(artifact_s3_url) as data:
+            current_test_name = ""
+            current_record = {}
+
+            for line in data.read().decode("utf8").splitlines():
+                s = IOS_TEST_SPEC_REGEX.search(line)
+                if not s:
+                    continue
+
+                test_class = s.group("test_class")
+                test_name = s.group("test_name")
+                metric_name = s.group("metric")
+                metric_value = float(s.group("value"))
+
+                if test_name != current_test_name:
+                    if current_record:
+                        # Save the benchmark result in the same format used by Android
+                        benchmark_results.append(current_record.copy())
+
+                    current_test_name = test_name
+                    current_record = initialize_ios_metadata(current_test_name)
+
+                current_record = extract_ios_metric(
+                    current_record, test_name, metric_name, metric_value
+                )
+
+            benchmark_results.append(current_record.copy())
+
+        return benchmark_results
+
+    except error.HTTPError:
+        warning(f"Fail to {artifact_type} {artifact_s3_url}")
+        return []
+
+
 def extract_job_id(artifacts_filename: str) -> int:
     """
     Extract the job id from the artifacts filename
@@ -222,23 +355,25 @@ def main() -> None:
                 benchmark_results = extract_android_benchmark_results(
                     job_name, artifact_type, artifact_s3_url
                 )
-                if benchmark_results:
-                    benchmark_results = transform(
-                        app_type,
-                        benchmark_results,
-                        args.repo,
-                        args.head_branch,
-                        args.workflow_name,
-                        args.workflow_run_id,
-                        args.workflow_run_attempt,
-                        job_name,
-                        extract_job_id(args.artifacts),
-                    )
-                    all_benchmark_results.extend(benchmark_results)
 
             if app_type == "IOS_APP":
-                # TODO (huydhn): Implement the logic for iOS next
-                pass
+                benchmark_results = extract_ios_benchmark_results(
+                    job_name, artifact_type, artifact_s3_url
+                )
+
+            if benchmark_results:
+                benchmark_results = transform(
+                    app_type,
+                    benchmark_results,
+                    args.repo,
+                    args.head_branch,
+                    args.workflow_name,
+                    args.workflow_run_id,
+                    args.workflow_run_attempt,
+                    job_name,
+                    extract_job_id(args.artifacts),
+                )
+                all_benchmark_results.extend(benchmark_results)
 
     if all_benchmark_results:
         output_file = os.path.basename(args.artifacts)
