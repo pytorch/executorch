@@ -24,7 +24,7 @@ def main() -> None:
     args = parser.parse_args()
     # Overrides this arg, because evaluation requires full logits.
     args.generate_full_logits = True
-    eval_llama(modelname, args)
+    eval_llama(modelname, args)  # pyre-ignore
 
 
 if __name__ == "__main__":

@@ -29,7 +29,7 @@ PLATFORM_TARGET=("17.0" "17.0" "10.15")
 
 FRAMEWORK_EXECUTORCH="executorch:\
 libexecutorch.a,\
-libexecutorch_no_prim_ops.a,\
+libexecutorch_core.a,\
 libextension_apple.a,\
 libextension_data_loader.a,\
 libextension_module.a,\
@@ -49,6 +49,7 @@ libXNNPACK.a,\
 libcpuinfo.a,\
 libpthreadpool.a,\
 libxnnpack_backend.a,\
+libmicrokernels-prod.a,\
 :"
 
 FRAMEWORK_KERNELS_CUSTOM="kernels_custom:\
@@ -57,7 +58,7 @@ libcustom_ops.a,\
 
 FRAMEWORK_KERNELS_OPTIMIZED="kernels_optimized:\
 liboptimized_kernels.a,\
-liboptimized_ops_lib.a,\
+liboptimized_native_cpu_ops_lib.a,\
 :"
 
 FRAMEWORK_KERNELS_PORTABLE="kernels_portable:\

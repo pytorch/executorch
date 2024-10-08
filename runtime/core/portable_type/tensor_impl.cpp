@@ -17,8 +17,9 @@
 #include <executorch/runtime/core/portable_type/scalar_type.h>
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 /**
  * Compute the number of elements based on the sizes of a tensor.
@@ -119,5 +120,6 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
   return Error::Ok;
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch

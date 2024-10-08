@@ -36,7 +36,7 @@ cmake "$EXECUTORCH_ROOT_PATH" -B"$CMAKE_BUILD_DIR_PATH" \
 -DFLATC_EXECUTABLE="$(which flatc)" \
 -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
 -DEXECUTORCH_BUILD_XNNPACK=OFF \
--DEXECUTORCH_BUILD_SDK=ON \
+-DEXECUTORCH_BUILD_DEVTOOLS=ON \
 -DEXECUTORCH_BUILD_COREML=ON \
 -Dprotobuf_BUILD_TESTS=OFF \
 -Dprotobuf_BUILD_EXAMPLES=OFF \
@@ -63,7 +63,7 @@ cp -rf "$COREML_DIR_PATH/runtime/include/" "$INCLUDE_DIR_PATH"
 echo "ExecuTorch: Copying libraries"
 mkdir "$LIBRARIES_DIR_PATH"
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libexecutorch.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libexecutorch.a"  \;
-find "$CMAKE_BUILD_DIR_PATH/" -name 'libexecutorch_no_prim_ops.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libexecutorch_no_prim_ops.a"  \;
+find "$CMAKE_BUILD_DIR_PATH/" -name 'libexecutorch_core.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libexecutorch_core.a"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libprotobuf-lite.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libprotobuf-lite.a"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libprotobuf-lited.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libprotobuf-lite.a"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libetdump.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libetdump.a"  \;

@@ -43,16 +43,16 @@ class OpLinearOutTest : public OperatorTest {
       }
     }
 
-    // matmul gives 4 * 2 * 3 = 24
-    Tensor x = tf.full({3, 4}, 2);
-    Tensor y = tf.full({5, 4}, 3);
+    // matmul gives 32 * 2 * 3 = 192
+    Tensor x = tf.full({3, 32}, 2);
+    Tensor y = tf.full({5, 32}, 3);
 
     // Output shape should be (3, 5)
     Tensor out = tf.zeros({3, 5});
 
     op_linear_out(x, y, out);
 
-    Tensor expected = tf.full({3, 5}, 24);
+    Tensor expected = tf.full({3, 5}, 192);
 
     EXPECT_TENSOR_EQ(out, expected);
   }

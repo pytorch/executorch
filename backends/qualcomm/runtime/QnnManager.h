@@ -37,7 +37,8 @@ class QnnManager {
 
   Error Execute(
       const std::vector<Qnn_Tensor_t>& input_tensor_structs,
-      std::vector<Qnn_Tensor_t>& output_tensor_structs);
+      std::vector<Qnn_Tensor_t>& output_tensor_structs,
+      EventTracer* event_tracer);
 
   Error ProfileExecuteData(EventTracer* event_tracer);
 
@@ -52,7 +53,7 @@ class QnnManager {
   }
 
   bool IsTensorDump() {
-    return options_->tensor_dump_output_path()->size() > 0;
+    return options_->dump_intermediate_outputs();
   }
 
   bool IsNodeSupportedByBackend(

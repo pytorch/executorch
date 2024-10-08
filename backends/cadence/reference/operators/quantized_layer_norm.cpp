@@ -9,11 +9,10 @@
 #include <executorch/backends/cadence/reference/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-#include <algorithm>
 #include <cmath>
-#include <tuple>
 
-using Tensor = exec_aten::Tensor;
+using executorch::aten::Tensor;
+using executorch::runtime::getLeadingDims;
 using executorch::runtime::KernelRuntimeContext;
 
 namespace impl {

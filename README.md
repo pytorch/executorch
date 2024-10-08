@@ -22,6 +22,11 @@ please visit our documentation website [for the latest release](https://pytorch.
 
 Check out the [Getting Started](https://pytorch.org/executorch/stable/getting-started-setup.html#quick-setup-colab-jupyter-notebook-prototype) page for a quick spin.
 
+Check out the examples of [Llama](./examples/models/llama2/README.md), [Llava](./examples/models/llava/README.md) and [other models](./examples/README.md) running on edge devices using ExecuTorch.
+
+
+**[UPDATE - 09/25]** We have added support for running [Llama 3.2 1B/3B](./examples/models/llama2/README.md) models via ExecuTorch.
+
 ## Feedback
 
 We welcome any feedback, suggestions, and bug reports from the community to help

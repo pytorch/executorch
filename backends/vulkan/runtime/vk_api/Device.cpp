@@ -84,7 +84,7 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
 DeviceHandle::DeviceHandle(VkDevice device) : handle(device) {}
 
 DeviceHandle::~DeviceHandle() {
-  if (VK_NULL_HANDLE == handle) {
+  if (handle == VK_NULL_HANDLE) {
     return;
   }
   vkDestroyDevice(handle, nullptr);

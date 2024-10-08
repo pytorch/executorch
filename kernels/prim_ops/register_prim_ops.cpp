@@ -12,7 +12,6 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 
-using KernelArrayRef = ::torch::executor::ArrayRef<::torch::executor::Kernel>;
 using torch::executor::function::et_copy_index;
 
 namespace torch {
@@ -287,6 +286,21 @@ static Kernel prim_ops[] = {
           out = EValue(a.toInt() % b.toInt());
         }),
 
+    // executorch_prim::mod.Scalar(Scalar, Scalar) -> Scalar
+    Kernel(
+        "executorch_prim::mod.Scalar",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          if (a.isInt() && b.isInt()) {
+            out = EValue(a.toInt() % b.toInt());
+          } else {
+            ET_CHECK_MSG(false, "%zu, %zu", (size_t)a.tag, (size_t)b.tag);
+          }
+        }),
+
     // executorch_prim::et_copy_index.tensor(tensor, tensor) -> tensor
     Kernel("executorch_prim::et_copy_index.tensor", &et_copy_index),
     // executorch_prim::et_view.default(Tensor, int[]) -> Tensor
@@ -294,13 +308,14 @@ static Kernel prim_ops[] = {
 
 };
 
-static KernelArrayRef kernel_array_ref(
+executorch::runtime::Span<const executorch::runtime::Kernel> kernel_span(
     prim_ops,
     prim_ops + sizeof(prim_ops) / sizeof(Kernel));
 
 // Return value not used. Keep the static variable assignment to register
 // operators in static initialization time.
-static auto success_with_kernel_reg = register_kernels(kernel_array_ref);
+auto success_with_kernel_reg =
+    executorch::runtime::register_kernels(kernel_span);
 
 } // namespace
 } // namespace function

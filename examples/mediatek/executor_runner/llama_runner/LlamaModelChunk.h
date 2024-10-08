@@ -27,12 +27,12 @@
 #include "llm_helper/include/mask_builder.h"
 #include "llm_helper/include/rotary_embedding.h"
 
-namespace torch::executor {
+namespace example {
 
 using llm_helper::MaskBuilder;
 using llm_helper::RotaryEmbeddingMasterLut;
 
-using TensorShape = Span<const int32_t>;
+using TensorShape = executorch::runtime::Span<const int32_t>;
 using ModelIndexMap = std::unordered_map<size_t, size_t>;
 
 // Llama decoder chunk
@@ -135,4 +135,4 @@ class LlamaModelChunk : public ModelChunk {
   size_t mCurrentTokenIndex = 0;
 };
 
-} // namespace torch::executor
+} // namespace example

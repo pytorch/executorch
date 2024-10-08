@@ -6,23 +6,26 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/test/BinaryLogicalOpTest.h>
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
-#include <executorch/kernels/test/TestUtil.h>
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
-#include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 
 #include <gtest/gtest.h>
 
-using namespace ::testing;
-using exec_aten::ScalarType;
 using exec_aten::Tensor;
-using torch::executor::testing::TensorFactory;
 
-class OpLogicalXorTest : public OperatorTest {
+class OpLogicalXorTest : public torch::executor::testing::BinaryLogicalOpTest {
  protected:
-  Tensor&
-  op_logical_xor_out(const Tensor& self, const Tensor& other, Tensor& out) {
+  Tensor& op_out(const Tensor& self, const Tensor& other, Tensor& out)
+      override {
     return torch::executor::aten::logical_xor_outf(context_, self, other, out);
   }
+
+  double op_reference(double x, double y) const override {
+    uint64_t lhs, rhs;
+    std::memcpy(&lhs, &x, sizeof(lhs));
+    std::memcpy(&rhs, &y, sizeof(rhs));
+    return bool(lhs) != bool(rhs);
+  }
 };
+
+IMPLEMENT_BINARY_LOGICAL_OP_TEST(OpLogicalXorTest)

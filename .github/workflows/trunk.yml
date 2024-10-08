@@ -223,8 +223,10 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        build-tool: [buck2, cmake]
         mode: [portable, xnnpack+kv+custom, mps, coreml]
+        include:
+          - dtype: bf16
+            mode: portable
       fail-fast: false
     with:
       runner: macos-m1-stable
@@ -235,25 +237,12 @@ jobs:
       script: |
 
         DTYPE=${{ matrix.dtype }}
-        BUILD_TOOL=${{ matrix.build-tool }}
         MODE=${{ matrix.mode }}
-
-        if [[ "${BUILD_TOOL}" == "buck2" ]]; then
-          # TODO: Will add more modes that don't support buck2
-          if [[ "${MODE}" == "mps" ]]; then
-            echo "mps doesn't support buck2."
-            exit 0
-          fi
-          if [[ "${MODE}" == "coreml" ]]; then
-            echo "coreml doesn't support buck2."
-            exit 0
-          fi
-        fi
 
         bash .ci/scripts/setup-conda.sh
 
         # Setup executorch
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh cmake
 
         if [[ "${MODE}" == "mps" ]]; then
           # Install mps delegate
@@ -268,7 +257,7 @@ jobs:
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/models/llama2/install_requirements.sh
         # Test llama2
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llama.sh stories110M "${BUILD_TOOL}" "${DTYPE}" "${MODE}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llama.sh stories110M cmake "${DTYPE}" "${MODE}"
 
   # # TODO(jackzhxng): Runner consistently runs out of memory before test finishes. Try to find a more powerful runner.
   # test-llava-runner-macos:
@@ -351,3 +340,97 @@ jobs:
           PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
           echo "::endgroup::"
         done
+
+  test-huggingface-transformers:
+    name: test-huggingface-transformers
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    secrets: inherit
+    strategy:
+      matrix:
+        hf_model_repo: [google/gemma-2b]
+      fail-fast: false
+    with:
+      secrets-env: EXECUTORCH_HF_TOKEN
+      runner: linux.12xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        echo "::group::Set up ExecuTorch"
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
+
+        echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
+        rm -rf cmake-out
+        cmake \
+            -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+            -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+            -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+            -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+            -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+            -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+            -DEXECUTORCH_BUILD_XNNPACK=ON \
+            -DPYTHON_EXECUTABLE=python \
+            -Bcmake-out .
+        cmake --build cmake-out -j9 --target install --config Release
+
+        echo "Build llama runner"
+        dir="examples/models/llama2"
+        cmake \
+            -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+            -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+            -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+            -DEXECUTORCH_BUILD_XNNPACK=ON \
+            -DPYTHON_EXECUTABLE=python \
+            -Bcmake-out/${dir} \
+            ${dir}
+        cmake --build cmake-out/${dir} -j9 --config Release
+        echo "::endgroup::"
+
+        echo "::group::Set up HuggingFace Dependencies"
+        if [ -z "$SECRET_EXECUTORCH_HF_TOKEN" ]; then
+          echo "::error::SECRET_EXECUTORCH_HF_TOKEN is empty. For security reason secrets won't be accessible on forked PRs. Please make sure you submit a non-forked PR."
+          exit 1
+        fi
+        pip install -U "huggingface_hub[cli]"
+        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        pip install accelerate sentencepiece
+        # TODO(guangyang): Switch to use released transformers library after all required patches are included
+        pip install "git+https://github.com/huggingface/transformers.git@6cc4dfe3f1e8d421c6d6351388e06e9b123cbfe1"
+        pip list
+        echo "::endgroup::"
+
+        echo "::group::Export to ExecuTorch"
+        TOKENIZER_FILE=tokenizer.model
+        TOKENIZER_BIN_FILE=tokenizer.bin
+        ET_MODEL_NAME=et_model
+        # Fetch the file using a Python one-liner
+        DOWNLOADED_TOKENIZER_FILE_PATH=$(python -c "
+        from huggingface_hub import hf_hub_download
+        # Download the file from the Hugging Face Hub
+        downloaded_path = hf_hub_download(
+            repo_id='${{ matrix.hf_model_repo }}',
+            filename='${TOKENIZER_FILE}'
+        )
+        print(downloaded_path)
+        ")
+        if [ -f "$DOWNLOADED_TOKENIZER_FILE_PATH" ]; then
+            echo "${TOKENIZER_FILE} downloaded successfully at: $DOWNLOADED_TOKENIZER_FILE_PATH"
+            python -m extension.llm.tokenizer.tokenizer -t $DOWNLOADED_TOKENIZER_FILE_PATH -o ./${TOKENIZER_BIN_FILE}
+            ls ./tokenizer.bin
+        else
+            echo "Failed to download ${TOKENIZER_FILE} from ${{ matrix.hf_model_repo }}."
+            exit 1
+        fi
+
+        python -m extension.export_util.export_hf_model -hfm=${{ matrix.hf_model_repo }} -o ${ET_MODEL_NAME}
+
+        cmake-out/examples/models/llama2/llama_main --model_path=${ET_MODEL_NAME}.pte --tokenizer_path=${TOKENIZER_BIN_FILE} --prompt="My name is"
+        echo "::endgroup::"

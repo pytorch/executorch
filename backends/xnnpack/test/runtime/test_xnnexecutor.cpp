@@ -9,12 +9,12 @@
 #include <executorch/backends/xnnpack/runtime/XNNExecutor.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <gtest/gtest.h>
-#include <xnnpack/subgraph.h>
+#include <xnnpack.h>
 
-using torch::executor::Error;
-using torch::executor::EValue;
-using torch::executor::testing::TensorFactory;
-using torch::executor::xnnpack::delegate::XNNExecutor;
+using executorch::backends::xnnpack::delegate::XNNExecutor;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::testing::TensorFactory;
 
 TEST(XNNExecutorTest, ArgumentWithTooManyDimensions) {
   XNNExecutor executor;
@@ -26,7 +26,7 @@ TEST(XNNExecutorTest, ArgumentWithTooManyDimensions) {
   std::unique_ptr<xnn_subgraph, decltype(&xnn_delete_subgraph)> auto_subgraph(
       subgraph, xnn_delete_subgraph);
 
-  auto input_id = XNN_INVALID_NODE_ID;
+  auto input_id = XNN_INVALID_VALUE_ID;
   std::vector<size_t> dims = {
       1,
   };
@@ -43,9 +43,9 @@ TEST(XNNExecutorTest, ArgumentWithTooManyDimensions) {
           /*external_id=*/0,
           /*flags=*/XNN_VALUE_FLAG_EXTERNAL_INPUT,
           &input_id));
-  ASSERT_NE(input_id, XNN_INVALID_NODE_ID);
+  ASSERT_NE(input_id, XNN_INVALID_VALUE_ID);
 
-  auto output_id = XNN_INVALID_NODE_ID;
+  auto output_id = XNN_INVALID_VALUE_ID;
   ASSERT_EQ(
       xnn_status_success,
       xnn_define_quantized_tensor_value(
@@ -59,7 +59,7 @@ TEST(XNNExecutorTest, ArgumentWithTooManyDimensions) {
           /*external_id=*/0,
           /*flags=*/XNN_VALUE_FLAG_EXTERNAL_OUTPUT,
           &output_id));
-  ASSERT_NE(output_id, XNN_INVALID_NODE_ID);
+  ASSERT_NE(output_id, XNN_INVALID_VALUE_ID);
 
   ASSERT_EQ(
       xnn_status_success,
@@ -76,7 +76,7 @@ TEST(XNNExecutorTest, ArgumentWithTooManyDimensions) {
               1,
           }),
       Error::Ok);
-  TensorFactory<exec_aten::ScalarType::Int> tf;
+  TensorFactory<executorch::aten::ScalarType::Int> tf;
   auto input_tensor = tf.make({1, 1, 1, 1, 1, 1, 1, 1, 1}, {42});
   ASSERT_EQ(input_tensor.dim(), 9);
   auto output_tensor = tf.make(

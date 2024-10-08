@@ -56,11 +56,28 @@ class ParamsBuffer final {
     }
     // Fill the uniform buffer with data in block
     {
-      vkapi::MemoryMap mapping(vulkan_buffer_, vkapi::MemoryAccessType::WRITE);
+      vkapi::MemoryMap mapping(vulkan_buffer_, vkapi::kWrite);
       Block* data_ptr = mapping.template data<Block>();
 
       *data_ptr = block;
     }
+  }
+
+  template <typename T>
+  T read() const {
+    T val;
+    if (sizeof(val) != nbytes_) {
+      VK_THROW(
+          "Attempted to store value from ParamsBuffer to type of different size");
+    }
+    // Read value from uniform buffer and store in val
+    {
+      vkapi::MemoryMap mapping(vulkan_buffer_, vkapi::kRead);
+      T* data_ptr = mapping.template data<T>();
+
+      val = *data_ptr;
+    }
+    return val;
   }
 };
 

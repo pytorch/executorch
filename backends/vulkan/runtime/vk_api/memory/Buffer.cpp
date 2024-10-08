@@ -58,8 +58,6 @@ VulkanBuffer::VulkanBuffer(
       nullptr, // pQueueFamilyIndices
   };
 
-  memory_.create_info = allocation_create_info;
-
   if (allocate_memory) {
     VK_CHECK(vmaCreateBuffer(
         allocator_,
@@ -67,7 +65,7 @@ VulkanBuffer::VulkanBuffer(
         &allocation_create_info,
         &handle_,
         &(memory_.allocation),
-        &(memory_.allocation_info)));
+        nullptr));
   } else {
     VmaAllocatorInfo allocator_info{};
     vmaGetAllocatorInfo(allocator_, &allocator_info);
@@ -83,7 +81,7 @@ VulkanBuffer::VulkanBuffer(
     : buffer_properties_(other.buffer_properties_),
       allocator_(other.allocator_),
       memory_(other.memory_),
-      owns_memory_(other.owns_memory_),
+      owns_memory_(false),
       is_copy_(true),
       handle_(other.handle_) {
   // TODO: set the offset and range appropriately
@@ -124,7 +122,7 @@ VulkanBuffer::~VulkanBuffer() {
   // Do not destroy the VkBuffer if this class instance is a copy of another
   // class instance, since this means that this class instance does not have
   // ownership of the underlying resource.
-  if (VK_NULL_HANDLE != handle_ && !is_copy_) {
+  if (handle_ != VK_NULL_HANDLE && !is_copy_) {
     if (owns_memory_) {
       vmaDestroyBuffer(allocator_, handle_, memory_.allocation);
     } else {
@@ -135,6 +133,12 @@ VulkanBuffer::~VulkanBuffer() {
     // memory
     memory_.allocation = VK_NULL_HANDLE;
   }
+}
+
+VmaAllocationInfo VulkanBuffer::allocation_info() const {
+  VmaAllocationInfo info;
+  vmaGetAllocationInfo(allocator_, memory_.allocation, &info);
+  return info;
 }
 
 VkMemoryRequirements VulkanBuffer::get_memory_requirements() const {

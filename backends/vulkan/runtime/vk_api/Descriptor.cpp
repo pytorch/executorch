@@ -261,7 +261,7 @@ DescriptorPool::DescriptorPool(
 }
 
 DescriptorPool::~DescriptorPool() {
-  if (VK_NULL_HANDLE == pool_) {
+  if (pool_ == VK_NULL_HANDLE) {
     return;
   }
   vkDestroyDescriptorPool(device_, pool_, nullptr);

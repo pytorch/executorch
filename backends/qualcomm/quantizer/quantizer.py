@@ -26,7 +26,7 @@ from .utils import (
     get_16a8w_qnn_ptq_config,
     get_default_16bit_qnn_ptq_config,
     get_default_8bit_qnn_ptq_config,
-    get_ptq_per_channel_weight_config,
+    get_ptq_per_channel_quant_config,
     OP_ANNOTATOR,
     QuantizationConfig,
 )
@@ -72,6 +72,7 @@ class QnnQuantizer(Quantizer):
             "8bit_act": torch.int8,
             "16bit_act": torch.int16,
         }
+        self.per_channel_quant_config = None
 
     def _annotate(self, gm: GraphModule) -> None:
         for node in gm.graph.nodes:
@@ -96,13 +97,17 @@ class QnnQuantizer(Quantizer):
             return
 
         if op in self.use_per_channel_weight_quant_ops:
-            if op in self.bit16_quant_ops:
-                return get_ptq_per_channel_weight_config(
-                    torch.uint16, self.per_channel_weight_dtype["16bit_act"]
+            if self.per_channel_quant_config is None:
+                if op in self.bit16_quant_ops:
+                    return get_ptq_per_channel_quant_config(
+                        act_dtype=torch.uint16,
+                        weight_dtype=self.per_channel_weight_dtype["16bit_act"],
+                    )
+                return get_ptq_per_channel_quant_config(
+                    act_dtype=torch.uint8,
+                    weight_dtype=self.per_channel_weight_dtype["8bit_act"],
                 )
-            return get_ptq_per_channel_weight_config(
-                weight_dtype=self.per_channel_weight_dtype["8bit_act"]
-            )
+            return self.per_channel_quant_config
 
         if op in self.bit8_quant_ops:
             return self.bit8_quant_config

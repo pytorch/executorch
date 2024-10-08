@@ -38,3 +38,5 @@ unary_op:
       OPERATOR: hardshrink(X, A, B)
     - NAME: hardswish
       OPERATOR: hardswish(X)
+    - NAME: hardsigmoid
+      OPERATOR: hardsigmoid(X)

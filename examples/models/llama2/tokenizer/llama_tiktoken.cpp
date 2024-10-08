@@ -8,8 +8,10 @@
 
 #include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
 
-namespace torch {
-namespace executor {
+namespace example {
+
+using ::executorch::extension::llm::Tiktoken;
+
 namespace {
 static constexpr int32_t kSpecialTokensSize = 256;
 static constexpr size_t kBOSTokenIndex = 0;
@@ -72,7 +74,7 @@ _get_multimodal_special_tokens() {
 
 std::unique_ptr<std::vector<std::string>> _get_special_tokens(Version version) {
   switch (version) {
-    case MULTIMODAL:
+    case Version::Multimodal:
       return _get_multimodal_special_tokens();
     default:
       return _get_default_special_tokens();
@@ -86,5 +88,4 @@ std::unique_ptr<Tiktoken> get_tiktoken_for_llama(Version version) {
       _get_special_tokens(version), kBOSTokenIndex, kEOSTokenIndex);
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace example

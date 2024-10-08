@@ -21,13 +21,14 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 from executorch.backends.xnnpack.test.tester.tester import Quantize
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
 
 class TestSimpleUnsqueeze(unittest.TestCase):
     class Unsqueeze(torch.nn.Module):
-        shapes: list[int | Sequence[int]] = [5, (5, 5), (5, 5), (5, 5, 5)]
-        test_parameters: list[tuple[torch.Tensor]] = [(torch.ones(n),) for n in shapes]
+        shapes: list[int | Sequence[int]] = [5, (5, 5), (5, 5), (5, 4, 3)]
+        test_parameters: list[tuple[torch.Tensor]] = [(torch.randn(n),) for n in shapes]
 
         def forward(self, x: torch.Tensor, dim):
             return x.unsqueeze(dim)
@@ -39,7 +40,7 @@ class TestSimpleUnsqueeze(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=False),
             )
             .export()
             .check_count({"torch.ops.aten.unsqueeze.default": 1})
@@ -58,7 +59,7 @@ class TestSimpleUnsqueeze(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=False),
             )
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
@@ -70,15 +71,18 @@ class TestSimpleUnsqueeze(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
-    def _test_unsqueeze_tosa_u55_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor, int]
+    def _test_unsqueeze_ethosu_BI_pipeline(
+        self,
+        compile_spec: CompileSpec,
+        module: torch.nn.Module,
+        test_data: Tuple[torch.Tensor, int],
     ):
         quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(),
+                compile_spec=compile_spec,
             )
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
@@ -100,4 +104,16 @@ class TestSimpleUnsqueeze(unittest.TestCase):
 
     @parameterized.expand(Unsqueeze.test_parameters)
     def test_unsqueeze_u55_BI(self, test_tensor: torch.Tensor):
-        self._test_unsqueeze_tosa_u55_pipeline(self.Unsqueeze(), (test_tensor, 0))
+        self._test_unsqueeze_ethosu_BI_pipeline(
+            common.get_u55_compile_spec(permute_memory_to_nhwc=False),
+            self.Unsqueeze(),
+            (test_tensor, 0),
+        )
+
+    @parameterized.expand(Unsqueeze.test_parameters)
+    def test_unsqueeze_u85_BI(self, test_tensor: torch.Tensor):
+        self._test_unsqueeze_ethosu_BI_pipeline(
+            common.get_u85_compile_spec(permute_memory_to_nhwc=False),
+            self.Unsqueeze(),
+            (test_tensor, 0),
+        )

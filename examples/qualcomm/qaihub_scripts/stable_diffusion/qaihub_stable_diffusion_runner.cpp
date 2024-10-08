@@ -66,9 +66,10 @@ void usage_message() {
   gflags::SetUsageMessage(usage_message);
 }
 
+using executorch::runtime::Error;
+
 int main(int argc, char** argv) {
-  using namespace torch::executor;
-  runtime_init();
+  executorch::runtime::runtime_init();
   usage_message();
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   bool is_default =
@@ -101,7 +102,7 @@ int main(int argc, char** argv) {
       FLAGS_text_encoder_path, FLAGS_unet_path, FLAGS_vae_path};
 
   // Create stable_diffusion_runner
-  Runner runner(
+  example::Runner runner(
       models_path,
       FLAGS_num_time_steps,
       FLAGS_guidance_scale,

@@ -31,8 +31,13 @@ MPSGraphBuilder::getMPSDataType(DataType serializedDataType) {
       return MPSDataTypeFloat32;
     case DataType::mps_data_type_int8:
       return MPSDataTypeInt8;
-    case DataType::mps_data_type_int4:
-      return MPSDataTypeInt4;
+    case DataType::mps_data_type_int4: {
+      if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, *)) {
+        return MPSDataTypeInt4;
+      } else {
+        return ((MPSDataType)(MPSDataTypeSignedBit | 4));
+      }
+    }
     case DataType::mps_data_type_int16:
       return MPSDataTypeInt16;
     case DataType::mps_data_type_int32:

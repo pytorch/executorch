@@ -12,8 +12,9 @@
 
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 /**
  * A minimal Tensor type whose API is a source compatible subset of at::Tensor.
@@ -35,7 +36,7 @@ class Tensor {
   using StridesType = TensorImpl::StridesType;
 
   Tensor() = delete;
-  explicit Tensor(TensorImpl* impl) : impl_(impl) {}
+  explicit constexpr Tensor(TensorImpl* impl) : impl_(impl) {}
 
   /**
    * Returns a pointer to the underlying TensorImpl.
@@ -85,6 +86,10 @@ class Tensor {
     return impl_->scalar_type();
   }
 
+  inline ScalarType dtype() const {
+    return scalar_type();
+  }
+
   /// Returns the size in bytes of one element of the tensor.
   ssize_t element_size() const {
     return impl_->element_size();
@@ -103,6 +108,11 @@ class Tensor {
   /// Returns the strides of the tensor at each dimension.
   const ArrayRef<StridesType> strides() const {
     return impl_->strides();
+  }
+
+  /// Returns the mutability of the shape of the tensor.
+  TensorShapeDynamism shape_dynamism() const {
+    return impl_->shape_dynamism();
   }
 
   /// Returns a pointer of type T to the constant underlying data blob.
@@ -152,5 +162,14 @@ class Tensor {
   TensorImpl* impl_ = nullptr;
 };
 
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::etensor::Tensor;
 } // namespace executor
 } // namespace torch

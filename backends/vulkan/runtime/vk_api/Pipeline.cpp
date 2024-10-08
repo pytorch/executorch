@@ -228,7 +228,7 @@ PipelineLayout::PipelineLayout(PipelineLayout&& other) noexcept
 }
 
 PipelineLayout::~PipelineLayout() {
-  if (VK_NULL_HANDLE == handle_) {
+  if (handle_ == VK_NULL_HANDLE) {
     return;
   }
   vkDestroyPipelineLayout(device_, handle_, nullptr);
@@ -300,7 +300,7 @@ ComputePipeline::ComputePipeline(ComputePipeline&& other) noexcept
 }
 
 ComputePipeline::~ComputePipeline() {
-  if (VK_NULL_HANDLE == handle_) {
+  if (handle_ == VK_NULL_HANDLE) {
     return;
   }
   vkDestroyPipeline(device_, handle_, nullptr);
@@ -402,7 +402,7 @@ ComputePipelineCache::ComputePipelineCache(
 ComputePipelineCache::~ComputePipelineCache() {
   purge();
 
-  if (VK_NULL_HANDLE == pipeline_cache_) {
+  if (pipeline_cache_ == VK_NULL_HANDLE) {
     return;
   }
 

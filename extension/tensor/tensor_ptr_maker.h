@@ -15,13 +15,13 @@ namespace extension {
 
 /**
  * A helper class for creating TensorPtr instances from raw data and tensor
- * properties. Note that the TensorPtr created by this class will not own the
- * data, so it must outlive the TensorPtr.
+ * properties. Note that the TensorPtr created by this class does not own the
+ * data, so the data must outlive the TensorPtr.
  *
- * TensorPtrMaker provides a fluent interface for specifying various properties
- * of a tensor, such as its type, sizes, data pointer, dimension order, strides,
- * and shape dynamism. The final tensor is created by invoking make_tensor_ptr()
- * or converting TensorPtrMaker to TensorPtr.
+ * TensorPtrMaker provides a fluent interface for specifying various tensor
+ * properties, such as type, sizes, data pointer, dimension order, strides, and
+ * shape dynamism. The final tensor is created by invoking make_tensor_ptr() or
+ * by converting TensorPtrMaker to TensorPtr.
  */
 class TensorPtrMaker final {
  public:
@@ -99,11 +99,11 @@ class TensorPtrMaker final {
    */
   TensorPtr make_tensor_ptr() && {
     return ::executorch::extension::make_tensor_ptr(
-        type_,
         std::move(sizes_),
         data_,
         std::move(dim_order_),
         std::move(strides_),
+        type_,
         dynamism_,
         std::move(deleter_));
   }
@@ -167,16 +167,16 @@ inline TensorPtrMaker for_blob(
  * Creates a TensorPtr from a raw data pointer and tensor sizes, with an
  * optional dynamism setting.
  *
- * This function is a convenient way to create a tensor from existing data, with
- * the option to specify whether the tensor's shape is static, dynamic, or
- * bounded.
+ * This function provides a convenient way to create a tensor from existing
+ * data, with the option to specify whether the tensor's shape is static or
+ * dynamic.
  *
- * @param data A pointer to the raw data to be used by the tensor. It must
+ * @param data A pointer to the raw data used by the tensor. The data must
  * outlive the TensorPtr created by this function.
  * @param sizes A vector specifying the size of each dimension.
  * @param type The scalar type of the tensor elements.
  * @param dynamism Specifies whether the tensor's shape is static or dynamic.
- * @return A TensorPtr instance that manages the newly created Tensor.
+ * @return A TensorPtr instance managing the newly created Tensor.
  */
 inline TensorPtr from_blob(
     void* data,
@@ -195,15 +195,16 @@ inline TensorPtr from_blob(
  *
  * This function allows for the creation of a tensor from existing data, with
  * the option to specify custom strides for each dimension and whether the
- * tensor's shape is static, dynamic, or bounded.
+ * tensor’s shape is static, dynamic, or bounded.
  *
- * @param data A pointer to the raw data to be used by the tensor. It must
+ * @param data A pointer to the raw data used by the tensor. The data must
  * outlive the TensorPtr created by this function.
  * @param sizes A vector specifying the size of each dimension.
  * @param strides A vector specifying the stride for each dimension.
  * @param type The scalar type of the tensor elements.
- * @param dynamism Specifies whether the tensor's shape is static or dynamic.
- * @return A TensorPtr instance that manages the newly created Tensor.
+ * @param dynamism Specifies whether the tensor's shape is static, dynamic, or
+ * bounded.
+ * @return A TensorPtr instance managing the newly created Tensor.
  */
 inline TensorPtr from_blob(
     void* data,
@@ -306,9 +307,10 @@ TensorPtr empty_strided(
  * This function allocates memory for the tensor elements but does not
  * initialize them with any specific values.
  *
- * @param other A reference to another tensor, whose size and properties will be
+ * @param other A reference to another tensor, whose size and properties are
  * used.
- * @param type The scalar type of the tensor elements.
+ * @param type The scalar type of the tensor elements. If not provided, the
+ * scalar type of the other tensor is used.
  * @param dynamism Specifies whether the tensor's shape is static or dynamic.
  * @return A TensorPtr instance managing the newly created Tensor.
  */
@@ -397,7 +399,7 @@ inline TensorPtr full_like(
  * Creates a TensorPtr filled with the specified value.
  *
  * @param sizes A vector specifying the size of each dimension.
- * @param fill_value The value to fill the tensor with.
+ * @param fill_value The value used to fill the tensor.
  * @param type The scalar type of the tensor elements.
  * @param dynamism Specifies whether the tensor's shape is static or dynamic.
  * @return A TensorPtr instance managing the newly created Tensor.
@@ -412,29 +414,26 @@ inline TensorPtr full(
 }
 
 /**
- * Creates a TensorPtr that holds a scalar value.
+ * Creates a TensorPtr holding a scalar value.
  *
- * @param value The scalar value to create the tensor with.
+ * @param value The scalar value for the tensor.
  * @param type The scalar type of the tensor elements.
- * @param dynamism Specifies whether the tensor's shape is static or dynamic.
  * @return A TensorPtr instance managing the newly created scalar Tensor.
  */
 inline TensorPtr scalar_tensor(
     exec_aten::Scalar value,
-    exec_aten::ScalarType type = exec_aten::ScalarType::Float,
-    exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
-  return full({}, value, type, dynamism);
+    exec_aten::ScalarType type = exec_aten::ScalarType::Float) {
+  return full({}, value, type);
 }
 
 /**
  * Creates a TensorPtr filled with ones, with the same size and properties as
  * another tensor.
  *
- * @param other A reference to another tensor, whose size and properties will be
+ * @param other A reference to another tensor, whose size and properties are
  * used.
- * @param type The scalar type of the tensor elements. If not specified, the
- * scalar type of the `other` tensor is used.
+ * @param type The scalar type of the tensor elements. If not provided, the
+ * scalar type of the other tensor is used.
  * @param dynamism Specifies whether the tensor's shape is static or dynamic.
  * @return A TensorPtr instance managing the newly created Tensor.
  */
@@ -555,7 +554,8 @@ inline TensorPtr rand(
 }
 
 /**
- * Creates a TensorPtr filled with random values from a normal distribution.
+ * Creates a TensorPtr filled with random values between 0 and 1, with specified
+ * strides.
  *
  * @param sizes A vector specifying the size of each dimension.
  * @param strides A vector specifying the stride for each dimension.
@@ -596,7 +596,8 @@ inline TensorPtr randn_like(
 }
 
 /**
- * Creates a TensorPtr filled with random values from a normal distribution.
+ * Creates a TensorPtr filled with random values sampled from a normal
+ * distribution.
  *
  * @param sizes A vector specifying the size of each dimension.
  * @param type The scalar type of the tensor elements.
@@ -663,10 +664,11 @@ inline TensorPtr randint_like(
 }
 
 /**
- * Creates a TensorPtr filled with random integer values in the given range.
+ * Creates a TensorPtr filled with random integer values within the specified
+ * range.
  *
- * @param low The lower bound (inclusive) of the random values.
- * @param high The upper bound (exclusive) of the random values.
+ * @param low The inclusive lower bound of the random values.
+ * @param high The exclusive upper bound of the random values.
  * @param sizes A vector specifying the size of each dimension.
  * @param type The scalar type of the tensor elements.
  * @param dynamism Specifies whether the tensor's shape is static or dynamic.

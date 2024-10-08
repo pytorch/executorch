@@ -373,10 +373,10 @@ class SDPATestCommon(unittest.TestCase):
 
     def setup_caches(self):
         self.k_cache = torch.zeros(
-            (1, self.max_seq_len, self.n_heads_kv, self.head_dim)
+            (self.n_batch, self.max_seq_len, self.n_heads_kv, self.head_dim)
         )
         self.v_cache = torch.zeros(
-            (1, self.max_seq_len, self.n_heads_kv, self.head_dim)
+            (self.n_batch, self.max_seq_len, self.n_heads_kv, self.head_dim)
         )
         self.mask = torch.full(
             (self.max_seq_len, self.max_seq_len),
@@ -386,6 +386,7 @@ class SDPATestCommon(unittest.TestCase):
 
     def setUp(self):
         torch.manual_seed(42)
+        self.n_batch = 5
         self.n_heads_kv = 32
         self.n_heads_q = 32
         self.head_dim = 128
@@ -410,27 +411,27 @@ class SDPATestCommon(unittest.TestCase):
         scale_tensors=False,
     ):
         # Range arbitrarily chosen to reproduce a numerical error on x86 in some of the long context tests
-        tensor_scale_max = 20
-        tensor_scale_min = -20
+        tensor_scale_max = 15
+        tensor_scale_min = -15
         self.n_heads_kv = n_heads_kv
         self.n_heads_q = n_heads_q
         self.head_dim = head_dim
         self.max_seq_len = max_seq_len
         self.setup_caches()
         q = self._scale_tensor(
-            torch.rand((1, seq_len, self.n_heads_kv, self.head_dim)),
+            torch.rand((self.n_batch, seq_len, self.n_heads_kv, self.head_dim)),
             tensor_scale_max,
             tensor_scale_min,
             scale_tensors,
         )
         k = self._scale_tensor(
-            torch.rand((1, seq_len, self.n_heads_kv, self.head_dim)),
+            torch.rand((self.n_batch, seq_len, self.n_heads_kv, self.head_dim)),
             tensor_scale_max,
             tensor_scale_min,
             scale_tensors,
         )
         v = self._scale_tensor(
-            torch.rand((1, seq_len, self.n_heads_kv, self.head_dim)),
+            torch.rand((self.n_batch, seq_len, self.n_heads_kv, self.head_dim)),
             tensor_scale_max,
             tensor_scale_min,
             scale_tensors,
@@ -448,19 +449,25 @@ class SDPATestCommon(unittest.TestCase):
         self.assertTrue(torch.allclose(ref_output, op_output, atol=1e-6))
 
         q = self._scale_tensor(
-            torch.rand((1, next_iter_seq_len, self.n_heads_kv, self.head_dim)),
+            torch.rand(
+                (self.n_batch, next_iter_seq_len, self.n_heads_kv, self.head_dim)
+            ),
             tensor_scale_max,
             tensor_scale_min,
             scale_tensors,
         )
         k = self._scale_tensor(
-            torch.rand((1, next_iter_seq_len, self.n_heads_kv, self.head_dim)),
+            torch.rand(
+                (self.n_batch, next_iter_seq_len, self.n_heads_kv, self.head_dim)
+            ),
             tensor_scale_max,
             tensor_scale_min,
             scale_tensors,
         )
         v = self._scale_tensor(
-            torch.rand((1, next_iter_seq_len, self.n_heads_kv, self.head_dim)),
+            torch.rand(
+                (self.n_batch, next_iter_seq_len, self.n_heads_kv, self.head_dim)
+            ),
             tensor_scale_max,
             tensor_scale_min,
             scale_tensors,

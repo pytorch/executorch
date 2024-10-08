@@ -86,7 +86,9 @@ class TestInspector(unittest.TestCase):
 
             # Assert that expected functions are called
             mock_parse_etrecord.assert_called_once_with(etrecord_path=ETRECORD_PATH)
-            mock_gen_etdump.assert_called_once_with(etdump_path=ETDUMP_PATH)
+            mock_gen_etdump.assert_called_once_with(
+                etdump_path=ETDUMP_PATH, etdump_data=None
+            )
             mock_gen_from_etdump.assert_called_once()
             # Because we mocked parse_etrecord() to return None, this method shouldn't be called
             mock_gen_graphs_from_etrecord.assert_not_called()

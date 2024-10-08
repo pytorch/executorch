@@ -21,8 +21,30 @@
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 
-namespace torch {
-namespace executor {
+using ::executorch::aten::Tensor;
+using ::executorch::extension::BufferDataLoader;
+using ::executorch::runtime::ArrayRef;
+using ::executorch::runtime::Backend;
+using ::executorch::runtime::BackendExecutionContext;
+using ::executorch::runtime::BackendInitContext;
+using ::executorch::runtime::CompileSpec;
+using ::executorch::runtime::DelegateHandle;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::EValue;
+using ::executorch::runtime::FreeableBuffer;
+using ::executorch::runtime::HierarchicalAllocator;
+using ::executorch::runtime::MemoryAllocator;
+using ::executorch::runtime::MemoryManager;
+using ::executorch::runtime::Method;
+using ::executorch::runtime::MethodMeta;
+using ::executorch::runtime::Program;
+using ::executorch::runtime::Result;
+using ::executorch::runtime::Span;
+using ::executorch::runtime::Tag;
+using ::executorch::runtime::internal::copy_tensor_data;
+
+namespace example {
+
 /**
  * ExecutorBackend is a backend to execute an executorch program via delegate.
  * In preprocess, the preprocesed bytes (delegate blob) is an executorch
@@ -51,8 +73,8 @@ class ExecutorBackend final : public ::executorch::runtime::BackendInterface {
     // will return the data directly without copying it.
     MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
     auto loader = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-        runtime_allocator, util::BufferDataLoader);
-    new (loader) util::BufferDataLoader(processed->data(), processed->size());
+        runtime_allocator, BufferDataLoader);
+    new (loader) BufferDataLoader(processed->data(), processed->size());
     // Can't free `processed` because the program will point into that memory.
 
     // Try loading the program.
@@ -150,7 +172,7 @@ class ExecutorBackend final : public ::executorch::runtime::BackendInterface {
       if (output.tag == Tag::Tensor) {
         Tensor t_src = output.toTensor();
         Tensor t_dst = args[num_inputs + i]->toTensor();
-        status = internal::copy_tensor_data(t_dst, t_src);
+        status = copy_tensor_data(t_dst, t_src);
       }
     }
 
@@ -165,12 +187,11 @@ class ExecutorBackend final : public ::executorch::runtime::BackendInterface {
   }
 };
 
-Error registerExecutorBackend() {
+Error register_executor_backend() {
   static auto cls = ExecutorBackend();
   static Backend backend{"ExecutorBackend", &cls};
   static auto success_with_compiler = register_backend(backend);
   return success_with_compiler;
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace example

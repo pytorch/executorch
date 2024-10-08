@@ -16,7 +16,7 @@
 #include <fstream>
 #include <type_traits>
 
-namespace torch::executor {
+namespace example {
 namespace llm_helper {
 
 RotaryEmbeddingMasterLut::RotaryEmbeddingMasterLut(
@@ -394,4 +394,4 @@ size_t RotaryEmbeddingMasterLut::getRotEmbedLength() const {
 }
 
 } // namespace llm_helper
-} // namespace torch::executor
+} // namespace example

@@ -10,10 +10,9 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 
-namespace torch {
-namespace executor {
+namespace example {
 namespace {
-static Error register_success = registerExecutorBackend();
+static ::executorch::runtime::Error register_success =
+    register_executor_backend();
 } // namespace
-} // namespace executor
-} // namespace torch
+} // namespace example

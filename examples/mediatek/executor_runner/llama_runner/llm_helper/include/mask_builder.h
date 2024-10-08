@@ -12,7 +12,7 @@
 
 #include <string>
 
-namespace torch::executor {
+namespace example {
 namespace llm_helper {
 
 class MaskBuilder {
@@ -76,4 +76,4 @@ class MaskBuilder {
 };
 
 } // namespace llm_helper
-} // namespace torch::executor
+} // namespace example

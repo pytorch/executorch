@@ -15,10 +15,13 @@
 
 #pragma clang diagnostic ignored "-Wdeprecated"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace xnnpack {
 namespace delegate {
+
+using executorch::runtime::Error;
+using executorch::runtime::Result;
 
 namespace {
 /// Interprets the 8 bytes at `data` as a little-endian uint64_t.
@@ -73,5 +76,5 @@ constexpr char XNNHeader::kMagic[kMagicSize];
 
 } // namespace delegate
 } // namespace xnnpack
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

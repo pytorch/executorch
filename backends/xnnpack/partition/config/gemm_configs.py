@@ -52,8 +52,8 @@ class GEMMConfig(XNNPartitionerConfig):
     different ops
     """
 
-    def __init__(self, weight_idx, bias_idx, act_idx, fused_acts):
-        super().__init__()
+    def __init__(self, weight_idx, bias_idx, act_idx, fused_acts, **kwargs):
+        super().__init__(**kwargs)
         self.weight_idx = weight_idx
         self.bias_idx = bias_idx
         self.act_idx = act_idx
@@ -250,16 +250,27 @@ class GEMMConfig(XNNPartitionerConfig):
 class LinearConfig(GEMMConfig):
     target_name = "linear.default"
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         super().__init__(
             weight_idx=1,
             bias_idx=2,
             act_idx=0,
             fused_acts=["relu.default", "hardtanh.default"],
+            **kwargs,
         )
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
         return torch.ops.aten.linear.default
+
+    def _get_weight_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
+    ) -> Tuple[bool, List[torch.fx.Node]]:
+        if precision == ConfigPrecisionType.FP32 and self.force_fp32_dynamic_linear:
+            # if force fp32_dynamic_linear is on and we detected this as fp32, then we
+            # do not partition the weight node
+            return (True, [])
+
+        return super()._get_weight_deps(node, ep, precision)
 
     def supported_precision_types(self):
         return [
@@ -272,12 +283,13 @@ class LinearConfig(GEMMConfig):
 class ConvolutionConfig(GEMMConfig):
     target_name = "convolution.default"
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         super().__init__(
             weight_idx=1,
             bias_idx=2,
             act_idx=0,
             fused_acts=["relu.default", "hardtanh.default"],
+            **kwargs,
         )
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
@@ -314,12 +326,13 @@ class AddmmConfig(GEMMConfig):
 
     target_name = "addmm.default"
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         super().__init__(
             weight_idx=2,
             bias_idx=0,
             act_idx=1,
             fused_acts=["relu.default", "hardtanh.default"],
+            **kwargs,
         )
         self.src_partitions = None
         self.linear_modules = [torch.nn.functional.linear, torch.nn.Linear]
@@ -417,8 +430,8 @@ class AddmmConfig(GEMMConfig):
 class MMConfig(AddmmConfig):
     target_name = "mm.default"
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.bias_idx = None
         self.weight_idx = 1
         self.act_idx = 0

@@ -16,10 +16,14 @@
 #pragma clang diagnostic ignored "-Wmissing-prototypes"
 #pragma clang diagnostic ignored "-Wglobal-constructors"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace xnnpack {
 namespace delegate {
+
+using executorch::runtime::Error;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::Result;
 
 /*
  * Provide compile-time allocation.
@@ -630,7 +634,14 @@ Error defineConvertNode(
       subgraph_ptr,
       remapped_ids.at(graph_node->input_id()),
       remapped_ids.at(graph_node->output_id()),
+#ifdef ENABLE_XNNPACK_KLEIDI
+      // This maps to XNNPACK's XNN_FLAG_MAYBE_PACK_FOR_QB4W_GEMM
+      // however this is not currently exposed at top level
+      // xnnpack.h Header
+      0x00000100);
+#else
       graph_node->flags());
+#endif
 
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
@@ -1776,14 +1787,14 @@ ET_NODISCARD Error XNNCompiler::compileModel(
       subgraph.get(),
       /*weight_cache=*/nullptr, // TODO - support weight cache
       workspace,
-      torch::executorch::threadpool::get_pthreadpool(),
+      ::executorch::extension::threadpool::get_pthreadpool(),
       runtime_flags,
       &runtime_ptr);
 #else
   status = xnn_create_runtime_v3(
       subgraph.get(),
       /*weight_cache=*/nullptr, // TODO - support weight cache
-      torch::executorch::threadpool::get_pthreadpool(),
+      ::executorch::extension::threadpool::get_pthreadpool(),
       runtime_flags,
       &runtime_ptr);
 #endif
@@ -1804,5 +1815,5 @@ ET_NODISCARD Error XNNCompiler::compileModel(
 
 } // namespace delegate
 } // namespace xnnpack
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

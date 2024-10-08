@@ -3,10 +3,15 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <application
+        android:extractNativeLibs="true"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.MiniBench"
         tools:targetApi="31">
+
+        <uses-native-library
+            android:name="libcdsprpc.so"
+            android:required="false" />
 
         <activity
             android:name=".BenchmarkActivity"

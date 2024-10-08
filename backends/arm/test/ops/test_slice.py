@@ -15,6 +15,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.xnnpack.test.tester.tester import Quantize
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
 
@@ -77,8 +78,11 @@ class TestSimpleSlice(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
-    def _test_slice_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
+    def _test_slice_ethos_BI_pipeline(
+        self,
+        compile_spec: list[CompileSpec],
+        module: torch.nn.Module,
+        test_data: Tuple[torch.Tensor],
     ):
         quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
@@ -96,6 +100,20 @@ class TestSimpleSlice(unittest.TestCase):
             .to_executorch()
         )
 
+    def _test_slice_u55_BI_pipeline(
+        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
+    ):
+        self._test_slice_ethos_BI_pipeline(
+            common.get_u55_compile_spec(), module, test_data
+        )
+
+    def _test_slice_u85_BI_pipeline(
+        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
+    ):
+        self._test_slice_ethos_BI_pipeline(
+            common.get_u85_compile_spec(), module, test_data
+        )
+
     @parameterized.expand(Slice.test_tensors)
     def test_slice_tosa_MI(self, tensor):
         self._test_slice_tosa_MI_pipeline(self.Slice(), (tensor,))
@@ -108,9 +126,10 @@ class TestSimpleSlice(unittest.TestCase):
     def test_slice_nhwc_tosa_BI(self, test_tensor: torch.Tensor):
         self._test_slice_tosa_BI_pipeline(self.Slice(), (test_tensor,), True)
 
-    # Fails during Vela compilation when trying to use a Tuple as a Named tuple,
-    # Could be Vela Issue, wait until Regor.
     @parameterized.expand(Slice.test_tensors)
-    @unittest.expectedFailure
     def test_slice_u55_BI(self, test_tensor: torch.Tensor):
         self._test_slice_u55_BI_pipeline(self.Slice(), (test_tensor,))
+
+    @parameterized.expand(Slice.test_tensors)
+    def test_slice_u85_BI(self, test_tensor: torch.Tensor):
+        self._test_slice_u85_BI_pipeline(self.Slice(), (test_tensor,))

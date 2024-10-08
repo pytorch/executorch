@@ -9,7 +9,7 @@
 
 from dataclasses import dataclass
 from functools import partial
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -102,6 +102,8 @@ class ModelArgs:
     # logits for all input tokens.)
     generate_full_logits: bool = False
     enable_dynamic_shape: bool = False  # export model with dynamic shape support
+    # A dictionary mapping from pruned token-id to original token-id
+    output_prune_map: Optional[Dict[int, int]] = None
     use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
     rope_theta: Optional[float] = (
         None  # The official name to override self.rope_freq_base.
@@ -149,6 +151,7 @@ class KVCache(nn.Module):
     ):
         super().__init__()
         self.max_seq_length = max_seq_length
+        self.is_tranposed = transpose_cache
         if transpose_cache:
             cache_shape = (max_batch_size, n_heads, max_seq_length, head_dim)
         else:
@@ -171,19 +174,21 @@ class KVCache(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # input_pos: [S], k_val: [B, H, S, D] or [B, S, H, D] depending on transpose_cache
         if self.enable_dynamic_shape:
-            start_pos = input_pos[-1].item()
+            start_pos = input_pos[0].item()
             torch._check_is_size(start_pos)
             torch._check(start_pos < self.max_seq_length)
-            seq_length = k_val.size(2)
+            dim_to_slice = 2 if self.transpose_cache else 1
+            seq_length = k_val.size(dim_to_slice)
             # Replace the entry in the cache for this token
             # The following lines are equivalent to:
             # cache_k[:bsz, start_pos : start_pos + seqlen] = xk
             # cache_v[:bsz, start_pos : start_pos + seqlen] = xv
+            # when dim_to_slice is 1
             # We use .narrow() here to make the compiler happy
             # pyre-ignore: Incompatible parameter type [6]
-            narrowed_k = self.k_cache.narrow(2, start_pos, seq_length)
+            narrowed_k = self.k_cache.narrow(dim_to_slice, start_pos, seq_length)
             # pyre-ignore: Incompatible parameter type [6]
-            narrowed_v = self.v_cache.narrow(2, start_pos, seq_length)
+            narrowed_v = self.v_cache.narrow(dim_to_slice, start_pos, seq_length)
 
             narrowed_k.copy_(k_val)
             narrowed_v.copy_(v_val)
@@ -191,8 +196,12 @@ class KVCache(nn.Module):
         else:
             k_out = self.k_cache
             v_out = self.v_cache
-            k_out[:, :, input_pos] = k_val
-            v_out[:, :, input_pos] = v_val
+            if self.transpose_cache:
+                k_out[:, :, input_pos] = k_val
+                v_out[:, :, input_pos] = v_val
+            else:
+                k_out[:, input_pos] = k_val
+                v_out[:, input_pos] = v_val
 
             return k_out, v_out
 
@@ -218,9 +227,9 @@ class SDPA(nn.Module):
     def forward(
         self,
         input_pos: torch.Tensor,
-        q: torch.Tensor,
-        k: torch.Tensor,
-        v: torch.Tensor,
+        q: torch.Tensor,  # Already have rotary embeddings. (bs, seqlen, n_local_heads, head_dim)
+        k: torch.Tensor,  # Already have rotary embeddings. (bs, seqlen, n_local_kv_heads, head_dim)
+        v: torch.Tensor,  # (bs, seqlen, n_local_kv_heads, head_dim)
         bsz,
         seqlen,
         mask: torch.Tensor,
@@ -449,6 +458,7 @@ class Transformer(nn.Module):
         self.use_kv_cache = params.use_kv_cache
         self.generate_full_logits = params.generate_full_logits
         self.max_seq_len = params.max_seq_len
+        self.output_prune_map = params.output_prune_map
         if params.use_hf_rope:
             self.precompute_freqs_cis = hf_precompute_freqs_cis
         else:
@@ -525,4 +535,27 @@ class Transformer(nn.Module):
         h = self.norm(h)
 
         logits = self.output(h)
+
+        if self.output_prune_map is not None:
+            # expand to original size so that downstream applications can use the logits as-is.
+            if self.generate_full_logits:
+                # (1, seq_len, pruned_size) -> (1, seq_len, original_size)
+                expanded_logits = torch.full(
+                    [logits.shape[0], logits.shape[1], self.vocab_size],
+                    float("-inf"),
+                    device=logits.device,
+                    dtype=logits.dtype,
+                )
+                expanded_logits[:, :, list(self.output_prune_map.values())] = logits
+            else:
+                # (1, pruned_size) -> (1, original_size)
+                expanded_logits = torch.full(
+                    [logits.shape[0], self.vocab_size],
+                    float("-inf"),
+                    device=logits.device,
+                    dtype=logits.dtype,
+                )
+                expanded_logits[:, list(self.output_prune_map.values())] = logits
+            logits = expanded_logits
+
         return logits

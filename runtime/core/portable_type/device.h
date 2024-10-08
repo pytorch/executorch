@@ -10,8 +10,9 @@
 
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 /// Denotes the specific genre of compute device.
 /// Subset of https://github.com/pytorch/pytorch/blob/main/c10/core/Device.h
@@ -59,5 +60,15 @@ struct Device final {
   DeviceIndex index_ = -1;
 };
 
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::etensor::Device;
+using ::executorch::runtime::etensor::DeviceType;
 } // namespace executor
 } // namespace torch

@@ -10,6 +10,12 @@
 
 #ifdef USE_VULKAN_WRAPPER
 #ifdef USE_VULKAN_VOLK
+#ifdef VK_ANDROID_external_memory_android_hardware_buffer
+#include <android/hardware_buffer.h>
+#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_android.h>
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
+
 #include <volk.h>
 #else
 #include <vulkan_wrapper.h>

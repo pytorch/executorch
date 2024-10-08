@@ -22,9 +22,13 @@
 #include <unordered_map>
 // NOLINTEND
 
-namespace torch::executor::xnnpack::delegate::profiling {
+namespace executorch::backends::xnnpack::delegate::profiling {
+
+using executorch::runtime::Error;
+using executorch::runtime::EventTracer;
 
 #if defined(ET_EVENT_TRACER_ENABLED) || defined(ENABLE_XNNPACK_PROFILING)
+
 XNNProfiler::XNNProfiler()
     : state_(XNNProfilerState::Uninitialized), run_count_(0) {}
 
@@ -210,10 +214,10 @@ void XNNProfiler::submit_trace() {
 
     auto end_time = time + interval_ticks;
 
-    torch::executor::event_tracer_log_profiling_delegate(
+    executorch::runtime::event_tracer_log_profiling_delegate(
         event_tracer_,
         name_formatted.c_str(),
-        /*delegate_debug_id=*/static_cast<torch::executor::DebugHandle>(-1),
+        /*delegate_debug_id=*/static_cast<executorch::runtime::DebugHandle>(-1),
         time,
         end_time);
 
@@ -246,4 +250,4 @@ Error XNNProfiler::end() {
 
 #endif
 
-} // namespace torch::executor::xnnpack::delegate::profiling
+} // namespace executorch::backends::xnnpack::delegate::profiling

@@ -106,21 +106,20 @@ class RpcMemAllocator {
     return reinterpret_cast<char*>(ptr_) + name##_pos_[idx]; \
   }
 
-namespace torch {
-namespace executor {
+namespace example {
 class IoMemMgr {
  public:
   // Allocate a big memory which is capable to contain all IO of all modules
   IoMemMgr(){};
-  IoMemMgr(MethodMeta method_meta);
+  IoMemMgr(executorch::runtime::MethodMeta method_meta);
 
   struct InfoAttrs {
-    std::unique_ptr<TensorInfo> tensor_meta;
+    std::unique_ptr<executorch::runtime::TensorInfo> tensor_meta;
     size_t size = 0;
     std::vector<uint32_t> shape;
     uint32_t rank;
     size_t element_size;
-    torch::executor::ScalarType dtype;
+    executorch::aten::ScalarType dtype;
   };
 
   struct IoInfo {
@@ -186,15 +185,16 @@ class IoMemMgr {
   std::vector<size_t> v_caches_write_pos_;
 
   IoInfo io_info_;
-  std::unique_ptr<MethodMeta> method_meta_;
+  std::unique_ptr<executorch::runtime::MethodMeta> method_meta_;
   RpcMemAllocator rpc_mem_allocator{QnnMemDescriptor::kCustom};
-  std::unordered_map<ScalarType, size_t> scalar_type_to_size = {
-      {ScalarType::Int, sizeof(int32_t)},
-      {ScalarType::Float, sizeof(float)},
-      {ScalarType::Char, sizeof(int8_t)},
-      {ScalarType::Short, sizeof(int16_t)},
-      {ScalarType::Byte, sizeof(uint8_t)},
-      {ScalarType::Bits16, sizeof(uint16_t)},
+  std::unordered_map<executorch::aten::ScalarType, size_t> scalar_type_to_size =
+      {
+          {executorch::aten::ScalarType::Int, sizeof(int32_t)},
+          {executorch::aten::ScalarType::Float, sizeof(float)},
+          {executorch::aten::ScalarType::Char, sizeof(int8_t)},
+          {executorch::aten::ScalarType::Short, sizeof(int16_t)},
+          {executorch::aten::ScalarType::Byte, sizeof(uint8_t)},
+          {executorch::aten::ScalarType::Bits16, sizeof(uint16_t)},
   };
 };
 
@@ -232,23 +232,24 @@ class Runner {
   };
 
   bool is_loaded() const;
-  Error load();
-  Error mem_alloc(size_t alignment, size_t seq_len);
-  Error generate(
+  executorch::runtime::Error load();
+  executorch::runtime::Error mem_alloc(size_t alignment, size_t seq_len);
+  executorch::runtime::Error generate(
       const std::string& prompt,
       int32_t seq_len,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {});
   void stop();
-  Result<MethodMeta> get_method_meta();
+  executorch::runtime::Result<executorch::runtime::MethodMeta>
+  get_method_meta();
 
  private:
   // metadata
   template <typename T>
   T getMetadataHelper(std::string method_name, T default_val);
   template <typename T>
-  int32_t logitsToToken(const exec_aten::Tensor& logits_tensor);
-  Result<Tensor> run_model_step(
+  int32_t logitsToToken(const executorch::aten::Tensor& logits_tensor);
+  executorch::runtime::Result<executorch::aten::Tensor> run_model_step(
       int64_t input_token,
       ::executorch::extension::TensorPtr& token,
       ::executorch::extension::TensorPtr& start_pos,
@@ -265,16 +266,15 @@ class Runner {
   int32_t head_dim_;
   int32_t dim_;
   std::unordered_set<std::string> model_methods_;
-  std::unique_ptr<Module> module_;
+  std::unique_ptr<executorch::extension::Module> module_;
   std::string tokenizer_path_;
   std::string model_path_;
   float temperature_;
-  std::unique_ptr<Tokenizer> tokenizer_;
-  std::unique_ptr<Sampler> sampler_;
+  std::unique_ptr<executorch::extension::llm::Tokenizer> tokenizer_;
+  std::unique_ptr<executorch::extension::llm::Sampler> sampler_;
   bool shouldStop_{false};
   Stats stats_;
   IoMemMgr io_mem_mgr_;
 };
 
-} // namespace executor
-} // namespace torch
+} // namespace example

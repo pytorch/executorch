@@ -51,14 +51,27 @@ DEFINE_string(
     "outputs",
     "Model output folder. Default to 'outputs'");
 
-using namespace torch::executor;
-using torch::executor::MemoryAllocator;
-using torch::executor::util::BufferCleanup;
-using torch::executor::util::FileDataLoader;
+using executorch::aten::Tensor;
+using executorch::aten::TensorImpl;
+using executorch::extension::BufferCleanup;
+using executorch::extension::FileDataLoader;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::HierarchicalAllocator;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::MemoryManager;
+using executorch::runtime::Method;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::Span;
+using executorch::runtime::Tag;
+using executorch::runtime::TensorInfo;
+
 using namespace std::filesystem;
 
 int main(int argc, char** argv) {
-  runtime_init();
+  executorch::runtime::runtime_init();
 
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {

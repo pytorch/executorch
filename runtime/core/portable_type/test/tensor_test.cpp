@@ -13,15 +13,16 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 
-namespace torch {
-namespace executor {
+using executorch::runtime::etensor::ScalarType;
+using executorch::runtime::etensor::Tensor;
+using executorch::runtime::etensor::TensorImpl;
 
 class TensorTest : public ::testing::Test {
  protected:
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
@@ -77,6 +78,3 @@ TEST_F(TensorTest, ModifyDataOfConstTensor) {
   EXPECT_EQ(a.scalar_type(), ScalarType::Int);
   EXPECT_EQ(a.const_data_ptr<int32_t>()[0], 0);
 }
-
-} // namespace executor
-} // namespace torch

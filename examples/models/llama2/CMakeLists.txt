@@ -141,7 +141,10 @@ endif()
 
 # XNNPACK
 if(TARGET xnnpack_backend)
-  set(xnnpack_backend_libs xnnpack_backend XNNPACK)
+  set(xnnpack_backend_libs xnnpack_backend XNNPACK microkernels-prod)
+  if(TARGET kleidiai)
+    list(APPEND xnnpack_backend_libs kleidiai)
+  endif()
   list(APPEND link_libraries ${xnnpack_backend_libs})
   target_link_options_shared_lib(xnnpack_backend)
 endif()

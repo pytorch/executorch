@@ -28,6 +28,13 @@ def process_inputs(
     tosa_graph: ts.TosaSerializer,
 ):
     """Serialize an input node"""
+    # inputs need to be in default dim_order (contiguous memory format)
+    meta = node.meta["val"]
+    if meta.dim_order() != tuple(range(meta.dim())):
+        raise RuntimeError(
+            f"Arm backend only supports contiguous memory format for inputs. "
+            f"Expected dim_order: {tuple(range(meta.dim()))}, but got: {meta.dim_order()} for node {node.name}"
+        )
     inputs = [TosaArg(node)]
     input_shape = inputs[0].shape
     input_dim_order = inputs[0].dim_order

@@ -10,8 +10,9 @@
 
 #include <cstdint>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 /**
  * Tensor data memory formats supported by ExecuTorch. This concept only exists
@@ -45,5 +46,15 @@ enum class Layout : int8_t {
    */
   Strided = 0,
 };
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::etensor::Layout;
+using ::executorch::runtime::etensor::MemoryFormat;
 } // namespace executor
 } // namespace torch

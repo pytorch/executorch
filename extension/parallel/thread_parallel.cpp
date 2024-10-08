@@ -20,7 +20,7 @@ namespace {
 thread_local int64_t thread_num_ = 0;
 }
 
-using namespace torch::executorch::threadpool;
+using namespace ::executorch::extension::threadpool;
 
 inline int64_t divup(int64_t x, int64_t y) {
   return (x + y - 1) / y;

@@ -1,0 +1,24 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+addmm_naive_texture3d:
+  parameter_names_with_default_values:
+    DTYPE: float
+    MAT2_IS_TRANSPOSED: false
+    HAS_BIAS: true
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: float
+      - VALUE: half
+  shader_variants:
+    - NAME: addmm_naive_texture3d
+    - NAME: matmul_naive_texture3d
+      HAS_BIAS: false
+    - NAME: linear_naive_texture3d
+      MAT2_IS_TRANSPOSED: true
+    - NAME: matmul_transposed_naive_texture3d
+      MAT2_IS_TRANSPOSED: true
+      HAS_BIAS: false

@@ -32,29 +32,29 @@ ${layout_declare_ubo(9, "int", "out_numel")}
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 void main() {
-  const ivec4 out_idx = ivec4(
+  const ivec4 out_bufix = ivec4(
       gl_GlobalInvocationID.x,
       gl_GlobalInvocationID.y,
       gl_GlobalInvocationID.z % out_sizes.z,
       gl_GlobalInvocationID.z / out_sizes.z);
 
-  if (any(greaterThanEqual(out_idx, out_sizes))) {
+  if (any(greaterThanEqual(out_bufix, out_sizes))) {
     return;
   }
 
-  int mat1_id = to_buffer_id(
-      ivec4(0, out_idx.y, out_idx.z, out_idx.w), mat1_strides);
-  int mat2_id = to_buffer_id(
-      ivec4(out_idx.x, 0, out_idx.z, out_idx.w), mat2_strides);
+  int mat1_bufi = tidx_to_bufi(
+      ivec4(0, out_bufix.y, out_bufix.z, out_bufix.w), mat1_strides);
+  int mat2_bufi = tidx_to_bufi(
+      ivec4(out_bufix.x, 0, out_bufix.z, out_bufix.w), mat2_strides);
 
   T sum = T(0.0);
   for (int i = 0; i < mat1_sizes.x; ++i) {
-    sum += t_mat1[mat1_id] * t_mat2[mat2_id];
+    sum += t_mat1[mat1_bufi] * t_mat2[mat2_bufi];
 
-    mat1_id += mat1_strides.x;
-    mat2_id += mat2_strides.y;
+    mat1_bufi += mat1_strides.x;
+    mat2_bufi += mat2_strides.y;
   }
 
-  const int out_id = to_buffer_id(out_idx, out_strides);
-  t_out[out_id] = T(sum);
+  const int out_bufi = tidx_to_bufi(out_bufix, out_strides);
+  t_out[out_bufi] = T(sum);
 }

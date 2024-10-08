@@ -7,7 +7,6 @@
  */
 
 #include <executorch/backends/qualcomm/runtime/backends/QnnProfiler.h>
-#include <iostream>
 
 namespace torch {
 namespace executor {

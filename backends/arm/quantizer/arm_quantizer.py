@@ -271,6 +271,7 @@ class ArmQuantizer(Quantizer):
         "mm",
         "cat",
         "one_to_one",
+        "generic",
     ]
 
     def __init__(self) -> None:

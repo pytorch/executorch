@@ -9,7 +9,7 @@ The expected flow is:
  * torch.nn.module -> TOSA -> command_stream for fully AoT flows e.g. embedded.
  * torch.nn.module -> TOSA for flows supporting a JiT compilation step.
 
-Current backend support is being developed for TOSA to Ethos(TM)-U55/65 via the
+Current backend support is being developed for TOSA to Ethos(TM)-U55/65/85 via the
 ethos-u-vela compilation stack. which follows the fully AoT flow.
 
 ## Layout

@@ -34,18 +34,18 @@ void main() {
   }
 
   const ivec4 idx = to_tensor_idx(out_pos, out_sizes, packed_dim);
-  const ivec4 buffer_ixs = get_texel_nchw_buffer_ixs(idx, out_sizes, packed_dim);
+  const ivec4 buffer_ixs = tidx_to_nchwi(idx, out_sizes, packed_dim);
 
   VEC4_T out_texel;
   for (int i = 0; i < 4; ++i) {
-      const ivec4 out_idx = from_nchw_buffer_i(buffer_ixs[i], out_sizes);
-      int out_channel = out_idx.z;
+      const ivec4 out_tidx = nchwi_to_tidx(buffer_ixs[i], out_sizes);
+      int out_channel = out_tidx.z;
       int in_channel = texelFetch(t_idx, ivec3(out_channel, 0, 0), 0).x;
 
-      ivec4 in_idx = out_idx;
-      in_idx.z = in_channel;
+      ivec4 in_tidx = out_tidx;
+      in_tidx.z = in_channel;
 
-      ivec4 in_elem_pos = to_texture_elem_pos(in_idx, in_sizes, packed_dim);
+      ivec4 in_elem_pos = to_texture_elem_pos(in_tidx, in_sizes, packed_dim);
 
       VEC4_T in_texel = texelFetch(t_in, in_elem_pos.xyz, 0);
 

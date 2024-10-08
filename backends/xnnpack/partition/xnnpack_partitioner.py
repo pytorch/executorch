@@ -36,6 +36,7 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
         ] = None,
         per_op_mode=False,
         verbose: bool = False,
+        **kwargs,
     ):
         """
         @verbose: if True, print out more information about the partitioner.
@@ -55,7 +56,7 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
 
         for config in configs_to_use:
             # Config Classes given to XnnpackPartitioner should no longer be abstract
-            initialized = config()  #  pyre-ignore
+            initialized = config(**kwargs)  #  pyre-ignore
             initialized.set_enabled_precision_types(config_precisions)
             initialized_configs.append(initialized)
 

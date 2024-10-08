@@ -12,6 +12,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
 
@@ -80,14 +81,17 @@ class TestSoftmax(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
-    def _test_softmax_tosa_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
+    def _test_softmax_tosa_ethos_BI_pipeline(
+        self,
+        compile_spec: list[CompileSpec],
+        module: torch.nn.Module,
+        test_data: Tuple[torch.tensor],
     ):
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(),
+                compile_spec=compile_spec,
             )
             .quantize()
             .export()
@@ -98,6 +102,20 @@ class TestSoftmax(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten__softmax_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+        )
+
+    def _test_softmax_tosa_u55_BI_pipeline(
+        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
+    ):
+        self._test_softmax_tosa_ethos_BI_pipeline(
+            common.get_u55_compile_spec(), module, test_data
+        )
+
+    def _test_softmax_tosa_u85_BI_pipeline(
+        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
+    ):
+        self._test_softmax_tosa_ethos_BI_pipeline(
+            common.get_u85_compile_spec(), module, test_data
         )
 
     @parameterized.expand(test_data_suite)
@@ -132,3 +150,13 @@ class TestSoftmax(unittest.TestCase):
         dim: int,
     ):
         self._test_softmax_tosa_u55_BI_pipeline(self.Softmax(dim=dim), (test_data,))
+
+    @parameterized.expand(test_data_suite)
+    @unittest.expectedFailure
+    def test_softmax_tosa_u85_BI(
+        self,
+        test_name: str,
+        test_data: torch.Tensor,
+        dim: int,
+    ):
+        self._test_softmax_tosa_u85_BI_pipeline(self.Softmax(dim=dim), (test_data,))

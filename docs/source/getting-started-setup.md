@@ -110,6 +110,23 @@ Alternatively, if you would like to experiment with ExecuTorch quickly and easil
    ```
 After setting up your environment, you are ready to convert your PyTorch programs
 to ExecuTorch.
+
+> **_NOTE:_**  Cleaning the build system
+>
+> When fetching a new version of the upstream repo (via `git fetch` or `git
+> pull`) it is a good idea to clean the old build artifacts. The build system
+> does not currently adapt well to changes in build dependencies.
+>
+> You should also update and pull the submodules again, in case their versions
+> have changed.
+>
+> ```bash
+> # From the root of the executorch repo:
+> rm -rf cmake-out pip-out
+> git submodule sync
+> git submodule update --init
+> ```
+
 ## Create an ExecuTorch program
 
 After setting up your environment, you are ready to convert your PyTorch programs
@@ -169,12 +186,29 @@ For now, let's use [`executor_runner`](https://github.com/pytorch/executorch/blo
 ### Build Tooling Setup
 The ExecuTorch repo uses CMake to build its C++ code. Here, we'll configure it to build the `executor_runner` tool to run it on our desktop OS.
   ```bash
-  # Clean and configure the CMake build system. Compiled programs will appear in the executorch/cmake-out directory we create here.
+  # Clean and configure the CMake build system. Compiled programs will
+  # appear in the executorch/cmake-out directory we create here.
   (rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake ..)
 
   # Build the executor_runner target
   cmake --build cmake-out --target executor_runner -j9
   ```
+
+> **_NOTE:_**  Cleaning the build system
+>
+> When fetching a new version of the upstream repo (via `git fetch` or `git
+> pull`) it is a good idea to clean the old build artifacts. The build system
+> does not currently adapt well to changes in build dependencies.
+>
+> You should also update and pull the submodules again, in case their versions
+> have changed.
+>
+> ```bash
+> # From the root of the executorch repo:
+> rm -rf cmake-out pip-out
+> git submodule sync
+> git submodule update --init
+> ```
 
 ### Run Your Program
 

@@ -13,7 +13,9 @@ on:
       - extension/android/benchmark/android-llm-device-farm-test-spec.yml
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  # NB: This concurency group needs to be different than the one used in android-perf, otherwise
+  # GH complains about concurrency deadlock
+  group: android-spec-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
 jobs:
@@ -27,7 +29,7 @@ jobs:
         with:
           s3-bucket: gha-artifacts
           s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/artifact
+            ${{ github.repository }}/${{ github.run_id }}/artifacts
           retention-days: 1
           if-no-files-found: error
           path: extension/android/benchmark/android-llm-device-farm-test-spec.yml
@@ -43,7 +45,7 @@ jobs:
       models: stories110M
       devices: samsung_galaxy_s22
       delegates: xnnpack
-      test_spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/android-llm-device-farm-test-spec.yml
+      test_spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/android-llm-device-farm-test-spec.yml
 
   upload-android-test-spec:
     needs: validate-android-test-spec

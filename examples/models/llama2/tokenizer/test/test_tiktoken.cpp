@@ -7,20 +7,25 @@
  */
 
 #include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
-#include <executorch/runtime/platform/runtime.h>
-#include <gtest/gtest.h>
+
 #include <vector>
+
+#include <executorch/runtime/platform/runtime.h>
+
+#include <gtest/gtest.h>
 
 using namespace ::testing;
 
-namespace torch {
-namespace executor {
+using ::example::Version;
+using ::executorch::extension::llm::Tokenizer;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::Result;
 
 class MultimodalTiktokenV5ExtensionTest : public Test {
  public:
   void SetUp() override {
-    torch::executor::runtime_init();
-    tokenizer_ = get_tiktoken_for_llama(MULTIMODAL);
+    executorch::runtime::runtime_init();
+    tokenizer_ = get_tiktoken_for_llama(Version::Multimodal);
     modelPath_ = std::getenv("RESOURCES_PATH") +
         std::string("/test_tiktoken_tokenizer.model");
   }
@@ -79,5 +84,3 @@ TEST_F(MultimodalTiktokenV5ExtensionTest, TokenizerDecodeCorrectly) {
     EXPECT_EQ(out.get(), expected[i]);
   }
 }
-} // namespace executor
-} // namespace torch

@@ -10,18 +10,19 @@ import argparse
 from typing import Optional, Union
 
 import torch
-from executorch.examples.models.llama2.evaluate import EagerEvalWrapper, evaluate_model
 from executorch.examples.models.llama2.export_llama_lib import (
     get_quantizer_and_quant_params,
 )
 from executorch.examples.models.llama2.tokenizer.tiktoken import Tokenizer as Tiktoken
 
-from executorch.extension.llm.export import LLMEdgeManager
+from executorch.extension.llm.export.builder import LLMEdgeManager
 from executorch.extension.llm.tokenizer.tokenizer import (
     Tokenizer as SentencePieceTokenizer,
 )
 from executorch.extension.llm.tokenizer.utils import get_tokenizer
 from lm_eval.api.model import LM
+
+from .evaluate.eager_eval import EagerEvalWrapper, evaluate_model
 
 from .export_llama_lib import (
     _prepare_for_llama_export,
@@ -91,7 +92,7 @@ class ETPybindEvalWrapper(EagerEvalWrapper):
         tokenizer: Union[SentencePieceTokenizer, Tiktoken],
         max_seq_length: Optional[int] = None,
     ):
-        super().__init__(None, tokenizer, max_seq_length)
+        super().__init__(None, tokenizer, max_seq_length)  # pyre-ignore
         self._model = model  # Expects model to be path to a .pte file
 
         from executorch.extension.pybindings.portable_lib import _load_for_executorch
@@ -106,7 +107,7 @@ class ETPybindEvalWrapper(EagerEvalWrapper):
         from executorch.kernels import quantized  # noqa
 
         self._et_model = _load_for_executorch(self._model)
-        self._use_kv_cache = self._et_model.run_method("use_kv_cache")[0]
+        self._use_kv_cache = self._et_model.run_method("use_kv_cache")[0]  # pyre-ignore
 
     def _model_call(self, inps):
         # Given inps (tokens), return the logits from a single forward call
@@ -140,7 +141,7 @@ class ETRunnerEvalWrapper(EagerEvalWrapper):
         tokenizer_bin: str,
         max_seq_length: Optional[int] = None,
     ):
-        super().__init__(None, tokenizer, max_seq_length)
+        super().__init__(None, tokenizer, max_seq_length)  # pyre-ignore
         self._model = model
         self._tokenizer_bin = tokenizer_bin
 
@@ -165,17 +166,17 @@ def gen_eval_wrapper(
     Returns:
         eval_wrapper (LM): A wrapper interface for the lm-evaluation-harness library.
     """
-    tokenizer = get_tokenizer(args.tokenizer_path)
+    tokenizer = get_tokenizer(args.tokenizer_path)  # pyre-ignore
 
     # ExecuTorch Binary Evaluation
-    if (model := args.pte) is not None:
-        if (tokenizer_bin := args.tokenizer_bin) is not None:
+    if (model := args.pte) is not None:  # pyre-ignore
+        if (tokenizer_bin := args.tokenizer_bin) is not None:  # pyre-ignore
             # ETRunnerEvalWrapper: Create a wrapper around an ExecuTorch model, evaluated at runtime
             return ETRunnerEvalWrapper(
                 model=model,
                 tokenizer=tokenizer,
                 tokenizer_bin=tokenizer_bin,
-                max_seq_length=args.max_seq_length,
+                max_seq_length=args.max_seq_length,  # pyre-ignore
             )
 
         # ETPybindEvalWrapper: Create a wrapper around an ExecuTorch model, evaluated with pybindings
@@ -194,7 +195,7 @@ def gen_eval_wrapper(
     if len(quantizers) != 0:
         manager = manager.capture_pre_autograd_graph().pt2e_quantize(quantizers)
         model = (
-            manager.pre_autograd_graph_module.to(device="cuda")
+            manager.pre_autograd_graph_module.to(device="cuda")  # pyre-ignore
             if torch.cuda.is_available()
             else manager.pre_autograd_graph_module.to(device="cpu")
         )
@@ -202,8 +203,8 @@ def gen_eval_wrapper(
             model=model,
             tokenizer=tokenizer,
             max_seq_length=args.max_seq_length,
-            use_kv_cache=args.use_kv_cache,
-            enable_dynamic_shape=args.enable_dynamic_shape,
+            use_kv_cache=args.use_kv_cache,  # pyre-ignore
+            enable_dynamic_shape=args.enable_dynamic_shape,  # pyre-ignore
         )
     else:
         # TODO: use manager.pre_autograd_graph_module for the eval to remove the if-else branch
@@ -221,7 +222,7 @@ def gen_eval_wrapper(
         # that is not available in this eval_llama. We save the checkpoint
         # here for consistency with eval_llama. The accuracy results we
         # get from eval_llama can be used as a reference to other evaluations.
-        if args.output_eager_checkpoint_file is not None:
+        if args.output_eager_checkpoint_file is not None:  # pyre-ignore
             torch.save(model, args.output_eager_checkpoint_file)
 
         return EagerEvalWrapper(
@@ -282,8 +283,8 @@ def eval_llama(
     # Evaluate the model
     eval_results = evaluate_model(
         eval_wrapper,
-        args.tasks,
-        args.limit,
+        args.tasks,  # pyre-ignore
+        args.limit,  # pyre-ignore
     )
 
     for task, res in eval_results["results"].items():

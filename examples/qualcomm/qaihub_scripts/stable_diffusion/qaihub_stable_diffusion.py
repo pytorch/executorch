@@ -311,8 +311,6 @@ def inference(args, compiler_specs, pte_files):
     qnn_executor_runner_args = " ".join(
         [
             f"cd {adb.workspace} &&",
-            "export ADSP_LIBRARY_PATH=. &&",
-            "export LD_LIBRARY_PATH=. &&",
             f"./qaihub_stable_diffusion_runner {' '.join(qnn_executor_runner_args)}",
         ]
     )

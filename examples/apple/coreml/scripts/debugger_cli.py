@@ -24,7 +24,7 @@ def get_root_dir_path() -> Path:
 sys.path.append(str((get_root_dir_path() / "examples").resolve()))
 
 from inspector_utils import (
-    build_sdk_runner_including_coreml,
+    build_devtools_runner_including_coreml,
     ComparisonResult,
     create_inspector_coreml,
     create_inspector_reference,
@@ -145,7 +145,7 @@ def main() -> None:
             f"Valid compute units are {valid_compute_units}."
         )
 
-    build_sdk_runner_including_coreml(
+    build_devtools_runner_including_coreml(
         root_dir_path=get_root_dir_path(), conda_env_name=args.conda_environment_name
     )
 

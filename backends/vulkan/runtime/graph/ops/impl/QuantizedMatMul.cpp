@@ -30,15 +30,21 @@ void check_q_matmul_args(
   VK_CHECK_COND(mat1_sizes.size() == 2);
   VK_CHECK_COND(mat1_sizes.size() == mat2_sizes.size());
 
-  VK_CHECK_COND(graph.memory_layout_of(mat1) == utils::kWidthPacked);
-  VK_CHECK_COND(graph.memory_layout_of(mat2_data) == utils::kWidthPacked);
-  VK_CHECK_COND(
-      graph.memory_layout_of(scales_and_zeros) == utils::kWidthPacked);
+  using namespace WHCN;
+  VK_CHECK_COND(graph.packed_dim_of(mat1) == kWidthDim);
+  VK_CHECK_COND(graph.packed_dim_of(mat2_data) == kWidthDim);
+  // VK_CHECK_COND(graph.packed_dim_of(scales_and_zeros) == kWidthDim);
+
+  if (graph.storage_type_of(scales_and_zeros) == utils::kBuffer) {
+    VK_CHECK_COND(graph.packed_dim_of(scales_and_zeros) == kWidthDim);
+  } else {
+    VK_CHECK_COND(graph.packed_dim_of(scales_and_zeros) == kChannelsDim);
+  }
 
   if (graph.storage_type_of(out) == utils::kBuffer) {
-    VK_CHECK_COND(graph.memory_layout_of(out) == utils::kWidthPacked);
+    VK_CHECK_COND(graph.packed_dim_of(out) == kWidthDim);
   } else {
-    VK_CHECK_COND(graph.memory_layout_of(out) == utils::kChannelsPacked);
+    VK_CHECK_COND(graph.packed_dim_of(out) == kChannelsDim);
   }
 
   const int mat1_K = utils::val_at(-1, mat1_sizes);
@@ -106,13 +112,8 @@ void add_q_matmul_node(
     const ValueRef out) {
   auto storage_type = graph.storage_type_of(out);
 
-  ValueRef mat2;
-
-  if (storage_type == utils::kBuffer) {
-    mat2 = prepack_buffer_if_tensor_ref(graph, mat2_data, utils::kWidthPacked);
-  } else {
-    mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kWidthPacked);
-  }
+  ValueRef mat2 =
+      prepack_buffer_if_tensor_ref(graph, mat2_data, utils::kWidthPacked);
 
   ValueRef scales_and_zeros =
       prepack_if_tensor_ref(graph, scales_and_zeros_data, utils::kWidthPacked);
@@ -135,6 +136,7 @@ void add_q_matmul_node(
   } else {
     ubos.append(graph.sizes_ubo(out));
     ubos.append(graph.sizes_ubo(mat1));
+    ubos.append(graph.strides_ubo(mat2));
     ubos.append(graph.strides_ubo(scales_and_zeros));
   }
 

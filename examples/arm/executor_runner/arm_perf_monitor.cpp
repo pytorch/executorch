@@ -39,10 +39,20 @@ void ethosu_inference_begin(struct ethosu_driver* drv, void*) {
   ETHOSU_PMU_PMCCNTR_CFG_Set_Start_Event(drv, ETHOSU_PMU_NPU_ACTIVE);
 
   // Setup 4 counters
+#if defined(ETHOSU55) || defined(ETHOSU65)
   ETHOSU_PMU_Set_EVTYPER(drv, 0, ETHOSU_PMU_AXI0_RD_DATA_BEAT_RECEIVED);
   ETHOSU_PMU_Set_EVTYPER(drv, 1, ETHOSU_PMU_AXI1_RD_DATA_BEAT_RECEIVED);
   ETHOSU_PMU_Set_EVTYPER(drv, 2, ETHOSU_PMU_AXI0_WR_DATA_BEAT_WRITTEN);
   ETHOSU_PMU_Set_EVTYPER(drv, 3, ETHOSU_PMU_NPU_IDLE);
+#elif defined(ETHOSU85)
+  ETHOSU_PMU_Set_EVTYPER(drv, 0, ETHOSU_PMU_EXT0_RD_DATA_BEAT_RECEIVED);
+  ETHOSU_PMU_Set_EVTYPER(drv, 1, ETHOSU_PMU_EXT1_RD_DATA_BEAT_RECEIVED);
+  ETHOSU_PMU_Set_EVTYPER(drv, 2, ETHOSU_PMU_EXT0_WR_DATA_BEAT_WRITTEN);
+  ETHOSU_PMU_Set_EVTYPER(drv, 3, ETHOSU_PMU_NPU_IDLE);
+#else
+#error No NPU target defined
+#endif
+
   // Enable 4 counters
   ETHOSU_PMU_CNTR_Enable(drv, 0xf);
 
@@ -160,9 +170,17 @@ void StopMeasurements() {
   for (size_t i = 0; i < ethosu_pmuCountersUsed; i++) {
     ET_LOG(Info, "ethosu_pmu_cntr%zd : %" PRIu64, i, ethosu_pmuEventCounts[i]);
   }
+#if defined(ETHOSU55) || defined(ETHOSU65)
   ET_LOG(
       Info,
       "Ethos-U PMU Events:[ETHOSU_PMU_AXI0_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_AXI1_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_AXI0_WR_DATA_BEAT_WRITTEN, ETHOSU_PMU_NPU_IDLE]");
+#elif defined(ETHOSU85)
+  ET_LOG(
+      Info,
+      "Ethos-U PMU Events:[ETHOSU_PMU_EXT0_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_EXT1_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_EXT0_WR_DATA_BEAT_WRITTEN, ETHOSU_PMU_NPU_IDLE]");
+#else
+#error No NPU target defined
+#endif
 }
 
 #else

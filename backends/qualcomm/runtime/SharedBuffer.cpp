@@ -25,7 +25,7 @@ std::size_t std::hash<CustomMemTensorInfo>::operator()(
     hash_val ^= info.shape[i];
   }
   hash_val ^= std::hash<uint32_t>()(info.rank);
-  hash_val ^= std::hash<torch::executor::ScalarType>()(info.dtype);
+  hash_val ^= std::hash<exec_aten::ScalarType>()(info.dtype);
   return hash_val;
 }
 

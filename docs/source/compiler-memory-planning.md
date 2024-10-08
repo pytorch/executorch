@@ -32,9 +32,8 @@ The `MemoryPlanningPass` exposes the option to not memory plan program inputs an
 program = edge_program.to_executorch(
             exir.ExecutorchBackendConfig(
                 memory_planning_pass=MemoryPlanningPass(
-                    memory_planning_algo="greedy",
                     alloc_graph_input=False, # Inputs will not be memory planned, the data_ptr for input tensors after model load will be nullptr
-                    alloc_graph_output=True, # Outputs will be memory planned, the data_ptr for input tensors after model load will be in the `planned_memory`.
+                    alloc_graph_output=True, # Outputs will be memory planned, the data_ptr for output tensors after model load will be in the `planned_memory`.
                 )
             )
         )
@@ -77,10 +76,14 @@ Then later when lowering to ExecuTorch you can use your custom plan in the follo
 program = edge_program.to_executorch(
             exir.ExecutorchBackendConfig(
                 memory_planning_pass=CustomPoolMemoryPlanningPass(
-                    memory_planning_algo="greedy",
+                    memory_planning_algo=greedy,
                 )
             )
         )
 ```
 
 Users attempting to write a custom memory planning algorithm should start by looking at [the greedy algorithm's implementation](https://github.com/pytorch/executorch/blob/d62c41ca86435e5316e7ed292b6d68aff27a2fb7/exir/memory_planning.py#L459C1-L459C12).
+
+## Debugging Tool
+
+Please refer to [Memory Planning Inspection](./memory-planning-inspection.md) for a tool to inspect the result of memory planning.

@@ -301,6 +301,10 @@ def _filegroup(*args, **kwargs):
     _patch_kwargs_common(kwargs)
     env.filegroup(*args, **kwargs)
 
+def _command_alias(*args, **kwargs):
+    _patch_kwargs_common(kwargs)
+    env.command_alias(*args, **kwargs)
+
 def _genrule(*args, **kwargs):
     _patch_kwargs_common(kwargs)
     env.patch_platforms(kwargs)
@@ -345,6 +349,7 @@ def get_oss_build_kwargs():
 # see the "Build Rules" section in the sidebar of
 # https://buck.build/concept/build_rule.html.
 runtime = struct(
+    command_alias = _command_alias,
     cxx_binary = _cxx_binary,
     cxx_library = _cxx_library,
     cxx_python_extension = _cxx_python_extension,

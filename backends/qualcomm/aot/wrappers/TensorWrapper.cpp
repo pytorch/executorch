@@ -91,7 +91,9 @@ TensorWrapper::TensorWrapper(
   if (data != nullptr) {
     QNN_VER_PTR(tensor_)->clientBuf.dataSize = bytes;
 
-    if (copy_data) {
+    if (tensor_type != QNN_TENSOR_TYPE_STATIC) {
+      QNN_VER_PTR(tensor_)->clientBuf.data = nullptr;
+    } else if (copy_data) {
       owned_data_ = std::make_unique<char[]>(bytes);
       const char* src_data = static_cast<const char*>(data);
       std::memcpy(owned_data_.get(), src_data, bytes);

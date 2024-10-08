@@ -37,9 +37,11 @@ class XNNPartitionerConfig(PartitionerConfig):
     types they want to enable
     """
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         super().__init__()
         self.enabled_precision_types = self.supported_precision_types()
+        # Flag used in GEMMConfig()
+        self.force_fp32_dynamic_linear = kwargs.get("force_fp32_dynamic_linear", False)
 
     def get_partition(
         self, node: torch.fx.Node, ep: ExportedProgram

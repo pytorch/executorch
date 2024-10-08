@@ -30,10 +30,22 @@
 #include <type_traits>
 #include <vector>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace vulkan {
 namespace {
+
+using executorch::runtime::ArrayRef;
+using executorch::runtime::Backend;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::kTensorDimensionLimit;
+using executorch::runtime::Result;
 
 using namespace vkcompute;
 
@@ -357,7 +369,7 @@ class GraphBuilder {
 bool maybe_resize_input(
     ComputeGraph* graph,
     const size_t input_i,
-    exec_aten::Tensor& et_tensor) {
+    executorch::aten::Tensor& et_tensor) {
   ValueRef in_tensor_ref = graph->inputs()[input_i].value;
   vTensorPtr in_tensor = graph->get_tensor(in_tensor_ref);
 
@@ -392,17 +404,18 @@ bool maybe_resize_input(
 void maybe_resize_output(
     ComputeGraph* graph,
     const size_t output_i,
-    exec_aten::Tensor& et_tensor) {
+    executorch::aten::Tensor& et_tensor) {
   ValueRef out_tensor_ref = graph->outputs()[output_i].value;
   vTensorPtr out_tensor = graph->get_tensor(out_tensor_ref);
 
-  exec_aten::SizesType new_output_size[kTensorDimensionLimit];
+  executorch::aten::SizesType new_output_size[kTensorDimensionLimit];
   size_t ndim = out_tensor->sizes().size();
   for (int i = 0; i < ndim; ++i) {
     new_output_size[i] = out_tensor->sizes()[i];
   }
 
-  exec_aten::ArrayRef<exec_aten::SizesType> output_size{new_output_size, ndim};
+  executorch::aten::ArrayRef<executorch::aten::SizesType> output_size{
+      new_output_size, ndim};
   Error err = resize_tensor(et_tensor, output_size);
 
   ET_CHECK_MSG(err == Error::Ok, "Failed to resize output tensor.");
@@ -555,5 +568,5 @@ static auto success_with_compiler = register_backend(backend);
 
 } // namespace
 } // namespace vulkan
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

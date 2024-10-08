@@ -4,9 +4,9 @@ This example demonstrates how to run a [Phi-3-mini](https://huggingface.co/micro
 # Instructions
 ## Step 1: Setup
 1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch. For installation run `./install_requirements.sh --pybind xnnpack`
-2. To export Phi-3-mini, we need this [PR](https://github.com/huggingface/transformers/pull/32339). Install transformers from master with the following command:
+2. Currently, we support transformers v4.44.2. Install transformers with the following command:
 ```
-pip uninstall -y transformers ; pip install git+https://github.com/huggingface/transformers
+pip uninstall -y transformers ; pip install transformers==4.44.2
 ```
 ## Step 2: Prepare and run the model
 1. Download the `tokenizer.model` from HuggingFace and create `tokenizer.bin`.
@@ -53,5 +53,14 @@ cmake --build cmake-out/examples/models/phi-3-mini -j16 --config Release
 ```
 - Run model. Options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/phi-3-mini/main.cpp#L13-L30)
 ```
-cmake-out/examples/models/phi-3-mini/phi_3_mini_runner --model_path=<model pte file> --tokenizer_path=<tokenizer.bin> --seq_len=128 --prompt=<prompt>
+cmake-out/examples/models/phi-3-mini/phi_3_mini_runner \
+    --model_path=phi-3-mini.pte \
+    --tokenizer_path=tokenizer.bin \
+    --seq_len=128 \
+    --temperature=0 \
+    --prompt="<|system|>
+You are a helpful assistant.<|end|>
+<|user|>
+What is the capital of France?<|end|>
+<|assistant|>"
 ```

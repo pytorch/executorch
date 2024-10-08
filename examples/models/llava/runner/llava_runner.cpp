@@ -20,9 +20,11 @@
 #include <sstream>
 #include <vector>
 
-using ::executorch::extension::llm::Stats;
+namespace llm = ::executorch::extension::llm;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::Result;
 
-namespace torch::executor {
+namespace example {
 
 bool LlavaRunner::is_loaded() {
   bool instantiated = tokenizer_ && text_decoder_runner_ && text_prefiller_ &&
@@ -38,10 +40,10 @@ Error LlavaRunner::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
-  stats_.model_load_start_ms = util::time_in_ms();
+  stats_.model_load_start_ms = llm::time_in_ms();
 
   // Load the tokenizer
-  tokenizer_ = std::make_unique<BPETokenizer>();
+  tokenizer_ = std::make_unique<llm::BPETokenizer>();
   tokenizer_->load(tokenizer_path_);
 
   // Load the text decoder runner
@@ -50,7 +52,7 @@ Error LlavaRunner::load() {
   text_decoder_runner_->load();
 
   // Load the text prefiller
-  text_prefiller_ = std::make_unique<TextPrefiller>(
+  text_prefiller_ = std::make_unique<llm::TextPrefiller>(
       text_decoder_runner_.get(),
       /*use_kv_cache=*/true,
       /*enable_parallel_prefill=*/true);
@@ -60,7 +62,7 @@ Error LlavaRunner::load() {
   image_prefiller_->load();
 
   // Load the text token generator
-  text_token_generator_ = std::make_unique<TextTokenGenerator>(
+  text_token_generator_ = std::make_unique<llm::TextTokenGenerator>(
       tokenizer_.get(),
       text_decoder_runner_.get(),
       /*use_kv_cache=*/true,
@@ -68,12 +70,12 @@ Error LlavaRunner::load() {
           std::unordered_set<uint64_t>{tokenizer_->eos_tok()}),
       &stats_);
 
-  stats_.model_load_end_ms = util::time_in_ms();
+  stats_.model_load_end_ms = llm::time_in_ms();
   return Error::Ok;
 }
 
 Error LlavaRunner::prefill_images(
-    std::vector<Image>& images,
+    std::vector<llm::Image>& images,
     int64_t& start_pos) {
   for (auto& image : images) {
     // pos is updated inside image prefill.
@@ -108,8 +110,8 @@ Error LlavaRunner::generate_from_pos(
 
   uint64_t prefill_next_token =
       ET_UNWRAP(prefill_prompt(prompt, start_pos, /*bos=*/0, /*eos*/ 0));
-  stats_.first_token_ms = util::time_in_ms();
-  stats_.prompt_eval_end_ms = util::time_in_ms();
+  stats_.first_token_ms = llm::time_in_ms();
+  stats_.prompt_eval_end_ms = llm::time_in_ms();
   stats_.num_prompt_tokens = start_pos;
 
   // Generate tokens
@@ -125,11 +127,11 @@ Error LlavaRunner::generate_from_pos(
 }
 
 Error LlavaRunner::generate(
-    std::vector<Image> images,
+    std::vector<llm::Image> images,
     const std::string& prompt,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback,
+    std::function<void(const llm::Stats&)> stats_callback,
     bool echo) {
   ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
   if (!is_loaded()) {
@@ -139,12 +141,12 @@ Error LlavaRunner::generate(
   ET_LOG(
       Info,
       "RSS after loading model: %f MiB (0 if unsupported)",
-      util::get_rss_bytes() / 1024.0 / 1024.0);
+      llm::get_rss_bytes() / 1024.0 / 1024.0);
 
   // Wrap the token_callback with print function
   std::function<void(const std::string&)> wrapped_callback =
       [token_callback](const std::string& piece) {
-        util::safe_printf(piece.c_str());
+        llm::safe_printf(piece.c_str());
         fflush(stdout);
         if (token_callback) {
           token_callback(piece);
@@ -152,7 +154,7 @@ Error LlavaRunner::generate(
       };
 
   int64_t pos = 0;
-  stats_.inference_start_ms = util::time_in_ms();
+  stats_.inference_start_ms = llm::time_in_ms();
 
   // prefill preset prompt
   prefill_prompt(kPresetPrompt, pos, /*bos=*/1, /*eos*/ 0);
@@ -163,21 +165,21 @@ Error LlavaRunner::generate(
   ET_LOG(
       Info,
       "RSS after prompt and image prefill: %f MiB (0 if unsupported)",
-      util::get_rss_bytes() / 1024.0 / 1024.0);
+      llm::get_rss_bytes() / 1024.0 / 1024.0);
 
   // Generate tokens
   Error err = generate_from_pos(
       prompt, seq_len, pos, wrapped_callback, stats_callback, echo);
 
-  stats_.inference_end_ms = util::time_in_ms();
+  stats_.inference_end_ms = llm::time_in_ms();
   ::executorch::llm::print_report(stats_);
 
   ET_LOG(
       Info,
       "RSS after finishing text generation: %f MiB (0 if unsupported)",
-      util::get_rss_bytes() / 1024.0 / 1024.0);
+      llm::get_rss_bytes() / 1024.0 / 1024.0);
 
   return err;
 }
 
-} // namespace torch::executor
+} // namespace example

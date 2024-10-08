@@ -83,7 +83,7 @@ ShaderLayout::ShaderLayout(ShaderLayout&& other) noexcept
 }
 
 ShaderLayout::~ShaderLayout() {
-  if (VK_NULL_HANDLE == handle_) {
+  if (handle_ == VK_NULL_HANDLE) {
     return;
   }
   vkDestroyDescriptorSetLayout(device_, handle_, nullptr);
@@ -128,7 +128,7 @@ ShaderModule::ShaderModule(ShaderModule&& other) noexcept
 }
 
 ShaderModule::~ShaderModule() {
-  if (VK_NULL_HANDLE == handle_) {
+  if (handle_ == VK_NULL_HANDLE) {
     return;
   }
   vkDestroyShaderModule(device_, handle_, nullptr);

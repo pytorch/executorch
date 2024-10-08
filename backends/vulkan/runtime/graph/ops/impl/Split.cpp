@@ -25,7 +25,7 @@ void add_split_with_sizes_default_node(
     ValueRef out_list_ref) {
   vTensorPtr t_in = graph.get_tensor(in);
 
-  VK_CHECK_COND(check_memory_layout_is(*t_in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_packed_dim_is(*t_in, WHCN::kChannelsDim));
 
   ValueListPtr out_list = graph.get_value_list(out_list_ref);
 
@@ -38,7 +38,7 @@ void add_split_with_sizes_default_node(
     ValueRef out_ref = (*out_list)[split_idx];
 
     vTensorPtr t_out = graph.get_tensor(out_ref);
-    VK_CHECK_COND(check_memory_layout_is(*t_out, utils::kChannelsPacked));
+    VK_CHECK_COND(check_packed_dim_is(*t_out, WHCN::kChannelsDim));
     VK_CHECK_COND(dim_at(*t_out, dim_index) == split_size);
   }
 
@@ -50,7 +50,7 @@ void add_split_with_sizes_default_node(
       // Doesn't need to use split_size since we have already verified that the
       // output tensor's size matches with the split_size.
       vTensorPtr t_out = graph.get_tensor(out_ref);
-      utils::ivec3 range = t_out->texture_limits();
+      utils::ivec3 range = t_out->logical_limits();
       add_copy_offset_node(graph, in, range, src_offset, dst_offset, out_ref);
 
       src_offset[0] += range[0];
@@ -61,7 +61,7 @@ void add_split_with_sizes_default_node(
 
     for (ValueRef out_ref : *out_list) {
       vTensorPtr t_out = graph.get_tensor(out_ref);
-      utils::ivec3 range = t_out->texture_limits();
+      utils::ivec3 range = t_out->logical_limits();
       add_copy_offset_node(graph, in, range, src_offset, dst_offset, out_ref);
 
       src_offset[1] += range[1];
@@ -72,7 +72,7 @@ void add_split_with_sizes_default_node(
 
     for (ValueRef out_ref : *out_list) {
       vTensorPtr t_out = graph.get_tensor(out_ref);
-      utils::ivec3 range = t_out->texture_limits();
+      utils::ivec3 range = t_out->logical_limits();
       add_copy_offset_node(graph, in, range, src_offset, dst_offset, out_ref);
 
       src_offset[2] += range[2];

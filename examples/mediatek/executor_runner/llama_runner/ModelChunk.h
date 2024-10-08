@@ -16,7 +16,7 @@
 
 #include "MultiModelLoader.h"
 
-namespace torch::executor {
+namespace example {
 
 struct BufferInfo {
   void* data = nullptr;
@@ -91,7 +91,7 @@ class ModelChunk : protected MultiTokenSizeModelLoader {
   // Release allocated buffers for model IOs
   void ReleaseIoBuffers();
 
-  Method& GetModelMethod();
+  executorch::runtime::Method& GetModelMethod();
 
  private:
   // Override the virtual functions
@@ -119,4 +119,4 @@ class ModelChunk : protected MultiTokenSizeModelLoader {
   std::unordered_map<size_t, size_t> mModelOutToInIndexLinks;
 };
 
-} // namespace torch::executor
+} // namespace example

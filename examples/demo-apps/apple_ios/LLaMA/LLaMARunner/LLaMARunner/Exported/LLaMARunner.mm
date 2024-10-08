@@ -12,7 +12,8 @@
 #import <executorch/examples/models/llama2/runner/runner.h>
 #import <executorch/examples/models/llava/runner/llava_runner.h>
 
-using namespace ::torch::executor;
+using executorch::extension::llm::Image;
+using executorch::runtime::Error;
 
 NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
 NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
@@ -21,7 +22,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
 @end
 
 @implementation LLaMARunner {
-  std::unique_ptr<Runner> _runner;
+  std::unique_ptr<example::Runner> _runner;
 }
 
 - (instancetype)initWithModelPath:(NSString*)modelPath
@@ -29,7 +30,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
   self = [super init];
   if (self) {
     [ExecuTorchLog.sharedLog addSink:self];
-    _runner = std::make_unique<Runner>(
+    _runner = std::make_unique<example::Runner>(
         modelPath.UTF8String, tokenizerPath.UTF8String);
   }
   return self;
@@ -109,7 +110,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
 @end
 
 @implementation LLaVARunner {
-  std::unique_ptr<LlavaRunner> _runner;
+  std::unique_ptr<example::LlavaRunner> _runner;
 }
 
 - (instancetype)initWithModelPath:(NSString*)modelPath
@@ -117,7 +118,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
   self = [super init];
   if (self) {
     [ExecuTorchLog.sharedLog addSink:self];
-    _runner = std::make_unique<LlavaRunner>(
+    _runner = std::make_unique<example::LlavaRunner>(
         modelPath.UTF8String, tokenizerPath.UTF8String);
   }
   return self;
@@ -144,39 +145,27 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
   return YES;
 }
 
-- (BOOL)generate:(NSArray<UIImage*>*)images
+- (BOOL)generate:(void*)imageBuffer
+                width:(CGFloat)width
+               height:(CGFloat)height
                prompt:(NSString*)prompt
        sequenceLength:(NSInteger)seq_len
     withTokenCallback:(nullable void (^)(NSString*))callback
                 error:(NSError**)error {
-  std::vector<Image> rawImages;
-  rawImages.reserve(images.count);
-
-  for (UIImage* image in images) {
-    CGImageRef cgImage = image.CGImage;
-    const int32_t width = CGImageGetWidth(cgImage);
-    const int32_t height = CGImageGetHeight(cgImage);
-    std::vector<uint8_t> buffer(height * width * 4);
-    CGContextRef context = CGBitmapContextCreate(
-        buffer.data(),
-        width,
-        height,
-        8,
-        width * 4,
-        CGColorSpaceCreateDeviceRGB(),
-        kCGImageAlphaPremultipliedLast);
-    CGContextDrawImage(context, CGRectMake(0, 0, width, height), cgImage);
-    CGContextRelease(context);
-    rawImages.push_back({std::move(buffer), width, height, 4});
-  }
+  const auto* data = static_cast<uint8_t*>(imageBuffer);
   const auto status = _runner->generate(
-      std::move(rawImages),
+      {Image{
+          std::vector<uint8_t>(
+              data, data + (int32_t)width * (int32_t)height * 3),
+          (int32_t)width,
+          (int32_t)height,
+          3}},
       prompt.UTF8String,
       seq_len,
       [callback](const std::string& token) { callback(@(token.c_str())); });
   if (status != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:LLaVARunnerErrorDomain
+      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
                                    code:(NSInteger)status
                                userInfo:nil];
       return NO;

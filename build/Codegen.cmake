@@ -154,7 +154,7 @@ function(gen_custom_ops_aot_lib)
   if(TARGET portable_lib)
     target_link_libraries(${GEN_LIB_NAME} PRIVATE portable_lib)
   else()
-    target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_no_prim_ops)
+    target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_core)
   endif()
 endfunction()
 

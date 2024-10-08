@@ -20,7 +20,7 @@
 #include "llm_helper/include/rotary_embedding.h"
 #include "llm_helper/include/token_embedding.h"
 
-namespace torch::executor {
+namespace example {
 
 class LlamaRuntime {
  public:
@@ -56,4 +56,4 @@ class LlamaRuntime {
   size_t mTokenIndex = 0;
 };
 
-} // namespace torch::executor
+} // namespace example

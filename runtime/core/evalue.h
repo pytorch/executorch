@@ -248,7 +248,9 @@ struct EValue {
           decltype(*std::forward<T>(value)),
           EValue>::value>::type* = 0) {
     ET_CHECK_MSG(value != nullptr, "Pointer is null.");
-    *this = EValue(*std::forward<T>(value));
+    // Note that this ctor does not initialize this->tag directly; it is set by
+    // moving in the new value.
+    moveFrom(*std::forward<T>(value));
   }
 
   // Delete constructor for raw pointers to ensure they cannot be used.

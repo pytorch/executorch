@@ -134,8 +134,8 @@ Tensor& opt_sub_out(
           }
         });
       });
+      return out;
     }
-    return out;
   }
 
   auto selected_optimized_path = select_optimized_path(a, b, out);

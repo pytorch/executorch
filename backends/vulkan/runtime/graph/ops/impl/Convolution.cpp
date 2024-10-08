@@ -106,9 +106,9 @@ ValueRef prepack_biases(
       graph.create_local_wg_size(v),
       vref,
       v,
-      {t->sizes_ubo(), t->axis_mapping_ubo()},
+      {t->sizes_ubo(), t->axis_map_ubo()},
       // Specialization constants
-      {SV(t->packed_dim_whcn_idx())}));
+      {SV(t->packed_dim())}));
 
   return v;
 }
@@ -216,14 +216,14 @@ ValueRef prepack_weights(
        graph.create_params_buffer(
            utils::make_ivec4(original_sizes, /*reverse = */ true))},
       // Specialization constants
-      {SV(t->packed_dim_whcn_idx())}));
+      {SV(t->packed_dim())}));
 
   return v;
 }
 
 void check_conv_args(const api::vTensor& in, const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
+  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
 }
 
 struct Conv2dParams final {
@@ -291,7 +291,7 @@ utils::uvec3 create_conv2d_global_wg_size(
     const Conv2dMethod method,
     const ValueRef out) {
   if (method == Conv2dMethod::Pointwise) {
-    const utils::uvec3 image_extents = graph.image_extents_of(out);
+    const utils::uvec3 image_extents = graph.logical_limits_of(out);
     return {
         utils::div_up(image_extents[0u], 2u),
         utils::div_up(image_extents[1u], 2u),
@@ -376,7 +376,7 @@ void add_conv2d_node(
        {{arg_in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {
-          t_out->texture_limits_ubo(),
+          t_out->logical_limits_ubo(),
           t_in->sizes_ubo(),
           graph.create_params_buffer(kernel_params),
           graph.create_params_buffer(extra_params),
@@ -444,7 +444,7 @@ void add_conv1d_node(
   int32_t out_group_size = static_cast<int64_t>(out_channels / groups_val);
 
   utils::uvec3 global_size = {1, static_cast<uint32_t>(out_channels), 1};
-  utils::uvec3 local_size = {1, 1, 1};
+  utils::uvec3 local_size = {1, 64, 1};
 
   Kernel1dParams kernel_params = {
       kernel_size,
@@ -474,8 +474,12 @@ void add_conv1d_node(
        {{arg_in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {
-          t_out->texture_limits_ubo(),
+          t_out->logical_limits_ubo(),
           t_in->sizes_ubo(),
+          t_out->axis_map_ubo(),
+          t_in->axis_map_ubo(),
+          t_weight->axis_map_ubo(),
+          t_bias->axis_map_ubo(),
           graph.create_params_buffer(kernel_params),
           graph.create_params_buffer(out_params),
       },

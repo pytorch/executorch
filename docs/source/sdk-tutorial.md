@@ -1,3 +1,3 @@
 ## Developer Tools Usage Tutorial
 
-Please refer to the [Developer Tools tutorial](./tutorials/sdk-integration-tutorial) for a walkthrough on how to profile a model in ExecuTorch using the Developer Tools.
+Please update your link to <https://pytorch.org/executorch/main/devtools-tutorial.html>. This URL will be deleted after v0.4.0.

@@ -21,16 +21,16 @@ class ComputeGraph;
  * access permission.
  */
 struct ArgGroup {
-  ArgGroup(const ValueRef ref, const vkapi::MemoryAccessType access)
+  ArgGroup(const ValueRef ref, const vkapi::MemoryAccessFlags access)
       : refs{ref}, access(access) {}
 
   ArgGroup(
       const std::vector<ValueRef>& refs,
-      const vkapi::MemoryAccessType access)
+      const vkapi::MemoryAccessFlags access)
       : refs(refs), access(access) {}
 
   const std::vector<ValueRef> refs;
-  const vkapi::MemoryAccessType access;
+  const vkapi::MemoryAccessFlags access;
 };
 
 /*

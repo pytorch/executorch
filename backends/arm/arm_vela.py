@@ -50,7 +50,12 @@ def vela_compile(tosa_graph, args: List[str]):
         args.append(tosa_path)
         vela.main(" ".join(args).split(" "))
 
-        np_path = os.path.join(output_dir, "out_sg0_vela.npz")
+        if any("ethos-u85" in arg for arg in args) or any(
+            "debug-force-regor" in arg for arg in args
+        ):
+            np_path = os.path.join(tmpdir, "output", "out_vela.npz")
+        else:
+            np_path = os.path.join(tmpdir, "output", "out_sg0_vela.npz")
         blocks = b""
 
         with np.load(np_path, allow_pickle=False) as data:

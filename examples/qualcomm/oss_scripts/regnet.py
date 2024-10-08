@@ -6,14 +6,13 @@
 
 import json
 import os
-import sys
 from multiprocessing.connection import Client
 
 import numpy as np
-import torch
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_imagenet_dataset,
     make_output_dir,
     parse_skip_delegation_node,
     setup_common_args_and_variables,
@@ -29,41 +28,6 @@ from torchvision.models import (
 )
 
 
-def get_dataset(dataset_path, data_size):
-    from torchvision import datasets, transforms
-
-    def get_data_loader():
-        preprocess = transforms.Compose(
-            [
-                transforms.Resize(256),
-                transforms.CenterCrop(224),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),
-            ]
-        )
-        imagenet_data = datasets.ImageFolder(dataset_path, transform=preprocess)
-        return torch.utils.data.DataLoader(
-            imagenet_data,
-            shuffle=True,
-        )
-
-    # prepare input data
-    inputs, targets, input_list = [], [], ""
-    data_loader = get_data_loader()
-    for index, data in enumerate(data_loader):
-        if index >= data_size:
-            break
-        feature, target = data
-        inputs.append((feature,))
-        for element in target:
-            targets.append(element)
-        input_list += f"input_{index}_0.raw\n"
-
-    return inputs, targets, input_list
-
-
 def main(args):
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
 
@@ -77,9 +41,11 @@ def main(args):
         )
 
     data_num = 100
-    inputs, targets, input_list = get_dataset(
+    inputs, targets, input_list = get_imagenet_dataset(
         dataset_path=f"{args.dataset}",
         data_size=data_num,
+        image_shape=(256, 256),
+        crop_size=224,
     )
 
     if args.weights == "regnet_y_400mf":
@@ -97,11 +63,14 @@ def main(args):
         args.model,
         f"{args.artifact}/{pte_filename}",
         inputs,
+        skip_node_id_set=skip_node_id_set,
+        skip_node_op_set=skip_node_op_set,
         quant_dtype=QuantDtype.use_8a8w,
+        shared_buffer=args.shared_buffer,
     )
 
     if args.compile_only:
-        sys.exit(0)
+        return
 
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),

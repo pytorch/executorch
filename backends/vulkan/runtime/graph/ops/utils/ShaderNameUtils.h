@@ -29,10 +29,8 @@ void add_dtype_suffix(std::string& kernel_name, const api::vTensor& tensor);
 void add_ndim_suffix(std::string& kernel_name, const size_t ndim);
 void add_ndim_suffix(std::string& kernel_name, const api::vTensor& tensor);
 
-void add_memory_layout_suffix(
-    std::string& kernel_name,
-    const utils::GPUMemoryLayout layout);
-void add_memory_layout_suffix(
+void add_packed_dim_suffix(std::string& kernel_name, const int32_t packed_dim);
+void add_packed_dim_suffix(
     std::string& kernel_name,
     const api::vTensor& tensor);
 

@@ -5,8 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
+import warnings
 from collections import OrderedDict
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Set, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 
@@ -33,6 +34,9 @@ from executorch.backends.qualcomm.passes.convert_interpolate_with_upsample2d imp
 )
 from executorch.backends.qualcomm.passes.convert_prelu import ConvertPReLU
 from executorch.backends.qualcomm.passes.convert_to_linear import ConvertToLinear
+from executorch.backends.qualcomm.passes.expand_broadcast_tensor_shape import (
+    ExpandBroadcastTensorShape,
+)
 from executorch.backends.qualcomm.passes.fold_qdq import FoldQDQ
 from executorch.backends.qualcomm.passes.i64_to_i32 import I64toI32
 from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
@@ -60,7 +64,10 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_serialize impor
     convert_to_flatbuffer,
     convert_to_option,
 )
-from executorch.backends.qualcomm.utils.constants import QCOM_QNN_COMPILE_SPEC
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_PASS_EXPAND_BROADCAST_SHAPE,
+    QCOM_QNN_COMPILE_SPEC,
+)
 
 from executorch.exir import ExirExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -267,7 +274,10 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
     return source_decompositions
 
 
-def _transform(edge_program: ExportedProgram) -> None:
+def _transform(
+    edge_program: ExportedProgram, custom_pass_config: Set[str] = None
+) -> None:
+    custom_pass_config = custom_pass_config or {}
     # currently ExirExportedProgram.transform does not accept
     # changes of input number which was caused by FoldQDQ
     # apply passes one by one here to avoid IR capture failure
@@ -284,6 +294,10 @@ def _transform(edge_program: ExportedProgram) -> None:
     AnnotateAndQuantScalar(edge_program)(graph_module)
     AnnotateDecomposed(edge_program)(graph_module)
     FoldQDQ()(graph_module)
+    # this pass is not necessary for network without layout-sensitive ops
+    # enable defaultly will introduce overhead from extra view_copy nodes
+    if QCOM_PASS_EXPAND_BROADCAST_SHAPE in custom_pass_config:
+        ExpandBroadcastTensorShape()(graph_module)
     LayoutTransform(edge_program)(graph_module)
     ReplaceIndexPutInput(edge_program)(graph_module)
 
@@ -298,6 +312,7 @@ def _transform(edge_program: ExportedProgram) -> None:
 def capture_program(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
+    custom_pass_config: Set[str] = None,
 ) -> exir.ExirExportedProgram:
     ep = torch.export.export(module, inputs)
     decomposed_ep = ep.run_decompositions(get_decomp_table())
@@ -309,7 +324,7 @@ def capture_program(
     core_ep = ExirExportedProgram(decomposed_ep, False)
     core_ep.transform(ConvertBinaryOpsWithScalar())
     edge_ep = core_ep.to_edge(qnn_edge_config())
-    _transform(edge_ep.exported_program)
+    _transform(edge_ep.exported_program, custom_pass_config)
     return edge_ep
 
 
@@ -734,7 +749,7 @@ def generate_qnn_executorch_compiler_spec(
     debug: bool = False,
     saver: bool = False,
     online_prepare: bool = False,
-    tensor_dump_output_path: str = "",
+    dump_intermediate_outputs: bool = False,
     profile: bool = False,
     shared_buffer: bool = False,
     is_from_context_binary: bool = False,
@@ -756,10 +771,8 @@ def generate_qnn_executorch_compiler_spec(
         saver: Instead of compiling the model, run QNN Saver. Please check
             documents of Qualcomm AI Engine Direct SDK. This feature is usually
             for debugging purpose.
-        tensor_dump_output_path: If a path is given, Delegate would write
-            outputs of each OP there in runtime. In ALL cases,
-            we don't recommend to set this option. This option exist just
-            for debugging some accuracy issues.
+        dump_intermediate_outputs: If tensor dump is enabled, all intermediate tensors output will be dumped.
+            This option exists for debugging accuracy issues
         profile: Enable profile the performance of per operator.
             Note that for now only support kProfileDetailed to
             profile the performance of each operator with cycle unit.
@@ -777,6 +790,13 @@ def generate_qnn_executorch_compiler_spec(
     if soc_model not in _supported_soc_models:
         raise ValueError(f"unknown SoC model for QNN: {soc_model}")
 
+    if profile and dump_intermediate_outputs:
+        warnings.warn(
+            "It is not recommended to turn on both profiling and dump_intermediate_outputs the same time"
+            ", because dump_intermediate_outputs will cause performance drop.",
+            stacklevel=1,
+        )
+
     qnn_executorch_options = QnnExecuTorchOptions(
         _soc_info_table[soc_model], backend_options
     )
@@ -787,11 +807,10 @@ def generate_qnn_executorch_compiler_spec(
         else QnnExecuTorchLogLevel.kLogLevelWarn
     )
 
+    qnn_executorch_options.dump_intermediate_outputs = dump_intermediate_outputs
+
     if saver:
         qnn_executorch_options.library_path = "libQnnSaver.so"
-
-    if len(tensor_dump_output_path.strip()) != 0:
-        qnn_executorch_options.tensor_dump_output_path = tensor_dump_output_path
 
     if profile:
         qnn_executorch_options.profile_level = (

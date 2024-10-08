@@ -317,7 +317,7 @@ public class SettingsActivity extends AppCompatActivity {
       }
       return result;
     }
-    return null;
+    return new String[] {};
   }
 
   private void setupModelTypeSelectorDialog() {
@@ -344,9 +344,11 @@ public class SettingsActivity extends AppCompatActivity {
   }
 
   private void setupTokenizerSelectorDialog() {
-    String[] binFiles = listLocalFile(MODEL_PATH, ".bin");
-    String[] tokenizerFiles = new String[binFiles.length];
+    String[] binFiles = listLocalFile("/data/local/tmp/llama/", ".bin");
+    String[] modelFiles = listLocalFile("/data/local/tmp/llama/", ".model");
+    String[] tokenizerFiles = new String[binFiles.length + modelFiles.length];
     System.arraycopy(binFiles, 0, tokenizerFiles, 0, binFiles.length);
+    System.arraycopy(modelFiles, 0, tokenizerFiles, binFiles.length, modelFiles.length);
     AlertDialog.Builder tokenizerPathBuilder = new AlertDialog.Builder(this);
     tokenizerPathBuilder.setTitle("Select tokenizer path");
     tokenizerPathBuilder.setSingleChoiceItems(

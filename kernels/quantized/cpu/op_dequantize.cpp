@@ -168,6 +168,19 @@ Tensor& dequantize_per_tensor_tensor_args_out(
   return out;
 }
 
+float get_scale(const Tensor& scale, size_t channel_ix) {
+  ET_CHECK_MSG(
+      (scale.scalar_type() == ScalarType::Double) ||
+          (scale.scalar_type() == ScalarType::Float),
+      "scale.scalar_type() %" PRId8 " is not double or float type",
+      static_cast<int8_t>(scale.scalar_type()));
+  if (scale.scalar_type() == ScalarType::Double) {
+    return static_cast<float>(scale.const_data_ptr<double>()[channel_ix]);
+  } else {
+    return scale.const_data_ptr<float>()[channel_ix];
+  }
+}
+
 Tensor& dequantize_per_channel_out(
     const Tensor& input,
     const Tensor& scale,
@@ -178,8 +191,6 @@ Tensor& dequantize_per_channel_out(
     ScalarType dtype,
     exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
-  torch::executor::Error err = resize_tensor(out, input.sizes());
-
   // normalize axis
   ET_CHECK_MSG(
       tensor_has_dim(input, axis),
@@ -190,15 +201,6 @@ Tensor& dequantize_per_channel_out(
   if (axis < 0) {
     axis += nonzero_dim(input);
   }
-
-  ET_CHECK_MSG(
-      err == torch::executor::Error::Ok,
-      "Failed to resize out Tensor in dequantize_per_channel_out");
-
-  ET_CHECK_MSG(
-      scale.scalar_type() == ScalarType::Float,
-      "scale.scalar_type() %" PRId8 " is not float type",
-      static_cast<int8_t>(scale.scalar_type()));
 
   ET_CHECK_MSG(
       scale.numel() == input.size(axis),
@@ -232,7 +234,6 @@ Tensor& dequantize_per_channel_out(
       dims[i] = i + 1;
     }
   }
-  const float* scale_data = scale.const_data_ptr<float>();
   const int64_t* zero_point_data;
   if (opt_zero_points.has_value()) {
     zero_point_data = opt_zero_points.value().const_data_ptr<int64_t>();
@@ -260,11 +261,11 @@ Tensor& dequantize_per_channel_out(
           axis == 0, "Axis must be 0 for a single dimensional tensors");       \
       const optional<int64_t> dim;                                             \
       apply_over_dim(                                                          \
-          [input_data_ptr, out_data_ptr, scale_data, zero_point_data](         \
+          [input_data_ptr, out_data_ptr, zero_point_data, &scale](             \
               size_t numel, size_t stride, size_t base_ix) {                   \
             for (size_t i = 0; i < numel; i++) {                               \
               size_t current_ix = base_ix * stride + i;                        \
-              float _scale = scale_data[current_ix];                           \
+              float _scale = get_scale(scale, current_ix);                     \
               int64_t zero_point = 0;                                          \
               if (zero_point_data != nullptr) {                                \
                 zero_point = zero_point_data[current_ix];                      \
@@ -280,7 +281,7 @@ Tensor& dequantize_per_channel_out(
       break;                                                                   \
     }                                                                          \
     for (size_t channel_ix = 0; channel_ix < input.size(axis); ++channel_ix) { \
-      float _scale = scale_data[channel_ix];                                   \
+      float _scale = get_scale(scale, channel_ix);                             \
       int64_t _zero_point = 0;                                                 \
       if (zero_point_data != nullptr) {                                        \
         _zero_point = zero_point_data[channel_ix];                             \
@@ -335,6 +336,11 @@ Tensor& dequantize_per_channel_out(
     exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   (void)context;
+  torch::executor::Error err = resize_tensor(out, input.sizes());
+  ET_CHECK_MSG(
+      err == torch::executor::Error::Ok,
+      "Failed to resize out Tensor in dequantize_per_channel_out");
+
   return dequantize_per_channel_out(
       input,
       scale,
@@ -379,6 +385,79 @@ Tensor& dequantize_per_tensor_tensor_args_out(
   (void)context;
   return dequantize_per_tensor_tensor_args_out(
       input, scale, zero_point, quant_min, quant_max, dtype, out_dtype, out);
+}
+
+Tensor& dequantize_per_token_out(
+    const Tensor& input,
+    const Tensor& scale,
+    const Tensor& zero_points,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    ScalarType out_dtype,
+    Tensor& out) {
+  // Refactor this into a util
+  size_t num_channels = 1;
+  for (size_t i = 0; i < input.dim() - 1; i++) {
+    num_channels *= input.size(i);
+  }
+  // This unfortunate change is needed because we compile op_quantize for aten
+  // mode as well
+  std::array<exec_aten::SizesType, 2> input_sizes;
+  input_sizes[0] = static_cast<exec_aten::SizesType>(num_channels);
+  input_sizes[1] =
+      static_cast<exec_aten::SizesType>(input.size(input.dim() - 1));
+#ifdef USE_ATEN_LIB
+  Tensor reshaped_input = at::from_blob(
+      input.mutable_data_ptr(),
+      input_sizes,
+      at::TensorOptions(input.scalar_type()));
+#else
+  std::array<exec_aten::DimOrderType, 2> input_dim_order{0, 1};
+  std::array<exec_aten::StridesType, 2> input_strides;
+  dim_order_to_stride_nocheck(
+      input_sizes.data(), input_dim_order.data(), 2, input_strides.data());
+  void* input_data = input.mutable_data_ptr();
+  TensorImpl reshaped_input_impl = TensorImpl(
+      input.scalar_type(),
+      2,
+      input_sizes.data(),
+      input_data,
+      input_dim_order.data(),
+      input_strides.data(),
+      TensorShapeDynamism::STATIC);
+  Tensor reshaped_input(&reshaped_input_impl);
+  torch::executor::Error err = resize_tensor(out, input.sizes());
+  ET_CHECK_MSG(
+      err == torch::executor::Error::Ok,
+      "Failed to resize out Tensor in dequantize_per_channel_out");
+#endif
+
+  return dequantize_per_channel_out(
+      reshaped_input,
+      scale,
+      zero_points,
+      0, /* axis */
+      quant_min,
+      quant_max,
+      dtype,
+      out_dtype,
+      out);
+}
+
+Tensor& dequantize_per_token_out(
+    RuntimeContext& context,
+    const Tensor& input,
+    const Tensor& scale,
+    const Tensor& zero_points,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    ScalarType out_dtype,
+    Tensor& out) {
+  (void)context;
+  return dequantize_per_token_out(
+      input, scale, zero_points, quant_min, quant_max, dtype, out_dtype, out);
 }
 
 } // namespace native

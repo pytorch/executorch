@@ -97,8 +97,26 @@ DEFINE_int32(
     262144, // 256 KB
     "Size of the debug buffer in bytes to allocate for intermediate outputs and program outputs logging.");
 
-using namespace torch::executor;
-using torch::executor::util::FileDataLoader;
+using executorch::etdump::ETDumpGen;
+using executorch::etdump::ETDumpResult;
+using executorch::extension::BufferCleanup;
+using executorch::extension::BufferDataLoader;
+using executorch::extension::FileDataLoader;
+using executorch::runtime::DataLoader;
+using executorch::runtime::EValue;
+using executorch::runtime::Error;
+using executorch::runtime::EventTracerDebugLogLevel;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::HierarchicalAllocator;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::MemoryManager;
+using executorch::runtime::Method;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::Span;
+
+namespace bundled_program = executorch::bundled_program;
 
 int main(int argc, char** argv) {
   {
@@ -113,7 +131,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  runtime_init();
+  executorch::runtime::runtime_init();
 
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
@@ -144,20 +162,20 @@ int main(int argc, char** argv) {
   // Find the offset to the embedded Program.
   const void* program_data;
   size_t program_data_len;
-  Error status = torch::executor::bundled_program::GetProgramData(
+  Error status = bundled_program::get_program_data(
       const_cast<void*>(file_data->data()),
       file_data->size(),
       &program_data,
       &program_data_len);
   ET_CHECK_MSG(
       status == Error::Ok,
-      "GetProgramData() failed on file '%s': 0x%x",
+      "get_program_data() failed on file '%s': 0x%x",
       model_path,
       (unsigned int)status);
 
   // Wrap the buffer in a DataLoader.
   auto buffer_data_loader =
-      util::BufferDataLoader(program_data, program_data_len);
+      BufferDataLoader(program_data, program_data_len);
 
   // Parse the program file. This is immutable, and can also be reused between
   // multiple execution invocations across multiple threads.
@@ -239,7 +257,7 @@ int main(int argc, char** argv) {
   // be used by a single thread at at time, but it can be reused.
   //
 
-  torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();
+  ETDumpGen etdump_gen;
   Result<Method> method =
       program->load_method(method_name, &memory_manager, &etdump_gen);
   ET_CHECK_MSG(
@@ -263,11 +281,11 @@ int main(int argc, char** argv) {
   }
 
   // Prepare the inputs.
-  std::unique_ptr<util::BufferCleanup> inputs;
+  std::unique_ptr<BufferCleanup> inputs;
   if (FLAGS_bundled_program) {
     ET_LOG(Info, "Loading bundled program...");
     // Use the inputs embedded in the bundled program.
-    status = torch::executor::bundled_program::LoadBundledInput(
+    status = bundled_program::load_bundled_input(
         *method,
         file_data->data(),
         FLAGS_testset_idx);
@@ -278,11 +296,11 @@ int main(int argc, char** argv) {
   } else {
     ET_LOG(Info, "Loading non-bundled program...\n");
     // Use ones-initialized inputs.
-    auto inputs_result = torch::executor::util::prepare_input_tensors(*method);
+    auto inputs_result = executorch::extension::prepare_input_tensors(*method);
     if (inputs_result.ok()) {
       // Will free the inputs when destroyed.
       inputs =
-          std::make_unique<util::BufferCleanup>(std::move(inputs_result.get()));
+          std::make_unique<BufferCleanup>(std::move(inputs_result.get()));
     }
   }
   ET_LOG(Info, "Inputs prepared.");
@@ -322,14 +340,14 @@ int main(int argc, char** argv) {
   status = method->get_outputs(outputs.data(), outputs.size());
   ET_CHECK(status == Error::Ok);
   // Print the first and last 100 elements of long lists of scalars.
-  std::cout << torch::executor::util::evalue_edge_items(100);
+  std::cout << executorch::extension::evalue_edge_items(100);
   for (int i = 0; i < outputs.size(); ++i) {
     std::cout << "Output " << i << ": " << outputs[i] << std::endl;
   }
 
   // Dump the etdump data containing profiling/debugging data to the specified
   // file.
-  etdump_result result = etdump_gen.get_etdump_data();
+  ETDumpResult result = etdump_gen.get_etdump_data();
   if (result.buf != nullptr && result.size > 0) {
     FILE* f = fopen(FLAGS_etdump_path.c_str(), "w+");
     fwrite((uint8_t*)result.buf, 1, result.size, f);
@@ -362,7 +380,7 @@ int main(int argc, char** argv) {
       atol = 1e-01;
       rtol = 1e-01;
     }
-    status = torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput(
+    status = bundled_program::verify_method_outputs(
         *method,
         file_data->data(),
         FLAGS_testset_idx,

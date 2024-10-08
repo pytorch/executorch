@@ -76,7 +76,9 @@ class TestSimpleExpand(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
-    def _test_expand_tosa_u55_pipeline(self, module: torch.nn.Module, test_data: Tuple):
+    def _test_expand_ethosu_BI_pipeline(
+        self, module: torch.nn.Module, test_data: Tuple
+    ):
         quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
             ArmTester(
@@ -104,6 +106,15 @@ class TestSimpleExpand(unittest.TestCase):
 
     # Expected failure since tosa.TILE is unsupported by Vela.
     @parameterized.expand(Expand.test_parameters)
-    @unittest.expectedFailure
+    @unittest.expectedFailure  # TODO: MLBEDSW-9386
     def test_expand_u55_BI(self, test_input, multiples):
-        self._test_expand_tosa_u55_pipeline(self.Expand(), (test_input, multiples))
+        self._test_expand_ethosu_BI_pipeline(
+            self.Expand(), common.get_u55_compile_spec(), (test_input, multiples)
+        )
+
+    @parameterized.expand(Expand.test_parameters)
+    @unittest.expectedFailure  # TODO: MLBEDSW-9386
+    def test_expand_u85_BI(self, test_input, multiples):
+        self._test_expand_ethosu_BI_pipeline(
+            self.Expand(), common.get_u85_compile_spec(), (test_input, multiples)
+        )

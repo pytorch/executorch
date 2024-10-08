@@ -21,9 +21,9 @@ void check_embedding_args(
     const api::vTensor& weight,
     const api::vTensor& in,
     const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(weight, utils::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
+  VK_CHECK_COND(check_packed_dim_is(weight, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
 }
 
 void add_embedding_node(
@@ -48,7 +48,12 @@ void add_embedding_node(
       graph.create_local_wg_size(out),
       {{out, vkapi::MemoryAccessType::WRITE},
        {{in, weight}, vkapi::MemoryAccessType::READ}},
-      {t_out->sizes_ubo()}));
+      {
+          t_out->sizes_ubo(),
+          t_out->axis_map_ubo(),
+          t_in->axis_map_ubo(),
+          t_weight->axis_map_ubo(),
+      }));
 }
 
 void embedding(ComputeGraph& graph, const std::vector<ValueRef>& args) {

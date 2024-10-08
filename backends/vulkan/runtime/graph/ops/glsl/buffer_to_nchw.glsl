@@ -23,13 +23,13 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 layout(constant_id = 3) const int UNUSED_packed_dim = W_DIM;
 
 void main() {
-  int out_id = int(gl_GlobalInvocationID.x);
-  if (out_id >= numel) {
+  int nchwi = int(gl_GlobalInvocationID.x);
+  if (nchwi >= numel) {
     return;
   }
 
-  ivec4 t_in_idx = from_nchw_buffer_i(out_id, in_sizes);
-  const int in_id = to_buffer_id(t_in_idx, in_strides);
+  ivec4 in_tidx = nchwi_to_tidx(nchwi, in_sizes);
+  const int in_bufi = tidx_to_bufi(in_tidx, in_strides);
 
-  nchw_buf[out_id] = t_in[in_id];
+  nchw_buf[nchwi] = t_in[in_bufi];
 }

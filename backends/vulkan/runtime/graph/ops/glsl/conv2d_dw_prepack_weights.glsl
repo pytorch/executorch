@@ -53,7 +53,7 @@ void main() {
   }
 
   // Map tensor_idx to normal buffer_i
-  const ivec4 p0 = get_texel_nchw_buffer_ixs(idx, sizes, packed_dim);
+  const ivec4 p0 = tidx_to_nchwi(idx, sizes, packed_dim);
 
   // Compute modified tensor_idx by inverting the CPU function
   const int N = original_sizes.w;

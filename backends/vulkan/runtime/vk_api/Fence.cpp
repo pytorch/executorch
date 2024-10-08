@@ -44,7 +44,7 @@ VulkanFence& VulkanFence::operator=(VulkanFence&& other) noexcept {
 }
 
 VulkanFence::~VulkanFence() {
-  if (VK_NULL_HANDLE == handle_) {
+  if (handle_ == VK_NULL_HANDLE) {
     return;
   }
   vkDestroyFence(device_, handle_, nullptr);

@@ -23,8 +23,8 @@ void check_args(
     const api::vTensor& in,
     const std::vector<int64_t>& repeats,
     const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
+  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
 
   int64_t in_dim = in.dim();
   VK_CHECK_COND(
@@ -108,7 +108,7 @@ void add_repeat_channel_node(
       // Parameter buffers
       {graph.create_params_buffer(repeat_channel_args)},
       // Specialization Constants
-      {SV(t_out->packed_dim_whcn_idx())}));
+      {SV(t_out->packed_dim())}));
 }
 
 void add_repeat_node(
@@ -130,7 +130,7 @@ void add_repeat_node(
   // After expanding a dimension, we will update the "running_range" since we
   // will need to copy the "expanded" area.
 
-  utils::ivec3 running_range = t_in->texture_limits();
+  utils::ivec3 running_range = t_in->logical_limits();
 
   const std::vector<int64_t>& in_sizes = t_in->sizes();
 

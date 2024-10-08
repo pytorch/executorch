@@ -233,7 +233,7 @@ def export_all(llava_model: LlavaModel):
             passes=[
                 QuantFusionPass(),
             ],
-            memory_planning_pass=MemoryPlanningPass("greedy", alloc_graph_input=False),
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
             sym_shape_eval_pass={
                 "image_encoder": ConstraintBasedSymShapeEvalPass(),
                 "text_model": ConstraintBasedSymShapeEvalPass(),
@@ -273,6 +273,7 @@ def main():
     parser.add_argument(
         "--max-seq-len",
         default=768,
+        type=int,
         help="Maximum sequence length for the text model.",
     )
     parser.add_argument(

@@ -33,7 +33,7 @@ class OpIndexTensorOutTest : public OperatorTest {
       OptTensorArrayRef indices,
       Tensor& out) {
 #ifdef USE_ATEN_LIB
-    c10::List<c10::optional<at::Tensor>> indices_list(indices);
+    c10::List<std::optional<at::Tensor>> indices_list(indices);
     return torch::executor::aten::index_outf(
         context_, input, indices_list, out);
 #else
@@ -107,7 +107,7 @@ class OpIndexTensorOutTest : public OperatorTest {
 #define TEST_ENTRY(ctype, dtype) \
   test_dtype<ScalarType::dtype, ScalarType::Long, ScalarType::dtype>();
 
-    ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+    ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 
 #undef TEST_ENTRY
   }

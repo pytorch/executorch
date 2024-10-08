@@ -70,9 +70,9 @@ export ANDROID_HOME="$(realpath $DEV_HOME/sdk)"
 # Install SDK 34
 ./cmdline-tools/bin/sdkmanager --sdk_root="${ANDROID_HOME}" --install "platforms;android-34"
 # Install NDK
-./cmdline-tools/bin/sdkmanager --sdk_root="${ANDROID_HOME}" --install "ndk;25.0.8775105"
+./cmdline-tools/bin/sdkmanager --sdk_root="${ANDROID_HOME}" --install "ndk;26.3.11579264"
 # The NDK root is then under `ndk/<version>`.
-export ANDROID_NDK="$ANDROID_HOME/ndk/25.0.8775105"
+export ANDROID_NDK="$ANDROID_HOME/ndk/26.3.11579264"
 ```
 
 ### (Optional) Android Studio Setup

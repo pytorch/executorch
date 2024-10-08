@@ -26,7 +26,7 @@ using exec_aten::Tensor;
 Tensor& empty_out(
     KernelRuntimeContext& context,
     IntArrayRef size,
-    torch::executor::optional<torch::executor::MemoryFormat> memory_format,
+    exec_aten::optional<exec_aten::MemoryFormat> memory_format,
     Tensor& out) {
   (void)context;
 

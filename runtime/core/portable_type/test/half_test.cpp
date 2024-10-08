@@ -11,8 +11,8 @@
 #include <gtest/gtest.h>
 #include <cmath>
 
-namespace torch {
-namespace executor {
+using executorch::runtime::etensor::Half;
+
 namespace {
 
 /**
@@ -211,6 +211,3 @@ TEST(HalfTest, ArithmeticInt64Div) {
   EXPECT_TRUE(closeEnoughFloat16(ah / b, af / b));
   EXPECT_TRUE(closeEnoughFloat16(b / ah, b / af));
 }
-
-} // namespace executor
-} // namespace torch

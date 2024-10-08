@@ -18,6 +18,7 @@ from .qnn_constants import (
     OpDepthWiseConv2d,
     OpExpandDims,
     OpReshape,
+    OpTransposeConv2d,
     QNN_OP_PACKAGE_NAME_QTI_AISW,
 )
 from .utils import get_parameter
@@ -42,6 +43,9 @@ class Conv2d(NodeVisitor):
         padding_shape,
         dilation,
         dilation_shape,
+        output_padding=None,
+        output_padding_shape=None,
+        transpose_conv=False,
         groups=None,
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         """
@@ -68,14 +72,26 @@ class Conv2d(NodeVisitor):
             ),
             True,
         )
-        conv_op.AddTensorParam(
-            OP.param_dilation,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            len(dilation_shape),
-            dilation_shape,
-            np.array(dilation, dtype=np.uint32),
-            True,
-        )
+
+        if transpose_conv:
+            conv_op.AddTensorParam(
+                OP.param_output_padding,
+                PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+                len(output_padding_shape),
+                output_padding_shape,
+                np.array(output_padding, dtype=np.uint32),
+                True,
+            )
+        else:
+            conv_op.AddTensorParam(
+                OP.param_dilation,
+                PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+                len(dilation_shape),
+                dilation_shape,
+                np.array(dilation, dtype=np.uint32),
+                True,
+            )
+
         if groups is not None:
             conv_op.AddScalarParam(
                 OP.param_group,
@@ -94,6 +110,11 @@ class Conv2d(NodeVisitor):
         Conv1D is a special case for convolutional operation. QNN does not support Conv1D, therefore,
         we need to cast from input -> Conv1d -> output to input -> unsqueeze -> Conv2d -> squeeze -> output.
         """
+        transpose_conv = cast(bool, node.args[6])
+        if transpose_conv:
+            print("ConvTranspose1d is not yet supported")
+            return
+
         op_wrapper_list = []  # op_wrapper to return
         unsqueeze_input_node = node.args[0]
         input_quant_encoding, input_quant_configs = self.get_quant_encoding_conf(
@@ -239,9 +260,9 @@ class Conv2d(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[str, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-
         if get_parameter(node.args[1], self.edge_program).dim() == 3:
             return self._define_conv1d(node, nodes_to_wrappers)
+
         input_node = node.args[0]
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
@@ -254,8 +275,9 @@ class Conv2d(NodeVisitor):
 
         filter_node = node.args[1]
         filter_tensor = get_parameter(filter_node, self.edge_program)
-        # weight of pytorch OIHW, yet QNN is HWIO
-        filter_axis_order = (2, 3, 1, 0)
+        # weight of pytorch OIHW(conv2d) | IOHW(conv_transpose2d), yet QNN is HWIO
+        is_transpose_conv = cast(bool, node.args[6])
+        filter_axis_order = (2, 3, 0, 1) if is_transpose_conv else (2, 3, 1, 0)
         filter_tensor = filter_tensor.permute(dims=filter_axis_order).contiguous()
         filter_tensor_wrapper = self.define_tensor(
             filter_node,
@@ -291,6 +313,7 @@ class Conv2d(NodeVisitor):
         stride = cast(List[int], node.args[3])
         padding = cast(List[int], node.args[4])
         dilation = cast(List[int], node.args[5])
+        output_padding = cast(List[int], node.args[7])
 
         groups = cast(int, node.args[8])
         # Qnn filter tensor is (H, W, Cin, Cout)
@@ -308,57 +331,38 @@ class Conv2d(NodeVisitor):
         if len(padding) == 1:
             padding = padding + padding
 
-        # args[6] = transposed
-        if cast(bool, node.args[6]):
-            print("Currently, No support for transposed convolution")
-            return
-
-        # args[7] = output padding
-        if not all(out_pad == 0 for out_pad in cast(List[int], node.args[7])):
-            print("QNN does not support output padding")
-            return
-
         stride_shape = [len(stride)]
         padding_shape = [2, 2]
         dilation_shape = [len(dilation)]
+        output_padding_shape = [len(output_padding)]
 
         if is_depthwise_conv:
-            conv_op = PyQnnWrapper.PyQnnOpWrapper(
-                node.name,
-                QNN_OP_PACKAGE_NAME_QTI_AISW,
-                OpDepthWiseConv2d.op_name,
-            )
-            conv_op = self._add_conv_op_parameter(
-                OpDepthWiseConv2d,
-                conv_op,
-                conv_input_tensors,
-                conv_output_tensors,
-                stride,
-                stride_shape,
-                padding,
-                padding_shape,
-                dilation,
-                dilation_shape,
-            )
-
+            op_class = OpDepthWiseConv2d
+        elif is_transpose_conv:
+            op_class = OpTransposeConv2d
         else:
-            conv_op = PyQnnWrapper.PyQnnOpWrapper(
-                node.name,
-                QNN_OP_PACKAGE_NAME_QTI_AISW,
-                OpConv2d.op_name,
-            )
-            conv_op = self._add_conv_op_parameter(
-                OpConv2d,
-                conv_op,
-                conv_input_tensors,
-                conv_output_tensors,
-                stride,
-                stride_shape,
-                padding,
-                padding_shape,
-                dilation,
-                dilation_shape,
-                groups,
-            )
+            op_class = OpConv2d
+
+        conv_op = PyQnnWrapper.PyQnnOpWrapper(
+            node.name,
+            QNN_OP_PACKAGE_NAME_QTI_AISW,
+            op_class.op_name,
+        )
+        conv_op = self._add_conv_op_parameter(
+            op_class,
+            conv_op,
+            conv_input_tensors,
+            conv_output_tensors,
+            stride,
+            stride_shape,
+            padding,
+            padding_shape,
+            dilation,
+            dilation_shape,
+            output_padding,
+            output_padding_shape,
+            is_transpose_conv,
+            None if is_depthwise_conv else groups,
+        )
 
         return conv_op

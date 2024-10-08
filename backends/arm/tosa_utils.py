@@ -50,10 +50,10 @@ def dbg_node(node):
 
 
 # Output TOSA flatbuffer and test harness file
-def dbg_tosa_dump(tosa_graph, path):
-    filename = "output.tosa"
+def dbg_tosa_dump(tosa_graph: ts.TosaSerializer, path: str, suffix: str = ""):
+    filename = f"output{suffix}.tosa"
 
-    logger.info(f"Emitting debug output to {path}")
+    logger.info(f"Emitting debug output to: {path=}, {suffix=}")
 
     os.makedirs(path, exist_ok=True)
 
@@ -65,7 +65,7 @@ def dbg_tosa_dump(tosa_graph, path):
         f.write(fb)
     assert os.path.exists(filepath_tosa_fb), "Failed to write TOSA flatbuffer"
 
-    filepath_desc_json = os.path.join(path, "desc.json")
+    filepath_desc_json = os.path.join(path, f"desc{suffix}.json")
     with open(filepath_desc_json, "w") as f:
         f.write(js)
     assert os.path.exists(filepath_desc_json), "Failed to write TOSA JSON"
@@ -76,7 +76,7 @@ def dbg_fail(node, tosa_graph, path):
     logger.warn("Internal error due to poorly handled node:")
     dbg_node(node)
     logger.warn(f"Debug output captured in '{path}'.")
-    raise RuntimeError("TOSA Internal Error on node, enable logging for further info")
+    raise RuntimeError("TOSA Internal Error on node, enable logging for further info.")
 
 
 # Helper function to match TOSA's broadcasting rank requirement
