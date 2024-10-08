@@ -15,6 +15,7 @@ on:
       - install_requirements.sh
       - examples/demo-apps/android/**
       - extension/android/**
+      - extension/benchmark/android/**
       - extension/module/**
   workflow_dispatch:
 

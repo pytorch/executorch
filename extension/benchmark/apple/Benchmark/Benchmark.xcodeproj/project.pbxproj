@@ -66,10 +66,10 @@
 		032A73FD2CAFBB7800932D36 /* tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tiktoken.h; sourceTree = "<group>"; };
 		032A73FE2CAFBB7800932D36 /* tiktoken.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = tiktoken.cpp; sourceTree = "<group>"; };
 		032A73FF2CAFBB7800932D36 /* tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tokenizer.h; sourceTree = "<group>"; };
-		032A74212CAFC1B300932D36 /* runner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = runner.h; path = ../../../examples/models/llama2/runner/runner.h; sourceTree = SOURCE_ROOT; };
-		032A74222CAFC1B300932D36 /* runner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = runner.cpp; path = ../../../examples/models/llama2/runner/runner.cpp; sourceTree = SOURCE_ROOT; };
-		032A74242CAFC34800932D36 /* llama_tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = llama_tiktoken.h; path = ../../../examples/models/llama2/tokenizer/llama_tiktoken.h; sourceTree = SOURCE_ROOT; };
-		032A74252CAFC34800932D36 /* llama_tiktoken.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = llama_tiktoken.cpp; path = ../../../examples/models/llama2/tokenizer/llama_tiktoken.cpp; sourceTree = SOURCE_ROOT; };
+		032A74212CAFC1B300932D36 /* runner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = runner.h; path = ../../../../examples/models/llama2/runner/runner.h; sourceTree = SOURCE_ROOT; };
+		032A74222CAFC1B300932D36 /* runner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = runner.cpp; path = ../../../../examples/models/llama2/runner/runner.cpp; sourceTree = SOURCE_ROOT; };
+		032A74242CAFC34800932D36 /* llama_tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = llama_tiktoken.h; path = ../../../../examples/models/llama2/tokenizer/llama_tiktoken.h; sourceTree = SOURCE_ROOT; };
+		032A74252CAFC34800932D36 /* llama_tiktoken.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = llama_tiktoken.cpp; path = ../../../../examples/models/llama2/tokenizer/llama_tiktoken.cpp; sourceTree = SOURCE_ROOT; };
 		037C96A02C8A570B00B3DF38 /* Tests.xctestplan */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = Tests.xctestplan; sourceTree = "<group>"; };
 		03B0118B2CAC567900054791 /* DynamicTestCase.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = DynamicTestCase.h; sourceTree = "<group>"; };
 		03B0118C2CAC567900054791 /* DynamicTestCase.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DynamicTestCase.m; sourceTree = "<group>"; };
@@ -158,7 +158,7 @@
 				032A73DF2CAFBB7800932D36 /* util.h */,
 			);
 			name = runner;
-			path = ../../llm/runner;
+			path = ../../../llm/runner;
 			sourceTree = SOURCE_ROOT;
 		};
 		032A73E92CAFBB7800932D36 /* sampler */ = {
@@ -168,7 +168,7 @@
 				032A73E62CAFBB7800932D36 /* sampler.cpp */,
 			);
 			name = sampler;
-			path = ../../llm/sampler;
+			path = ../../../llm/sampler;
 			sourceTree = SOURCE_ROOT;
 		};
 		032A74022CAFBB7800932D36 /* tokenizer */ = {
@@ -184,7 +184,7 @@
 				032A73FF2CAFBB7800932D36 /* tokenizer.h */,
 			);
 			name = tokenizer;
-			path = ../../llm/tokenizer;
+			path = ../../../llm/tokenizer;
 			sourceTree = SOURCE_ROOT;
 		};
 		03B0118D2CAC567900054791 /* TestUtils */ = {
@@ -364,7 +364,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\nif ! command -v cmake &> /dev/null\nthen\n    echo \"Cmake not found, please install Cmake. \\n1. Download Cmake.app from https://cmake.org/download with version > 3.19. \\n2. Install it to Applications/ folder and run sudo /Applications/CMake.app/Contents/bin/cmake-gui --install to install CMake commandline tools.\"\n    exit 1\nfi\n\nCMAKE_DIR=\"$TEMP_DIR/cmake\"\nrm -rf \"$CMAKE_DIR\"\n\nPLATFORM=\"SIMULATORARM64\"\nDEPLOYMENT_TARGET=\"17.0\"\n\nif [[ \"$PLATFORM_NAME\" == *\"iphoneos\"* ]]; then\n  PLATFORM=\"OS64\"\nelif [[ \"$PLATFORM_NAME\" == *\"macos\"* ]]; then\n  PLATFORM=\"MAC_ARM64\"\n  DEPLOYMENT_TARGET=\"10.15\"\nfi\n\ncmake_build() {\n    local src_dir=$1\n    local target=$2\n    shift 2\n    local extra_args=(\"$@\")\n    local build_dir=\"$CMAKE_DIR/build/$(basename \"$src_dir\")\"\n\n    mkdir -p \"$build_dir\" && cd \"$build_dir\"\n\n    if [[ \"$PLATFORM\" == \"MAC_ARM64\" ]]; then\n        extra_args+=(-DCMAKE_INSTALL_BUNDLEDIR=\"${CMAKE_DIR}/bin\")\n        extra_args+=(-DCMAKE_MACOSX_BUNDLE=OFF)\n    fi\n    cmake -G Xcode \\\n          -DCMAKE_BUILD_TYPE=\"Release\" \\\n          -DCMAKE_CXX_STANDARD=17 \\\n          -DCMAKE_TOOLCHAIN_FILE=\"$SRCROOT/../../../third-party/ios-cmake/ios.toolchain.cmake\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD=\"c++17\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY=\"libc++\" \\\n          -DPLATFORM=\"$PLATFORM\" \\\n          -DDEPLOYMENT_TARGET=\"$DEPLOYMENT_TARGET\" \\\n          -DCMAKE_INSTALL_PREFIX=\"$CMAKE_DIR\" \\\n          \"${extra_args[@]}\" \\\n          \"$src_dir\"\n    cmake --build . --config \"Release\" --target \"$target\"\n    if [[ \"$target\" == \"install\" ]]; then\n        cmake --install . --prefix \"$CMAKE_DIR\"\n    fi\n}\n\ncmake_build \"$SRCROOT/../../llm/third-party/abseil-cpp\" \"install\" \\\n    -DABSL_PROPAGATE_CXX_STD=ON\n\ncmake_build \"$SRCROOT/../../llm/third-party/re2\" \"install\"\n\ncmake_build \"$SRCROOT/../../llm/third-party/sentencepiece\" \"sentencepiece-static\" \\\n    -DSPM_ENABLE_SHARED=OFF\n\necho \"$(find $CMAKE_DIR/lib -name \"*.a\" | sed -E 's|^.*/lib([^/]+)\\.a|-l\\1|g' | tr '\\n' ' ')\" > \"$CMAKE_DIR/linker_flags\"\n";
+			shellScript = "set -e\n\nif ! command -v cmake &> /dev/null\nthen\n    echo \"Cmake not found, please install Cmake. \\n1. Download Cmake.app from https://cmake.org/download with version > 3.19. \\n2. Install it to Applications/ folder and run sudo /Applications/CMake.app/Contents/bin/cmake-gui --install to install CMake commandline tools.\"\n    exit 1\nfi\n\nCMAKE_DIR=\"$TEMP_DIR/cmake\"\nrm -rf \"$CMAKE_DIR\"\n\nPLATFORM=\"SIMULATORARM64\"\nDEPLOYMENT_TARGET=\"17.0\"\n\nif [[ \"$PLATFORM_NAME\" == *\"iphoneos\"* ]]; then\n  PLATFORM=\"OS64\"\nelif [[ \"$PLATFORM_NAME\" == *\"macos\"* ]]; then\n  PLATFORM=\"MAC_ARM64\"\n  DEPLOYMENT_TARGET=\"10.15\"\nfi\n\ncmake_build() {\n    local src_dir=$1\n    local target=$2\n    shift 2\n    local extra_args=(\"$@\")\n    local build_dir=\"$CMAKE_DIR/build/$(basename \"$src_dir\")\"\n\n    mkdir -p \"$build_dir\" && cd \"$build_dir\"\n\n    if [[ \"$PLATFORM\" == \"MAC_ARM64\" ]]; then\n        extra_args+=(-DCMAKE_INSTALL_BUNDLEDIR=\"${CMAKE_DIR}/bin\")\n        extra_args+=(-DCMAKE_MACOSX_BUNDLE=OFF)\n    fi\n    cmake -G Xcode \\\n          -DCMAKE_BUILD_TYPE=\"Release\" \\\n          -DCMAKE_CXX_STANDARD=17 \\\n          -DCMAKE_TOOLCHAIN_FILE=\"$SRCROOT/../../../../third-party/ios-cmake/ios.toolchain.cmake\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD=\"c++17\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY=\"libc++\" \\\n          -DPLATFORM=\"$PLATFORM\" \\\n          -DDEPLOYMENT_TARGET=\"$DEPLOYMENT_TARGET\" \\\n          -DCMAKE_INSTALL_PREFIX=\"$CMAKE_DIR\" \\\n          \"${extra_args[@]}\" \\\n          \"$src_dir\"\n    cmake --build . --config \"Release\" --target \"$target\"\n    if [[ \"$target\" == \"install\" ]]; then\n        cmake --install . --prefix \"$CMAKE_DIR\"\n    fi\n}\n\ncmake_build \"$SRCROOT/../../../llm/third-party/abseil-cpp\" \"install\" \\\n    -DABSL_PROPAGATE_CXX_STD=ON\n\ncmake_build \"$SRCROOT/../../../llm/third-party/re2\" \"install\"\n\ncmake_build \"$SRCROOT/../../../llm/third-party/sentencepiece\" \"sentencepiece-static\" \\\n    -DSPM_ENABLE_SHARED=OFF\n\necho \"$(find $CMAKE_DIR/lib -name \"*.a\" | sed -E 's|^.*/lib([^/]+)\\.a|-l\\1|g' | tr '\\n' ' ')\" > \"$CMAKE_DIR/linker_flags\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
