@@ -423,6 +423,11 @@ class CustomBuildPy(build_py):
                 "devtools/bundled_program/schema/scalar_type.fbs",
                 "devtools/bundled_program/serialize/scalar_type.fbs",
             ),
+            # Install executorch-config.cmake to the root of the package.
+            (
+                "build/executorch-config.cmake",
+                "executorch-config.cmake",
+            ),
         ]
         # Copy all the necessary headers into include/executorch/ so that they can
         # be found in the pip package. This is the subset of headers that are
