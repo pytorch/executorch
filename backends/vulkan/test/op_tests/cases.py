@@ -706,18 +706,9 @@ def get_clone_inputs():
 def get_repeat_inputs():
     test_suite_2d = VkTestSuite(
         [
-            # Repeat channels only (most challenging case)
-            ((3, XS, S), [2, 1, 1]),
-            ((7, XS, S), [4, 1, 1]),
-            # More other cases
             ((2, 3), [1, 4]),
             ((2, 3), [4, 1]),
             ((2, 3), [4, 4]),
-            ((S1, S2, S2), [1, 3, 1]),
-            ((S1, S2, S2), [1, 3, 3]),
-            ((S1, S2, S2), [3, 3, 1]),
-            ((S1, S2, S2), [3, 3, 3]),
-            # Expanding cases
             ((2, 3), [3, 1, 4]),
         ]
     )

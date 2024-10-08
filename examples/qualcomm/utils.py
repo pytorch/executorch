@@ -233,24 +233,17 @@ def build_executorch_binary(
     soc_model,
     file_name,
     dataset: List[torch.Tensor] | Callable[[torch.fx.GraphModule], None],
-    custom_annotations=(),
     skip_node_id_set=None,
     skip_node_op_set=None,
     quant_dtype: Optional[QuantDtype] = None,
-    per_channel_linear=False,  # TODO: remove this once QNN fully supports linear
+    custom_quantizer=None,
     shared_buffer=False,
     metadata=None,
-    act_observer=MovingAverageMinMaxObserver,
     dump_intermediate_outputs=False,
+    custom_pass_config=None,
 ):
     if quant_dtype is not None:
-        quantizer = make_quantizer(
-            quant_dtype=quant_dtype,
-            custom_annotations=custom_annotations,
-            per_channel_conv=True,
-            per_channel_linear=per_channel_linear,
-            act_observer=act_observer,
-        )
+        quantizer = custom_quantizer or make_quantizer(quant_dtype=quant_dtype)
         captured_model = torch.export.export(model, inputs).module()
         annotated_model = prepare_pt2e(captured_model, quantizer)
         print("Quantizing the model...")
@@ -262,9 +255,9 @@ def build_executorch_binary(
                 annotated_model(*data)
 
         quantized_model = convert_pt2e(annotated_model)
-        edge_prog = capture_program(quantized_model, inputs)
+        edge_prog = capture_program(quantized_model, inputs, custom_pass_config)
     else:
-        edge_prog = capture_program(model, inputs)
+        edge_prog = capture_program(model, inputs, custom_pass_config)
 
     backend_options = generate_htp_compiler_spec(
         use_fp16=False if quant_dtype else True
@@ -359,6 +352,40 @@ def segmentation_metrics(predictions, targets, classes):
     miou = np.mean(iou)
     cls_iou = dict(zip(classes, iou))
     return (pa, mpa, miou, cls_iou)
+
+
+def get_imagenet_dataset(dataset_path, data_size, image_shape, crop_size=None):
+    from torchvision import datasets, transforms
+
+    def get_data_loader():
+        preprocess = transforms.Compose(
+            [
+                transforms.Resize(image_shape),
+                transforms.CenterCrop(crop_size or image_shape[0]),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                ),
+            ]
+        )
+        imagenet_data = datasets.ImageFolder(dataset_path, transform=preprocess)
+        return torch.utils.data.DataLoader(
+            imagenet_data,
+            shuffle=True,
+        )
+
+    # prepare input data
+    inputs, targets, input_list = [], [], ""
+    data_loader = get_data_loader()
+    for index, data in enumerate(data_loader):
+        if index >= data_size:
+            break
+        feature, target = data
+        inputs.append((feature,))
+        targets.append(target)
+        input_list += f"input_{index}_0.raw\n"
+
+    return inputs, targets, input_list
 
 
 def setup_common_args_and_variables():

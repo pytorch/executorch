@@ -108,9 +108,9 @@ build_android_demo_apps() {
   ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
   popd
 
-  mkdir -p extension/android/benchmark/app/libs
-  cp ${BUILD_AAR_DIR}/executorch.aar extension/android/benchmark/app/libs
-  pushd extension/android/benchmark
+  mkdir -p extension/benchmark/android/benchmark/app/libs
+  cp ${BUILD_AAR_DIR}/executorch.aar extension/benchmark/android/benchmark/app/libs
+  pushd extension/benchmark/android/benchmark
   ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
   popd
 }
@@ -135,8 +135,8 @@ collect_artifacts_to_be_uploaded() {
   # Collect MiniBench APK
   MINIBENCH_APP_DIR="${ARTIFACTS_DIR_NAME}/minibench"
   mkdir -p "${MINIBENCH_APP_DIR}"
-  cp extension/android/benchmark/app/build/outputs/apk/debug/*.apk "${MINIBENCH_APP_DIR}"
-  cp extension/android/benchmark/app/build/outputs/apk/androidTest/debug/*.apk "${MINIBENCH_APP_DIR}"
+  cp extension/benchmark/android/benchmark/app/build/outputs/apk/debug/*.apk "${MINIBENCH_APP_DIR}"
+  cp extension/benchmark/android/benchmark/app/build/outputs/apk/androidTest/debug/*.apk "${MINIBENCH_APP_DIR}"
 }
 
 BUILD_AAR_DIR="$(mktemp -d)"
