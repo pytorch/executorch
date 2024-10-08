@@ -25,19 +25,7 @@ main() {
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_DEVTOOLS=ON \
     -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
-<<<<<<< HEAD:backends/cadence/build_cadence_runner.sh
     -Bcmake-out .
-=======
-    -DPYTHON_EXECUTABLE=python3 \
-    -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
-    -DEXECUTORCH_BUILD_HOST_TARGETS=ON \
-    -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
-    -DEXECUTORCH_BUILD_PTHREADPOOL=OFF \
-    -DEXECUTORCH_BUILD_CPUINFO=OFF \
-    -DEXECUTORCH_ENABLE_LOGGING=ON \
-    -DEXECUTORCH_NNLIB_OPT=OFF \
-    -Bcmake-out
->>>>>>> upstream/main:backends/cadence/cadence_runner/build_cadence_runner.sh
   cmake --build cmake-out --target install --config Release -j16
 
   local example_dir=backends/cadence
