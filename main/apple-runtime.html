@@ -592,18 +592,6 @@ swift<span class="w"> </span>build
 </pre></div>
 </div>
 <ol class="arabic simple" start="5">
-<li><p>Install a compatible version of <a class="reference external" href="https://buck.build">Buck2</a>:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">BUCK2_RELEASE_DATE</span><span class="o">=</span><span class="s2">&quot;2024-05-15&quot;</span>
-<span class="nv">BUCK2_ARCHIVE</span><span class="o">=</span><span class="s2">&quot;buck2-aarch64-apple-darwin.zst&quot;</span>
-<span class="nv">BUCK2</span><span class="o">=</span><span class="s2">&quot;.venv/bin/buck2&quot;</span>
-
-curl<span class="w"> </span>-LO<span class="w"> </span><span class="s2">&quot;https://github.com/facebook/buck2/releases/download/</span><span class="nv">$BUCK2_RELEASE_DATE</span><span class="s2">/</span><span class="nv">$BUCK2_ARCHIVE</span><span class="s2">&quot;</span>
-zstd<span class="w"> </span>-cdq<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$BUCK2_ARCHIVE</span><span class="s2">&quot;</span><span class="w"> </span>&gt;<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$BUCK2</span><span class="s2">&quot;</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$BUCK2</span><span class="s2">&quot;</span>
-rm<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$BUCK2_ARCHIVE</span><span class="s2">&quot;</span>
-</pre></div>
-</div>
-<ol class="arabic simple" start="6">
 <li><p>Install the required dependencies, including those needed for the backends like <a class="reference internal" href="build-run-coreml.html"><span class="doc std std-doc">Core ML</span></a> or <a class="reference internal" href="build-run-mps.html"><span class="doc std std-doc">MPS</span></a>, if you plan to build them as well:</p></li>
 </ol>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_requirements.sh
@@ -615,14 +603,14 @@ rm<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$BUCK2_
 ./backends/apple/mps/install_requirements.sh
 </pre></div>
 </div>
-<ol class="arabic simple" start="7">
+<ol class="arabic simple" start="6">
 <li><p>Use the provided script to build .xcframeworks:</p></li>
 </ol>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./build/build_apple_frameworks.sh<span class="w"> </span>--help
 </pre></div>
 </div>
 <p>For example, the following invocation will build the ExecuTorch Runtime and all currently available kernels and backends for the Apple platform:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./build/build_apple_frameworks.sh<span class="w"> </span>--buck2<span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>realpath<span class="w"> </span><span class="nv">$BUCK2</span><span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>--coreml<span class="w"> </span>--custom<span class="w"> </span>--mps<span class="w"> </span>--optimized<span class="w"> </span>--portable<span class="w"> </span>--quantized<span class="w"> </span>--xnnpack
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./build/build_apple_frameworks.sh<span class="w"> </span>--coreml<span class="w"> </span>--custom<span class="w"> </span>--mps<span class="w"> </span>--optimized<span class="w"> </span>--portable<span class="w"> </span>--quantized<span class="w"> </span>--xnnpack
 </pre></div>
 </div>
 <p>After the build finishes successfully, the resulting frameworks can be found in the <code class="docutils literal notranslate"><span class="pre">cmake-out</span></code> directory.
