@@ -48,6 +48,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
     def __init__(self, require_dynamic_shape: bool = False) -> None:
         super().__init__()
         self.require_dynamic_shapes = require_dynamic_shape
+        # The tensor dim limit is to guard against tensors with one or more
+        # large dimensions, which cannot be represented by an image texture due
+        # to the texture axis limits.
+        self.tensor_dim_limit = 16384
 
     # pyre-ignore
     def node_val_is_compatible(self, node_val: Any) -> bool:
@@ -67,6 +71,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
             # bool dtype not currently supported
             if node_val.dtype == torch.bool:
                 return False
+
+            for dim in node_val.shape:
+                if dim > self.tensor_dim_limit:
+                    return False
 
         if isinstance(node_val, (list, tuple)):
             for item in node_val:
@@ -100,11 +108,14 @@ class VulkanSupportedOperators(OperatorSupportBase):
         if len(node.users) != 1:
             return False
 
-        if list(node.users.keys())[0].target in [
+        first_user = list(node.users.keys())[0]
+        if first_user.target in [
             exir_ops.edge.aten.mm.default,
             exir_ops.edge.aten.addmm.default,
         ]:
-            return True
+            # Only mark this node if the overall linear op is valid
+            if self.all_args_compatible(first_user):
+                return True
 
         return False
 
