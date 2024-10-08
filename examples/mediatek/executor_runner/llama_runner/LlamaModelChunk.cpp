@@ -73,16 +73,26 @@ size_t LlamaModelChunk::GetExpectedOutputCount() const {
 }
 
 void LlamaModelChunk::Initialize() {
+  ET_LOG(Info, "cmodiii in LlamaModelChunk::Initialize");
   LoadModels();
+  ET_LOG(Info, "cmodiii after LoadModels");
   GetModelIoInfo();
+  ET_LOG(Info, "cmodiii after GetModelIoInfo");
   CheckIoCount();
+  ET_LOG(Info, "cmodiii after CheckIoCount");
   PrepareCacheIOs();
+  ET_LOG(Info, "cmodiii after PrepareCacheIOs");
   AllocateIoBuffers();
+  ET_LOG(Info, "cmodiii after AllocateIoBuffers");
   InitMaskBuilder();
+  ET_LOG(Info, "cmodiii after InitMaskBuilder");
   InitCache();
+  ET_LOG(Info, "cmodiii after InitCache");
 
   SetBackendInputs();
+  ET_LOG(Info, "cmodiii after SetBackendInputs");
   SetBackendOutputs();
+  ET_LOG(Info, "cmodiii after SetBackendOutputs");
   mIsInitialized = true;
 }
 

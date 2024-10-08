@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <api/NeuronAdapter.h>
+#include "api/NeuronAdapter.h"
 
 #include <android/log.h>
 #include <sys/system_properties.h>

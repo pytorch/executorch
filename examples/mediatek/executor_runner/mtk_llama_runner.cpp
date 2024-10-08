@@ -45,13 +45,12 @@
  */
 
 #include "executorch/backends/mediatek/runtime/include/NeuronBufferAllocator.h"
+#include <executorch/examples/mediatek/executor_runner/mtk_llama_runner.h>
 
 #include <ctime>
 #include <iostream>
 #include <memory>
 #include <random>
-
-#include <gflags/gflags.h>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
@@ -60,121 +59,126 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
+// #include <executorch/util/util.h>
+#include <executorch/extension/llm/runner/util.h>
+#include <executorch/runtime/core/result.h>
 
-#include "llama_runner/LlamaConfig.h"
-#include "llama_runner/LlamaRuntime.h"
 #include "llama_runner/ModelChunk.h"
 #include "llama_runner/Utils.h"
 #include "llama_runner/llm_helper/include/llm_types.h"
+#include "llama_runner/llm_helper/include/llama_runner_values.h"
 
-#include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
-#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
-#include <executorch/extension/llm/tokenizer/tiktoken.h>
-
-// Llama model options
-DEFINE_uint64(
-    prompt_token_batch_size,
-    128,
-    "Token batch size for prompt model.");
-DEFINE_uint64(cache_size, 1024, "Model cache size.");
-DEFINE_uint64(hidden_size, 4096, "Model hidden size.");
-DEFINE_uint64(num_head, 32, "Number of attention heads in each layer.");
-DEFINE_uint64(num_layer, 32, "Number of layers in the model.");
-DEFINE_uint64(
-    max_token_length,
-    2048,
-    "Maximum token length that the model supports.");
-DEFINE_double(
-    rot_emb_base,
-    10000,
-    "Rotary embedding base value, aka 'rope_theta'.");
-
-// Model IO Types
-DEFINE_string(input_type, "int16", "Model input type. Default to 'int16'");
-DEFINE_string(output_type, "int16", "Model output type. Default to 'int16'");
-DEFINE_string(cache_type, "int16", "Model cache type. Default to 'int16'");
-DEFINE_string(mask_type, "int16", "Model mask type. Default to 'int16'");
-DEFINE_string(
-    rot_emb_type,
-    "int16",
-    "Model rotary embedding type. Default to 'int16'");
-
-// Model Paths
-DEFINE_string(
-    token_embedding_path,
-    "embedding.bin",
-    "Input token embedding lookup table path.");
-DEFINE_string(
-    prompt_model_paths,
-    "model_128t.pte",
-    "Comma-separated prompt model paths.");
-DEFINE_string(
-    gen_model_paths,
-    "model_1t.pte",
-    "Comma-separated generative model paths.");
-
-// Tokenizer
-DEFINE_string(tokenizer_path, "tokenizer.model", "tokenizer.model vocab path.");
-DEFINE_string(
-    tokenizer_type,
-    "tiktoken",
-    "Tokenizer type. One of ['bpe', 'tiktoken'].");
-DEFINE_uint64(vocab_size, 128000, "Tokenizer vocab size.");
-DEFINE_uint64(bos_token, 128000, "BOS token id.");
-DEFINE_uint64(eos_token, 128001, "EOS token id.");
-
-// Inference
-DEFINE_uint64(max_response, 50, "Maximum number of tokens to generate.");
-DEFINE_string(prompt_file, "", "File containing the prompt text.");
-
+static uint64_t MAX_RESPONSE = 50; // Maximum number of tokens to generate.
 // Global BOS and EOS option for tokenization (encoding)
 static constexpr int8_t kAddBos = 1;
 static constexpr int8_t kAddEos = 0;
 
-using namespace example::llm_helper;
-using example::LlamaModelOptions;
-using example::LlamaModelPaths;
-using example::LlamaRuntime;
-using example::utils::argmax;
-using example::utils::read_file;
-using example::utils::split;
-using example::utils::Timer;
-using example::utils::to_string;
-using executorch::extension::llm::BPETokenizer;
-using executorch::extension::llm::Tokenizer;
-using executorch::runtime::Error;
-using executorch::runtime::Result;
+using namespace torch::executor;
+using namespace torch::executor::llm_helper;
+using torch::executor::utils::Timer;
 
-LlamaModelOptions get_model_options() {
+MTKLlamaRunner::MTKLlamaRunner(
+  const std::string& model_path,
+  const std::string& tokenizer_path,
+  const float temperature)
+  : modeloptions_(get_model_options()),
+    modelpaths_(get_model_paths()) {
+  runtime_init();
+  ET_LOG(
+        Info,
+        "Creating MTK Llama runner. Current it will self-load .pte, .bin, and .so files. Initiated runtime_init().");
+}
+
+Error MTKLlamaRunner::load() {
+  if (is_loaded()) {
+    return Error::Ok;
+  }
+
+  // Load tokenizer
+  ET_LOG(Info, "Loading tokenizer.");
+  tokenizer_ = load_tokenizer();
+  ET_LOG(Info, "Complete loading tokenizer.");
+
+  // Load prompt model
+  runtime_ = std::make_unique<LlamaRuntime>();
+  ET_LOG(Info, "Loading prompt model.");
+  runtime_->Initialize(modeloptions_, modelpaths_);
+  ET_LOG(Info, "Complete loading prompt model.");
+
+  return Error::Ok;
+}
+
+bool MTKLlamaRunner::is_loaded() const {
+  return tokenizer_ && runtime_;
+}
+
+Error MTKLlamaRunner::generate(
+    const std::string& prompt,
+    int32_t seq_len,
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const Stats&)> stats_callback) {
+
+  if (!is_loaded()) {
+    ET_CHECK_OK_OR_RETURN_ERROR(load());
+  }
+
+  // Wrap the token_callback with print function
+  std::function<void(const std::string&)> wrapped_callback =
+      [token_callback](const std::string& piece) {
+        util::safe_printf(piece.c_str());
+        fflush(stdout);
+        if (token_callback) {
+          token_callback(piece);
+        }
+      };
+  
+  ET_LOG(Info, "Starting inference from MTKLlamaRunner");    
+  inference(*runtime_.get(), tokenizer_, prompt, wrapped_callback);
+  ET_LOG(Info, "Completed inference from MTKLlamaRunner"); 
+
+  return Error::Ok;
+}
+
+void MTKLlamaRunner::stop() {
+  if (is_loaded()) {
+    runtime_->Release();
+  } else {
+    ET_LOG(Error, "Llama Runtime is not loaded, cannot stop");
+  }
+}
+
+LlamaModelOptions MTKLlamaRunner::get_model_options() {
   LlamaModelOptions options = {
       // Sizes
-      .prompt_token_batch_size = FLAGS_prompt_token_batch_size,
-      .cache_size = FLAGS_cache_size,
-      .hidden_size = FLAGS_hidden_size,
-      .num_head = FLAGS_num_head,
-      .num_layer = FLAGS_num_layer,
-      .max_token_length = FLAGS_max_token_length,
-      .rot_emb_base = FLAGS_rot_emb_base,
+      .prompt_token_batch_size = PROMPT_TOKEN_BATCH_SIZE,
+      .cache_size = CACHE_SIZE,
+      .hidden_size = HIDDEN_SIZE,
+      .num_head = NUM_HEAD,
+      .num_layer = NUM_LAYER,
+      .max_token_length = MAX_TOKEN_LENGTH,
+      .rot_emb_base = ROT_EMB_BASE,
 
       // Types
-      .model_input_type = LLMType::FP32,
-      .model_output_type = LLMType::FP32,
-      .cache_type = LLMType::FP32,
-      .mask_type = LLMType::FP32,
-      .rot_emb_type = LLMType::FP32};
+      .model_input_type = MODEL_INPUT_TYPE,
+      .model_output_type = MODEL_OUTPUT_TYPE,
+      .cache_type = CACHE_TYPE,
+      .mask_type = MASK_TYPE,
+      .rot_emb_type = ROT_EMB_TYPE};
+  ET_LOG(Info, "Completed get_model_options");    
   return options;
 }
 
-LlamaModelPaths get_model_paths() {
+LlamaModelPaths MTKLlamaRunner::get_model_paths() {
   LlamaModelPaths model_paths = {
-      .tokenizer_path = FLAGS_tokenizer_path,
-      .token_embedding_path = FLAGS_token_embedding_path,
-      .prompt_model_paths = split(FLAGS_prompt_model_paths, ','),
-      .gen_model_paths = split(FLAGS_gen_model_paths, ',')};
+      .tokenizer_path = TOKENIZER_PATH,
+      .token_embedding_path = TOKEN_EMBEDDING_PATH,
+      .prompt_model_paths = utils::split(PROMPT_MODEL_PATHS, ','),
+      .gen_model_paths = utils::split(GEN_MODEL_PATHS, ',')};
+  ET_LOG(Info, "Completed get_model_paths");   
   return model_paths;
 }
 
-Result<uint64_t> digest_prompt(
+Result<uint64_t> MTKLlamaRunner::digest_prompt(
     LlamaRuntime& llama_runtime,
     const std::unique_ptr<Tokenizer>& tokenizer,
     const std::vector<uint64_t> input_tokens) {
@@ -221,14 +225,16 @@ Result<uint64_t> digest_prompt(
 
   const auto vocab_size = tokenizer->vocab_size();
   const auto logits_type = llama_runtime.GetModelOptions().model_output_type;
-  const auto first_output_token = argmax(logits_type, logits, vocab_size);
+  const auto first_output_token =
+      utils::argmax(logits_type, logits, vocab_size);
   return first_output_token;
 }
 
-Error gen_response(
+Error MTKLlamaRunner::gen_response(
     LlamaRuntime& llama_runtime,
     const std::unique_ptr<Tokenizer>& tokenizer,
-    const uint64_t input_token) {
+    const uint64_t input_token,
+    std::function<void(const std::string&)> token_callback) {
   Timer timer_model_swap(
       [](const auto elapsed_sec) { ET_LOG(Info, "Model swapped."); });
 
@@ -258,22 +264,21 @@ Error gen_response(
       [&](const auto elapsed_sec) { gen_total_time_sec += elapsed_sec; });
 
   // Print first output token
-  std::cout << "\n[Real-time Response]" << std::endl;
-  std::cout << full_response << std::flush;
+  token_callback(full_response);
 
-  while (gen_tok_count++ < FLAGS_max_response &&
-         llama_runtime.GetTokenIndex() < FLAGS_max_token_length) {
+  while (gen_tok_count++ < MAX_RESPONSE &&
+         llama_runtime.GetTokenIndex() < modeloptions_.max_token_length) {
     timer_gen_token.Start();
     void* logits = llama_runtime.Run({output_token});
     timer_gen_token.End();
 
     prev_token = output_token;
-    output_token = argmax(logits_type, logits, vocab_size);
+    output_token = utils::argmax(logits_type, logits, vocab_size);
     full_response_tokens.push_back(output_token);
 
     // Stop when output is EOS
     if (output_token == tokenizer->eos_tok()) {
-      std::cout << "</eos>" << std::flush;
+      token_callback("</eos>");
       break;
     }
     auto decode_res = tokenizer->decode(prev_token, output_token);
@@ -284,11 +289,11 @@ Error gen_response(
         output_token);
     const std::string tok_str = std::move(decode_res.get());
     full_response += tok_str;
-    std::cout << tok_str << std::flush;
+    token_callback(tok_str);
   }
 
   std::cout << "\n\n[Generated Tokens]\n"
-            << to_string(full_response_tokens) << std::endl;
+            << utils::to_string(full_response_tokens) << std::endl;
 
   ET_LOG(
       Info,
@@ -298,17 +303,16 @@ Error gen_response(
   return Error::Ok;
 }
 
-Error inference(
+Error MTKLlamaRunner::inference(
     LlamaRuntime& llama_runtime,
     const std::unique_ptr<Tokenizer>& tokenizer,
-    const std::string& prompt) {
+    const std::string& prompt,
+    std::function<void(const std::string&)> token_callback) {
   // Tokenize input prompt
   auto encode_res = tokenizer->encode(prompt, kAddBos, kAddEos);
   ET_CHECK_OR_RETURN_ERROR(
       encode_res.ok(), InvalidState, "Tokenizer failed to encode prompt");
   const auto input_tokens = std::move(encode_res.get());
-
-  std::cout << "\n[Input Prompt]\n" << prompt << std::endl;
 
   // Run prompt mode (pre-fill)
   auto prefill_res = digest_prompt(llama_runtime, tokenizer, input_tokens);
@@ -317,73 +321,13 @@ Error inference(
   const auto first_output_token = prefill_res.get();
 
   // run generation mode (decoding)
-  return gen_response(llama_runtime, tokenizer, first_output_token);
+  return gen_response(llama_runtime, tokenizer, first_output_token, token_callback);
 }
 
-std::unique_ptr<Tokenizer> load_tokenizer() {
+std::unique_ptr<Tokenizer> MTKLlamaRunner::load_tokenizer() {
   std::unique_ptr<Tokenizer> tokenizer;
-  if (FLAGS_tokenizer_type == "bpe") {
-    tokenizer = std::make_unique<BPETokenizer>();
-  } else if (FLAGS_tokenizer_type == "tiktoken") {
-    tokenizer = example::get_tiktoken_for_llama();
-  }
-  ET_CHECK_MSG(
-      tokenizer, "Invalid tokenizer type: %s", FLAGS_tokenizer_type.c_str());
-  tokenizer->load(FLAGS_tokenizer_path);
+  // Assumes that tokenizer type is Tiktoken
+  tokenizer = torch::executor::get_tiktoken_for_llama();
+  tokenizer->load(modelpaths_.tokenizer_path);
   return tokenizer;
-}
-
-int main(int argc, char** argv) {
-  executorch::runtime::runtime_init();
-
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
-  if (argc != 1) {
-    std::string msg = "Extra commandline args:";
-    for (int i = 1 /* skip argv[0] (program name) */; i < argc; i++) {
-      msg += std::string(" ") + argv[i];
-    }
-    ET_LOG(Error, "%s", msg.c_str());
-    return 1;
-  }
-
-  LlamaModelOptions model_options = get_model_options();
-  LlamaModelPaths model_paths = get_model_paths();
-
-  if (model_paths.prompt_model_paths.empty()) {
-    model_options.prompt_token_batch_size = 1;
-    ET_LOG(
-        Info,
-        "No prompt model paths provided, overriding prompt_token_batch_size to 1");
-  }
-
-  // Prepare timers
-  Timer timer_init(
-      [](const auto elapsed_sec) { ET_LOG(Info, "Model initialized."); });
-  Timer timer_release(
-      [](const auto elapsed_sec) { ET_LOG(Info, "Model released."); });
-
-  //LlamaRuntime llama_runtime;
-  std::unique_ptr<LlamaRuntime> llama_runtime = std::make_unique<LlamaRuntime>();
-
-  // Initialize model
-  ET_LOG(Info, "Begin model loading.");
-  timer_init.Start();
-  const auto tokenizer = load_tokenizer();
-  //llama_runtime.Initialize(model_options, model_paths);
-  llama_runtime->Initialize(model_options, model_paths);
-  timer_init.End();
-
-  // Run model
-  ET_CHECK_MSG(!FLAGS_prompt_file.empty(), "No prompt file provided.");
-  std::string prompt = utils::read_file(FLAGS_prompt_file);
-  //inference(llama_runtime, tokenizer, prompt);
-  inference(*llama_runtime.get(), tokenizer, prompt);
-
-  // Release model
-  timer_release.Start();
-  //llama_runtime.Release();
-  llama_runtime->Release();
-  timer_release.End();
-
-  return 0;
 }

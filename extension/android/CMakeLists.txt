@@ -124,6 +124,7 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
     ${EXECUTORCH_ROOT}/examples/models/llama2/runner
     ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama2/runner
   )
+
 endif()
 
 target_include_directories(
@@ -133,3 +134,25 @@ target_include_directories(
 target_compile_options(executorch_jni PUBLIC ${_common_compile_options})
 
 target_link_libraries(executorch_jni ${link_libraries})
+
+if (NEURON_BUFFER_ALLOCATOR_LIB)
+  target_sources(
+    executorch_jni PRIVATE
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/mtk_llama_runner.cpp
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/LlamaModelChunk.cpp
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/LlamaRuntime.cpp
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/ModelChunk.cpp
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/MultiModelLoader.cpp
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/llm_helper/mask_builder.cpp
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/llm_helper/rotary_embedding.cpp
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/llm_helper/token_embedding.cpp
+  )
+  target_include_directories(
+    executorch_jni PRIVATE
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner
+  )
+  ADD_LIBRARY(libneuron_buffer_allocator SHARED IMPORTED)
+  SET_PROPERTY(TARGET libneuron_buffer_allocator PROPERTY IMPORTED_LOCATION ${NEURON_BUFFER_ALLOCATOR_LIB}/libneuron_buffer_allocator.so)
+  list(APPEND link_libraries neuron_backend libneuron_buffer_allocator)
+endif()

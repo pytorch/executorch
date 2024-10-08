@@ -128,6 +128,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
             modelPath,
             tokenizerPath,
             temperature);
+    ETLogging.getInstance().log("ModelType is: " + mCurrentSettingsFields.getModelType());
     int loadResult = mModule.load();
     long loadDuration = System.currentTimeMillis() - runStartTime;
     String modelLoadError = "";
@@ -158,11 +159,11 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
               + " sec."
               + " You can send text or image for inference";
 
-      if (mCurrentSettingsFields.getModelType() == ModelType.LLAVA_1_5) {
+      /*if (mCurrentSettingsFields.getModelType() == ModelType.LLAVA_1_5) {
         ETLogging.getInstance().log("Llava start prefill prompt");
         startPos = mModule.prefillPrompt(PromptFormat.getLlavaPresetPrompt(), 0, 1, 0);
         ETLogging.getInstance().log("Llava completes prefill prompt");
-      }
+      }*/
     }
 
     Message modelLoadedMessage = new Message(modelInfo, false, MessageType.SYSTEM, 0);
@@ -228,6 +229,9 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
 
     try {
       Os.setenv("ADSP_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir, true);
+      Os.setenv("LD_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir, true);
+      ETLogging.getInstance().log("cmodiiiii ADSP_LIBRARY_PATH is: " + Os.getenv("ADSP_LIBRARY_PATH"));
+      ETLogging.getInstance().log("cmodiiiii LD_LIBRARY_PATH is: " + Os.getenv("LD_LIBRARY_PATH"));
     } catch (ErrnoException e) {
       finish();
     }
@@ -568,7 +572,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
 
     // For LLava, we want to call prefill_image as soon as an image is selected
     // Llava only support 1 image for now
-    if (mCurrentSettingsFields.getModelType() == ModelType.LLAVA_1_5) {
+/*    if (mCurrentSettingsFields.getModelType() == ModelType.LLAVA_1_5) {
       List<ETImage> processedImageList = getProcessedImagesForModel(mSelectedImageUri);
       if (!processedImageList.isEmpty()) {
         mMessageAdapter.add(
@@ -590,7 +594,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
             };
         executor.execute(runnable);
       }
-    }
+    }*/
   }
 
   private void addSelectedImagesToChatThread(List<Uri> selectedImageUri) {
@@ -721,8 +725,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
                     mModule.generate(
                         finalPrompt,
                         (int) (finalPrompt.length() * 0.75) + 64,
-                        MainActivity.this,
-                        false);
+                        MainActivity.this);
                   }
 
                   long generateDuration = System.currentTimeMillis() - generateStartTime;
