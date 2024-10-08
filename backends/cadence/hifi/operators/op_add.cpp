@@ -14,11 +14,19 @@
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 
-namespace torch {
-namespace executor {
-namespace native {
-namespace {
+using exec_aten::Scalar;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
+using executorch::runtime::can_cast;
+using executorch::runtime::CppTypeToScalarType;
+using executorch::runtime::KernelRuntimeContext;
+using torch::executor::Error;
 
+namespace impl {
+namespace HiFi { 
+namespace native {
+
+namespace {
 template <
     bool can_cast,
     typename CTYPE_A,
@@ -35,7 +43,7 @@ template <
 struct AddInner<true, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT> {
   static void
   run(const Tensor& a, const Tensor& b, CTYPE_IN alpha_val, Tensor& out) {
-    apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
+    torch::executor::apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
         // NOLINTNEXTLINE(facebook-hte-ConstantArgumentPassByValue)
         [alpha_val](const CTYPE_A val_a, const CTYPE_B val_b) {
           CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
@@ -89,7 +97,7 @@ Tensor& add_out(
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
-  ScalarType alpha_type = utils::get_scalar_dtype(alpha);
+  ScalarType alpha_type = torch::executor::native::utils::get_scalar_dtype(alpha);
   ScalarType common_type = promoteTypes(a_type, b_type, /*half_to_float*/ true);
   ScalarType out_type = out.scalar_type();
 
@@ -98,7 +106,7 @@ Tensor& add_out(
       ctx, check_alpha_type(alpha_type, common_type), InvalidArgument, out);
       
   float alpha_val;
-  utils::extract_scalar(alpha, &alpha_val);
+  torch::executor::native::utils::extract_scalar(alpha, &alpha_val);
 
   constexpr auto name = "add.out";
   constexpr int kNnlibMaxDim = 4; /*fallback if broadcast and dim > 4 */
@@ -168,7 +176,7 @@ Tensor& add_out(
           promote_types<CTYPE_A, CTYPE_B, /*half_to_float*/ true>::type;
       ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
       CTYPE_IN alpha_val;
-      utils::extract_scalar(alpha, &alpha_val);
+      torch::executor::native::utils::extract_scalar(alpha, &alpha_val);
 
       ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
         AddInner<
@@ -184,83 +192,7 @@ Tensor& add_out(
   return out;
 }
 
-Tensor& add_scalar_out(
-    KernelRuntimeContext& ctx,
-    const Tensor& a,
-    const Scalar& b,
-    const Scalar& alpha,
-    Tensor& out) {
 
-  // Resize for dynamic shape
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      resize_tensor(out, a.sizes()) == Error::Ok,
-      InvalidArgument,
-      out,
-      "Failed to resize output tensor.");
-
-  ET_KERNEL_CHECK(
-      ctx,
-      executorch::runtime::tensor_is_realhbbf16_type(out),
-      InvalidArgument,
-      out);
-  ET_KERNEL_CHECK(
-      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
-
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = utils::get_scalar_dtype(b);
-  ScalarType alpha_type = utils::get_scalar_dtype(alpha);
-  ScalarType common_type =
-      utils::promote_type_with_scalar(a_type, b, /*half_to_float*/ false);
-  ScalarType out_type = out.scalar_type();
-
-  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
-  ET_KERNEL_CHECK(
-      ctx, check_alpha_type(alpha_type, common_type), InvalidArgument, out);
-
-  /*When Half first compute the result in float precision 
-  and then downcast to half*/
-  if (common_type == ScalarType::Half) {
-    common_type = ScalarType::Float;
-  }
-
-  constexpr auto name = "add.Scalar_out";
-
-  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
-    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
-      using CTYPE_IN = typename utils::promote_type_with_scalar_type<
-          CTYPE_A,
-          CTYPE_B,
-          /*half_to_float*/ true>::type;
-      ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
-
-      CTYPE_B b_val;
-      utils::extract_scalar(b, &b_val);
-      CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
-
-      CTYPE_IN alpha_val;
-      utils::extract_scalar(alpha, &alpha_val);
-
-      using CTYPE_OUT = typename std::conditional<
-          std::is_same<CTYPE_A, internal::F2>::value,
-          internal::F2,
-          CTYPE_IN>::type;
-
-      apply_unary_map_fn(
-          [b_casted, alpha_val](const CTYPE_A val_a) {
-            CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-            CTYPE_IN value = a_casted + alpha_val * b_casted;
-            return static_cast<CTYPE_OUT>(value);
-          },
-          a.const_data_ptr<CTYPE_A>(),
-          out.mutable_data_ptr<CTYPE_OUT>(),
-          out.numel());
-    });
-  });
-
-  return out;
-}
-
+} // namespace impl
+} // namespace HiFi
 } // namespace native
-} // namespace executor
-} // namespace torch

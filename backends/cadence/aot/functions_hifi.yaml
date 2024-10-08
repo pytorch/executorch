@@ -25,7 +25,7 @@
 - op: add.out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::add_out
+      kernel_name: impl::HiFi::add_out
 
 - op: bmm.out
   kernels:
@@ -45,12 +45,12 @@
 - op: div.out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::div_out
+      kernel_name: impl::HiFi::div_out
 
 - op: div.out_mode
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::div_out_mode
+      kernel_name: impl::HiFi::div_out_mode
 
 - op: embedding.out
   kernels:
@@ -65,7 +65,7 @@
 - op: mul.out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::mul_out
+      kernel_name: impl::HiFi::mul_out
 
 - op: permute_copy.out
   kernels:
@@ -75,7 +75,7 @@
 - op: sigmoid.out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::sigmoid_out
+      kernel_name: impl::HiFi::sigmoid_out
 
 - op: slice_copy.Tensor_out
   kernels:
@@ -90,12 +90,12 @@
 - op: sub.out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::sub_out
+      kernel_name: impl::HiFi::sub_out
 
 - op: tanh.out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::tanh_out
+      kernel_name: impl::HiFi::tanh_out
 
 - op: view_copy.out
   kernels:

@@ -13,9 +13,16 @@
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 
+using exec_aten::Scalar;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
+using executorch::aten::RuntimeContext;
+using executorch::runtime::can_cast;
+using executorch::runtime::CppTypeToScalarType;
+using torch::executor::Error;
 
-namespace torch {
-namespace executor { 
+namespace impl {
+namespace HiFi { 
 namespace native {
 
 namespace {
@@ -34,7 +41,7 @@ template <
     typename CTYPE_OUT>
 struct MulInner<true, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT> {
   static void run(const Tensor& a, const Tensor& b, Tensor& out) {
-    apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
+    torch::executor::apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
         // NOLINTNEXTLINE(facebook-hte-ConstantArgumentPassByValue)
         [](const CTYPE_A val_a, const CTYPE_B val_b) {
           CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
@@ -155,63 +162,6 @@ mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
   return out;
 }
 
-Tensor& mul_scalar_out(
-    RuntimeContext& ctx,
-    const Tensor& a,
-    const Scalar& b,
-    Tensor& out) {
-
-  // Resize for dynamic shape
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      resize_tensor(out, a.sizes()) == Error::Ok,
-      InvalidArgument,
-      out,
-      "Failed to resize output tensor.");
-
-  ET_KERNEL_CHECK(ctx, tensor_is_realhb_type(out), InvalidArgument, out);
-
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = utils::get_scalar_dtype(b);
-  ScalarType common_type =
-      utils::promote_type_with_scalar(a_type, b, /*half_to_float*/ false);
-  ScalarType out_type = out.scalar_type();
-
-  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
-
-  /*When Half first compute the result in float precision 
-    and then downcast to half*/
-  if (common_type == ScalarType::Half) {
-    common_type = ScalarType::Float;
-  }
-
-  ET_SWITCH_REALHB_TYPES(a_type, ctx, "mul.Scalar_out", CTYPE_A, [&]() {
-    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "mul.Scalar_out", CTYPE_B, [&]() {
-      ET_SWITCH_REALB_TYPES(
-          common_type, ctx, "mul.Scalar_out", CTYPE_IN, [&]() {
-            ET_SWITCH_REALHB_TYPES(
-                out_type, ctx, "mul.Scalar_out", CTYPE_OUT, [&]() {
-                  CTYPE_B b_val;
-                  utils::extract_scalar(b, &b_val);
-                  CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
-
-                  apply_unary_map_fn(
-                      [b_casted](const CTYPE_A val_a) {
-                        CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                        CTYPE_IN value = a_casted * b_casted;
-                        return static_cast<CTYPE_OUT>(value);
-                      },
-                      a.const_data_ptr<CTYPE_A>(),
-                      out.mutable_data_ptr<CTYPE_OUT>(),
-                      out.numel());
-                });
-          });
-    });
-  });
-
-  return out;
-}
-
+} // namespace impl
+} // namespace HiFi
 } // namespace native
-} // namespace executor
-} // namespace torch
