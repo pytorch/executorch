@@ -72,6 +72,7 @@ else()
       ${FLATCCRT_LIB}
       coremldelegate
       mpsdelegate
+      neuron_backend
       qnn_executorch_backend
       portable_ops_lib
       extension_module
