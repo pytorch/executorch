@@ -53,7 +53,6 @@ Tensor& rsub_scalar_out(
     const CTYPE_COMPUTE val_alpha = utils::scalar_to<CTYPE_COMPUTE>(alpha);
     utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
         [val_b, val_alpha](const CTYPE_COMPUTE val_a) {
-
           return val_b - val_alpha * val_a;
         },
         ctx,
