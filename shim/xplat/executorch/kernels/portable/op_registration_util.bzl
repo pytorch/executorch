@@ -447,6 +447,7 @@ ATEN_OPS = (
     op_target(
         name = "op_cumsum",
         deps = [
+            "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
