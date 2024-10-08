@@ -1431,10 +1431,10 @@ class TestPasses(unittest.TestCase):
             m_eager: torch.nn.Module, example_inputs: Tuple[torch.Tensor]
         ) -> Tuple[EdgeProgramManager, int, int]:
             # program capture
-            m = torch.export.export_for_training(
+            m = torch._export.capture_pre_autograd_graph(
                 m_eager,
                 example_inputs,
-            ).module()
+            )
 
             quantizer = XNNPACKQuantizer()
             quantization_config = get_symmetric_quantization_config()
