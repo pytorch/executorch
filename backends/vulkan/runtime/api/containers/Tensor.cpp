@@ -221,6 +221,7 @@ vkapi::VulkanImage allocate_image(
   VkSampler sampler = adapter_ptr->sampler_cache().retrieve(sampler_props);
 
   return adapter_ptr->vma().create_image(
+      context_ptr->device(),
       vkapi::create_extent3d(image_extents),
       image_format,
       image_type,

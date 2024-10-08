@@ -93,6 +93,7 @@ class VulkanImage final {
   explicit VulkanImage();
 
   explicit VulkanImage(
+      VkDevice,
       const VmaAllocator,
       const VmaAllocationCreateInfo&,
       const ImageProperties&,
@@ -101,6 +102,13 @@ class VulkanImage final {
       const VkImageLayout layout,
       VkSampler,
       const bool allocate_memory = true);
+
+  explicit VulkanImage(
+      VkDevice,
+      const ImageProperties&,
+      VkImage,
+      VkImageView,
+      VkSampler);
 
  protected:
   /*
@@ -136,6 +144,7 @@ class VulkanImage final {
   friend struct ImageMemoryBarrier;
 
  private:
+  VkDevice device_;
   ImageProperties image_properties_;
   ViewProperties view_properties_;
   SamplerProperties sampler_properties_;
@@ -159,9 +168,7 @@ class VulkanImage final {
   void create_image_view();
 
   inline VkDevice device() const {
-    VmaAllocatorInfo allocator_info{};
-    vmaGetAllocatorInfo(allocator_, &allocator_info);
-    return allocator_info.device;
+    return device_;
   }
 
   inline VmaAllocator vma_allocator() const {
