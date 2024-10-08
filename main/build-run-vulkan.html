@@ -491,7 +491,7 @@ is a native GPU delegate for ExecuTorch.</p>
 <div class="sd-card-title sd-font-weight-bold docutils">
 What you will learn in this tutorial:</div>
 <ul class="simple">
-<li><p class="sd-card-text">How to export the Stories 110M parameter model with partial GPU delegation</p></li>
+<li><p class="sd-card-text">How to export the Llama3.2-1B parameter model with partial GPU delegation</p></li>
 <li><p class="sd-card-text">How to execute the partially delegated model on Android</p></li>
 </ul>
 </div>
@@ -504,7 +504,7 @@ What you will learn in this tutorial:</div>
 Prerequisites:</div>
 <ul class="simple">
 <li><p class="sd-card-text">Follow <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc"><strong>Setting up ExecuTorch</strong></span></a></p></li>
-<li><p class="sd-card-text">Follow <a class="reference internal" href="llm/llama-demo-android.html"><span class="doc std std-doc"><strong>Setting up the ExecuTorch LLaMA Android Demo App</strong></span></a></p></li>
+<li><p class="sd-card-text">It is also recommended that you read through <a class="reference internal" href="native-delegates-executorch-vulkan-delegate.html"><span class="doc std std-doc"><strong>ExecuTorch Vulkan Delegate</strong></span></a> and follow the example in that page</p></li>
 </ul>
 </div>
 </div>
@@ -516,12 +516,10 @@ Prerequisites:</div>
 <p>Note that all the steps below should be performed from the ExecuTorch repository
 root directory, and assumes that you have gone through the steps of setting up
 ExecuTorch.</p>
-<p>You should also refer to the <strong>Prerequisites</strong> section of the <a class="reference internal" href="llm/llama-demo-android.html"><span class="doc std std-doc"><strong>Setting up the ExecuTorch LLaMA Android Demo App</strong></span></a>
-Tutorial in order to install the specified versions of the Android NDK and the
-Android SDK.</p>
-<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span><span class="c1"># Recommended version is Android NDK 26.3.11579264.</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path_to_ndk&gt;
-<span class="c1"># Select an appropriate Android ABI</span>
+<p>It is also assumed that the Android NDK and Android SDK is installed, and the
+following environment examples are set.</p>
+<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path_to_ndk&gt;
+<span class="c1"># Select an appropriate Android ABI for your device</span>
 <span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABI</span><span class="o">=</span>arm64-v8a
 <span class="c1"># All subsequent commands should be performed from ExecuTorch repo root</span>
 <span class="nb">cd</span><span class="w"> </span>&lt;path_to_executorch_root&gt;
@@ -530,39 +528,35 @@ adb<span class="w"> </span>--version
 </pre></div>
 </div>
 </div>
-<div class="section" id="lowering-the-stories-110m-model-to-vulkan">
-<h2>Lowering the Stories 110M model to Vulkan<a class="headerlink" href="#lowering-the-stories-110m-model-to-vulkan" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="lowering-the-llama3-2-1b-model-to-vulkan">
+<h2>Lowering the Llama3.2-1B model to Vulkan<a class="headerlink" href="#lowering-the-llama3-2-1b-model-to-vulkan" title="Permalink to this heading">¶</a></h2>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>The resultant model will only be partially delegated to the Vulkan backend. In
 particular, only binary arithmetic operators (<code class="docutils literal notranslate"><span class="pre">aten.add</span></code>, <code class="docutils literal notranslate"><span class="pre">aten.sub</span></code>,
-<code class="docutils literal notranslate"><span class="pre">aten.mul</span></code>, <code class="docutils literal notranslate"><span class="pre">aten.div</span></code>) and the matrix multiplication operator (<code class="docutils literal notranslate"><span class="pre">aten.mm</span></code>) will
-be executed on the GPU via the Vulkan delegate. The rest of the model will be
-executed using Portable operators. This is because the Vulkan delegate is still
-early in development and currently has limited operator coverage.</p>
+<code class="docutils literal notranslate"><span class="pre">aten.mul</span></code>, <code class="docutils literal notranslate"><span class="pre">aten.div</span></code>), matrix multiplication operators (<code class="docutils literal notranslate"><span class="pre">aten.mm</span></code>, <code class="docutils literal notranslate"><span class="pre">aten.bmm</span></code>),
+and linear layers (<code class="docutils literal notranslate"><span class="pre">aten.linear</span></code>) will be executed on the GPU via the Vulkan
+delegate. The rest of the model will be executed using Portable operators.</p>
+<p>Operator support for LLaMA models is currently in active development; please
+check out the <code class="docutils literal notranslate"><span class="pre">main</span></code> branch of the ExecuTorch repo for the latest capabilities.</p>
 </div>
-<p>First, download <code class="docutils literal notranslate"><span class="pre">stories110M.pt</span></code> and <code class="docutils literal notranslate"><span class="pre">tokenizer.model</span></code> from Github:</p>
-<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span>wget<span class="w"> </span><span class="s2">&quot;https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt&quot;</span>
-wget<span class="w"> </span><span class="s2">&quot;https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model&quot;</span>
+<p>First, obtain the <code class="docutils literal notranslate"><span class="pre">consolidated.00.pth</span></code>, <code class="docutils literal notranslate"><span class="pre">params.json</span></code> and <code class="docutils literal notranslate"><span class="pre">tokenizer.model</span></code>
+files for the <code class="docutils literal notranslate"><span class="pre">Llama3.2-1B</span></code> model from the <a class="reference external" href="https://www.llama.com/llama-downloads/">Llama website</a>.</p>
+<p>Once the files have been downloaded, the <code class="docutils literal notranslate"><span class="pre">export_llama</span></code> script can be used to
+partially lower the Llama model to Vulkan.</p>
+<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span><span class="c1"># The files will usually be downloaded to ~/.llama</span>
+python<span class="w"> </span>-m<span class="w"> </span>examples.models.llama2.export_llama<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--disable_dynamic_shape<span class="w"> </span>--vulkan<span class="w"> </span>-kv<span class="w"> </span>--use_sdpa_with_kv_cache<span class="w"> </span>-d<span class="w"> </span>fp32<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-c<span class="w"> </span>~/.llama/checkpoints/Llama3.2-1B/consolidated.00.pth<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-p<span class="w"> </span>~/.llama/checkpoints/Llama3.2-1B/params.json<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--metadata<span class="w"> </span><span class="s1">&#39;{&quot;get_bos_id&quot;:128000, &quot;get_eos_ids&quot;:[128009, 128001]}&#39;</span>
 </pre></div>
 </div>
-<p>Next, create the params file:</p>
-<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span><span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;{&quot;dim&quot;: 768, &quot;multiple_of&quot;: 32, &quot;n_heads&quot;: 12, &quot;n_layers&quot;: 12, &quot;norm_eps&quot;: 1e-05, &quot;vocab_size&quot;: 32000}&#39;</span><span class="w"> </span>&gt;<span class="w"> </span>params.json
-</pre></div>
-</div>
-<p>Then, create a tokenizer binary file:</p>
-<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>extension.llm.tokenizer.tokenizer<span class="w"> </span>-t<span class="w"> </span>tokenizer.model<span class="w"> </span>-o<span class="w"> </span>tokenizer.bin
-</pre></div>
-</div>
-<p>Finally, export the <code class="docutils literal notranslate"><span class="pre">stories110M.pt</span></code> file into an ExecuTorch program:</p>
-<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.models.llama2.export_llama<span class="w"> </span>-c<span class="w"> </span>stories110M.pt<span class="w"> </span>-p<span class="w"> </span>params.json<span class="w"> </span>--vulkan
-</pre></div>
-</div>
-<p>A <code class="docutils literal notranslate"><span class="pre">vulkan_llama2.pte</span></code> file should have been created as a result of the last step.</p>
+<p>A <code class="docutils literal notranslate"><span class="pre">vulkan_llama2.pte</span></code> file should have been created as a result of running the
+script.</p>
 <p>Push the tokenizer binary and <code class="docutils literal notranslate"><span class="pre">vulkan_llama2.pte</span></code> onto your Android device:</p>
-<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span>adb<span class="w"> </span>mkdir<span class="w"> </span>/data/local/tmp/llama/
-adb<span class="w"> </span>push<span class="w"> </span>tokenizer.bin<span class="w"> </span>/data/local/tmp/llama/
-adb<span class="w"> </span>push<span class="w"> </span>vulkan_llama2.pte<span class="w"> </span>/data/local/tmp/llama/
+<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span>adb<span class="w"> </span>push<span class="w"> </span>~/.llama/tokenizer.model<span class="w"> </span>/data/local/tmp/
+adb<span class="w"> </span>push<span class="w"> </span>vulkan_llama2.pte<span class="w"> </span>/data/local/tmp/
 </pre></div>
 </div>
 </div>
@@ -578,7 +572,8 @@ binary using the Android NDK toolchain.</p>
 <span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_TENSOR<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_VULKAN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_CUSTOM<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-Bcmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out<span class="w"> </span>-j16<span class="w"> </span>--target<span class="w"> </span>install<span class="o">)</span>
@@ -588,39 +583,29 @@ binary using the Android NDK toolchain.</p>
 <span class="w">  </span>cmake<span class="w"> </span>examples/models/llama2<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="nv">$ANDROID_ABI</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_CUSTOM<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-android-out<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-Bcmake-android-out/examples/models/llama2<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out/examples/models/llama2<span class="w"> </span>-j16<span class="o">)</span>
 </pre></div>
 </div>
-<p>Finally, push and run the llama runner binary on your Android device.</p>
+<p>Finally, push and run the llama runner binary on your Android device. Note that
+your device must have sufficient GPU memory to execute the model.</p>
 <div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span>adb<span class="w"> </span>push<span class="w"> </span>cmake-android-out/examples/models/llama2/llama_main<span class="w"> </span>/data/local/tmp/llama_main
 
 adb<span class="w"> </span>shell<span class="w"> </span>/data/local/tmp/llama_main<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--model_path<span class="o">=</span>/data/local/tmp/llama/vulkan_llama2.pte<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--tokenizer_path<span class="o">=</span>/data/local/tmp/llama/tokenizer.bin<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--prompt<span class="w"> </span><span class="s2">&quot;hi&quot;</span><span class="w"> </span><span class="se">\-</span>-temperature<span class="o">=</span><span class="m">0</span>
+<span class="w">    </span>--model_path<span class="o">=</span>/data/local/tmp/vulkan_llama2.pte<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--tokenizer_path<span class="o">=</span>/data/local/tmp/tokenizer.model<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--prompt<span class="w"> </span><span class="s2">&quot;Hello&quot;</span>
 </pre></div>
 </div>
-<p>The following output will be produced:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">hippo</span> <span class="n">named</span> <span class="n">Hippy</span> <span class="n">lived</span> <span class="ow">in</span> <span class="n">a</span> <span class="n">big</span> <span class="n">pond</span><span class="o">.</span> <span class="n">Hippy</span> <span class="n">was</span> <span class="n">a</span> <span class="n">very</span> <span class="n">happy</span> <span class="n">hippo</span><span class="o">.</span> <span class="n">He</span> <span class="n">liked</span> <span class="n">to</span> <span class="n">play</span><span class="o">...</span>
-</pre></div>
-</div>
-</div>
-<div class="section" id="running-with-the-llama-android-demo-app">
-<h2>Running with the LLaMA Android Demo App<a class="headerlink" href="#running-with-the-llama-android-demo-app" title="Permalink to this heading">¶</a></h2>
-<p>It is also possible to run the partially delegated Vulkan model inside the LLaMA
-Android demo app.</p>
-<p>First, make some modifications to the Android app setup script to make sure that
-the Vulkan backend is built when building and installing ExecuTorch libraries:</p>
-<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span><span class="c1"># Run from executorch root directory. You can also edit this in a code editor</span>
-sed<span class="w"> </span>-i<span class="w"> </span><span class="s1">&#39;s/-DEXECUTORCH_BUILD_XNNPACK=ON/-DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_VULKAN=ON/g&#39;</span><span class="w"> </span>examples/demo-apps/android/LlamaDemo/setup.sh
-</pre></div>
-</div>
-<p>Then, Follow the instructions at <a class="reference internal" href="llm/llama-demo-android.html"><span class="doc std std-doc"><strong>Setting up the ExecuTorch LLaMA Android Demo App</strong></span></a>
-to build and run the demo application on your Android device. Once the app
-starts up, you can load and run the <code class="docutils literal notranslate"><span class="pre">vulkan_llama2.pte</span></code> model with the app.</p>
+<p>Note that currently model inference will be very slow due to the high amount of
+delegate blobs in the lowered graph, which requires a transfer to and from the
+GPU for each sub graph. Performance is expected to improve drastically as more
+of the model can be lowered to the Vulkan delegate, and techniques such as
+quantization are supported.</p>
 </div>
 </div>
 
@@ -671,9 +656,8 @@ starts up, you can load and run the <code class="docutils literal notranslate"><
               <ul>
 <li><a class="reference internal" href="#">Building and Running ExecuTorch with the Vulkan Backend</a><ul>
 <li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
-<li><a class="reference internal" href="#lowering-the-stories-110m-model-to-vulkan">Lowering the Stories 110M model to Vulkan</a></li>
+<li><a class="reference internal" href="#lowering-the-llama3-2-1b-model-to-vulkan">Lowering the Llama3.2-1B model to Vulkan</a></li>
 <li><a class="reference internal" href="#build-and-run-the-llama-runner-binary-on-android">Build and Run the LLaMA runner binary on Android</a></li>
-<li><a class="reference internal" href="#running-with-the-llama-android-demo-app">Running with the LLaMA Android Demo App</a></li>
 </ul>
 </li>
 </ul>
