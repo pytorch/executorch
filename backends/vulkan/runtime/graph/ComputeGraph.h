@@ -467,6 +467,11 @@ class ComputeGraph final {
       const int64_t shared_object_idx = -1);
 
   /*
+   * Add a `api::vTensor` value to the graph with the specified image.
+   */
+  ValueRef add_tensor(const vkapi::VulkanImage& image);
+
+  /*
    * Add a `api::vTensor` value to the graph with the properties of `vref`.
    */
   ValueRef add_tensor_like(

@@ -282,6 +282,21 @@ vTensorStorage::vTensorStorage(
       has_copies_{false} {}
 
 vTensorStorage::vTensorStorage(
+    Context* const context,
+    const vkapi::VulkanImage& image)
+    : context_(context),
+      storage_type_{utils::kTexture2D},
+      image_extents_(
+          {image.extents().width,
+           image.extents().height,
+           image.extents().depth}),
+      buffer_length_{0},
+      buffer_offset_{0},
+      image_(image),
+      buffer_(vkapi::VulkanBuffer()),
+      last_access_{} {}
+
+vTensorStorage::vTensorStorage(
     vTensorStorage& other,
     const int64_t buffer_offset)
     : context_(other.context_),
@@ -446,6 +461,30 @@ vTensor::vTensor(
 }
 
 // NOLINTNEXTLINE
+vTensor::vTensor(Context* const context, const vkapi::VulkanImage& image)
+    : dtype_(),
+      // Calculate tensor metadata
+      sizes_(),
+      packed_dim_(),
+      dim_order_(),
+      axis_map_(default_axis_map()),
+      strides_(),
+      numel_(),
+      padded_sizes_(),
+      unsqueezed_strides_(),
+      padded_numel_(),
+      logical_limits_(),
+      // Utility Uniform Buffers that can be passed to shaders as arguments
+      sizes_uniform_(),
+      strides_uniform_(),
+      numel_uniform_(),
+      axis_map_uniform_(),
+      logical_limits_uniform_(),
+      // Construct Tensor storage
+      storage_(context, image) {
+  set_logical_limits(storage_.image_extents_);
+}
+
 vTensor::vTensor(vTensor& other)
     : dtype_(other.dtype_),
       // Copy tensor size metadata

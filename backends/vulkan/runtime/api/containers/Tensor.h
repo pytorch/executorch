@@ -95,6 +95,8 @@ class vTensorStorage final {
       const vkapi::ScalarType dtype,
       const bool allocate_memory = true);
 
+  vTensorStorage(Context* const context, const vkapi::VulkanImage& image);
+
  protected:
   /*
    * This allows for creation of tensors that use the same underlying storage
@@ -184,6 +186,8 @@ class vTensor final {
       const bool allocate_memory = true);
 
   vTensor(const vTensor& other) = delete;
+
+  explicit vTensor(Context* context, const vkapi::VulkanImage& image);
 
   /*
    * This constructor allows for the creation of a vTensor that references the
