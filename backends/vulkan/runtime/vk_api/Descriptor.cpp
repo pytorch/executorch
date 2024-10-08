@@ -116,8 +116,12 @@ DescriptorSet& DescriptorSet::bind(
 DescriptorSet& DescriptorSet::bind(
     const uint32_t idx,
     const VulkanImage& image) {
-  VK_CHECK_COND(
-      image.has_memory(), "Image must be bound to memory for it to be usable");
+  // Check is only accurate for images allocated with VMA
+  if (image.vma_allocator() != VK_NULL_HANDLE) {
+    VK_CHECK_COND(
+        image.has_memory(),
+        "Image must be bound to memory for it to be usable");
+  }
 
   VkImageLayout binding_layout = image.layout();
   if (shader_layout_signature_[idx] == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {

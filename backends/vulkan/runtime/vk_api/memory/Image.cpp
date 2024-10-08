@@ -92,7 +92,8 @@ void swap(ImageSampler& lhs, ImageSampler& rhs) noexcept {
 //
 
 VulkanImage::VulkanImage()
-    : image_properties_{},
+    : device_{VK_NULL_HANDLE},
+      image_properties_{},
       view_properties_{},
       sampler_properties_{},
       allocator_(VK_NULL_HANDLE),
@@ -108,6 +109,7 @@ VulkanImage::VulkanImage()
       layout_{} {}
 
 VulkanImage::VulkanImage(
+    VkDevice device,
     VmaAllocator vma_allocator,
     const VmaAllocationCreateInfo& allocation_create_info,
     const ImageProperties& image_props,
@@ -116,7 +118,8 @@ VulkanImage::VulkanImage(
     const VkImageLayout layout,
     VkSampler sampler,
     const bool allocate_memory)
-    : image_properties_(image_props),
+    : device_{device},
+      image_properties_(image_props),
       view_properties_(view_props),
       sampler_properties_(sampler_props),
       allocator_(vma_allocator),
@@ -178,8 +181,30 @@ VulkanImage::VulkanImage(
   }
 }
 
+VulkanImage::VulkanImage(
+    VkDevice device,
+    const ImageProperties& image_props,
+    VkImage image,
+    VkImageView image_view,
+    VkSampler sampler)
+    : device_{device},
+      image_properties_{image_props},
+      view_properties_{},
+      sampler_properties_{},
+      allocator_(VK_NULL_HANDLE),
+      memory_{},
+      owns_memory_(false),
+      is_copy_(false),
+      handles_{
+          image,
+          image_view,
+          sampler,
+      },
+      layout_{VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL} {}
+
 VulkanImage::VulkanImage(const VulkanImage& other) noexcept
-    : image_properties_(other.image_properties_),
+    : device_(other.device_),
+      image_properties_(other.image_properties_),
       view_properties_(other.view_properties_),
       sampler_properties_(other.sampler_properties_),
       allocator_(other.allocator_),
@@ -191,7 +216,8 @@ VulkanImage::VulkanImage(const VulkanImage& other) noexcept
       layout_(other.layout_) {}
 
 VulkanImage::VulkanImage(VulkanImage&& other) noexcept
-    : image_properties_(other.image_properties_),
+    : device_(other.device_),
+      image_properties_(other.image_properties_),
       view_properties_(other.view_properties_),
       sampler_properties_(other.sampler_properties_),
       allocator_(other.allocator_),
@@ -212,6 +238,7 @@ VulkanImage& VulkanImage::operator=(VulkanImage&& other) noexcept {
   VkImageView tmp_image_view = handles_.image_view;
   bool tmp_owns_memory = owns_memory_;
 
+  device_ = other.device_;
   image_properties_ = other.image_properties_;
   view_properties_ = other.view_properties_;
   sampler_properties_ = other.sampler_properties_;
