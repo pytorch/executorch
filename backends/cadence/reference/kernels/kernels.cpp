@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <kernels.h>
 #include <math.h>
 #include <algorithm>
 #include <cstring>

@@ -25,15 +25,8 @@ main() {
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_SDK=ON \
     -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
-    -DPYTHON_EXECUTABLE=python3 \
-    -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
-    -DEXECUTORCH_BUILD_HOST_TARGETS=ON \
-    -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
-    -DEXECUTORCH_BUILD_PTHREADPOOL=OFF \
-    -DEXECUTORCH_BUILD_CPUINFO=OFF \
-    -DEXECUTORCH_ENABLE_LOGGING=ON \
     -Bcmake-out .
-  cmake --build cmake-out --target install --config Release
+  cmake --build cmake-out --target install --config Release -j16
 
   local example_dir=backends/cadence
   local build_dir="cmake-out/${example_dir}"
@@ -41,6 +34,7 @@ main() {
   rm -rf ${build_dir}
   cmake -DCMAKE_PREFIX_PATH="${cmake_prefix_path}" \
     -DCMAKE_BUILD_TYPE=Release \
+    -DEXECUTORCH_CADENCE_CPU_RUNNER=ON \
     -B"${build_dir}" \
     "${example_dir}"
   cmake --build "${build_dir}" --config Release
