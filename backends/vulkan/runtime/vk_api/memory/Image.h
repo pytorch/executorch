@@ -145,6 +145,9 @@ class VulkanImage final {
   Allocation memory_;
   // Indicates whether the underlying memory is owned by this resource
   bool owns_memory_;
+  // In some cases, a VulkanImage may be a copy of another VulkanImage but still
+  // own a unique view of the VkImage.
+  bool owns_view_;
   // Indicates whether this VulkanImage was copied from another VulkanImage,
   // thus it does not have ownership of the underlying VKBuffer
   bool is_copy_;
@@ -228,10 +231,17 @@ class VulkanImage final {
 
   inline void bind_allocation(const Allocation& memory) {
     VK_CHECK_COND(!memory_, "Cannot bind an already bound allocation!");
-    VK_CHECK(vmaBindImageMemory(allocator_, memory.allocation, handles_.image));
+    // To prevent multiple instances of binding the same VkImage to a memory
+    // block, do not actually bind memory if this VulkanImage is a copy. Assume
+    // that the original VulkanImage is responsible for binding the image.
+    if (!is_copy_) {
+      VK_CHECK(
+          vmaBindImageMemory(allocator_, memory.allocation, handles_.image));
+    }
     memory_.allocation = memory.allocation;
 
     // Only create the image view if the image has been bound to memory
+    owns_view_ = true;
     create_image_view();
   }
 

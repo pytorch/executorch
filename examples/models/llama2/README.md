@@ -85,10 +85,10 @@ We have verified running Llama 2 7B [mobile applications](#step-6-build-mobile-a
 ### Llama 3.2 1B and 3B
 Llama 3.2 1B and 3B performance was measured on the OnePlus 12 device. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on) for generating 128 tokens.
 
-|Model  | 4bit(*) via SpinQuant
-|--------| ---------------
-|1B  | 53.41 tokens/second |
-|3B | 22.98 tokens/second |
+|Model  | bf16 | 4bit(*) via SpinQuant
+|--------| ---------------------- | ---------------
+|1B  | 19.4 tokens/second | 53.41 tokens/second |
+|3B | 7.76 tokens/second | 22.98 tokens/second |
 
 (*) With SpinQuant, we currently quantize 4-bit groupwise (with groupsize 32) weight, 8bit dynamic activation of all the linear layers of the model, except embedding and output layers. The embedding and output layers are quantized as 8-bit per-channel weight and 8-bit dynamic activation.
 
@@ -142,7 +142,9 @@ LLAMA_PARAMS=path/to/params.json
 python -m examples.models.llama2.export_llama \
   --checkpoint "${LLAMA_CHECKPOINT:?}" \
   --params "${LLAMA_PARAMS:?}" \
-  -kv -X \
+  -kv \
+  --use_sdpa_with_kv_cache \
+  -X \
   -d bf16 \
   --metadata '{"append_eos_to_prompt": 0, "get_bos_id":128000, "get_eos_ids":[128009, 128001], "get_n_bos": 0, "get_n_eos": 0}' \
   --output_name="llama3_2.pte"
@@ -162,13 +164,13 @@ python -m examples.models.llama2.export_llama \
    --params "${LLAMA_PARAMS:?}" \
    --use_sdpa_with_kv_cache \
    -X \
-   --spin_qmode 8da4w_output_8da8w \
-   --spin_group_size 32 \
+   --preq_mode 8da4w_output_8da8w \
+   --preq_group_size 32 \
    --max_seq_length 2048 \
    --output_name "llama3_2.pte" \
    -kv \
    -d fp32 \
-   --spin_embedding_quantize 8,0 \
+   --preq_embedding_quantize 8,0 \
    --use_spin_quant native \
    --metadata '{"append_eos_to_prompt": 0, "get_bos_id":128000, "get_eos_ids":[128009, 128001], "get_n_bos": 0, "get_n_eos": 0}'
 ```

@@ -395,6 +395,14 @@ class vTensor final {
     return packed_dim_;
   }
 
+  /*
+   * Returns the WHCN index of the dimension that is used to concatenate batches
+   * as an int32_t.
+   */
+  inline int32_t concat_dim() const {
+    return utils::safe_downcast<int32_t>(axis_map_.at(3));
+  }
+
   inline const std::vector<int64_t>& sizes() const {
     return sizes_;
   }

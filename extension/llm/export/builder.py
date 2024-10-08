@@ -16,7 +16,7 @@ import torch
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
-from executorch.backends.xnnpack.passes.convert_to_linear import ConvertToLinearPass
+from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
 from executorch.exir import EdgeProgramManager
 from executorch.exir.backend.partitioner import Partitioner
 
@@ -146,6 +146,7 @@ class LLMEdgeManager:
 
         if self.verbose:
             logging.info(f"Applied source transforms: {self.applied_source_transforms}")
+        logging.info(f"Model after source transforms: {self.model}")
         return self
 
     def _get_dynamic_shape(self) -> Any:

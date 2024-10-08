@@ -54,6 +54,11 @@
 #define alignup4(x) ((x + 3) & -4)
 
 /*
+ * Fast modulo by 4 using bit masking
+ */
+#define mod4(x) (x & 3)
+
+/*
  * Find the packed dimension of a tensor given its strides. The packed dimension
  * is the "fastest moving" dimension which will have a stride of 1.
  */

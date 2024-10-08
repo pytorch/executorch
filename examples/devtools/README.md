@@ -11,7 +11,7 @@ examples/devtools
 
 ## BundledProgram
 
-We will use an example model (in `torch.nn.Module`) and its representative inputs, both from [`models/`](../models) directory, to generate a [BundledProgram(`.bpte`)](../../docs/source/sdk-bundled-io.md) file using the [script](scripts/export_bundled_program.py). Then we will use [devtools/example_runner](example_runner/example_runner.cpp) to execute the `.bpte` model on the ExecuTorch runtime and verify the model on BundledProgram API.
+We will use an example model (in `torch.nn.Module`) and its representative inputs, both from [`models/`](../models) directory, to generate a [BundledProgram(`.bpte`)](../../docs/source/bundled-io.md) file using the [script](scripts/export_bundled_program.py). Then we will use [devtools/example_runner](example_runner/example_runner.cpp) to execute the `.bpte` model on the ExecuTorch runtime and verify the model on BundledProgram API.
 
 
 1. Sets up the basic development environment for ExecuTorch by [Setting up ExecuTorch from GitHub](https://pytorch.org/executorch/stable/getting-started-setup).

@@ -49,6 +49,8 @@ def define_common_targets():
         preprocessor_flags = [
             # Uncomment to enable per operator timings
             # "-DENABLE_XNNPACK_PROFILING",
+            # Uncomment to enable using KleidiAI Kernels
+            # "-DENABLE_XNNPACK_KLEIDI"
         ] + _get_preprocessor_flags(),
         exported_deps = [
             "//executorch/runtime/backend:interface",

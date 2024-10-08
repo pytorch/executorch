@@ -72,7 +72,7 @@ endif()
 
 if(TARGET xnnpack_backend)
   target_link_options_shared_lib(xnnpack_backend)
-  list(APPEND link_libraries xnnpack_backend XNNPACK pthreadpool cpuinfo)
+  list(APPEND link_libraries xnnpack_backend XNNPACK pthreadpool cpuinfo microkernels-prod)
 endif()
 
 if(TARGET vulkan_backend)

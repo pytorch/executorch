@@ -747,6 +747,46 @@ def get_repeat_inputs():
     return test_suite
 
 
+@register_test_suite("aten.repeat_interleave.self_int")
+def get_repeat_interleave_inputs():
+    test_suite_W = VkTestSuite(
+        [
+            ((4, 32, 256), 3, -2),
+            # Test repeat on each non-packed dim
+            ((16, 32, 64), 5, -2),
+            ((16, 32, 64), 5, -3),
+            # Test batched inputs
+            ((3, 5, 32, 64), 4, -2),
+            ((3, 5, 32, 64), 4, -3),
+        ]
+    )
+    test_suite_W.layouts = [
+        "utils::kWidthPacked",
+    ]
+    test_suite_W.data_gen = "make_seq_tensor"
+    test_suite_W.dtypes = ["at::kFloat"]
+    test_suite_W.test_name_suffix = "W_packed"
+
+    test_suite_C = VkTestSuite(
+        [
+            # Test repeat on each non-packed dim
+            ((32, 32, 16), 5, -1),
+            ((32, 32, 16), 5, -2),
+            # Test batched inputs
+            ((3, 16, 8, 64), 4, -1),
+            ((3, 16, 8, 64), 4, -2),
+        ]
+    )
+    test_suite_C.layouts = [
+        "utils::kChannelsPacked",
+    ]
+    test_suite_C.data_gen = "make_seq_tensor"
+    test_suite_C.dtypes = ["at::kFloat"]
+    test_suite_C.test_name_suffix = "C_packed"
+
+    return [test_suite_W, test_suite_C]
+
+
 @register_test_suite("aten.cat.default")
 def get_cat_inputs():
     # TensorList must be specified as list of tuples
@@ -900,29 +940,30 @@ def get_split_tensor_inputs():
 def get_softmax_inputs():
     test_suite = VkTestSuite(
         [
-            ((S1), 0, False),
-            ((S1), -1, False),
-            ((S, S1), 0, False),
-            ((S, S1), 1, False),
-            ((S, S1), -1, False),
-            ((S, S1), -2, False),
+            ((L), 0, False),
+            ((L), -1, False),
+            ((M, L), 0, False),
+            ((M, L), 1, False),
+            ((L, M), -1, False),
+            ((M, L), -2, False),
             ((S, S1, S2), 0, False),
             ((S, S1, S2), 1, False),
             ((S, S1, S2), 2, False),
             ((S, S1, S2), -1, False),
             ((S, S1, S2), -2, False),
             ((S, S1, S2), -3, False),
-            ((XS, S, S1, S2), 0, False),
-            ((XS, S, S1, S2), 1, False),
-            ((XS, S, S1, S2), 2, False),
-            ((XS, S, S1, S2), 3, False),
-            ((XS, S, S1, S2), -1, False),
-            ((XS, S, S1, S2), -2, False),
-            ((XS, S, S1, S2), -3, False),
-            ((XS, S, S1, S2), -4, False),
+            ((1, S, S1, S2), 1, False),
+            ((1, S, S1, S2), 2, False),
+            ((1, S, S1, S2), 3, False),
+            ((1, S, S1, S2), -1, False),
+            ((1, S, S1, S2), -2, False),
+            ((1, S, S1, S2), -3, False),
+            # Test batches > 1 where the reduction dim is not the concat dim
+            ((S, S2, S1, 128), -1, False),
         ]
     )
     test_suite.layouts = [
+        "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
     return test_suite
@@ -1117,4 +1158,24 @@ def get_squeeze_copy_dim_inputs():
             ([1, M1, M1], 0),
         ]
     )
+    return test_suite
+
+
+@register_test_suite("aten.flip.default")
+def get_flip_inputs():
+    Test = namedtuple("Flip", ["self", "dim"])
+    Test.__new__.__defaults__ = (None, 0)
+
+    test_cases = [
+        Test(self=[9], dim=[0]),
+        Test(self=[9, 9], dim=[0, 1]),
+        Test(self=[9, 9, 9], dim=[0, 2]),
+        Test(self=[9, 9, 9], dim=[0, 1, 2]),
+        Test(self=[9, 9, 9, 9], dim=[0]),
+        Test(self=[9, 9, 9, 9], dim=[0, 2, 3]),
+        Test(self=[9, 9, 9, 9], dim=[1, 3]),
+        Test(self=[9, 9, 9, 9], dim=[0, 1, 2, 3]),
+    ]
+
+    test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
     return test_suite
