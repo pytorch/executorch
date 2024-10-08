@@ -79,14 +79,27 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "dtype_util",
+        srcs = ["dtype_util.cpp"],
+        exported_headers = [
+            "dtype_util.h",
+        ],
+        compiler_flags = ["-Wno-missing-prototypes"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+    )
+
+    runtime.cxx_library(
         name = "elementwise_util",
-        srcs = ["elementwise_util.cpp"],
         exported_headers = [
             "elementwise_util.h",
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
         deps = [
             ":broadcast_util",
+            ":dtype_util",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/runtime/kernel:kernel_includes",
         ],
