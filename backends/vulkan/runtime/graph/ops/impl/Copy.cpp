@@ -31,6 +31,7 @@ void add_copy_offset_node(
   std::string kernel_name = "copy_offset";
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
+  add_storage_type_suffix(kernel_name, *t_out);
 
   const struct Block final {
     alignas(16) ivec3 range;
