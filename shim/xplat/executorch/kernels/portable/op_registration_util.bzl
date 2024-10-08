@@ -538,6 +538,7 @@ ATEN_OPS = (
         name = "op_floor_divide",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
@@ -546,7 +547,7 @@ ATEN_OPS = (
         deps = [
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -938,7 +939,7 @@ ATEN_OPS = (
         deps = [
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
