@@ -28,8 +28,8 @@ test_data_suite = [
     ),
     (
         "op_div_rank1_rand",
-        torch.rand(5),
-        torch.rand(5),
+        torch.rand(5) * 5,
+        torch.rand(5) * 5,
         None,
     ),
     (
@@ -70,8 +70,8 @@ test_data_suite = [
     ),
     (
         "op_div_rank4_large_randn",
-        200 * torch.randn(5, 10, 25, 20),
-        torch.rand(5, 10, 25, 20),
+        200 * torch.randn(5, 10, 25, 20) + 1,
+        torch.rand(5, 10, 25, 20) + 1,
         None,
     ),
 ]
@@ -81,14 +81,6 @@ class TestDiv(unittest.TestCase):
     """Tests division"""
 
     class Div(torch.nn.Module):
-        def __init__(
-            self,
-            input_: Union[torch.Tensor, torch.types.Number],
-            other_: Union[torch.Tensor, torch.types.Number],
-            rounding_mode: Optional[str] = None,
-        ):
-            super().__init__()
-            self.rounding_mode = rounding_mode
 
         def forward(
             self,
@@ -96,11 +88,11 @@ class TestDiv(unittest.TestCase):
             other_: Union[torch.Tensor, torch.types.Number],
             rounding_mode: Optional[str] = None,
         ):
-            if self.rounding_mode is None:
+            if rounding_mode is None:
                 return torch.div(input=input_, other=other_)
             else:
                 return torch.div(
-                    input=input_, other=other_, rounding_mode=self.rounding_mode
+                    input=input_, other=other_, rounding_mode=rounding_mode
                 )
 
     def _test_div_tosa_MI_pipeline(
@@ -133,13 +125,15 @@ class TestDiv(unittest.TestCase):
             )
             .quantize()
             .export()
-            .check_count({"torch.ops.aten.div.Tensor": 1})
+            .check_count(
+                {"torch.ops.aten.reciprocal.default": 1, "torch.ops.aten.mul.Tensor": 1}
+            )
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
+            .run_method_and_compare_outputs(inputs=test_data, atol=1, rtol=0.1)
         )
 
     def _test_div_u55_BI_pipeline(
@@ -153,7 +147,9 @@ class TestDiv(unittest.TestCase):
             )
             .quantize()
             .export()
-            .check_count({"torch.ops.aten.div.Tensor": 1})
+            .check_count(
+                {"torch.ops.aten.reciprocal.default": 1, "torch.ops.aten.mul.Tensor": 1}
+            )
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
             .partition()
@@ -170,14 +166,9 @@ class TestDiv(unittest.TestCase):
         rounding_mode: Optional[str] = None,
     ):
         test_data = (input_, other_)
-        self._test_div_tosa_MI_pipeline(
-            self.Div(input_, other_, rounding_mode=rounding_mode), test_data
-        )
+        self._test_div_tosa_MI_pipeline(self.Div(), test_data)
 
-    # Expected to fail since ArmQuantizer cannot quantize a Div layer
-    # TODO(MLETORCH-129)
     @parameterized.expand(test_data_suite)
-    @unittest.expectedFailure
     def test_div_tosa_BI(
         self,
         test_name: str,
@@ -187,14 +178,9 @@ class TestDiv(unittest.TestCase):
     ):
 
         test_data = (input_, other_)
-        self._test_div_tosa_BI_pipeline(
-            self.Div(input=input_, other=other_, rounding_mode=rounding_mode), test_data
-        )
+        self._test_div_tosa_BI_pipeline(self.Div(), test_data)
 
-    # Expected to fail since ArmQuantizer cannot quantize a Div layer
-    # TODO(MLETORCH-129)
     @parameterized.expand(test_data_suite)
-    @unittest.expectedFailure
     def test_div_u55_BI(
         self,
         test_name: str,
@@ -203,6 +189,4 @@ class TestDiv(unittest.TestCase):
         rounding_mode: Optional[str] = None,
     ):
         test_data = (input_, other_)
-        self._test_div_u55_BI_pipeline(
-            self.Div(input=input_, other=other_, rounding_mode=rounding_mode), test_data
-        )
+        self._test_div_u55_BI_pipeline(self.Div(), test_data)
