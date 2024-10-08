@@ -10,7 +10,7 @@ The ExecuTorch project introduces an advanced benchmarking infrastructure design
 
 - **Backend Delegates**: Supports XNNPACK, Apple CoreML, Qualcomm QNN, and more in the near future.
 
-- **Benchmark Apps:** Generic apps that support both GenAI and non-GenAI models, capable of measuring performance offline. [Android App](../android/benchmark/) | [iOS App](../apple/Benchmark/). Popular Android and iOS profilers with in-depth performance analysis will be integrated with these apps in the future.
+- **Benchmark Apps:** Generic apps that support both GenAI and non-GenAI models, capable of measuring performance offline. [Android App](android/benchmark/) | [iOS App](apple/Benchmark/). Popular Android and iOS profilers with in-depth performance analysis will be integrated with these apps in the future.
 
 - **Performance Monitoring**: Stores results in a database with a dashboard for tracking performance and detecting regressions.
 
