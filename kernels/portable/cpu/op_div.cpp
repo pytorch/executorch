@@ -132,7 +132,7 @@ Tensor& div_out_mode(
           CTYPE_COMPUTE value = val_a / val_b;
           if (mode_is_trunc) {
             value = std::trunc(value);
-          } else  {
+          } else {
             // We established above that the mode is either trunc or floor, so
             // it must be floor.
             value = utils::floor_divide(val_a, val_b);
@@ -186,7 +186,7 @@ Tensor& div_scalar_out(
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
     utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [val_b](const CTYPE_COMPUTE val_a) {return val_a / val_b;},
+        [val_b](const CTYPE_COMPUTE val_a) { return val_a / val_b; },
         ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
