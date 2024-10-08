@@ -5,9 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import glob
 import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
 
@@ -78,6 +80,16 @@ for arg in sys.argv[1:]:
         else:
             print(f"Error: {arg} must follow --pybind")
             sys.exit(1)
+    elif arg == "--clean":
+        print("Cleaning build artifacts...")
+        print("Cleaning pip-out/...")
+        shutil.rmtree("pip-out/", ignore_errors=True)
+        dirs = glob.glob("cmake-out*/")
+        for d in dirs:
+            print(f"Cleaning {d}...")
+            shutil.rmtree(d, ignore_errors=True)
+        print("Done cleaning build artifacts.")
+        sys.exit(0)
     else:
         print(f"Error: Unknown option {arg}")
         sys.exit(1)
@@ -94,7 +106,7 @@ if os.name == "nt":
 # NOTE: If a newly-fetched version of the executorch repo changes the value of
 # NIGHTLY_VERSION, you should re-run this script to install the necessary
 # package versions.
-NIGHTLY_VERSION = "dev20241002"
+NIGHTLY_VERSION = "dev20241007"
 
 # The pip repository that hosts nightly torch packages.
 TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
