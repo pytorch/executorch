@@ -9,6 +9,7 @@
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+
 def get_default_model_resource_dir() -> str:
     """
     Get the default path to resouce files (which contain files such as the
@@ -18,10 +19,11 @@ def get_default_model_resource_dir() -> str:
     """
 
     try:
+        import pkg_resources
+
         # 2nd way: If we can import this path, we are running with buck2 and all resources can be accessed with pkg_resources.
         # pyre-ignore
-        import pgk_resources
-        from executorch.examples.models.llama2 import params
+        from executorch.examples.models.llama2 import params  # noqa
 
         ckpt_dir = Path(
             pkg_resources.resource_filename(
@@ -32,7 +34,8 @@ def get_default_model_resource_dir() -> str:
         # 3rd way.
         ckpt_dir = Path(__file__).absolute().parent / "params"
 
-    return ckpt_dir   
+    return ckpt_dir
+
 
 def get_checkpoint_dtype(checkpoint: Dict[str, Any]) -> Optional[str]:
     dtype = None
