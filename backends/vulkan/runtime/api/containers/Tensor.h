@@ -187,7 +187,10 @@ class vTensor final {
 
   vTensor(const vTensor& other) = delete;
 
-  explicit vTensor(Context* context, const vkapi::VulkanImage& image);
+  explicit vTensor(
+      Context* context,
+      const vkapi::VulkanImage& image,
+      const utils::GPUMemoryLayout memory_layout = utils::kChannelsPacked);
 
   /*
    * This constructor allows for the creation of a vTensor that references the
