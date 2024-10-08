@@ -10,13 +10,17 @@
 
 #define PRECISION ${PRECISION}
 
+#define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
+
+${define_active_storage_type(STORAGE)}
+
 #include "indexing_utils.h"
 
 layout(std430) buffer;
 
 #extension GL_EXT_control_flow_attributes : require
 
-${layout_declare_tensor(B, "w", "t_out", "int8", "texture3d")}
+${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
 ${layout_declare_buffer(B, "r", "nchw_in", "int")}
 ${layout_declare_ubo(B, "ivec4", "sizes")}
 ${layout_declare_ubo(B, "ivec4", "axis_map")}
@@ -71,5 +75,5 @@ void main() {
     return;
   }
 
-  write_texel(t_out, lpos_to_pos(lpos, axis_map), read_texel(tidx));
+  write_texel(t_out, lpos_to_pos(lpos, axis_map), VEC4_T(read_texel(tidx)));
 }
