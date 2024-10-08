@@ -9,9 +9,9 @@ from typing import Optional
 
 import torch
 from executorch.backends.transforms import get_shape
-from executorch.backends.xnnpack.partition.graphs import sdpa
 
-from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
+from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
+from executorch.backends.xnnpack.partition.graphs import sdpa
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch.fx.passes.infra.pass_base import PassResult
