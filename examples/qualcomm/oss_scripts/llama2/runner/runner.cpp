@@ -161,7 +161,10 @@ Result<Tensor> Runner::run_model_step(
   token->mutable_data_ptr<int32_t>()[0] = input_token;
 
   // inputs:[tokens, start_pos, atten_mask, k_cache, v_cache]
-  auto outputs_res = module_->forward({token, start_pos, atten_mask});
+  std::vector<executorch::runtime::EValue> inputs = {
+      token, start_pos, atten_mask};
+  inputs.insert(inputs.end(), kv_tensors.begin(), kv_tensors.end());
+  auto outputs_res = module_->forward(inputs);
   ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
 
   // TODO: need to handle batch size != 1

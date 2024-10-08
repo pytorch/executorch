@@ -16,8 +16,8 @@ runtime.python_library(
     ],
     deps = [
         "//executorch/backends/transforms:lib",
+        "//executorch/backends/xnnpack/_passes:xnnpack_passes",
         "//executorch/backends/xnnpack/operators:operators",
-        "//executorch/backends/xnnpack/passes:xnnpack_passes",
         "//executorch/backends/xnnpack/serialization:xnnpack_serializer",
         "//executorch/exir:graph_module",
         "//executorch/exir/backend:backend_details",
