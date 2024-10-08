@@ -12,6 +12,8 @@
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 #include <executorch/backends/vulkan/runtime/vk_api/VkUtils.h>
 
 namespace vkcompute {
@@ -179,6 +181,48 @@ vkapi::VulkanImage create_image_from_ahb(
 
   return vkapi::VulkanImage(
       context->device(), image_props, image, image_view, sampler);
+}
+
+void add_rgba_to_image_node(
+    ComputeGraph& graph,
+    const ValueRef in_rgba,
+    const ValueRef out_tensor) {
+  std::string kernel_name("rgba_to_image");
+  kernel_name.reserve(kShaderNameReserve);
+
+  const auto global_wg_size = graph.create_global_wg_size(out_tensor);
+
+  graph.execute_nodes().emplace_back(new ExecuteNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      global_wg_size,
+      graph.create_local_wg_size(global_wg_size),
+      // Input and Outputs
+      {{out_tensor, vkapi::MemoryAccessType::WRITE},
+       {in_rgba, vkapi::MemoryAccessType::READ}},
+      // Parameter Buffers
+      {graph.logical_limits_ubo(out_tensor)}));
+}
+
+void add_image_to_rgba_node(
+    ComputeGraph& graph,
+    const ValueRef in_tensor,
+    const ValueRef out_rgba) {
+  std::string kernel_name("image_to_rgba");
+  kernel_name.reserve(kShaderNameReserve);
+
+  const auto global_wg_size = graph.create_global_wg_size(out_rgba);
+
+  graph.execute_nodes().emplace_back(new ExecuteNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      global_wg_size,
+      graph.create_local_wg_size(global_wg_size),
+      // Input and Outputs
+      {{out_rgba, vkapi::MemoryAccessType::WRITE},
+       {in_tensor, vkapi::MemoryAccessType::READ}},
+      // Parameter Buffers
+      {graph.logical_limits_ubo(out_rgba)}));
 }
 
 } // namespace utils
