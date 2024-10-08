@@ -22,6 +22,8 @@ bool check_tensor_dtype(
   switch (dtypes) {
     case SupportedTensorDtypes::REALHBBF16:
       return executorch::runtime::tensor_is_realhbbf16_type(t);
+    case SupportedTensorDtypes::REALHBF16:
+      return executorch::runtime::tensor_is_realhbf16_type(t);
     case SupportedTensorDtypes::BOOL_OR_BYTE:
       return (
           executorch::runtime::tensor_is_type(t, ScalarType::Bool) ||
