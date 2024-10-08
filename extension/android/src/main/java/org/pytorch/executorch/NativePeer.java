@@ -11,7 +11,6 @@ package org.pytorch.executorch;
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
-import java.util.Map;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**
@@ -29,8 +28,7 @@ class NativePeer {
   private final HybridData mHybridData;
 
   @DoNotStrip
-  private static native HybridData initHybrid(
-      String moduleAbsolutePath, int loadMode);
+  private static native HybridData initHybrid(String moduleAbsolutePath, int loadMode);
 
   NativePeer(String moduleAbsolutePath, int loadMode) {
     mHybridData = initHybrid(moduleAbsolutePath, loadMode);
