@@ -12,7 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 readonly SCRIPT_DIR
 
-readonly EXECUTORCH_ROOT="${SCRIPT_DIR}/../../.."
+readonly EXECUTORCH_ROOT="${SCRIPT_DIR}/../.."
 
 # Allow overriding the number of build jobs. Default to 9.
 export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-9}"

@@ -107,7 +107,7 @@ class Executor:
     ):
         self.working_dir = working_dir
         self.executor_builder = (
-            "./backends/cadence/cadence_runner/build_cadence_runner.sh"
+            "./backends/cadence/build_cadence_runner.sh"
         )
         self.execute_runner = "./cmake-out/backends/cadence/cadence_runner"
         self.bundled_program_path: str = "CadenceDemoModel.bpte"
