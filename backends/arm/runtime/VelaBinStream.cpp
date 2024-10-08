@@ -10,10 +10,15 @@
  *          as that function emits this format and the two need to align.
  */
 
+#include <executorch/backends/arm/runtime/VelaBinStream.h>
+
 #include <cstring>
 
-#include "executorch/backends/arm/runtime/VelaBinStream.h"
-#include "executorch/runtime/core/error.h"
+#include <executorch/runtime/core/error.h>
+
+namespace executorch {
+namespace backends {
+namespace arm {
 
 // get next mul of 16 ptr, return n if already aligned
 static uintptr_t next_mul_16(uintptr_t n) {
@@ -91,3 +96,7 @@ bool vela_bin_read(const char* data, VelaHandles* handles, int size) {
   // We've fallen off the end without finding vela_end_stream
   return false;
 }
+
+} // namespace arm
+} // namespace backends
+} // namespace executorch
