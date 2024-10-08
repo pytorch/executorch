@@ -42,11 +42,11 @@ build_android_native_library() {
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
-    -DEXECUTORCH_BUILD_NEURON=ON \
-    -DNEURON_BUFFER_ALLOCATOR_LIB="$NEURON_BUFFER_ALLOCATOR_LIB" \
+    -DEXECUTORCH_BUILD_NEURON="${EXECUTORCH_BUILD_NEURON}" \
+    -DNEURON_BUFFER_ALLOCATOR_LIB="${NEURON_BUFFER_ALLOCATOR_LIB}" \
     -DEXECUTORCH_BUILD_QNN="${EXECUTORCH_BUILD_QNN}" \
     -DQNN_SDK_ROOT="${QNN_SDK_ROOT}" \
-    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DCMAKE_BUILD_TYPE=Release \
     -B"${CMAKE_OUT}"
 
   if [ "$(uname)" == "Darwin" ]; then
@@ -54,7 +54,7 @@ build_android_native_library() {
   else
     CMAKE_JOBS=$(( $(nproc) - 1 ))
   fi
-  cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config RelWithDebInfo
+  cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config Release
 
   cmake extension/android \
     -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
@@ -67,18 +67,14 @@ build_android_native_library() {
     -DNEURON_BUFFER_ALLOCATOR_LIB="$NEURON_BUFFER_ALLOCATOR_LIB" \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
-    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DCMAKE_BUILD_TYPE=Release \
     -B"${CMAKE_OUT}"/extension/android
 
-  cmake --build "${CMAKE_OUT}"/extension/android -j "${CMAKE_JOBS}" --config RelWithDebInfo
+  cmake --build "${CMAKE_OUT}"/extension/android -j "${CMAKE_JOBS}" --config Release
 
   # Copy artifacts to ABI specific directory
   mkdir -p "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}"
   cp "${CMAKE_OUT}"/extension/android/*.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/"
-
-  cp "${CMAKE_OUT}"/backends/mediatek/libneuron_backend.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
-  cp /Users/cmodi/Documents/ai/clean/executorch/backends/mediatek/libneuron_buffer_allocator.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
-  cp /Users/cmodi/Documents/ai/clean/executorch/backends/mediatek/libneuronusdk_adapter.mtk.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
 
   # Copy QNN related so library
   if [ -n "$QNN_SDK_ROOT" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then
@@ -91,6 +87,13 @@ build_android_native_library() {
     cp "${QNN_SDK_ROOT}"/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/"
     cp "${QNN_SDK_ROOT}"/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/"
     cp "${QNN_SDK_ROOT}"/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/"
+  fi
+
+  # Copy MTK related so library
+  if [ -n "$NEURON_BUFFER_ALLOCATOR_LIB" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then
+    cp "${CMAKE_OUT}"/backends/mediatek/libneuron_backend.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
+    cp "$NEURON_BUFFER_ALLOCATOR_LIB"/libneuron_buffer_allocator.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
+    cp "$NEURON_BUFFER_ALLOCATOR_LIB"/libneuronusdk_adapter.mtk.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
   fi
 }
 
@@ -151,7 +154,6 @@ BUILD_AAR_DIR="$(mktemp -d)"
 export BUILD_AAR_DIR
 if [ -z "$ANDROID_ABIS" ]; then
   ANDROID_ABIS=("arm64-v8a" "x86_64")
-  ANDROID_ABIS=("arm64-v8a")
 fi
 export ANDROID_ABIS
 
