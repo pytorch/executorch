@@ -24,8 +24,6 @@ import torch
 
 from executorch.devtools.etrecord import generate_etrecord
 
-from executorch.examples.models.llama2.llama_transformer import ModelArgs
-
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 
 from executorch.extension.llm.export.partitioner_lib import (
@@ -78,7 +76,7 @@ verbosity_setting = None
 
 
 EXECUTORCH_DEFINED_MODELS = ["llama2", "llama3", "llama3_1", "llama3_2"]
-TORCHTUNE_DEFINED_MODELS = []
+TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 
 
 class WeightType(Enum):
@@ -728,7 +726,9 @@ def _load_llama_model_metadata(
     use_kv_cache: bool,
     use_sdpa_with_kv_cache: bool,
     enable_dynamic_shape: bool,
-    model_args: ModelArgs,
+    max_seq_len: int,
+    n_layers: int,
+    vocab_size: int,
     metadata_str: Optional[str] = None,
 ):
     is_fairseq2 = weight_type == WeightType.FAIRSEQ2
@@ -736,11 +736,11 @@ def _load_llama_model_metadata(
         "append_eos_to_prompt": is_fairseq2,  # For language llama, tell the runtime to always append EOS token(s) to prompt.
         "get_bos_id": 3 if is_fairseq2 else 1,
         "get_eos_ids": [3] if is_fairseq2 else [2],
-        "get_max_seq_len": model_args.max_seq_len,
+        "get_max_seq_len": max_seq_len,
         "get_n_bos": 1,
         "get_n_eos": 2 if is_fairseq2 else 1,
-        "get_n_layers": model_args.n_layers,
-        "get_vocab_size": model_args.vocab_size,
+        "get_n_layers": n_layers,
+        "get_vocab_size": vocab_size,
         "use_kv_cache": use_kv_cache,
         "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
         "enable_dynamic_shape": enable_dynamic_shape,
@@ -798,11 +798,12 @@ def _load_llama_model(
         modelname = "llama2"
         model_class_name = "Llama2Model"
     elif modelname in TORCHTUNE_DEFINED_MODELS:
-        raise NotImplementedError("Torchtune Llama models are not yet supported in ExecuTorch export.")
+        if modelname == "llama3_2_vision":
+            model_class_name = "Llama3_2Decoder"
     else:
         raise ValueError(f"{modelname} is not a valid Llama model.")
 
-    model, example_inputs, example_kwarg_inputs, _ = (
+    model, example_inputs, example_kwarg_inputs, dynamic_shapes = (
         EagerModelFactory.create_model(
             modelname,
             model_class_name,
@@ -814,7 +815,7 @@ def _load_llama_model(
             generate_full_logits=generate_full_logits,
             fairseq2=weight_type == WeightType.FAIRSEQ2,
             max_seq_len=max_seq_len,
-            enable_dynamic_shape=enable_dynamic_shape,
+            enable_dynamic_shape=enable_dynamic_shape ,
             output_prune_map_path=output_prune_map_path,
             args=args,
         )
@@ -849,12 +850,13 @@ def _load_llama_model(
     return LLMEdgeManager(
         model=model,
         modelname=modelname,
-        max_seq_len=model.params.max_seq_len,
+        max_seq_len=model.max_seq_len,
         dtype=dtype,
         use_kv_cache=use_kv_cache,
         generate_full_logits=generate_full_logits,
         example_inputs=example_inputs,
         example_kwarg_inputs=example_kwarg_inputs,
+        dynamic_shapes=dynamic_shapes,
         enable_dynamic_shape=enable_dynamic_shape,
         calibration_tasks=calibration_tasks,
         calibration_limit=calibration_limit,
@@ -867,7 +869,9 @@ def _load_llama_model(
             use_kv_cache,
             use_sdpa_with_kv_cache,
             enable_dynamic_shape,
-            model.params,
+            model.max_seq_len,
+            model.n_layers,
+            model.vocab_size,
             metadata_str,
         ),
         args=args,
