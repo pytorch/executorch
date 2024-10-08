@@ -555,6 +555,14 @@ class ComputeGraph final {
 
   int32_t read_symint(const ValueRef idx);
 
+  inline void set_val_as_input(const ValueRef idx) {
+    inputs_.push_back({idx, kDummyValueRef});
+  }
+
+  inline void set_val_as_output(const ValueRef idx) {
+    outputs_.push_back({idx, kDummyValueRef});
+  }
+
   /*
    * Convenience function to add an input tensor along with its staging buffer
    */
