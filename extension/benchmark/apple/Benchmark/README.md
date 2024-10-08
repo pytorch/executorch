@@ -42,7 +42,7 @@ You have two options:
 Run the provided script to download the prebuilt frameworks:
 
 ```bash
-./extension/apple/Benchmark/Frameworks/download_frameworks.sh
+./extension/benchmark/apple/Benchmark/Frameworks/download_frameworks.sh
 ```
 </details>
 
@@ -56,7 +56,7 @@ Alternatively, you can build the frameworks yourself by following the [guide](ht
 Once the frameworks are downloaded or built, verify that the `Frameworks` directory contains the necessary `.xcframework` files:
 
 ```bash
-ls extension/apple/Benchmark/Frameworks
+ls extension/benchmark/apple/Benchmark/Frameworks
 ```
 
 You should see:
@@ -74,16 +74,16 @@ kernels_quantized.xcframework
 
 ## Adding Models and Resources
 
-Place your exported model files (`.pte`) and any other resources (e.g., `tokenizer.bin`) into the `extension/apple/Benchmark/Resources` directory:
+Place your exported model files (`.pte`) and any other resources (e.g., `tokenizer.bin`) into the `extension/benchmark/apple/Benchmark/Resources` directory:
 
 ```bash
-cp <path/to/my_model.pte> <path/to/llama3.pte> <path/to/tokenizer.bin> extension/apple/Benchmark/Resources
+cp <path/to/my_model.pte> <path/to/llama3.pte> <path/to/tokenizer.bin> extension/benchmark/apple/Benchmark/Resources
 ```
 
 Optionally, check that the files are there:
 
 ```bash
-ls extension/apple/Benchmark/Resources
+ls extension/benchmark/apple/Benchmark/Resources
 ```
 
 For this example you should see:
@@ -103,7 +103,7 @@ The app automatically bundles these resources and makes them available to the te
 Open the Benchmark Xcode project:
 
 ```bash
-open extension/apple/Benchmark/Benchmark.xcodeproj
+open extension/benchmark/apple/Benchmark/Benchmark.xcodeproj
 ```
 
 Select the destination device or simulator and press `Command+U`, or click `Product` > `Test` in the menu to run the test suite.
@@ -333,13 +333,13 @@ You can also run the tests using `xcodebuild`:
 
 ```bash
 # Run on an iOS Simulator
-xcodebuild test -project extension/apple/Benchmark/Benchmark.xcodeproj \
+xcodebuild test -project extension/benchmark/apple/Benchmark/Benchmark.xcodeproj \
 -scheme Benchmark \
 -destination 'platform=iOS Simulator,name=<SimulatorName>' \
 -testPlan Tests
 
 # Run on a physical iOS device
-xcodebuild test -project extension/apple/Benchmark/Benchmark.xcodeproj \
+xcodebuild test -project extension/benchmark/apple/Benchmark/Benchmark.xcodeproj \
 -scheme Benchmark \
 -destination 'platform=iOS,name=<DeviceName>' \
 -testPlan Tests \
