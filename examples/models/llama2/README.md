@@ -113,11 +113,6 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     ```
     python -m examples.models.llama2.export_llama -c stories110M.pt -p params.json -X -kv
     ```
-4. Create tokenizer.bin.
-
-    ```
-    python -m extension.llm.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
-    ```
 
 ### Option C: Download and export Llama 3 8B instruct model
 
@@ -127,7 +122,11 @@ You can export and run the original Llama 3 8B instruct model.
 
 2. Export model and generate `.pte` file
     ```
-    python -m examples.models.llama2.export_llama --checkpoint <consolidated.00.pth> -p <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w  --group_size 128 -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --embedding-quantize 4,32 --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
+    python -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w --group_size 128 -d fp32
+    ```
+4. Create tokenizer.bin.
+    ```
+    python -m extension.llm.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
     ```
 
     Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `--embedding-quantize 4,32` as shown above to further reduce the model size.
@@ -187,7 +186,7 @@ tokenizer.path=<path_to_checkpoint_folder>/tokenizer.model
 
 Using the same arguments from above
 ```
-python -m examples.models.llama2.eval_llama -c <checkpoint.pth> -p <params.json> -t <tokenizer.model> -d fp32 --max_seq_len <max sequence length> --limit <number of samples>
+python -m examples.models.llama2.eval_llama -c <checkpoint.pth> -p <params.json> -t <tokenizer.model/bin> -d fp32 --max_seq_len <max sequence length> --limit <number of samples>
 ```
 
 The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
@@ -233,7 +232,7 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
     cmake-out/examples/models/llama2/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.bin> --prompt=<prompt>
     ```
 
-For Llama3, you can pass the original `tokenizer.model` (without converting to `.bin` file).
+For Llama2 models, pass the converted `tokenizer.bin` file instead of `tokenizer.model`.
 
 To build for CoreML backend and validate on Mac, replace `-DEXECUTORCH_BUILD_XNNPACK=ON` with `-DEXECUTORCH_BUILD_COREML=ON`
 
