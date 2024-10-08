@@ -81,7 +81,7 @@ for arg in sys.argv[1:]:
             print(f"Error: {arg} must follow --pybind")
             sys.exit(1)
     elif arg == "--clean":
-        print(f"Cleaning build artifacts...")
+        print("Cleaning build artifacts...")
         print("Cleaning pip-out/...")
         shutil.rmtree("pip-out/", ignore_errors=True)
         dirs = glob.glob("cmake-out*/")
