@@ -80,7 +80,7 @@ if(TARGET vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
 endif()
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
   add_subdirectory(
     ${EXECUTORCH_ROOT}/extension/llm/custom_ops
     ${CMAKE_CURRENT_BINARY_DIR}/../../extension/llm/custom_ops

@@ -165,14 +165,14 @@ option(EXECUTORCH_BUILD_ARM_BAREMETAL
 
 option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
 
-option(EXECUTORCH_BUILD_KERNELS_CUSTOM "Build the custom kernels" OFF)
-
-option(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT "Build the custom ops lib for AOT"
+option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
        OFF
 )
 
-option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
-       OFF
+option(EXECUTORCH_BUILD_EXTENSION_LLM "Build the LLM extension" OFF)
+
+option(EXECUTORCH_BUILD_EXTENSION_LLM_AOT 
+      "Build the LLM extension custom ops lib for AOT" OFF
 )
 
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" OFF)
@@ -229,12 +229,12 @@ cmake_dependent_option(
   "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
 )
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
+if(EXECUTORCH_BUILD_EXTENSION_LLM_AOT)
   set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
-  set(EXECUTORCH_BUILD_KERNELS_CUSTOM ON)
+  set(EXECUTORCH_BUILD_EXTENSION_LLM ON)
 endif()
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
   set(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
 endif()
 
@@ -786,10 +786,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   )
 endif()
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/custom_ops)
-endif()
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/custom_ops)
+  endif()
 
 if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)

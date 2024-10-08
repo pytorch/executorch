@@ -28,7 +28,7 @@ install_executorch_and_backend_lib() {
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
     -DXNNPACK_ENABLE_ARM_BF16=OFF \
     -Bcmake-android-out .
 
@@ -47,7 +47,7 @@ build_llama_runner() {
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
     -Bcmake-android-out/examples/models/llama2 examples/models/llama2
 
     cmake --build cmake-android-out/examples/models/llama2 -j4 --config Release

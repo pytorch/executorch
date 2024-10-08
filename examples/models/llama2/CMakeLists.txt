@@ -83,7 +83,7 @@ if(CMAKE_TOOLCHAIN_IOS OR ANDROID)
 endif()
 
 # custom ops library
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
   add_subdirectory(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/custom_ops
     ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/custom_ops
@@ -116,7 +116,7 @@ endif()
 target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
   target_link_options_shared_lib(custom_ops)
   list(APPEND link_libraries custom_ops)
 endif()

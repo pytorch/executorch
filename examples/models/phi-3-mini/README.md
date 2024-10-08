@@ -32,7 +32,7 @@ python -m examples.models.phi-3-mini.export_phi-3-mini -c "4k" -s 128 -o phi-3-m
      -DEXECUTORCH_BUILD_XNNPACK=ON \
      -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
      -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+     -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
      -Bcmake-out .
 
  cmake --build cmake-out -j16 --target install --config Release
@@ -42,7 +42,7 @@ python -m examples.models.phi-3-mini.export_phi-3-mini -c "4k" -s 128 -o phi-3-m
 cmake -DPYTHON_EXECUTABLE=python \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DCMAKE_BUILD_TYPE=Release \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \

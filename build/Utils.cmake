@@ -50,8 +50,8 @@ function(executorch_print_configuration_summary)
     STATUS
       "  EXECUTORCH_BUILD_COREML                : ${EXECUTORCH_BUILD_COREML}"
   )
-  message(STATUS "  EXECUTORCH_BUILD_KERNELS_CUSTOM        : "
-                 "${EXECUTORCH_BUILD_KERNELS_CUSTOM}"
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_LLM         : "
+                 "${EXECUTORCH_BUILD_EXTENSION_LLM}"
   )
   message(STATUS "  EXECUTORCH_BUILD_EXECUTOR_RUNNER       : "
                  "${EXECUTORCH_BUILD_EXECUTOR_RUNNER}"
@@ -68,7 +68,7 @@ function(executorch_print_configuration_summary)
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TENSOR      : "
                  "${EXECUTORCH_BUILD_EXTENSION_TENSOR}"
   )
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TRAINING      : "
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TRAINING    : "
                  "${EXECUTORCH_BUILD_EXTENSION_TRAINING}"
   )
   message(
