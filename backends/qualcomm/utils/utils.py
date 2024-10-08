@@ -14,39 +14,41 @@ import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAd
 import executorch.exir as exir
 
 import torch
+from executorch.backends.qualcomm._passes.annotate_and_quant_scalar import (
+    AnnotateAndQuantScalar,
+)
+from executorch.backends.qualcomm._passes.annotate_decomposed import AnnotateDecomposed
+from executorch.backends.qualcomm._passes.annotate_quant_attrs import AnnotateQuantAttrs
+from executorch.backends.qualcomm._passes.convert_binary_op_with_scalar import (
+    ConvertBinaryOpsWithScalar,
+)
+from executorch.backends.qualcomm._passes.convert_bmm_to_matmul import (
+    ConvertBmmToMatmul,
+)
+from executorch.backends.qualcomm._passes.convert_interpolate_with_upsample2d import (
+    ConvertInterpolateWithUpsample2D,
+)
+from executorch.backends.qualcomm._passes.convert_prelu import ConvertPReLU
+from executorch.backends.qualcomm._passes.convert_to_linear import ConvertToLinear
+from executorch.backends.qualcomm._passes.fold_qdq import FoldQDQ
+from executorch.backends.qualcomm._passes.i64_to_i32 import I64toI32
+from executorch.backends.qualcomm._passes.layout_transform import LayoutTransform
+from executorch.backends.qualcomm._passes.recompose_pixel_unshuffle import (
+    RecomposePixelUnshuffle,
+)
+from executorch.backends.qualcomm._passes.recompose_rms_norm import RecomposeRmsNorm
+from executorch.backends.qualcomm._passes.remove_redundancy import RemoveRedundancy
+from executorch.backends.qualcomm._passes.replace_index_put_input import (
+    ReplaceIndexPutInput,
+)
 
 from executorch.backends.qualcomm.builders.node_visitor import (
     QNN_QUANT_TYPE_MAP,
     QNN_TENSOR_TYPE_MAP,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
-from executorch.backends.qualcomm.passes.annotate_and_quant_scalar import (
-    AnnotateAndQuantScalar,
-)
-from executorch.backends.qualcomm.passes.annotate_decomposed import AnnotateDecomposed
-from executorch.backends.qualcomm.passes.annotate_quant_attrs import AnnotateQuantAttrs
-from executorch.backends.qualcomm.passes.convert_binary_op_with_scalar import (
-    ConvertBinaryOpsWithScalar,
-)
-from executorch.backends.qualcomm.passes.convert_bmm_to_matmul import ConvertBmmToMatmul
-from executorch.backends.qualcomm.passes.convert_interpolate_with_upsample2d import (
-    ConvertInterpolateWithUpsample2D,
-)
-from executorch.backends.qualcomm.passes.convert_prelu import ConvertPReLU
-from executorch.backends.qualcomm.passes.convert_to_linear import ConvertToLinear
 from executorch.backends.qualcomm.passes.expand_broadcast_tensor_shape import (
     ExpandBroadcastTensorShape,
-)
-from executorch.backends.qualcomm.passes.fold_qdq import FoldQDQ
-from executorch.backends.qualcomm.passes.i64_to_i32 import I64toI32
-from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
-from executorch.backends.qualcomm.passes.recompose_pixel_unshuffle import (
-    RecomposePixelUnshuffle,
-)
-from executorch.backends.qualcomm.passes.recompose_rms_norm import RecomposeRmsNorm
-from executorch.backends.qualcomm.passes.remove_redundancy import RemoveRedundancy
-from executorch.backends.qualcomm.passes.replace_index_put_input import (
-    ReplaceIndexPutInput,
 )
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     _soc_info_table,
