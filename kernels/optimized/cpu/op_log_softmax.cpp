@@ -125,7 +125,7 @@ void log_softmax_wrapper(const Tensor& X, int64_t dim, Tensor& out) {
 // _log_softmax.out(Tensor self, int dim, bool half_to_float, *, Tensor(a!) out)
 // -> Tensor(a!)
 Tensor& opt_log_softmax_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& self,
     int64_t dim,
     bool half_to_float,

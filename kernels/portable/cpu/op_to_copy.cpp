@@ -29,7 +29,7 @@ void _to_impl(const Tensor& self, Tensor& out) {
 // to_copy.out(Tensor self, *, bool non_blocking=False, MemoryFormat?
 // memory_format=None, Tensor(a!) out) -> Tensor(a!)
 Tensor& to_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     bool non_blocking,
     exec_aten::optional<exec_aten::MemoryFormat> memory_format,
@@ -45,6 +45,11 @@ Tensor& to_copy_out(
       resize_tensor(out, self.sizes()) == torch::executor::Error::Ok,
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(self), InvalidArgument, out);
 
   ET_SWITCH_REALHBBF16_TYPES(self.scalar_type(), ctx, "to_copy", CTYPE_IN, [&] {
     ET_SWITCH_REALHBBF16_TYPES(

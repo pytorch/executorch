@@ -15,10 +15,10 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::RuntimeContext;
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
+using executorch::runtime::KernelRuntimeContext;
 using torch::executor::testing::TensorFactory;
 
 class OpGeTensorOutTest : public OperatorTest {

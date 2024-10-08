@@ -57,7 +57,7 @@ void apply_tril(
  */
 template <typename CTYPE>
 void tril_kernel(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     int64_t diagonal,
     const Tensor& out) {
@@ -131,7 +131,7 @@ void tril_kernel(
  *       main one are also captured.
  */
 Tensor& tril_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     int64_t diagonal,
     Tensor& out) {
@@ -144,6 +144,11 @@ Tensor& tril_out(
       resize_tensor(out, self.sizes()) == torch::executor::Error::Ok,
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(self), InvalidArgument, out);
 
   if (self.numel() == 0) {
     return out;

@@ -22,7 +22,7 @@ using Tensor = exec_aten::Tensor;
 // TODO: We actually shouldn't see this op with the proper functionalization,
 // and this op needs to be deleted
 Tensor& copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& src,
     bool non_blocking,
@@ -60,8 +60,11 @@ Tensor& copy_out(
   return out;
 }
 
-Tensor&
-copy_(RuntimeContext& ctx, Tensor& in, const Tensor& src, bool non_blocking) {
+Tensor& copy_(
+    KernelRuntimeContext& ctx,
+    Tensor& in,
+    const Tensor& src,
+    bool non_blocking) {
   (void)ctx;
   // Right now we only support blocking data transfer
   ET_KERNEL_CHECK(ctx, non_blocking == false, InvalidArgument, in);

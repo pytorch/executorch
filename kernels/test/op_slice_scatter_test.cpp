@@ -863,3 +863,24 @@ TEST_F(OpSliceScatterTensorOutTest, DynamicShapeTest) {
   EXPECT_TENSOR_EQ(ret_default_end, out);
   EXPECT_TENSOR_EQ(ret_default_end, expected);
 }
+
+TEST_F(OpSliceScatterTensorOutTest, LargeEndValue) {
+  TensorFactory<ScalarType::Int> tf;
+
+  Tensor input = tf.zeros({1, 1, 2, 5, 3, 3});
+  Tensor src = tf.ones({1, 1, 2, 5, 3, 3});
+
+  Tensor out = tf.zeros({1, 1, 2, 5, 3, 3});
+  Tensor expected = tf.ones({1, 1, 2, 5, 3, 3});
+
+  Tensor ret = op_slice_scatter_out(
+      input,
+      src,
+      /*dim=*/1,
+      /*start=*/0,
+      /*end=*/9223372036854775807,
+      /*step=*/1,
+      out);
+  EXPECT_TENSOR_EQ(ret, out);
+  EXPECT_TENSOR_EQ(ret, expected);
+}

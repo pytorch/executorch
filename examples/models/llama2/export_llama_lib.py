@@ -16,7 +16,7 @@ import shlex
 from enum import Enum
 from json import JSONDecodeError
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Callable, List, Optional, Union
 
 import pkg_resources
 
@@ -45,14 +45,25 @@ from executorch.extension.llm.export.quantizer_lib import (
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
 from ..model_factory import EagerModelFactory
+from .source_transformation.apply_spin_quant_r1_r2 import (
+    fuse_layer_norms,
+    get_model_with_r1_r2,
+)
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
 )
+from .source_transformation.quantized_kv_cache import (
+    replace_kv_cache_with_quantized_kv_cache,
+)
+from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
+
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
 from .source_transformation.sdpa import (
     replace_causal_mask,
+    replace_kv_cache_with_coreml_kv_cache,
     replace_kv_cache_with_simple_kv_cache,
+    replace_sdpa_with_coreml_sdpa,
     replace_sdpa_with_custom_op,
     replace_sdpa_with_flex_sdpa,
     replace_sdpa_with_simple_sdpa,
@@ -200,6 +211,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Whether or not to export a model using kv cache",
     )
     parser.add_argument(
+        "--quantize_kv_cache",
+        default=False,
+        action="store_true",
+        help="Whether or not to export a model using int8 per token quantized kv cache",
+    )
+    parser.add_argument(
         "--num_sharding",
         type=int,
         default=0,
@@ -223,6 +240,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--params",
         default=f"{ckpt_dir}/params/demo_config.json",
         help="config.json",
+    )
+    parser.add_argument(
+        "--optimized_rotation_path",
+        default=None,
+        required=False,
+        help="[QNN backend] Optimized rotation checkpoint path. Just apply R1/R2 here."
+        "You can download the optimized rotation matrices from https://github.com/facebookresearch/SpinQuant/tree/main",
     )
     parser.add_argument(
         "-m",
@@ -283,10 +307,43 @@ def build_args_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
-    parser.add_argument("-X", "--xnnpack", action="store_true")
+    parser.add_argument(
+        "-X",
+        "--xnnpack",
+        action="store_true",
+        help="Delegate to DQLinear ops to the xnnpack backend",
+    )
+    parser.add_argument(
+        "--xnnpack-extended-ops",
+        action="store_true",
+        help="Delegate more operators beyond DQLinear to the xnnpack backend. Requires -X or --xnnpack to be set.",
+    )
     parser.add_argument("-V", "--vulkan", action="store_true")
     parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
+    parser.add_argument(
+        "--coreml-enable-state",
+        action="store_true",
+        help="This option is only for coreml, and is only supported for MacOS15+/iOS18+",
+    )
+    parser.add_argument(
+        "--coreml-preserve-sdpa",
+        action="store_true",
+        help="This option is only for coreml: Preserve sdpa in torch edge program to use coreml iOS18.sdpa op",
+    )
+    parser.add_argument(
+        "--coreml-quantize",
+        default=None,
+        choices=["b4w"],
+        help="This option is only for coreml: Use coreml quantization, e.g. b4w (for blockwise 4 bit weight)",
+    )
+    parser.add_argument(
+        "--coreml-ios",
+        type=int,
+        default=15,
+        choices=(15, 16, 17, 18),
+        help="This option is only for coreml: The minimum iOS version to deploy",
+    )
     parser.add_argument(
         "--qnn",
         action="store_true",
@@ -314,6 +371,68 @@ def build_args_parser() -> argparse.ArgumentParser:
         required=False,
         default=False,
         help="Generate logits for all inputs.",
+    )
+
+    parser.add_argument(
+        "--soc_model",
+        help="[QNN backend] SoC model of current device. e.g. 'SM8650' for Snapdragon 8 Gen 3.",
+        type=str,
+        required=False,
+        default="SM8650",
+    )
+
+    parser.add_argument(
+        "-sq",
+        "--use_spin_quant",
+        type=str,
+        default=None,
+        choices=["cuda", "native"],
+        help="Use SpinQuant for better quantization performance. Only support cuda and native.",
+    )
+
+    parser.add_argument(
+        "-qat",
+        "--use_qat",
+        default=False,
+        action="store_true",
+        help="Whether the checkpoin is pre-quantized with QAT or not.",
+    )
+
+    parser.add_argument(
+        "-lora",
+        "--use_lora",
+        type=int,
+        default=0,
+        help="Whether the checkpoint contains LoRA adaptors or not. 0: no LoRA adaptors; "
+        "otherwise, it means the rank of LoRA adaptors. Currently it only works if QAT is enabled.",
+    )
+
+    parser.add_argument(
+        "--preq_mode",
+        type=str,
+        default=None,
+        choices=["8da4w", "8da4w_output_8da8w"],
+        help="Quantization mode used for pre-quantized checkpoint. Only support 8da4w and 8da4w_output_8da8w right now.",
+    )
+
+    parser.add_argument(
+        "--preq_group_size",
+        type=int,
+        default=32,
+        help="group_size for pre-quantized checkpoint weight quantization",
+    )
+
+    parser.add_argument(
+        "--preq_embedding_quantize",
+        default="8,0",
+        type=str,
+        help="type of embedding quantization for pre-quantized checkpoint, '<bitwidth>,<groupsize>', e.g., '8,1024'.",
+    )
+
+    parser.add_argument(
+        "--output_prune_map",
+        default=None,
+        help="path to the output pruning token mapping file (token_map.json)",
     )
     return parser
 
@@ -368,7 +487,6 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
 
     Returns a LLMEdgeManager prior to calling export_to_edge with quantizers
     """
-
     # load model from checkpoint and params.json
     checkpoint_path = canonical_path(args.checkpoint) if args.checkpoint else None
     checkpoint_dir = (
@@ -386,35 +504,6 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
     else:
         dtype_override = None
 
-    # source transforms
-    transforms = []
-    if args.quantization_mode:
-        modelname = f"{modelname}_q"
-        transforms.append(
-            get_quant_weight_transform(args, dtype_override, verbose_export())
-        )
-
-    if args.embedding_quantize:
-        modelname = f"{modelname}_e"
-        transforms.append(get_quant_embedding_transform(args))
-
-    if args.expand_rope_table:
-        transforms.append(materialze_broadcast_of_rope_freq_cis)
-
-    if args.use_sdpa_with_kv_cache:
-        transforms.append(replace_sdpa_with_custom_op)
-
-    if args.use_kv_cache:
-        if args.qnn:
-            transforms.append(replace_kv_cache_with_simple_kv_cache)
-            transforms.append(replace_sdpa_with_flex_sdpa)
-            transforms.append(replace_causal_mask)
-
-        elif args.coreml or args.mps:
-            # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
-            # to get free perf gain.
-            transforms.append(replace_sdpa_with_simple_sdpa)
-            transforms.append(replace_causal_mask)
     return (
         _load_llama_model(
             modelname=modelname,
@@ -433,12 +522,13 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             tokenizer_path=args.tokenizer_path,
             verbose=args.verbose,
             max_seq_len=args.max_seq_length,
+            output_prune_map_path=args.output_prune_map,
             metadata_str=args.metadata,
+            dtype_override=dtype_override,
             args=args,
         )
         .set_output_dir(output_dir_path)
-        .to_dtype(dtype_override)
-        .source_transform(transforms)
+        .source_transform(_get_source_transforms(modelname, dtype_override, args))
     )
 
 
@@ -492,12 +582,24 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
     # to_backend
     partitioners = []
-    if pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None:
-        partitioners.append(get_xnnpack_partitioner())
+
+    # Order matters here, dynamic quantization should be applied first when both xnnpack and xnnpack_extended_ops are enabled
+    if (
+        pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None
+    ) or (args.xnnpack):
+        partitioners.append(
+            get_xnnpack_partitioner(dynamic_quant_only_partitioner=True)
+        )
+
+        # force xnnpack to be true if pt2e_quant_params is not None and args.xnnpack is False
+        args.xnnpack = True
         modelname = f"xnnpack_dq_{modelname}"
 
-    if args.xnnpack:
-        partitioners.append(get_xnnpack_partitioner())
+    if args.xnnpack_extended_ops:
+        assert args.xnnpack, "xnnpack_extended_ops requires xnnpack to be enabled"
+        partitioners.append(
+            get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
+        )
         modelname = f"xnnpack_{modelname}"
 
     if args.vulkan:
@@ -515,7 +617,10 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
     if args.coreml:
         coreml_partitioner = get_coreml_partitioner(
-            args.use_kv_cache, args.pt2e_quantize
+            args.coreml_ios,
+            args.embedding_quantize,
+            args.pt2e_quantize,
+            args.coreml_quantize,
         )
         partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
@@ -525,7 +630,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
         partitioners.append(
             get_qnn_partitioner(
-                args.use_kv_cache, args.pt2e_quantize, args.num_sharding
+                args.use_kv_cache, args.pt2e_quantize, args.num_sharding, args.soc_model
             )
         )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
@@ -541,6 +646,10 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
                 shares=args.num_sharding,
             )
 
+    logging.info("Lowering model using following partitioner(s): ")
+    for partitioner in partitioners:
+        logging.info(f"--> {partitioner.__class__.__name__}")
+
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
             raise ValueError("Unable to generate etrecord due to missing edge manager.")
@@ -552,7 +661,10 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
-            canonicalize_program(builder.edge_manager.exported_program())
+            # TODO: Need to remove this once we have better way to handle buffer size
+            canonicalize_program(
+                builder.edge_manager.exported_program(), custom_buffer_size=542048256
+            )
 
         builder = builder.to_executorch()
 
@@ -569,7 +681,10 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
-            canonicalize_program(builder.edge_manager.exported_program())
+            # TODO: Need to remove this once we have better way to handle buffer size
+            canonicalize_program(
+                builder.edge_manager.exported_program(), custom_buffer_size=542048256
+            )
 
         builder = builder.to_executorch()
 
@@ -648,7 +763,9 @@ def _load_llama_model(
     tokenizer_path: Optional[str] = None,
     verbose: bool = False,
     max_seq_len: int = 128,
+    output_prune_map_path: Optional[str] = None,
     metadata_str: Optional[str] = None,
+    dtype_override: Optional[DType] = None,
     args,
 ) -> "LLMEdgeManager":
     """
@@ -675,24 +792,35 @@ def _load_llama_model(
         fairseq2=weight_type == WeightType.FAIRSEQ2,
         max_seq_len=max_seq_len,
         enable_dynamic_shape=enable_dynamic_shape,
+        output_prune_map_path=output_prune_map_path,
+        args=args,
     )
-    state_dict = model.state_dict()
-    dtype = state_dict[next(iter(state_dict))].dtype
-    assert dtype in [
-        torch.bfloat16,
-        torch.float16,
-        torch.float32,
-    ], f"Only support bfloat16, fp16 or fp32 got {dtype}"
-    logging.info(f"Loaded model with dtype={dtype}")
-
-    if dtype == torch.bfloat16:
-        dtype = DType.bf16
-    elif dtype == torch.float16:
-        dtype = DType.fp16
-    elif dtype == torch.float32:
-        dtype = DType.fp32
+    if dtype_override:
+        assert isinstance(
+            dtype_override, DType
+        ), "Override dtype needs to be of type <DType>"
+        torch_dtype = dtype_override.to_torch_dtype()
+        logging.info(f"model.to {torch_dtype}")
+        model = model.to(dtype=torch_dtype)
+        dtype = dtype_override
     else:
-        raise ValueError(f"Unsupported dtype {dtype}")
+        state_dict = model.state_dict()
+        dtype = state_dict[next(iter(state_dict))].dtype
+        assert dtype in [
+            torch.bfloat16,
+            torch.float16,
+            torch.float32,
+        ], f"Only support bfloat16, fp16 or fp32 got {dtype}"
+        logging.info(f"Loaded model with dtype={dtype}")
+
+        if dtype == torch.bfloat16:
+            dtype = DType.bf16
+        elif dtype == torch.float16:
+            dtype = DType.fp16
+        elif dtype == torch.float32:
+            dtype = DType.fp32
+        else:
+            raise ValueError(f"Unsupported dtype {dtype}")
 
     return LLMEdgeManager(
         model=model,
@@ -700,6 +828,7 @@ def _load_llama_model(
         max_seq_len=model.params.max_seq_len,
         dtype=dtype,
         use_kv_cache=use_kv_cache,
+        generate_full_logits=generate_full_logits,
         example_inputs=example_inputs,
         enable_dynamic_shape=enable_dynamic_shape,
         calibration_tasks=calibration_tasks,
@@ -718,3 +847,97 @@ def _load_llama_model(
         ),
         args=args,
     )
+
+
+def _get_source_transforms(  # noqa
+    modelname: str, dtype_override: Optional[DType], args
+) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
+    transforms = []
+
+    if args.use_spin_quant:
+        if args.use_spin_quant == "cuda":
+            from .source_transformation.spin_quant import (
+                inject_fast_hadamard_transform_cuda_for_spin_quant,
+            )
+
+            transforms.append(inject_fast_hadamard_transform_cuda_for_spin_quant)
+        elif args.use_spin_quant == "native":
+            from .source_transformation.spin_quant import (
+                inject_fast_hadamard_transform_native_for_spin_quant,
+            )
+
+            transforms.append(inject_fast_hadamard_transform_native_for_spin_quant)
+
+    if args.quantization_mode:
+        """
+        When this option is selected, it finds all linear layers and transforms
+        into quantized linear equivalent module.
+
+        There are cases where the checkpoint is already quantized, for example
+        on use_spin_quant is enabled. In that case, it will do the appropriate
+        transformations based on the given checkpoint first. In those cases,
+        if quantization_mode is enabled, it will quantize any remaining linear
+        ops that is not quantized.
+
+        There are cases where this may be a no-op, namely, if all linears are
+        quantized in the checkpoint.
+        """
+        modelname = f"{modelname}_q"
+        transforms.append(
+            get_quant_weight_transform(args, dtype_override, verbose_export())
+        )
+
+    if args.embedding_quantize:
+        """
+        When this option is selected, it finds all embedding layers and transforms
+        into quantized embedding equivalent module.
+
+        There are cases where the checkpoint is already quantized, for example
+        on use_spin_quant is enabled. In that case, it will do the appropriate
+        transformations based on the given checkpoint first. In those cases,
+        this wil be a no-op.
+        """
+        modelname = f"{modelname}_e"
+        transforms.append(get_quant_embedding_transform(args))
+
+    if args.expand_rope_table:
+        transforms.append(materialze_broadcast_of_rope_freq_cis)
+
+    if args.use_sdpa_with_kv_cache:
+        transforms.append(replace_sdpa_with_custom_op)
+
+    if args.quantize_kv_cache:
+        assert args.use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
+        transforms.append(replace_kv_cache_with_quantized_kv_cache)
+
+    if args.use_kv_cache:
+        if args.qnn:
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
+            from executorch.backends.qualcomm.utils.utils import (
+                convert_linear_to_conv2d,
+            )
+
+            transforms.append(replace_kv_cache_with_simple_kv_cache)
+            transforms.append(replace_sdpa_with_flex_sdpa)
+            transforms.append(replace_causal_mask)
+            transforms.append(replace_rms_norm_with_native_rms_norm)
+            if args.optimized_rotation_path:
+                transforms.append(fuse_layer_norms)
+                transforms.append(get_model_with_r1_r2(args.optimized_rotation_path))
+            transforms.append(convert_linear_to_conv2d)
+
+        elif args.mps:
+            # Currently mps doesn't support sdpa op, use the simpler decomposition
+            # to get free perf gain.
+            transforms.append(replace_sdpa_with_simple_sdpa)
+            transforms.append(replace_causal_mask)
+
+        elif args.coreml:
+            # iOS 18 introduced fused sdpa op
+            if args.coreml_ios >= 18:
+                transforms.append(replace_sdpa_with_coreml_sdpa)
+            else:
+                transforms.append(replace_sdpa_with_simple_sdpa)
+            transforms.append(replace_kv_cache_with_coreml_kv_cache)
+
+    return transforms

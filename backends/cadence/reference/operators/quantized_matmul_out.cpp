@@ -13,8 +13,9 @@ namespace impl {
 namespace reference {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using RuntimeContext = torch::executor::RuntimeContext;
+using executorch::aten::Tensor;
+using executorch::runtime::getLeadingDims;
+using executorch::runtime::KernelRuntimeContext;
 
 // The quantized matmul. The quantized matmul accumulates in a wider register,
 // whose type is TA.
@@ -108,7 +109,7 @@ void inline _typed_quantized_matmul(
 }
 
 void quantized_matmul_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& X,
     int64_t X_zero_point,
     const Tensor& Y,

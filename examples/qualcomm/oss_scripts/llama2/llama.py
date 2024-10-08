@@ -16,8 +16,7 @@ import torch
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.passes.build_quant_io import BuildQuantIo
 
-from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
-from executorch.backends.qualcomm.quantizer.utils import get_16a4w_qnn_ptq_config
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QcomChipset,
 )
@@ -34,13 +33,13 @@ from executorch.examples.qualcomm.oss_scripts.llama2.model.static_llama import (
 )
 from executorch.examples.qualcomm.utils import (
     make_output_dir,
+    make_quantizer,
     setup_common_args_and_variables,
     SimpleADB,
 )
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
-from executorch.exir.program._program import _get_updated_graph_signature
 from executorch.extension.llm.export.builder import DType
 
 from sentencepiece import SentencePieceProcessor
@@ -49,6 +48,7 @@ from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 soc_to_chipset_map = {
+    "SSG2115P": QcomChipset.SSG2115P,
     "SM8650": QcomChipset.SM8650,
     "SM8550": QcomChipset.SM8550,
     "SM8475": QcomChipset.SM8475,
@@ -151,7 +151,7 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:
 
 def annotate_linear_16a8w_in_affine_layer(gm: torch.fx.GraphModule) -> None:
     from executorch.backends.qualcomm.quantizer.quantizer import (
-        get_ptq_per_channel_weight_config,
+        get_ptq_per_channel_quant_config,
         QuantizationConfig,
     )
     from executorch.backends.qualcomm.quantizer.utils import QUANT_ANNOTATION_KEY
@@ -173,7 +173,7 @@ def annotate_linear_16a8w_in_affine_layer(gm: torch.fx.GraphModule) -> None:
             _annotated=True,
         )
 
-    quantization_config_16a8w_per_channel = get_ptq_per_channel_weight_config(
+    quantization_config_16a8w_per_channel = get_ptq_per_channel_quant_config(
         torch.uint16, weight_dtype=torch.int8
     )
     for node in gm.graph.nodes:
@@ -274,20 +274,12 @@ class SingleLlama:
 
     def quantize(self, quant_dtype, custom_annotations=()):
         self.quant_dtype = quant_dtype
-        quantizer = QnnQuantizer()
-        quantizer.set_per_channel_linear_quant(True)
-        quantizer.set_per_channel_conv_quant(True)
-
-        if quant_dtype == QuantDtype.use_8a8w:
-            pass  # default setting
-        elif quant_dtype == QuantDtype.use_16a4w:
-            quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
-            quantizer.set_bit16_op_quant_config(
-                get_16a4w_qnn_ptq_config(act_observer=MinMaxObserver)
-            )
-            quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
-        else:
-            raise AssertionError(f"No support for QuantDtype {quant_dtype}.")
+        quantizer = make_quantizer(
+            quant_dtype=quant_dtype,
+            per_channel_conv=True,
+            per_channel_linear=True,
+            act_observer=MinMaxObserver,
+        )
         quantizer.add_custom_quant_annotations(custom_annotations)
 
         self.has_quant_io = True
@@ -320,7 +312,6 @@ class SingleLlama:
             # Therefore, won't want to pre-allocate
             # by memory manager in runtime.
             memory_planning_pass=MemoryPlanningPass(
-                memory_planning_algo="greedy",
                 alloc_graph_input=False,
                 alloc_graph_output=False,
             ),
@@ -367,6 +358,7 @@ def compile(args):
     )
     end_load_ts = time.time()
     print("torch.load checkpoint", end_load_ts - start_ts)
+
     llama_instance = None
     with torch.device("meta"):
         llama_instance = LlamaModel(config, output_new_cache_only=True)
@@ -383,16 +375,13 @@ def compile(args):
     for layer in llama_instance.layers:
         if getattr(layer.attention, "prepare_sha", None):
             layer.attention.prepare_sha()
-    kv_type = torch.uint8
-    if args.ptq == "8a8w":
-        quant_dtype = QuantDtype.use_8a8w
-    elif args.ptq == "16a4w":
-        quant_dtype = QuantDtype.use_16a4w
-    else:
-        raise AssertionError(
-            f"No support for quant type {args.ptq}. Support 8a8w and 16a4w."
-        )
 
+    kv_type = torch.uint8
+    assert args.ptq in [
+        "8a8w",
+        "16a4w",
+    ], f"No support for quant type {args.ptq}. Support 8a8w and 16a4w."
+    quant_dtype = getattr(QuantDtype, f"use_{args.ptq}")
     assert args.tokenizer_model is not None, "Need tokenizer model for calibration"
 
     if args.dtype_override is not None:
@@ -435,8 +424,6 @@ def inference(args, pre_gen_pte=""):
     runner_cmd = " ".join(
         [
             f"cd {workspace} &&",
-            "export ADSP_LIBRARY_PATH=. &&",
-            "export LD_LIBRARY_PATH=. &&",
             f"./qnn_llama_runner {runner_args}",
         ]
     )
@@ -584,11 +571,11 @@ if __name__ == "__main__":
         inference(args, args.pre_gen_pte)
         exit(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
 
-    compile(args)
     if args.compile_only:
         exit(f"Finish compile_only and save to {args.artifact}")
 
     try:
+        compile(args)
         inference(args)
     except Exception as e:
         if args.ip and args.port != -1:

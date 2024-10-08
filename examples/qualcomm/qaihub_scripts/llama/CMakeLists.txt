@@ -32,7 +32,7 @@ target_include_directories(
 target_link_libraries(
   qaihub_llama2_7b_runner
   qnn_executorch_backend
-  executorch_no_prim_ops
+  executorch_core
   extension_data_loader
   extension_module
   extension_tensor
@@ -41,6 +41,9 @@ target_link_libraries(
 )
 target_compile_options(
   qaihub_llama2_7b_runner PUBLIC ${_common_compile_options}
+)
+set_target_properties(
+  qaihub_llama2_7b_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
 )
 
 # preprocess qaihub llama3 8b runner src files
@@ -87,7 +90,7 @@ target_include_directories(
 target_link_libraries(
   qaihub_llama3_8b_runner
   qnn_executorch_backend
-  executorch_no_prim_ops
+  executorch_core
   extension_data_loader
   extension_module
   extension_tensor
@@ -96,4 +99,7 @@ target_link_libraries(
 )
 target_compile_options(
   qaihub_llama3_8b_runner PUBLIC ${_common_compile_options}
+)
+set_target_properties(
+  qaihub_llama3_8b_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
 )

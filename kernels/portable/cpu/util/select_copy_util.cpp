@@ -38,6 +38,10 @@ Error select_copy_util(
     return Error::InvalidArgument;
   }
 
+  if (!tensors_have_same_dim_order(in, out)) {
+    return Error::InvalidArgument;
+  }
+
   // If the input is a empty tensor, no other operation could be done. We just
   // return the output.
   if (in.numel() == 0) {

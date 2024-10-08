@@ -13,10 +13,10 @@ namespace executor {
 namespace native {
 
 using Tensor = exec_aten::Tensor;
-using RuntimeContext = torch::executor::RuntimeContext;
+using executorch::runtime::KernelRuntimeContext;
 
 void embedding_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& weight,
     const Tensor& indices,
     int64_t padding_idx,

@@ -22,7 +22,7 @@ bool logical_or(bool a, bool b) {
 } // namespace
 
 Tensor& logical_or_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {

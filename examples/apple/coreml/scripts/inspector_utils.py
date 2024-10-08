@@ -47,26 +47,26 @@ COREML_METADATA_KEYS: Final[List[Tuple[str, str]]] = [
 ]
 
 
-def build_sdk_runner_including_coreml(
+def build_devtools_runner_including_coreml(
     root_dir_path: Path,
     conda_env_name: str,
     force: bool = False,
 ):
     if not force:
-        sdk_executable_path = (
-            root_dir_path / "cmake-out" / "examples" / "sdk" / "sdk_example_runner"
+        devtools_executable_path = (
+            root_dir_path / "cmake-out" / "examples" / "devtools" / "example_runner"
         )
-        print(sdk_executable_path)
-        if sdk_executable_path.is_file():
+        print(devtools_executable_path)
+        if devtools_executable_path.is_file():
             return
 
     cd_root_command: str = f"cd {root_dir_path.resolve()}"
     conda_activate_env_command: str = f"source conda activate {conda_env_name}"
-    build_sdk_runner_command: str = (
-        "./examples/sdk/build_sdk_example_runner.sh --coreml"
+    build_devtools_runner_command: str = (
+        "./examples/devtools/build_example_runner.sh --coreml"
     )
     build_command: str = (
-        f"{cd_root_command} && {conda_activate_env_command} && {build_sdk_runner_command}"
+        f"{cd_root_command} && {conda_activate_env_command} && {build_devtools_runner_command}"
     )
     subprocess.run(
         f'bash -c "{build_command}"', shell=True, check=True
@@ -173,22 +173,24 @@ def generate_etdump_with_intermediate_values(
     debug_buffer_path: Path,
     debug_buffer_size: int,
 ):
-    sdk_executable_path = (
-        root_dir_path / "cmake-out" / "examples" / "sdk" / "sdk_example_runner"
+    devtools_executable_path = (
+        root_dir_path / "cmake-out" / "examples" / "devtools" / "example_runner"
     )
-    if not sdk_executable_path.is_file():
+    if not devtools_executable_path.is_file():
         raise FileNotFoundError(
-            errno.ENOENT, os.strerror(errno.ENOENT), str(sdk_executable_path.resolve())
+            errno.ENOENT,
+            os.strerror(errno.ENOENT),
+            str(devtools_executable_path.resolve()),
         )
 
-    sdk_runner_command: str = f"""
-    {sdk_executable_path.resolve()} -dump_intermediate_outputs\
+    devtools_runner_command: str = f"""
+    {devtools_executable_path.resolve()} -dump_intermediate_outputs\
     -bundled_program_path {bundled_program_path.resolve()}\
     -etdump_path {et_dump_path.resolve()}\
     -debug_output_path {debug_buffer_path.resolve()}\
     -debug_buffer_size {debug_buffer_size}"""
     subprocess.run(
-        f'bash -c "{sdk_runner_command}"', shell=True, check=True
+        f'bash -c "{devtools_runner_command}"', shell=True, check=True
     ).check_returncode()
 
 

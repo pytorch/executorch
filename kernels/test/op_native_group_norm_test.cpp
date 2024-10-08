@@ -32,7 +32,7 @@ using torch::executor::testing::TensorFactory;
     Tensor& out0,
     Tensor& out1,
     Tensor& out2) {
-  exec_aten::RuntimeContext context{};
+  executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::aten::native_group_norm_outf(
       context, input, weight, bias, N, C, HxW, group, eps, out0, out1, out2);
 }

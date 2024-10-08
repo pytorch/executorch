@@ -12,14 +12,18 @@
 
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 
-namespace torch::executor {
+namespace example {
 
-class LlavaTextDecoderRunner : public TextDecoderRunner {
+class LlavaTextDecoderRunner
+    : public executorch::extension::llm::TextDecoderRunner {
  public:
-  LlavaTextDecoderRunner(Module* module, int32_t vocab_size, float temperature)
+  LlavaTextDecoderRunner(
+      executorch::extension::Module* module,
+      int32_t vocab_size,
+      float temperature)
       : TextDecoderRunner(module, true, vocab_size, temperature){};
 
-  inline Result<exec_aten::Tensor> step(
+  inline executorch::runtime::Result<exec_aten::Tensor> step(
       executorch::extension::TensorPtr& tokens,
       executorch::extension::TensorPtr& start_pos) override {
     // run token embedding
@@ -45,13 +49,13 @@ class LlavaTextDecoderRunner : public TextDecoderRunner {
    * Load the Module for text decode purpose.
    * @return The error code.
    */
-  inline Error load() override {
+  inline executorch::runtime::Error load() override {
     if (is_method_loaded()) {
-      return Error::Ok;
+      return executorch::runtime::Error::Ok;
     }
     ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kTokenEmbeddingMethod));
     ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kTextModelMethod));
-    return Error::Ok;
+    return executorch::runtime::Error::Ok;
   }
 
   /**
@@ -59,9 +63,9 @@ class LlavaTextDecoderRunner : public TextDecoderRunner {
    * @return True if the Module is loaded, false otherwise.
    */
   inline bool is_method_loaded() override {
-    Result<std::unordered_set<std::string>> methods_res =
+    executorch::runtime::Result<std::unordered_set<std::string>> methods_res =
         module_->method_names();
-    if (methods_res.error() != Error::Ok) {
+    if (methods_res.error() != executorch::runtime::Error::Ok) {
       ET_CHECK_MSG(false, "Failed to get method names");
     }
     std::unordered_set<std::string> methods = methods_res.get();
@@ -86,4 +90,4 @@ class LlavaTextDecoderRunner : public TextDecoderRunner {
   inline static const std::string kTextModelMethod = "text_model";
 };
 
-} // namespace torch::executor
+} // namespace example

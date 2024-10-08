@@ -59,7 +59,8 @@ class MultimodalRunner {
       const std::string& prompt,
       int32_t seq_len = 1024,
       std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const Stats&)> stats_callback = {}) = 0;
+      std::function<void(const Stats&)> stats_callback = {},
+      bool echo = true) = 0;
 
   /**
    * Prefill an LLaVA Module with the given images input.
@@ -95,6 +96,7 @@ class MultimodalRunner {
    * @param start_pos The starting position in KV cache of the input in the LLM.
    * @param token_callback What to do after a token is generated.
    * @param stats_callback What to do with Stats.
+   * @param echo Whether to echo the input prompt or not.
    * @return The error code.
    */
   virtual runtime::Error generate_from_pos(
@@ -103,7 +105,8 @@ class MultimodalRunner {
       int64_t start_pos = 0,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const ::executorch::extension::llm::Stats&)>
-          stats_callback = {}) = 0;
+          stats_callback = {},
+      bool echo = true) = 0;
 
   inline void stop() {
     text_token_generator_->stop();

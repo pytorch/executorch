@@ -8,10 +8,6 @@
 #import <CoreML/CoreML.h>
 #import <vector>
 
-#if !defined(MODEL_STATE_IS_SUPPORTED) && __has_include(<CoreML/MLModel+MLState.h>)
-#define MODEL_STATE_IS_SUPPORTED 1
-#endif
-
 NS_ASSUME_NONNULL_BEGIN
 
 @class ETCoreMLAsset;
@@ -45,7 +41,7 @@ __attribute__((objc_subclassing_restricted))
 @property (strong, readonly, nonatomic) MLModel* mlModel;
 
 /// The model state.
-@property (strong, readonly, nonatomic) id state API_AVAILABLE(macos(15.0), ios(18.0), tvos(18.0), watchos(11.0));
+@property (strong, readonly, nonatomic, nullable) id state;
 
 /// The asset from which the model is loaded.
 @property (strong, readonly, nonatomic) ETCoreMLAsset* asset;

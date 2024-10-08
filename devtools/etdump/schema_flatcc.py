@@ -93,6 +93,7 @@ class Value:
 
 @dataclass
 class DebugEvent:
+    name: Optional[str]
     chain_index: int
     instruction_id: int
     delegate_debug_id_int: Optional[int]

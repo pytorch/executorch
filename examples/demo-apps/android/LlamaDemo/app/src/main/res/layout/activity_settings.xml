@@ -10,19 +10,22 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_marginTop="20dp"
-        android:layout_marginLeft="10dp"
-        android:layout_marginRight="10dp"
+        android:background="#16293D"
         android:orientation="vertical"
         app:layout_constraintTop_toTopOf="parent"
         tools:layout_editor_absoluteX="1dp">
+
         <TextView
             android:id="@+id/textView"
             android:layout_width="match_parent"
-            android:layout_height="28dp"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-medium"
             android:text="Settings"
-            android:textAlignment="center"
-            android:textSize="20sp" />
+            android:textAlignment="viewStart"
+            android:textColor="#FFFFFF"
+            android:textSize="22sp"
+            android:translationX="5dp"
+            android:translationY="5dp" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -33,10 +36,12 @@
             <TextView
                 android:id="@+id/modelLabel"
                 android:layout_width="wrap_content"
-                android:layout_height="match_parent"
+                android:layout_height="wrap_content"
                 android:gravity="center_vertical"
+                android:text="Model"
+                android:textColor="#FFFFFF"
                 android:textSize="16sp"
-                android:text="Model" />
+                android:translationX="5dp" />
 
             <TextView
                 android:id="@+id/modelTextView"
@@ -44,15 +49,19 @@
                 android:layout_height="match_parent"
                 android:layout_weight="1"
                 android:gravity="center_vertical|end"
-                android:text="no model selected" />
+                android:text="no model selected"
+                android:textColor="#FFFFFF" />
 
             <ImageButton
                 android:id="@+id/modelImageButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="5dp"
-                android:background="#FFFFFF"
-                android:src="@drawable/outline_arrow_drop_down_circle_24"/>
+                android:background="#00FFFFFF"
+                android:scaleType="center"
+                android:scaleX="0.7"
+                android:scaleY="0.7"
+                android:src="@drawable/expand_circle_down" />
 
         </LinearLayout>
 
@@ -65,10 +74,12 @@
             <TextView
                 android:id="@+id/tokenizerLabel"
                 android:layout_width="wrap_content"
-                android:layout_height="match_parent"
+                android:layout_height="wrap_content"
                 android:gravity="center_vertical"
+                android:text="Tokenizer"
+                android:textColor="#FDFDFD"
                 android:textSize="16sp"
-                android:text="Tokenizer" />
+                android:translationX="5dp" />
 
             <TextView
                 android:id="@+id/tokenizerTextView"
@@ -76,15 +87,18 @@
                 android:layout_height="match_parent"
                 android:layout_weight="1"
                 android:gravity="center_vertical|end"
-                android:text="no tokenizer selected" />
+                android:text="no tokenizer selected"
+                android:textColor="#FFFFFF" />
 
             <ImageButton
                 android:id="@+id/tokenizerImageButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="5dp"
-                android:background="#FFFFFF"
-                android:src="@drawable/outline_arrow_drop_down_circle_24" />
+                android:background="#00FFFFFF"
+                android:scaleX="0.7"
+                android:scaleY="0.7"
+                android:src="@drawable/expand_circle_down" />
 
         </LinearLayout>
 
@@ -97,10 +111,12 @@
             <TextView
                 android:id="@+id/modelTypeLabel"
                 android:layout_width="wrap_content"
-                android:layout_height="match_parent"
+                android:layout_height="wrap_content"
                 android:gravity="center_vertical"
+                android:text="Model Type"
+                android:textColor="#FFFFFF"
                 android:textSize="16sp"
-                android:text="Model Type" />
+                android:translationX="5dp" />
 
             <TextView
                 android:id="@+id/modelTypeTextView"
@@ -108,17 +124,21 @@
                 android:layout_height="match_parent"
                 android:layout_weight="1"
                 android:gravity="center_vertical|end"
-                android:text="no model type selected" />
+                android:text="no model type selected"
+                android:textColor="#FFFFFF" />
 
             <ImageButton
                 android:id="@+id/modelTypeImageButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="5dp"
-                android:background="#FFFFFF"
-                android:src="@drawable/outline_arrow_drop_down_circle_24" />
+                android:background="#00FFFFFF"
+                android:scaleX="0.7"
+                android:scaleY="0.7"
+                android:src="@drawable/expand_circle_down" />
 
         </LinearLayout>
+
         <Button
             android:id="@+id/loadModelButton"
             android:layout_width="wrap_content"
@@ -127,8 +147,9 @@
             android:layout_marginTop="10dp"
             android:paddingHorizontal="10dp"
             android:text="Load Model"
-            android:theme="@style/DefaultButton"
-            android:textColor="@android:color/white"/>
+            android:textColor="@android:color/white"
+            android:textSize="14sp"
+            android:theme="@style/DefaultButton" />
 
         <TextView
             android:id="@+id/textView4"
@@ -136,9 +157,11 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
             android:layout_marginBottom="20dp"
+            android:text="Parameters"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
             android:textStyle="bold"
-            android:textSize="20sp"
-            android:text="Parameters" />
+            android:translationX="5dp" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -150,8 +173,10 @@
                 android:id="@+id/textView5"
                 android:layout_width="150dp"
                 android:layout_height="wrap_content"
+                android:text="Temperature"
+                android:textColor="#FFFFFF"
                 android:textSize="16sp"
-                android:text="Temperature" />
+                android:translationX="5dp" />
 
             <EditText
                 android:id="@+id/temperatureEditText"
@@ -159,9 +184,12 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:ems="10"
+                android:inputType="numberDecimal"
                 android:text="0.1"
                 android:textAlignment="textEnd"
-                android:inputType="numberDecimal" />
+                android:textColor="#FFFFFF"
+                android:textColorHint="#FFFFFF"
+                android:textSize="16sp" />
         </LinearLayout>
 
         <LinearLayout
@@ -181,17 +209,19 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="20dp"
                     android:layout_marginBottom="20dp"
+                    android:text="System Prompt"
+                    android:textColor="#FFFAFA"
+                    android:textSize="18sp"
                     android:textStyle="bold"
-                    android:textSize="20sp"
-                    android:text="System Prompt" />
+                    android:translationX="5dp" />
 
                 <ImageButton
                     android:id="@+id/resetSystemPrompt"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
                     android:backgroundTint="@android:color/transparent"
-                    android:src="@drawable/baseline_restart_alt_24"
-                    android:layout_marginTop="10dp" />
+                    android:src="@drawable/baseline_restart_alt_24" />
             </LinearLayout>
 
 
@@ -199,10 +229,12 @@
                 android:id="@+id/systemPromptText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="@drawable/prompt_shape"
-                android:textSize="16sp"
                 android:height="60dp"
-                android:hint="Type custom system prompt" />
+                android:background="@drawable/prompt_shape"
+                android:hint="Type custom system prompt"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#FFFCFC"
+                android:textSize="16sp" />
         </LinearLayout>
 
         <LinearLayout
@@ -222,33 +254,31 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="20dp"
                     android:layout_marginBottom="20dp"
+                    android:text="Prompt Format"
+                    android:textColor="#FFFFFF"
+                    android:textSize="18sp"
                     android:textStyle="bold"
-                    android:textSize="20sp"
-                    android:text="Prompt Format" />
+                    android:translationX="5dp" />
 
                 <ImageButton
                     android:id="@+id/resetUserPrompt"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
                     android:backgroundTint="@android:color/transparent"
-                    android:src="@drawable/baseline_restart_alt_24"
-                    android:layout_marginTop="10dp" />
+                    android:src="@drawable/baseline_restart_alt_24" />
 
             </LinearLayout>
 
             <EditText
                 android:id="@+id/userPromptText"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="69dp"
                 android:background="@drawable/prompt_shape"
-                android:textSize="16sp"
-                android:text = "USER_PROMPT tags" />
+                android:text="USER_PROMPT tags"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp" />
         </LinearLayout>
-
-        <View
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"/>
 
         <Button
             android:id="@+id/clearChatButton"
@@ -256,8 +286,8 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:text="Clear Chat History"
-            android:theme="@style/DefaultButton"
-            android:textColor="@android:color/white"/>
+            android:textColor="@android:color/white"
+            android:theme="@style/DefaultButton" />
 
     </LinearLayout>
 

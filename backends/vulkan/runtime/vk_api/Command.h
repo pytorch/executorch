@@ -99,7 +99,7 @@ class CommandBuffer final {
   VkCommandBuffer get_submit_handle(const bool final_use = false);
 
   inline operator bool() const {
-    return VK_NULL_HANDLE != handle_;
+    return handle_ != VK_NULL_HANDLE;
   }
 };
 

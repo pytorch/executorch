@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from typing import Callable, List, Optional
 
 import torch
@@ -33,7 +35,11 @@ def _annotate_one_to_one(
     Typical ops are ops implemented with a lookup table.
     """
     annotated_partitions = []
-    one_to_one_ops = (torch.ops.aten.exp.default, torch.ops.aten.log.default)
+    one_to_one_ops = {
+        torch.ops.aten.exp.default,
+        torch.ops.aten.log.default,
+        torch.ops.aten.rsqrt.default,
+    }
     for node in gm.graph.nodes:
         if node.op != "call_function" or node.target not in one_to_one_ops:
             continue

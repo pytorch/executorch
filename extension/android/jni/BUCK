@@ -70,21 +70,30 @@ fb_android_cxx_library(
 
 fb_android_cxx_library(
     name = "executorch_llama_jni",
-    srcs = ["jni_layer_llama.cpp"],
+    srcs = [
+        "jni_layer.cpp",
+        "jni_layer_llama.cpp",
+    ],
+    headers = ["jni_layer_constants.h"],
     allow_jni_merging = False,
     compiler_flags = [
         "-frtti",
         "-fexceptions",
+        "-DEXECUTORCH_BUILD_LLAMA_JNI",
         "-Wno-format",
     ],
-    soname = "libexecutorch_llama_jni.$(ext)",
+    soname = "libexecutorch.$(ext)",
     visibility = ["PUBLIC"],
     deps = [
         "//fbandroid/libraries/fbjni:fbjni",
         "//fbandroid/native/fb:fb",
         "//third-party/glog:glog",
+        "//xplat/executorch/backends/xnnpack:xnnpack_backend_static",
         "//xplat/executorch/examples/models/llama2/runner:runner_static",
         "//xplat/executorch/examples/models/llava/runner:runner_static",
+        "//xplat/executorch/extension/module:module_static",
+        "//xplat/executorch/extension/runner_util:inputs_static",
+        "//xplat/executorch/extension/tensor:tensor_static",
         "//xplat/executorch/extension/threadpool:cpuinfo_utils_static",
         "//xplat/executorch/extension/threadpool:threadpool_static",
     ],

@@ -8,6 +8,7 @@
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
+#include <executorch/extension/training/module/training_module.h>
 #include <executorch/extension/training/optimizer/sgd.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
@@ -30,73 +31,52 @@ using exec_aten::Tensor;
 using namespace torch::executor;
 using torch::executor::util::FileDataLoader;
 
-constexpr size_t kDefaultNonConstMemBytes = 32 * 1024;
-constexpr size_t kDefaultRuntimeMemBytes = 32 * 1024;
-
 class TrainingLoopTest : public ::testing::Test {
  protected:
-  void SetUp() override {
-    // Create a loader for the serialized ModuleAdd program.
-    const char* path = std::getenv("ET_MODULE_SIMPLE_TRAIN_PATH");
-    Result<FileDataLoader> loader = FileDataLoader::from(path);
-    ASSERT_EQ(loader.error(), Error::Ok);
-    loader_ = std::make_unique<FileDataLoader>(std::move(loader.get()));
-
-    // Use it to load the program.
-    Result<Program> program = Program::load(
-        loader_.get(), Program::Verification::InternalConsistency);
-    ASSERT_EQ(program.error(), Error::Ok);
-    program_ = std::make_unique<Program>(std::move(program.get()));
-  }
-
-  // Must outlive program_, but tests shouldn't need to touch it.
-  std::unique_ptr<FileDataLoader> loader_;
-
-  std::unique_ptr<Program> program_;
+  void SetUp() override {}
 };
 
 TEST_F(TrainingLoopTest, OptimizerSteps) {
-  // Execute model with constants stored in segment.
-  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
-  Result<Method> method = program_->load_method("forward", &mmm.get());
-  ASSERT_EQ(method.error(), Error::Ok);
+  const char* path = std::getenv("ET_MODULE_SIMPLE_TRAIN_PATH");
+  executorch::runtime::Result<torch::executor::util::FileDataLoader>
+      loader_res = torch::executor::util::FileDataLoader::from(path);
+  ASSERT_EQ(loader_res.error(), Error::Ok);
+  auto loader = std::make_unique<torch::executor::util::FileDataLoader>(
+      std::move(loader_res.get()));
+
+  auto mod = executorch::extension::training::TrainingModule(std::move(loader));
 
   // Create inputs.
   TensorFactory<ScalarType::Float> tf;
   Tensor input = tf.make({3}, {1.0, 1.0, 1.0});
   Tensor label = tf.make({3}, {1.0, 0.0, 0.0});
 
-  Error e = method->set_input(input, 0);
-  e = method->set_input(label, 1);
+  auto res = mod.execute_forward_backward("forward", {input, label});
+  ASSERT_TRUE(res.ok());
 
   // Set up optimizer.
-  const char* param_name[2] = {"mod.linear1.weight", "mod.linear2.bias"};
-  Span<const char*> param_names(param_name, 2);
+  // Get the params and names
+  auto param_res = mod.named_parameters("forward");
+  ASSERT_EQ(param_res.error(), Error::Ok);
 
-  Tensor param_data[2] = {
-      method.get().get_output(3).toTensor(), // mod.linear1.weight
-      method.get().get_output(4).toTensor()}; // mod.linear1.bias
-  Span<Tensor> param_data_span(param_data, 2);
-
-  auto orig_data = param_data[0].data_ptr<float>()[0];
-
-  Tensor grad_data[2] = {
-      method.get().get_output(1).toTensor(), // mod.linear1.weight.grad
-      method.get().get_output(2).toTensor()}; // mod.linear1.bias.grad
-  ;
-  Span<Tensor> grad_data_span(grad_data, 2);
+  float orig_data = param_res.get().at("linear.weight").data_ptr<float>()[0];
 
   SGDOptions options{0.1};
-  SGD optimizer(param_names, param_data_span, options);
+  SGD optimizer(param_res.get(), options);
 
-  // Execute the method. (Forward and Backward)
-  Error err = method->execute();
-  ASSERT_EQ(err, Error::Ok);
+  // Get the gradients
+  auto grad_res = mod.named_gradients("forward");
+  ASSERT_EQ(grad_res.error(), Error::Ok);
+  auto& grad = grad_res.get();
+  ASSERT_EQ(grad.size(), 2);
+  ASSERT_NE(grad.find("linear.weight"), grad.end());
+  ASSERT_NE(grad.find("linear.bias"), grad.end());
 
   // Step
-  auto opt_err = optimizer.step(param_names, grad_data_span);
+  auto opt_err = optimizer.step(grad_res.get());
   ASSERT_EQ(opt_err, Error::Ok);
 
   // Check that the data has changed.
-  ASSERT_NE(param_data[0].data_ptr<float>()[0], orig_data);
+  ASSERT_NE(
+      param_res.get().at("linear.weight").data_ptr<float>()[0], orig_data);
 }

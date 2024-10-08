@@ -16,7 +16,7 @@ namespace native {
 
 using exec_aten::Tensor;
 
-Tensor& ceil_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& ceil_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   return internal::unary_ufunc_realh(std::ceil, ctx, in, out);
 }
 

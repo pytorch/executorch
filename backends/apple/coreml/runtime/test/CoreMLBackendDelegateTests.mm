@@ -13,6 +13,8 @@
 #import <executorch/runtime/platform/runtime.h>
 #import <string>
 
+#import "MLModel_Prewarm.h"
+
 static constexpr size_t kRuntimeMemorySize = 50 * 1024U * 1024U; // 50 MB
 
 using namespace torch::executor;
@@ -184,20 +186,28 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
 - (void)testAddProgramExecute {
     NSURL *modelURL = [[self class] bundledResourceWithName:@"add_coreml_all" extension:@"pte"];
     XCTAssertNotNil(modelURL);
-    [self executeModelAtURL:modelURL nLoads:5 nExecutions:2];
+    [self executeModelAtURL:modelURL nLoads:1 nExecutions:2];
 }
 
 - (void)testMulProgramExecute {
     NSURL *modelURL = [[self class] bundledResourceWithName:@"mul_coreml_all" extension:@"pte"];
     XCTAssertNotNil(modelURL);
-    [self executeModelAtURL:modelURL nLoads:5 nExecutions:2];
+    [self executeModelAtURL:modelURL nLoads:1 nExecutions:2];
 }
 
 - (void)testMV3ProgramExecute {
     NSURL *modelURL = [[self class] bundledResourceWithName:@"mv3_coreml_all" extension:@"pte"];
     XCTAssertNotNil(modelURL);
-    [self executeModelAtURL:modelURL nLoads:5 nExecutions:2];
+    [self executeModelAtURL:modelURL nLoads:1 nExecutions:2];
 }
+
+#if MODEL_STATE_IS_SUPPORTED
+- (void)testStateProgramExecute {
+    NSURL *modelURL = [[self class] bundledResourceWithName:@"state_coreml_all" extension:@"pte"];
+    XCTAssertNotNil(modelURL);
+    [self executeModelAtURL:modelURL nLoads:1 nExecutions:2];
+}
+#endif
 
 - (void)executeMultipleModelsConcurrently:(NSArray<NSURL *> *)modelURLs
                                    nLoads:(NSUInteger)nLoads

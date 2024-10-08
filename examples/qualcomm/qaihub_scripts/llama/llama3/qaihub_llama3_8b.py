@@ -124,8 +124,6 @@ def main(args):
     runner_cmds = " ".join(
         [
             f"cd {adb.workspace} &&",
-            "export ADSP_LIBRARY_PATH=. &&",
-            "export LD_LIBRARY_PATH=. &&",
             f"./qaihub_llama3_8b_runner {' '.join(runner_args)}",
         ]
     )

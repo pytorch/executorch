@@ -180,8 +180,9 @@ def get_qnn_quantizer(
         # Due to the error with 16a16w in Qnn Htp, we need to disable per channel linear quantization when use 16a16w
         # TODO: enable it after the issue is fixed
         logging.warning(
-            "Disable per channel quantization for linear due to the error with QNN HTP 16a16w."
+            "Disable per channel quantization for linear and conv due to the error with QNN HTP 16a16w."
         )
+        qnn_quantizer.set_per_channel_conv_quant(enable=False)
         qnn_quantizer.set_per_channel_linear_quant(enable=False)
         qnn_quantizer.add_16bit_quant_ops(qnn_quantizer.SUPPORTED_OPS)
         qnn_quantizer.set_bit16_op_quant_config(
@@ -208,6 +209,12 @@ def get_qnn_quantizer(
         quantization_mode is None
     ), "Currently qnn backend only supports QnnQuantizer via pt2e flow"
     qnn_quantizer.add_custom_quant_annotations(custom_annotations)
+    qnn_quantizer.add_discard_ops(
+        [
+            torch.ops.aten.embedding.default,
+        ]
+    )
+
     return qnn_quantizer, quant_dtype
 
 

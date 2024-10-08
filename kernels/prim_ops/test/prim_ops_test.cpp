@@ -29,10 +29,10 @@ namespace executor {
 
 class RegisterPrimOpsTest : public ::testing::Test {
  protected:
-  RuntimeContext context;
+  KernelRuntimeContext context;
   void SetUp() override {
     torch::executor::runtime_init();
-    context = RuntimeContext();
+    context = KernelRuntimeContext();
   }
 };
 
@@ -113,6 +113,9 @@ TEST_F(RegisterPrimOpsTest, TestAlgebraOps) {
   EXPECT_FLOAT_EQ(stack[2]->toDouble(), 0.75);
 
   getOpsFn("executorch_prim::mod.int")(context, stack);
+  EXPECT_EQ(stack[2]->toInt(), 3);
+
+  getOpsFn("executorch_prim::mod.Scalar")(context, stack);
   EXPECT_EQ(stack[2]->toInt(), 3);
 
   getOpsFn("executorch_prim::sym_float.Scalar")(context, stack);

@@ -15,10 +15,10 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::RuntimeContext;
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
+using executorch::runtime::KernelRuntimeContext;
 using torch::executor::testing::TensorFactory;
 
 class OpNeTest : public OperatorTest {
@@ -34,7 +34,7 @@ class OpNeTest : public OperatorTest {
     Tensor a = tf_input.make(/*sizes=*/{2, 2}, /*data=*/{2, 3, 2, 4});
     Tensor b = tf_input.make({2, 2}, {2, 2, 2, 2});
     Tensor out = tf_bool.zeros({2, 2});
-    RuntimeContext context{};
+    KernelRuntimeContext context{};
 
     torch::executor::aten::ne_outf(context, a, b, out);
     EXPECT_TENSOR_EQ(out, tf_bool.make({2, 2}, {false, true, false, true}));

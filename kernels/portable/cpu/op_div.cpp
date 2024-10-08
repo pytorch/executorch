@@ -33,8 +33,11 @@ ScalarType get_compute_type(ScalarType a_type, ScalarType b_type) {
 
 } // namespace
 
-Tensor&
-div_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
+Tensor& div_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Tensor& b,
+    Tensor& out) {
   ET_KERNEL_CHECK(
       ctx,
       resize_to_broadcast_target_size(a, b, out) == Error::Ok,
@@ -89,7 +92,7 @@ div_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
 }
 
 Tensor& div_out_mode(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     exec_aten::optional<exec_aten::string_view> mode,
@@ -146,7 +149,7 @@ Tensor& div_out_mode(
 }
 
 Tensor& div_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {
@@ -194,7 +197,7 @@ Tensor& div_scalar_out(
 }
 
 Tensor& div_scalar_mode_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     exec_aten::optional<exec_aten::string_view> mode,

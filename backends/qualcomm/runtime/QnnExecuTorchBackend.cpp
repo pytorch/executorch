@@ -213,8 +213,10 @@ Error QnnExecuTorchBackend::execute(
   }
 
   ET_CHECK_OR_RETURN_ERROR(
-      qnn_manager->Execute(input_tensor_structs, output_tensor_structs) ==
-          Error::Ok,
+      qnn_manager->Execute(
+          input_tensor_structs,
+          output_tensor_structs,
+          context.event_tracer()) == Error::Ok,
       Internal,
       "Fail to execute graph");
   ET_CHECK_OR_RETURN_ERROR(

@@ -13,6 +13,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
 
 logger = logging.getLogger(__name__)
@@ -86,14 +87,17 @@ class TestAvgPool2d(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
-    def _test_avgpool2d_tosa_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
+    def _test_avgpool2d_tosa_ethos_BI_pipeline(
+        self,
+        module: torch.nn.Module,
+        compile_spec: CompileSpec,
+        test_data: Tuple[torch.tensor],
     ):
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=compile_spec,
             )
             .quantize()
             .export()
@@ -141,6 +145,22 @@ class TestAvgPool2d(unittest.TestCase):
         test_data: torch.Tensor,
         model_params: int | Tuple[int, int],
     ):
-        self._test_avgpool2d_tosa_u55_BI_pipeline(
-            self.AvgPool2d(*model_params), (test_data,)
+        self._test_avgpool2d_tosa_ethos_BI_pipeline(
+            self.AvgPool2d(*model_params),
+            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            (test_data,),
+        )
+
+    @parameterized.expand(test_data_suite)
+    @unittest.expectedFailure
+    def test_avgpool2d_tosa_u85_BI(
+        self,
+        test_name: str,
+        test_data: torch.Tensor,
+        model_params: int | Tuple[int, int],
+    ):
+        self._test_avgpool2d_tosa_ethos_BI_pipeline(
+            self.AvgPool2d(*model_params),
+            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            (test_data,),
         )

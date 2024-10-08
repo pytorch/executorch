@@ -22,7 +22,7 @@ using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 Tensor& op_flip_out(const Tensor& input, IntArrayRef dims, Tensor& out) {
-  exec_aten::RuntimeContext context{};
+  executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::aten::flip_outf(context, input, dims, out);
 }
 

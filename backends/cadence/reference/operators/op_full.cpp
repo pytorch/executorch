@@ -17,7 +17,7 @@ using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
 Tensor& full_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const IntArrayRef sizes,
     const Scalar& fill_value,
     Tensor& out) {

@@ -179,8 +179,8 @@ except Exception:
 # -----------------------
 #
 # To quantize a model, we first need to capture the graph with
-# ``torch._export.capture_pre_autograd_graph``, perform quantization, and then
-# call ``torch.export``. ``torch._export.capture_pre_autograd_graph`` returns a
+# ``torch.export.export_for_training``, perform quantization, and then
+# call ``torch.export``. ``torch.export.export_for_training`` returns a
 # graph which contains ATen operators which are Autograd safe, meaning they are
 # safe for eager-mode training, which is needed for quantization. We will call
 # the graph at this level, the ``Pre-Autograd ATen Dialect`` graph.
@@ -193,10 +193,10 @@ except Exception:
 # will annotate the nodes in the graph with information needed to quantize the
 # model properly for a specific backend.
 
-from torch._export import capture_pre_autograd_graph
+from torch.export import export_for_training
 
 example_args = (torch.randn(1, 3, 256, 256),)
-pre_autograd_aten_dialect = capture_pre_autograd_graph(SimpleConv(), example_args)
+pre_autograd_aten_dialect = export_for_training(SimpleConv(), example_args).module()
 print("Pre-Autograd ATen Dialect Graph")
 print(pre_autograd_aten_dialect)
 
@@ -523,9 +523,7 @@ from executorch.exir.passes import MemoryPlanningPass
 executorch_program: ExecutorchProgramManager = edge_program.to_executorch(
     ExecutorchBackendConfig(
         passes=[],  # User-defined passes
-        memory_planning_pass=MemoryPlanningPass(
-            "greedy"
-        ),  # Default memory planning pass
+        memory_planning_pass=MemoryPlanningPass(),  # Default memory planning pass
     )
 )
 
@@ -562,8 +560,7 @@ import executorch.exir as exir
 # Here is an example for an entire end-to-end workflow:
 
 import torch
-from torch._export import capture_pre_autograd_graph
-from torch.export import export, ExportedProgram
+from torch.export import export, export_for_training, ExportedProgram
 
 
 class M(torch.nn.Module):
@@ -577,7 +574,7 @@ class M(torch.nn.Module):
 
 
 example_args = (torch.randn(3, 4),)
-pre_autograd_aten_dialect = capture_pre_autograd_graph(M(), example_args)
+pre_autograd_aten_dialect = export_for_training(M(), example_args).module()
 # Optionally do quantization:
 # pre_autograd_aten_dialect = convert_pt2e(prepare_pt2e(pre_autograd_aten_dialect, CustomBackendQuantizer))
 aten_dialect: ExportedProgram = export(pre_autograd_aten_dialect, example_args)

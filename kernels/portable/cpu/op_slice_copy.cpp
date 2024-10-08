@@ -17,7 +17,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& slice_copy_Tensor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     exec_aten::optional<int64_t> start_val,
@@ -32,6 +32,9 @@ Tensor& slice_copy_Tensor_out(
   if (dim < 0) {
     dim += in.dim();
   }
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   // If user do not set value to end_val, set end to in.size(dim) (largest
   // value available)

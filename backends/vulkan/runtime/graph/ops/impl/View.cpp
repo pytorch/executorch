@@ -76,7 +76,7 @@ void add_view_node(
       // Parameter Buffers
       {t_out->sizes_ubo(), t_in->sizes_ubo()},
       // Specialization Constants
-      {SV(t_in->packed_dim_whcn_idx()), SV(t_out->packed_dim_whcn_idx())},
+      {SV(t_in->packed_dim()), SV(t_out->packed_dim())},
       // Resizing Logic
       resize_view_node,
       {sizes}));

@@ -24,8 +24,25 @@ static inline id check_class(id obj, Class cls) {
 
 #define SAFE_CAST(Object, Type) ((Type *)check_class(Object, [Type class]))
 
-using namespace torch::executor;
-using torch::executor::util::FileDataLoader;
+using executorch::etdump::ETDumpGen;
+using executorch::etdump::ETDumpResult;
+using executorch::extension::FileDataLoader;
+using executorch::runtime::DataLoader;
+using executorch::runtime::EValue;
+using executorch::runtime::Error;
+using executorch::runtime::EventTracer;
+using executorch::runtime::EventTracerDebugLogLevel;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::HierarchicalAllocator;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::MemoryManager;
+using executorch::runtime::Method;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::Span;
+using executorch::runtime::TensorInfo;
+using torch::executor::CoreMLBackendDelegate;
 
 static constexpr size_t kRuntimeMemorySize = 16 * 1024U * 1024U; // 16 MB
 
@@ -294,7 +311,7 @@ std::unique_ptr<ETDumpGen> make_etdump_gen(Buffer& debug_buffer, const Args& arg
 }
 
 void dump_etdump_gen(ETDumpGen *etdump_gen, const Buffer& debug_buffer, const Args& args) {
-    etdump_result result = (etdump_gen != nullptr) ? etdump_gen->get_etdump_data() : etdump_result{.buf = nullptr, .size = 0};
+    ETDumpResult result = (etdump_gen != nullptr) ? etdump_gen->get_etdump_data() : ETDumpResult{.buf = nullptr, .size = 0};
     if (result.size == 0) {
         return;
     }
@@ -316,7 +333,7 @@ void dump_etdump_gen(ETDumpGen *etdump_gen, const Buffer& debug_buffer, const Ar
 
 int main(int argc, char * argv[]) {
     @autoreleasepool {
-        runtime_init();
+        executorch::runtime::runtime_init();
 
         auto args = parse_command_line_args([[NSProcessInfo processInfo] arguments]);
         if (args.purge_models_cache) {

@@ -29,14 +29,6 @@ def _is_valid_alignment(alignment: int) -> bool:
     return alignment > 0 and (alignment & (alignment - 1)) == 0
 
 
-# TODO(T182299196): Replace this hack with a proper flatc binary.
-def _replace_infinity_in_json_file(content: str) -> str:
-    content = re.sub(
-        r'"double_val"\s*:\s*(-)?Infinity', r'"double_val": "\g<1>inf"', content
-    )
-    return content
-
-
 def _patch_schema_alignment(
     schema: bytes,
     constant_tensor_alignment: Optional[int],
@@ -291,11 +283,8 @@ def _program_json_to_flatbuffer(
         json_path = os.path.join(temp_dir, file_stem + ".json")
         output_path = os.path.join(temp_dir, file_stem + ".pte")
 
-        # TODO(T182299196): Replace this hack with a proper flatc binary.
-        replaced_program_json = _replace_infinity_in_json_file(program_json)
-
         with open(json_path, "wb") as json_file:
-            json_file.write(replaced_program_json.encode("ascii"))
+            json_file.write(program_json.encode("ascii"))
 
         try:
             _flatc_compile(temp_dir, schema_info.root_path, json_path)
@@ -330,6 +319,19 @@ def _program_json_to_flatbuffer(
             )
 
 
+def _replace_infinity_in_json_file(content: bytes) -> bytes:
+    """Replace -inf and inf with "inf" and "-inf" in the JSON file. program.fbs
+    is used to convert from flatbuffer to JSON. +-inf float values are not
+    supported by JSON, so we replace them with the string equivalent. When
+    converting from JSON to python dataclasses, the string is read as a Union
+    of float and string (see schema.py).
+    """
+    content = re.sub(
+        rb'"double_val"\s*:\s*(-)?inf', rb'"double_val": "\g<1>inf"', content
+    )
+    return content
+
+
 def _program_flatbuffer_to_json(program_flatbuffer: bytes) -> bytes:
     """Converts binary flatbuffer data into Program-compatible JSON.
 
@@ -348,4 +350,5 @@ def _program_flatbuffer_to_json(program_flatbuffer: bytes) -> bytes:
 
         _flatc_decompile(temp_dir, schema_info.root_path, bin_path)
         with open(json_path, "rb") as output_file:
-            return output_file.read()
+            json_data = output_file.read()
+            return _replace_infinity_in_json_file(json_data)

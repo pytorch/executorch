@@ -4,10 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import argparse
 
 from executorch.devtools import Inspector
-from executorch.devtools.inspector._inspector_utils import compare_results, TimeScale
+from executorch.devtools.inspector import compare_results, TimeScale
 
 
 def main() -> None:

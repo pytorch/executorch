@@ -19,9 +19,9 @@
 using namespace ::testing;
 using exec_aten::ArrayRef;
 using exec_aten::optional;
-using exec_aten::RuntimeContext;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
+using executorch::runtime::KernelRuntimeContext;
 using torch::executor::native::quantized_embedding_4bit_out;
 
 using torch::executor::testing::TensorFactory;
@@ -62,7 +62,7 @@ TEST(OpQuantizedEmbedding4bTest, TestGroupWiseQuantizedEmbedding) {
   EXPECT_TENSOR_EQ(out, expected);
 
   out = tf.zeros({3, 4});
-  auto context = RuntimeContext();
+  auto context = KernelRuntimeContext();
   torch::executor::native::quantized_embedding_4bit_out(
       context,
       qweight,

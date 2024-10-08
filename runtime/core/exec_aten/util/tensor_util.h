@@ -922,6 +922,38 @@ inline size_t coordinateToIndex(
 }
 
 /**
+ * Produce a memoized array for use with repeated calls to
+ * coordinateToIndexWithTrailingDimsMemo, which will be faster than
+ * repeated calls to coordinateToIndex.
+ */
+inline void memoizeTrailingDims(
+    const exec_aten::Tensor& tensor,
+    size_t trailing_dims_memo[kTensorDimensionLimit]) {
+  const auto tensorDim = tensor.dim();
+  size_t dims = 1;
+  for (int ii = tensorDim - 1; ii >= 0; --ii) {
+    trailing_dims_memo[ii] = dims;
+    dims *= static_cast<size_t>(tensor.size(ii));
+  }
+}
+
+/**
+ * Like coordinateToIndex, but faster for repeated calls with the same
+ * tensor. trailing_dims_memo must be produced by a call to
+ * memoizeTrailingDims.
+ */
+inline size_t coordinateToIndexWithTrailingDimsMemo(
+    const exec_aten::Tensor& tensor,
+    const size_t* const coordinate,
+    const size_t trailing_dims_memo[kTensorDimensionLimit]) {
+  size_t index = 0;
+  for (int d = 0; d < tensor.dim(); ++d) {
+    index += coordinate[d] * trailing_dims_memo[d];
+  }
+  return index;
+}
+
+/**
  * Given the linear index return the N-dimensional tensor coordinate. This is
  * the inverse operation of coordinateToIndex.
  *

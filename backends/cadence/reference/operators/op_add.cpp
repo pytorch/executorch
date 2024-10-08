@@ -16,7 +16,7 @@ namespace executor {
 namespace native {
 
 Tensor& add_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     const Scalar& alpha,

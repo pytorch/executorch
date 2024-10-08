@@ -15,13 +15,13 @@ namespace extension {
 
 /**
  * A helper class for creating TensorPtr instances from raw data and tensor
- * properties. Note the the TensorPtr created by this class will not own the
- * data, so it must outlive the TensorPtr.
+ * properties. Note that the TensorPtr created by this class does not own the
+ * data, so the data must outlive the TensorPtr.
  *
- * TensorPtrMaker provides a fluent interface for specifying various properties
- * of a tensor, such as its type, sizes, data pointer, dimension order, strides,
- * and shape dynamism. The final tensor is created by invoking make_tensor_ptr()
- * or converting TensorPtrMaker to TensorPtr.
+ * TensorPtrMaker provides a fluent interface for specifying various tensor
+ * properties, such as type, sizes, data pointer, dimension order, strides, and
+ * shape dynamism. The final tensor is created by invoking make_tensor_ptr() or
+ * by converting TensorPtrMaker to TensorPtr.
  */
 class TensorPtrMaker final {
  public:
@@ -31,6 +31,7 @@ class TensorPtrMaker final {
   // But it is movable.
   TensorPtrMaker(TensorPtrMaker&&) = default;
   TensorPtrMaker& operator=(TensorPtrMaker&&) = default;
+
   /**
    * Sets the scalar type of the tensor elements.
    *
@@ -98,11 +99,11 @@ class TensorPtrMaker final {
    */
   TensorPtr make_tensor_ptr() && {
     return ::executorch::extension::make_tensor_ptr(
-        type_,
         std::move(sizes_),
         data_,
         std::move(dim_order_),
         std::move(strides_),
+        type_,
         dynamism_,
         std::move(deleter_));
   }
@@ -138,7 +139,7 @@ class TensorPtrMaker final {
   void* data_ = nullptr;
   exec_aten::ScalarType type_ = exec_aten::ScalarType::Float;
   exec_aten::TensorShapeDynamism dynamism_ =
-      exec_aten::TensorShapeDynamism::STATIC;
+      exec_aten::TensorShapeDynamism::DYNAMIC_BOUND;
 };
 
 /**
@@ -166,23 +167,23 @@ inline TensorPtrMaker for_blob(
  * Creates a TensorPtr from a raw data pointer and tensor sizes, with an
  * optional dynamism setting.
  *
- * This function is a convenient way to create a tensor from existing data, with
- * the option to specify whether the tensor's shape is static, dynamic, or
- * bounded.
+ * This function provides a convenient way to create a tensor from existing
+ * data, with the option to specify whether the tensor's shape is static or
+ * dynamic.
  *
- * @param data A pointer to the raw data to be used by the tensor. It must
+ * @param data A pointer to the raw data used by the tensor. The data must
  * outlive the TensorPtr created by this function.
  * @param sizes A vector specifying the size of each dimension.
  * @param type The scalar type of the tensor elements.
  * @param dynamism Specifies whether the tensor's shape is static or dynamic.
- * @return A TensorPtr instance that manages the newly created Tensor.
+ * @return A TensorPtr instance managing the newly created Tensor.
  */
 inline TensorPtr from_blob(
     void* data,
     std::vector<exec_aten::SizesType> sizes,
     exec_aten::ScalarType type = exec_aten::ScalarType::Float,
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC) {
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return for_blob(data, std::move(sizes), type)
       .dynamism(dynamism)
       .make_tensor_ptr();
@@ -194,15 +195,16 @@ inline TensorPtr from_blob(
  *
  * This function allows for the creation of a tensor from existing data, with
  * the option to specify custom strides for each dimension and whether the
- * tensor's shape is static, dynamic, or bounded.
+ * tensor’s shape is static, dynamic, or bounded.
  *
- * @param data A pointer to the raw data to be used by the tensor. It must
+ * @param data A pointer to the raw data used by the tensor. The data must
  * outlive the TensorPtr created by this function.
  * @param sizes A vector specifying the size of each dimension.
  * @param strides A vector specifying the stride for each dimension.
  * @param type The scalar type of the tensor elements.
- * @param dynamism Specifies whether the tensor's shape is static or dynamic.
- * @return A TensorPtr instance that manages the newly created Tensor.
+ * @param dynamism Specifies whether the tensor's shape is static, dynamic, or
+ * bounded.
+ * @return A TensorPtr instance managing the newly created Tensor.
  */
 inline TensorPtr from_blob(
     void* data,
@@ -210,7 +212,7 @@ inline TensorPtr from_blob(
     std::vector<exec_aten::StridesType> strides,
     exec_aten::ScalarType type = exec_aten::ScalarType::Float,
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC) {
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return for_blob(data, std::move(sizes), type)
       .strides(std::move(strides))
       .dynamism(dynamism)
@@ -239,7 +241,7 @@ inline TensorPtr from_blob(
     exec_aten::ScalarType type,
     std::function<void(void*)>&& deleter,
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC) {
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return for_blob(data, std::move(sizes), type)
       .deleter(std::move(deleter))
       .dynamism(dynamism)
@@ -270,12 +272,416 @@ inline TensorPtr from_blob(
     exec_aten::ScalarType type,
     std::function<void(void*)>&& deleter,
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC) {
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return for_blob(data, std::move(sizes), type)
       .strides(std::move(strides))
       .deleter(std::move(deleter))
       .dynamism(dynamism)
       .make_tensor_ptr();
+}
+
+/**
+ * Creates a TensorPtr with the specified sizes, strides, and properties.
+ *
+ * This function allocates memory for the tensor elements but does not
+ * initialize them with any specific values. The tensor is created with the
+ * specified strides.
+ *
+ * @param sizes A vector specifying the size of each dimension.
+ * @param strides A vector specifying the stride for each dimension.
+ * @param type The scalar type of the tensor elements.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+TensorPtr empty_strided(
+    std::vector<exec_aten::SizesType> sizes,
+    std::vector<exec_aten::StridesType> strides,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Float,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
+
+/**
+ * Creates an empty TensorPtr with the same size and properties as the given
+ * tensor.
+ *
+ * This function allocates memory for the tensor elements but does not
+ * initialize them with any specific values.
+ *
+ * @param other A reference to another tensor, whose size and properties are
+ * used.
+ * @param type The scalar type of the tensor elements. If not provided, the
+ * scalar type of the other tensor is used.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+inline TensorPtr empty_like(
+    const TensorPtr& other,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Undefined,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  if (type == exec_aten::ScalarType::Undefined) {
+    type = other->scalar_type();
+  }
+  return empty_strided(
+      {other->sizes().begin(), other->sizes().end()},
+      {other->strides().begin(), other->strides().end()},
+      type,
+      dynamism);
+}
+
+/**
+ * Creates an empty TensorPtr with the specified sizes and properties.
+ *
+ * This function allocates memory for the tensor elements but does not
+ * initialize them with any specific values.
+ *
+ * @param sizes A vector specifying the size of each dimension.
+ * @param type The scalar type of the tensor elements.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+inline TensorPtr empty(
+    std::vector<exec_aten::SizesType> sizes,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Float,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  return empty_strided(std::move(sizes), {}, type, dynamism);
+}
+
+/**
+ * Creates a TensorPtr filled with the specified value.
+ *
+ * @param sizes A vector specifying the size of each dimension.
+ * @param strides A vector specifying the stride for each dimension.
+ * @param fill_value The value to fill the tensor with.
+ * @param type The scalar type of the tensor elements.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+TensorPtr full_strided(
+    std::vector<exec_aten::SizesType> sizes,
+    std::vector<exec_aten::StridesType> strides,
+    exec_aten::Scalar fill_value,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Float,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
+
+/**
+ * Creates a TensorPtr filled with the specified value, with the same size and
+ * properties as another tensor.
+ *
+ * @param other A reference to another tensor, whose size and properties will be
+ * used.
+ * @param fill_value The value to fill the tensor with.
+ * @param type The scalar type of the tensor elements. If not specified, the
+ * scalar type of the other tensor is used.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+inline TensorPtr full_like(
+    const TensorPtr& other,
+    exec_aten::Scalar fill_value,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Undefined,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  if (type == exec_aten::ScalarType::Undefined) {
+    type = other->scalar_type();
+  }
+  return full_strided(
+      {other->sizes().begin(), other->sizes().end()},
+      {other->strides().begin(), other->strides().end()},
+      fill_value,
+      type,
+      dynamism);
+}
+
+/**
+ * Creates a TensorPtr filled with the specified value.
+ *
+ * @param sizes A vector specifying the size of each dimension.
+ * @param fill_value The value used to fill the tensor.
+ * @param type The scalar type of the tensor elements.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+inline TensorPtr full(
+    std::vector<exec_aten::SizesType> sizes,
+    exec_aten::Scalar fill_value,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Float,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  return full_strided(std::move(sizes), {}, fill_value, type, dynamism);
+}
+
+/**
+ * Creates a TensorPtr holding a scalar value.
+ *
+ * @param value The scalar value for the tensor.
+ * @param type The scalar type of the tensor elements.
+ * @return A TensorPtr instance managing the newly created scalar Tensor.
+ */
+inline TensorPtr scalar_tensor(
+    exec_aten::Scalar value,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Float) {
+  return full({}, value, type);
+}
+
+/**
+ * Creates a TensorPtr filled with ones, with the same size and properties as
+ * another tensor.
+ *
+ * @param other A reference to another tensor, whose size and properties are
+ * used.
+ * @param type The scalar type of the tensor elements. If not provided, the
+ * scalar type of the other tensor is used.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+inline TensorPtr ones_like(
+    const TensorPtr& other,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Undefined,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  return full_like(other, 1, type, dynamism);
+}
+
+/**
+ * Creates a TensorPtr filled with ones.
+ *
+ * @param sizes A vector specifying the size of each dimension.
+ * @param type The scalar type of the tensor elements.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+inline TensorPtr ones(
+    std::vector<exec_aten::SizesType> sizes,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Float,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  return full(std::move(sizes), 1, type, dynamism);
+}
+
+/**
+ * Creates a TensorPtr filled with zeros, with the same size and properties as
+ * another tensor.
+ *
+ * @param other A reference to another tensor, whose size and properties will be
+ * used.
+ * @param type The scalar type of the tensor elements. If not specified, the
+ * scalar type of the `other` tensor is used.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+inline TensorPtr zeros_like(
+    const TensorPtr& other,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Undefined,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  return full_like(other, 0, type, dynamism);
+}
+
+/**
+ * Creates a TensorPtr filled with zeros.
+ *
+ * @param sizes A vector specifying the size of each dimension.
+ * @param type The scalar type of the tensor elements.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+inline TensorPtr zeros(
+    std::vector<exec_aten::SizesType> sizes,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Float,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  return full(std::move(sizes), 0, type, dynamism);
+}
+
+/**
+ * Creates a TensorPtr filled with random values between 0 and 1.
+ *
+ * @param sizes A vector specifying the size of each dimension.
+ * @param strides A vector specifying the stride for each dimension.
+ * @param type The scalar type of the tensor elements.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ **/
+TensorPtr rand_strided(
+    std::vector<exec_aten::SizesType> sizes,
+    std::vector<exec_aten::StridesType> strides,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Float,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
+
+/**
+ * Creates a TensorPtr filled with random values between 0 and 1.
+ *
+ * @param other A reference to another tensor, whose size and properties will be
+ * used.
+ * @param type The scalar type of the tensor elements. If not specified, the
+ * scalar type of the other tensor is used.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+inline TensorPtr rand_like(
+    const TensorPtr& other,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Undefined,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  if (type == exec_aten::ScalarType::Undefined) {
+    type = other->scalar_type();
+  }
+  return rand_strided(
+      {other->sizes().begin(), other->sizes().end()},
+      {other->strides().begin(), other->strides().end()},
+      type,
+      dynamism);
+}
+
+/**
+ * Creates a TensorPtr filled with random values between 0 and 1.
+ *
+ * @param sizes A vector specifying the size of each dimension.
+ * @param type The scalar type of the tensor elements.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+inline TensorPtr rand(
+    std::vector<exec_aten::SizesType> sizes,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Float,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  return rand_strided(std::move(sizes), {}, type, dynamism);
+}
+
+/**
+ * Creates a TensorPtr filled with random values between 0 and 1, with specified
+ * strides.
+ *
+ * @param sizes A vector specifying the size of each dimension.
+ * @param strides A vector specifying the stride for each dimension.
+ * @param type The scalar type of the tensor elements.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+TensorPtr randn_strided(
+    std::vector<exec_aten::SizesType> sizes,
+    std::vector<exec_aten::StridesType> strides,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Float,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
+
+/**
+ * Creates a TensorPtr filled with random values from a normal distribution.
+ *
+ * @param other A reference to another tensor, whose size and properties will be
+ * used.
+ * @param type The scalar type of the tensor elements. If not specified, the
+ * scalar type of the other tensor is used.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+inline TensorPtr randn_like(
+    const TensorPtr& other,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Undefined,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  if (type == exec_aten::ScalarType::Undefined) {
+    type = other->scalar_type();
+  }
+  return randn_strided(
+      {other->sizes().begin(), other->sizes().end()},
+      {other->strides().begin(), other->strides().end()},
+      type,
+      dynamism);
+}
+
+/**
+ * Creates a TensorPtr filled with random values sampled from a normal
+ * distribution.
+ *
+ * @param sizes A vector specifying the size of each dimension.
+ * @param type The scalar type of the tensor elements.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+inline TensorPtr randn(
+    std::vector<exec_aten::SizesType> sizes,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Float,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  return randn_strided(std::move(sizes), {}, type, dynamism);
+}
+
+/**
+ * Creates a TensorPtr filled with random integer values in the given range.
+ *
+ * @param low The lower bound (inclusive) of the random values.
+ * @param high The upper bound (exclusive) of the random values.
+ * @param sizes A vector specifying the size of each dimension.
+ * @param strides A vector specifying the stride for each dimension.
+ * @param type The scalar type of the tensor elements.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+TensorPtr randint_strided(
+    int64_t low,
+    int64_t high,
+    std::vector<exec_aten::SizesType> sizes,
+    std::vector<exec_aten::StridesType> strides,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Int,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
+
+/**
+ * Creates a TensorPtr filled with random integer values in the given range.
+ *
+ * @param other A reference to another tensor, whose size and properties will be
+ * used.
+ * @param low The lower bound (inclusive) of the random values.
+ * @param high The upper bound (exclusive) of the random values.
+ * @param type The scalar type of the tensor elements. If not specified, the
+ * scalar type of the other tensor is used.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+inline TensorPtr randint_like(
+    const TensorPtr& other,
+    int64_t low,
+    int64_t high,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Undefined,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  if (type == exec_aten::ScalarType::Undefined) {
+    type = other->scalar_type();
+  }
+  return randint_strided(
+      low,
+      high,
+      {other->sizes().begin(), other->sizes().end()},
+      {other->strides().begin(), other->strides().end()},
+      type,
+      dynamism);
+}
+
+/**
+ * Creates a TensorPtr filled with random integer values within the specified
+ * range.
+ *
+ * @param low The inclusive lower bound of the random values.
+ * @param high The exclusive upper bound of the random values.
+ * @param sizes A vector specifying the size of each dimension.
+ * @param type The scalar type of the tensor elements.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+inline TensorPtr randint(
+    int64_t low,
+    int64_t high,
+    std::vector<exec_aten::SizesType> sizes,
+    exec_aten::ScalarType type = exec_aten::ScalarType::Int,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  return randint_strided(low, high, std::move(sizes), {}, type, dynamism);
 }
 
 } // namespace extension

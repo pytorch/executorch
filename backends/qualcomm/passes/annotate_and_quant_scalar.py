@@ -14,7 +14,7 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
-from .utils import get_quant_attrs
+from .utils import dq_ops, get_quant_attrs
 
 
 class AnnotateAndQuantScalar(ExportPass):
@@ -78,6 +78,7 @@ class AnnotateAndQuantScalar(ExportPass):
             float,
             torch.float32,
             torch.int32,
+            torch.int64,
         ]:
             return
 
@@ -88,30 +89,43 @@ class AnnotateAndQuantScalar(ExportPass):
             graph_module.graph, self.binary_op_sources
         )
         src_partitions = list(itertools.chain(*src_partitions.values()))
+        processed = set()
         for src_partition in src_partitions:
-            output = src_partition.output_nodes[0]
-            if (
-                output.meta.get(QCOM_QUANT_ATTRS)
-                and len(src_partition.input_nodes) == 1
-            ):
-                dq_node = src_partition.input_nodes[0]
-                q_node = dq_node.args[0]
-                q_node_attrs = get_quant_attrs(graph_module, q_node)
+            # need post process here to identify partitioned nodes:
+            src_fn_dict = {}
+            for n in src_partition.nodes:
+                # e.g.
+                # meta["source_fn_stack"]: [('mul', <built-in function mul>)]
+                # we'll use <built-in function mul> as grouping key
+                node_list = src_fn_dict.setdefault(n.meta["source_fn_stack"][-1][1], [])
+                node_list.append(n)
 
-                scalar_nodes = [n for n in output.args if n != dq_node]
-                if len(scalar_nodes) == 0:
+            for nodes in src_fn_dict.values():
+                output = [n for n in nodes if n in src_partition.output_nodes][0]
+                # if all args have been annotated, it shouldn't be a scalar operation
+                if all(arg.target in dq_ops for arg in output.args):
                     continue
 
-                scalar_node = scalar_nodes[0]
-                source_scalar_node = self._get_source_scalar_node(scalar_node)
-                # we'll abandon cast op here, since the constant scalar will
-                # be pre-loaded into QNN context binary
-                output.replace_input_with(scalar_node, source_scalar_node)
+                if output not in processed and QCOM_QUANT_ATTRS in output.meta:
+                    dq_node = [n for n in output.args if n.target in dq_ops][0]
+                    q_node = dq_node.args[0]
+                    q_node_attrs = get_quant_attrs(graph_module, q_node)
 
-                scalar_quant_attrs = self._update_scalar_node_attrs(
-                    source_scalar_node, q_node_attrs
-                )
-                self._annotate_scalar_node(source_scalar_node, scalar_quant_attrs)
+                    scalar_nodes = [n for n in output.args if n != dq_node]
+                    if len(scalar_nodes) == 0:
+                        continue
+
+                    scalar_node = scalar_nodes[0]
+                    source_scalar_node = self._get_source_scalar_node(scalar_node)
+                    # we'll abandon cast op here, since the constant scalar will
+                    # be pre-loaded into QNN context binary
+                    output.replace_input_with(scalar_node, source_scalar_node)
+
+                    scalar_quant_attrs = self._update_scalar_node_attrs(
+                        source_scalar_node, q_node_attrs
+                    )
+                    self._annotate_scalar_node(source_scalar_node, scalar_quant_attrs)
+                    processed.add(output)
 
     def call(self, graph_module: torch.fx.GraphModule):
         self._traverse_binary_node(graph_module)

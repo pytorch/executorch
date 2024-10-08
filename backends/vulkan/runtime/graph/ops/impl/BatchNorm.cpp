@@ -88,7 +88,7 @@ void add_native_batch_norm_node(
       {{out_ref, vkapi::MemoryAccessType::WRITE},
        {{in_ref, arg_weight, arg_bias, arg_mean, arg_var},
         vkapi::MemoryAccessType::READ}},
-      {t_out->texture_limits_ubo(),
+      {t_out->logical_limits_ubo(),
        graph.create_params_buffer(epsilon),
        graph.create_params_buffer(num_texel_per_batch)}));
 }

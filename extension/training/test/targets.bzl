@@ -30,6 +30,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/extension/evalue_util:print_evalue",
                 "//executorch/runtime/executor/test:managed_memory_manager",
                 "//executorch/extension/training/optimizer:sgd",
+                "//executorch/extension/training/module:training_module",
                 "//executorch/kernels/portable:generated_lib",
             ],
             env = modules_env,

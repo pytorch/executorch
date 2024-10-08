@@ -75,6 +75,16 @@ void et_pal_emit_log_message(
       timestamp, level, filename, function, line, message, length);
 }
 
+void* et_pal_allocate(size_t size) {
+  ASSERT_INTERCEPT_INSTALLED();
+  return platform_intercept->allocate(size);
+}
+
+void et_pal_free(void* ptr) {
+  ASSERT_INTERCEPT_INSTALLED();
+  platform_intercept->free(ptr);
+}
+
 } // extern "C"
 
 #include <gtest/gtest.h>

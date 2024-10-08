@@ -74,9 +74,9 @@ jobs:
           # Separate default values from the workflow dispatch. To ensure defaults are accessible
           # during scheduled runs and to provide flexibility for different defaults between
           # on-demand and periodic benchmarking.
-          CRON_DEFAULT_MODELS: "stories110M"
+          CRON_DEFAULT_MODELS: "stories110M,mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l"
           CRON_DEFAULT_DEVICES: "apple_iphone_15"
-          CRON_DEFAULT_DELEGATES: "xnnpack"
+          CRON_DEFAULT_DELEGATES: "xnnpack,coreml"
         run: |
           set -ex
           MODELS="${{ inputs.models }}"
@@ -124,11 +124,13 @@ jobs:
           delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
       fail-fast: false
     with:
-      runner: macos-latest-xlarge
+      # NB: Need to use our AWS MacOS runner to upload large models to S3
+      runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'true'
       timeout: 60
       upload-artifact: ios-models
+      upload-artifact-to-s3: true
       script: |
         set -eux
 
@@ -165,6 +167,8 @@ jobs:
           # Test llama2
           if [[ ${{ matrix.delegate }} == "xnnpack" ]]; then
             DELEGATE_CONFIG="xnnpack+custom+qe"
+          elif [[ ${{ matrix.delegate }} == "coreml" ]]; then
+            DELEGATE_CONFIG="coreml"
           fi
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
             bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
@@ -174,49 +178,19 @@ jobs:
         fi
         echo "::endgroup::"
 
-  upload-models:
-    needs: export-models
-    runs-on: linux.2xlarge
-    steps:
-      - name: Download the models from GitHub
-        uses: actions/download-artifact@v3
-        with:
-          # The name here needs to match the name of the upload-artifact parameter
-          name: ios-models
-          path: ${{ runner.temp }}/artifacts/
-
-      - name: Verify the models
-        shell: bash
-        working-directory: ${{ runner.temp }}/artifacts/
-        run: |
-          ls -lah ./
-
-      - name: Upload the models to S3
-        uses: seemethere/upload-artifact-s3@v5
-        with:
-          s3-bucket: gha-artifacts
-          s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/artifact
-          retention-days: 1
-          if-no-files-found: ignore
-          path: ${{ runner.temp }}/artifacts/
-
-  build-llm-demo:
-    name: build-llm-demo
+  build-benchmark-app:
+    name: build-benchmark-app
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     needs:
       - set-parameters
     secrets: inherit
-    strategy:
-      matrix:
-          tokenizer: [bpe]
     with:
       runner: macos-latest-xlarge
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       upload-artifact: ios-apps
-      secrets-env: BUILD_CERTIFICATE_BASE64 BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
+      secrets-env: BUILD_CERTIFICATE_BASE64 EXECUTORCH_BENCHMARK_BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
       timeout: 90
       script: |
         set -eux
@@ -231,7 +205,7 @@ jobs:
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         # Setup Apple certificate for iOS development
-        BUILD_PROVISION_PROFILE_BASE64="${SECRET_BUILD_PROVISION_PROFILE_BASE64}" \
+        BUILD_PROVISION_PROFILE_BASE64="${SECRET_EXECUTORCH_BENCHMARK_BUILD_PROVISION_PROFILE_BASE64}" \
         BUILD_CERTIFICATE_BASE64="${SECRET_BUILD_CERTIFICATE_BASE64}" \
         KEYCHAIN_PASSWORD="${SECRET_KEYCHAIN_PASSWORD}" \
         .ci/scripts/setup-ios.sh
@@ -245,11 +219,38 @@ jobs:
           backends/apple/mps/install_requirements.sh
         echo "::endgroup::"
 
-        ${CONDA_RUN} --no-capture-output \
-          build/build_apple_llm_demo.sh ${{ matrix.tokenizer }} ${ARTIFACTS_DIR_NAME}
+        echo "::group::Build ExecuTorch iOS frameworks"
+        FRAMEWORKS=(
+          "executorch"
+          "backend_coreml"
+          "backend_mps"
+          "backend_xnnpack"
+          "kernels_custom"
+          "kernels_optimized"
+          "kernels_portable"
+          "kernels_quantized"
+        )
 
-  upload-ios-apps:
-    needs: build-llm-demo
+        # Build Release iOS Frameworks
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+          build/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack
+
+        mkdir -p extension/benchmark/apple/Benchmark/Frameworks
+        for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
+          cp -r "cmake-out/${FRAMEWORK}.xcframework" extension/benchmark/apple/Benchmark/Frameworks/
+        ) done
+        echo "::endgroup::"
+
+        # NB: Although exported models can be copied to this directory and bundled together with the
+        # app, we don't use this in CI and rely on AWS extra data parameter to make the model and the
+        # tokenizer available to the benchmark. This decouples the app and the model. We just need to
+        # create the directory here to pass the build
+        mkdir -p extension/benchmark/apple/Benchmark/Models
+        ${CONDA_RUN} --no-capture-output \
+          build/build_apple_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+
+  upload-benchmark-app:
+    needs: build-benchmark-app
     runs-on: linux.2xlarge
     steps:
       - name: Download the apps from GitHub
@@ -270,7 +271,7 @@ jobs:
         with:
           s3-bucket: gha-artifacts
           s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/artifact
+            ${{ github.repository }}/${{ github.run_id }}/artifacts
           retention-days: 14
           if-no-files-found: ignore
           path: ${{ runner.temp }}/artifacts/
@@ -278,8 +279,8 @@ jobs:
   benchmark-on-device:
     needs:
       - set-parameters
-      - upload-ios-apps
-      - upload-models
+      - upload-benchmark-app
+      - export-models
     permissions:
       id-token: write
       contents: read
@@ -291,6 +292,8 @@ jobs:
         device: ${{ fromJson(needs.set-parameters.outputs.devices) }}
       fail-fast: false
     with:
+      # Due to scheduling a job may be pushed beyond the default 60m threshold
+      timeout: 120
       device-type: ios
       # For iOS testing, the runner just needs to call AWS Device Farm, so there is no need to run this on macOS
       runner: linux.2xlarge
@@ -299,7 +302,7 @@ jobs:
       project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
       device-pool-arn: ${{ matrix.device }}
       # Uploaded to S3 from the previous job
-      ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/LLaMAPerfBenchmark.ipa
-      ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/LLaMAPerfBenchmark.xctestrun.zip
+      ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/Benchmark.ipa
+      ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/Benchmark.xctestrun.zip
       test-spec: ${{ inputs.test_spec || 'https://ossci-ios.s3.amazonaws.com/executorch/default-ios-device-farm-appium-test-spec.yml' }}
-      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/${{ matrix.model }}_${{ matrix.delegate }}/model.zip
+      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/model.zip

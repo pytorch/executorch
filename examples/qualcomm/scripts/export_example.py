@@ -1,3 +1,4 @@
+# pyre-ignore-all-errors
 import argparse
 import copy
 
@@ -24,7 +25,8 @@ from executorch.extension.export_util.utils import save_pte_program
 
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
-if __name__ == "__main__":
+
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-m",
@@ -104,3 +106,7 @@ if __name__ == "__main__":
         generate_etrecord(etrecord_path, edge_copy, executorch_program)
 
     save_pte_program(executorch_program, args.model_name, args.output_folder)
+
+
+if __name__ == "__main__":
+    main()  # pragma: no cover

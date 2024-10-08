@@ -1,0 +1,8 @@
+datasets
+huggingface-hub
+safetensors
+sentencepiece
+tokenizers
+transformers
+piq
+pillow

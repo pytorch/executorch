@@ -32,8 +32,9 @@
 #endif // __x86_64__ || _M_X64 || __i386 || _M_IX86
 #endif // __GNUC__ || __clang__
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 /**
  * A half-precision floating point type, compatible with c10/util/Half.h from
@@ -62,7 +63,7 @@ struct alignas(2) Half {
 namespace internal {
 
 inline float fp32_from_bits(uint32_t w) {
-  static_assert(sizeof(float) == sizeof(uint32_t), "");
+  static_assert(sizeof(float) == sizeof(uint32_t));
   union {
     uint32_t as_bits;
     float as_value;
@@ -71,7 +72,7 @@ inline float fp32_from_bits(uint32_t w) {
 }
 
 inline uint32_t fp32_to_bits(float f) {
-  static_assert(sizeof(float) == sizeof(uint32_t), "");
+  static_assert(sizeof(float) == sizeof(uint32_t));
   union {
     float as_value;
     uint32_t as_bits;
@@ -676,18 +677,26 @@ inline Half operator/(int64_t a, Half b) {
 
 static inline std::ostream& operator<<(
     std::ostream& out,
-    const torch::executor::Half& value) {
+    const executorch::runtime::etensor::Half& value) {
   out << (float)value;
   return out;
 }
 
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::etensor::Half;
 } // namespace executor
 } // namespace torch
 
 namespace std {
 
 template <>
-class numeric_limits<torch::executor::Half> {
+class numeric_limits<executorch::runtime::etensor::Half> {
  public:
   static constexpr bool is_specialized = true;
   static constexpr bool is_signed = true;
@@ -714,32 +723,41 @@ class numeric_limits<torch::executor::Half> {
   static constexpr auto traps = numeric_limits<float>::traps;
   static constexpr auto tinyness_before =
       numeric_limits<float>::tinyness_before;
-  static constexpr torch::executor::Half min() {
-    return torch::executor::Half(0x0400, torch::executor::Half::from_bits());
+  static constexpr executorch::runtime::etensor::Half min() {
+    return executorch::runtime::etensor::Half(
+        0x0400, executorch::runtime::etensor::Half::from_bits());
   }
-  static constexpr torch::executor::Half lowest() {
-    return torch::executor::Half(0xFBFF, torch::executor::Half::from_bits());
+  static constexpr executorch::runtime::etensor::Half lowest() {
+    return executorch::runtime::etensor::Half(
+        0xFBFF, executorch::runtime::etensor::Half::from_bits());
   }
-  static constexpr torch::executor::Half max() {
-    return torch::executor::Half(0x7BFF, torch::executor::Half::from_bits());
+  static constexpr executorch::runtime::etensor::Half max() {
+    return executorch::runtime::etensor::Half(
+        0x7BFF, executorch::runtime::etensor::Half::from_bits());
   }
-  static constexpr torch::executor::Half epsilon() {
-    return torch::executor::Half(0x1400, torch::executor::Half::from_bits());
+  static constexpr executorch::runtime::etensor::Half epsilon() {
+    return executorch::runtime::etensor::Half(
+        0x1400, executorch::runtime::etensor::Half::from_bits());
   }
-  static constexpr torch::executor::Half round_error() {
-    return torch::executor::Half(0x3800, torch::executor::Half::from_bits());
+  static constexpr executorch::runtime::etensor::Half round_error() {
+    return executorch::runtime::etensor::Half(
+        0x3800, executorch::runtime::etensor::Half::from_bits());
   }
-  static constexpr torch::executor::Half infinity() {
-    return torch::executor::Half(0x7C00, torch::executor::Half::from_bits());
+  static constexpr executorch::runtime::etensor::Half infinity() {
+    return executorch::runtime::etensor::Half(
+        0x7C00, executorch::runtime::etensor::Half::from_bits());
   }
-  static constexpr torch::executor::Half quiet_NaN() {
-    return torch::executor::Half(0x7E00, torch::executor::Half::from_bits());
+  static constexpr executorch::runtime::etensor::Half quiet_NaN() {
+    return executorch::runtime::etensor::Half(
+        0x7E00, executorch::runtime::etensor::Half::from_bits());
   }
-  static constexpr torch::executor::Half signaling_NaN() {
-    return torch::executor::Half(0x7D00, torch::executor::Half::from_bits());
+  static constexpr executorch::runtime::etensor::Half signaling_NaN() {
+    return executorch::runtime::etensor::Half(
+        0x7D00, executorch::runtime::etensor::Half::from_bits());
   }
-  static constexpr torch::executor::Half denorm_min() {
-    return torch::executor::Half(0x0001, torch::executor::Half::from_bits());
+  static constexpr executorch::runtime::etensor::Half denorm_min() {
+    return executorch::runtime::etensor::Half(
+        0x0001, executorch::runtime::etensor::Half::from_bits());
   }
 };
 

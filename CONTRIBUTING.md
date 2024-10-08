@@ -131,9 +131,7 @@ for detailed advice.
 
 #### C++ language version
 
-**C++11.**
-
-NOTE: The code does not yet fully conform to this, and some files require C++17.
+**C++17.**
 
 Rationale: This is a compromise between being compatible with older, proprietary
 toolchains, and having access to relatively modern C++ features.

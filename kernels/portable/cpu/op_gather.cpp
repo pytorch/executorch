@@ -60,7 +60,7 @@ void gather_helper(
 } // namespace
 
 Tensor& gather_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     const Tensor& index,

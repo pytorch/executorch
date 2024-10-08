@@ -49,14 +49,14 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 #ifdef USING_BUFFER
 
 void main() {
-  const int t_id = int(gl_GlobalInvocationID.x);
-  if (t_id >= out_numel) {
+  const int out_bufi = int(gl_GlobalInvocationID.x);
+  if (out_bufi >= out_numel) {
     return;
   }
 
-  const ivec4 out_idx = to_tensor_idx(t_id, out_strides, 0);
+  const ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, 0);
 
-  t_out[t_id] = q_8w_linear(out_idx, mat1_sizes.x);
+  t_out[out_bufi] = q_8w_linear(out_tidx, mat1_sizes.x);
 }
 
 #else // USING_TEXTURE

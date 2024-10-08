@@ -158,7 +158,7 @@ static inline scalar_t* conditional_data_ptr(scalar_t* ptr, scalar_t* ptr2) {
 template <
     typename scalar_t,
     typename std::enable_if_t<
-        ::executorch::runtime::is_reduced_floating_point<scalar_t>::value,
+        ::executorch::runtime::is_reduced_floating_point_v<scalar_t>,
         int> = 0>
 static inline scalar_t* conditional_data_ptr(float* ptr, scalar_t* ptr2) {
   (void)ptr;
@@ -224,7 +224,7 @@ void cpu_flash_attention(
     bool is_causal,
     const optional<Tensor>& attn_mask,
     const optional<double>& scale,
-    bool is_with_kv_cache = false,
+    bool is_seq_at_dim_1 = false,
     const int64_t start_pos = 0) {
   (void)dropout_p;
   // Query (Batch x Num_heads  x Q_seq_len  x Dim_per_head)
@@ -247,7 +247,7 @@ void cpu_flash_attention(
       "KV_split_size must be greater than q_split_size");
 
   constexpr bool is_reduced_type =
-      ::executorch::runtime::is_reduced_floating_point<scalar_t>::value;
+      ::executorch::runtime::is_reduced_floating_point_v<scalar_t>;
 
   ET_CHECK_MSG(
       !is_reduced_type, "FlashAttention does not support reduced types.");
@@ -265,7 +265,7 @@ void cpu_flash_attention(
   int64_t kvSize = value.size(2);
   int64_t num_heads_kv = key.size(1);
 
-  if (is_with_kv_cache) {
+  if (is_seq_at_dim_1) {
     num_head = query.size(2);
     num_heads_kv = key.size(2);
     qSize = query.size(1);
@@ -311,7 +311,7 @@ void cpu_flash_attention(
   int64_t qStrideH = strides[1];
   int64_t qStrideM = strides[2];
 
-  if (is_with_kv_cache) {
+  if (is_seq_at_dim_1) {
     qStrideH = strides[2];
     qStrideM = strides[1];
   }
@@ -321,7 +321,7 @@ void cpu_flash_attention(
   int64_t kStrideH = strides[1];
   int64_t kStrideN = strides[2];
 
-  if (is_with_kv_cache) {
+  if (is_seq_at_dim_1) {
     kStrideH = strides[2];
     kStrideN = strides[1];
   }
@@ -331,7 +331,7 @@ void cpu_flash_attention(
   int64_t vStrideH = strides[1];
   int64_t vStrideN = strides[2];
 
-  if (is_with_kv_cache) {
+  if (is_seq_at_dim_1) {
     vStrideH = strides[2];
     vStrideN = strides[1];
   }
@@ -341,7 +341,7 @@ void cpu_flash_attention(
   int64_t oStrideH = strides[1];
   int64_t oStrideM = strides[2];
 
-  if (is_with_kv_cache) {
+  if (is_seq_at_dim_1) {
     oStrideH = strides[2];
     oStrideM = strides[1];
   }
@@ -367,7 +367,7 @@ void cpu_flash_attention(
   int64_t qSlice = (qSize - 1) / qSplitSize + 1;
 #ifdef ET_USE_THREADPOOL
   int64_t num_thread =
-      torch::executorch::threadpool::get_threadpool()->get_thread_count();
+      ::executorch::extension::threadpool::get_threadpool()->get_thread_count();
 #else
   int64_t num_thread = 1;
 #endif
@@ -700,10 +700,23 @@ void update_cache(
     const Tensor& cache,
     int64_t start_pos,
     int64_t seq_length) { // NOLINT: unused parameter 'seq_length'
+  // 1) Cache shape should be [bs, max_seq_len, num heads, head dim]
+  // 2) projected_value shape should be [bs, seq_len, num heads, head dim]
+  // 3) We're updating the cache with projected_value, at position start_pos
+
   ET_CHECK_MSG(
-      projected_value.size(0) == 1,
-      "projected_value must have batch size of 1");
-  ET_CHECK_MSG(cache.size(0) == 1, "cache must have batch size of 1");
+      projected_value.size(0) == cache.size(0),
+      "projected_value batch size should be equal to the cache batch size.");
+  ET_CHECK_MSG(
+      projected_value.size(2) == cache.size(2),
+      "projected_value number of heads should be equal to the cache number of heads.");
+  ET_CHECK_MSG(
+      projected_value.size(3) == cache.size(3),
+      "projected_value embedding dimension should be equal to the cache embedding dimension.");
+  ET_CHECK_MSG(
+      projected_value.element_size() == cache.element_size(),
+      "projected_value data type size should be equal to the cache data type size.");
+
   ET_CHECK_MSG(
       is_contiguous_dim_order(
           projected_value.dim_order().data(), projected_value.dim()),
@@ -714,16 +727,31 @@ void update_cache(
   ET_CHECK_MSG(projected_value_data != nullptr, "projected_value data is null");
   ET_CHECK_MSG(cache_data, "cache data is null");
 
-  auto strides = cache.strides();
-  exec_aten::StridesType seq_dim_stride = strides[1];
-  exec_aten::SizesType pos_offset = start_pos * seq_dim_stride;
-  exec_aten::SizesType pos_offset_bytes =
-      pos_offset * projected_value.element_size();
-  exec_aten::SizesType num_bytes =
-      projected_value.numel() * projected_value.element_size();
-  // NOLINTNEXTLINE
-  std::memcpy(
-      (uint8_t*)cache_data + pos_offset_bytes, projected_value_data, num_bytes);
+  auto cache_strides = cache.strides();
+  exec_aten::StridesType cache_batch_dim_stride = cache_strides[0];
+  exec_aten::StridesType cache_seq_dim_stride = cache_strides[1];
+
+  auto value_strides = projected_value.strides();
+  exec_aten::StridesType value_batch_dim_stride = value_strides[0];
+
+  exec_aten::SizesType num_bytes_to_copy =
+      (projected_value.numel() / projected_value.size(0)) *
+      projected_value.element_size();
+
+  for (int64_t batch_line = 0; batch_line < projected_value.size(0);
+       ++batch_line) {
+    exec_aten::SizesType cache_pos_offset =
+        (batch_line * cache_batch_dim_stride +
+         start_pos * cache_seq_dim_stride) *
+        cache.element_size();
+    exec_aten::SizesType value_pos_offset =
+        (batch_line * value_batch_dim_stride) * cache.element_size();
+
+    std::memcpy(
+        (uint8_t*)cache_data + cache_pos_offset,
+        (uint8_t*)projected_value_data + value_pos_offset,
+        num_bytes_to_copy);
+  }
 }
 
 } // anonymous namespace
@@ -810,8 +838,154 @@ Tensor& flash_attention_kernel_out(
   @param[in] start_pos: sequence position
   @param[in] seq_len: Seq length. e.g. seq_len dim of q_projected.
 */
-Tensor& sdpa_with_kv_cache_out(
+Tensor& custom_sdpa_out(
     RuntimeContext& ctx,
+    const Tensor& q,
+    const Tensor& k,
+    const Tensor& v,
+    const int64_t start_pos,
+    const optional<Tensor>& attn_mask,
+    const double dropout_p,
+    const bool is_causal,
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const optional<double> scale,
+    Tensor& output) {
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      !attn_mask.has_value() || !is_causal,
+      InvalidArgument,
+      output,
+      "attn_mask and is_causal cannot be set at the same time");
+
+  ET_CHECK_MSG(q.dim() == 4, "query must be a 4D tensor");
+
+  const int64_t seq_len = q.size(1);
+  auto q_seq_len = q.size(1);
+
+  // Refactor the following into create_view util perhaps using
+  // TensorPtr
+  std::array<exec_aten::DimOrderType, util::kKVDim> sliced_key_dim_order{
+      0, 1, 2, 3};
+  std::array<exec_aten::SizesType, util::kKVDim> sliced_key_sizes;
+  sliced_key_sizes[0] = k.size(0);
+  sliced_key_sizes[1] = start_pos + seq_len; // key_cache.size(2);
+  sliced_key_sizes[2] = k.size(2);
+  sliced_key_sizes[3] = k.size(3);
+  std::array<exec_aten::StridesType, util::kKVDim> sliced_key_strides;
+  dim_order_to_stride_nocheck(
+      sliced_key_sizes.data(),
+      sliced_key_dim_order.data(),
+      util::kKVDim,
+      sliced_key_strides.data());
+  // since the cache is sliced, the batch stride needs to stay the same.
+  sliced_key_strides[0] = k.strides()[0];
+  void* key_cache_data = k.mutable_data_ptr();
+  TensorImpl k_impl = TensorImpl(
+      k.scalar_type(),
+      util::kKVDim,
+      sliced_key_sizes.data(),
+      key_cache_data,
+      sliced_key_dim_order.data(),
+      sliced_key_strides.data(),
+      TensorShapeDynamism::STATIC);
+  Tensor sliced_key_cache(&k_impl);
+
+  std::array<exec_aten::DimOrderType, util::kKVDim> sliced_value_dim_order{
+      0, 1, 2, 3};
+  std::array<exec_aten::SizesType, util::kKVDim> sliced_value_sizes;
+  sliced_value_sizes[0] = v.size(0);
+  sliced_value_sizes[1] = start_pos + seq_len; // value_cache.size(2);
+  sliced_value_sizes[2] = v.size(2);
+  sliced_value_sizes[3] = v.size(3);
+  std::array<exec_aten::StridesType, util::kKVDim> sliced_value_strides;
+  dim_order_to_stride_nocheck(
+      sliced_value_sizes.data(),
+      sliced_value_dim_order.data(),
+      util::kKVDim,
+      sliced_value_strides.data());
+  // since the cache is sliced, the batch stride needs to stay the same.
+  sliced_value_strides[0] = v.strides()[0];
+  void* value_cache_data = v.mutable_data_ptr();
+  TensorImpl value_impl = TensorImpl(
+      v.scalar_type(),
+      util::kKVDim,
+      sliced_value_sizes.data(),
+      value_cache_data,
+      sliced_value_dim_order.data(),
+      sliced_value_strides.data(),
+      TensorShapeDynamism::STATIC);
+  Tensor sliced_value_cache(&value_impl);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(output, q.sizes()) == Error::Ok,
+      InvalidArgument,
+      output);
+
+  // TODO(task): replace the template param selection logic
+  // with whatever apprpriately makes more sense for
+  ET_SWITCH_FLOAT_TYPES(q.scalar_type(), ctx, "flash_attention", CTYPE, [&] {
+    // TODO we need to re-evaluate this for ARM CPUs
+    // And there can be many so instead of templatizing
+    // we might consider another appraoch
+    if (q_seq_len >= 768) {
+      cpu_flash_attention<CTYPE, 256, 512>(
+          output,
+          q,
+          sliced_key_cache,
+          sliced_value_cache,
+          dropout_p,
+          is_causal,
+          attn_mask,
+          scale,
+          true, /* is_seq_at_dim_1 */
+          start_pos);
+    } else if (q_seq_len >= 192) {
+      cpu_flash_attention<CTYPE, 64, 512>(
+          output,
+          q,
+          sliced_key_cache,
+          sliced_value_cache,
+          dropout_p,
+          is_causal,
+          attn_mask,
+          scale,
+          true, /* is_seq_at_dim_1 */
+          start_pos);
+    } else {
+      cpu_flash_attention<CTYPE, 32, 512>(
+          output,
+          q,
+          sliced_key_cache,
+          sliced_value_cache,
+          dropout_p,
+          is_causal,
+          attn_mask,
+          scale,
+          true, /* is_seq_at_dim_1 */
+          start_pos);
+    }
+  });
+  return output;
+}
+/*
+  Input params
+  @param[in] q_projected Projected query with query weights.
+  Format [n_layers, batch size, seq_len, num heads, head dim]
+  @param[in] k_projected Projected query with key weights.
+  Format [n_layers, batch size, seq_len, num heads, head dim]
+  @param[in] v_projected Projected query with value weights.
+  Format [n_layers, batch size, seq_len, num heads, head dim]
+  @param[in] key_cache Cache of previous k_projected.
+  Format [n_layers, batch size, max_seq_len, num heads, head dim]
+  @param[in] key_cache Cache of previous v_projected.
+  Format [n_layers, batch size, max_seq_len, num heads, head dim]
+  ....
+  @param[in] start_pos: sequence position
+  @param[in] seq_len: Seq length. e.g. seq_len dim of q_projected.
+*/
+Tensor& sdpa_with_kv_cache_out(
+    KernelRuntimeContext& ctx,
     const Tensor& q_projected,
     const Tensor& k_projected,
     const Tensor& v_projected,
@@ -832,125 +1006,23 @@ Tensor& sdpa_with_kv_cache_out(
       InvalidArgument,
       output);
 
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      !attn_mask.has_value() || !is_causal,
-      InvalidArgument,
-      output,
-      "attn_mask and is_causal cannot be set at the same time");
-
   ET_CHECK_MSG(q_projected.dim() == 4, "query must be a 4D tensor");
 
   update_cache(k_projected, key_cache, start_pos, seq_len);
   update_cache(v_projected, value_cache, start_pos, seq_len);
 
-  auto q_seq_len = q_projected.size(1);
-
-  std::array<exec_aten::DimOrderType, util::kKVDim> sliced_key_dim_order{
-      0, 1, 2, 3};
-  std::array<exec_aten::SizesType, util::kKVDim> sliced_key_sizes;
-  sliced_key_sizes[0] = key_cache.size(0);
-  sliced_key_sizes[1] = start_pos + seq_len; // key_cache.size(2);
-  sliced_key_sizes[2] = key_cache.size(2);
-  sliced_key_sizes[3] = key_cache.size(3);
-  std::array<exec_aten::StridesType, util::kKVDim> sliced_key_strides;
-  dim_order_to_stride_nocheck(
-      sliced_key_sizes.data(),
-      sliced_key_dim_order.data(),
-      util::kKVDim,
-      sliced_key_strides.data());
-  void* key_cache_data = key_cache.mutable_data_ptr();
-  TensorImpl k_impl = TensorImpl(
-      key_cache.scalar_type(),
-      util::kKVDim,
-      sliced_key_sizes.data(),
-      key_cache_data,
-      sliced_key_dim_order.data(),
-      sliced_key_strides.data(),
-      TensorShapeDynamism::STATIC);
-  Tensor sliced_key_cache(&k_impl);
-
-  std::array<exec_aten::DimOrderType, util::kKVDim> sliced_value_dim_order{
-      0, 1, 2, 3};
-  std::array<exec_aten::SizesType, util::kKVDim> sliced_value_sizes;
-  sliced_value_sizes[0] = value_cache.size(0);
-  sliced_value_sizes[1] = start_pos + seq_len; // value_cache.size(2);
-  sliced_value_sizes[2] = value_cache.size(2);
-  sliced_value_sizes[3] = value_cache.size(3);
-  std::array<exec_aten::StridesType, util::kKVDim> sliced_value_strides;
-  dim_order_to_stride_nocheck(
-      sliced_value_sizes.data(),
-      sliced_value_dim_order.data(),
-      util::kKVDim,
-      sliced_value_strides.data());
-  void* value_cache_data = value_cache.mutable_data_ptr();
-  TensorImpl value_impl = TensorImpl(
-      value_cache.scalar_type(),
-      util::kKVDim,
-      sliced_value_sizes.data(),
-      value_cache_data,
-      sliced_value_dim_order.data(),
-      sliced_value_strides.data(),
-      TensorShapeDynamism::STATIC);
-  Tensor sliced_value_cache(&value_impl);
-
-  // Is this true?
-  // Cant do this as is because the expectation of this kernel is
-  // that q, k, v are [B, num heads, seq length, head dim]
-  // and the cache is [B, max seq len, num heads, head dim]
-  // and q, k, v are all [B, seq length, num heads, head dim]
-
-  ET_KERNEL_CHECK(
+  custom_sdpa_out(
       ctx,
-      resize_tensor(output, q_projected.sizes()) == Error::Ok,
-      InvalidArgument,
+      q_projected,
+      key_cache,
+      value_cache,
+      start_pos,
+      attn_mask,
+      dropout_p,
+      is_causal,
+      scale,
       output);
 
-  // TODO(task): replace the template param selection logic
-  // with whatever apprpriately makes more sense for
-  ET_SWITCH_FLOAT_TYPES(
-      q_projected.scalar_type(), ctx, "flash_attention", CTYPE, [&] {
-        // TODO we need to re-evaluate this for ARM CPUs
-        // And there can be many so instead of templatizing
-        // we might consider another appraoch
-        if (q_seq_len >= 768) {
-          cpu_flash_attention<CTYPE, 256, 512>(
-              output,
-              q_projected,
-              sliced_key_cache,
-              sliced_value_cache,
-              dropout_p,
-              is_causal,
-              attn_mask,
-              scale,
-              true,
-              start_pos);
-        } else if (q_seq_len >= 192) {
-          cpu_flash_attention<CTYPE, 64, 512>(
-              output,
-              q_projected,
-              sliced_key_cache,
-              sliced_value_cache,
-              dropout_p,
-              is_causal,
-              attn_mask,
-              scale,
-              true,
-              start_pos);
-        } else {
-          cpu_flash_attention<CTYPE, 32, 512>(
-              output,
-              q_projected,
-              sliced_key_cache,
-              sliced_value_cache,
-              dropout_p,
-              is_causal,
-              attn_mask,
-              scale,
-              true,
-              start_pos);
-        }
-      });
   return output;
 }
 } // namespace native
@@ -961,3 +1033,8 @@ EXECUTORCH_LIBRARY(
     llama,
     "sdpa_with_kv_cache.out",
     torch::executor::native::sdpa_with_kv_cache_out);
+
+EXECUTORCH_LIBRARY(
+    llama,
+    "custom_sdpa.out",
+    torch::executor::native::custom_sdpa_out);

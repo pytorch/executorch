@@ -7,10 +7,11 @@
 # pyre-unsafe
 
 import unittest
-from typing import Any, Callable, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 import torch
-from executorch.exir import ExecutorchProgramManager, to_edge
+from executorch.exir import ExecutorchBackendConfig, ExecutorchProgramManager, to_edge
+from executorch.exir.passes import MemoryPlanningPass
 from torch.export import export
 
 
@@ -75,8 +76,25 @@ def make_test(  # noqa: C901
             def get_inputs(self):
                 return (torch.ones(2, 2),)
 
+        class ModuleAddConstReturn(torch.nn.Module):
+            """The module to serialize and execute."""
+
+            def __init__(self):
+                super(ModuleAddConstReturn, self).__init__()
+                self.state = torch.ones(2, 2)
+
+            def forward(self, x):
+                return x + self.state, self.state
+
+            def get_methods_to_export(self):
+                return ("forward",)
+
+            def get_inputs(self):
+                return (torch.ones(2, 2),)
+
         def create_program(
             eager_module: torch.nn.Module,
+            et_config: Optional[ExecutorchBackendConfig] = None,
         ) -> Tuple[ExecutorchProgramManager, Tuple[Any, ...]]:
             """Returns an executorch program based on ModuleAdd, along with inputs."""
 
@@ -103,7 +121,7 @@ def make_test(  # noqa: C901
                 )
                 exported_methods[method_name] = export(wrapped_mod, method_input)
 
-            exec_prog = to_edge(exported_methods).to_executorch()
+            exec_prog = to_edge(exported_methods).to_executorch(config=et_config)
 
             # Create the ExecuTorch program from the graph.
             exec_prog.dump_executorch_program(verbose=True)
@@ -251,6 +269,90 @@ def make_test(  # noqa: C901
             expected = example_inputs[0] + example_inputs[1]
             tester.assertEqual(str(expected), str(executorch_output))
 
+        def test_constant_output_not_memory_planned(tester):
+            # Create an ExecuTorch program from ModuleAdd.
+            exported_program, inputs = create_program(
+                ModuleAddConstReturn(),
+                et_config=ExecutorchBackendConfig(
+                    memory_planning_pass=MemoryPlanningPass(alloc_graph_output=False)
+                ),
+            )
+
+            exported_program.dump_executorch_program(verbose=True)
+
+            # Use pybindings to load and execute the program.
+            executorch_module = load_fn(exported_program.buffer)
+            # Invoke the callable on executorch_module instead of calling module.forward.
+            # Use only one input to test this case.
+            executorch_output = executorch_module((torch.ones(2, 2),))
+            print(executorch_output)
+
+            # The test module adds the input to torch.ones(2,2), so its output should be the same
+            # as adding them directly.
+            expected = torch.ones(2, 2) + torch.ones(2, 2)
+            tester.assertEqual(str(expected), str(executorch_output[0]))
+
+            # The test module returns the state. Check that its value is correct.
+            tester.assertEqual(str(torch.ones(2, 2)), str(executorch_output[1]))
+
+        def test_method_meta(tester) -> None:
+            # pyre-fixme[16]: Callable `make_test` has no attribute `wrapper`.
+            exported_program, inputs = create_program(ModuleAdd())
+
+            # Use pybindings to load the program and query its metadata.
+            executorch_module = load_fn(exported_program.buffer)
+            meta = executorch_module.method_meta("forward")
+
+            # Ensure that all these APIs work even if the module object is destroyed.
+            del executorch_module
+            tester.assertEqual(meta.name(), "forward")
+            tester.assertEqual(meta.num_inputs(), 2)
+            tester.assertEqual(meta.num_outputs(), 1)
+            # Common string for all these tensors.
+            tensor_info = "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16)"
+            float_dtype = 6
+            tester.assertEqual(
+                str(meta),
+                "MethodMeta(name='forward', num_inputs=2, "
+                f"input_tensor_meta=['{tensor_info}', '{tensor_info}'], "
+                f"num_outputs=1, output_tensor_meta=['{tensor_info}'])",
+            )
+
+            input_tensors = [meta.input_tensor_meta(i) for i in range(2)]
+            output_tensor = meta.output_tensor_meta(0)
+            # Check that accessing out of bounds raises IndexError.
+            with tester.assertRaises(IndexError):
+                meta.input_tensor_meta(2)
+            # Test that tensor metadata can outlive method metadata.
+            del meta
+            tester.assertEqual([t.sizes() for t in input_tensors], [(2, 2), (2, 2)])
+            tester.assertEqual(
+                [t.dtype() for t in input_tensors], [float_dtype, float_dtype]
+            )
+            tester.assertEqual(
+                [t.is_memory_planned() for t in input_tensors], [True, True]
+            )
+            tester.assertEqual([t.nbytes() for t in input_tensors], [16, 16])
+            tester.assertEqual(str(input_tensors), f"[{tensor_info}, {tensor_info}]")
+
+            tester.assertEqual(output_tensor.sizes(), (2, 2))
+            tester.assertEqual(output_tensor.dtype(), float_dtype)
+            tester.assertEqual(output_tensor.is_memory_planned(), True)
+            tester.assertEqual(output_tensor.nbytes(), 16)
+            tester.assertEqual(str(output_tensor), tensor_info)
+
+        def test_bad_name(tester) -> None:
+            # Create an ExecuTorch program from ModuleAdd.
+            # pyre-fixme[16]: Callable `make_test` has no attribute `wrapper`.
+            exported_program, inputs = create_program(ModuleAdd())
+
+            # Use pybindings to load and execute the program.
+            executorch_module = load_fn(exported_program.buffer)
+            # Invoke the callable on executorch_module instead of calling module.forward.
+            with tester.assertRaises(RuntimeError):
+                executorch_module.run_method("not_a_real_method", inputs)
+
+        ######### RUN TEST CASES #########
         test_e2e(tester)
         test_multiple_entry(tester)
         test_output_lifespan(tester)
@@ -258,5 +360,8 @@ def make_test(  # noqa: C901
         test_module_single_input(tester)
         test_stderr_redirect(tester)
         test_quantized_ops(tester)
+        test_constant_output_not_memory_planned(tester)
+        test_method_meta(tester)
+        test_bad_name(tester)
 
     return wrapper

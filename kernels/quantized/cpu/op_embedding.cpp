@@ -250,7 +250,7 @@ Tensor& quantized_embedding_byte_out(
 }
 
 Tensor& quantized_embedding_byte_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
     const optional<Tensor>& opt_weight_zero_points,
@@ -313,7 +313,7 @@ Tensor& quantized_embedding_byte_dtype_out(
 }
 
 Tensor& quantized_embedding_byte_dtype_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
     const optional<Tensor>& opt_weight_zero_points,

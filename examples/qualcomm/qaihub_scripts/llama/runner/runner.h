@@ -22,8 +22,7 @@
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
 
-namespace torch {
-namespace executor {
+namespace example {
 
 class Runner {
  public:
@@ -64,15 +63,16 @@ class Runner {
   };
 
   bool is_loaded() const;
-  Error load();
-  Error generate(
+  executorch::runtime::Error load();
+  executorch::runtime::Error generate(
       const std::string& prompt,
       const std::string& system_prompt,
       int32_t seq_len,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {});
   void stop();
-  std::vector<Result<MethodMeta>> get_methods_meta();
+  std::vector<executorch::runtime::Result<executorch::runtime::MethodMeta>>
+  get_methods_meta();
 
  private:
   enum EvalMode {
@@ -86,8 +86,9 @@ class Runner {
     kLlama3,
   };
 
-  int32_t logitsToToken(const exec_aten::Tensor& logits_tensor);
-  void run_model_step(std::vector<std::vector<EValue>>& inputs);
+  int32_t logitsToToken(const executorch::aten::Tensor& logits_tensor);
+  void run_model_step(
+      std::vector<std::vector<executorch::runtime::EValue>>& inputs);
   // metadata
   int32_t bos_id_;
   std::unordered_set<uint64_t> eos_id_;
@@ -96,11 +97,11 @@ class Runner {
   const int32_t vocab_size_;
   const int32_t max_seq_len_;
   int32_t eval_mode_;
-  std::vector<std::shared_ptr<Module>> modules_;
+  std::vector<std::shared_ptr<executorch::extension::Module>> modules_;
   std::string tokenizer_path_;
   float temperature_;
-  std::unique_ptr<Tokenizer> tokenizer_;
-  std::unique_ptr<Sampler> sampler_;
+  std::unique_ptr<executorch::extension::llm::Tokenizer> tokenizer_;
+  std::unique_ptr<executorch::extension::llm::Sampler> sampler_;
   Stats stats_;
   std::unique_ptr<Memory> io_mem_;
   const float logits_scale_;
@@ -108,5 +109,4 @@ class Runner {
   LlamaVersion version_;
 };
 
-} // namespace executor
-} // namespace torch
+} // namespace example

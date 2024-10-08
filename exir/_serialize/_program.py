@@ -553,6 +553,24 @@ def _restore_segments(program: Program, segment_data: bytes) -> Program:
                 location=DataLocation.INLINE, index=data_index
             )
 
+    # Replace constants from constant_segment into constant_buffer.
+    if program.constant_segment and len(program.constant_segment.offsets) > 0:
+        buffers: List[Buffer] = []
+        constant_segment = segments[program.constant_segment.segment_index]
+        for i in range(len(program.constant_segment.offsets)):
+            start_offset = program.constant_segment.offsets[i]
+            # Note: this is the original end offset plus any padding between
+            # it and the next start offset.
+            end_offset = (
+                program.constant_segment.offsets[i + 1]
+                if i < len(program.constant_segment.offsets) - 1
+                else len(constant_segment)
+            )
+            buffers.append(Buffer(storage=constant_segment[start_offset:end_offset]))
+        program.constant_buffer = buffers
+        program.constant_segment.segment_index = 0
+        program.constant_segment.offsets = []
+
     # Clear out the segments list since the original Program didn't have one.
     program.segments = []
     return program

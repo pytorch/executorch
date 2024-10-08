@@ -17,7 +17,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& bmm_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& mat2,
     Tensor& out) {

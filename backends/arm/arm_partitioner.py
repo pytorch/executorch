@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import logging
 import operator
 import os
@@ -56,6 +58,7 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.mm.default,
             exir_ops.edge.aten.repeat.default,
             exir_ops.edge.aten.relu.default,
+            exir_ops.edge.aten.rsqrt.default,
             exir_ops.edge.aten._softmax.default,
             exir_ops.edge.aten.slice_copy.Tensor,
             exir_ops.edge.aten.sub.Tensor,
@@ -63,6 +66,7 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.clone.default,
             exir_ops.edge.aten.mean.dim,
             exir_ops.edge.aten.unsqueeze_copy.default,
+            exir_ops.edge.aten.squeeze_copy.dims,
             operator.getitem,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,

@@ -4,12 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
+
 from math import prod
 from typing import Optional, Tuple
 
 import torch
-from executorch.exir.scalar_type import ScalarType
-from torch.library import impl, Library
+from torch.library import Library, register_fake
 
 from .utils import get_conv1d_output_size, get_conv2d_output_size
 
@@ -67,31 +68,31 @@ lib.define(
 m = Library("cadence", "IMPL", "Meta")
 
 
-@impl(m, "quantize_per_tensor")
+@register_fake("cadence::quantize_per_tensor")
 def quantize_per_tensor_meta(
     input: torch.Tensor,
     scale: float,
     zero_point: int,
     quant_min: int,
     quant_max: int,
-    dtype: ScalarType,
-):
+    dtype: torch.dtype,
+) -> torch.Tensor:
     return input.new_empty(input.size(), dtype=dtype)
 
 
-@impl(m, "dequantize_per_tensor")
+@register_fake("cadence::dequantize_per_tensor")
 def dequantize_per_tensor_meta(
     input: torch.Tensor,
     scale: float,
     zero_point: int,
     quant_min: int,
     quant_max: int,
-    dtype: ScalarType,
-):
+    dtype: torch.dtype,
+) -> torch.Tensor:
     return input.new_empty(input.size(), dtype=torch.float)
 
 
-@impl(m, "quantized_linear")
+@register_fake("cadence::quantized_linear")
 def quantized_linear_meta(
     src: torch.Tensor,
     weight: torch.Tensor,
@@ -102,7 +103,7 @@ def quantized_linear_meta(
     out_shift: torch.Tensor,
     out_zero_point: int,
     offset: Optional[torch.Tensor],
-):
+) -> torch.Tensor:
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
@@ -113,7 +114,7 @@ def quantized_linear_meta(
     return src.new_empty(out_size, dtype=torch.uint8)
 
 
-@impl(m, "quantized_conv")
+@register_fake("cadence::quantized_conv")
 def quantized_conv_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -151,7 +152,7 @@ def quantized_conv_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@impl(m, "quantized_layer_norm")
+@register_fake("cadence::quantized_layer_norm")
 def quantized_layer_norm_meta(
     input: torch.Tensor,
     X_scale: torch.Tensor,
@@ -162,22 +163,22 @@ def quantized_layer_norm_meta(
     eps: float,
     output_scale: float,
     output_zero_point: int,
-):
+) -> torch.Tensor:
     return input.new_empty(input.size(), dtype=torch.uint8)
 
 
-@impl(m, "quantized_relu")
+@register_fake("cadence::quantized_relu")
 def quantized_relu_meta(
     X: torch.Tensor,
     X_zero_point: torch.Tensor,
     out_zero_point: int,
     out_multiplier: torch.Tensor,
     out_shift: torch.Tensor,
-):
+) -> torch.Tensor:
     return X.new_empty(X.size(), dtype=torch.uint8)
 
 
-@impl(m, "quantized_matmul")
+@register_fake("cadence::quantized_matmul")
 def quantized_matmul_meta(
     X: torch.Tensor,
     X_zero_point: int,

@@ -25,13 +25,13 @@ why = WhyNoPartition(logger=logger)
 
 
 class GenericNodePartitionerConfig(XNNPartitionerConfig):
-    def __init__(self, fused_act: Optional[List[str]] = None):
+    def __init__(self, fused_act: Optional[List[str]] = None, **kwargs):
         """
         fused_act is a list of node target names that can be fused with this
         node under quantization
         """
         self.fused_acts = fused_act or []
-        super().__init__()
+        super().__init__(**kwargs)
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         return self.check_common_constraints(node, ep)
@@ -98,8 +98,8 @@ class HardtanhConfig(GenericNodePartitionerConfig):
 class AddConfig(GenericNodePartitionerConfig):
     target_name = "add.Tensor"
 
-    def __init__(self):
-        super().__init__(fused_act=["relu.default"])
+    def __init__(self, **kwargs):
+        super().__init__(fused_act=["relu.default"], **kwargs)
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]

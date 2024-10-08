@@ -17,7 +17,7 @@ using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
 Tensor& as_strided_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     ArrayRef<int64_t> size,
     ArrayRef<int64_t> stride,

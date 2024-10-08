@@ -19,7 +19,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& slice_scatter_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& src,
     int64_t dim,
@@ -39,6 +39,9 @@ Tensor& slice_scatter_out(
       resize_tensor(out, input.sizes()) == Error::Ok,
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(input, out), InvalidArgument, out);
 
   if (input.numel() == 0) {
     return out;

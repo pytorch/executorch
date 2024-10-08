@@ -113,7 +113,7 @@ void group_norm(
 } // namespace
 
 std::tuple<Tensor&, Tensor&, Tensor&> native_group_norm_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     const exec_aten::optional<Tensor>& weight,
     const exec_aten::optional<Tensor>& bias,

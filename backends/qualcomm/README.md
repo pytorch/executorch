@@ -73,3 +73,67 @@ examples/qualcomm
 Please see this [README.md](../../examples/qualcomm/README.md).
 
 Further, an example build script is provided as [build.sh](scripts/build.sh).
+
+## Issues
+If you want to address the problem encountered, it would be great to have reproduction information for indicating maintainers. Please also follow the [policy](../../CONTRIBUTING.md#issues) to emit issues.
+
+## Pull Requests
+PRs are always welcome to help improve the codebase in a comprehensive manner. Before submitting changes, please apply:
+
+- **Check the Coding Style**:<br/>
+    Make sure your code follows the [style guides](../../CONTRIBUTING.md#coding-style) and passes the [lint checks](../../CONTRIBUTING.md#lintrunner).
+
+- **Add Unit Tests**:<br/>
+    Following is an example of adding test case after [creating new operator builder](builders/README.md), please navigate to `backends/qualcomm/tests` folder and put minimum example module in `model.py`. e.g.:
+    ```python
+    class IndexPut(torch.nn.Module):
+        ...
+
+    # please insert implementation in alphabetical order
+    class LayerNorm(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.layer_norm = torch.nn.LayerNorm([768], eps=1e-6)
+
+        def forward(self, x):
+            return self.layer_norm(x)
+
+
+    class LeakyReLUDefault(torch.nn.Module):
+        ...
+    ```
+    Also extend sections `TestQNNFloatingPointOperator`, `TestQNNQuantizedOperator` in `test_qnn_delegate.py`. e.g.:
+    ```python
+    class TestQNNQuantizedOperator(TestQNN):
+        def test_qnn_backend_interpolate_nearest_2d(self):
+            ...
+
+        # please insert it implementation alphabetical order
+        def test_qnn_backend_layer_norm(self):
+            module = LayerNorm()  # noqa: F405
+            sample_input = (torch.randn(196, 768),)
+            module = self.get_qdq_module(module, sample_input)
+            self.lower_module_and_test_output(module, sample_input)
+
+        def test_qnn_backend_leaky_relu(self):
+            ...
+    ```
+
+- **Verify Unit Test Results**:<br/>
+    ```bash
+    cd $PATH_TO_EXECUTORCH
+    # example usage of performing unit test
+    python backends/qualcomm/tests/test_qnn_delegate.py -k TestQNNQuantizedOperator.test_qnn_backend_layer_norm -s $DEVICE_SERIAL -m SM8650 -b build-android/ -a $PATH_TO_TEST_ARTIFACTS
+    ```
+    The test graph is expected to have 1 delegated node with only placeholders / output nodes being left. Check the execution report for more information.
+
+- **Code Reviews**:<br/>
+    Please ping authors in Qualcomm AI Engine Direct related PRs for reviewing, possible candidates are listed below:
+    - [chiwwang](https://github.com/chiwwang)
+    - [shewu-quic](https://github.com/shewu-quic)
+    - [chunit-quic](https://github.com/chunit-quic)
+    - [winskuo-quic](https://github.com/winskuo-quic)
+    - [chuntl](https://github.com/chuntl)
+    - [haowhsu-quic](https://github.com/haowhsu-quic)
+
+Thanks again for your contribution!

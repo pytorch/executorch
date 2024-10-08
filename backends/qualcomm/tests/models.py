@@ -55,6 +55,16 @@ class AvgPoolModule(torch.nn.Module):
         return self.avgPool(x)
 
 
+class BatchNorm(torch.nn.Module):
+    def __init__(self, n_features):
+        super().__init__()
+        self.native_batchnorm = torch.nn.BatchNorm2d(n_features)
+        self.eval()
+
+    def forward(self, x):
+        return self.native_batchnorm(x)
+
+
 class Bmm(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -349,6 +359,46 @@ class Conv2dSingle(torch.nn.Module):
 
     def forward(self, x):
         return self.conv(x)
+
+
+class ConvTranspose2dSingle(torch.nn.Module):
+    def __init__(self, bias=True):
+        super().__init__()
+        self.conv_transpose = torch.nn.ConvTranspose2d(
+            in_channels=1,
+            out_channels=3,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=bias,
+        )
+
+    def forward(self, x):
+        return self.conv_transpose(x)
+
+
+class Conv2dDownUpSample(torch.nn.Module):
+    def __init__(self, bias=True):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=16,
+            out_channels=16,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=bias,
+        )
+        self.conv_transpose = torch.nn.ConvTranspose2d(
+            in_channels=16,
+            out_channels=16,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=bias,
+        )
+
+    def forward(self, x):
+        return self.conv_transpose(self.conv(x))
 
 
 class Conv2dSumReduceDim(torch.nn.Module):
@@ -732,6 +782,16 @@ class ResizeNearest2D(torch.nn.Module):
             size=list(torch.randn(output_shape).shape),
             mode="nearest",
         )
+
+
+class RmsNorm(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.eps = 1e-5
+        self.rms = torch.nn.RMSNorm([4], 1e-5)
+
+    def forward(self, x):
+        return self.rms(x)
 
 
 class Rsqrt(torch.nn.Module):

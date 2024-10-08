@@ -9,12 +9,12 @@ import operator
 from typing import List, Optional
 
 import torch
+from executorch.backends.xnnpack._passes.fuse_batch_norm_with_conv import (
+    FuseBatchNormWithConvPass,
+)
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
-)
-from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
-    FuseBatchNormWithConvPass,
 )
 from executorch.backends.xnnpack.utils.utils import is_param_node
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
@@ -85,6 +85,11 @@ class MaxDimConfig(XNNPartitionerConfig):
         supported_dtypes = {torch.float32, torch.float16, torch.int8, torch.qint8}
         node_val = node.meta.get("val")
         output_0 = node_val[0]
+
+        input_node = node.all_input_nodes[0]
+        if len(input_node.meta.get("val").shape) != 4:
+            why(node, f"Unsupported input rank {input_node.meta.get('val').shape}")
+            return False
         # Don't check indicies dtype
         if output_0.dtype not in supported_dtypes:
             why(node, f"Unsupported output dtype {output_0.dtype}")

@@ -66,7 +66,7 @@ void add_upsample_nearest2d_node(
   ValueRef arg_in = prepack_if_tensor_ref(graph, in);
 
   vTensorPtr t_in = graph.get_tensor(in);
-  utils::uvec3 input_sizes = t_in->image_extents();
+  utils::uvec3 input_sizes = t_in->logical_limits();
 
   utils::ivec2 input_size = {
       utils::safe_downcast<int32_t>(input_sizes[0]),
@@ -105,7 +105,7 @@ void add_upsample_nearest2d_node(
       {{out, vkapi::MemoryAccessType::WRITE},
        {arg_in, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->texture_limits_ubo(),
+      {t_out->logical_limits_ubo(),
        graph.create_params_buffer(input_size),
        graph.create_params_buffer(rev_scales)},
       // Specialization Constants

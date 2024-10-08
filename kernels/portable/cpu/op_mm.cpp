@@ -16,8 +16,11 @@ namespace native {
 
 using Tensor = exec_aten::Tensor;
 
-Tensor&
-mm_out(RuntimeContext& ctx, const Tensor& in, const Tensor& mat2, Tensor& out) {
+Tensor& mm_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& in,
+    const Tensor& mat2,
+    Tensor& out) {
   ET_KERNEL_CHECK(ctx, check_mm_args(in, mat2, out), InvalidArgument, out);
 
   size_t output_ndim = 0;

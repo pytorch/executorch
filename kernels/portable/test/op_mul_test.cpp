@@ -36,19 +36,18 @@ class OpMulOutKernelTest : public OperatorTest {
 TEST_F(OpMulOutKernelTest, UnhandledDtypeDies) {
   // mul_out() doesn't handle QInt8.
   // TensorFactory cannot be used with ScalarType::QInt8 since
-  // torch::executor::qint8 does not have a default constructor. It must be
+  // exec_aten::qint8 does not have a default constructor. It must be
   // initialized with an explicit value. So, we need to manually create the
   // underlying data without default construction and then the tensors from that
   // data via TensorImpl.
 
   std::vector<SizesType> sizes = {2, 2};
 
-  std::vector<torch::executor::qint8> a_data{};
-  std::generate_n(std::back_inserter(a_data), 4, []() {
-    return torch::executor::qint8{0};
-  });
-  std::vector<torch::executor::qint8> b_data(a_data);
-  std::vector<torch::executor::qint8> out_data(a_data);
+  std::vector<exec_aten::qint8> a_data{};
+  std::generate_n(
+      std::back_inserter(a_data), 4, []() { return exec_aten::qint8{0}; });
+  std::vector<exec_aten::qint8> b_data(a_data);
+  std::vector<exec_aten::qint8> out_data(a_data);
 
   auto a_impl = torch::executor::TensorImpl(
       ScalarType::QInt8, 2, sizes.data(), a_data.data());

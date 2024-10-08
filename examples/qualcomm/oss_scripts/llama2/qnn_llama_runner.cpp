@@ -23,8 +23,6 @@
 #include <fstream>
 #include <vector>
 
-using torch::executor::MemoryAllocator;
-
 DEFINE_string(
     model_path,
     "qnn_llama2.pte",
@@ -49,9 +47,12 @@ DEFINE_int32(
     128,
     "Total number of tokens to generate (prompt + output). Defaults to max_seq_len. If the number of input tokens + seq_len > max_seq_len, the output will be truncated to max_seq_len tokens.");
 
-int main(int argc, char** argv) {
-  using namespace torch::executor;
+using executorch::runtime::Error;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Result;
 
+int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   const char* tokenizer_path = FLAGS_tokenizer_path.c_str();
@@ -60,7 +61,7 @@ int main(int argc, char** argv) {
   int32_t seq_len = FLAGS_seq_len;
 
   // create llama runner
-  Runner runner(FLAGS_model_path, tokenizer_path, temperature);
+  example::Runner runner(FLAGS_model_path, tokenizer_path, temperature);
   ET_CHECK_MSG(runner.load() == Error::Ok, "Runner failed to load method");
 
   // MethodMeta describes the memory requirements of the method.

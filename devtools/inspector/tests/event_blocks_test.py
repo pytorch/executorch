@@ -62,6 +62,7 @@ class TestEventBlock(unittest.TestCase):
     def _gen_sample_debug_event(
         instruction_id: int,
         delegate_debug_id: Optional[Union[int, str]] = None,
+        name: str = "test_debug_event",
     ) -> flatcc.DebugEvent:
         """
         Helper for generating test DebugEvents
@@ -77,6 +78,7 @@ class TestEventBlock(unittest.TestCase):
         )
 
         return flatcc.DebugEvent(
+            name=name,
             chain_index=0,
             instruction_id=instruction_id,
             delegate_debug_id_int=delegate_debug_id_int,
@@ -299,6 +301,42 @@ class TestEventBlock(unittest.TestCase):
 
         return ETDumpFlatCC(version=0, run_data=[run_data_1, run_data_2, run_data_3])
 
+    @staticmethod
+    def _get_sample_etdump_flatcc_debug_events_only(
+        event_name: str,
+        delegate_debug_id: str,
+    ) -> flatcc.ETDumpFlatCC:
+        """
+        Helper for getting a sample ETDumpFlatCC object with RunData signature_a
+        and (debug_event_delegated, debug_event_non_delegated, no profile event)
+        """
+
+        debug_event_delegated = TestEventBlock._gen_sample_debug_event(
+            instruction_id=1, delegate_debug_id=delegate_debug_id, name=event_name
+        )
+        debug_event_non_delegated = TestEventBlock._gen_sample_debug_event(
+            instruction_id=1, name=event_name
+        )
+        run_data_1 = flatcc.RunData(
+            name="signature_a",
+            bundled_input_index=-1,
+            allocators=[],
+            events=[
+                flatcc.Event(
+                    allocation_event=None,
+                    debug_event=debug_event_delegated,
+                    profile_event=None,
+                ),
+                flatcc.Event(
+                    allocation_event=None,
+                    debug_event=debug_event_non_delegated,
+                    profile_event=None,
+                ),
+            ],
+        )
+
+        return ETDumpFlatCC(version=0, run_data=[run_data_1])
+
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Tests ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     def test_gen_from_etdump(self) -> None:
@@ -369,6 +407,30 @@ class TestEventBlock(unittest.TestCase):
         )
         with self.assertRaises(AssertionError):
             EventBlock._gen_from_etdump(etdump)
+
+    def test_gen_from_etdump_debug_events_only(self) -> None:
+        """
+        Test generation of EventBlocks given an ETDump with only debugging events
+
+        Specifically it tests:
+        - Correct number of EventBlocks and Events
+        - Correct name of each Event
+        """
+        event_name = "test_debug_event_only"
+        delegate_debug_id = "debug_id"
+        etdump: ETDumpFlatCC = (
+            TestEventBlock._get_sample_etdump_flatcc_debug_events_only(
+                event_name=event_name,
+                delegate_debug_id=delegate_debug_id,
+            )
+        )
+        event_blocks = EventBlock._gen_from_etdump(etdump)
+        self.assertEqual(len(event_blocks), 1)
+        self.assertEqual(len(event_blocks[0].events), 2)
+        # Delegated event uses delegate_debug_id as event name
+        self.assertEqual(event_blocks[0].events[0].name, delegate_debug_id)
+        # Non delegated event uses event_name as event name
+        self.assertEqual(event_blocks[0].events[1].name, event_name)
 
     def test_inspector_event_generation(self) -> None:
         """

@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 
 #include <ATen/Functions.h> // @manual=//caffe2/aten:ATen-cpu
@@ -47,6 +48,8 @@ void alias_etensor_to_attensor(at::Tensor& at, torch::executor::Tensor& et);
  * cloned.
  */
 at::Tensor alias_attensor_to_etensor(const torch::executor::Tensor& et);
+
+TensorPtr alias_tensor_ptr_to_attensor(at::Tensor& t);
 
 } // namespace extension
 } // namespace executorch

@@ -52,6 +52,19 @@ struct Stats {
     aggregate_sampling_timer_start_timestamp = 0;
   }
 
+  void reset() {
+    model_load_start_ms = 0;
+    model_load_end_ms = 0;
+    inference_start_ms = 0;
+    prompt_eval_end_ms = 0;
+    first_token_ms = 0;
+    inference_end_ms = 0;
+    aggregate_sampling_time_ms = 0;
+    num_prompt_tokens = 0;
+    num_generated_tokens = 0;
+    aggregate_sampling_timer_start_timestamp = 0;
+  }
+
  private:
   long aggregate_sampling_timer_start_timestamp = 0;
 };

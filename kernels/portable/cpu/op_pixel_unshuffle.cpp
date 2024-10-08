@@ -63,7 +63,7 @@ using SizesType = exec_aten::SizesType;
 using Tensor = exec_aten::Tensor;
 
 Tensor& pixel_unshuffle_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t downscale_factor,
     Tensor& out) {

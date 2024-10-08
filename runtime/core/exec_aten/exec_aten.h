@@ -46,9 +46,10 @@
 
 #endif
 
-namespace exec_aten {
+namespace executorch {
+namespace aten {
 
-using TensorShapeDynamism = torch::executor::TensorShapeDynamism;
+using TensorShapeDynamism = executorch::runtime::TensorShapeDynamism;
 
 #ifdef USE_ATEN_LIB
 
@@ -86,6 +87,7 @@ using IntArrayRef = at::IntArrayRef;
 
 template <typename T>
 using OptionalArrayRef = c10::OptionalArrayRef<T>;
+using OptionalIntArrayRef = OptionalArrayRef<int64_t>;
 
 inline ssize_t compute_numel(const SizesType* sizes, ssize_t dim) {
   return static_cast<ssize_t>(
@@ -131,16 +133,21 @@ using IntArrayRef = torch::executor::IntArrayRef;
 template <typename T>
 using OptionalArrayRef =
     torch::executor::optional<torch::executor::ArrayRef<T>>;
+using OptionalIntArrayRef = OptionalArrayRef<int64_t>;
 
 using torch::executor::compute_numel;
 
-#endif // Use executor types
+#endif // Use ExecuTorch types
 
-} // namespace exec_aten
+} // namespace aten
+} // namespace executorch
+
+// DEPRECATED: The exec_aten:: namespace is deprecated. Use executorch::aten::
+// instead.
+namespace exec_aten = executorch::aten;
 
 namespace torch {
 namespace executor {
 using TensorList = exec_aten::TensorList;
-
 } // namespace executor
 } // namespace torch

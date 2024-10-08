@@ -64,7 +64,7 @@ bool get_view_target_size(
 }
 } // namespace
 
-void et_view(RuntimeContext& context, EValue** stack) {
+void et_view(KernelRuntimeContext& context, EValue** stack) {
   (void)context;
 
   auto self = (*stack[0]).toTensor();

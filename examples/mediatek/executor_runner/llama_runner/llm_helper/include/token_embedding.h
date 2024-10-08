@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace torch::executor {
+namespace example {
 
 class FileMemMapper;
 
@@ -49,4 +49,4 @@ class TokenEmbeddingLut {
 };
 
 } // namespace llm_helper
-} // namespace torch::executor
+} // namespace example

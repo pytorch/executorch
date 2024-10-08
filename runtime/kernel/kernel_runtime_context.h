@@ -110,21 +110,22 @@ class KernelRuntimeContext {
 } // namespace runtime
 } // namespace executorch
 
-namespace torch {
-namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::KernelRuntimeContext;
-} // namespace executor
-} // namespace torch
-
-// TODO(T147221312): Remove these aliases once all code uses
-// KernelRuntimeContext.
-namespace exec_aten {
-using RuntimeContext = ::executorch::runtime::KernelRuntimeContext;
-} // namespace exec_aten
 namespace torch {
 namespace executor {
+/// DEPRECATED: Use ::executorch::runtime::KernelRuntimeContext instead.
+using ::executorch::runtime::KernelRuntimeContext;
+/// DEPRECATED: Use ::executorch::runtime::KernelRuntimeContext instead.
 using RuntimeContext = ::executorch::runtime::KernelRuntimeContext;
 } // namespace executor
 } // namespace torch
+namespace executorch {
+namespace aten {
+/// DEPRECATED: Use ::executorch::runtime::KernelRuntimeContext instead.
+using RuntimeContext = ::executorch::runtime::KernelRuntimeContext;
+} // namespace aten
+} // namespace executorch
+// DEPRECATED: The exec_aten:: namespace is deprecated. Use executorch::aten::
+// instead.
+namespace exec_aten = ::executorch::aten;

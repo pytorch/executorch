@@ -15,16 +15,31 @@
 
 #include <ethosu_driver.h>
 
-#include "executorch/backends/arm/runtime/VelaBinStream.h"
-#include "executorch/runtime/backend/interface.h"
-#include "executorch/runtime/core/error.h"
-#include "executorch/runtime/core/evalue.h"
-#include "executorch/runtime/core/exec_aten/util/scalar_type_util.h"
+#include <executorch/backends/arm/runtime/VelaBinStream.h>
+#include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 using namespace std;
 
-namespace torch {
-namespace executor {
+using executorch::aten::ScalarType;
+using executorch::runtime::ArrayRef;
+using executorch::runtime::Backend;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::Result;
+
+namespace executorch {
+namespace backends {
+namespace arm {
 
 typedef struct {
   FreeableBuffer* processed;
@@ -141,7 +156,16 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
             Error,
             "Input %d expected Integer (4 byte) or Char (1 byte) integer inputs, got ScalarType id %s",
             i,
-            toString(tensor_in.scalar_type()));
+            executorch::runtime::toString(tensor_in.scalar_type()));
+        return Error::InvalidProgram;
+      }
+      supported = executorch::runtime::is_contiguous_dim_order(
+          tensor_in.dim_order().data(), tensor_in.dim());
+      if (!supported) {
+        ET_LOG(
+            Error,
+            "Input %d expected contiguous dim_order, but got non-contiguous dim_order",
+            i);
         return Error::InvalidProgram;
       }
 
@@ -258,7 +282,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
  private:
   Error check_requires_permute(
       int index,
-      const exec_aten::Tensor tensor,
+      const executorch::aten::Tensor tensor,
       VelaIO* io,
       bool permuted_io_flag,
       bool* is_permuted) const {
@@ -281,18 +305,27 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
       }
     }
     if (!permuted_shape) {
-      // Error check matching shapes in the general case
+      // Check the number of elements in each tensor match
+      int tensor_count = 1;
+      int io_count = 1;
+
       for (int i = 0; i < tensor.dim(); i++) {
-        if (tensor.size(i) != io->shape[i]) {
-          ET_LOG(Error, "Tensor input/output %d mismatched shape", index);
-          ET_LOG(
-              Error,
-              "dimension %d mismatch, %zd != %d",
-              index,
-              tensor.size(i),
-              io->shape[i]);
-          return Error::InvalidProgram;
-        }
+        tensor_count = tensor_count * tensor.size(i);
+      }
+
+      // The VelaIO type has a shape of fixed size 4
+      for (int i = 0; i < 4; i++) {
+        io_count = io_count * io->shape[i];
+      }
+
+      if (tensor_count != io_count) {
+        ET_LOG(Error, "Input tensor sizes do not match");
+        ET_LOG(
+            Error,
+            "Program expects %d elements but got %d",
+            io_count,
+            tensor_count);
+        return Error::InvalidProgram;
       }
     }
     *is_permuted = permuted_shape;
@@ -324,5 +357,6 @@ Backend backend_id{"ArmBackend", &backend};
 static auto registered = register_backend(backend_id);
 } // namespace
 
-} // namespace executor
-} // namespace torch
+} // namespace arm
+} // namespace backends
+} // namespace executorch

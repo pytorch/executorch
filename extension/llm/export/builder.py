@@ -16,6 +16,7 @@ import torch
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
+from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
 from executorch.exir import EdgeProgramManager
 from executorch.exir.backend.partitioner import Partitioner
 
@@ -28,10 +29,10 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 from executorch.extension.llm.tokenizer.utils import get_tokenizer
-from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
+from torch.export import export_for_training
 from torch.nn.attention import SDPBackend
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -69,6 +70,7 @@ class LLMEdgeManager:
         example_inputs,
         args: Optional[Any] = None,
         enable_dynamic_shape: bool = False,
+        generate_full_logits: bool = False,
         calibration_tasks: Optional[List[str]] = None,
         calibration_limit: Optional[int] = None,
         calibration_seq_length: Optional[int] = None,
@@ -86,6 +88,7 @@ class LLMEdgeManager:
         self.dtype = dtype
         self.example_inputs = example_inputs
         self.use_kv_cache = use_kv_cache
+        self.generate_full_logits = generate_full_logits
         self.enable_dynamic_shape = enable_dynamic_shape
         self.verbose = verbose
         self.metadata = metadata
@@ -143,6 +146,7 @@ class LLMEdgeManager:
 
         if self.verbose:
             logging.info(f"Applied source transforms: {self.applied_source_transforms}")
+        logging.info(f"Model after source transforms: {self.model}")
         return self
 
     def _get_dynamic_shape(self) -> Any:
@@ -186,9 +190,9 @@ class LLMEdgeManager:
                     strict=True,
                 ).module()
             else:
-                self.pre_autograd_graph_module = capture_pre_autograd_graph(
+                self.pre_autograd_graph_module = export_for_training(
                     self.model, self.example_inputs, dynamic_shapes=dynamic_shape
-                )
+                ).module()
 
         return self
 
@@ -206,7 +210,9 @@ class LLMEdgeManager:
             from executorch.examples.models.llama2.eval_llama_lib import (
                 GraphModuleEvalWrapper,
             )
-            from executorch.examples.models.llama2.evaluate import evaluate_model
+            from executorch.examples.models.llama2.evaluate import (  # pyre-ignore[21]
+                evaluate_model,
+            )
         except ImportError:
             raise ImportError(
                 "Please install the llm eval dependency via examples/models/llama2/install_requirements.sh"
@@ -229,7 +235,12 @@ class LLMEdgeManager:
                     )
                     pos += 1
                     if pos >= len(token_list):
-                        token_list.append(torch.argmax(logits[:], dim=-1).item())
+                        if self.generate_full_logits:
+                            token_list.append(
+                                torch.argmax(logits[:, -1], dim=-1).item()
+                            )
+                        else:
+                            token_list.append(torch.argmax(logits[:], dim=-1).item())
 
         calibrate_template(
             module=prepared_module,
@@ -243,6 +254,7 @@ class LLMEdgeManager:
             tokenizer=tokenizer,
             max_seq_length=calibration_seq_length,
             use_kv_cache=self.use_kv_cache,
+            generate_full_logits=self.generate_full_logits,
             enable_dynamic_shape=self.enable_dynamic_shape,
         )
         eval_results = evaluate_model(
@@ -374,11 +386,13 @@ class LLMEdgeManager:
             ExecutorchBackendConfig(
                 extract_delegate_segments=True,
                 passes=[
+                    # If there are Linear operations left in the graph, let's execute
+                    # them with the optimized op_linear rather than materializing a
+                    # transpose followed by a regular op_mm.
+                    ConvertToLinearPass(),
                     QuantFusionPass(),
                 ],
-                memory_planning_pass=MemoryPlanningPass(
-                    "greedy", alloc_graph_input=False
-                ),
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
             )
         )

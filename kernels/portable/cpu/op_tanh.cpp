@@ -14,8 +14,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-Tensor& tanh_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  return internal::unary_ufunc_realhb_to_floath(std::tanh, ctx, in, out);
+Tensor& tanh_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
+  return internal::unary_ufunc_realhbbf16_to_floathbf16(
+      std::tanh, ctx, in, out);
 }
 
 } // namespace native

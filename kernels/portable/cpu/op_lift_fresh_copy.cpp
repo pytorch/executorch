@@ -17,7 +17,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor&
-lift_fresh_copy_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+lift_fresh_copy_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   ET_KERNEL_CHECK(ctx, tensors_have_same_dtype(in, out), InvalidArgument, out);

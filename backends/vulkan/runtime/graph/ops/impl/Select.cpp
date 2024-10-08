@@ -22,8 +22,8 @@ void check_args(
     int64_t dim,
     int64_t index,
     const api::vTensor& t_out) {
-  VK_CHECK_COND(check_memory_layout_is(t_in, utils::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(t_out, utils::kChannelsPacked));
+  VK_CHECK_COND(check_packed_dim_is(t_in, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_packed_dim_is(t_out, WHCN::kChannelsDim));
 
   const int64_t in_dim = t_in.dim();
   VK_CHECK_COND(
@@ -112,7 +112,7 @@ void add_select_int_node(
       {{out, vkapi::MemoryAccessType::WRITE},
        {in, vkapi::MemoryAccessType::READ}},
       // Parameter buffers
-      {t_out->texture_limits_ubo(),
+      {t_out->logical_limits_ubo(),
        t_out->sizes_ubo(),
        // TODO: num_batches and num_texel_per_batch are provided by
        // t_out->sizes. Can change the following to reduce params

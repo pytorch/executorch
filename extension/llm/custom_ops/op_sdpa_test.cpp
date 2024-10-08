@@ -28,7 +28,7 @@ exec_aten::Tensor op_scaled_dot_product_attention(
     bool is_causal,
     exec_aten::optional<double> scale,
     exec_aten::Tensor& out) {
-  exec_aten::RuntimeContext context{};
+  executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::native::flash_attention_kernel_out(
       context, query, key, value, attn_mask, dropout_p, is_causal, scale, out);
 }

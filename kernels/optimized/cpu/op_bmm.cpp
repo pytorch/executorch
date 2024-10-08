@@ -137,7 +137,7 @@ Error resize_out_tensor(const Tensor& self, const Tensor& mat2, Tensor& out) {
 
 // bmm.out(Tensor self, Tensor mat2, *, Tensor(a!) out) -> Tensor(a!)
 Tensor& opt_bmm_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& self,
     const Tensor& mat2,
     Tensor& out) {

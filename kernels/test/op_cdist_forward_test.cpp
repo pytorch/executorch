@@ -28,7 +28,7 @@ Tensor& op_cdist_forward_out(
     double p,
     optional<int64_t> compute_mode,
     Tensor& out) {
-  exec_aten::RuntimeContext context{};
+  executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::aten::_cdist_forward_outf(
       context, x1, x2, p, compute_mode, out);
 }

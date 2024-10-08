@@ -150,9 +150,12 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
 
   // Constant data may live inside the flatbuffer data (constant_buffer) or in a
   // separate segment (constant_segment). It should not be in both.
+  // Check constant_segment->offsets()->size() > 1, as the offsets list will
+  // always contain a placeholder value 0 for non-const tensors. If this is the
+  // only offset, the constant segment is empty and does not need to be loaded.
   const auto* constant_segment = flatbuffer_program->constant_segment();
   if (constant_segment != nullptr && constant_segment->offsets() != nullptr &&
-      constant_segment->offsets()->size() > 0) {
+      constant_segment->offsets()->size() > 1) {
     // The constant data is inside a separate segment.
     const auto* constant_buffer = flatbuffer_program->constant_buffer();
     ET_CHECK_OR_RETURN_ERROR(
@@ -238,8 +241,9 @@ Result<Method> Program::load_method(
     EventTracer* event_tracer) const {
   EXECUTORCH_SCOPE_PROF("Program::load_method");
   internal::event_tracer_create_event_block(event_tracer, "Default");
-  internal::EventTracerProfileScope event_tracer_scope =
-      internal::EventTracerProfileScope(event_tracer, "Program::load_method");
+  internal::EventTracerProfileMethodScope event_tracer_scope =
+      internal::EventTracerProfileMethodScope(
+          event_tracer, "Program::load_method");
   // If we can't create a MethodMeta for the Method, the Method is corrupt;
   // Method::method_meta() assumes success, so we must fail here.
   Result<MethodMeta> meta = method_meta(method_name);

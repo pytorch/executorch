@@ -279,6 +279,13 @@ class OpResizeNearestNeighbor:
 
 
 @dataclass(init=False, frozen=True)
+class OpRmsNorm:
+    op_name: str = "RmsNorm"
+    param_epsilon: str = "epsilon"
+    param_axes: str = "axes"
+
+
+@dataclass(init=False, frozen=True)
 class OpScatterNd:
     op_name: str = "ScatterNd"
     param_reduction: str = "reduction"
@@ -349,3 +356,12 @@ class OpTile:
 class OpTranspose:
     op_name: str = "Transpose"
     param_perm: str = "perm"
+
+
+@dataclass(init=False, frozen=True)
+class OpTransposeConv2d:
+    op_name: str = "TransposeConv2d"
+    param_stride: str = "stride"
+    param_pad_amount: str = "pad_amount"
+    param_group: str = "group"
+    param_output_padding: str = "output_padding"

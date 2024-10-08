@@ -33,6 +33,7 @@ class QcomChipset(IntEnum):
     SM8450 = 36  # v69
     SM8475 = 42  # v69
     SM8550 = 43  # v73
+    SSG2115P = 46  # v73
     SM8650 = 57  # v75
 
 
@@ -47,6 +48,7 @@ _soc_info_table = {
     QcomChipset.SM8475: SocInfo(QcomChipset.SM8475, HtpInfo(HtpArch.V69, 8)),
     QcomChipset.SM8550: SocInfo(QcomChipset.SM8550, HtpInfo(HtpArch.V73, 8)),
     QcomChipset.SM8650: SocInfo(QcomChipset.SM8650, HtpInfo(HtpArch.V75, 8)),
+    QcomChipset.SSG2115P: SocInfo(QcomChipset.SSG2115P, HtpInfo(HtpArch.V73, 2)),
 }
 
 
@@ -129,7 +131,7 @@ class QnnExecuTorchOptions:
     library_path: str = ""
     log_level: QnnExecuTorchLogLevel = QnnExecuTorchLogLevel.kLogOff
     online_prepare: bool = False
-    tensor_dump_output_path: str = ""
+    dump_intermediate_outputs: bool = False
     profile_level: QnnExecuTorchProfileLevel = QnnExecuTorchProfileLevel.kProfileOff
     shared_buffer: bool = False
     is_from_context_binary: bool = False

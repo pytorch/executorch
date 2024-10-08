@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 
 from typing import Callable, Dict, List, NamedTuple, Optional
 
@@ -51,6 +53,7 @@ from . import (  # noqa
     add_annotator,
     cat_annotator,
     conv_annotator,
+    generic_annotator,
     linear_annotator,
     max_pool2d_annotator,
     mm_annotator,

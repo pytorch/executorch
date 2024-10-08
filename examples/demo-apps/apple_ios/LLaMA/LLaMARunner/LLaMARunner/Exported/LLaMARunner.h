@@ -38,7 +38,9 @@ NS_SWIFT_NAME(LLaVARunner)
                     tokenizerPath:(NSString*)tokenizerPath;
 - (BOOL)isloaded;
 - (BOOL)loadWithError:(NSError**)error;
-- (BOOL)generate:(NSArray<UIImage*>*)images
+- (BOOL)generate:(void*)imageBuffer
+                width:(CGFloat)width
+               height:(CGFloat)height
                prompt:(NSString*)prompt
        sequenceLength:(NSInteger)seq_len
     withTokenCallback:(nullable void (^)(NSString*))callback

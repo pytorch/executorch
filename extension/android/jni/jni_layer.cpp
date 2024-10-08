@@ -386,7 +386,15 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 };
 } // namespace executorch::extension
 
+#ifdef EXECUTORCH_BUILD_LLAMA_JNI
+extern void register_natives_for_llama();
+#else
+// No op if we don't build llama
+void register_natives_for_llama() {}
+#endif
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
-  return facebook::jni::initialize(
-      vm, [] { executorch::extension::ExecuTorchJni::registerNatives(); });
+  return facebook::jni::initialize(vm, [] {
+    executorch::extension::ExecuTorchJni::registerNatives();
+    register_natives_for_llama();
+  });
 }

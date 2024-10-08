@@ -17,7 +17,7 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-from executorch.exir.backend.utils import tag_constant_data
+from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -61,6 +61,7 @@ class CoreMLPartitioner(Partitioner):
         self,
         skip_ops_for_coreml_delegation: Optional[List[str]] = None,
         compile_specs: Optional[List[CompileSpec]] = None,
+        take_over_mutable_buffer: Optional[bool] = True,
     ) -> None:
         if skip_ops_for_coreml_delegation is None:
             skip_ops_for_coreml_delegation = []
@@ -69,6 +70,7 @@ class CoreMLPartitioner(Partitioner):
             backend_id=CoreMLBackend.__name__,
             compile_specs=compile_specs if compile_specs is not None else [],
         )
+        self.take_over_mutable_buffer = take_over_mutable_buffer
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
@@ -89,6 +91,15 @@ class CoreMLPartitioner(Partitioner):
                 partition_tags[tag] = self.delegation_spec
 
         tag_constant_data(exported_program)
+        if self.take_over_mutable_buffer:
+            logger.info(
+                "Core ML partitioner will take over torch mutable buffer as Core ML state, "
+                "so if your model contains mutable buffer, "
+                "then you will need MacOS15+/iOS18+ to execute. "
+                "If you want your mutable buffer model to be compatible with older OS, "
+                "then please set `take_over_mutable_buffer=False`"
+            )
+            tag_mutated_buffer(exported_program)
 
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags

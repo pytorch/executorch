@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import executorch.backends.arm.tosa_quant_utils as tqutils
 import serializer.tosa_serializer as ts
 import torch.fx

@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import dataclasses
 import logging
 import sys
@@ -39,6 +41,7 @@ from executorch.devtools.etdump.schema_flatcc import (
 )
 from executorch.devtools.etrecord import ETRecord, parse_etrecord
 from executorch.devtools.inspector._inspector_utils import (
+    calculate_time_scale_factor,
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
     EXCLUDED_COLUMNS_WHEN_PRINTING,
@@ -52,7 +55,6 @@ from executorch.devtools.inspector._inspector_utils import (
     is_inference_output_equal,
     ProgramOutput,
     RESERVED_FRAMEWORK_EVENT_NAMES,
-    TIME_SCALE_DICT,
     TimeScale,
     verify_debug_data_equivalence,
 )
@@ -150,6 +152,7 @@ class ProfileEventSignature:
 # Signature of a DebugEvent
 @dataclass(frozen=True, order=True)
 class DebugEventSignature:
+    name: str = ""
     instruction_id: Optional[int] = -1
     delegate_id: Optional[int] = None
     delegate_id_str: Optional[str] = None
@@ -163,6 +166,7 @@ class DebugEventSignature:
         The Signature will convert these back to the intended None value
         """
         return DebugEventSignature(
+            event.name or "",
             event.instruction_id if event.instruction_id != -1 else None,
             event.delegate_debug_id_int if event.delegate_debug_id_int != -1 else None,
             event.delegate_debug_id_str if event.delegate_debug_id_str != "" else None,
@@ -468,6 +472,42 @@ class Event:
         return elapsed_time
 
     @staticmethod
+    def _populate_event_signature_fields(
+        ret_event: "Event",
+        event_signature: Optional[Union[ProfileEventSignature, DebugEventSignature]],
+    ) -> None:
+        """
+        Given a partially constructed Event, populate the fields related to
+        the profile event signature or debug event signature
+
+        Fields Updated:
+            name
+            delegate_debug_identifier
+            is_delegated_op
+        """
+        # TODO: T201347372 Push the None check to ealier in the stack.
+        if event_signature is not None:
+            if event_signature.delegate_id is not None:  # 0 is a valid value
+                delegate_debug_identifier = event_signature.delegate_id
+            else:
+                delegate_debug_identifier = event_signature.delegate_id_str or None
+
+            # Use the delegate identifier as the event name if delegated
+            is_delegated_op = delegate_debug_identifier is not None
+            name = (
+                event_signature.name
+                if not is_delegated_op
+                else str(delegate_debug_identifier)
+            )
+
+            # Update fields
+            # This is for older version of etdump that doesn't have the name field for debug events, we don't update the name field
+            if name:
+                ret_event.name = name
+            ret_event.delegate_debug_identifier = delegate_debug_identifier
+            ret_event.is_delegated_op = is_delegated_op
+
+    @staticmethod
     def _populate_profiling_related_fields(
         ret_event: "Event",
         profile_event_signature: Optional[ProfileEventSignature],
@@ -487,26 +527,7 @@ class Event:
         """
 
         # Fill out fields from profile event signature
-        if profile_event_signature is not None:
-            if profile_event_signature.delegate_id is not None:  # 0 is a valid value
-                delegate_debug_identifier = profile_event_signature.delegate_id
-            else:
-                delegate_debug_identifier = (
-                    profile_event_signature.delegate_id_str or None
-                )
-
-            # Use the delegate identifier as the event name if delegated
-            is_delegated_op = delegate_debug_identifier is not None
-            name = (
-                profile_event_signature.name
-                if not is_delegated_op
-                else str(delegate_debug_identifier)
-            )
-
-            # Update fields
-            ret_event.name = name
-            ret_event.delegate_debug_identifier = delegate_debug_identifier
-            ret_event.is_delegated_op = is_delegated_op
+        Event._populate_event_signature_fields(ret_event, profile_event_signature)
 
         # Fill out fields from profile event
         data = []
@@ -575,8 +596,14 @@ class Event:
         the debug events
 
         Fields Updated:
+            name
+            delegate_debug_identifier
+            is_delegated_op
             debug_data
         """
+
+        # Fill out fields from debug event signature
+        Event._populate_event_signature_fields(ret_event, debug_event_signature)
 
         debug_data: List[flatcc.Value] = []
         for event in events:
@@ -799,9 +826,7 @@ class EventBlock:
 
         # Construct the EventBlocks
         event_blocks = []
-        scale_factor = (
-            TIME_SCALE_DICT[source_time_scale] / TIME_SCALE_DICT[target_time_scale]
-        )
+        scale_factor = calculate_time_scale_factor(source_time_scale, target_time_scale)
         for run_signature, grouped_run_instance in run_groups.items():
             run_group: OrderedDict[EventSignature, List[InstructionEvent]] = (
                 grouped_run_instance.events
@@ -942,6 +967,7 @@ class Inspector:
     def __init__(
         self,
         etdump_path: Optional[str] = None,
+        etdump_data: Optional[bytes] = None,
         etrecord: Optional[Union[ETRecord, str]] = None,
         source_time_scale: TimeScale = TimeScale.NS,
         target_time_scale: TimeScale = TimeScale.MS,
@@ -955,17 +981,21 @@ class Inspector:
         enable_module_hierarchy: bool = False,
     ) -> None:
         r"""
-        Initialize an `Inspector` instance with the underlying `EventBlock`\ s populated with data from the provided ETDump path
+        Initialize an `Inspector` instance with the underlying `EventBlock`\ s populated with data from the provided ETDump path or binary,
         and optional ETRecord path.
 
         Args:
-            etdump_path: Path to the ETDump file.
+            etdump_path: Path to the ETDump file. Either this parameter or etdump_data should be provided.
+            etdump_data: ETDump binary. Either this parameter or etdump_path should be provided.
             etrecord: Optional ETRecord object or path to the ETRecord file.
             source_time_scale: The time scale of the performance data retrieved from the runtime. The default time hook implentation in the runtime returns NS.
             target_time_scale: The target time scale to which the users want their performance data converted to. Defaults to MS.
             debug_buffer_path: Debug buffer file path that contains the debug data referenced by ETDump for intermediate and program outputs.
             delegate_metadata_parser: Optional function to parse delegate metadata from an Profiling Event. Expected signature of the function is:
                     (delegate_metadata_list: List[bytes]) -> Union[List[str], Dict[str, Any]]
+            delegate_time_scale_converter: Optional function to convert the time scale of delegate profiling data. If not given, use the conversion ratio of
+                    target_time_scale/source_time_scale.
+            enable_module_hierarchy: Enable submodules in the operator graph. Defaults to False.
 
         Returns:
             None
@@ -980,6 +1010,14 @@ class Inspector:
         self._source_time_scale = source_time_scale
         self._target_time_scale = target_time_scale
 
+        if delegate_time_scale_converter is None:
+            scale_factor = calculate_time_scale_factor(
+                source_time_scale, target_time_scale
+            )
+            delegate_time_scale_converter = (
+                lambda event_name, input_time: input_time / scale_factor
+            )
+
         if etrecord is None:
             self._etrecord = None
         elif isinstance(etrecord, ETRecord):
@@ -989,8 +1027,13 @@ class Inspector:
         else:
             raise TypeError("Unsupported ETRecord type")
 
+        if (etdump_path is None) == (etdump_data is None):
+            raise ValueError(
+                "Expecting exactly one of etdump_path or etdump_data to be specified."
+            )
+
         # Create EventBlocks from ETDump
-        etdump = gen_etdump_object(etdump_path=etdump_path)
+        etdump = gen_etdump_object(etdump_path=etdump_path, etdump_data=etdump_data)
         if debug_buffer_path is not None:
             with open(debug_buffer_path, "rb") as f:
                 output_buffer = f.read()
@@ -1002,10 +1045,10 @@ class Inspector:
             )
 
         self.event_blocks = EventBlock._gen_from_etdump(
-            etdump,
-            self._source_time_scale,
-            self._target_time_scale,
-            output_buffer,
+            etdump=etdump,
+            source_time_scale=self._source_time_scale,
+            target_time_scale=self._target_time_scale,
+            output_buffer=output_buffer,
             delegate_metadata_parser=delegate_metadata_parser,
             delegate_time_scale_converter=delegate_time_scale_converter,
         )

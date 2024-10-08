@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 #
 # PyTorch to Tosa mapping - simple mapping functions and multi-type extraction
 # of key information. These are used by the initial compile stage which captures

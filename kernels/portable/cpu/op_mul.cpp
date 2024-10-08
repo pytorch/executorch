@@ -62,8 +62,11 @@ struct MulInner<false, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT>
     : public ReportCanCastBug {};
 } // namespace
 
-Tensor&
-mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
+Tensor& mul_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Tensor& b,
+    Tensor& out) {
   ET_KERNEL_CHECK(
       ctx,
       resize_to_broadcast_target_size(a, b, out) == Error::Ok,
@@ -106,7 +109,7 @@ mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
 }
 
 Tensor& mul_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {
@@ -123,7 +126,11 @@ Tensor& mul_scalar_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
-  ET_KERNEL_CHECK(ctx, tensor_is_realhb_type(out), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      executorch::runtime::tensor_is_realhbbf16_type(out),
+      InvalidArgument,
+      out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);

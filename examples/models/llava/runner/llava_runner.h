@@ -19,9 +19,9 @@
 
 #include <executorch/extension/llm/runner/multimodal_runner.h>
 
-namespace torch::executor {
+namespace example {
 
-class LlavaRunner : public MultimodalRunner {
+class LlavaRunner : public ::executorch::extension::llm::MultimodalRunner {
  public:
   explicit LlavaRunner(
       const std::string& model_path,
@@ -29,14 +29,15 @@ class LlavaRunner : public MultimodalRunner {
       const float temperature = 0.8f)
       : MultimodalRunner(model_path, tokenizer_path, temperature){};
   bool is_loaded();
-  Error load();
-  Error generate(
-      std::vector<Image> images,
+  ::executorch::runtime::Error load();
+  ::executorch::runtime::Error generate(
+      std::vector<::executorch::extension::llm::Image> images,
       const std::string& prompt,
       int32_t seq_len = 1024,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const ::executorch::extension::llm::Stats&)>
-          stats_callback = {});
+          stats_callback = {},
+      bool echo = true);
 
   /**
    * Prefill an LLaVA Module with the given images input.
@@ -45,7 +46,9 @@ class LlavaRunner : public MultimodalRunner {
    * It's passed as reference and will be updated inside this function.
    * @return The error status of prefilling images.
    */
-  Error prefill_images(std::vector<Image>& images, int64_t& start_pos);
+  ::executorch::runtime::Error prefill_images(
+      std::vector<::executorch::extension::llm::Image>& images,
+      int64_t& start_pos);
 
   /**
    * Prefill an LLaVA Module with the given text input.
@@ -56,7 +59,7 @@ class LlavaRunner : public MultimodalRunner {
    * @param eos The number of EOS (end of sequence) token.
    * @return The generated token of the LLaVA Module after prefill prompt.
    */
-  Result<uint64_t> prefill_prompt(
+  ::executorch::runtime::Result<uint64_t> prefill_prompt(
       const std::string& prompt,
       int64_t& start_pos,
       int8_t bos = 0,
@@ -70,19 +73,21 @@ class LlavaRunner : public MultimodalRunner {
    * @param start_pos The starting position in KV cache of the input in the LLM.
    * @param token_callback What to do after a token is generated.
    * @param stats_callback What to do with Stats.
+   * @param echo Whether to echo the input prompt or not.
    * @return The error code.
    */
-  Error generate_from_pos(
+  ::executorch::runtime::Error generate_from_pos(
       const std::string& prompt,
       int32_t seq_len = 1024,
       int64_t start_pos = 0,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const ::executorch::extension::llm::Stats&)>
-          stats_callback = {});
+          stats_callback = {},
+      bool echo = true);
 
  private:
   inline static const std::string kPresetPrompt =
       "A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. USER: ";
 };
 
-} // namespace torch::executor
+} // namespace example

@@ -80,7 +80,7 @@ void cumsum_tensors(const Tensor& self, int64_t dim, Tensor& out) {
  * operation is performed. This is useful for preventing data type overflows.
  */
 Tensor& cumsum_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     int64_t dim,
     optional<ScalarType> enforced_dtype,

@@ -27,7 +27,8 @@ class ManagedMemoryManager {
  public:
   ManagedMemoryManager(
       size_t planned_memory_bytes,
-      size_t method_allocator_bytes)
+      size_t method_allocator_bytes,
+      MemoryAllocator* temp_allocator = nullptr)
       : planned_memory_buffer_(new uint8_t[planned_memory_bytes]),
         planned_memory_span_(
             planned_memory_buffer_.get(),
@@ -35,7 +36,7 @@ class ManagedMemoryManager {
         planned_memory_({&planned_memory_span_, 1}),
         method_allocator_pool_(new uint8_t[method_allocator_bytes]),
         method_allocator_(method_allocator_bytes, method_allocator_pool_.get()),
-        memory_manager_(&method_allocator_, &planned_memory_) {}
+        memory_manager_(&method_allocator_, &planned_memory_, temp_allocator) {}
 
   MemoryManager& get() {
     return memory_manager_;

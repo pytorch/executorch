@@ -28,6 +28,7 @@ runtime.python_library(
         "//executorch/backends/transforms:fuse_view_copy",
         "//executorch/backends/transforms:mean_to_sum_div",
         "//executorch/backends/transforms:remove_clone_ops",
+        "//executorch/backends/vulkan/passes:remove_local_scalar_dense",
         "//executorch/exir:graph_module",
         "//executorch/exir/_serialize:_bindings",
         "//executorch/exir/_serialize:lib",

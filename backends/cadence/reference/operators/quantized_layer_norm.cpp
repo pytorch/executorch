@@ -9,12 +9,11 @@
 #include <executorch/backends/cadence/reference/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-#include <algorithm>
 #include <cmath>
-#include <tuple>
 
-using Tensor = exec_aten::Tensor;
-using RuntimeContext = torch::executor::RuntimeContext;
+using executorch::aten::Tensor;
+using executorch::runtime::getLeadingDims;
+using executorch::runtime::KernelRuntimeContext;
 
 namespace impl {
 namespace reference {
@@ -112,7 +111,7 @@ void quantized_layer_norm_(
 }
 
 void quantized_layer_norm_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& in_scale,
     const Tensor& in_zero_point,

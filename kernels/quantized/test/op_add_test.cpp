@@ -21,10 +21,10 @@
 using namespace ::testing;
 using exec_aten::ArrayRef;
 using exec_aten::optional;
-using exec_aten::RuntimeContext;
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
+using executorch::runtime::KernelRuntimeContext;
 using torch::executor::native::add_out;
 using torch::executor::native::dequantize_per_tensor_out;
 using torch::executor::native::quantize_per_tensor_out;
@@ -193,7 +193,7 @@ TEST(OpQuantizeAddTest, ConsitencyWithReferencePattern) {
 
   optional<ScalarType> out_dtype = optional<ScalarType>();
 
-  RuntimeContext context{};
+  KernelRuntimeContext context{};
   // q -> qadd -> dq
   // 3.5 / 0.5 + 1 = 8
   quantize_per_tensor_out(

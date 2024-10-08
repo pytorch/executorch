@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import math
 from enum import Enum
 from typing import Dict, List, Mapping, Optional, Tuple, TypeAlias, Union
@@ -61,6 +63,15 @@ TIME_SCALE_DICT = {
     TimeScale.S: 1,
     TimeScale.CYCLES: 1,
 }
+
+
+def calculate_time_scale_factor(
+    source_time_scale: TimeScale, target_time_scale: TimeScale
+) -> float:
+    """
+    Calculate the factor (source divided by target) between two time scales
+    """
+    return TIME_SCALE_DICT[source_time_scale] / TIME_SCALE_DICT[target_time_scale]
 
 
 # Model Debug Output
@@ -268,13 +279,20 @@ def create_debug_handle_to_op_node_mapping(
     return debug_handle_to_op_node_map
 
 
-def gen_etdump_object(etdump_path: Optional[str] = None) -> ETDumpFlatCC:
+def gen_etdump_object(
+    etdump_path: Optional[str] = None, etdump_data: Optional[bytes] = None
+) -> ETDumpFlatCC:
     # Gen event blocks from etdump
-    if etdump_path is None:
-        raise ValueError("Etdump_path must be specified.")
-    with open(etdump_path, "rb") as buff:
-        etdump = deserialize_from_etdump_flatcc(buff.read())
-        return etdump
+    if etdump_data is None and etdump_path is not None:
+        with open(etdump_path, "rb") as buff:
+            etdump_data = buff.read()
+
+    if etdump_data is None:
+        raise ValueError(
+            "Unable to get ETDump data. One and only one of etdump_path and etdump_data must be specified."
+        )
+
+    return deserialize_from_etdump_flatcc(etdump_data)
 
 
 def plot_metric(result: List[float], metric_name: str):

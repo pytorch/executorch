@@ -336,7 +336,7 @@ void convolution_wrapper(
 } // namespace
 
 Tensor& convolution_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& weight,
     const exec_aten::optional<Tensor>& bias,
