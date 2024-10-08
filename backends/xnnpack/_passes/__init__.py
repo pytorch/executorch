@@ -6,23 +6,27 @@
 
 from typing import List, Optional, Type
 
-from executorch.backends.xnnpack.passes.channels_last_tagged_reshape_pass import (
+from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass import (
     ChannelsLastTaggedReshapePass,
 )
-from executorch.backends.xnnpack.passes.conv1d_unsqueeze_pass import Conv1dUnsqueezePass
-from executorch.backends.xnnpack.passes.convert_to_linear import ConvertToLinearPass
-from executorch.backends.xnnpack.passes.convert_to_sdpa import ConvertToSDPAPass
-from executorch.backends.xnnpack.passes.convert_to_upsample_bilinear2d import (
+from executorch.backends.xnnpack._passes.conv1d_unsqueeze_pass import (
+    Conv1dUnsqueezePass,
+)
+from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
+from executorch.backends.xnnpack._passes.convert_to_sdpa import ConvertToSDPAPass
+from executorch.backends.xnnpack._passes.convert_to_upsample_bilinear2d import (
     ConvertToUpsampleBilinear2d,
 )
-from executorch.backends.xnnpack.passes.fuse_activation_pass import FuseActivationPass
-from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
+from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
+from executorch.backends.xnnpack._passes.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
-from executorch.backends.xnnpack.passes.prelu_reshape_pass import PReLUReshapePass
-from executorch.backends.xnnpack.passes.remove_getitem_op import RemoveGetItemPass
-from executorch.backends.xnnpack.passes.tag_implicit_q_dq_pass import TagImplicitQDqPass
-from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
+from executorch.backends.xnnpack._passes.prelu_reshape_pass import PReLUReshapePass
+from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
+from executorch.backends.xnnpack._passes.tag_implicit_q_dq_pass import (
+    TagImplicitQDqPass,
+)
+from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 
 from executorch.exir.pass_base import ExportPass
 
