@@ -66,6 +66,7 @@ from .source_transformation.sdpa import (
     replace_sdpa_with_flex_sdpa,
     replace_sdpa_with_simple_sdpa,
 )
+from .source_transformation.torchtune.attention import replace_mha_with_inference_mha
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -934,6 +935,7 @@ def _get_source_transforms(  # noqa
 
     if args.use_sdpa_with_kv_cache:
         transforms.append(replace_sdpa_with_custom_op)
+        transforms.append(replace_mha_with_inference_mha)
 
     if args.quantize_kv_cache:
         assert args.use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"

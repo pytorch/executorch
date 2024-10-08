@@ -193,7 +193,7 @@ class LLMEdgeManager:
                     strict=True,
                 ).module()
             else:
-                self.pre_autograd_graph_module = export_for_training(
+                self.pre_autograd_graph_module = capture_pre_autograd_graph(
                     self.model,
                     self.example_inputs,
                     kwargs=self.example_kwarg_inputs,
