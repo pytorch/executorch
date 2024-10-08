@@ -634,6 +634,16 @@ class TestQNNQuantizedOperator(TestQNN):
                 )
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_16a4w_layer_norm(self):
+        module = LayerNorm()  # noqa: F405
+        sample_input = (torch.randn(196, 768),)
+        module = self.get_qdq_module(
+            module,
+            sample_input,
+            quant_dtype=QuantDtype.use_16a4w,
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_16a4w_linear(self):
         module = Linear()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
