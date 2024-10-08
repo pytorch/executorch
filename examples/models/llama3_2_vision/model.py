@@ -7,7 +7,7 @@
 # pyre-unsafe
 
 import json
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 import torch
 
@@ -47,7 +47,7 @@ class Llama3_2Decoder(EagerModelBase):
         self.args = kwargs.get("args", None)
 
 
-        ckpt_dir = get_default_model_resource_dir()
+        ckpt_dir = get_default_model_resource_dir(__file__)
         # Single checkpoint file.
         checkpoint_path = kwargs.get("checkpoint", ckpt_dir / "demo_rand_params.pth")
         # Sharded checkpoint.
@@ -122,16 +122,19 @@ class Llama3_2Decoder(EagerModelBase):
         else:
             return self.model_.to(torch.float16)
 
-    def get_example_inputs(self) -> Tuple[Tuple, Dict]:
+    def get_example_inputs(self):
         return (
-            (torch.ones(1, 64, dtype=torch.long),), # positional inputs
-            {
-                # "mask": None,
-                # "encoder_input": None,
-                # "encoder_mask": None,
-                # "input_pos": torch.ones(64, dtype=torch.long),
-            } # kwarg inputs
+            torch.ones(1, 64, dtype=torch.long), # positional inputs
         )
+
+    def get_example_kwarg_inputs(self):
+        # TODO: add input_pos and mask when after making cache work.
+        return {
+            # "mask": None,
+            # "encoder_input": None,
+            # "encoder_mask": None,
+            # "input_pos": torch.ones(64, dtype=torch.long),
+        }
 
     def get_dynamic_shapes(self):
         dim = torch.export.Dim("token_dim", min=1,max=self.max_seq_len)
