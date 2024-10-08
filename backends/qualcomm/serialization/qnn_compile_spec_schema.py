@@ -35,6 +35,7 @@ class QcomChipset(IntEnum):
     SM8550 = 43  # v73
     SSG2115P = 46  # v73
     SM8650 = 57  # v75
+    SSG2115P = 46  # v73... I wish I can know where the number comes from...
 
 
 @dataclass

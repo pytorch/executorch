@@ -35,9 +35,11 @@ class EagerModelFactory:
             ValueError: If the provided model class is not found in the module.
         """
         package_prefix = "executorch." if not os.getcwd().endswith("executorch") else ""
-        module = importlib.import_module(
-            f"{package_prefix}examples.models.{module_name}"
-        )
+        print(f"package_prefix: {package_prefix}")
+        # module = importlib.import_module(
+        #     f"{package_prefix}examples.models.{module_name}"
+        # )
+        module = importlib.import_module(f"executorch.examples.models.{module_name}")
 
         if hasattr(module, model_class_name):
             model_class = getattr(module, model_class_name)
