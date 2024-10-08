@@ -313,7 +313,7 @@ from executorch.exir import to_edge
 from executorch.devtools import BundledProgram
 
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
-from torch.export import export
+from torch.export import export, export_for_training
 
 
 class Module(torch.nn.Module):
@@ -449,7 +449,7 @@ from executorch.exir import to_edge
 from executorch.devtools import BundledProgram
 
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
-from torch.export import export
+from torch.export import export, export_for_training
 
 
 class Module(torch.nn.Module):
