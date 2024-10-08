@@ -1446,7 +1446,6 @@ class TestQNNFloatingPointUtils(TestQNN):
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         self.lower_module_and_test_output(module, sample_input)
 
-    @unittest.skip("segfault happens in recent torch.export.export")
     def test_qnn_backend_context_direct(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             module = ContextBinaryExample()  # noqa: F405
@@ -1734,7 +1733,6 @@ class TestQNNQuantizedUtils(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
-    @unittest.skip("segfault happens in recent torch.export.export")
     def test_qnn_backend_context_direct(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             module = ContextBinaryExample()  # noqa: F405
@@ -1775,6 +1773,119 @@ class TestExampleOssScript(TestQNN):
                 *conditions,
             ]
         )
+
+    def test_dino_v2(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/dino_v2.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 70)
+                self.assertGreaterEqual(msg["top_5"], 85)
+
+    def test_esrgan(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/esrgan.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--default_dataset",
+            "--oss_repo",
+            self.oss_repo,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["PSNR"], 24)
+                self.assertGreaterEqual(msg["SSIM"], 0.8)
+
+    def test_fastvit(self):
+        if not self.required_envs(
+            [self.image_dataset, self.pretrained_weight, self.oss_repo]
+        ):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/fastvit.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--oss_repo",
+            self.oss_repo,
+            "--pretrained_weight",
+            self.pretrained_weight,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 60)
+                self.assertGreaterEqual(msg["top_5"], 80)
 
     def test_fbnet(self):
         if not self.required_envs([self.image_dataset]):
@@ -1888,6 +1999,42 @@ class TestExampleOssScript(TestQNN):
                     self.assertGreaterEqual(msg["top_1"], 60)
                     self.assertGreaterEqual(msg["top_5"], 85)
 
+    def test_squeezenet(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/squeezenet.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 45)
+                self.assertGreaterEqual(msg["top_5"], 70)
+
     def test_ssd300_vgg16(self):
         if not self.required_envs([self.pretrained_weight, self.oss_repo]):
             self.skipTest("missing required envs")
@@ -1924,114 +2071,6 @@ class TestExampleOssScript(TestQNN):
                 self.fail(msg["Error"])
             else:
                 self.assertGreaterEqual(msg["mAP"], 0.70)
-
-    def test_dino_v2(self):
-        if not self.required_envs([self.image_dataset]):
-            self.skipTest("missing required envs")
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/dino_v2.py",
-            "--dataset",
-            self.image_dataset,
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--device",
-            self.device,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-        ]
-        if self.host:
-            cmds.extend(["--host", self.host])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                self.assertGreaterEqual(msg["top_1"], 70)
-                self.assertGreaterEqual(msg["top_5"], 85)
-
-    def test_esrgan(self):
-        if not self.required_envs():
-            self.skipTest("missing required envs")
-
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/esrgan.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--device",
-            self.device,
-            "--model",
-            self.model,
-            "--default_dataset",
-            "--oss_repo",
-            self.oss_repo,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-        ]
-        if self.host:
-            cmds.extend(["--host", self.host])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                self.assertGreaterEqual(msg["PSNR"], 24)
-                self.assertGreaterEqual(msg["SSIM"], 0.8)
-
-    def test_squeezenet(self):
-        if not self.required_envs([self.image_dataset]):
-            self.skipTest("missing required envs")
-
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/squeezenet.py",
-            "--dataset",
-            self.image_dataset,
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--device",
-            self.device,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-        ]
-        if self.host:
-            cmds.extend(["--host", self.host])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                self.assertGreaterEqual(msg["top_1"], 40)
-                self.assertGreaterEqual(msg["top_5"], 70)
 
 
 class TestExampleQaihubScript(TestQNN):

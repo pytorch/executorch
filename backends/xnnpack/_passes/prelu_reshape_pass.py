@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
+from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.utils import (
     check_or_raise,
     get_param_tensor,
