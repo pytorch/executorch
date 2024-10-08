@@ -9,7 +9,9 @@ from __future__ import annotations
 from typing import cast, Optional, Union
 
 import torch
-from executorch.backends.xnnpack.passes.tag_implicit_q_dq_pass import TagImplicitQDqPass
+from executorch.backends.xnnpack._passes.tag_implicit_q_dq_pass import (
+    TagImplicitQDqPass,
+)
 from executorch.backends.xnnpack.utils.quant_utils import (
     extract_qdq_affine_op_args_for_decomposed_ops,
     is_affine_qdq,

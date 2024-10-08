@@ -254,7 +254,7 @@ class ComputeGraph final {
 #undef GET_AND_CHECK_VAL_AS_TYPE_FNS
 
   inline bool val_is_none(const ValueRef idx) {
-    return values_.at(idx).isNone();
+    return idx == kDummyValueRef ? true : values_.at(idx).isNone();
   }
 
   inline TypeTag get_val_type(const ValueRef idx) {

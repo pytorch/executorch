@@ -103,6 +103,7 @@ NO_DYNAMIC_SHAPE = [
     exir_ops.edge.aten.t_copy.default,
     # Indexing and lookup
     exir_ops.edge.aten.embedding.default,
+    exir_ops.edge.aten.flip.default,
     exir_ops.edge.aten.index_select.default,
     exir_ops.edge.aten.select_copy.int,
     exir_ops.edge.aten.slice_copy.Tensor,

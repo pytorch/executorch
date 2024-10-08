@@ -192,12 +192,6 @@ class GraphBuilder {
     UIntVector dims_fb = tensor_fb->dims();
     const std::vector<int64_t> dims_vector(dims_fb->cbegin(), dims_fb->cend());
 
-    // For scalar tensors, add them as SymInts instead of tensors
-    if (dtype == vkapi::kInt && utils::multiply_integers(dims_vector) == 1) {
-      ref_mapping_[fb_id] = compute_graph_->add_symint(0);
-      return;
-    }
-
     utils::GPUMemoryLayout memory_layout =
         tensor_fb->memory_layout() == vkgraph::VkMemoryLayout::DEFAULT_LAYOUT
         ? compute_graph_->suggested_memory_layout(dims_vector)
