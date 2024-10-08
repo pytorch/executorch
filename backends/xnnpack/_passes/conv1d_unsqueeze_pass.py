@@ -7,7 +7,7 @@
 from typing import Optional
 
 import torch
-from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
+from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
 from executorch.backends.xnnpack.utils.utils import get_param_tensor, is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
