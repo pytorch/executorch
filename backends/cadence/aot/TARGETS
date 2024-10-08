@@ -22,6 +22,7 @@ python_library(
     deps = [
         "fbsource//third-party/pypi/tabulate:tabulate",
         "//caffe2:torch",
+        "//executorch/exir:lib",
         "//executorch/exir:memory",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/dialects/edge:lib",

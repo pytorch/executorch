@@ -15,9 +15,9 @@ python_unittest(
 )
 
 python_unittest(
-    name = "test_spinquant_transforms",
+    name = "test_pre_quantization_transforms",
     srcs = [
-        "test_spinquant_transforms.py",
+        "test_pre_quantization_transforms.py",
     ],
     deps = [
         "//caffe2:torch",

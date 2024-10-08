@@ -254,7 +254,7 @@ class ComputeGraph final {
 #undef GET_AND_CHECK_VAL_AS_TYPE_FNS
 
   inline bool val_is_none(const ValueRef idx) {
-    return values_.at(idx).isNone();
+    return idx == kDummyValueRef ? true : values_.at(idx).isNone();
   }
 
   inline TypeTag get_val_type(const ValueRef idx) {
@@ -376,6 +376,19 @@ class ComputeGraph final {
 
   std::string extract_string(const ValueRef idx) {
     return values_.at(idx).toString();
+  }
+
+  template <
+      typename T,
+      typename std::enable_if<
+          std::is_integral<T>::value && std::is_signed<T>::value,
+          int>::type = 0>
+  T extract_whcn_dim(const ValueRef idx, const int64_t ndim) {
+    T dim = extract_scalar<T>(idx);
+    // Normalize dim to account for negative indexing
+    dim = (dim % ndim + ndim) % ndim;
+    // Assume original value is NCHW ordering, obtain the WHCN ordering
+    return ndim - 1 - dim;
   }
 
   //
@@ -541,6 +554,14 @@ class ComputeGraph final {
   void set_symint(const ValueRef idx, const int32_t val);
 
   int32_t read_symint(const ValueRef idx);
+
+  inline void set_val_as_input(const ValueRef idx) {
+    inputs_.push_back({idx, kDummyValueRef});
+  }
+
+  inline void set_val_as_output(const ValueRef idx) {
+    outputs_.push_back({idx, kDummyValueRef});
+  }
 
   /*
    * Convenience function to add an input tensor along with its staging buffer

@@ -48,6 +48,7 @@ from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 soc_to_chipset_map = {
+    "SSG2115P": QcomChipset.SSG2115P,
     "SM8650": QcomChipset.SM8650,
     "SM8550": QcomChipset.SM8550,
     "SM8475": QcomChipset.SM8475,
@@ -150,7 +151,7 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:
 
 def annotate_linear_16a8w_in_affine_layer(gm: torch.fx.GraphModule) -> None:
     from executorch.backends.qualcomm.quantizer.quantizer import (
-        get_ptq_per_channel_weight_config,
+        get_ptq_per_channel_quant_config,
         QuantizationConfig,
     )
     from executorch.backends.qualcomm.quantizer.utils import QUANT_ANNOTATION_KEY
@@ -172,7 +173,7 @@ def annotate_linear_16a8w_in_affine_layer(gm: torch.fx.GraphModule) -> None:
             _annotated=True,
         )
 
-    quantization_config_16a8w_per_channel = get_ptq_per_channel_weight_config(
+    quantization_config_16a8w_per_channel = get_ptq_per_channel_quant_config(
         torch.uint16, weight_dtype=torch.int8
     )
     for node in gm.graph.nodes:
@@ -570,11 +571,11 @@ if __name__ == "__main__":
         inference(args, args.pre_gen_pte)
         exit(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
 
-    compile(args)
     if args.compile_only:
         exit(f"Finish compile_only and save to {args.artifact}")
 
     try:
+        compile(args)
         inference(args)
     except Exception as e:
         if args.ip and args.port != -1:

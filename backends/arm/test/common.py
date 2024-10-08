@@ -6,6 +6,7 @@
 
 import logging
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -57,11 +58,17 @@ def pytest_collection_modifyitems(config, items):
 
 
 def load_libquantized_ops_aot_lib():
+    so_ext = {
+        "Darwin": "dylib",
+        "Linux": "so",
+        "Windows": "dll",
+    }.get(platform.system(), None)
+
     find_lib_cmd = [
         "find",
         "cmake-out-aot-lib",
         "-name",
-        "libquantized_ops_aot_lib.so",
+        f"libquantized_ops_aot_lib.{so_ext}",
     ]
     res = subprocess.run(find_lib_cmd, capture_output=True)
     if res.returncode == 0:

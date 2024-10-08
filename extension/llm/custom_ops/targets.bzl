@@ -13,11 +13,13 @@ def define_common_targets():
                 "op_fallback.cpp",
                 "op_fast_hadamard_transform.cpp",
                 "op_sdpa.cpp",
+                "op_update_quantized_cache.cpp",
             ],
             exported_headers = [
                 "op_fallback.h",
                 "op_fast_hadamard_transform.h",
                 "op_sdpa.h",
+                "op_update_quantized_cache.h",
             ],
             exported_deps = [
                 "//executorch/runtime/kernel:kernel_includes",

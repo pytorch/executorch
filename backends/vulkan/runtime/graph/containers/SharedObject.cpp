@@ -12,6 +12,10 @@
 
 namespace vkcompute {
 
+bool SharedObject::has_user(const ValueRef idx) const {
+  return std::find(users.begin(), users.end(), idx) != users.end();
+}
+
 void SharedObject::add_user(ComputeGraph* const graph, const ValueRef idx) {
   vTensorPtr t = graph->get_tensor(idx);
 
