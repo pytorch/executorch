@@ -18,6 +18,7 @@ on:
       - build/test_ios_ci.sh
       - examples/demo-apps/apple_ios/**
       - extension/apple/**
+      - extension/benchmark/apple/**
       - extension/module/**
   workflow_dispatch:
 
@@ -272,14 +273,14 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
           build/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack
 
-        mkdir -p extension/apple/Benchmark/Frameworks
+        mkdir -p extension/benchmark/apple/Benchmark/Frameworks
         for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
-          cp -r "cmake-out/${FRAMEWORK}.xcframework" extension/apple/Benchmark/Frameworks/
+          cp -r "cmake-out/${FRAMEWORK}.xcframework" extension/benchmark/apple/Benchmark/Frameworks/
         ) done
         echo "::endgroup::"
 
         echo "::group::Build ExecuTorch benchmark app"
-        mkdir -p extension/apple/Benchmark/Models
+        mkdir -p extension/benchmark/apple/Benchmark/Models
         ${CONDA_RUN} --no-capture-output \
           build/build_apple_llm_demo.sh ${ARTIFACTS_DIR_NAME}
         echo "::endgroup::"

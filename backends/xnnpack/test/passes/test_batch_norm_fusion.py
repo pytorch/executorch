@@ -8,7 +8,7 @@ import unittest
 from typing import Tuple
 
 import torch
-from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
+from executorch.backends.xnnpack._passes.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
 from executorch.backends.xnnpack.test.tester import RunPasses, Tester
