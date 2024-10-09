@@ -520,6 +520,7 @@
 <span class="kn">from</span> <span class="nn">executorch.devtools.inspector._inspector_utils</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">calculate_time_scale_factor</span><span class="p">,</span>
     <span class="n">create_debug_handle_to_op_node_mapping</span><span class="p">,</span>
+    <span class="n">display_or_print_df</span><span class="p">,</span>
     <span class="n">EDGE_DIALECT_GRAPH_KEY</span><span class="p">,</span>
     <span class="n">EXCLUDED_COLUMNS_WHEN_PRINTING</span><span class="p">,</span>
     <span class="n">EXCLUDED_EVENTS_WHEN_PRINTING</span><span class="p">,</span>
@@ -536,8 +537,6 @@
     <span class="n">verify_debug_data_equivalence</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">ExportedProgram</span>
-
-<span class="kn">from</span> <span class="nn">tabulate</span> <span class="kn">import</span> <span class="n">tabulate</span>
 
 
 <span class="n">log</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">Logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
@@ -1649,25 +1648,7 @@
             <span class="p">]</span>
         <span class="n">filtered_column_df</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-        <span class="k">try</span><span class="p">:</span>
-            <span class="kn">from</span> <span class="nn">IPython</span> <span class="kn">import</span> <span class="n">get_ipython</span>
-            <span class="kn">from</span> <span class="nn">IPython.display</span> <span class="kn">import</span> <span class="n">display</span>
-
-            <span class="k">def</span> <span class="nf">style_text_size</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">12</span><span class="p">):</span>
-                <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;font-size: </span><span class="si">{</span><span class="n">size</span><span class="si">}</span><span class="s2">px&quot;</span>
-
-            <span class="k">if</span> <span class="n">get_ipython</span><span class="p">()</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">styled_df</span> <span class="o">=</span> <span class="n">filtered_column_df</span><span class="o">.</span><span class="n">style</span><span class="o">.</span><span class="n">applymap</span><span class="p">(</span><span class="n">style_text_size</span><span class="p">)</span>
-                <span class="n">display</span><span class="p">(</span><span class="n">styled_df</span><span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span>
-                    <span class="s2">&quot;Environment unable to support IPython. Fall back to print().&quot;</span>
-                <span class="p">)</span>
-        <span class="k">except</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span>
-                <span class="n">tabulate</span><span class="p">(</span><span class="n">filtered_column_df</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="s2">&quot;keys&quot;</span><span class="p">,</span> <span class="n">tablefmt</span><span class="o">=</span><span class="s2">&quot;fancy_grid&quot;</span><span class="p">),</span>
-                <span class="n">file</span><span class="o">=</span><span class="n">file</span><span class="p">,</span>
-            <span class="p">)</span>
+        <span class="n">display_or_print_df</span><span class="p">(</span><span class="n">filtered_column_df</span><span class="p">,</span> <span class="n">file</span><span class="p">)</span>
 
     <span class="c1"># TODO: write unit test</span>
     <span class="k">def</span> <span class="nf">find_total_for_module</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
