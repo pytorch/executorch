@@ -44,7 +44,7 @@ from executorch.exir.operator.convert import is_out_variant
 from executorch.exir.types import ValueSpec
 
 from torch._C import _EnableTorchFunction, DisableTorchFunctionSubclass  # @manual
-from torch._decomp import core_aten_decompositions, get_decompositions
+from torch._decomp import get_decompositions
 from torch._dynamo.guards import Guard
 from torch._functorch.eager_transforms import _maybe_unwrap_functional_tensor
 from torch.func import functionalize
@@ -631,7 +631,12 @@ def _default_decomposition_table(
         # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.e...
         return get_decompositions(decomp_opset)
     # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.exir....
-    return core_aten_decompositions()
+    try:
+        from torch.export import default_decompositions
+        return default_decompositions()
+    except ImportError:
+        from torch._decomp import core_aten_decompositions
+        return core_aten_decompositions()
 
 
 def dynamo_trace(
