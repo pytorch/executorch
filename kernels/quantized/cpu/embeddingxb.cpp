@@ -46,12 +46,14 @@ weight_value(const unsigned char* w_data, int32_t index, int32_t weight_nbit) {
       return (int32_t)((w_data[index] >> 4) & 0x0F) - 8;
     }
   }
+
+  ET_CHECK_MSG(false, "invalid weight_nbit: %zd", weight_nbit);
 }
 
 static inline int32_t get_embedding_dim(
     int32_t packed_dim,
     int32_t weight_nbit) {
-  assert(8 % weight_nbit == 0);
+  ET_CHECK_MSG(8 % weight_nbit == 0, "invalid embedding dim");
   int packed_values_per_byte = 8 / weight_nbit;
   return packed_dim * packed_values_per_byte;
 }

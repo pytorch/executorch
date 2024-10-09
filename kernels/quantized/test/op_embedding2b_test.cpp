@@ -119,6 +119,7 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbeddingDeath1) {
   Tensor indices = tfl.make({3}, {0, 2, 1});
   Tensor out = tf.zeros({3, 4});
 
+  // qvals are incompatible shape with scales/zeros
   ET_EXPECT_DEATH(
       quantized_embedding_2bit_out(
           qweight,
@@ -146,6 +147,35 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbeddingDeath2) {
   Tensor indices = tfl.make({3}, {0, 2, 1});
   Tensor out = tf.zeros({3, 4});
 
+  // qvals are incompatible shape with scales/zeros
+  ET_EXPECT_DEATH(
+      quantized_embedding_2bit_out(
+          qweight,
+          weight_scales,
+          weight_zero_points,
+          quant_min,
+          quant_max,
+          indices,
+          out),
+      "");
+}
+
+TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbeddingDeath3) {
+  et_pal_init();
+  TensorFactory<ScalarType::Byte> tfb;
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  int64_t quant_min = -2;
+  int64_t quant_max = 1;
+
+  Tensor weight_scales = tf.make({3}, {1.0, 1.0, 1.0});
+  Tensor weight_zero_points = tf.make({3}, {0.0, 0.0, 0.0});
+  Tensor qweight = tfb.make({3, 2}, {236, 134, 228, 111, 12, 14});
+  Tensor indices = tfl.make({3}, {0, 2, 1});
+  Tensor out = tf.zeros({3, 2});
+
+  // wrong output shape
   ET_EXPECT_DEATH(
       quantized_embedding_2bit_out(
           qweight,
