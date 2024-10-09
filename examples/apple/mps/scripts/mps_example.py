@@ -195,18 +195,15 @@ if __name__ == "__main__":
             edge_compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         ).to_executorch(config=ExecutorchBackendConfig(extract_delegate_segments=False))
 
-    model_name = f"{args.model_name}_mps"
+    dtype = "float16" if args.use_fp16 else "float32"
+    model_name = f"{args.model_name}_mps_{dtype}"
 
     if args.bundled:
         expected_output = model(*example_inputs)
         bundled_program_buffer = get_bundled_program(
             executorch_program, example_inputs, expected_output
         )
-        model_name = f"{model_name}_bundled"
-        extension = "fp16"
-        if not args.use_fp16:
-            extension = "fp32"
-        model_name = f"{model_name}_{extension}.pte"
+        model_name = f"{model_name}_bundled.pte"
 
     if args.generate_etrecord:
         etrecord_path = "etrecord.bin"

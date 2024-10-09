@@ -197,6 +197,11 @@ test_model_with_coreml() {
   fi
 }
 
+test_model_with_mps() {
+  "${PYTHON_EXECUTABLE}" -m examples.apple.mps.scripts.mps_example --model_name="${MODEL_NAME}" --use_fp16
+  EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
+}
+
 if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
   test_model
@@ -209,6 +214,12 @@ elif [[ "${BACKEND}" == "qnn" ]]; then
 elif [[ "${BACKEND}" == "coreml" ]]; then
   echo "Testing ${MODEL_NAME} with coreml..."
   test_model_with_coreml
+  if [[ $? -eq 0 ]]; then
+    prepare_artifacts_upload
+  fi
+elif [[ "${BACKEND}" == "mps" ]]; then
+  echo "Testing ${MODEL_NAME} with mps..."
+  test_model_with_mps
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
