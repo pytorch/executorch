@@ -18,12 +18,9 @@ class RunnerHolder: ObservableObject {
 
 extension UIImage {
   func resized(to newSize: CGSize) -> UIImage {
-    let format = UIGraphicsImageRendererFormat.default()
-    let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
-    let image = renderer.image { _ in
+    UIGraphicsImageRenderer(size: newSize).image { _ in
       draw(in: CGRect(origin: .zero, size: newSize))
     }
-    return image
   }
 
   func toRGBArray() -> [UInt8]? {
@@ -71,10 +68,10 @@ extension UIImage {
         let g = UInt8(pixelData[pixelIndex + 1])
         let b = UInt8(pixelData[pixelIndex + 2])
 
-        let rgbIndex = (y * width + x)
+        let rgbIndex = (y * width + x) * 3
         rgbArray[rgbIndex] = r
-        rgbArray[rgbIndex + height * width] = g
-        rgbArray[rgbIndex + 2 * height * width] = b
+        rgbArray[rgbIndex + 1] = g
+        rgbArray[rgbIndex + 2] = b
       }
     }
 
@@ -207,33 +204,34 @@ struct ContentView: View {
         }
       }
       .navigationBarTitle(title, displayMode: .inline)
-      .navigationBarItems(leading:
-                            Button(action: {
-                              showingSettings.toggle()
-                            }) {
-                              Image(systemName: "gearshape")
-                                .imageScale(.large)
-                            })
-      .navigationBarItems(trailing:
-                            HStack {
-                              Menu {
-                                Section(header: Text("Memory")) {
-                                  Text("Used: \(resourceMonitor.usedMemory) Mb")
-                                  Text("Available: \(resourceMonitor.availableMemory) Mb")
-                                }
-                              } label: {
-                                Text("\(resourceMonitor.usedMemory) Mb")
-                              }
-                              .onAppear {
-                                resourceMonitor.start()
-                              }
-                              .onDisappear {
-                                resourceMonitor.stop()
-                              }
-                              Button(action: { showingLogs = true }) {
-                                Image(systemName: "list.bullet.rectangle")
-                              }
-                            }
+      .navigationBarItems(
+        leading:
+          Button(action: {
+            showingSettings.toggle()
+          }) {
+            Image(systemName: "gearshape")
+              .imageScale(.large)
+          },
+        trailing:
+          HStack {
+            Menu {
+              Section(header: Text("Memory")) {
+                Text("Used: \(resourceMonitor.usedMemory) Mb")
+                Text("Available: \(resourceMonitor.usedMemory) Mb")
+              }
+            } label: {
+              Text("\(resourceMonitor.usedMemory) Mb")
+            }
+            .onAppear {
+              resourceMonitor.start()
+            }
+            .onDisappear {
+              resourceMonitor.stop()
+            }
+            Button(action: { showingLogs = true }) {
+              Image(systemName: "list.bullet.rectangle")
+            }
+          }
       )
       .sheet(isPresented: $showingLogs) {
         NavigationView {
@@ -274,20 +272,24 @@ struct ContentView: View {
     isGenerating = true
     shouldStopGenerating = false
     shouldStopShowingToken = false
-    let text = prompt
+    let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     let seq_len = 768 // text: 256, vision: 768
     let modelPath = resourceManager.modelPath
     let tokenizerPath = resourceManager.tokenizerPath
-    let useLlama = modelPath.range(of: "llama", options: .caseInsensitive) != nil
+    let useLlama = modelPath.lowercased().contains("llama")
 
     prompt = ""
     hideKeyboard()
     showingSettings = false
 
+    messages.append(Message(text: text))
+    messages.append(Message(type: useLlama ? .llamagenerated : .llavagenerated))
+
     runnerQueue.async {
       defer {
         DispatchQueue.main.async {
           isGenerating = false
+          selectedImage = nil
         }
       }
 
@@ -299,10 +301,7 @@ struct ContentView: View {
 
       guard !shouldStopGenerating else { return }
       if useLlama {
-        messages.append(Message(text: text))
-        messages.append(Message(type: .llamagenerated))
-
-        if let runner = runnerHolder.runner, !runner.isloaded() {
+        if let runner = runnerHolder.runner, !runner.isLoaded() {
           var error: Error?
           let startLoadTime = Date()
           do {
@@ -332,10 +331,7 @@ struct ContentView: View {
           }
         }
       } else {
-        messages.append(Message(text: text))
-        messages.append(Message(type: .llavagenerated))
-
-        if let runner = runnerHolder.llavaRunner, !runner.isloaded() {
+        if let runner = runnerHolder.llavaRunner, !runner.isLoaded() {
           var error: Error?
           let startLoadTime = Date()
           do {
@@ -394,7 +390,7 @@ struct ContentView: View {
             if token != llava_prompt {
               if token == "</s>" {
                 shouldStopGenerating = true
-                runnerHolder.runner?.stop()
+                runnerHolder.llavaRunner?.stop()
               } else {
                 tokens.append(token)
                 if tokens.count > 2 {
@@ -410,7 +406,7 @@ struct ContentView: View {
                   }
                 }
                 if shouldStopGenerating {
-                  runnerHolder.runner?.stop()
+                  runnerHolder.llavaRunner?.stop()
                 }
               }
             }
@@ -421,7 +417,7 @@ struct ContentView: View {
           try runnerHolder.runner?.generate(llama3_prompt, sequenceLength: seq_len) { token in
 
             NSLog(">>> token={\(token)}")
-            if token != llama3_prompt && !shouldStopShowingToken {
+            if token != llama3_prompt {
               // hack to fix the issue that extension/llm/runner/text_token_generator.h
               // keeps generating after <|eot_id|>
               if token == "<|eot_id|>" {
@@ -485,6 +481,7 @@ struct ContentView: View {
       }
       runnerQueue.async {
         runnerHolder.runner = nil
+        runnerHolder.llavaRunner = nil
       }
       switch pickerType {
       case .model:
