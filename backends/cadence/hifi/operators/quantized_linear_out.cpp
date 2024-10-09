@@ -15,7 +15,7 @@ namespace impl {
 namespace HiFi {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
 
 void quantized_linear_out(
@@ -28,7 +28,7 @@ void quantized_linear_out(
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
-    const exec_aten::optional<Tensor>& offset,
+    const executorch::aten::optional<Tensor>& offset,
     Tensor& out) {
   // input comes in shape [leading_dims, in_dim]
   // weight comes in shape [out_dim, in_dim]
