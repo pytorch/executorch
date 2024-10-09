@@ -159,3 +159,33 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbeddingDeath2) {
           out),
       "");
 }
+
+TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbeddingDeath3) {
+  et_pal_init();
+  TensorFactory<ScalarType::Byte> tfb;
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  int64_t quant_min = -2;
+  int64_t quant_max = 1;
+
+  Tensor weight_scales =
+      tf.make({2, 3}, {1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0});
+  Tensor weight_zero_points = tf.make({2, 3}, {0, 0, 0, 0, 0, 0, 0, 0, 0});
+  Tensor qweight = tfb.make({2, 1}, {236, 134, 228});
+  Tensor indices = tfl.make({2}, {0, 2});
+  Tensor out = tf.zeros({2, 8});
+
+  // scales/zeros imply groupsize 3, which does not divide embed dimension from
+  // qvals (8)
+  ET_EXPECT_DEATH(
+      quantized_embedding_2bit_out(
+          qweight,
+          weight_scales,
+          weight_zero_points,
+          quant_min,
+          quant_max,
+          indices,
+          out),
+      "");
+}

@@ -75,6 +75,27 @@ Tensor& quantized_embedding_2bit_out(
 }
 
 Tensor& quantized_embedding_2bit_dtype_out(
+    const Tensor& weight,
+    const Tensor& weight_scales,
+    const optional<Tensor>& opt_weight_zero_points,
+    int64_t weight_quant_min,
+    int64_t weight_quant_max,
+    const Tensor& indices,
+    exec_aten::optional<ScalarType> out_dtype,
+    Tensor& out) {
+  return quantized_embedding_xbit_dtype_out(
+      weight,
+      weight_scales,
+      opt_weight_zero_points,
+      weight_quant_min,
+      weight_quant_max,
+      indices,
+      out_dtype,
+      out,
+      2);
+}
+
+Tensor& quantized_embedding_2bit_dtype_out(
     KernelRuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
