@@ -25,7 +25,7 @@ std::size_t std::hash<CustomMemTensorInfo>::operator()(
     hash_val ^= info.shape[i];
   }
   hash_val ^= std::hash<uint32_t>()(info.rank);
-  hash_val ^= std::hash<exec_aten::ScalarType>()(info.dtype);
+  hash_val ^= std::hash<executorch::aten::ScalarType>()(info.dtype);
   return hash_val;
 }
 
@@ -42,9 +42,11 @@ bool operator==(
   return is_same;
 }
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
 
 namespace {
 
@@ -200,5 +202,5 @@ Error SharedBuffer::UnLoad() {
   return Error::Ok;
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

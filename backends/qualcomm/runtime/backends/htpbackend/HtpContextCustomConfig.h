@@ -16,8 +16,8 @@
 
 #include "HTP/QnnHtpContext.h"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 
 using namespace qnn_delegate;
@@ -46,5 +46,5 @@ class HtpContextCustomConfig {
 };
 
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -24,8 +24,8 @@
 #include <executorch/backends/qualcomm/schema_generated.h>
 
 #include <memory>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 typedef enum { UNINITIALIZED, INITIALIZED } BackendInitializeState;
 
@@ -70,5 +70,5 @@ class QnnBackendFactory {
       const QnnExecuTorchOptions* options);
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

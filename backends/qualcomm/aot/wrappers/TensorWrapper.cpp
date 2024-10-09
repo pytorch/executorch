@@ -12,9 +12,12 @@
 #include <cstring>
 #include <limits>
 #include <numeric>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
+
 std::uint32_t GetDataTypeSize(Qnn_DataType_t data_type) {
   std::uint32_t size = 0;
 
@@ -212,5 +215,5 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(const Qnn_Tensor_t& tensor) {
       QNN_VER_PTR(tensor)->clientBuf.data);
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch
