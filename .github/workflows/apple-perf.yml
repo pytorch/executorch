@@ -169,6 +169,8 @@ jobs:
             DELEGATE_CONFIG="xnnpack+custom+qe"
           elif [[ ${{ matrix.delegate }} == "coreml" ]]; then
             DELEGATE_CONFIG="coreml"
+          elif [[ ${{ matrix.delegate }} == "mps" ]]; then
+            DELEGATE_CONFIG="mps"
           fi
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
             bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
