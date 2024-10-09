@@ -13,9 +13,9 @@ namespace impl {
 namespace HiFi {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
-using ScalarType = exec_aten::ScalarType;
 
 // Quantize the input tensor (PT2 version). Note that quant_<min,max> are not
 // used in any computation.

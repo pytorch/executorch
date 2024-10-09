@@ -12,7 +12,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
 
 void embedding_out(
