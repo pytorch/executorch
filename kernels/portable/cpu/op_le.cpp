@@ -17,6 +17,7 @@ Tensor& le_tensor_out(
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "le.Tensor_out";
   return internal::comparison_tensor_out<op_name>(ctx, a, b, out);
 }
@@ -26,6 +27,7 @@ Tensor& le_scalar_out(
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "le.Scalar_out";
   return internal::comparison_scalar_out<op_name>(ctx, a, b, out);
 }
