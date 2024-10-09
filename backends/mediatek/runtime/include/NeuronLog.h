@@ -16,8 +16,8 @@
 #include <cstdlib>
 #include <string>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace neuron {
 
 #define AndroidLog(priority, tag, format, ...) \
@@ -83,5 +83,5 @@ inline int ReadSystemProperty(std::string& property) {
 }
 
 } // namespace neuron
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

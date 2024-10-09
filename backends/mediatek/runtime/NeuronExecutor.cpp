@@ -17,8 +17,8 @@
 #define RESTORE_DLA_EXTENSION_OPERATION_TYPE 0x0000
 #define RESTORE_DLA_EXTENSION_NAME "com.mediatek.compiled_network"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace neuron {
 
 NeuronExecutor::NeuronExecutor(){};
@@ -164,5 +164,5 @@ int NeuronExecutor::LoadFromCompiledNetwork(
 }
 
 } // namespace neuron
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -19,8 +19,20 @@
 #include <new>
 #include <unordered_set>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
+namespace neuron {
+
+using executorch::runtime::ArrayRef;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::Result;
 
 const char kHighAddrKey[] = "HighAddr";
 const char kImportForeverKey[] = "ImportForever";
@@ -94,8 +106,8 @@ Error NeuronExecuTorchDelegate::execute(
     return Error::InvalidState;
   };
 
-  auto allocator =
-      dynamic_cast<neuron::BufferAllocator*>(context.get_temp_allocator());
+  auto allocator = dynamic_cast<torch::executor::neuron::BufferAllocator*>(
+      context.get_temp_allocator());
   size_t inputCount = mInputSizes.size(), outputCount = mOutputSizes.size();
 
   for (int i = 0; i < inputCount; i++) {
@@ -175,11 +187,13 @@ int NeuronExecuTorchDelegate::HintNeuronBackend(EValue** args) const {
   return NEURON_NO_ERROR;
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace neuron
+} // namespace backends
+} // namespace executorch
 
 namespace {
-auto cls = torch::executor::NeuronBackend();
-torch::executor::Backend backend{"NeuropilotBackend", &cls};
-static auto success_with_compiler = register_backend(backend);
+auto cls = executorch::backends::neuron::NeuronBackend();
+executorch::runtime::Backend backend{"NeuropilotBackend", &cls};
+static auto success_with_compiler =
+    executorch::runtime::register_backend(backend);
 } // namespace

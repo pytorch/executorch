@@ -23,22 +23,24 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
+namespace neuron {
 
 class NeuronBackend final : public ::executorch::runtime::BackendInterface {
  public:
-  Result<DelegateHandle*> init(
-      BackendInitContext& context,
-      FreeableBuffer* processed,
-      ArrayRef<CompileSpec> compile_specs) const override;
+  ::executorch::runtime::Result<::executorch::runtime::DelegateHandle*> init(
+      ::executorch::runtime::BackendInitContext& context,
+      ::executorch::runtime::FreeableBuffer* processed,
+      ::executorch::runtime::ArrayRef<::executorch::runtime::CompileSpec>
+          compile_specs) const override;
 
-  Error execute(
-      ET_UNUSED BackendExecutionContext& context,
-      DelegateHandle* handle,
-      EValue** args) const override;
+  ::executorch::runtime::Error execute(
+      ET_UNUSED ::executorch::runtime::BackendExecutionContext& context,
+      ::executorch::runtime::DelegateHandle* handle,
+      ::executorch::runtime::EValue** args) const override;
 
-  void destroy(DelegateHandle* handle) const override;
+  void destroy(::executorch::runtime::DelegateHandle* handle) const override;
 
   bool is_available() const override;
 };
@@ -111,8 +113,9 @@ class NeuronExecuTorchDelegate {
     return NEURON_NO_ERROR;
   }
 
-  Error execute(ET_UNUSED BackendExecutionContext& context, EValue** args)
-      const;
+  ::executorch::runtime::Error execute(
+      ET_UNUSED ::executorch::runtime::BackendExecutionContext& context,
+      ::executorch::runtime::EValue** args) const;
 
  private:
   template <bool isInput>
@@ -145,7 +148,7 @@ class NeuronExecuTorchDelegate {
     return NEURON_NO_ERROR;
   }
 
-  int HintNeuronBackend(EValue** args) const;
+  int HintNeuronBackend(::executorch::runtime::EValue** args) const;
 
  private:
   std::vector<size_t> mInputSizes;
@@ -168,5 +171,6 @@ class NeuronExecuTorchDelegate {
   NeuronExecuTorchDelegate operator=(const NeuronExecuTorchDelegate&);
 };
 
-} // namespace executor
-} // namespace torch
+} // namespace neuron
+} // namespace backends
+} // namespace executorch
