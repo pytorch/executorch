@@ -108,7 +108,7 @@ def main(args):
     )
 
     inputs, targets, input_list = dataset.lr, dataset.hr, dataset.get_input_list()
-    pte_filename = "edsr_qnn"
+    pte_filename = "edsr_qnn_q8"
     instance = EdsrModel()
 
     build_executorch_binary(

@@ -78,7 +78,7 @@ def main(args):
             dataset_path=f"{args.dataset}",
             data_size=data_num,
         )
-    pte_filename = "mv2_qnn"
+    pte_filename = "mv2_qnn_q8"
     instance = MV2Model()
     build_executorch_binary(
         instance.get_eager_model().eval(),

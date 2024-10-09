@@ -78,7 +78,7 @@ def main(args):
             dataset_path=f"{args.dataset}",
             data_size=data_num,
         )
-    pte_filename = "ic3_qnn"
+    pte_filename = "ic3_qnn_q8"
     instance = InceptionV3Model()
     build_executorch_binary(
         instance.get_eager_model().eval(),
