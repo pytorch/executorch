@@ -29,8 +29,8 @@
 #include <fbjni/fbjni.h>
 #if ET_USE_THREADPOOL == 1
 #include <cpuinfo.h>
-#include <pthreadpool.h>
 #include <executorch/extension/threadpool/threadpool.h>
+#include <pthreadpool.h>
 #endif
 
 #ifdef __ANDROID__
