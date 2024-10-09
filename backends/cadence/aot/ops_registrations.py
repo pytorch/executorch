@@ -164,7 +164,7 @@ def quantized_layer_norm_meta(
     output_scale: float,
     output_zero_point: int,
 ) -> torch.Tensor:
-    return input.new_empty(input.size(), dtype=torch.uint8)
+    return input.new_empty(input.size(), dtype=input.dtype)
 
 
 @register_fake("cadence::quantized_relu")
