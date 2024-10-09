@@ -21,6 +21,7 @@ public class ModelUtils {
         return VISION_MODEL;
       case LLAMA_3:
       case LLAMA_3_1:
+      case LLAMA_3_2:
       default:
         return TEXT_MODEL;
     }

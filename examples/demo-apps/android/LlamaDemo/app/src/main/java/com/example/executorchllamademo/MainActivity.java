@@ -107,10 +107,6 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
   }
 
   private void setLocalModel(String modelPath, String tokenizerPath, float temperature) {
-    if (mModule != null) {
-      mModule.resetNative();
-      mModule = null;
-    }
     Message modelLoadingMessage = new Message("Loading model...", false, MessageType.SYSTEM, 0);
     ETLogging.getInstance().log("Loading model " + modelPath + " with tokenizer " + tokenizerPath);
     runOnUiThread(
@@ -119,6 +115,12 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
           mMessageAdapter.add(modelLoadingMessage);
           mMessageAdapter.notifyDataSetChanged();
         });
+    if (mModule != null) {
+      ETLogging.getInstance().log("Start deallocating existing module instance");
+      mModule.resetNative();
+      mModule = null;
+      ETLogging.getInstance().log("Completed deallocating existing module instance");
+    }
     long runStartTime = System.currentTimeMillis();
     mModule =
         new LlamaModule(

@@ -142,10 +142,18 @@ def define_common_targets(is_fbcode = False):
         VK_API_DEPS += [
             "fbsource//third-party/volk:volk",
         ]
+        VK_API_DEPS += select({
+            "DEFAULT": [],
+            "ovr_config//os:android": ["fbsource//third-party/toolchains:android"],
+        })
         VK_API_PREPROCESSOR_FLAGS += [
             "-DUSE_VULKAN_WRAPPER",
             "-DUSE_VULKAN_VOLK",
         ]
+        VK_API_PREPROCESSOR_FLAGS += select({
+            "DEFAULT": [],
+            "ovr_config//os:android": ["-DVK_ANDROID_external_memory_android_hardware_buffer"],
+        })
     else:
         VK_API_DEPS += [
             "fbsource//third-party/swiftshader:swiftshader_vk_headers",

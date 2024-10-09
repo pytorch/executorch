@@ -205,7 +205,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             ":broadcast_util",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/...", "@EXECUTORCH_CLIENTS"],
     )
 
     runtime.cxx_library(
@@ -253,5 +253,6 @@ def define_common_targets():
                 "//executorch/extension/llm/custom_ops/...",
                 "//executorch/kernels/portable/cpu/...",
                 "//executorch/kernels/quantized/...",
+                "@EXECUTORCH_CLIENTS",
             ],
         )

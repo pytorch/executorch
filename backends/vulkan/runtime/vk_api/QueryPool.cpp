@@ -30,7 +30,7 @@ constexpr int64_t kDefaultNsPerTick = 52; // lround(52.08f);
 } // namespace
 
 #define EARLY_RETURN_IF_UNINITIALIZED() \
-  if (VK_NULL_HANDLE == querypool_) {   \
+  if (querypool_ == VK_NULL_HANDLE) {   \
     return;                             \
   }
 
@@ -178,7 +178,7 @@ std::string stringize(const VkExtent3D& extents) {
 }
 std::vector<std::tuple<std::string, uint32_t, uint64_t, uint64_t>>
 QueryPool::get_shader_timestamp_data() {
-  if (VK_NULL_HANDLE == querypool_) {
+  if (querypool_ == VK_NULL_HANDLE) {
     return {};
   }
   std::lock_guard<std::mutex> lock(mutex_);

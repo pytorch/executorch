@@ -13,11 +13,13 @@ def define_common_targets():
                 "op_fallback.cpp",
                 "op_fast_hadamard_transform.cpp",
                 "op_sdpa.cpp",
+                "op_update_quantized_cache.cpp",
             ],
             exported_headers = [
                 "op_fallback.h",
                 "op_fast_hadamard_transform.h",
                 "op_sdpa.h",
+                "op_update_quantized_cache.h",
             ],
             exported_deps = [
                 "//executorch/runtime/kernel:kernel_includes",
@@ -113,6 +115,20 @@ def define_common_targets():
         name = "preprocess_custom_ops_py",
         srcs = [
             "preprocess_custom_ops.py",
+        ],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        deps = [
+            "//caffe2:torch",
+        ],
+    )
+
+    runtime.python_library(
+        name = "model_sharding_py",
+        srcs = [
+            "model_sharding.py",
         ],
         visibility = [
             "//executorch/...",

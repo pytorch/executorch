@@ -24,8 +24,9 @@ class TensorResizerFriend;
 } // namespace runtime
 } // namespace executorch
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 /**
  * Manages the storage behind an ETensor (torch::executor::Tensor).
@@ -266,16 +267,18 @@ class TensorImpl {
  * Compute the number of elements based on the sizes of a tensor.
  */
 ssize_t compute_numel(
-    const ::torch::executor::TensorImpl::SizesType* sizes,
+    const ::executorch::runtime::etensor::TensorImpl::SizesType* sizes,
     ssize_t dim);
 
-} // namespace executor
-} // namespace torch
-
-namespace executorch {
-namespace runtime {
-// TODO(T197294990): Remove these deprecated aliases once all users have moved
-// to the new `::executorch` namespaces.
-using torch::executor::compute_numel;
+} // namespace etensor
 } // namespace runtime
 } // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::etensor::compute_numel;
+using ::executorch::runtime::etensor::TensorImpl;
+} // namespace executor
+} // namespace torch

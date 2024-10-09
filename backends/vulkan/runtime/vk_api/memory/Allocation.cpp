@@ -65,7 +65,7 @@ Allocation::~Allocation() {
   // Do not destroy the VmaAllocation if this class instance is a copy of some
   // other class instance, since this means that this class instance does not
   // have ownership of the underlying resource.
-  if (VK_NULL_HANDLE != allocation && !is_copy_) {
+  if (allocation != VK_NULL_HANDLE && !is_copy_) {
     vmaFreeMemory(allocator, allocation);
   }
 }

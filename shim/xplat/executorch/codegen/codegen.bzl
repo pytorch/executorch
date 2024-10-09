@@ -1,4 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_default_executorch_platforms", "is_xplat", "runtime", "struct_to_json")
+load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 load("@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl", "portable_header_list", "portable_source_list")
 
 # Headers that declare the function signatures of the C++ functions that
@@ -49,32 +50,43 @@ def et_operator_library(
         model = None,
         include_all_operators = False,
         ops_schema_yaml_target = None,
+        server_generated_yaml_target = None,
         **kwargs):
-    genrule_cmd = [
-        "$(exe //executorch/codegen/tools:gen_oplist)",
-        "--output_path=${OUT}",
-    ]
-    if ops_schema_yaml_target:
-        genrule_cmd.append(
-            "--ops_schema_yaml_path=$(location {})".format(ops_schema_yaml_target),
-        )
-    if ops:
-        genrule_cmd.append(
-            "--root_ops=" + ",".join(ops),
-        )
-    if ops_dict:
-        ops_dict_json = struct_to_json(ops_dict)
-        genrule_cmd.append(
-            "--ops_dict='{}'".format(ops_dict_json),
-        )
-    if model:
-        genrule_cmd.append(
-            "--model_file_path=$(location {})".format(model),
-        )
-    if include_all_operators:
-        genrule_cmd.append(
-            "--include_all_operators",
-        )
+    # do a dummy copy if server_generated_yaml_target is set
+    if server_generated_yaml_target:
+        if include_all_operators or ops_schema_yaml_target or model or ops or ops_dict:
+            fail("Since server_generated_yaml_target is set, ops, ops_dict, include_all_operators and ops_schema_yaml_target shouldn't be set.")
+        genrule_cmd = [
+            "cp",
+            "$(location {})".format(server_generated_yaml_target),
+            "$OUT",
+        ]
+    else:
+        genrule_cmd = [
+            "$(exe //executorch/codegen/tools:gen_oplist)",
+            "--output_path=${OUT}",
+        ]
+        if ops_schema_yaml_target:
+            genrule_cmd.append(
+                "--ops_schema_yaml_path=$(location {})".format(ops_schema_yaml_target),
+            )
+        if ops:
+            genrule_cmd.append(
+                "--root_ops=" + ",".join(ops),
+            )
+        if ops_dict:
+            ops_dict_json = struct_to_json(ops_dict)
+            genrule_cmd.append(
+                "--ops_dict='{}'".format(ops_dict_json),
+            )
+        if model:
+            genrule_cmd.append(
+                "--model_file_path=$(location {})".format(model),
+            )
+        if include_all_operators:
+            genrule_cmd.append(
+                "--include_all_operators",
+            )
 
     # TODO(larryliu0820): Remove usages of this flag.
     if "define_static_targets" in kwargs:
@@ -250,8 +262,13 @@ def _prepare_custom_ops_genrule_and_lib(
             "headers": [],
             "srcs": custom_ops_sources,
         }
+        my_cmd = ""
+        for rule_substr in genrule_cmd:
+            if my_cmd != "":
+                my_cmd += " "
+            my_cmd += rule_substr
         genrules[genrule_name] = {
-            "cmd": " ".join(genrule_cmd),
+            "cmd": my_cmd,
             "outs": {out: [out] for out in CUSTOM_OPS_NATIVE_FUNCTION_HEADER + custom_ops_sources},
         }
     return genrules, libs
@@ -283,7 +300,7 @@ def exir_custom_ops_aot_lib(
     """
     genrules, libs = _prepare_custom_ops_genrule_and_lib(
         name = name,
-        custom_ops_yaml_path = "$(location {})".format(yaml_target),
+        custom_ops_yaml_path = selects.apply(yaml_target, lambda y: "$(location {})".format(y)),
         kernels = kernels,
         deps = deps,
     )
@@ -484,9 +501,8 @@ def executorch_generated_lib(
     # merge functions.yaml with fallback yaml
     if functions_yaml_target:
         merge_yaml_name = name + "_merge_yaml"
-        cmd = ("$(exe fbsource//xplat/executorch/codegen/tools:merge_yaml) " +
-               "--functions_yaml_path=$(location {}) ".format(functions_yaml_target) +
-               "--output_dir=$OUT ")
+        cmd = selects.apply(functions_yaml_target, lambda value: "$(exe fbsource//xplat/executorch/codegen/tools:merge_yaml) " +
+                                                                 "--functions_yaml_path=$(location {}) --output_dir=$OUT ".format(value))
         if fallback_yaml_target:
             cmd = cmd + "--fallback_yaml_path=$(location {}) ".format(fallback_yaml_target)
         runtime.genrule(
@@ -501,7 +517,7 @@ def executorch_generated_lib(
     else:
         functions_yaml_path = None
     if custom_ops_yaml_target:
-        custom_ops_yaml_path = "$(location {})".format(custom_ops_yaml_target)
+        custom_ops_yaml_path = selects.apply(custom_ops_yaml_target, lambda value: "$(location {})".format(value))
     else:
         custom_ops_yaml_path = None
 
@@ -548,9 +564,14 @@ def executorch_generated_lib(
         genrules[genrule_name]["cmd"].append(
             "--op_selection_yaml_path=$(location :{}[selected_operators.yaml])".format(oplist_dir_name),
         )
+        my_cmd = ""
+        for rule_substr in genrules[genrule_name]["cmd"]:
+            if my_cmd != "":
+                my_cmd += " "
+            my_cmd += rule_substr
         runtime.genrule(
             name = genrule_name,
-            cmd = " ".join(genrules[genrule_name]["cmd"]),
+            cmd = my_cmd,
             outs = {f: [f] for f in genrules[genrule_name]["outs"]},
             default_outs = ["."],
             platforms = platforms,

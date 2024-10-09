@@ -74,7 +74,7 @@ jobs:
           # Separate default values from the workflow dispatch. To ensure defaults are accessible
           # during scheduled runs and to provide flexibility for different defaults between
           # on-demand and periodic benchmarking.
-          CRON_DEFAULT_MODELS: "stories110M,mv3,ic4,resnet50,edsr,mobilebert,w2l"
+          CRON_DEFAULT_MODELS: "stories110M,mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l"
           CRON_DEFAULT_DEVICES: "apple_iphone_15"
           CRON_DEFAULT_DELEGATES: "xnnpack,coreml"
         run: |
@@ -235,9 +235,9 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
           build/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack
 
-        mkdir -p extension/apple/Benchmark/Frameworks
+        mkdir -p extension/benchmark/apple/Benchmark/Frameworks
         for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
-          cp -r "cmake-out/${FRAMEWORK}.xcframework" extension/apple/Benchmark/Frameworks/
+          cp -r "cmake-out/${FRAMEWORK}.xcframework" extension/benchmark/apple/Benchmark/Frameworks/
         ) done
         echo "::endgroup::"
 
@@ -245,7 +245,7 @@ jobs:
         # app, we don't use this in CI and rely on AWS extra data parameter to make the model and the
         # tokenizer available to the benchmark. This decouples the app and the model. We just need to
         # create the directory here to pass the build
-        mkdir -p extension/apple/Benchmark/Models
+        mkdir -p extension/benchmark/apple/Benchmark/Models
         ${CONDA_RUN} --no-capture-output \
           build/build_apple_llm_demo.sh ${ARTIFACTS_DIR_NAME}
 

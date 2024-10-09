@@ -361,6 +361,46 @@ class Conv2dSingle(torch.nn.Module):
         return self.conv(x)
 
 
+class ConvTranspose2dSingle(torch.nn.Module):
+    def __init__(self, bias=True):
+        super().__init__()
+        self.conv_transpose = torch.nn.ConvTranspose2d(
+            in_channels=1,
+            out_channels=3,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=bias,
+        )
+
+    def forward(self, x):
+        return self.conv_transpose(x)
+
+
+class Conv2dDownUpSample(torch.nn.Module):
+    def __init__(self, bias=True):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=16,
+            out_channels=16,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=bias,
+        )
+        self.conv_transpose = torch.nn.ConvTranspose2d(
+            in_channels=16,
+            out_channels=16,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=bias,
+        )
+
+    def forward(self, x):
+        return self.conv_transpose(self.conv(x))
+
+
 class Conv2dSumReduceDim(torch.nn.Module):
     def __init__(self):
         super().__init__()

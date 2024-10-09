@@ -423,7 +423,31 @@ class CustomBuildPy(build_py):
                 "devtools/bundled_program/schema/scalar_type.fbs",
                 "devtools/bundled_program/serialize/scalar_type.fbs",
             ),
+            # Install executorch-wheel-config.cmake to pip package.
+            (
+                "build/executorch-wheel-config.cmake",
+                "share/cmake/executorch-config.cmake",
+            ),
         ]
+        # Copy all the necessary headers into include/executorch/ so that they can
+        # be found in the pip package. This is the subset of headers that are
+        # essential for building custom ops extensions.
+        # TODO: Use cmake to gather the headers instead of hard-coding them here.
+        # For example: https://discourse.cmake.org/t/installing-headers-the-modern-
+        # way-regurgitated-and-revisited/3238/3
+        for include_dir in [
+            "runtime/core/",
+            "runtime/kernel/",
+            "runtime/platform/",
+            "extension/kernel_util/",
+            "extension/tensor/",
+            "extension/threadpool/",
+        ]:
+            src_list = Path(include_dir).rglob("*.h")
+            for src in src_list:
+                src_to_dst.append(
+                    (str(src), os.path.join("include/executorch", str(src)))
+                )
         for src, dst in src_to_dst:
             dst = os.path.join(dst_root, dst)
 
@@ -662,6 +686,10 @@ def get_ext_modules() -> List[Extension]:
     # platform-specific files using InstallerBuildExt.
     return ext_modules
 
+
+# Override extension suffix to be ".so", skipping package info such as
+# "cpython-311-darwin"
+os.environ["SETUPTOOLS_EXT_SUFFIX"] = ".so"
 
 setup(
     version=Version.string(),

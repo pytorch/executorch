@@ -4,9 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import os
+import platform
 import shutil
 import subprocess
+import sys
 import tempfile
 
 import pytest
@@ -37,6 +40,7 @@ def pytest_configure(config):
                 "Tests are run with --arm_run_corstone300 but corstone300 FVP is not installed."
             )
         _enabled_options.append("corstone300")
+    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 
 def pytest_collection_modifyitems(config, items):
@@ -54,11 +58,17 @@ def pytest_collection_modifyitems(config, items):
 
 
 def load_libquantized_ops_aot_lib():
+    so_ext = {
+        "Darwin": "dylib",
+        "Linux": "so",
+        "Windows": "dll",
+    }.get(platform.system(), None)
+
     find_lib_cmd = [
         "find",
         "cmake-out-aot-lib",
         "-name",
-        "libquantized_ops_aot_lib.so",
+        f"libquantized_ops_aot_lib.{so_ext}",
     ]
     res = subprocess.run(find_lib_cmd, capture_output=True)
     if res.returncode == 0:

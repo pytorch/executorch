@@ -10,8 +10,8 @@
 
 #include <executorch/runtime/core/result.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace vulkan {
 
 // Byte decoding utilities
@@ -22,7 +22,8 @@ uint32_t getUInt16LE(const uint8_t* data);
 struct VulkanDelegateHeader {
   bool is_valid() const;
 
-  static Result<VulkanDelegateHeader> parse(const void* data);
+  static executorch::runtime::Result<VulkanDelegateHeader> parse(
+      const void* data);
 
   uint32_t header_size;
   uint32_t flatbuffer_offset;
@@ -32,5 +33,5 @@ struct VulkanDelegateHeader {
 };
 
 } // namespace vulkan
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

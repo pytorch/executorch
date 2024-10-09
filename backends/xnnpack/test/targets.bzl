@@ -24,6 +24,7 @@ def define_common_targets():
         srcs = ["runtime/test_xnnexecutor.cpp"],
         deps = [
             third_party_dep("XNNPACK"),
+            third_party_dep("FP16"),
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/backends/xnnpack:xnnpack_backend",

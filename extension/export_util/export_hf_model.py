@@ -28,6 +28,14 @@ def main() -> None:
         help="a valid huggingface model repo name",
     )
     parser.add_argument(
+        "-d",
+        "--dtype",
+        type=str,
+        choices=["float32", "float16", "bfloat16"],
+        default="float32",
+        help="specify the dtype for loading the model",
+    )
+    parser.add_argument(
         "-o",
         "--output_name",
         required=False,
@@ -39,7 +47,8 @@ def main() -> None:
 
     # Configs to HF model
     device = "cpu"
-    dtype = torch.float32
+    # TODO: remove getattr once https://github.com/huggingface/transformers/pull/33741 is merged
+    dtype = getattr(torch, args.dtype)
     batch_size = 1
     max_length = 123
     cache_implementation = "static"

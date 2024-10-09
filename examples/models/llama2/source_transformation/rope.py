@@ -16,11 +16,11 @@ def materialze_broadcast_of_rope_freq_cis(
     assert module.freqs_cos.dim() == 2
     dim0 = module.freqs_cos.size(0)
     dim1 = module.freqs_cos.size(1)
+    module_attention = module.layers[0].attention
     assert (
-        module.layers[0].attention.n_local_kv_heads
-        == module.layers[0].attention.n_local_heads
-    ), f"For rope freqs to be materialzed for broadcast q, k, v num heads must match. For q got {module.attention.n_kv_heads} for k got {module.attention.n_local_heads} and v got {module.attention.n_local_kv_heads}"
-    num_heads = module.layers[0].attention.n_local_heads
+        module_attention.n_local_kv_heads == module_attention.n_local_heads
+    ), f"For rope freqs to be materialized for broadcast, q, k, v num heads must match. For q got {module_attention.n_kv_heads} for k got {module_attention.n_local_heads} and v got {module_attention.n_local_kv_heads}"
+    num_heads = module_attention.n_local_heads
     module.freqs_cos = module.freqs_cos.view(dim0, 1, dim1)
     module.freqs_cos = module.freqs_cos.expand(dim0, num_heads, dim1).contiguous()
     assert module.freqs_sin.dim() == 2

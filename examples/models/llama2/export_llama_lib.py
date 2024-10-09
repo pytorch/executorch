@@ -53,7 +53,11 @@ from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
 )
+from .source_transformation.quantized_kv_cache import (
+    replace_kv_cache_with_quantized_kv_cache,
+)
 from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
+
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
 from .source_transformation.sdpa import (
     replace_causal_mask,
@@ -207,6 +211,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Whether or not to export a model using kv cache",
     )
     parser.add_argument(
+        "--quantize_kv_cache",
+        default=False,
+        action="store_true",
+        help="Whether or not to export a model using int8 per token quantized kv cache",
+    )
+    parser.add_argument(
         "--num_sharding",
         type=int,
         default=0,
@@ -297,7 +307,17 @@ def build_args_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
-    parser.add_argument("-X", "--xnnpack", action="store_true")
+    parser.add_argument(
+        "-X",
+        "--xnnpack",
+        action="store_true",
+        help="Delegate to DQLinear ops to the xnnpack backend",
+    )
+    parser.add_argument(
+        "--xnnpack-extended-ops",
+        action="store_true",
+        help="Delegate more operators beyond DQLinear to the xnnpack backend. Requires -X or --xnnpack to be set.",
+    )
     parser.add_argument("-V", "--vulkan", action="store_true")
     parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
@@ -371,25 +391,42 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--spin_qmode",
+        "-qat",
+        "--use_qat",
+        default=False,
+        action="store_true",
+        help="Whether the checkpoin is pre-quantized with QAT or not.",
+    )
+
+    parser.add_argument(
+        "-lora",
+        "--use_lora",
+        type=int,
+        default=0,
+        help="Whether the checkpoint contains LoRA adaptors or not. 0: no LoRA adaptors; "
+        "otherwise, it means the rank of LoRA adaptors. Currently it only works if QAT is enabled.",
+    )
+
+    parser.add_argument(
+        "--preq_mode",
         type=str,
         default=None,
         choices=["8da4w", "8da4w_output_8da8w"],
-        help="Quantization mode for SpinQuant. Only support 8da4w and 8da4w_output_8da8w right now.",
+        help="Quantization mode used for pre-quantized checkpoint. Only support 8da4w and 8da4w_output_8da8w right now.",
     )
 
     parser.add_argument(
-        "--spin_group_size",
+        "--preq_group_size",
         type=int,
         default=32,
-        help="group_size for SpinQuant weight quantization",
+        help="group_size for pre-quantized checkpoint weight quantization",
     )
 
     parser.add_argument(
-        "--spin_embedding_quantize",
+        "--preq_embedding_quantize",
         default="8,0",
         type=str,
-        help="type of embedding quantization for SpinQuant, '<bitwidth>,<groupsize>', e.g., '8,1024'.",
+        help="type of embedding quantization for pre-quantized checkpoint, '<bitwidth>,<groupsize>', e.g., '8,1024'.",
     )
 
     parser.add_argument(
@@ -450,7 +487,6 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
 
     Returns a LLMEdgeManager prior to calling export_to_edge with quantizers
     """
-
     # load model from checkpoint and params.json
     checkpoint_path = canonical_path(args.checkpoint) if args.checkpoint else None
     checkpoint_dir = (
@@ -546,12 +582,24 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
     # to_backend
     partitioners = []
-    if pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None:
-        partitioners.append(get_xnnpack_partitioner())
+
+    # Order matters here, dynamic quantization should be applied first when both xnnpack and xnnpack_extended_ops are enabled
+    if (
+        pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None
+    ) or (args.xnnpack):
+        partitioners.append(
+            get_xnnpack_partitioner(dynamic_quant_only_partitioner=True)
+        )
+
+        # force xnnpack to be true if pt2e_quant_params is not None and args.xnnpack is False
+        args.xnnpack = True
         modelname = f"xnnpack_dq_{modelname}"
 
-    if args.xnnpack:
-        partitioners.append(get_xnnpack_partitioner())
+    if args.xnnpack_extended_ops:
+        assert args.xnnpack, "xnnpack_extended_ops requires xnnpack to be enabled"
+        partitioners.append(
+            get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
+        )
         modelname = f"xnnpack_{modelname}"
 
     if args.vulkan:
@@ -598,6 +646,10 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
                 shares=args.num_sharding,
             )
 
+    logging.info("Lowering model using following partitioner(s): ")
+    for partitioner in partitioners:
+        logging.info(f"--> {partitioner.__class__.__name__}")
+
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
             raise ValueError("Unable to generate etrecord due to missing edge manager.")
@@ -609,10 +661,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
-            # TODO: Need to remove this once we have better way to handle buffer size
-            canonicalize_program(
-                builder.edge_manager.exported_program(), custom_buffer_size=542048256
-            )
+            canonicalize_program(builder.edge_manager.exported_program())
 
         builder = builder.to_executorch()
 
@@ -629,10 +678,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
-            # TODO: Need to remove this once we have better way to handle buffer size
-            canonicalize_program(
-                builder.edge_manager.exported_program(), custom_buffer_size=542048256
-            )
+            canonicalize_program(builder.edge_manager.exported_program())
 
         builder = builder.to_executorch()
 
@@ -853,6 +899,10 @@ def _get_source_transforms(  # noqa
 
     if args.use_sdpa_with_kv_cache:
         transforms.append(replace_sdpa_with_custom_op)
+
+    if args.quantize_kv_cache:
+        assert args.use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
+        transforms.append(replace_kv_cache_with_quantized_kv_cache)
 
     if args.use_kv_cache:
         if args.qnn:

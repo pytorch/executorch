@@ -100,11 +100,11 @@ class TestMobileNetV2(unittest.TestCase):
         )
         if common.is_option_enabled("corstone300"):
             tester.run_method_and_compare_outputs(
-                atol=1.0, qtol=1, inputs=self.model_inputs
+                atol=1.0, qtol=1, inputs=self.model_inputs, target_board="corstone-300"
             )
 
     def test_mv2_u85_BI(self):
-        (
+        tester = (
             ArmTester(
                 self.mv2,
                 example_inputs=self.model_inputs,
@@ -116,4 +116,9 @@ class TestMobileNetV2(unittest.TestCase):
             .check(list(self.operators_after_quantization))
             .partition()
             .to_executorch()
+            .serialize()
         )
+        if common.is_option_enabled("corstone300"):
+            tester.run_method_and_compare_outputs(
+                atol=1.0, qtol=1, inputs=self.model_inputs, target_board="corstone-320"
+            )

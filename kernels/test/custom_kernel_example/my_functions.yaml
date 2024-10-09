@@ -5,4 +5,4 @@
 - op: relu.out
   kernels:
     - arg_meta: null
-      kernel_name: torch::my_custom_kernel::my_relu_out
+      kernel_name: my_custom_kernels::my_relu_out

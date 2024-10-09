@@ -277,10 +277,11 @@ vTensorStorage::vTensorStorage(
           storage_type_,
           dtype,
           allocate_memory)),
-      last_access_{} {}
+      last_access_{},
+      has_copies_{false} {}
 
 vTensorStorage::vTensorStorage(
-    const vTensorStorage& other,
+    vTensorStorage& other,
     const int64_t buffer_offset)
     : context_(other.context_),
       storage_type_{other.storage_type_},
@@ -289,7 +290,10 @@ vTensorStorage::vTensorStorage(
       buffer_offset_{buffer_offset},
       image_(other.image_),
       buffer_(other.buffer_, buffer_offset),
-      last_access_{other.last_access_} {}
+      last_access_{other.last_access_},
+      has_copies_{false} {
+  other.has_copies_ = true;
+}
 
 vTensorStorage::~vTensorStorage() {
   flush();
@@ -311,6 +315,21 @@ void vTensorStorage::transition(
   // Get last stage access
   vkapi::PipelineStageFlags prev_stage = last_access_.stage;
   vkapi::MemoryAccessFlags prev_access = last_access_.access;
+
+  // If the underlying resource is a copy of another tensor's resource the
+  // last_access may not be accurate, since the original storage may have been
+  // written to as part of the original tensor. Likewise, if the underlying
+  // resource has copies, then the resource may have been updated as part of the
+  // view tensors.
+  //
+  // If the resource is a copy, or has copies of it, then cowardly assume that
+  // it has previously been written to as part of a compute shader before the
+  // current access event so that the appropriate memory barriers may be
+  // inserted.
+  if (is_copy() || has_copies_) {
+    prev_stage = vkapi::PipelineStage::COMPUTE;
+    prev_access = vkapi::kWrite;
+  }
 
   const bool prev_written = (prev_access & vkapi::MemoryAccessType::WRITE) != 0;
 
@@ -356,6 +375,13 @@ void vTensorStorage::transition(
 
   last_access_.stage = cur_stage;
   last_access_.access = cur_access;
+}
+
+bool vTensorStorage::is_copy() const {
+  if (storage_type_ == utils::kBuffer) {
+    return buffer_.is_copy();
+  }
+  return image_.is_copy();
 }
 
 bool vTensorStorage::is_copy_of(const vTensorStorage& other) const {
@@ -418,7 +444,8 @@ vTensor::vTensor(
   }
 }
 
-vTensor::vTensor(const vTensor& other)
+// NOLINTNEXTLINE
+vTensor::vTensor(vTensor& other)
     : dtype_(other.dtype_),
       // Copy tensor size metadata
       sizes_(other.sizes_.begin(), other.sizes_.end()),
@@ -443,7 +470,7 @@ vTensor::vTensor(const vTensor& other)
       storage_(other.storage_) {}
 
 vTensor::vTensor(
-    const vTensor& other,
+    vTensor& other,
     const std::vector<int64_t>& sizes,
     const std::vector<int64_t>& dim_order,
     const int64_t offset_numel)
@@ -669,6 +696,14 @@ void vTensor::virtual_reconfigure(
   sizes_ = new_sizes;
   dim_order_ = new_dim_order;
   update_metadata();
+}
+
+void vTensor::virtual_clone(const vTensor& other) {
+  VK_CHECK_COND(is_view_of(other));
+  sizes_ = other.sizes_;
+  dim_order_ = other.dim_order_;
+  axis_map_ = other.axis_map_;
+  packed_dim_ = other.packed_dim_;
 }
 
 void vTensor::virtual_resize(const std::vector<int64_t>& new_sizes) {

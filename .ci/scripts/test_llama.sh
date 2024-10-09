@@ -188,7 +188,7 @@ EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}.pte"
 echo "Exporting ${EXPORTED_MODEL_NAME}"
 EXPORT_ARGS="-c ${CHECKPOINT_FILE_NAME} -p ${PARAMS} -d ${DTYPE} -n ${EXPORTED_MODEL_NAME} -kv"
 if [[ "${XNNPACK}" == "ON" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} -X -qmode 8da4w -G 128"
+  EXPORT_ARGS="${EXPORT_ARGS} -X --xnnpack-extended-ops -qmode 8da4w -G 128"
 fi
 if [[ "${CUSTOM}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} --use_sdpa_with_kv_cache"
@@ -213,7 +213,7 @@ echo "Creating tokenizer.bin"
 $PYTHON_EXECUTABLE -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 
 
-RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --tokenizer_path=tokenizer.bin --prompt=Once --temperature=0 --seq_len=10"
+RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --tokenizer_path=tokenizer.bin --prompt=Once --temperature=0 --seq_len=10 --warmup=1"
 # Check build tool.
 echo "Running ${EXPORTED_MODEL_NAME} in portable mode"
 if [[ "${BUILD_TOOL}" == "buck2" ]]; then

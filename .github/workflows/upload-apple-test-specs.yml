@@ -4,13 +4,13 @@ on:
   pull_request:
     paths:
       - .github/workflows/upload-apple-test-specs.yml
-      - examples/demo-apps/apple_ios/default-ios-device-farm-appium-test-spec.yml
+      - extension/benchmark/apple/Benchmark/default-ios-device-farm-appium-test-spec.yml
   push:
     branches:
       - main
     paths:
       - .github/workflows/upload-apple-test-specs.yml
-      - examples/demo-apps/apple_ios/default-ios-device-farm-appium-test-spec.yml
+      - extension/benchmark/apple/Benchmark/default-ios-device-farm-appium-test-spec.yml
 
 concurrency:
   # NB: This concurency group needs to be different than the one used in apple-perf, otherwise
@@ -32,7 +32,7 @@ jobs:
             ${{ github.repository }}/${{ github.run_id }}/artifacts
           retention-days: 1
           if-no-files-found: error
-          path: examples/demo-apps/apple_ios/default-ios-device-farm-appium-test-spec.yml
+          path: extension/benchmark/apple/Benchmark/default-ios-device-farm-appium-test-spec.yml
 
   validate-apple-test-spec:
     needs: upload-apple-test-spec-for-validation
@@ -78,7 +78,7 @@ jobs:
 
       - name: Upload the spec to S3 ossci-ios bucket
         shell: bash
-        working-directory: examples/demo-apps/apple_ios
+        working-directory: extension/benchmark/apple/Benchmark/
         env:
           SPEC_FILE: default-ios-device-farm-appium-test-spec.yml
         run: |

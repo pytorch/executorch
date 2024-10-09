@@ -7,8 +7,8 @@
 import unittest
 
 import torch
-from executorch.backends.xnnpack.passes.convert_to_linear import ConvertToLinearPass
-from executorch.backends.xnnpack.passes.fuse_activation_pass import FuseActivationPass
+from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
+from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack.test.tester import RunPasses, Tester
 from executorch.exir.dialects._ops import ops as exir_ops
 

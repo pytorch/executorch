@@ -14,14 +14,11 @@
 #include <executorch/runtime/platform/assert.h>
 
 // TODO(T154113473): Document this file
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
-namespace {
-constexpr std::size_t min(const std::size_t a, const std::size_t b) {
-  return (b < a) ? b : a;
-}
-} // namespace
+namespace internal {
 
 /**
  * Reimplementation of std::string_view for C++11.
@@ -128,7 +125,7 @@ class basic_string_view final {
 
   size_type copy(pointer dest, size_type count, size_type pos = 0) const {
     ET_CHECK_MSG(pos > size_, "basic_string_view::copy: out of range.");
-    size_type copy_length = min(count, size_ - pos);
+    size_type copy_length = min_(count, size_ - pos);
     for (auto iter = begin() + pos, end = iter + copy_length; iter != end;) {
       *(dest++) = *(iter++);
     }
@@ -145,7 +142,7 @@ class basic_string_view final {
   constexpr int compare(basic_string_view rhs) const noexcept {
 #if __cpp_constexpr >= 201304
     // if we are in C++14, write it iteratively. This is faster.
-    for (size_t i = 0, end = min(size(), rhs.size()); i < end; ++i) {
+    for (size_t i = 0, end = min_(size(), rhs.size()); i < end; ++i) {
       if (at_(i) < rhs.at_(i)) {
         return -1;
       } else if (at_(i) > rhs.at_(i)) {
@@ -315,7 +312,7 @@ class basic_string_view final {
     }
 
     if (v.size() <= size()) {
-      pos = min(size() - v.size(), pos);
+      pos = min_(size() - v.size(), pos);
       do {
         if (v.at_(0) == at_(pos) &&
             v.substr_(1).equals_(substr_(pos + 1, v.size() - 1))) {
@@ -432,6 +429,10 @@ class basic_string_view final {
   }
 
  private:
+  static constexpr std::size_t min_(const std::size_t a, const std::size_t b) {
+    return (b < a) ? b : a;
+  }
+
   static constexpr size_type strlen_(const_pointer str) noexcept {
 #if __cpp_constexpr >= 201304
     // if we are in C++14, write it iteratively. This is faster.
@@ -453,7 +454,7 @@ class basic_string_view final {
 
   constexpr basic_string_view substr_(size_type pos = 0, size_type count = npos)
       const {
-    return basic_string_view{begin_ + pos, min(count, size() - pos)};
+    return basic_string_view{begin_ + pos, min_(count, size() - pos)};
   }
 
   template <class Condition>
@@ -485,7 +486,7 @@ class basic_string_view final {
 #if __cpp_constexpr >= 201304
     // if we are in C++14, write it iteratively. This is faster.
     if (size() > 0) {
-      pos = min(size() - 1, pos);
+      pos = min_(size() - 1, pos);
       do {
         if (condition(at_(pos))) {
           return pos;
@@ -570,7 +571,18 @@ inline void swap(
   lhs.swap(rhs);
 }
 
-using string_view = basic_string_view<char>;
+} // namespace internal
 
+using string_view = internal::basic_string_view<char>;
+
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::etensor::string_view;
 } // namespace executor
 } // namespace torch

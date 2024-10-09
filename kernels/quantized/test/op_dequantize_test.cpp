@@ -11,6 +11,7 @@
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 
 #include <gtest/gtest.h>
@@ -57,10 +58,12 @@ void test_dtype() {
 }
 
 TEST(OpDequantizeOutTest, AllDtypesSupported) {
+  et_pal_init();
   test_dtype<ScalarType::Byte>();
 }
 
 TEST(OpDequantizeOutTest, NonWholeNumbers) {
+  et_pal_init();
   TensorFactory<ScalarType::Byte> tf;
 
   Tensor input = tf.full({3, 5}, 100);
@@ -87,6 +90,7 @@ TEST(OpDequantizeOutTest, NonWholeNumbers) {
 }
 
 TEST(OpDequantizeOutTest, TensorArgOverload) {
+  et_pal_init();
   TensorFactory<ScalarType::Byte> tf_byte;
   TensorFactory<ScalarType::Double> tf_double;
   TensorFactory<ScalarType::Long> tf_long;
@@ -115,12 +119,13 @@ TEST(OpDequantizeOutTest, TensorArgOverload) {
 }
 
 TEST(OpDequantizeOutTest, DequantizePerChannel) {
+  et_pal_init();
   TensorFactory<ScalarType::Byte> tf_byte;
-  TensorFactory<ScalarType::Float> tf_float;
+  TensorFactory<ScalarType::Double> tf_double;
   TensorFactory<ScalarType::Long> tf_long;
 
   Tensor input = tf_byte.full({3, 2}, 100);
-  Tensor scale = tf_float.make({2}, {0.5, 1});
+  Tensor scale = tf_double.make({2}, {0.5, 1});
   Tensor zero_point = tf_long.make({2}, {30, 60});
   int64_t quant_min = 0;
   int64_t quant_max = 255;
@@ -145,7 +150,7 @@ TEST(OpDequantizeOutTest, DequantizePerChannel) {
 
   // Test with a different axis
   out = tfo.zeros({3, 2});
-  scale = tf_float.make({3}, {0.5, 0.75, 1});
+  scale = tf_double.make({3}, {0.5, 0.75, 1});
   zero_point = tf_long.make({3}, {30, 50, 60});
   // (100 - 30) * 0.5
   // (100 - 50) * 0.75
@@ -167,7 +172,7 @@ TEST(OpDequantizeOutTest, DequantizePerChannel) {
   // Test with a different axis
   out = tfo.zeros({3});
   input = tf_byte.make({3}, {100, 100, 100});
-  scale = tf_float.make({3}, {0.5, 0.75, 1});
+  scale = tf_double.make({3}, {0.5, 0.75, 1});
   zero_point = tf_long.make({3}, {30, 50, 60});
   // (100 - 30) * 0.5
   // (100 - 50) * 0.75

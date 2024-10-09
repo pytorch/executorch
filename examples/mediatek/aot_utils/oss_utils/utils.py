@@ -30,7 +30,7 @@ def build_executorch_binary(
         if quant_dtype not in Precision:
             raise AssertionError(f"No support for Precision {quant_dtype}.")
 
-        captured_model = torch._export.capture_pre_autograd_graph(model, inputs)
+        captured_model = torch.export.export_for_training(model, inputs).module()
         annotated_model = prepare_pt2e(captured_model, quantizer)
         print("Quantizing the model...")
         # calibration
@@ -58,9 +58,8 @@ def build_executorch_binary(
         partitioner=[neuro_partitioner],
     )
 
-    exec_prog = edge_prog.to_executorch(
-        config=exir.ExecutorchBackendConfig(extract_constant_segment=False)
-    )
+    exec_prog = edge_prog.to_executorch(config=exir.ExecutorchBackendConfig())
+
     with open(f"{file_name}.pte", "wb") as file:
         file.write(exec_prog.buffer)
 
