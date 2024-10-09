@@ -13,8 +13,8 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnDeviceCommon.h>
 
 #include <memory>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 class QnnContext {
  public:
@@ -30,7 +30,7 @@ class QnnContext {
         cache_(cache) {}
 
   virtual ~QnnContext();
-  Error Configure();
+  executorch::runtime::Error Configure();
 
   Qnn_ContextHandle_t GetHandle() const {
     return handle_;
@@ -50,15 +50,16 @@ class QnnContext {
     return cache_->GetCacheState();
   };
 
-  Error GetContextBinary(
+  executorch::runtime::Error GetContextBinary(
       QnnExecuTorchContextBinary& qnn_executorch_context_binary);
 
  protected:
-  virtual Error MakeConfig(std::vector<const QnnContext_Config_t*>& config) {
-    return Error::Ok;
+  virtual executorch::runtime::Error MakeConfig(
+      std::vector<const QnnContext_Config_t*>& config) {
+    return executorch::runtime::Error::Ok;
   };
-  virtual Error AfterConfigure() {
-    return Error::Ok;
+  virtual executorch::runtime::Error AfterConfigure() {
+    return executorch::runtime::Error::Ok;
   };
 
  private:
@@ -70,5 +71,5 @@ class QnnContext {
   std::vector<char> binary_buffer_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

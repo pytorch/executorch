@@ -12,8 +12,8 @@
 
 #include <string>
 #include <vector>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 class QnnBackendCache {
  public:
@@ -51,16 +51,16 @@ class QnnBackendCache {
     return graph_name_;
   }
 
-  Error Configure();
+  executorch::runtime::Error Configure();
 
  protected:
-  virtual Error RetrieveBackendBinaryInfo(
+  virtual executorch::runtime::Error RetrieveBackendBinaryInfo(
       __ET_UNUSED const QnnSystemContext_BinaryInfo_t* binaryinfo) {
-    return Error::Ok;
+    return executorch::runtime::Error::Ok;
   }
 
  private:
-  Error GetQnnGraphInfoFromBinary();
+  executorch::runtime::Error GetQnnGraphInfoFromBinary();
 
   CacheState state_{INVALID};
 
@@ -72,5 +72,5 @@ class QnnBackendCache {
   std::vector<Qnn_Tensor_t> output_tensor_structs_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch
