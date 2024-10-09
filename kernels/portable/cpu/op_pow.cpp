@@ -49,6 +49,7 @@ Tensor& pow_Tensor_Tensor_out(
     compute_type = ScalarType::Double;
   }
 
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "pow.Tensor_Tensor_out";
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
@@ -98,6 +99,7 @@ Tensor& pow_Tensor_Scalar_out(
     compute_type = ScalarType::Double;
   }
 
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "pow.Tensor_Scalar_out";
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
@@ -144,6 +146,7 @@ Tensor& pow_Scalar_out(
     compute_type = ScalarType::Double;
   }
 
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "pow.Scalar_out";
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
