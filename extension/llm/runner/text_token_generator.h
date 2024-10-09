@@ -72,8 +72,9 @@ class TextTokenGenerator {
     // initialize tensor wrappers
     auto tokens_managed =
         from_blob(token_data.data(), token_shape, exec_aten::ScalarType::Long);
-
     auto start_pos_managed = from_blob(&pos, {1}, exec_aten::ScalarType::Long);
+
+    should_stop_ = false;
 
     // Generate our tokens
     while (pos < seq_len - 1) {
