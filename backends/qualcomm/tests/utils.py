@@ -26,7 +26,10 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QcomChipset,
 )
-from executorch.backends.qualcomm.utils.utils import capture_program
+from executorch.backends.qualcomm.utils.utils import (
+    capture_program,
+    get_soc_to_chipset_map,
+)
 from executorch.devtools import generate_etrecord, Inspector
 from executorch.examples.qualcomm.utils import (
     generate_inputs,
@@ -117,13 +120,7 @@ class TestQNN(unittest.TestCase):
     build_folder: Literal = ""
     model: QcomChipset = None
     compiler_specs: List[CompileSpec] = None
-    arch_table = {
-        "SSG2115P": QcomChipset.SSG2115P,
-        "SM8650": QcomChipset.SM8650,
-        "SM8550": QcomChipset.SM8550,
-        "SM8475": QcomChipset.SM8475,
-        "SM8450": QcomChipset.SM8450,
-    }
+    arch_table = get_soc_to_chipset_map()
     error_only = False
     ip = "localhost"
     port = 8080
