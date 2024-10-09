@@ -57,6 +57,9 @@ void check_quantize_per_tensor_args(
         static_cast<int32_t>(std::numeric_limits<int8_t>::min());
     quant_max_upper_bound =
         static_cast<int32_t>(std::numeric_limits<int8_t>::max());
+  } else if (dtype == ScalarType::Bits16) {
+    quant_min_lower_bound = std::numeric_limits<uint16_t>::min();
+    quant_max_upper_bound = std::numeric_limits<uint16_t>::max();
   } else if (dtype == ScalarType::Short) {
     quant_min_lower_bound = std::numeric_limits<int16_t>::min();
     quant_max_upper_bound = std::numeric_limits<int16_t>::max();
@@ -135,6 +138,7 @@ Tensor& quantize_per_tensor_out(
   case ScalarType::in_dtype:                             \
     switch (out.scalar_type()) {                         \
       ET_FORALL_INT_TYPES_WITH(IN_CTYPE, QUANTIZE_IMPL); \
+      QUANTIZE_IMPL(IN_CTYPE, uint16_t, Bits16)          \
       default:                                           \
         ET_CHECK_MSG(                                    \
             false,                                       \
@@ -329,6 +333,7 @@ Tensor& quantize_per_channel_out(
   case ScalarType::in_dtype:                             \
     switch (out.scalar_type()) {                         \
       ET_FORALL_INT_TYPES_WITH(CTYPE_IN, QUANTIZE_IMPL); \
+      QUANTIZE_IMPL(CTYPE_IN, uint16_t, Bits16)          \
       default:                                           \
         ET_CHECK_MSG(                                    \
             false,                                       \
