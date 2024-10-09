@@ -20,8 +20,8 @@
 
 #define MB(x) (x * 1048576UL)
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
 
@@ -72,8 +72,10 @@ class MPSDevice {
    * Compile a PSO for a given library type.
    * Once compiled, the library and PSOs are cached.
    */
-  Error compilePSO(LibraryType libraryType, const char* kernelName);
-  Error compileLibrary(LibraryType);
+  executorch::runtime::Error compilePSO(
+      LibraryType libraryType,
+      const char* kernelName);
+  executorch::runtime::Error compileLibrary(LibraryType);
 
  private:
   static MPSDevice* _device;
@@ -88,5 +90,5 @@ bool is_macos_13_or_newer(
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch
