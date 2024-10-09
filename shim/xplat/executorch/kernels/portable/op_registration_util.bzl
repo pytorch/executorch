@@ -224,6 +224,8 @@ ATEN_OPS = (
         name = "op_addmm",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:matmul_ops_util",
             ":scalar_utils",
             ":vec_ops",
