@@ -360,7 +360,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         num_threads_ <=
             torch::executorch::threadpool::get_threadpool()->get_thread_count();
     if (set_num_threads) {
-      threadpool->_unsafe_reset_threadpool(num_threads_)
+      pool->_unsafe_reset_threadpool(num_threads_)
     }
 #endif
     auto result = module_->execute(method, evalues);
