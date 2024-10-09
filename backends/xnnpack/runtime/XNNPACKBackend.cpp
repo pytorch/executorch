@@ -132,6 +132,12 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
 
   void destroy(DelegateHandle* handle) const override {
     if (handle != nullptr) {
+#ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
+      // This is needed to serialize access to xnn_delete_runtime which is not
+      // thread safe. This can heppen when multiple threads call destroy() on
+      // the same backend instance.
+      const std::lock_guard<std::mutex> lock(workspace_mutex_);
+#endif
       auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 #ifdef ENABLE_XNNPACK_PROFILING
       executor->print_avg_op_timings();
