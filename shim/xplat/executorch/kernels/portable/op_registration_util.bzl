@@ -892,7 +892,7 @@ ATEN_OPS = (
         deps = [
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -985,8 +985,8 @@ ATEN_OPS = (
         name = "op_rsub",
         deps = [
             ":scalar_utils",
-            "//executorch/kernels/portable/cpu/util:functional_util",
-            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -1104,8 +1104,7 @@ ATEN_OPS = (
         deps = [
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
-            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
