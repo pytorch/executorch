@@ -229,15 +229,29 @@ store_common_to_tensor_fn<CTYPE_COMMON> get_store_common_to_tensor_fn(
   return nullptr;
 }
 
+bool check_tensor_dtype(
+    const Tensor t,
+    SupportedTensorDtypes dtypes,
+    const ScalarType compute_type);
+
 } // namespace internal
 
 template <typename CTYPE_COMMON, const char* op_name, typename Op>
 inline void apply_unitensor_elementwise_fn(
     const Op& compute_fun,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     SupportedTensorDtypes a_dtypes,
     const Tensor& out,
     SupportedTensorDtypes out_dtypes) {
+  constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMMON>::value;
+
+  ET_KERNEL_CHECK(
+      ctx,
+      (internal::check_tensor_dtype(a, a_dtypes, compute_type) &&
+       internal::check_tensor_dtype(out, out_dtypes, compute_type)),
+      InvalidArgument, );
+
   const auto load_a_to_common =
       internal::get_load_to_common_fn<CTYPE_COMMON, op_name>(a, a_dtypes);
   const auto store_common_to_out =
@@ -263,12 +277,22 @@ inline void apply_unitensor_elementwise_fn(
 template <typename CTYPE_COMMON, const char* op_name, typename Op>
 inline void apply_bitensor_elementwise_fn(
     const Op& compute_fun,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     SupportedTensorDtypes a_dtypes,
     const Tensor& b,
     SupportedTensorDtypes b_dtypes,
     const Tensor& out,
     SupportedTensorDtypes out_dtypes) {
+  constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMMON>::value;
+
+  ET_KERNEL_CHECK(
+      ctx,
+      (internal::check_tensor_dtype(a, a_dtypes, compute_type) &&
+       internal::check_tensor_dtype(b, b_dtypes, compute_type) &&
+       internal::check_tensor_dtype(out, out_dtypes, compute_type)),
+      InvalidArgument, );
+
   const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
   const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
   const bool any_is_broadcasted = (a_is_broadcasted || b_is_broadcasted);
@@ -312,9 +336,9 @@ inline void apply_bitensor_elementwise_fn(
 }
 
 /**
- * Useful for tri-tensor elementwise operators. For each element of the inputs,
- * perform a computation and write to the corresponding element of the output.
- * Tensor broadcasting is applied wherever it is required.
+ * Useful for tri-tensor elementwise operators. For each element of the
+ * inputs, perform a computation and write to the corresponding element of the
+ * output. Tensor broadcasting is applied wherever it is required.
  *
  * In order to mitigate build time cost (straightforwardly |CTYPE_A| *
  * |CTYPE_B| * |CTYPE_C| * |CTYPE_OUT|), all arguments to compute_fun
@@ -334,6 +358,7 @@ inline void apply_bitensor_elementwise_fn(
 template <typename CTYPE_COMMON, const char* op_name, typename Op>
 inline void apply_tritensor_elementwise_fn(
     const Op& compute_fun,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     SupportedTensorDtypes a_dtypes,
     const Tensor& b,
@@ -342,6 +367,16 @@ inline void apply_tritensor_elementwise_fn(
     SupportedTensorDtypes c_dtypes,
     const Tensor& out,
     SupportedTensorDtypes out_dtypes) {
+  constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMMON>::value;
+
+  ET_KERNEL_CHECK(
+      ctx,
+      (internal::check_tensor_dtype(a, a_dtypes, compute_type) &&
+       internal::check_tensor_dtype(b, b_dtypes, compute_type) &&
+       internal::check_tensor_dtype(c, c_dtypes, compute_type) &&
+       internal::check_tensor_dtype(out, out_dtypes, compute_type)),
+      InvalidArgument, );
+
   const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
   const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
   const bool c_is_broadcasted = !out.sizes().equals(c.sizes());
