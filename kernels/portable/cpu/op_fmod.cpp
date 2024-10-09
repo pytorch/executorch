@@ -49,6 +49,7 @@ Tensor& fmod_Tensor_out(
     compute_type = ScalarType::Double;
   }
 
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "fmod.Tensor_out";
 
   bool div_by_zero_error = false;
@@ -125,6 +126,7 @@ Tensor& fmod_Scalar_out(
     compute_type = ScalarType::Double;
   }
 
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "fmod.Scalar_out";
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
