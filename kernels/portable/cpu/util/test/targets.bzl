@@ -29,5 +29,13 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/kernels/portable/cpu/util:allocate_tensor_util",
             "//executorch/runtime/kernel:kernel_includes",
+        
+    runtime.cxx_test(
+        name = "sort_util_test",
+        srcs = ["sort_util_test.cpp"],
+        deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:sort_util",
         ],
     )
