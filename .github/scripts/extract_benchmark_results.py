@@ -31,7 +31,7 @@ IOS_TEST_SPEC_REGEX = re.compile(
 IOS_TEST_NAME_REGEX = re.compile(
     r"test_(?P<method>forward|load|generate)_(?P<model_name>\w+)_pte.*iOS_(?P<ios_ver>\w+)_iPhone(?P<iphone_ver>\w+)"
 )
-IOS_MODEL_NAME_REGEX = re.compile(r"(?P<model>[^_]+)_(?P<backend>[^_]+)_(?P<dtype>\w+)")
+IOS_MODEL_NAME_REGEX = re.compile(r"(?P<model>[^_]+)_(?P<backend>\w+)_(?P<dtype>\w+)")
 
 
 class ValidateArtifacts(Action):
