@@ -134,8 +134,8 @@ VulkanImage Allocator::create_image(
       image_props,
       view_props,
       sampler_props,
-      initial_layout,
       sampler,
+      initial_layout,
       allocate_memory);
 }
 
