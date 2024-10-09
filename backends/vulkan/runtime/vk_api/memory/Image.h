@@ -180,6 +180,10 @@ class VulkanImage final {
     return memory_.allocation;
   }
 
+  inline VkImageType type() const {
+    return image_properties_.image_type;
+  }
+
   inline VkFormat format() const {
     return image_properties_.image_format;
   }
