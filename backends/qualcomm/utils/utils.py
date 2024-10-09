@@ -850,3 +850,13 @@ def generate_qnn_executorch_compiler_spec(
             QCOM_QNN_COMPILE_SPEC, convert_to_flatbuffer(qnn_executorch_options)
         )
     ]
+
+
+def get_soc_to_chipset_map():
+    return {
+        "SSG2115P": QcomChipset.SSG2115P,
+        "SM8650": QcomChipset.SM8650,
+        "SM8550": QcomChipset.SM8550,
+        "SM8475": QcomChipset.SM8475,
+        "SM8450": QcomChipset.SM8450,
+    }
