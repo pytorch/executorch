@@ -47,7 +47,9 @@ Additionally, 1B/3B models are sensitive to accuracy loss when regular PTQ quant
 ## Quantization:
 We employed 4-bit groupwise per token dynamic quantization of all the linear layers of the model. Dynamic quantization refers to quantizating activations dynamically, such that quantization parameters for activations are calculated, from min/max range, at runtime. Here we quantized activations with 8bits (signed integer). Furthermore, weights are statically quantized. In our case weights were per-channel groupwise quantized with 4bit signed integer. For more information refer to this [page](https://github.com/pytorch/ao).
 
-We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness). Below are the results for two different groupsizes, with max_seq_len 2048, and 1000 samples.
+We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness). Please note that LM Eval reports perplexity normalized by word count instead of token count. You may see different perplexity for WikiText from other sources if they implement it differntly. More details could be found [here](https://github.com/EleutherAI/lm-evaluation-harness/issues/2301).
+
+Below are the results for two different groupsizes, with max_seq_len 2048, and 1000 samples.
 
 |Model | Baseline (FP32) | Groupwise 4-bit (128) | Groupwise 4-bit (256)
 |--------|-----------------| ---------------------- | ---------------
