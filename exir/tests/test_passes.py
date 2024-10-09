@@ -33,7 +33,10 @@ from executorch.exir.passes import (
     ToOutVarPass,
 )
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
-from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGeneratorPass
+from executorch.exir.passes.debug_handle_generator_pass import (
+    DebugHandleGeneratorPass,
+    generate_missing_debug_handles,
+)
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
@@ -949,12 +952,27 @@ class TestPasses(unittest.TestCase):
             .exported_program()
             .graph_module
         )
-        DebugHandleGeneratorPass()(graph_module)
         for node in graph_module.graph.nodes:
             self.assertIn("debug_handle", node.meta)
         ScalarToTensorPass()(graph_module)
         for node in graph_module.graph.nodes:
             self.assertIn("debug_handle", node.meta)
+
+    def test_generate_missing_debug_handles(self) -> None:
+        eager_model = MLP(2, output_size=4)
+        inputs = eager_model.get_random_inputs()
+
+        ep = to_edge(
+            export(
+                eager_model,
+                inputs,
+            )
+        ).exported_program()
+
+        list(ep.graph.nodes)[0].meta.pop("debug_handle")
+        self.assertTrue(list(ep.graph.nodes)[0].meta.get("debug_handle") is None)
+        generate_missing_debug_handles(ep)
+        self.assertTrue(list(ep.graph.nodes)[0].meta.get("debug_handle") is not None)
 
     def test_debug_handle_generator_pass_with_control_flow(self) -> None:
         def true_nested(y: torch.Tensor) -> torch.Tensor:

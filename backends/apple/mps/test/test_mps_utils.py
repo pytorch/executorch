@@ -209,9 +209,9 @@ class TestMPS(unittest.TestCase):
 
         expected_output = model(*sample_inputs)
 
-        model = torch._export.capture_pre_autograd_graph(
+        model = torch.export.export_for_training(
             model, sample_inputs, dynamic_shapes=dynamic_shapes
-        )
+        ).module()
 
         edge_program = export_to_edge(
             model,

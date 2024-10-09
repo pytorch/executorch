@@ -179,7 +179,7 @@ def get_qnn_partitioner(
         )
 
     use_fp16 = True
-    skip_node_op_set = {"llama.fallback.default", "aten.embedding.default"}
+    skip_node_op_set = {"llama.fallback.default"}
     if pt2e_quantize is not None:
         use_fp16 = False
 

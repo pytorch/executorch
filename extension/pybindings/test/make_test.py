@@ -7,6 +7,7 @@
 # pyre-unsafe
 
 import unittest
+from types import ModuleType
 from typing import Any, Callable, Optional, Tuple
 
 import torch
@@ -17,7 +18,7 @@ from torch.export import export
 
 def make_test(  # noqa: C901
     tester: unittest.TestCase,
-    load_fn: Callable,
+    runtime: ModuleType,
 ) -> Callable[[unittest.TestCase], None]:
     """
     Returns a function that operates as a test case within a unittest.TestCase class.
@@ -26,6 +27,7 @@ def make_test(  # noqa: C901
     which will all have different load functions. In this case each individual test case is a
     subfunction of wrapper.
     """
+    load_fn: Callable = runtime._load_for_executorch_from_buffer
 
     def wrapper(tester: unittest.TestCase) -> None:
         class ModuleAdd(torch.nn.Module):
@@ -352,6 +354,29 @@ def make_test(  # noqa: C901
             with tester.assertRaises(RuntimeError):
                 executorch_module.run_method("not_a_real_method", inputs)
 
+        def test_verification_config(tester) -> None:
+            # Create an ExecuTorch program from ModuleAdd.
+            # pyre-fixme[16]: Callable `make_test` has no attribute `wrapper`.
+            exported_program, inputs = create_program(ModuleAdd())
+            Verification = runtime.Verification
+
+            # Use pybindings to load and execute the program.
+            for config in [Verification.Minimal, Verification.InternalConsistency]:
+                executorch_module = load_fn(
+                    exported_program.buffer,
+                    enable_etdump=False,
+                    debug_buffer_size=0,
+                    program_verification=config,
+                )
+
+                executorch_output = executorch_module.forward(inputs)[0]
+
+                # The test module adds the two inputs, so its output should be the same
+                # as adding them directly.
+                expected = inputs[0] + inputs[1]
+
+                tester.assertEqual(str(expected), str(executorch_output))
+
         ######### RUN TEST CASES #########
         test_e2e(tester)
         test_multiple_entry(tester)
@@ -363,5 +388,6 @@ def make_test(  # noqa: C901
         test_constant_output_not_memory_planned(tester)
         test_method_meta(tester)
         test_bad_name(tester)
+        test_verification_config(tester)
 
     return wrapper
