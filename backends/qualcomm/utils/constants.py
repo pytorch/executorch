@@ -6,7 +6,7 @@
 
 # Qualcomm specific key
 
-# constants in backends/qualcomm/passes & backends/qualcomm/builders
+# constants in backends/qualcomm/_passes & backends/qualcomm/builders
 QCOM_AXIS = "axis"
 QCOM_AXIS_ORDER = "axis_order"
 QCOM_BITWIDTH = "bitwidth"
