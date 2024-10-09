@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import warnings
 from typing import cast, Dict, List
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -189,12 +190,18 @@ class Conv2d(NodeVisitor):
 
         # args[6] = transposed
         if cast(bool, node.args[6]):
-            print("Currently, No support for transposed convolution")
+            warnings.warn(
+                "[QNN Delegate Op Builder]: Currently, No support for transposed convolution.",
+                stacklevel=1,
+            )
             return
 
         # args[7] = output padding
         if not all(out_pad == 0 for out_pad in cast(List[int], node.args[7])):
-            print("QNN does not support output padding")
+            warnings.warn(
+                "[QNN Delegate Op Builder]: QNN does not support output padding.",
+                stacklevel=1,
+            )
             return
 
         stride_shape = [len(stride)]

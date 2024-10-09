@@ -415,8 +415,8 @@ def _is_annotated(nodes: List[Node]):
     return annotated
 
 
-def _is_input_float_tensor(node: Node):
-    """Check if the input is not a float tensor, so that we can skip quantization for the node
+def _is_float_tensor(node: Node):
+    """Check if the node's tensor is a float tensor, so that we can skip quantization for the node
     since observers only works with float Tensors
     """
     if (
@@ -474,12 +474,20 @@ def annotate_single_in_single_out(
     assert isinstance(input_act, Node)
     input_qspec_map[input_act] = quantization_config.input_activation
 
-    if _is_input_float_tensor(node):
+    if _is_float_tensor(node):
         node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,
         )
+
+
+@register_annotator([torch.ops.aten.topk.default])
+def annotate_topk(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_annotated([node]):
+        return
+    # We can use single_in_single_out since we don't want to quantize indices output
+    annotate_single_in_single_out(node, quantization_config)
 
 
 def annotate_binary(node: Node, quantization_config: QuantizationConfig) -> None:
@@ -488,16 +496,16 @@ def annotate_binary(node: Node, quantization_config: QuantizationConfig) -> None
 
     input_act_qspec = quantization_config.input_activation
     output_act_qspec = (
-        quantization_config.output_activation if _is_input_float_tensor(node) else None
+        quantization_config.output_activation if _is_float_tensor(node) else None
     )
 
     input_qspec_map = {}
     input_act0 = node.args[0]
-    if _is_input_float_tensor(input_act0):
+    if _is_float_tensor(input_act0):
         input_qspec_map[input_act0] = input_act_qspec
 
     input_act1 = node.args[1]
-    if _is_input_float_tensor(input_act1):
+    if _is_float_tensor(input_act1):
         input_qspec_map[input_act1] = input_act_qspec
 
     node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -579,7 +587,7 @@ def annotate_div(node: Node, quantization_config: QuantizationConfig) -> None:
         )
         input_qspec_map = {}
         input_act0 = node.args[0]
-        if _is_input_float_tensor(input_act0):
+        if _is_float_tensor(input_act0):
             input_qspec_map[input_act0] = input_act_qspec
 
         node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -864,7 +872,7 @@ def annotate_sigmoid(node: Node, quantization_config: QuantizationConfig) -> Non
         qscheme=torch.torch.per_tensor_affine,
     )
 
-    if _is_input_float_tensor(node):
+    if _is_float_tensor(node):
         node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=out_act_quantization_spec,
@@ -1143,8 +1151,12 @@ def annotate_batch_norm(node: Node, quantization_config: QuantizationConfig) -> 
 
 @register_annotator([operator.getitem])
 def annotate_getitem(node: Node, quantization_config: QuantizationConfig) -> None:
-    _annotate_output_qspec(node, quantization_config.output_activation)
-    _mark_nodes_as_annotated([node])
+    if _is_annotated([node]):
+        return
+
+    if _is_float_tensor(node):
+        _annotate_output_qspec(node, quantization_config.output_activation)
+        _mark_nodes_as_annotated([node])
 
 
 @register_annotator([torch.ops.aten.layer_norm.default])

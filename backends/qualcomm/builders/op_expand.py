@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import warnings
 from typing import cast, Dict, List
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -52,8 +53,9 @@ class Expand(NodeVisitor):
         output_dims = len(output_tensor.size())
 
         if input_dims < output_dims:
-            print(
-                f"The rank of input tensor: {input_dims} is less than the rank of output tensor: {output_dims}."
+            warnings.warn(
+                f"[QNN Delegate Op Builder]: The rank of input tensor: {input_dims} is less than the rank of output tensor: {output_dims}.",
+                stacklevel=1,
             )
             return
 
