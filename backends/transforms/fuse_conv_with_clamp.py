@@ -7,7 +7,9 @@
 import sys
 
 import torch
-from executorch.backends.vulkan.passes.custom_ops_defs import conv_with_clamp_op  # noqa
+from executorch.backends.vulkan._passes.custom_ops_defs import (  # noqa
+    conv_with_clamp_op,
+)
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
