@@ -70,6 +70,12 @@ class QnnManager {
   // Pre-register custom memory handle from the SharedBuffer before execution
   Error PreRegisterMem();
 
+  uint64_t GetSpillFillBufferSize() {
+    auto* htp_backend_cache_ptr = static_cast<HtpBackendCache*>(
+        backend_params_ptr_->qnn_backend_cache_ptr_.get());
+    return htp_backend_cache_ptr->GetSpillFillBufferSize();
+  }
+
   std::vector<std::shared_ptr<TensorWrapper>> GetGraphInputs() {
     return input_tensors_;
   }

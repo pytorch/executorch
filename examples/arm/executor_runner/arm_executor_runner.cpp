@@ -392,6 +392,11 @@ int main(int argc, const char* argv[]) {
         (unsigned int)method_meta.error());
   }
 
+  ET_LOG(
+      Info,
+      "Setup Method allocator pool. Size: %lu bytes.",
+      method_allocation_pool_size);
+
   ArmMemoryAllocator method_allocator(
       method_allocation_pool_size, method_allocation_pool);
 
