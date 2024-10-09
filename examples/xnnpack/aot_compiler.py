@@ -96,7 +96,7 @@ if __name__ == "__main__":
             _skip_dim_order=True,  # TODO(T182187531): enable dim order in xnnpack
         ),
     )
-    logging.info(f"Exported graph:\n{edge.exported_program().graph}")
+    logging.critical(f"Exported graph:\n{edge.exported_program().graph}")
 
     # this is needed for the ETRecord as lowering modifies the graph in-place
     edge_copy = copy.deepcopy(edge)
