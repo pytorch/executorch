@@ -173,7 +173,7 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbeddingDeath3) {
   Tensor weight_zero_points = tf.make({3}, {0.0, 0.0, 0.0});
   Tensor qweight = tfb.make({3, 2}, {236, 134, 228, 111, 12, 14});
   Tensor indices = tfl.make({3}, {0, 2, 1});
-  Tensor out = tf.zeros({3, 2});
+  Tensor out = tf.zeros({3, 1});
 
   // wrong output shape
   ET_EXPECT_DEATH(
