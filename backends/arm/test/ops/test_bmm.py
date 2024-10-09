@@ -32,6 +32,12 @@ class TestBMM(unittest.TestCase):
         def forward(self, x, y):
             return torch.bmm(x, y)
 
+    class MatMul(torch.nn.Module):
+        test_parameters = [(torch.rand(2, 3, 5), torch.rand(2, 5, 2))]
+
+        def forward(self, x, y):
+            return torch.matmul(x, y)
+
     class BMMSingleInput(torch.nn.Module):
         test_parameters = [
             (torch.rand(20, 3, 3),),
@@ -53,9 +59,9 @@ class TestBMM(unittest.TestCase):
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
-            .check_count({"torch.ops.aten.bmm.default": 1})
             .check_not(["torch.ops.quantized_decomposed"])
             .to_edge()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_bmm_default": 1})
             .partition()
             .check_not(["executorch_exir_dialects_edge__ops_aten_bmm_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
@@ -74,9 +80,9 @@ class TestBMM(unittest.TestCase):
             )
             .quantize()
             .export()
-            .check_count({"torch.ops.aten.bmm.default": 1})
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_bmm_default": 1})
             .partition()
             .check_not(["executorch_exir_dialects_edge__ops_aten_bmm_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
@@ -115,6 +121,16 @@ class TestBMM(unittest.TestCase):
     def test_bmm_single_input_tosa_MI(self, operand1: torch.Tensor):
         test_data = (operand1,)
         self._test_bmm_tosa_MI_pipeline(self.BMMSingleInput(), test_data)
+
+    @parameterized.expand(MatMul.test_parameters)
+    def test_matmul_tosa_MI(self, operand1: torch.Tensor, operand2: torch.Tensor):
+        test_data = (operand1, operand2)
+        self._test_bmm_tosa_MI_pipeline(self.MatMul(), test_data)
+
+    @parameterized.expand(MatMul.test_parameters)
+    def test_matmul_tosa_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
+        test_data = (operand1, operand2)
+        self._test_bmm_tosa_BI_pipeline(self.MatMul(), test_data)
 
     @parameterized.expand(BMM.test_parameters)
     def test_bmm_tosa_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):

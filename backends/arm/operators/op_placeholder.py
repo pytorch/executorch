@@ -10,13 +10,14 @@ import serializer.tosa_serializer as ts
 import torch.fx
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import (
-    get_quant_arg_dtype,
-    get_quant_node_args,
-    is_quant_arg,
+    get_quantized_node_output_dtype,
+    is_node_quantized,
+    search_quant_arg_upstream,
 )
 from executorch.backends.arm.tosa_utils import (
     is_bias_node_for_quantized_addmm,
     is_bias_node_for_quantized_conv,
+    map_dtype,
     tosa_shape,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -41,7 +42,11 @@ def process_inputs(
     tensor = ts.TosaSerializerTensor(
         inputs[0].name,
         tosa_shape(input_shape, input_dim_order),
-        get_quant_arg_dtype(node) if is_quant_arg(node) else inputs[0].dtype,
+        (
+            map_dtype(get_quantized_node_output_dtype(node))
+            if is_node_quantized(node)
+            else inputs[0].dtype
+        ),
         data=None,
         placeholderFilename=inputs[0].name + ".npy",
     )
@@ -75,8 +80,8 @@ def process_quantized_bias(
             _,
         ) = consumer_node.all_input_nodes
 
-    input_node_scale = get_quant_node_args(input_node).scale
-    weight_node_scale = get_quant_node_args(weight_node).scale
+    input_node_scale = search_quant_arg_upstream(input_node).scale
+    weight_node_scale = search_quant_arg_upstream(weight_node).scale
     bias_values_quantized = (
         (parameter_values / (input_node_scale * weight_node_scale))
         .round()

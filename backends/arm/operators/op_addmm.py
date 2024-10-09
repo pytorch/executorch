@@ -14,10 +14,13 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import build_rescale, get_quant_node_args
+from executorch.backends.arm.tosa_quant_utils import (
+    build_rescale,
+    search_quant_arg_downstream,
+    search_quant_arg_upstream,
+)
 
 from executorch.backends.arm.tosa_utils import build_reshape
-from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp
 
 
@@ -67,12 +70,7 @@ class AddmmVisitor(NodeVisitor):
         input_zp = 0
         if is_quant_node:
             input_node = node.all_input_nodes[1]
-            # rank > 2 linear layer
-            if input_node.target == exir_ops.edge.aten.view_copy.default:
-                quant_node = input_node.all_input_nodes[0]
-            else:
-                quant_node = input_node
-            input_zp = get_quant_node_args(quant_node).zp
+            input_zp = search_quant_arg_upstream(input_node).zp
         attr.ConvAttribute(
             pad=pad_attr,
             stride=stride_attr,
@@ -107,24 +105,16 @@ class AddmmVisitor(NodeVisitor):
             # Read inputs' parent nodes
             _, input_node, weight_node = node.all_input_nodes
 
-            # rank > 2 linear layer
-            if input_node.target == exir_ops.edge.aten.view_copy.default:
-                quant_node = input_node.all_input_nodes[0]
-                input_scale = get_quant_node_args(quant_node).scale
-                consumer_node = list(node.users)[0]
-                consumer_consumer_node = list(consumer_node.users)[0]
-                quant_args = get_quant_node_args(consumer_consumer_node)
-                consumer_node_scale = quant_args.scale
-                consumer_node_node_zp = quant_args.zp
-            else:
-                input_scale = get_quant_node_args(input_node).scale
-                consumer_node = list(node.users)[0]
-                quant_args = get_quant_node_args(consumer_node)
-                consumer_node_scale = quant_args.scale
-                consumer_node_node_zp = quant_args.zp
+            qargs = search_quant_arg_upstream(input_node)
+            input_scale = qargs.scale
+            consumer_node = list(node.users)[0]
+            quant_args = search_quant_arg_downstream(consumer_node)
+
+            consumer_node_scale = quant_args.scale
+            consumer_node_node_zp = quant_args.zp
 
             weight_node_q_node = weight_node.all_input_nodes[0]
-            weight_scale = get_quant_node_args(weight_node_q_node).scale
+            weight_scale = search_quant_arg_upstream(weight_node_q_node).scale
 
             output_rescale_scale = (input_scale * weight_scale) / consumer_node_scale
 
