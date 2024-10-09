@@ -16,6 +16,7 @@ namespace HiFi {
 namespace native {
 
 using executorch::aten::Tensor;
+using executorch::runtime::getLeadingDims;
 using executorch::runtime::KernelRuntimeContext;
 
 void quantized_linear_out(

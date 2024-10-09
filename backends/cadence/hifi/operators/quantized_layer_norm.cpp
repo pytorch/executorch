@@ -13,6 +13,7 @@
 #include <tuple>
 
 using executorch::aten::Tensor;
+using executorch::runtime::getLeadingDims;
 using executorch::runtime::KernelRuntimeContext;
 
 namespace impl {
