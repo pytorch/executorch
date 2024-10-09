@@ -51,9 +51,9 @@ class TestQuantization(unittest.TestCase):
             m = torchvision.models.resnet18().eval()
             m_copy = copy.deepcopy(m)
             # program capture
-            m = torch._export.capture_pre_autograd_graph(
+            m = torch.export.export_for_training(
                 m, copy.deepcopy(example_inputs)
-            )
+            ).module()
 
             quantizer = XNNPACKQuantizer()
             operator_config = get_symmetric_quantization_config(is_per_channel=True)

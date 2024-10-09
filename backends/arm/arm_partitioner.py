@@ -57,6 +57,7 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.sigmoid.default,
             exir_ops.edge.aten.mm.default,
             exir_ops.edge.aten.repeat.default,
+            exir_ops.edge.aten.reciprocal.default,
             exir_ops.edge.aten.relu.default,
             exir_ops.edge.aten.rsqrt.default,
             exir_ops.edge.aten._softmax.default,
