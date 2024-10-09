@@ -21,3 +21,13 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     )
+
+    runtime.cxx_test(
+        name = "allocate_tensor_test",
+        srcs = ["allocate_tensor_test.cpp"],
+        deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/kernels/portable/cpu/util:allocate_tensor_util",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+    )
