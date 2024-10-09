@@ -1387,6 +1387,9 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    @unittest.skip(
+        "Softmax shader with shared memory does not work with swiftshader due to potential swiftshader bug"
+    )
     def test_vulkan_backend_softmax(self):
         class SoftmaxModule(torch.nn.Module):
             def __init__(self):
@@ -1406,6 +1409,9 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    @unittest.skip(
+        "Softmax shader with shared memory does not work with swiftshader due to potential swiftshader bug"
+    )
     def test_vulkan_backend_logsoftmax(self):
         class LogSoftmaxModule(torch.nn.Module):
             def __init__(self):
@@ -1640,6 +1646,20 @@ class TestBackends(unittest.TestCase):
         self.lower_module_and_test_output(
             EmbeddingModule(torch.nn.Embedding(5, 4)),
             (torch.tensor([[[0, 1], [0, 1]], [[4, 2], [3, 3]]]),),
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_flip(self):
+        class FlipModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.flip(x, [0, 1, 2, 3])
+
+        self.lower_module_and_test_output(
+            FlipModule(),
+            (torch.arange(48).reshape(2, 3, 4, 2),),
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 

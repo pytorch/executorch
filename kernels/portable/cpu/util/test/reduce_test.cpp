@@ -19,7 +19,10 @@ using exec_aten::ArrayRef;
 using exec_aten::optional;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
-using torch::executor::testing::TensorFactory;
+using executorch::runtime::testing::TensorFactory;
+using torch::executor::apply_over_dim;
+using torch::executor::apply_over_dim_list;
+using torch::executor::get_out_numel;
 
 void _apply_over_dim(const Tensor& in, const optional<int64_t>& dim) {
   int64_t* in_data = in.mutable_data_ptr<int64_t>();

@@ -300,6 +300,11 @@ ValueRef ComputeGraph::add_tensor_view(const ValueRef vref) {
   const vTensorPtr t = get_tensor(vref);
   ValueRef idx(static_cast<int>(values_.size()));
   values_.emplace_back(api::vTensor(*t));
+  for (SharedObject& sobj : shared_objects_) {
+    if (sobj.has_user(vref)) {
+      sobj.add_user(this, idx);
+    }
+  }
   return idx;
 }
 
@@ -311,6 +316,11 @@ ValueRef ComputeGraph::add_tensor_view(
   const vTensorPtr t = get_tensor(vref);
   ValueRef idx(static_cast<int>(values_.size()));
   values_.emplace_back(api::vTensor(*t, sizes, strides, offset_numel));
+  for (SharedObject& sobj : shared_objects_) {
+    if (sobj.has_user(vref)) {
+      sobj.add_user(this, idx);
+    }
+  }
   return idx;
 }
 
@@ -414,6 +424,10 @@ vkapi::BufferBindInfo ComputeGraph::get_or_create_int_param_buffer(
 
 void ComputeGraph::set_symint(const ValueRef idx, const int32_t val) {
   get_symint(idx)->set(val);
+}
+
+int32_t ComputeGraph::read_symint(const ValueRef idx) {
+  return get_symint(idx)->get();
 }
 
 SharedObject& ComputeGraph::get_shared_object(const int64_t idx) {

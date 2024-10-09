@@ -10,6 +10,7 @@
 import argparse
 import logging
 import os
+from typing import Optional
 
 import torch
 
@@ -19,8 +20,11 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
+
+from executorch.devtools.backend_debug import get_delegation_info
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
+from tabulate import tabulate
 
 # Quantize model if required using the standard export quantizaion flow.
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
@@ -148,8 +152,15 @@ models = {
 }
 
 targets = [
-    "ethos-u85-128",
+    "ethos-u55-32",
+    "ethos-u55-64",
     "ethos-u55-128",
+    "ethos-u55-256",
+    "ethos-u85-128",
+    "ethos-u85-256",
+    "ethos-u85-512",
+    "ethos-u85-1024",
+    "ethos-u85-2048",
     "TOSA",
 ]
 
@@ -160,11 +171,11 @@ def get_compile_spec(target: str, intermediates: bool) -> ArmCompileSpecBuilder:
         spec_builder = (
             ArmCompileSpecBuilder().tosa_compile_spec().set_permute_memory_format(True)
         )
-    elif target == "ethos-u55-128":
+    elif "ethos-u55" in target:
         spec_builder = (
             ArmCompileSpecBuilder()
             .ethosu_compile_spec(
-                "ethos-u55-128",
+                target,
                 system_config="Ethos_U55_High_End_Embedded",
                 memory_mode="Shared_Sram",
                 extra_flags="--debug-force-regor --output-format=raw",
@@ -172,11 +183,11 @@ def get_compile_spec(target: str, intermediates: bool) -> ArmCompileSpecBuilder:
             .set_permute_memory_format(args.model_name in MODEL_NAME_TO_MODEL.keys())
             .set_quantize_io(True)
         )
-    elif target == "ethos-u85-128":
+    elif "ethos-u85" in target:
         spec_builder = (
             ArmCompileSpecBuilder()
             .ethosu_compile_spec(
-                "ethos-u85-128",
+                target,
                 system_config="Ethos_U85_SYS_DRAM_Mid",
                 memory_mode="Shared_Sram",
                 extra_flags="--output-format=raw",
@@ -189,6 +200,21 @@ def get_compile_spec(target: str, intermediates: bool) -> ArmCompileSpecBuilder:
         spec_builder.dump_intermediate_artifacts_to(args.intermediates)
 
     return spec_builder.build()
+
+
+def dump_delegation_info(edge, intermediate_files_folder: Optional[str] = None):
+    graph_module = edge.exported_program().graph_module
+    delegation_info = get_delegation_info(graph_module)
+    df = delegation_info.get_operator_delegation_dataframe()
+    table = tabulate(df, headers="keys", tablefmt="fancy_grid")
+    delegation_info_string = f"Delegation info:\n{delegation_info.get_summary()}\nDelegation table:\n{table}\n"
+    logging.info(delegation_info_string)
+    if intermediate_files_folder is not None:
+        delegation_file_path = os.path.join(
+            intermediate_files_folder, "delegation_info.txt"
+        )
+        with open(delegation_file_path, "w") as file:
+            file.write(delegation_info_string)
 
 
 def get_args():
@@ -281,7 +307,7 @@ if __name__ == "__main__":
     model = model.eval()
 
     # pre-autograd export. eventually this will become torch.export
-    model = torch._export.capture_pre_autograd_graph(model, example_inputs)
+    model = torch.export.export_for_training(model, example_inputs).module()
 
     # Quantize if required
     if args.quantize:
@@ -306,6 +332,9 @@ if __name__ == "__main__":
     logging.debug(f"Exported graph:\n{edge.exported_program().graph}")
     if args.delegate is True:
         edge = edge.to_backend(ArmPartitioner(compile_spec))
+
+        dump_delegation_info(edge, args.intermediates)
+
         logging.debug(f"Lowered graph:\n{edge.exported_program().graph}")
 
     try:
@@ -323,7 +352,9 @@ if __name__ == "__main__":
 
     model_name = os.path.basename(os.path.splitext(args.model_name)[0])
     output_name = f"{model_name}" + (
-        f"_arm_delegate_{args.target}" if args.delegate is True else ""
+        f"_arm_delegate_{args.target}"
+        if args.delegate is True
+        else f"_arm_{args.target}"
     )
 
     if args.output is not None:

@@ -33,43 +33,43 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
-            name = "runtime",
-            srcs = glob(
-                [
-                    "*.cpp",
-                    "backends/*.cpp",
-                    "backends/htpbackend/*.cpp",
-                    "backends/htpbackend/aarch64/*.cpp",
-                ],
-                exclude = ["Logging.cpp"],
-            ),
-            exported_headers = glob(
-                [
-                    "*.h",
-                    "backends/*.h",
-                    "backends/htpbackend/*.h",
-                ],
-                exclude = ["Logging.h"],
-            ),
-            define_static_target = True,
-            link_whole = True,  # needed for executorch/examples/models/llama2:main to register QnnBackend
-            platforms = [ANDROID],
-            visibility = ["@EXECUTORCH_CLIENTS"],
-            resources = {
-                "qnn_lib": "fbsource//third-party/qualcomm/qnn/qnn-2.25:qnn_offline_compile_libs",
-            },
-            deps = [
-                "fbsource//third-party/qualcomm/qnn:api",
-                ":logging",
-                "//executorch/backends/qualcomm:schema",
-                "//executorch/backends/qualcomm/aot/ir:qcir_utils",
-                "//executorch/backends/qualcomm/aot/wrappers:wrappers",
-                "//executorch/runtime/backend:interface",
-                "//executorch/runtime/core:core", 
-                "//executorch/extension/tensor:tensor", 
+        name = "runtime",
+        srcs = glob(
+            [
+                "*.cpp",
+                "backends/*.cpp",
+                "backends/htpbackend/*.cpp",
+                "backends/htpbackend/aarch64/*.cpp",
             ],
-            exported_deps = [
-                "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-                "//executorch/runtime/core:event_tracer",         
+            exclude = ["Logging.cpp"],
+        ),
+        exported_headers = glob(
+            [
+                "*.h",
+                "backends/*.h",
+                "backends/htpbackend/*.h",
             ],
+            exclude = ["Logging.h"],
+        ),
+        define_static_target = True,
+        link_whole = True,  # needed for executorch/examples/models/llama2:main to register QnnBackend
+        platforms = [ANDROID],
+        visibility = ["@EXECUTORCH_CLIENTS"],
+        resources = {
+            "qnn_lib": "fbsource//third-party/qualcomm/qnn/qnn-2.25:qnn_offline_compile_libs",
+        },
+        deps = [
+            "fbsource//third-party/qualcomm/qnn:api",
+            ":logging",
+            "//executorch/backends/qualcomm:schema",
+            "//executorch/backends/qualcomm/aot/ir:qcir_utils",
+            "//executorch/backends/qualcomm/aot/wrappers:wrappers",
+            "//executorch/runtime/backend:interface",
+            "//executorch/runtime/core:core",
+            "//executorch/extension/tensor:tensor",
+        ],
+        exported_deps = [
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core:event_tracer",
+        ],
     )

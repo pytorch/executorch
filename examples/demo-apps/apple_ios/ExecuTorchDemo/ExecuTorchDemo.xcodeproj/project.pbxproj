@@ -807,7 +807,7 @@
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
 				kind = revision;
-				revision = 308512d938b2b6bb97d18f83e950d2765b053581;
+				revision = bdf3f5a1047c73ef61bb3e956d1d4528de743077;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

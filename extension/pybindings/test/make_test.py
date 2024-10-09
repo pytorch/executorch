@@ -341,6 +341,17 @@ def make_test(  # noqa: C901
             tester.assertEqual(output_tensor.nbytes(), 16)
             tester.assertEqual(str(output_tensor), tensor_info)
 
+        def test_bad_name(tester) -> None:
+            # Create an ExecuTorch program from ModuleAdd.
+            # pyre-fixme[16]: Callable `make_test` has no attribute `wrapper`.
+            exported_program, inputs = create_program(ModuleAdd())
+
+            # Use pybindings to load and execute the program.
+            executorch_module = load_fn(exported_program.buffer)
+            # Invoke the callable on executorch_module instead of calling module.forward.
+            with tester.assertRaises(RuntimeError):
+                executorch_module.run_method("not_a_real_method", inputs)
+
         ######### RUN TEST CASES #########
         test_e2e(tester)
         test_multiple_entry(tester)
@@ -351,5 +362,6 @@ def make_test(  # noqa: C901
         test_quantized_ops(tester)
         test_constant_output_not_memory_planned(tester)
         test_method_meta(tester)
+        test_bad_name(tester)
 
     return wrapper

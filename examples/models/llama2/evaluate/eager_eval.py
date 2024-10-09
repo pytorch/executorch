@@ -62,7 +62,7 @@ class EagerEvalWrapper(eval_wrapper):
     def device(self):
         return self._device
 
-    def tok_encode(self, string: str, **kwargs):
+    def tok_encode(self, string: str, **kwargs):  # pyre-ignore
         tokens = self._tokenizer.encode(string, bos=True, eos=False)
         encoded = torch.tensor(tokens, dtype=torch.int, device=self.device)
         # encoded is a pytorch tensor, but some internal logic in the
@@ -111,7 +111,9 @@ def evaluate_model(
 
     if "hendrycks_test" in tasks:
         tasks.remove("hendrycks_test")
-        tasks += list(lm_eval.tasks.hendrycks_test.create_all_tasks().keys())
+        tasks += list(
+            lm_eval.tasks.hendrycks_test.create_all_tasks().keys()  # pyre-ignore
+        )
     task_dict = get_task_dict(tasks)
 
     eval_results = evaluate(

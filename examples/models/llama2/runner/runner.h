@@ -41,7 +41,11 @@ class Runner {
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const ::executorch::extension::llm::Stats&)>
           stats_callback = {},
-      bool echo = true);
+      bool echo = true,
+      bool warming = false);
+  ::executorch::runtime::Error warmup(
+      const std::string& prompt,
+      int32_t seq_len = 128);
   void stop();
 
  private:

@@ -170,5 +170,12 @@ at::Tensor alias_attensor_to_etensor(const torch::executor::Tensor& etensor) {
   return t;
 }
 
+TensorPtr alias_tensor_ptr_to_attensor(at::Tensor& t) {
+  return make_tensor_ptr(
+      {t.sizes().begin(), t.sizes().end()},
+      t.mutable_data_ptr(),
+      torch::executor::ScalarType(t.scalar_type()));
+}
+
 } // namespace extension
 } // namespace executorch

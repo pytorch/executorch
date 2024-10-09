@@ -140,26 +140,26 @@ void setup_output_storage(
     const std::vector<Span<uint8_t>>& output_storages) {
   if (output_storages.size() != method.outputs_size()) {
     THROW_IF_ERROR(
-        Error(),
+        Error::InvalidArgument,
         "number of output storages %zu does not match number of outputs %zu",
         output_storages.size(),
         method.outputs_size());
   }
   for (size_t i = 0; i < output_storages.size(); ++i) {
     if (output_storages[i].size() == 0) {
-      // Skip empty output storages, this would happen for non-tensor outputs.
+      // Skip empty output storages, this would happen for non-tensor outputs
+      // and memory planned outputs.
       continue;
     }
     Error output_status = method.set_output_data_ptr(
         output_storages[i].data(), output_storages[i].size(), i);
-    // InvalidState can be the status if outputs are already memory planned.
-    // That's fine and we don't need to alert the user to that error.
-    if (output_status != Error::Ok && output_status != Error::InvalidState) {
-      ET_LOG(
-          Error,
-          "Cannot set_output_data_ptr(): 0x%" PRIx32,
-          static_cast<uint32_t>(output_status));
-    }
+    // We already should be skipping non-tensor outputs, and memory planned
+    // outputs so any error is real.
+    THROW_IF_ERROR(
+        output_status,
+        "set_output_data_ptr failed for output %zu with error 0x%" PRIx32,
+        i,
+        static_cast<uint32_t>(output_status));
   }
 }
 
@@ -249,10 +249,10 @@ class Module final {
       const std::vector<EValue>& args,
       const std::optional<std::vector<Span<uint8_t>>>& output_storages =
           std::nullopt) {
-    auto& method = methods_[method_name];
+    auto& method = get_method(method_name);
     exec_aten::ArrayRef<EValue> input_evalue_list(args.data(), args.size());
 
-    Error set_inputs_status = method->set_inputs(input_evalue_list);
+    Error set_inputs_status = method.set_inputs(input_evalue_list);
     THROW_IF_ERROR(
         set_inputs_status,
         "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
@@ -273,9 +273,9 @@ class Module final {
         c10::autograd_dispatch_keyset);
 #endif
     if (output_storages) {
-      setup_output_storage(*method, *output_storages);
+      setup_output_storage(method, *output_storages);
     }
-    Error execute_status = method->execute();
+    Error execute_status = method.execute();
     THROW_IF_ERROR(
         execute_status,
         "method->execute() failed with error 0x%" PRIx32,
@@ -302,7 +302,9 @@ class Module final {
   Method& get_method(const std::string& method_name) {
     if (methods_.count(method_name) == 0) {
       THROW_IF_ERROR(
-          Error(), "no such method in program: %s", method_name.c_str());
+          Error::InvalidArgument,
+          "no such method in program: %s",
+          method_name.c_str());
     }
     return *methods_[method_name].get();
   }
@@ -888,26 +890,34 @@ struct PyModule final {
 
   std::vector<std::vector<uint8_t>> make_output_storages(const Method& method) {
     const auto num_outputs = method.outputs_size();
-    // These output storages will not be used if the ExecuTorch program already
-    // pre-allocated output space. That is represented by an error from
-    // set_output_data_ptr.
-    std::vector<std::vector<uint8_t>> output_storages(num_outputs);
+    // Create a buffer for each output tensor. Memory planned outputs and non
+    // tensor outputs get an empty buffer in this list which is ignored later.
+    std::vector<std::vector<uint8_t>> output_storages;
+    output_storages_.reserve(num_outputs);
+    auto meta = method.method_meta();
     for (size_t i = 0; i < num_outputs; ++i) {
-      const auto& output_tensor_meta =
-          method.method_meta().output_tensor_meta(i);
-      if (!output_tensor_meta.ok()) {
-        // If the output isn't a tensor it won't have a tensor meta.
-        ET_LOG(
-            Error,
-            "Tensor meta doesn't exist for output %zu, error is 0x%" PRIx32
-            ", skipping allocating storage",
-            i,
-            static_cast<uint32_t>(output_tensor_meta.error()));
-        output_storages[i] = std::vector<uint8_t>();
+      auto output_type = meta.output_tag(i);
+      THROW_IF_ERROR(
+          output_type.error(), "Failed to get output type for output %zu", i);
+      if (output_type.get() != Tag::Tensor) {
+        // Skip allocating storage for non-tensor outputs.
+        output_storages.emplace_back();
         continue;
       }
+      const auto& output_tensor_meta =
+          method.method_meta().output_tensor_meta(i);
+      THROW_IF_ERROR(
+          output_tensor_meta.error(),
+          "Failed to get output tensor meta for output %zu",
+          i);
+      if (output_tensor_meta.get().is_memory_planned()) {
+        // Skip allocating storage for planned memory outputs.
+        output_storages.emplace_back();
+        continue;
+      }
+      // Allocate storage for the output tensor.
       const size_t output_size = output_tensor_meta.get().nbytes();
-      output_storages[i] = std::vector<uint8_t>(output_size);
+      output_storages.emplace_back(output_size);
     }
     return output_storages;
   }

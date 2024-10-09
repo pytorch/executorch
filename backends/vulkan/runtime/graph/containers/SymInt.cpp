@@ -17,6 +17,10 @@ void SymInt::set(const int32_t val) {
   gpu_buffer.update(val);
 }
 
+int32_t SymInt::get() {
+  return gpu_buffer.read<int32_t>();
+}
+
 void SymInt::operator=(const int32_t val) {
   gpu_buffer.update(val);
 }

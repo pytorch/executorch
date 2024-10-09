@@ -13,7 +13,8 @@ namespace impl {
 namespace reference {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using executorch::aten::Tensor;
+using executorch::runtime::getLeadingDims;
 using executorch::runtime::KernelRuntimeContext;
 
 // The quantized matmul. The quantized matmul accumulates in a wider register,

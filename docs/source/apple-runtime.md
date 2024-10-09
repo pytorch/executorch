@@ -121,19 +121,7 @@ source .venv/bin/activate
 pip install --upgrade cmake pip zstd
 ```
 
-5. Install a compatible version of [Buck2](https://buck.build):
-
-```bash
-BUCK2_RELEASE_DATE="2024-05-15"
-BUCK2_ARCHIVE="buck2-aarch64-apple-darwin.zst"
-BUCK2=".venv/bin/buck2"
-
-curl -LO "https://github.com/facebook/buck2/releases/download/$BUCK2_RELEASE_DATE/$BUCK2_ARCHIVE"
-zstd -cdq "$BUCK2_ARCHIVE" > "$BUCK2" && chmod +x "$BUCK2"
-rm "$BUCK2_ARCHIVE"
-```
-
-6. Install the required dependencies, including those needed for the backends like [Core ML](build-run-coreml.md) or [MPS](build-run-mps.md), if you plan to build them as well:
+5. Install the required dependencies, including those needed for the backends like [Core ML](build-run-coreml.md) or [MPS](build-run-mps.md), if you plan to build them as well:
 
 ```bash
 ./install_requirements.sh
@@ -145,7 +133,7 @@ rm "$BUCK2_ARCHIVE"
 ./backends/apple/mps/install_requirements.sh
 ```
 
-7. Use the provided script to build .xcframeworks:
+6. Use the provided script to build .xcframeworks:
 
 ```bash
 ./build/build_apple_frameworks.sh --help
@@ -154,7 +142,7 @@ rm "$BUCK2_ARCHIVE"
 For example, the following invocation will build the ExecuTorch Runtime and all currently available kernels and backends for the Apple platform:
 
 ```bash
-./build/build_apple_frameworks.sh --buck2="$(realpath $BUCK2)" --coreml --custom --mps --optimized --portable --quantized --xnnpack
+./build/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack
 ```
 
 After the build finishes successfully, the resulting frameworks can be found in the `cmake-out` directory.
