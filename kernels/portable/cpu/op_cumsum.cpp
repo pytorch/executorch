@@ -108,6 +108,7 @@ Tensor& cumsum_out(
 
   dim = (self.dim() == 0) ? 0 : dim < 0 ? dim + self.dim() : dim;
 
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "cumsum.out";
 
   ET_SWITCH_REALHBBF16_TYPES(out.scalar_type(), ctx, op_name, CTYPE_OUT, [&] {

@@ -47,6 +47,7 @@ Tensor& floor_divide_out(
   // Compute Dtype
   ScalarType compute_type = utils::get_compute_type(common_type);
 
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "floor_divide.out";
 
   bool div_by_zero_error = false;
