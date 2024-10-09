@@ -406,6 +406,7 @@ Tensor& convolution_out(
     return out;
   }
 
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char name[] = "convolution.out";
 
   ET_SWITCH_REALH_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
