@@ -152,7 +152,7 @@ if __name__ == "__main__":
         raise RuntimeError(f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}.")
 
     model_config = get_model_config(args)
-    model, example_inputs, _ = EagerModelFactory.create_model(**model_config)
+    model, example_inputs, _, _ = EagerModelFactory.create_model(**model_config)
 
     model = model.eval()
 

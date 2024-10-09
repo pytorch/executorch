@@ -58,7 +58,7 @@ def main() -> None:
             f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}."
         )
 
-    model, example_inputs, dynamic_shapes = EagerModelFactory.create_model(
+    model, example_inputs, _, dynamic_shapes = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 

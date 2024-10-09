@@ -158,7 +158,7 @@ def main():
             f"Valid compute units are {valid_compute_units}."
         )
 
-    model, example_inputs, _ = EagerModelFactory.create_model(
+    model, example_inputs, _, _ = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
