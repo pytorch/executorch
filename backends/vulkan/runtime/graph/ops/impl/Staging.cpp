@@ -54,7 +54,7 @@ void add_staging_to_tensor_node(
 const std::string kBitw8PrefixStr = "bitw8_image_to_nchw_nobitw8buffer";
 
 bool is_bitw8_shader(const vkapi::ShaderInfo& shader) {
-  const auto size = shader.kernel_name.size();
+  const auto size = kBitw8PrefixStr.size();
   const std::string& shader_prefix_str = shader.kernel_name.substr(0, size);
   return shader_prefix_str == kBitw8PrefixStr;
 }
