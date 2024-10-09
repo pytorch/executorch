@@ -148,7 +148,7 @@ python -m examples.models.llama2.export_llama \
   --use_sdpa_with_kv_cache \
   -X \
   -d bf16 \
-  --metadata '{"append_eos_to_prompt": 0, "get_bos_id":128000, "get_eos_ids":[128009, 128001], "get_n_bos": 0, "get_n_eos": 0}' \
+  --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
   --output_name="llama3_2.pte"
 ```
 
@@ -174,7 +174,7 @@ python -m examples.models.llama2.export_llama \
    -d fp32 \
    --preq_embedding_quantize 8,0 \
    --use_spin_quant native \
-   --metadata '{"append_eos_to_prompt": 0, "get_bos_id":128000, "get_eos_ids":[128009, 128001], "get_n_bos": 0, "get_n_eos": 0}'
+   --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 ```
 
 ### Option B: Download and export Llama 3 8B instruct model
