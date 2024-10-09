@@ -7,9 +7,11 @@
  */
 
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpGraph.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
 
 Error HtpGraph::MakeConfig(std::vector<const QnnGraph_Config_t*>& config) {
   const std::vector<QnnGraph_CustomConfig_t>& graph_custom_config =
@@ -31,5 +33,5 @@ Error HtpGraph::MakeConfig(std::vector<const QnnGraph_Config_t*>& config) {
   return Error::Ok;
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch
