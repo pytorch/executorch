@@ -38,5 +38,5 @@ Values
 .. doxygenstruct:: executorch::runtime::EValue
   :members:
 
-.. doxygenclass:: executorch::runtime::Tensor
+.. doxygenclass:: executorch::aten::Tensor
   :members:
