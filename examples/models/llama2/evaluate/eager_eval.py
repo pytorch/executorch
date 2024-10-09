@@ -44,7 +44,7 @@ class EagerEvalWrapper(eval_wrapper):
 
     @property
     def eot_token_id(self):
-        return self._tokenizer.eos_id
+        return self._tokenizer.eot_id
 
     @property
     def max_length(self):
@@ -63,17 +63,10 @@ class EagerEvalWrapper(eval_wrapper):
         return self._device
 
     def tok_encode(self, string: str, **kwargs):  # pyre-ignore
-        tokens = self._tokenizer.encode(string, bos=True, eos=False)
-        encoded = torch.tensor(tokens, dtype=torch.int, device=self.device)
-        # encoded is a pytorch tensor, but some internal logic in the
-        # eval harness expects it to be a list instead
-        # TODO: verify this for multi-batch as well
-        encoded = encoded.tolist()
-        return encoded
+        return self._tokenizer.encode(string, bos=False, eos=False)
 
     def tok_decode(self, tokens):
-        decoded = self._tokenizer.decode(tokens)
-        return decoded
+        return self._tokenizer.decode(tokens)
 
     def _model_call(self, inps):
         if self._use_kv_cache:
