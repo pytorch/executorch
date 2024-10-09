@@ -48,7 +48,7 @@ Tensor& copy_out(
 
   ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "copy.out", CTYPE, [&]() {
     utils::apply_bitensor_elementwise_fn<CTYPE, op_name>(
-        [](const CTYPE _, const CTYPE val_src) { return val_src; },
+        [](ET_UNUSED const CTYPE _, const CTYPE val_src) { return val_src; },
         ctx,
         in,
         utils::SupportedTensorDtypes::REALHBBF16,
@@ -76,11 +76,12 @@ Tensor& copy_(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, src), InvalidArgument, in);
 
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "copy_";
 
   ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "copy_", CTYPE, [&]() {
     utils::apply_bitensor_elementwise_fn<CTYPE, op_name>(
-        [](const CTYPE _, const CTYPE val_src) { return val_src; },
+        [](ET_UNUSED const CTYPE _, const CTYPE val_src) { return val_src; },
         ctx,
         in,
         utils::SupportedTensorDtypes::REALHBBF16,
