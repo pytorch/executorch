@@ -47,7 +47,7 @@ weight_value(const unsigned char* w_data, int32_t index, int32_t weight_nbit) {
     }
   }
 
-  ET_CHECK_MSG(false, "invalid weight_nbit: %zd", weight_nbit);
+  ET_CHECK_MSG(false, "invalid weight_nbit");
 }
 
 static inline int32_t get_embedding_dim(
