@@ -130,10 +130,3 @@ class TestSimpleSplit(unittest.TestCase):
     @parameterized.expand(Split.test_data)
     def test_split_tosa_BI(self, test_data: test_data_t):
         self._test_split_tosa_BI_pipeline(self.Split(), test_data)
-
-    # Fails during Vela compilation when trying to use a Tuple as a Named tuple,
-    # Could be Vela Issue, wait until Regor.
-    @parameterized.expand(Split.test_data)
-    @unittest.expectedFailure
-    def test_split_u55_BI(self, test_data: test_data_t):
-        self._test_split_u55_BI_pipeline(self.Split(), test_data)
