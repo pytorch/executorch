@@ -111,7 +111,7 @@ def quantized_linear_meta(
     weight_size = list(weight.size())
     assert len(weight_size) == 2
     out_size[-1] = weight_size[0]
-    return src.new_empty(out_size, dtype=torch.uint8)
+    return src.new_empty(out_size, dtype=src.dtype)
 
 
 @register_fake("cadence::quantized_conv")
