@@ -43,6 +43,7 @@ from executorch.devtools.etrecord import ETRecord, parse_etrecord
 from executorch.devtools.inspector._inspector_utils import (
     calculate_time_scale_factor,
     create_debug_handle_to_op_node_mapping,
+    display_or_print_df,
     EDGE_DIALECT_GRAPH_KEY,
     EXCLUDED_COLUMNS_WHEN_PRINTING,
     EXCLUDED_EVENTS_WHEN_PRINTING,
@@ -59,8 +60,6 @@ from executorch.devtools.inspector._inspector_utils import (
     verify_debug_data_equivalence,
 )
 from executorch.exir import ExportedProgram
-
-from tabulate import tabulate
 
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -1172,25 +1171,7 @@ class Inspector:
             ]
         filtered_column_df.reset_index(drop=True, inplace=True)
 
-        try:
-            from IPython import get_ipython
-            from IPython.display import display
-
-            def style_text_size(val, size=12):
-                return f"font-size: {size}px"
-
-            if get_ipython() is not None:
-                styled_df = filtered_column_df.style.applymap(style_text_size)
-                display(styled_df)
-            else:
-                raise Exception(
-                    "Environment unable to support IPython. Fall back to print()."
-                )
-        except:
-            print(
-                tabulate(filtered_column_df, headers="keys", tablefmt="fancy_grid"),
-                file=file,
-            )
+        display_or_print_df(filtered_column_df, file)
 
     # TODO: write unit test
     def find_total_for_module(self, module_name: str) -> float:

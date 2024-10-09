@@ -51,6 +51,14 @@ void add_staging_to_tensor_node(
       {}));
 }
 
+const std::string kBitw8PrefixStr = "bitw8_image_to_nchw_nobitw8buffer";
+
+bool is_bitw8_shader(const vkapi::ShaderInfo& shader) {
+  const auto size = kBitw8PrefixStr.size();
+  const std::string& shader_prefix_str = shader.kernel_name.substr(0, size);
+  return shader_prefix_str == kBitw8PrefixStr;
+}
+
 void add_tensor_to_staging_node(
     ComputeGraph& graph,
     const ValueRef in_tensor,
@@ -80,7 +88,7 @@ void add_tensor_to_staging_node(
   // output buffer. Therefore, the global work group size for this shader will
   // be the number of elements in the output buffer divided by 4, as opposed to
   // the extents of the input texture.
-  if (shader.kernel_name == "int8_image_to_nchw_noint8") {
+  if (is_bitw8_shader(shader)) {
     uint32_t buffer_len = graph.get_staging(out_staging)->numel() / 4;
     global_wg_size = {buffer_len, 1, 1};
     ubos.append({graph.numel_ubo(in_tensor)});

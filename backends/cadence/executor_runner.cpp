@@ -37,7 +37,6 @@
 
 static uint8_t method_allocator_pool[18 * 1024U]; // 4 MB
 
-using namespace torch::executor;
 #include <xtensa/config/core.h>
 
 #define APP_MU MUB
@@ -48,8 +47,8 @@ using namespace torch::executor;
 /* How many message is used to test message sending */
 #define MSG_LENGTH 32U
 
-using torch::executor::Error;
-using torch::executor::Result;
+using executorch::runtime::Error;
+using executorch::runtime::Result;
 
 void LED_INIT();
 void LED_TOGGLE();
@@ -106,13 +105,13 @@ int main(int argc, char** argv) {
   BOARD_InitDebugConsole();
   ET_LOG(Info, "Booted up in DSP.");
 
-  torch::executor::runtime_init();
+  executorch::runtime::runtime_init();
 
   auto loader =
-      torch::executor::util::BufferDataLoader(model_pte, sizeof(model_pte));
+      executorch::extension::BufferDataLoader(model_pte, sizeof(model_pte));
 
-  Result<torch::executor::Program> program =
-      torch::executor::Program::load(&loader);
+  Result<executorch::runtime::Program> program =
+      executorch::runtime::Program::load(&loader);
   if (!program.ok()) {
     ET_LOG(
         Error,
@@ -132,7 +131,7 @@ int main(int argc, char** argv) {
   }
   ET_LOG(Info, "ET: Running method %s", method_name);
 
-  Result<torch::executor::MethodMeta> method_meta =
+  Result<executorch::runtime::MethodMeta> method_meta =
       program->method_meta(method_name);
   if (!method_meta.ok()) {
     ET_LOG(
@@ -142,12 +141,12 @@ int main(int argc, char** argv) {
         (unsigned int)method_meta.error());
   }
 
-  torch::executor::MemoryAllocator method_allocator{
-      torch::executor::MemoryAllocator(
+  executorch::runtime::MemoryAllocator method_allocator{
+      executorch::runtime::MemoryAllocator(
           sizeof(method_allocator_pool), method_allocator_pool)};
 
   std::vector<std::unique_ptr<uint8_t[]>> planned_buffers; // Owns the memory
-  std::vector<torch::executor::Span<uint8_t>>
+  std::vector<executorch::runtime::Span<uint8_t>>
       planned_spans; // Passed to the allocator
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
 
@@ -161,13 +160,13 @@ int main(int argc, char** argv) {
     planned_spans.push_back({planned_buffers.back().get(), buffer_size});
   }
 
-  torch::executor::HierarchicalAllocator planned_memory(
+  executorch::runtime::HierarchicalAllocator planned_memory(
       {planned_spans.data(), planned_spans.size()});
 
-  torch::executor::MemoryManager memory_manager(
+  executorch::runtime::MemoryManager memory_manager(
       &method_allocator, &planned_memory);
 
-  Result<torch::executor::Method> method =
+  Result<executorch::runtime::Method> method =
       program->load_method(method_name, &memory_manager);
   if (!method.ok()) {
     ET_LOG(
@@ -178,7 +177,7 @@ int main(int argc, char** argv) {
   }
 
   ET_LOG(Info, "Method loaded.");
-  torch::executor::util::prepare_input_tensors(*method);
+  executorch::extension::prepare_input_tensors(*method);
   ET_LOG(Info, "Starting the model execution...");
 
   Error status = method->execute();

@@ -10,7 +10,7 @@
 
 import logging
 from enum import Enum
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
@@ -68,6 +68,7 @@ class LLMEdgeManager:
         dtype,
         use_kv_cache,
         example_inputs,
+        example_kwarg_inputs: Optional[Dict] = None,
         args: Optional[Any] = None,
         enable_dynamic_shape: bool = False,
         generate_full_logits: bool = False,
@@ -87,6 +88,7 @@ class LLMEdgeManager:
         self.max_seq_len = max_seq_len
         self.dtype = dtype
         self.example_inputs = example_inputs
+        self.example_kwarg_inputs = example_kwarg_inputs
         self.use_kv_cache = use_kv_cache
         self.generate_full_logits = generate_full_logits
         self.enable_dynamic_shape = enable_dynamic_shape
@@ -186,12 +188,16 @@ class LLMEdgeManager:
                 self.pre_autograd_graph_module = torch.export.export(
                     self.model,
                     self.example_inputs,
+                    self.example_kwarg_inputs,
                     dynamic_shapes=dynamic_shape,
                     strict=True,
                 ).module()
             else:
                 self.pre_autograd_graph_module = capture_pre_autograd_graph(
-                    self.model, self.example_inputs, dynamic_shapes=dynamic_shape
+                    self.model,
+                    self.example_inputs,
+                    kwargs=self.example_kwarg_inputs,
+                    dynamic_shapes=dynamic_shape,
                 )
 
         return self
@@ -340,6 +346,7 @@ class LLMEdgeManager:
             self.edge_manager = export_to_edge(
                 self.pre_autograd_graph_module,  # pyre-fixme[6]
                 self.example_inputs,
+                example_kwarg_inputs=self.example_kwarg_inputs,
                 dynamic_shapes=dynamic_shape,
                 edge_constant_methods=self.metadata,
                 edge_compile_config=edge_config,

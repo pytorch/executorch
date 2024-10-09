@@ -121,7 +121,7 @@ Go to Project Navigator, click on LLaMA. `Project --> LLaMA --> Package Dependen
 - Branch --> latest
 - Branch --> 0.4.0
 - Branch --> 0.3.0
-- Commit --> (Specify the commit hash, for example: `bdf3f5a1047c73ef61bb3e956d1d4528de743077`. Full list [here](https://github.com/pytorch/executorch/commits/latest/))
+- Commit --> (Specify the commit hash, for example: `e19893740c76195d6c4e6b44648725a46cee244e`. Full list [here](https://github.com/pytorch/executorch/commits/latest/))
 
 
 ### 2.2 Manually build the package locally and link them

@@ -17,8 +17,8 @@
 #include <memory>
 #include <sstream>
 #include <typeinfo>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 class OpWrapper final {
  public:
@@ -116,5 +116,5 @@ class OpWrapper final {
   std::vector<Qnn_Param_t> param_types_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

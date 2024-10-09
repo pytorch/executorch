@@ -81,7 +81,7 @@ def main(args):
             data_size=data_num, dataset_dir=args.artifact, download=args.download
         )
 
-    pte_filename = "dlv3_qnn"
+    pte_filename = "dl3_qnn_q8"
     instance = DeepLabV3ResNet101Model()
 
     build_executorch_binary(

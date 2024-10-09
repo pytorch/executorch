@@ -70,7 +70,7 @@ def define_common_targets():
         deps = [
             ":utils",
             "//caffe2:torch",
-            "//executorch/backends/vulkan/passes:custom_ops_defs",
+            "//executorch/backends/vulkan/_passes:custom_ops_defs",
             "//executorch/exir:pass_base",
             "//executorch/exir:sym_util",
             "//executorch/exir/dialects:lib",

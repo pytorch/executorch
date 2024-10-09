@@ -27,7 +27,7 @@ void quantized_linear_out(
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
-    const exec_aten::optional<Tensor>& offset,
+    const executorch::aten::optional<Tensor>& offset,
     Tensor& out) {
   // Assuming uint8_t for now, but needs to be updated for other quantization
   // types

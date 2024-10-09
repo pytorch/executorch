@@ -1094,6 +1094,49 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
   EXPECT_TRUE(sizeof(ExecuteNode) < 500);
 }
 
+TEST_F(VulkanComputeAPITest, test_tensor_creation_from_vulkan_image) {
+  const auto w = 16;
+  const auto h = 12;
+  const auto d = 1;
+  const utils::uvec3 image_extents = {w, h, d};
+
+  vkapi::Adapter* adapter_ptr = context()->adapter_ptr();
+
+  vkapi::ImageSampler::Properties sampler_props{
+      VK_FILTER_NEAREST,
+      VK_SAMPLER_MIPMAP_MODE_NEAREST,
+      VK_SAMPLER_ADDRESS_MODE_REPEAT,
+      VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
+  };
+
+  VkFormat image_format = VK_FORMAT_R32G32B32A32_SFLOAT;
+  VkImageType image_type = VK_IMAGE_TYPE_3D;
+  VkImageViewType image_view_type = VK_IMAGE_VIEW_TYPE_3D;
+
+  VkSampler sampler = adapter_ptr->sampler_cache().retrieve(sampler_props);
+
+  auto image = adapter_ptr->vma().create_image(
+      context()->device(),
+      vkapi::create_extent3d(image_extents),
+      image_format,
+      image_type,
+      image_view_type,
+      sampler_props,
+      sampler,
+      /*allow_transfer = */ true,
+      /*allocate_memory = */ true);
+
+  auto tensor = vTensor(context(), image);
+
+  const auto exp_sizes = std::vector<int64_t>{w, h, d * 4};
+  EXPECT_TRUE(tensor.sizes() == exp_sizes);
+  EXPECT_TRUE(tensor.packed_dim() == 2);
+
+  const auto exp_numel = w * h * d * 4;
+  EXPECT_TRUE(tensor.numel() == exp_numel);
+  EXPECT_TRUE(tensor.padded_numel() == exp_numel);
+}
+
 TEST(VulkanComputeGraphTest, test_values_scalars) {
   GraphConfig config;
   ComputeGraph graph(config);
@@ -2365,7 +2408,8 @@ void run_from_gpu_test(
 
   if (dtype == vkapi::kChar &&
       !context()->adapter_ptr()->has_full_int8_buffers_support()) {
-    record_int8_image_to_nchw_noint8_op(context(), vten, staging_buffer);
+    record_bitw8_image_to_nchw_nobitw8buffer_op(
+        context(), vten, staging_buffer);
   } else {
     record_image_to_nchw_op(context(), vten, staging_buffer.buffer());
   }
@@ -2412,7 +2456,8 @@ void round_trip_test(
   // Copy data in and out of the tensor
   if (dtype == vkapi::kChar &&
       !context()->adapter_ptr()->has_full_int8_buffers_support()) {
-    record_int8_image_to_nchw_noint8_op(context(), vten, staging_buffer_out);
+    record_bitw8_image_to_nchw_nobitw8buffer_op(
+        context(), vten, staging_buffer_out);
   } else {
     record_image_to_nchw_op(context(), vten, staging_buffer_out.buffer());
   }

@@ -25,6 +25,11 @@
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
 
+#ifdef ET_USE_THREADPOOL
+#include <cpuinfo.h>
+#include <executorch/extension/threadpool/threadpool.h>
+#endif
+
 #include <fbjni/ByteBuffer.h>
 #include <fbjni/fbjni.h>
 #if ET_USE_THREADPOOL == 1
@@ -271,6 +276,25 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 
     module_ = std::make_unique<Module>(modelPath->toStdString(), load_mode);
     num_threads_ = numThreads;
+
+#ifdef ET_USE_THREADPOOL
+    // Default to using cores/2 threadpool threads. The long-term plan is to
+    // improve performant core detection in CPUInfo, but for now we can use
+    // cores/2 as a sane default.
+    //
+    // Based on testing, this is almost universally faster than using all
+    // cores, as efficiency cores can be quite slow. In extreme cases, using
+    // all cores can be 10x slower than using cores/2.
+    //
+    // TODO Allow overriding this default from Java.
+    auto threadpool = executorch::extension::threadpool::get_threadpool();
+    if (threadpool) {
+      int default_thread_count = cpuinfo_get_processors_count() / 2;
+      if (num_threads_ == 0 && default_thread_count > 0) {
+        num_threads_ = default_thread_count;
+      }
+    }
+#endif
   }
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> forward(

@@ -111,7 +111,7 @@ def quantized_linear_meta(
     weight_size = list(weight.size())
     assert len(weight_size) == 2
     out_size[-1] = weight_size[0]
-    return src.new_empty(out_size, dtype=torch.uint8)
+    return src.new_empty(out_size, dtype=src.dtype)
 
 
 @register_fake("cadence::quantized_conv")
@@ -164,7 +164,7 @@ def quantized_layer_norm_meta(
     output_scale: float,
     output_zero_point: int,
 ) -> torch.Tensor:
-    return input.new_empty(input.size(), dtype=torch.uint8)
+    return input.new_empty(input.size(), dtype=input.dtype)
 
 
 @register_fake("cadence::quantized_relu")
