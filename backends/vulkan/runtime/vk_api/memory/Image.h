@@ -99,8 +99,8 @@ class VulkanImage final {
       const ImageProperties&,
       const ViewProperties&,
       const SamplerProperties&,
-      const VkImageLayout layout,
       VkSampler,
+      const VkImageLayout,
       const bool allocate_memory = true);
 
   explicit VulkanImage(
@@ -108,7 +108,8 @@ class VulkanImage final {
       const ImageProperties&,
       VkImage,
       VkImageView,
-      VkSampler);
+      VkSampler,
+      const VkImageLayout);
 
  protected:
   /*

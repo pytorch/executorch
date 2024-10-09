@@ -497,7 +497,7 @@ vTensor::vTensor(
       numel_(utils::multiply_integers(sizes_)),
       padded_sizes_(calculate_padded_sizes(sizes_, packed_dim_)),
       unsqueezed_strides_(),
-      padded_numel_(),
+      padded_numel_(utils::multiply_integers(padded_sizes_)),
       logical_limits_(),
       // Utility Uniform Buffers that can be passed to shaders as arguments
       sizes_uniform_(),

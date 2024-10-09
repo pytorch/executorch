@@ -115,8 +115,8 @@ VulkanImage::VulkanImage(
     const ImageProperties& image_props,
     const ViewProperties& view_props,
     const SamplerProperties& sampler_props,
-    const VkImageLayout layout,
     VkSampler sampler,
+    const VkImageLayout layout,
     const bool allocate_memory)
     : device_{device},
       image_properties_(image_props),
@@ -186,7 +186,8 @@ VulkanImage::VulkanImage(
     const ImageProperties& image_props,
     VkImage image,
     VkImageView image_view,
-    VkSampler sampler)
+    VkSampler sampler,
+    const VkImageLayout layout)
     : device_{device},
       image_properties_{image_props},
       view_properties_{},
@@ -200,7 +201,7 @@ VulkanImage::VulkanImage(
           image_view,
           sampler,
       },
-      layout_{VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL} {}
+      layout_{layout} {}
 
 VulkanImage::VulkanImage(const VulkanImage& other) noexcept
     : device_(other.device_),
