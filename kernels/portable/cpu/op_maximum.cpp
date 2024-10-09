@@ -41,6 +41,7 @@ Tensor& maximum_out(
   // Compute Dtype
   ScalarType compute_type = utils::get_compute_type(common_type);
 
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "maximum.out";
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
