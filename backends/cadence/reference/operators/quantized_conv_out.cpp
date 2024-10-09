@@ -14,7 +14,7 @@ namespace impl {
 namespace reference {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
 
 // This implements a generic 2d conv kernel that operates on raw pointers.
@@ -158,9 +158,9 @@ void quantized_conv_out(
     const Tensor& input,
     const Tensor& weight,
     const Tensor& bias,
-    exec_aten::IntArrayRef stride,
-    exec_aten::IntArrayRef padding,
-    exec_aten::IntArrayRef dilation,
+    executorch::aten::IntArrayRef stride,
+    executorch::aten::IntArrayRef padding,
+    executorch::aten::IntArrayRef dilation,
     int64_t groups,
     int64_t in_zero_point,
     const Tensor& weight_zero_point,
