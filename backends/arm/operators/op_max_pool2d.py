@@ -13,7 +13,10 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_utils import get_quant_node_args
+from executorch.backends.arm.tosa_utils import (
+    search_quant_arg_downstream,
+    search_quant_arg_upstream,
+)
 
 from serializer.tosa_serializer import TosaOp
 
@@ -54,8 +57,10 @@ class MaxPool2dVisitor(NodeVisitor):
         output_zp = 0
 
         if is_quant_node:
-            input_zp = get_quant_node_args(node.all_input_nodes[0]).zp
-            output_zp = get_quant_node_args(list(node.users)[0]).zp
+            input_zp = search_quant_arg_upstream(
+                torch.fx.Node, node.all_input_nodes[0]
+            ).zp
+            output_zp = search_quant_arg_downstream(list(node.users)[0]).zp
 
         attr = ts.TosaSerializerAttribute()
         attr.PoolAttribute(
