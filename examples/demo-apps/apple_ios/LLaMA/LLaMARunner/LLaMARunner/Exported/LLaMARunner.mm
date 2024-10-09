@@ -40,7 +40,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
   [ExecuTorchLog.sharedLog removeSink:self];
 }
 
-- (BOOL)isloaded {
+- (BOOL)isLoaded {
   return _runner->is_loaded();
 }
 
@@ -128,7 +128,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
   [ExecuTorchLog.sharedLog removeSink:self];
 }
 
-- (BOOL)isloaded {
+- (BOOL)isLoaded {
   return _runner->is_loaded();
 }
 
