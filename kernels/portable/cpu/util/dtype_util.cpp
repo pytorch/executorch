@@ -7,7 +7,6 @@
  */
 
 #include <executorch/kernels/portable/cpu/util/dtype_util.h>
-#include <executorch/runtime/kernel/kernel_runtime_context.h>
 
 namespace torch {
 namespace executor {
