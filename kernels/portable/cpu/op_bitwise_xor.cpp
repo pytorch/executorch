@@ -17,6 +17,7 @@ Tensor& bitwise_xor_Tensor_out(
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "bitwise_xor.Tensor_out";
   return internal::bitwise_tensor_out<op_name>(ctx, a, b, out);
 }
@@ -26,6 +27,7 @@ Tensor& bitwise_xor_Scalar_out(
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "bitwise_xor.Scalar_out";
   return internal::bitwise_scalar_out<op_name>(ctx, a, b, out);
 }
