@@ -49,7 +49,7 @@ __attribute__((noinline)) void qmatmul(
           sum += (X[i * n + k] - X_zero_point) * (y[k * p + j] - Y_zero_point);
         }
       }
-      Z[i * p + j] = kernels::quantize<uint8_t>(sum, Z_scale, Z_zero_point);
+      Z[i * p + j] = kernels::quantize<TZ>(sum, Z_scale, Z_zero_point);
     }
   }
 }
