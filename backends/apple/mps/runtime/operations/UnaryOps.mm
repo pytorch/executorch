@@ -6,8 +6,8 @@
 
 #include <executorch/backends/apple/mps/runtime/MPSGraphBuilder.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
 
@@ -29,7 +29,7 @@ MPSGraphBuilder::mpsBitwiseNotOp(NodePtr nodePtr) {
 
   MPSGraphTensor* inputTensor = getMPSGraphTensor(graphNode->input1_id());
   MPSDataType mpsInputDataType = [inputTensor dataType];
-  if (getScalarType(mpsInputDataType) == ScalarType::Bool) {
+  if (getScalarType(mpsInputDataType) == executorch::aten::ScalarType::Bool) {
     _idToMPSGraphTensor[graphNode->output_id()] = [_mpsGraph notWithTensor:inputTensor name:nil];
   } else {
     ET_CHECK_OR_RETURN_ERROR(
@@ -134,5 +134,5 @@ MPSGraphBuilder::mpsNormCdfOp(NodePtr nodePtr)  {
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -7,10 +7,12 @@
 #include <executorch/backends/apple/mps/runtime/MPSDevice.h>
 #include <executorch/backends/apple/mps/runtime/MPSDelegateHeader.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
+
+using executorch::runtime::Result;
 
 MPSGraphBuilder::MPSGraphBuilder(
   const void* buffer_pointer,
@@ -186,5 +188,5 @@ MPSGraphBuilder::getMPSGraphExecutable() {
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

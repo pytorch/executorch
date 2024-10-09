@@ -8,10 +8,12 @@
 #include <memory>
 #include <mutex>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
+
+using executorch::runtime::Error;
 
 static std::unique_ptr<MPSDevice> mps_device;
 static std::once_flag mpsdev_init;
@@ -152,5 +154,5 @@ bool is_macos_13_or_newer(MacOSVersion version) {
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

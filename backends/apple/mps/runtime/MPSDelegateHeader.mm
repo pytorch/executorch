@@ -10,10 +10,13 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
+
+using executorch::runtime::Error;
+using executorch::runtime::Result;
 
 /// Interprets the 8 bytes at `data` as a little-endian uint64_t.
 uint64_t getUInt64LE(const uint8_t* data) {
@@ -49,5 +52,5 @@ Result<MPSDelegateHeader> MPSDelegateHeader::Parse(const void* data, size_t size
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -7,8 +7,8 @@
 
 #include <executorch/runtime/core/result.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
 
@@ -87,7 +87,9 @@ struct MPSDelegateHeader {
    *     error if size was too short, if the header was not found, or if the
    *     header appeared to be corrupt.
    */
-  static Result<MPSDelegateHeader> Parse(const void* data, size_t size);
+  static executorch::runtime::Result<MPSDelegateHeader> Parse(
+      const void* data,
+      size_t size);
 
   /**
    * The offset in bytes to the beginning of the constant data.
@@ -109,5 +111,5 @@ struct MPSDelegateHeader {
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch
