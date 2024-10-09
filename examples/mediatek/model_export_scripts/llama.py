@@ -318,9 +318,9 @@ def export_to_et_ir(
         max_num_token, max_cache_size, True
     )
     print("Getting pre autograd ATen Dialect Graph")
-    pre_autograd_aten_dialect = torch._export.capture_pre_autograd_graph(
+    pre_autograd_aten_dialect = torch.export.export_for_training(
         model, example_inputs, dynamic_shapes=dynamic_shapes
-    )  # NOTE: Will be replaced with export
+    ).module()  # NOTE: Will be replaced with export
     quantizer = NeuropilotQuantizer()
     quantizer.setup_precision(getattr(Precision, precision))
     prepared_graph = prepare_pt2e(pre_autograd_aten_dialect, quantizer)
