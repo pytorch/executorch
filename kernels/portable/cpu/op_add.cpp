@@ -24,36 +24,44 @@ Tensor& add_out(
     Tensor& out) {
   ET_KERNEL_CHECK(
       ctx,
-      resize_to_broadcast_target_size(a, b, out) == Error::Ok,
-      InvalidArgument,
-      out);
-
-  ET_KERNEL_CHECK(
-      ctx,
       (executorch::runtime::tensor_is_realhbbf16_type(a) &&
        executorch::runtime::tensor_is_realhbbf16_type(b) &&
        executorch::runtime::tensor_is_realhbbf16_type(out)),
       InvalidArgument,
       out);
+
+  // Common Dtype
+  ScalarType common_type = promoteTypes(a.scalar_type(), b.scalar_type());
+
+  // Check Common Dtype
+  ET_KERNEL_CHECK(
+      ctx,
+      (canCast(common_type, out.scalar_type()) &&
+       check_alpha_type(utils::get_scalar_dtype(alpha), common_type)),
+      InvalidArgument,
+      out);
+
+  // Check Dim Order
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
 
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = b.scalar_type();
-  ScalarType alpha_type = utils::get_scalar_dtype(alpha);
-  ScalarType common_type = promoteTypes(a_type, b_type, /*half_to_float*/ true);
-  ScalarType out_type = out.scalar_type();
-
-  ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
+  // Resize
   ET_KERNEL_CHECK(
-      ctx, check_alpha_type(alpha_type, common_type), InvalidArgument, out);
+      ctx,
+      resize_to_broadcast_target_size(a, b, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
+  // Compute Dtype
+  ScalarType compute_type = utils::get_compute_type(common_type);
+
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "add.out";
 
-  ET_SWITCH_REALB_TYPES(common_type, ctx, op_name, CTYPE_COMMON, [&]() {
-    utils::apply_bitensor_elementwise_fn<CTYPE_COMMON, op_name>(
-        [alpha](const CTYPE_COMMON val_a, const CTYPE_COMMON val_b) {
-          CTYPE_COMMON val_alpha = utils::scalar_to<CTYPE_COMMON>(alpha);
+  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    const CTYPE_COMPUTE val_alpha = utils::scalar_to<CTYPE_COMPUTE>(alpha);
+    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [val_alpha](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
           return val_a + val_alpha * val_b;
         },
         a,
@@ -73,52 +81,49 @@ Tensor& add_scalar_out(
     const Scalar& b,
     const Scalar& alpha,
     Tensor& out) {
-  (void)ctx;
-
-  // Resize for dynamic shape
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      resize_tensor(out, a.sizes()) == Error::Ok,
-      InvalidArgument,
-      out,
-      "Failed to resize output tensor.");
-
   ET_KERNEL_CHECK(
       ctx,
       (executorch::runtime::tensor_is_realhbbf16_type(a) &&
        executorch::runtime::tensor_is_realhbbf16_type(out)),
       InvalidArgument,
       out);
+
+  // Common Dtype
+  ScalarType common_type = utils::promote_type_with_scalar(a.scalar_type(), b);
+
+  // Check Common Dtype
+  ET_KERNEL_CHECK(
+      ctx,
+      (common_type == out.scalar_type() &&
+       check_alpha_type(utils::get_scalar_dtype(alpha), common_type)),
+      InvalidArgument,
+      out);
+
+  // Check Dim Order
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
-  ScalarType a_type = a.scalar_type();
-  ScalarType alpha_type = utils::get_scalar_dtype(alpha);
-  ScalarType common_type =
-      utils::promote_type_with_scalar(a_type, b, /*half_to_float*/ false);
-  ScalarType out_type = out.scalar_type();
-
-  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
+  // Resize
   ET_KERNEL_CHECK(
-      ctx, check_alpha_type(alpha_type, common_type), InvalidArgument, out);
+      ctx, resize_tensor(out, a.sizes()) == Error::Ok, InvalidArgument, out);
 
-  if (common_type == ScalarType::Half || common_type == ScalarType::BFloat16) {
-    common_type = ScalarType::Float;
-  }
+  // Compute Dtype
+  ScalarType compute_type = utils::get_compute_type(common_type);
 
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "add.Scalar_out";
 
-  ET_SWITCH_REALB_TYPES(common_type, ctx, op_name, CTYPE_COMMON, [&]() {
-    utils::apply_unitensor_elementwise_fn<CTYPE_COMMON, op_name>(
-        [b, alpha](const CTYPE_COMMON val_a) {
-          CTYPE_COMMON val_b = utils::scalar_to<CTYPE_COMMON>(b);
-          CTYPE_COMMON val_alpha = utils::scalar_to<CTYPE_COMMON>(alpha);
+  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [b, alpha](const CTYPE_COMPUTE val_a) {
+          CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
+          CTYPE_COMPUTE val_alpha = utils::scalar_to<CTYPE_COMPUTE>(alpha);
           return val_a + val_alpha * val_b;
         },
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
         out,
-        utils::SupportedTensorDtypes::REALHBBF16);
+        utils::SupportedTensorDtypes::SAME_AS_COMMON);
   });
 
   return out;
