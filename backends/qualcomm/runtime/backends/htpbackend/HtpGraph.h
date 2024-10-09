@@ -13,8 +13,8 @@
 #include <memory>
 
 #include "HTP/QnnHtpGraph.h"
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 class HtpGraph : public QnnGraph {
  public:
@@ -35,7 +35,8 @@ class HtpGraph : public QnnGraph {
   ~HtpGraph() {}
 
  protected:
-  Error MakeConfig(std::vector<const QnnGraph_Config_t*>& config) override;
+  executorch::runtime::Error MakeConfig(
+      std::vector<const QnnGraph_Config_t*>& config) override;
 
  private:
   std::vector<QnnGraph_Config_t> graph_config_;
@@ -44,5 +45,5 @@ class HtpGraph : public QnnGraph {
   [[maybe_unused]] const QnnExecuTorchHtpBackendOptions* htp_options_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

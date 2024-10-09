@@ -6,9 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <executorch/backends/qualcomm/runtime/backends/QnnGraphCommon.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
+
 Error QnnGraph::Configure() {
   // create qnn backend
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
@@ -104,5 +107,5 @@ Error QnnGraph::EnsureTensorInQnnGraph(
   return Error::Ok;
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -9,8 +9,8 @@
 
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/backends/qualcomm/schema_generated.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 void LoggingCallback(
     const char* fmt,
@@ -35,5 +35,5 @@ class QnnLogger {
   const QnnImplementation& implementation_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

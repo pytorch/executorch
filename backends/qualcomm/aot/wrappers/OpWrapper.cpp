@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <executorch/backends/qualcomm/aot/wrappers/OpWrapper.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 Qnn_OpConfig_t OpWrapper::GetOpConfig() {
   param_types_.clear();
@@ -44,5 +44,5 @@ Qnn_OpConfig_t OpWrapper::GetOpConfig() {
   return ret;
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

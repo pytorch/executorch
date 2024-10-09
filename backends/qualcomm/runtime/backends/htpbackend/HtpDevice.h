@@ -17,8 +17,8 @@
 #define QNN_HTP_DEPRECATED_HTP_ARCH_VERSION_MAJOR 5
 #define QNN_HTP_DEPRECATED_HTP_ARCH_VERSION_MINOR 14
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 class HtpDevice : public QnnDevice {
  public:
@@ -45,9 +45,10 @@ class HtpDevice : public QnnDevice {
   };
 
  protected:
-  Error MakeConfig(std::vector<const QnnDevice_Config_t*>& config) override;
+  executorch::runtime::Error MakeConfig(
+      std::vector<const QnnDevice_Config_t*>& config) override;
 
-  Error AfterCreateDevice() override;
+  executorch::runtime::Error AfterCreateDevice() override;
 
  private:
   void PerformanceVote();
@@ -92,5 +93,5 @@ class HtpDevice : public QnnDevice {
   const QnnExecuTorchHtpBackendOptions* htp_options_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

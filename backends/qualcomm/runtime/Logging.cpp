@@ -11,8 +11,8 @@
 #ifdef __ANDROID__
 #include <android/log.h>
 #endif
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 void Log(QnnExecuTorchLogLevel log_level, const char* format, ...) {
   va_list args;
@@ -64,5 +64,5 @@ void Log(QnnExecuTorchLogLevel log_level, const char* format, ...) {
   fputc('\n', stderr);
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -11,8 +11,8 @@
 #include <executorch/backends/qualcomm/aot/ir/qcir_generated.h>
 #include "QnnTypes.h"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 
 typedef flatbuffers::Vector<::flatbuffers::Offset<qcir::Tensor>>::return_type
@@ -36,5 +36,5 @@ flatbuffers::Offset<qcir::Tensor> ToTensor(
 Qnn_Tensor_t ToTensor(const tensor_type& tensor);
 
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -12,9 +12,11 @@
 #include "HTP/QnnHtpCommon.h"
 #include "Saver/QnnSaverCommon.h"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
 
 // constexpr config values
 constexpr const int kSleepMinLatency = 40;
@@ -425,5 +427,5 @@ Error HtpDevice::AfterCreateDevice() {
 }
 
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

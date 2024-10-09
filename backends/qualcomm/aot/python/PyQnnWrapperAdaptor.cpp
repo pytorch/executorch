@@ -15,8 +15,8 @@
 #include <string>
 
 namespace py = pybind11;
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
     const Qnn_QuantizationEncoding_t& encoding,
@@ -250,5 +250,5 @@ PYBIND11_MODULE(PyQnnWrapperAdaptor, m) {
       .def("GetEncodings", &PyQnnTensorWrapper::GetEncodings);
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

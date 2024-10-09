@@ -7,9 +7,12 @@
  */
 #include <executorch/backends/qualcomm/aot/ir/qcir_utils.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCache.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
+
 Error QnnBackendCache::GetQnnGraphInfoFromBinary() {
   const QnnSystemInterface& qnn_sys_interface =
       qnn_sys_impl_.GetQnnSystemInterface();
@@ -170,5 +173,5 @@ std::vector<Qnn_Tensor_t> QnnBackendCache::GetGraphOutputs() {
   return output_tensor_structs_;
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

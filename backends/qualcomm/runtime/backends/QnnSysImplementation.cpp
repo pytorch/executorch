@@ -8,9 +8,12 @@
 
 #include <dlfcn.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnSysImplementation.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
+
 Error QnnSystemImplementation::Load() {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
@@ -86,5 +89,5 @@ const QnnSystemInterface& QnnSystemImplementation::GetQnnSystemInterface()
   return qnn_sys_interface_;
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -19,8 +19,8 @@
 #include <string_view>
 
 namespace py = pybind11;
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 class PyQnnManager {
  public:
@@ -48,7 +48,7 @@ class PyQnnManager {
         qnn_executorch_options, qnn_executorch_context_binary_);
   }
 
-  Error Init() {
+  executorch::runtime::Error Init() {
     return qnn_manager_->Init();
   }
   bool IsNodeSupportedByBackend(
@@ -97,8 +97,8 @@ class PyQnnManager {
             wrapper->SetName(param->GetName());
             set_tensor(wrapper, params);
           } else {
-            Error err = param->PopulateQnnParam();
-            if (err != Error::Ok) {
+            executorch::runtime::Error err = param->PopulateQnnParam();
+            if (err != executorch::runtime::Error::Ok) {
               QNN_EXECUTORCH_LOG_ERROR(
                   "Fail to get scalar parameter in online prepare stage");
               return py::array_t<char>(0);
@@ -131,7 +131,8 @@ class PyQnnManager {
       context_binary.buffer = builder.GetBufferPointer();
       context_binary.nbytes = builder.GetSize();
     } else if (
-        qnn_manager_->Compile(op_wrappers, context_binary) != Error::Ok) {
+        qnn_manager_->Compile(op_wrappers, context_binary) !=
+        executorch::runtime::Error::Ok) {
       return py::array_t<char>(0);
     }
 
@@ -155,7 +156,7 @@ class PyQnnManager {
     return qnn_manager_->IsTensorDump();
   }
 
-  Error AllocateTensor() {
+  executorch::runtime::Error AllocateTensor() {
     return qnn_manager_->AllocateTensor();
   }
 
@@ -189,5 +190,5 @@ class PyQnnManager {
   std::shared_ptr<QnnManager> qnn_manager_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

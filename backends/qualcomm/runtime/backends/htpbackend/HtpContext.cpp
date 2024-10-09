@@ -12,9 +12,11 @@
 #include "HTP/QnnHtpCommon.h"
 #include "Saver/QnnSaverCommon.h"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
 
 Error HtpContext::MakeConfig(std::vector<const QnnContext_Config_t*>& config) {
   const std::vector<QnnContext_CustomConfig_t>& context_custom_config =
@@ -45,5 +47,5 @@ Error HtpContext::AfterConfigure() {
 }
 
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

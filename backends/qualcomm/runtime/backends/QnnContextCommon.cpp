@@ -7,9 +7,12 @@
  */
 
 #include <executorch/backends/qualcomm/runtime/backends/QnnContextCommon.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
+
 QnnContext::~QnnContext() {
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
@@ -120,5 +123,5 @@ Error QnnContext::GetContextBinary(
   return Error::Ok;
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -7,8 +7,8 @@
  */
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDevicePlatformInfoConfig.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 std::vector<QnnDevice_PlatformInfo_t*>
 HtpDevicePlatformInfoConfig::CreateDevicePlatformInfo(
@@ -57,5 +57,5 @@ HtpDevicePlatformInfoConfig::CreateDevicePlatformInfo(
   return ret;
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -27,8 +27,8 @@ struct std::hash<CustomMemTensorInfo> {
   std::size_t operator()(const CustomMemTensorInfo& info) const noexcept;
 };
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 
 class SharedBuffer final {
@@ -76,9 +76,9 @@ class SharedBuffer final {
   SharedBuffer() = default;
 
   // dlopen RPCMem library and dlysm required functions
-  Error Load();
+  executorch::runtime::Error Load();
 
-  Error UnLoad();
+  executorch::runtime::Error UnLoad();
 
   // Pointer to the dlopen'd libcdsprpc.so shared library which contains
   // rpcmem_alloc, rpcmem_free, rpcmem_to_fd APIs
@@ -99,5 +99,5 @@ class SharedBuffer final {
 };
 
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -11,8 +11,8 @@
 #include "HTP/QnnHtpCommon.h"
 #include "HTP/QnnHtpProfile.h"
 #include "QnnTypes.h"
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 class HtpBackend : public QnnBackend {
  public:
@@ -35,10 +35,11 @@ class HtpBackend : public QnnBackend {
   }
 
  protected:
-  Error MakeConfig(std::vector<const QnnBackend_Config_t*>& config) override {
-    return Error::Ok;
+  executorch::runtime::Error MakeConfig(
+      std::vector<const QnnBackend_Config_t*>& config) override {
+    return executorch::runtime::Error::Ok;
   }
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

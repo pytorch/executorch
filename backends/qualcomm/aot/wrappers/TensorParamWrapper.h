@@ -13,8 +13,8 @@
 
 #include <memory>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 class TensorParamWrapper final : public ParamWrapper {
  public:
@@ -24,12 +24,12 @@ class TensorParamWrapper final : public ParamWrapper {
       : ParamWrapper(QNN_PARAMTYPE_TENSOR, std::move(name)),
         static_tensor_wrapper_(std::move(static_tensor)) {}
   // Populate Qnn tensorParam with tensor wrapper
-  Error PopulateQnnParam() override {
-    // Error out if underlying tensor is not static:
+  executorch::runtime::Error PopulateQnnParam() override {
+    // executorch::runtime::Error out if underlying tensor is not static:
     if (!static_tensor_wrapper_->IsTensorStatic())
-      return Error::Internal;
+      return executorch::runtime::Error::Internal;
     qnn_param_.tensorParam = static_tensor_wrapper_->CloneTensorStruct();
-    return Error::Ok;
+    return executorch::runtime::Error::Ok;
   }
 
   // Accessor functions:
@@ -45,5 +45,5 @@ class TensorParamWrapper final : public ParamWrapper {
   std::shared_ptr<TensorWrapper> static_tensor_wrapper_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

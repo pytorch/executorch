@@ -8,8 +8,8 @@
 #pragma once
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCache.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 class HtpBackendCache : public QnnBackendCache {
  public:
@@ -22,12 +22,12 @@ class HtpBackendCache : public QnnBackendCache {
   }
 
  protected:
-  Error RetrieveBackendBinaryInfo(
+  executorch::runtime::Error RetrieveBackendBinaryInfo(
       const QnnSystemContext_BinaryInfo_t* binaryinfo) override;
 
  private:
   uint64_t spill_fill_buf_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

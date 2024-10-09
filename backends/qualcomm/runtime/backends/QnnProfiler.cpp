@@ -8,8 +8,8 @@
 
 #include <executorch/backends/qualcomm/runtime/backends/QnnProfiler.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 
 QnnProfile::QnnProfile(
@@ -34,7 +34,8 @@ QnnProfile::QnnProfile(
   }
 }
 
-Qnn_ErrorHandle_t QnnProfile::ProfileData(EventTracer* event_tracer) {
+Qnn_ErrorHandle_t QnnProfile::ProfileData(
+    executorch::runtime::EventTracer* event_tracer) {
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
   const QnnProfile_EventId_t* events_ptr = nullptr;
   const QnnProfile_EventId_t* sub_events_ptr = nullptr;
@@ -88,11 +89,11 @@ Qnn_ErrorHandle_t QnnProfile::ProfileData(EventTracer* event_tracer) {
         if (sub_event_data.type == QNN_PROFILE_EVENTTYPE_NODE &&
             (sub_event_data.unit == QNN_PROFILE_EVENTUNIT_MICROSEC ||
              sub_event_data.unit == QNN_PROFILE_EVENTUNIT_CYCLES)) {
-          torch::executor::event_tracer_log_profiling_delegate(
+          executorch::runtime::event_tracer_log_profiling_delegate(
               event_tracer,
               sub_event_data.identifier,
               /*delegate_debug_id=*/
-              static_cast<torch::executor::DebugHandle>(-1),
+              static_cast<executorch::runtime::DebugHandle>(-1),
               0,
               sub_event_data.value);
         }
@@ -117,5 +118,5 @@ QnnProfile::~QnnProfile() {
   }
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

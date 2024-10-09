@@ -8,8 +8,8 @@
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/Utils.h>
 #include <sys/stat.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 
 void CreateDirectory(const std::string& path) {
@@ -32,5 +32,5 @@ void CreateDirectory(const std::string& path) {
 }
 
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

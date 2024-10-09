@@ -11,8 +11,8 @@
 
 #include <unordered_map>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 
 qcir::TensorType ToTensorType(Qnn_TensorType_t type) {
@@ -278,5 +278,5 @@ Qnn_Tensor_t ToTensor(const tensor_type& tensor) {
 }
 
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch
