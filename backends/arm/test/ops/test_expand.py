@@ -104,6 +104,5 @@ class TestSimpleExpand(unittest.TestCase):
 
     # Expected failure since tosa.TILE is unsupported by Vela.
     @parameterized.expand(Expand.test_parameters)
-    @unittest.expectedFailure
     def test_expand_u55_BI(self, test_input, multiples):
         self._test_expand_tosa_u55_pipeline(self.Expand(), (test_input, multiples))

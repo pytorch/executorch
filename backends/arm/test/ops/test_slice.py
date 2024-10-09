@@ -111,6 +111,5 @@ class TestSimpleSlice(unittest.TestCase):
     # Fails during Vela compilation when trying to use a Tuple as a Named tuple,
     # Could be Vela Issue, wait until Regor.
     @parameterized.expand(Slice.test_tensors)
-    @unittest.expectedFailure
     def test_slice_u55_BI(self, test_tensor: torch.Tensor):
         self._test_slice_u55_BI_pipeline(self.Slice(), (test_tensor,))

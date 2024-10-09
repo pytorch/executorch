@@ -105,6 +105,5 @@ class TestSimpleRepeat(unittest.TestCase):
 
     # Expected failure since tosa.TILE is unsupported by Vela.
     @parameterized.expand(Repeat.test_parameters)
-    @unittest.expectedFailure
     def test_repeat_u55_BI(self, test_input, multiples):
         self._test_repeat_tosa_u55_pipeline(self.Repeat(), (test_input, multiples))
