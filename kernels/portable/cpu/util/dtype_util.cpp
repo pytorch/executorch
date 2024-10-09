@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
+#include <executorch/kernels/portable/cpu/util/dtype_util.h>
 
 namespace torch {
 namespace executor {
