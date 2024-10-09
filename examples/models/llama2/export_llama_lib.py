@@ -774,7 +774,7 @@ def _load_llama_model(
     logging.info(
         f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}"
     )
-    model, example_inputs, _ = EagerModelFactory.create_model(
+    model, example_inputs, example_kwarg_inputs, _ = EagerModelFactory.create_model(
         "llama2",
         "Llama2Model",
         checkpoint=checkpoint,
@@ -824,6 +824,7 @@ def _load_llama_model(
         use_kv_cache=use_kv_cache,
         generate_full_logits=generate_full_logits,
         example_inputs=example_inputs,
+        example_kwarg_inputs=example_kwarg_inputs,
         enable_dynamic_shape=enable_dynamic_shape,
         calibration_tasks=calibration_tasks,
         calibration_limit=calibration_limit,
