@@ -214,12 +214,7 @@ if __name__ == "__main__":
         edge = edge.to_backend(
             ArmPartitioner(
                 ArmCompileSpecBuilder()
-                .ethosu_compile_spec(
-                    "ethos-u55-128",
-                    system_config="Ethos_U55_High_End_Embedded",
-                    memory_mode="Shared_Sram",
-                    extra_flags="--debug-force-regor --output-format=raw",
-                )
+                .ethosu_compile_spec("ethos-u55-128")
                 .set_permute_memory_format(
                     args.model_name in MODEL_NAME_TO_MODEL.keys()
                 )
