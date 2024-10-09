@@ -8,8 +8,6 @@
 
 #include <executorch/backends/vulkan/runtime/api/containers/Tensor.h>
 
-#include <executorch/backends/vulkan/runtime/vk_api/VkUtils.h>
-
 namespace vkcompute {
 namespace api {
 

@@ -23,8 +23,6 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/QPackUtils.h>
 
-#include <executorch/backends/vulkan/runtime/vk_api/VkUtils.h>
-
 #include <executorch/backends/vulkan/test/utils/test_utils.h>
 
 using namespace vkcompute;
