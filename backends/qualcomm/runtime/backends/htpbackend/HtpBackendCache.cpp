@@ -8,9 +8,12 @@
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpBackendCache.h>
 #include "HTP/QnnHtpSystemContext.h"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
+
 Error HtpBackendCache::RetrieveBackendBinaryInfo(
     const QnnSystemContext_BinaryInfo_t* binaryinfo) {
   QnnHtpSystemContext_HwBlobInfo_t* htp_hwblobinfo = nullptr;
@@ -47,5 +50,5 @@ Error HtpBackendCache::RetrieveBackendBinaryInfo(
 }
 
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

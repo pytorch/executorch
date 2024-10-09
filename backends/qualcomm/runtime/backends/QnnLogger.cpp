@@ -14,8 +14,8 @@
 #include <memory>
 
 #include "QnnLog.h"
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 void LoggingCallback(
     const char* fmt,
@@ -101,5 +101,5 @@ QnnLogger::~QnnLogger() {
   }
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

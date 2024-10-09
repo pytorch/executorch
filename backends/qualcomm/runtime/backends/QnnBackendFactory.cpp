@@ -7,9 +7,12 @@
  */
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendFactory.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
+
 std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
     const QnnImplementation& implementation,
     QnnLogger* logger,
@@ -93,5 +96,5 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
   return nullptr;
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

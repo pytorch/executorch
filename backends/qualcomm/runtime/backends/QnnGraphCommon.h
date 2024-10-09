@@ -16,8 +16,8 @@
 #include <vector>
 
 #include "QnnCommon.h"
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 // qnn graph
 class QnnGraph {
@@ -37,7 +37,7 @@ class QnnGraph {
 
   virtual ~QnnGraph(){};
 
-  Error Configure();
+  executorch::runtime::Error Configure();
 
   Qnn_ErrorHandle_t GraphExecute(
       const std::vector<Qnn_Tensor_t>& input_tensor_structs,
@@ -47,14 +47,15 @@ class QnnGraph {
     return implementation_.GetQnnInterface().qnn_graph_add_node(
         handle_, op_config);
   };
-  Error EnsureTensorInQnnGraph(
+  executorch::runtime::Error EnsureTensorInQnnGraph(
       const std::shared_ptr<TensorWrapper>& tensor_wrapper);
 
   Qnn_ErrorHandle_t GraphFinalize() {
     return implementation_.GetQnnInterface().qnn_graph_finalize(
         handle_, nullptr /* profile_handle */, nullptr /* signal_handle */);
   };
-  Qnn_ErrorHandle_t ProfileExecuteData(EventTracer* event_tracer) {
+  Qnn_ErrorHandle_t ProfileExecuteData(
+      executorch::runtime::EventTracer* event_tracer) {
     return profile_->ProfileData(event_tracer);
   };
   Qnn_GraphHandle_t GetHandle() {
@@ -62,8 +63,9 @@ class QnnGraph {
   }
 
  protected:
-  virtual Error MakeConfig(std::vector<const QnnGraph_Config_t*>& config) {
-    return Error::Ok;
+  virtual executorch::runtime::Error MakeConfig(
+      std::vector<const QnnGraph_Config_t*>& config) {
+    return executorch::runtime::Error::Ok;
   };
 
  private:
@@ -76,5 +78,5 @@ class QnnGraph {
   std::unique_ptr<QnnProfile> profile_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch
