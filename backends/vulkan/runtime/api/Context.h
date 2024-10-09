@@ -18,6 +18,7 @@
 #include <executorch/backends/vulkan/runtime/vk_api/Fence.h>
 #include <executorch/backends/vulkan/runtime/vk_api/QueryPool.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
+#include <executorch/backends/vulkan/runtime/vk_api/VkUtils.h>
 
 namespace vkcompute {
 namespace api {
