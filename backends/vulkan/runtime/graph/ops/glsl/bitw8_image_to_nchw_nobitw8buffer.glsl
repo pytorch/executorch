@@ -10,6 +10,8 @@
 
 #define PRECISION ${PRECISION}
 
+${define_active_storage_type(STORAGE)}
+
 #include "indexing_utils.h"
 
 layout(std430) buffer;
@@ -17,7 +19,7 @@ layout(std430) buffer;
 #extension GL_EXT_control_flow_attributes : require
 
 ${layout_declare_buffer(B, "w", "nchw_out", "int")}
-${layout_declare_tensor(B, "r", "t_in", "int8", "texture3d")}
+${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 ${layout_declare_ubo(B, "ivec4", "tensor_sizes")}
 ${layout_declare_ubo(B, "ivec4", "axis_map")}
 ${layout_declare_ubo(B, "int", "out_numel")}
@@ -44,7 +46,7 @@ void main() {
     const ivec4 tidx = nchwi_to_tidx(in_buf_idx, tensor_sizes);
     const ivec4 texture_pos = to_texture_elem_pos(
         tidx, tensor_sizes, packed_dim);
-    values[i] = load_texel(t_in, texture_pos.xyz)[texture_pos.w];
+    values[i] = ivec4(load_texel(t_in, texture_pos.xyz))[texture_pos.w];
     in_buf_idx++;
   }
 

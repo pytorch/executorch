@@ -2365,7 +2365,8 @@ void run_from_gpu_test(
 
   if (dtype == vkapi::kChar &&
       !context()->adapter_ptr()->has_full_int8_buffers_support()) {
-    record_int8_image_to_nchw_noint8_op(context(), vten, staging_buffer);
+    record_bitw8_image_to_nchw_nobitw8buffer_op(
+        context(), vten, staging_buffer);
   } else {
     record_image_to_nchw_op(context(), vten, staging_buffer.buffer());
   }
@@ -2412,7 +2413,8 @@ void round_trip_test(
   // Copy data in and out of the tensor
   if (dtype == vkapi::kChar &&
       !context()->adapter_ptr()->has_full_int8_buffers_support()) {
-    record_int8_image_to_nchw_noint8_op(context(), vten, staging_buffer_out);
+    record_bitw8_image_to_nchw_nobitw8buffer_op(
+        context(), vten, staging_buffer_out);
   } else {
     record_image_to_nchw_op(context(), vten, staging_buffer_out.buffer());
   }
