@@ -25,12 +25,14 @@ target="ethos-u55-128"
 output_folder_set=false
 output_folder="."
 build_only=false
+portable_kernels="aten::_softmax.out"
 
 help() {
     echo "Usage: $(basename $0) [options]"
     echo "Options:"
     echo "  --model_name=<MODEL>                   Model to run, can be a builtin, examples/models or a filename Default to all builtin models"
     echo "  --aot_arm_compiler_flags=<FLAGS>       Only used if --model_name is used Default: ${aot_arm_compiler_flags}"
+    echo "  --portable_kernels=<OPS>               Comma separated list of portable (non delagated) kernels to include Default: ${portable_kernels}"
     echo "  --target=<TARGET>                      Target to build and run for Default: ${target}"
     echo "  --output=<FOLDER>                      Output folder Default: ${output_folder}"
     echo "  --build_only                           Only build, don't run FVP"
@@ -43,6 +45,7 @@ for arg in "$@"; do
       -h|--help) help ;;
       --model_name=*) model_name="${arg#*=}";;
       --aot_arm_compiler_flags=*) aot_arm_compiler_flags="${arg#*=}";;
+      --portable_kernels=*) portable_kernels="${arg#*=}";;
       --target=*) target="${arg#*=}";;
       --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
       --build_only) build_only=true ;;
@@ -71,20 +74,33 @@ et_root_dir=$(cd ${script_dir}/../.. && pwd)
 et_build_dir=${et_root_dir}/cmake-out
 
 fvp_model=FVP_Corstone_SSE-300_Ethos-U55
+if [[ ${target} =~ "ethos-u85" ]]
+then
+    echo "target is ethos-u85 variant so switching to CS320 FVP"
+    fvp_model=FVP_Corstone_SSE-320
+fi
+
 toolchain_cmake=${script_dir}/ethos-u-setup/arm-none-eabi-gcc.cmake
 _setup_msg="please refer to ${script_dir}/ethos-u-setup/setup.sh to properly install necessary tools."
+
+if ! [[ $portable_kernels =~ ^((^|,)aten::[a-zA-Z0-9_]+\.out)*$ ]]; then
+    echo " ERROR: specified argument --portable_kernels=${portable_kernels}"
+    echo "        is in the wrong format please use \"aten::<OP1>.out,aten::<OP2>.out,...\""
+    echo "        e.g. \"aten::_softmax.out,aten::add.out\""
+    exit 1
+fi
 
 # Generate a pte file
 function generate_pte_file() {
     [[ $# -ne 2 ]] && { echo "[${FUNCNAME[0]}]" "Expecting model and model_compiler_flags flag, got, $*"; exit 1; }
     local model=${1}
+    local model_short_name=$(basename -- "${model}" ".py")
     local model_compiler_flags=${2}
 
-    local model_filename=${model}_arm_${target}.pte
+    local model_filename=${model_short_name}_arm_${target}.pte
     if [[ "${model_compiler_flags}" == *"--delegate"* ]]; then
-	# Name aligned with default aot_arm_compiler output - run.sh only supports
-	# running on Corstone-300 with Ethos-U55 FVP at the moment.
-        model_filename=${model}_arm_delegate_${target}.pte
+        # Name aligned with default aot_arm_compiler output
+        model_filename=${model_short_name}_arm_delegate_${target}.pte
     fi
     cd $et_root_dir
 
@@ -92,8 +108,9 @@ function generate_pte_file() {
     pte_file=$(realpath ${output_folder}/${model_filename})
     rm -f "${pte_file}"
 
+    SO_EXT=$(python3 -c 'import platform; print({"Darwin": "dylib", "Linux": "so", "Windows": "dll"}.get(platform.system(), None))')
     # We are using the aot_lib from build_quantization_aot_lib below
-    SO_LIB=$(find cmake-out-aot-lib -name libquantized_ops_aot_lib.so)
+    SO_LIB=$(find cmake-out-aot-lib -name libquantized_ops_aot_lib.${SO_EXT})
 
     python3 -m examples.arm.aot_arm_compiler --model_name="${model}" --target=${target} ${model_compiler_flags} --output ${output_folder} --so_library="$SO_LIB" 1>&2
     [[ -f ${pte_file} ]] || { >&2 echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
@@ -118,8 +135,7 @@ function build_quantization_aot_lib()
         -Bcmake-out-aot-lib \
         "${et_root_dir}"
 
-    n=$(nproc)
-    cmake --build cmake-out-aot-lib -j"$((n - 5))" -- quantized_ops_aot_lib
+    cmake --build cmake-out-aot-lib --parallel -- quantized_ops_aot_lib
 }
 
 
@@ -147,18 +163,17 @@ function build_executorch() {
 
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
-    n=$(nproc)
-    cmake --build ${et_build_dir} -j"$((n - 5))" --target install --config Release
+    cmake --build ${et_build_dir} --parallel --target install --config Release
 
     cmake                                                 \
         -DCMAKE_INSTALL_PREFIX=${et_build_dir}            \
         -DCMAKE_BUILD_TYPE=Release                        \
-        -DEXECUTORCH_SELECT_OPS_LIST="aten::_softmax.out" \
+        -DEXECUTORCH_SELECT_OPS_LIST=${portable_kernels}  \
         -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
         -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
         -B"${et_build_dir}"/examples/arm                  \
         "${et_root_dir}"/examples/arm
-    cmake --build ${et_build_dir}/examples/arm -- -j"$((n - 5))"
+    cmake --build ${et_build_dir}/examples/arm --parallel --
 
     set +x
 
@@ -174,13 +189,16 @@ function build_executorch_runner() {
     local pte=${1}
     if [[ ${target} == *"ethos-u55"*  ]]; then
         local target_cpu=cortex-m55
+	local target_board=corstone-300
     else
         local target_cpu=cortex-m85
+	local target_board=corstone-320
     fi
     cd ${script_dir}/executor_runner
-    cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} \
+    cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}     \
 	  -DTARGET_CPU=${target_cpu}                    \
-      -DETHOSU_TARGET_NPU_CONFIG=${target}          \
+	  -DTARGET_BOARD=${target_board}                \
+	  -DETHOSU_TARGET_NPU_CONFIG=${target}          \
 	  -B ${executor_runner_path}/cmake-out          \
 	  -DETHOS_SDK_PATH:PATH=${ethos_u_root_dir}     \
 	  -DET_DIR_PATH:PATH=${et_root_dir}             \
@@ -189,8 +207,7 @@ function build_executorch_runner() {
 	  -DPYTHON_EXECUTABLE=$(which python3)
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
-    n=$(nproc)
-    cmake --build ${executor_runner_path}/cmake-out -- -j"$((n - 5))" arm_executor_runner
+    cmake --build ${executor_runner_path}/cmake-out --parallel -- arm_executor_runner
     echo "[${FUNCNAME[0]}] Generated baremetal elf file:"
     find ${executor_runner_path}/cmake-out -name "arm_executor_runner"
     echo "executable_text: $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec size {} \; | grep -v filename | awk '{print $1}') bytes"
@@ -205,9 +222,10 @@ function run_fvp() {
     elf=$(find ${executor_runner_path} -name "${elf_name}")
     [[ ! -f $elf ]] && { echo "[${FUNCNAME[0]}]: Unable to find executor_runner elf: ${elf}"; exit 1; }
     num_macs=$(echo ${target} | cut -d - -f 3)
+
     if [[ ${target} == *"ethos-u55"*  ]]; then
-        echo "Running ${elf} for ${target} run with FVP_Corstone_SSE-300_Ethos-U55 num_macs:${num_macs}"
-        FVP_Corstone_SSE-300_Ethos-U55                          \
+        echo "Running ${elf} for ${target} run with FVP:${fvp_model} num_macs:${num_macs}"
+        ${fvp_model}                                            \
             -C cpu0.CFGITCMSZ=11                                \
             -C ethosu.num_macs=${num_macs}                      \
             -C mps3_board.visualisation.disable-visualisation=1 \
@@ -216,7 +234,20 @@ function run_fvp() {
             -C mps3_board.uart0.shutdown_on_eot=1               \
             -a "${elf}"                                         \
             --timelimit 120 || true # seconds
-        echo "[${FUNCNAME[0]} Simulation complete, $?"
+        echo "[${FUNCNAME[0]}] Simulation complete, $?"
+    elif [[ ${target} == *"ethos-u85"*  ]]; then
+        echo "Running ${elf} for ${target} run with FVP:${fvp_model} num_macs:${num_macs}"
+    	${fvp_model}                                            \
+            -C mps4_board.subsystem.cpu0.CFGITCMSZ=11           \
+            -C mps4_board.subsystem.ethosu.num_macs=${num_macs} \
+            -C mps4_board.visualisation.disable-visualisation=1 \
+            -C vis_hdlcd.disable_visualisation=1                \
+            -C mps4_board.telnetterminal0.start_telnet=0        \
+            -C mps4_board.uart0.out_file='-'                    \
+            -C mps4_board.uart0.shutdown_on_eot=1               \
+            -a "${elf}"                                         \
+            --timelimit 120 || true # seconds
+        echo "[${FUNCNAME[0]}] Simulation complete, $?"
     else
         echo "Running ${elf} for ${target} is not supported"
         exit 1

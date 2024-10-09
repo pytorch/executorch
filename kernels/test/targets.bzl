@@ -44,9 +44,11 @@ def define_common_targets():
         runtime.cxx_library(
             name = "test_util" + aten_suffix,
             srcs = [
+                "BinaryLogicalOpTest.cpp",
                 "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp",
             ],
             exported_headers = [
+                "BinaryLogicalOpTest.h",
                 "TestUtil.h",
                 "UnaryUfuncRealHBBF16ToFloatHBF16Test.h",
             ],

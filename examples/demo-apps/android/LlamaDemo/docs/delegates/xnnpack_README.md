@@ -16,7 +16,11 @@ Phone verified: OnePlus 12, OnePlus 9 Pro. Samsung S23 (Llama only), Samsung S24
 
 ## Prerequisites
 * Install [Java 17 JDK](https://www.oracle.com/java/technologies/javase/jdk17-archive-downloads.html).
-* Install the [Android SDK API Level 34](https://developer.android.com/about/versions/15/setup-sdk) and [Android NDK 26.3.11579264](https://developer.android.com/studio/projects/install-ndk).
+* Install the [Android SDK API Level 34](https://developer.android.com/about/versions/15/setup-sdk) and [Android NDK 26.3.11579264](https://developer.android.com/studio/projects/install-ndk). **WARNING** NDK r27 will cause issues like:
+  ```
+  java.lang.UnsatisfiedLinkError: dlopen failed: cannot locate symbol "_ZTVNSt6__ndk114basic_ifstreamIcNS_11char_traitsIcEEEE" referenced by "/data/app/~~F5IwquaXUZPdLpSEYA-JGA==/com.example.executorchllamademo-FSyx80gEhsQCsxz7hvS2Ew==/lib/arm64/libexecutorch.so"...
+  ```
+  Please downgrade to version 26.3.11579264.
 * If you have Android Studio set up, you can install them with
   * Android Studio Settings -> Language & Frameworks -> Android SDK -> SDK Platforms -> Check the row with API Level 34.
   * Android Studio Settings -> Language & Frameworks -> Android SDK -> SDK Tools -> Check NDK (Side by side) row.
@@ -67,7 +71,7 @@ We have supported BFloat16 as a data type on the XNNPACK backend for Llama 3.2 1
 * Export Llama model and generate .pte file as below:
 
 ```
-python -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv -X -d bf16 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="llama3_2.pte"
+python -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -d bf16 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="llama3_2.pte"
 ```
 
 * Rename tokenizer for Llama 3.2 with command: `mv tokenizer.model tokenizer.bin`. We are updating the demo app to support tokenizer in original format directly.
@@ -135,6 +139,7 @@ export ANDROID_NDK=<path_to_android_ndk>
 export ANDROID_ABI=arm64-v8a
 ```
 *Note: <path_to_android_ndk> is the root for the NDK, which is usually under ~/Library/Android/sdk/ndk/XX.Y.ZZZZZ for macOS, and contains NOTICE and README.md. We use <path_to_android_ndk>/build/cmake/android.toolchain.cmake for CMake to cross-compile.*
+
 3. Build the Android Java extension code:
 ```
 pushd extension/android

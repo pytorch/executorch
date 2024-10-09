@@ -19,7 +19,8 @@ HtpContextCustomConfig::CreateContextCustomConfig() {
   QnnHtpContext_CustomConfig_t* p_custom_config = nullptr;
   const HtpContext* htp_ctx = static_cast<const HtpContext*>(context_);
 
-  if (htp_options_->use_multi_contexts()) {
+  if (htp_options_->use_multi_contexts() &&
+      htp_options_->max_sf_buf_size() != 0) {
     p_custom_config = AllocContextCustomConfig();
     p_custom_config->option =
         QNN_HTP_CONTEXT_CONFIG_OPTION_REGISTER_MULTI_CONTEXTS;

@@ -147,6 +147,10 @@ cmake --build $PWD --target "PyQnnManagerAdaptor" "PyQnnWrapperAdaptor" -j$(npro
 # The filename might vary depending on your Python and host version.
 cp -f backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so $EXECUTORCH_ROOT/backends/qualcomm/python
 cp -f backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so $EXECUTORCH_ROOT/backends/qualcomm/python
+
+# Workaround for fbs files in exir/_serialize
+cp $EXECUTORCH_ROOT/schema/program.fbs $EXECUTORCH_ROOT/exir/_serialize/program.fbs
+cp $EXECUTORCH_ROOT/schema/scalar_type.fbs $EXECUTORCH_ROOT/exir/_serialize/scalar_type.fbs
 ```
 
 ### Runtime:
@@ -205,9 +209,6 @@ We use deeplab-v3-resnet101 as an example in this tutorial. Run below commands t
 
 ```bash
 cd $EXECUTORCH_ROOT
-# Workaround for fbs files in exir/_serialize
-cp schema/program.fbs exir/_serialize/program.fbs
-cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
 
 python -m examples.qualcomm.scripts.deeplab_v3 -b build-android -m SM8550 --compile_only --download
 ```

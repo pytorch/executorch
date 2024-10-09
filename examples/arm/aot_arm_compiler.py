@@ -13,7 +13,7 @@ import logging
 import os
 
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
@@ -23,8 +23,11 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_quantization_config,
 )
 from executorch.backends.arm.util.arm_model_evaluator import GenericModelEvaluator
+
+from executorch.devtools.backend_debug import get_delegation_info
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
+from tabulate import tabulate
 
 # Quantize model if required using the standard export quantizaion flow.
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
@@ -235,6 +238,21 @@ def evaluate_model(
         json.dump(quant_metrics, json_file)
 
 
+def dump_delegation_info(edge, intermediate_files_folder: Optional[str] = None):
+    graph_module = edge.exported_program().graph_module
+    delegation_info = get_delegation_info(graph_module)
+    df = delegation_info.get_operator_delegation_dataframe()
+    table = tabulate(df, headers="keys", tablefmt="fancy_grid")
+    delegation_info_string = f"Delegation info:\n{delegation_info.get_summary()}\nDelegation table:\n{table}\n"
+    logging.info(delegation_info_string)
+    if intermediate_files_folder is not None:
+        delegation_file_path = os.path.join(
+            intermediate_files_folder, "delegation_info.txt"
+        )
+        with open(delegation_file_path, "w") as file:
+            file.write(delegation_info_string)
+
+
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -368,6 +386,9 @@ if __name__ == "__main__":
     logging.debug(f"Exported graph:\n{edge.exported_program().graph}")
     if args.delegate is True:
         edge = edge.to_backend(ArmPartitioner(compile_spec))
+
+        dump_delegation_info(edge, args.intermediates)
+
         logging.debug(f"Lowered graph:\n{edge.exported_program().graph}")
 
     try:

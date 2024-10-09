@@ -72,13 +72,13 @@ int32_t main(int32_t argc, char** argv) {
 
 #if defined(ET_USE_THREADPOOL)
   uint32_t num_performant_cores = cpu_threads == -1
-      ? torch::executorch::cpuinfo::get_num_performant_cores()
+      ? ::executorch::extension::cpuinfo::get_num_performant_cores()
       : static_cast<uint32_t>(cpu_threads);
   ET_LOG(
       Info, "Resetting threadpool with num threads = %d", num_performant_cores);
   if (num_performant_cores > 0) {
-    torch::executorch::threadpool::get_threadpool()->_unsafe_reset_threadpool(
-        num_performant_cores);
+    ::executorch::extension::threadpool::get_threadpool()
+        ->_unsafe_reset_threadpool(num_performant_cores);
   }
 #endif
   // create llama runner
