@@ -48,14 +48,9 @@ In the following sections we will walk through the steps to download each of the
 
 ## Set Up the Developer Environment
 
-In this section, we will do a one-time setup, like downloading and installing necessary software, for the platform support files needed to run ExecuTorch programs in this tutorial. There are two approaches available:
+In this section, we will do a one-time setup, like downloading and installing necessary software, for the platform support files needed to run ExecuTorch programs in this tutorial.
 
-1. Method 1: Use the `examples/arm/setup.sh` script to pull each item in an automated fashion (recommended). It is recommended to run the script in a conda environment. Upon successful execution, you can directly go to [the next step](#convert-the-pytorch-model-to-the-pte-file).
-2. Method 2: Follow the guide step by step to understand all the components and the logic of the script. You may want to use this method if you intend to change the behavior of the flow significantly.
-
-```{tip}
-In the ExecuTorch repository we have a functioning script which follows the exact same steps to speed things up. It is located at `examples/arm/setup.sh`. Feel free to use that instead if it is convenient, or use it as a reference if some of the steps in the manual instruction aren't very clear.
-```
+For that we will use the `examples/arm/setup.sh` script to pull each item in an automated fashion. It is recommended to run the script in a conda environment. Upon successful execution, you can directly go to [the next step](#convert-the-pytorch-model-to-the-pte-file).
 
 As mentioned before, we currently support only Linux based platforms with x86_64 or aarch64 processor architecture. Let’s make sure we are indeed on a supported platform.
 
@@ -67,7 +62,7 @@ uname -m
 # x86_64 or aarch64
 ```
 
-Let's create an empty directory, and use this as a top level development directory.
+Next we will walk through the steps performed by the `setup.sh` script to better understand the development setup.
 
 ### Download and Set Up the Corstone-300 FVP
 
@@ -77,126 +72,25 @@ Fixed Virtual Platforms (FVPs) are pre-configured, functionally accurate simulat
  By downloading and running the FVP software, you will be agreeing to the FVP [End-user license agreement (EULA)](https://developer.arm.com/downloads/-/arm-ecosystem-fvps/eula).
 ```
 
-To download, we can either download `Corstone-300 Ecosystem FVP` from [here](https://developer.arm.com/downloads/-/arm-ecosystem-fvps). Alternatively, you can download the same version we tested with like this,
-
-```bash
-# for aarch64
-curl \
-    --output FVP_cs300.tgz \
-    'https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_35_Linux64_armv8l.tgz?rev=b083dc5ac9c546899fbb7ccd67b74c17&hash=BFE589289ECF12B07192636382C15C01'
-
-# for x86_64
-curl \
-    --output FVP_cs300.tgz \
-    'https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64.tgz?rev=018659bd574f4e7b95fa647e7836ccf4&hash=22A79103C6FA5FFA7AFF3BE0447F3FF9'
-```
-
-Now, extract the `FVP_cs300.tgz` file in a new dir, and run the provided script which will install the FVP.
-
-```bash
-./FVP_Corstone_SSE-300.sh          \
-   --i-agree-to-the-contained-eula \
-   --force                         \
-   --destination ./                \
-   --quiet                         \
-   --no-interactive
-```
-
-Once successful, let's make sure the FVP simulator is available on the PATH for later use.
-
-```bash
-# for x86-64 hosts
-export PATH=${PATH}:<install_dir>/FVP/models/Linux64_GCC-9.3
-# for aarch64 hosts
-export PATH=${PATH}:<install_dir>/FVP/models/Linux64_armv8l_GCC-9.3/
-
-hash FVP_Corstone_SSE-300_Ethos-U55 # To make sure we are ready to use
-```
+To download, we can either download `Corstone-300 Ecosystem FVP` from [here](https://developer.arm.com/downloads/-/arm-ecosystem-fvps). or `setup.sh` script will does that for you under `setup_fvp` function.
 
 ### Download and Install the Arm GNU AArch32 Bare-Metal Toolchain
 
 Similar to the FVP, we would also need a tool-chain to cross-compile ExecuTorch runtime, executor-runner bare-metal application, as well as the rest of the bare-metal stack for Cortex-M55 CPU available on the Corstone-300 platform.
 
-These toolchains are available [here](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads). We will be using GCC 12.3 targeting `arm-none-eabi` here for our tutorial. Just like FVP, to download the same version as we tested with in the top-level development dir,
-
-```bash
-# for aarch64
-curl \
-    --output gcc.tar.xz \
-    'https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi.tar.xz'
-
-# for x86_64
-curl \
-    --output gcc.tar.xz \
-    'https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi.tar.xz'
-```
-
-Once downloaded, you can extract its contents in a new dir. Then, let's make sure the toolchain is available on the PATH for later use.
-
-```bash
-export PATH=${PATH}:/<install_dir>/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi/bin
-export PATH=${PATH}:/<install_dir>/arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi/bin
-
-hash arm-none-eabi-gcc # To make sure we are ready to use
-```
+These toolchains are available [here](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads). We will be using GCC 12.3 targeting `arm-none-eabi` here for our tutorial. Just like FVP, `setup.sh` script will down the toolchain for you. See `setup_toolchain` function.
 
 ### Setup the Arm Ethos-U Software Development
 
-This git repository is the root directory for all Arm Ethos-U software. It is to help us download required repositories and place them in a tree structure. In the top-level devlopment dir,
-
-```bash
-# Download the repo
-git clone https://review.mlplatform.org/ml/ethos-u/ethos-u
-cd ethos-u
-
-# To align with the version we have tested
-git reset --hard 0995223100e3da8011700f58e491f1bf59511e3c
-
-# Download the necessary repos and properly install them
-./fetch_externals.py fetch
-
-# Download the Vela compiler
-cd .. # To the top-level development dir
-git clone https://review.mlplatform.org/ml/ethos-u/ethos-u-vela
-```
+This git repository is the root directory for all Arm Ethos-U software. It is to help us download required repositories and place them in a tree structure. See `setup_ethos_u` function of the setup script for more details.
 
 Once this is done, you should have a working FVP simulator, a functioning toolchain for cross compilation, and the Ethos-U software development setup ready for the bare-metal developement.
 
-#### Applying Local Patches
-Since this is under active development, we have some patches for the Arm Ethos-u software development kit. Let's apply them on the download SDK and the Vela compiler.
-
-```bash
-cd ethos-u # this is the top level Ethos-U software directory
-
-# Let's patch core_platform repo
-cd core_platform
-git reset --hard 204210b1074071532627da9dc69950d058a809f4
-git am -3 <path_to>/executorch/examples/arm/ethos-u-setup/core_platform/patches/*.patch
-cd ../.. # To the top-level development dir
-```
-
 ### Install the Vela Compiler
-Once the patching is done, let's finish the setup by installing the Vela compiler.
-
-```bash
-cd ethos-u-vela
-pip install .
-```
+Once this is done, the script will finish the setup by installing the Vela compiler for you, details are in `setup_vela` function.
 
 ### Install the TOSA reference model
-```bash
-git clone https://review.mlplatform.org/tosa/reference_model -b v0.80
-cd reference_model
-git submodule update --init --recursive
-mkdir -p build
-cd build
-cmake ..
-n=$(nproc)
-make -j"$((n - 5))"
-cd reference_model # Within the build directory
-# Add tosa_reference_model to the path
-export PATH=${PATH}:`pwd`
-```
+This is the last step of the setup process, using `setup_tosa_reference_model` function `setup.sh` script will install TOSA reference model for you.
 
 At the end of the setup, if everything goes well, your top level devlopement dir might look something like this,
 
@@ -334,7 +228,7 @@ Before generating the `.pte` file for delegated quantized networks like MobileNe
 SITE_PACKAGES="$(python3 -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
 CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
 
-cd $et_root_dir
+cd <executorch_root_dir>
 mkdir -p cmake-out-aot-lib
 cmake -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_XNNPACK=OFF \
@@ -367,11 +261,7 @@ Now let's try to run these `.pte` files on a Corstone-300 platform in a bare-met
 
 ## Getting a Bare-Metal Executable
 
-In this section, we will go over steps that you need to go through to build the runtime application. This then run on the target device.
-
-```{tip}
-In the executorch repository we have a functioning script which does the exact same steps. It is located at `executorch/examples/arm/run.sh`. Feel free to use that instead if it is convenient, or use it as a reference if some of the steps in the manual instruction aren't very clear.
-```
+In this section, we will go over steps that you need to go through to build the runtime application. This then run on the target device. In the executorch repository we have a functioning script which does the exact same steps. It is located at `executorch/examples/arm/run.sh`. We will use that to build necessary pieces and finally run the previously generated PTE file on an FVP.
 
 Also before we get started, make sure that you have completed ExecuTorch cmake build setup, and the instructions to setup the development environment described [earlier](#set-up-the-developer-environment).
 
@@ -394,44 +284,11 @@ To run a `.pte` file with the Arm backend delegate call instructions, we will ne
 - `libexecutorch_delegate_ethos_u.a`
 
 
-To generate these libraries, use following commands,
+These libraries are generated in `build_executorch` function of the `run.sh` script.
 
-```bash
-# Empty and already created
-cd <executorch_source_root_dir>
+In this function, `EXECUTORCH_SELECT_OPS_LIST` will decide the number of portable operators included in the build and are available at runtime. It must match with `.pte` file's requirements, otherwise you will get `Missing Operator` error at runtime.
 
-# Use provided cmake toolchain for bare-metal builds
-toolchain_cmake=<executorch_source_root_dir>/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
-
-cmake                                                 \
-    -DCMAKE_INSTALL_PREFIX=<executorch_build_dir>     \
-    -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF            \
-    -DCMAKE_BUILD_TYPE=Release                        \
-    -DEXECUTORCH_ENABLE_LOGGING=ON                    \
-    -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
-    -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON       \
-    -DFLATC_EXECUTABLE="$(which flatc)"               \
-    -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
-    -B<executorch_build_dir>                          \
-    <executorch_source_root_dir>
-
-cmake --build <executorch_build_dir> --target install --config Release
-
-cmake                                                 \
-    -DCMAKE_INSTALL_PREFIX=<executorch_build_dir>     \
-    -DCMAKE_BUILD_TYPE=Release                        \
-    -DEXECUTORCH_SELECT_OPS_LIST="aten::_softmax.out" \
-    -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
-    -B<executorch_build_dir>/examples/arm             \
-    <executorch_source_root_dir>/examples/arm
-
-cmake --build <executorch_build_dir>/examples/arm --config Release
-
-```
-
-`EXECUTORCH_SELECT_OPS_LIST` will decide the number of portable operators included in the build and are available at runtime. It must match with `.pte` file's requirements, otherwise you will get `Missing Operator` error at runtime.
-
-For example, here in the command line above, to run SoftmaxModule, we only included the softmax CPU operator. Similarly, to run AddModule in a non-delegated manner you will need add op and so on. As you might have already realized, for the delegated operators, which will be executed by the Arm backend delegate, we do not need to include those operators in this list. This is only for *non-delegated* operators.
+For example, there  in the command line above, to run SoftmaxModule, we only included the softmax CPU operator. Similarly, to run AddModule in a non-delegated manner you will need add op and so on. As you might have already realized, for the delegated operators, which will be executed by the Arm backend delegate, we do not need to include those operators in this list. This is only for *non-delegated* operators.
 
 ### Building the executor_runner Bare-Metal Application
 
@@ -439,23 +296,7 @@ The SDK dir is the same one prepared [earlier](#setup-the-arm-ethos-u-software-d
 
 Note, you have to generate a new `executor-runner` binary if you want to change the model or the `.pte` file. This constraint is from the constrained bare-metal runtime environment we have for Corstone-300 platform.
 
-```bash
-
-cd <executorch_source_root_dir>
-cd examples/arm/executor_runner
-
-cmake                                                    \
-    -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"          \
-    -DTARGET_CPU=cortex-m55                              \
-    -B build                                             \
-    -DETHOS_SDK_PATH:PATH=<ethos-u_clone_directory>      \
-    -DET_DIR_PATH:PATH=<executorch_source_root_dir>      \
-    -DET_BUILD_DIR_PATH:PATH=<executorch_build_dir>      \
-    -DET_PTE_FILE_PATH:PATH=<path_to_pte_file_of_choice> \
-    -DPYTHON_EXECUTABLE=$(which python3)
-
-cmake --build build -- arm_executor_runner
-```
+This is performed by the `build_executorch_runner` function in `run.sh`.
 
 ## Running on Corstone-300 FVP Platform
 
