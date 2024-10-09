@@ -210,6 +210,7 @@ Create a file called main.cpp with the following contents:
 
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
+using executorch::extension::from_blob;
 using executorch::extension::Module;
 using executorch::runtime::EValue;
 using executorch::runtime::Result;

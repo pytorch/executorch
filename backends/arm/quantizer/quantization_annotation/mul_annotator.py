@@ -4,19 +4,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
-
-import itertools
-import operator
 from typing import Callable, List, Optional
 
 import torch
+import torch.fx
 from executorch.backends.arm.quantizer import arm_quantizer_utils
 from executorch.backends.arm.quantizer.quantization_annotation import register_annotator
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from torch.ao.quantization.quantizer import QuantizationAnnotation
 from torch.fx import Node
-from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
 @register_annotator("mul")
@@ -25,14 +21,13 @@ def _annotate_mul(
     quantization_config: QuantizationConfig,
     filter_fn: Optional[Callable[[Node], bool]] = None,
 ) -> Optional[List[List[Node]]]:
-    mul_partitions = get_source_partitions(
-        gm.graph, ["mul", "mul_", operator.mul, torch.mul, operator.imul], filter_fn
-    )
-    mul_partitions = list(itertools.chain.from_iterable(mul_partitions.values()))
+
     annotated_partitions = []
-    for mul_partition in mul_partitions:
-        annotated_partitions.append(mul_partition.nodes)
-        mul_node = mul_partition.output_nodes[0]
+    for node in gm.graph.nodes:
+        if node.target not in (torch.ops.aten.mul.Tensor,):
+            continue
+        mul_node = node
+        annotated_partitions.append([mul_node])
         if arm_quantizer_utils.is_annotated(mul_node):
             continue
 

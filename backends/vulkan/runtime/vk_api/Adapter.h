@@ -17,6 +17,8 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Allocator.h>
 
+#include <array>
+
 namespace vkcompute {
 namespace vkapi {
 
