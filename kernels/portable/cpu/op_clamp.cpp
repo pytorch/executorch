@@ -13,7 +13,6 @@
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
-#include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -122,43 +121,26 @@ Tensor& clamp_out(
 
   ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
 
-  ET_SWITCH_REALH_TYPES(out_type, ctx, "clamp", CTYPE_OUT, [&]() {
-    // Extract optional min value
-    CTYPE_OUT min = 0;
-    if (has_min) {
-      ET_SWITCH_SCALAR_OBJ_TYPES(min_type, ctx, "clamp", CTYPE_MIN, [&]() {
-        CTYPE_MIN min_val = 0;
-        utils::extract_scalar(min_opt.value(), &min_val);
-        min = static_cast<CTYPE_OUT>(min_val);
-      });
-    }
+  static constexpr const char op_name[] = "clamp.out";
 
-    // Extract optional max value
-    CTYPE_OUT max = 0;
-    if (has_max) {
-      ET_SWITCH_SCALAR_OBJ_TYPES(max_type, ctx, "clamp", CTYPE_MAX, [&]() {
-        CTYPE_MAX max_val = 0;
-        utils::extract_scalar(max_opt.value(), &max_val);
-        max = static_cast<CTYPE_OUT>(max_val);
-      });
-    }
-
-    ET_SWITCH_REALHB_TYPES(in_type, ctx, "clamp", CTYPE_IN, [&]() {
-      apply_unary_map_fn(
-          [has_min, min, has_max, max](const CTYPE_IN val_in) {
-            CTYPE_OUT val_out = static_cast<CTYPE_OUT>(val_in);
-            if (has_min) {
-              val_out = utils::max_override(val_out, min);
-            }
-            if (has_max) {
-              val_out = utils::min_override(val_out, max);
-            }
-            return val_out;
-          },
-          in.const_data_ptr<CTYPE_IN>(),
-          out.mutable_data_ptr<CTYPE_OUT>(),
-          in.numel());
-    });
+  ET_SWITCH_REALHB_TYPES(common_type, ctx, op_name, CTYPE_COMMON, [&]() {
+    utils::apply_unitensor_elementwise_fn<CTYPE_COMMON, op_name>(
+        [has_min, min_opt, has_max, max_opt](const CTYPE_COMMON val_in) {
+          CTYPE_COMMON val_out = val_in;
+          if (has_min) {
+            val_out = utils::max_override(
+                val_out, utils::scalar_to<CTYPE_COMMON>(min_opt.value()));
+          }
+          if (has_max) {
+            val_out = utils::min_override(
+                val_out, utils::scalar_to<CTYPE_COMMON>(max_opt.value()));
+          }
+          return val_out;
+        },
+        in,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        out,
+        utils::SupportedTensorDtypes::REALHBBF16);
   });
 
   return out;

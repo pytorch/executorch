@@ -16,6 +16,33 @@ namespace executor {
 namespace native {
 namespace utils {
 
+/*
+ * Convert Scalar to C++ type
+ */
+
+template <typename T>
+T scalar_to(const Scalar& s) {
+  if (s.isBoolean()) {
+    return static_cast<T>(s.to<bool>());
+  } else if (s.isFloatingPoint()) {
+    return static_cast<T>(s.to<double>());
+  } else {
+    return static_cast<T>(s.to<int64_t>());
+  }
+}
+
+template <>
+inline double scalar_to<double>(const Scalar& s) {
+  return s.isFloatingPoint() ? s.to<double>()
+                             : static_cast<double>(s.to<int64_t>());
+}
+
+template <>
+inline int64_t scalar_to<int64_t>(const Scalar& s) {
+  return s.isFloatingPoint() ? static_cast<int64_t>(s.to<double>())
+                             : s.to<int64_t>();
+}
+
 namespace internal {
 
 template <typename To, typename From>
@@ -139,6 +166,86 @@ store_common_to_tensor_fn<CTYPE_COMMON> get_store_common_to_tensor_fn(
 
 } // namespace internal
 
+template <typename CTYPE_COMMON, const char* op_name, typename Op>
+inline void apply_unitensor_elementwise_fn(
+    const Op& compute_fun,
+    const Tensor& a,
+    SupportedTensorDtypes a_dtypes,
+    const Tensor& out,
+    SupportedTensorDtypes out_dtypes) {
+  const auto load_a_to_common =
+      internal::get_load_to_common_fn<CTYPE_COMMON, op_name>(a, a_dtypes);
+  const auto store_common_to_out =
+      internal::get_store_common_to_tensor_fn<CTYPE_COMMON, op_name>(
+          out, out_dtypes);
+  const char* const data_a = reinterpret_cast<const char*>(a.const_data_ptr());
+  const auto a_element_size = a.element_size();
+  const auto out_element_size = out.element_size();
+  char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
+
+  auto out_numel = out.numel();
+  for (size_t i = 0; i < out_numel; ++i) {
+    auto result = compute_fun(load_a_to_common(&data_a[i * a_element_size]));
+    store_common_to_out(result, &data_out[i * out_element_size]);
+  }
+}
+
+/**
+ * Useful for bi-tensor elementwise operators. For each element of the inputs,
+ * perform a computation and write to the corresponding element of the output.
+ * Tensor broadcasting is applied wherever it is required.
+ */
+template <typename CTYPE_COMMON, const char* op_name, typename Op>
+inline void apply_bitensor_elementwise_fn(
+    const Op& compute_fun,
+    const Tensor& a,
+    SupportedTensorDtypes a_dtypes,
+    const Tensor& b,
+    SupportedTensorDtypes b_dtypes,
+    const Tensor& out,
+    SupportedTensorDtypes out_dtypes) {
+  const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
+  const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
+  const bool any_is_broadcasted = (a_is_broadcasted || b_is_broadcasted);
+
+  const auto load_a_to_common =
+      internal::get_load_to_common_fn<CTYPE_COMMON, op_name>(a, a_dtypes);
+  const auto load_b_to_common =
+      internal::get_load_to_common_fn<CTYPE_COMMON, op_name>(b, b_dtypes);
+  const auto store_common_to_out =
+      internal::get_store_common_to_tensor_fn<CTYPE_COMMON, op_name>(
+          out, out_dtypes);
+  const char* const data_a = reinterpret_cast<const char*>(a.const_data_ptr());
+  const char* const data_b = reinterpret_cast<const char*>(b.const_data_ptr());
+  const auto a_element_size = a.element_size();
+  const auto b_element_size = b.element_size();
+  const auto out_element_size = out.element_size();
+  char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
+
+  auto out_numel = out.numel();
+  for (size_t i = 0; i < out_numel; ++i) {
+    size_t a_linear_index = i;
+    size_t b_linear_index = i;
+
+    if (any_is_broadcasted) {
+      size_t out_indexes[kTensorDimensionLimit];
+      delinearize_index(i, out, out_indexes, kTensorDimensionLimit);
+
+      if (a_is_broadcasted) {
+        a_linear_index = linearize_access_indexes(out_indexes, out.dim(), a);
+      }
+      if (b_is_broadcasted) {
+        b_linear_index = linearize_access_indexes(out_indexes, out.dim(), b);
+      }
+    }
+
+    auto result = compute_fun(
+        load_a_to_common(&data_a[a_linear_index * a_element_size]),
+        load_b_to_common(&data_b[b_linear_index * b_element_size]));
+    store_common_to_out(result, &data_out[i * out_element_size]);
+  }
+}
+
 /**
  * Useful for tri-tensor elementwise operators. For each element of the inputs,
  * perform a computation and write to the corresponding element of the output.
@@ -194,7 +301,8 @@ inline void apply_tritensor_elementwise_fn(
   const auto out_element_size = out.element_size();
   char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
 
-  for (size_t i = 0; i < out.numel(); ++i) {
+  auto out_numel = out.numel();
+  for (size_t i = 0; i < out_numel; ++i) {
     size_t a_linear_index = i;
     size_t b_linear_index = i;
     size_t c_linear_index = i;
