@@ -391,6 +391,7 @@ ATEN_OPS = (
         deps = [
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
             "//executorch/kernels/portable/cpu/util:math_util",
         ],
@@ -1186,8 +1187,7 @@ ATEN_OPS = (
         name = "op_where",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
-            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(

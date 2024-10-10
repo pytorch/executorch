@@ -6,8 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/util/broadcast_util.h>
-#include <executorch/kernels/portable/cpu/util/functional_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -44,19 +43,20 @@ Tensor& where_out(
       cond_type == ScalarType::Bool || cond_type == ScalarType::Byte,
       "Unhandled dtype %s for where.self_out",
       torch::executor::toString(cond_type));
+
   ET_SWITCH_REALHBBF16_TYPES(common_type, ctx, op_name, CTYPE_COMMON, [&]() {
-    apply_ternary_elementwise_fn<CTYPE_COMMON, op_name>(
+    utils::apply_tritensor_elementwise_fn<CTYPE_COMMON, op_name>(
         [](const CTYPE_COMMON val_a,
            const CTYPE_COMMON val_b,
            const CTYPE_COMMON val_c) { return val_c ? val_a : val_b; },
         a,
-        SupportedTensorDtypes::REALHBBF16,
+        utils::SupportedTensorDtypes::REALHBBF16,
         b,
-        SupportedTensorDtypes::REALHBBF16,
+        utils::SupportedTensorDtypes::REALHBBF16,
         cond,
-        SupportedTensorDtypes::BOOL_OR_BYTE,
+        utils::SupportedTensorDtypes::BOOL_OR_BYTE,
         out,
-        SupportedTensorDtypes::SAME_AS_COMMON);
+        utils::SupportedTensorDtypes::SAME_AS_COMMON);
   });
 
   return out;

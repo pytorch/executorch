@@ -12,7 +12,7 @@
 #include <limits>
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
-#include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -215,7 +215,7 @@ Tensor& clamp_tensor_out(
   static constexpr const char op_name[] = "clamp.Tensor_out";
 
   ET_SWITCH_REALHB_TYPES(common_type, ctx, op_name, CTYPE_COMMON, [&]() {
-    apply_ternary_elementwise_fn<CTYPE_COMMON, op_name>(
+    utils::apply_tritensor_elementwise_fn<CTYPE_COMMON, op_name>(
         [has_min, has_max](
             const CTYPE_COMMON val_in,
             const CTYPE_COMMON val_min,
@@ -230,13 +230,13 @@ Tensor& clamp_tensor_out(
           return val_out;
         },
         in,
-        SupportedTensorDtypes::REALHBBF16,
+        utils::SupportedTensorDtypes::REALHBBF16,
         min,
-        SupportedTensorDtypes::REALHBBF16,
+        utils::SupportedTensorDtypes::REALHBBF16,
         max,
-        SupportedTensorDtypes::REALHBBF16,
+        utils::SupportedTensorDtypes::REALHBBF16,
         out,
-        SupportedTensorDtypes::REALHBBF16);
+        utils::SupportedTensorDtypes::REALHBBF16);
   });
 
   return out;
