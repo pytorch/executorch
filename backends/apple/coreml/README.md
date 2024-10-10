@@ -119,9 +119,9 @@ The `converted_graph` is the quantized torch model, and can be delegated to **Co
 
 ## Runtime
 
-To execute a Core ML delegated program, the application must link to the `coremldelegate` library. Once linked there are no additional steps required, ExecuTorch when running the program would call the Core ML runtime to execute the Core ML delegated part of the program.
+To execute a Core ML delegated program, the application must link to the `coreml_backend` library. Once linked there are no additional steps required, ExecuTorch when running the program would call the Core ML runtime to execute the Core ML delegated part of the program.
 
-Please follow the instructions described in the [Core ML setup](/backends/apple/coreml/setup.md) to link the `coremldelegate` library.
+Please follow the instructions described in the [Core ML setup](/backends/apple/coreml/setup.md) to link the `coreml_backend` library.
 
 ## Help & Improvements
 If you have problems or questions or have suggestions for ways to make

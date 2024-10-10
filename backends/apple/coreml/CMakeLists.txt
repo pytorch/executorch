@@ -112,34 +112,36 @@ set(PROTOBUF_SOURCES
 )
 
 # Define the delegate library
-add_library(coremldelegate)
+add_library(coreml_backend)
+# Preserve old name for backwards compatability
+add_library(coremldelegate ALIAS coreml_backend)
 target_sources(
-  coremldelegate PRIVATE ${INMEMORYFS_SOURCES} ${KVSTORE_SOURCES}
+  coreml_backend PRIVATE ${INMEMORYFS_SOURCES} ${KVSTORE_SOURCES}
                          ${DELEGATE_SOURCES} ${UTIL_SOURCES}
 )
 
 target_include_directories(
-  coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include
+  coreml_backend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include
 )
 target_include_directories(
-  coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/kvstore
+  coreml_backend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/kvstore
 )
 target_include_directories(
-  coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs
+  coreml_backend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs
 )
 target_include_directories(
-  coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/delegate
+  coreml_backend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/delegate
 )
 target_include_directories(
-  coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
+  coreml_backend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
 )
-target_include_directories(coremldelegate PRIVATE ${EXECUTORCH_ROOT}/..)
-target_link_libraries(coremldelegate PRIVATE executorch_core)
+target_include_directories(coreml_backend PRIVATE ${EXECUTORCH_ROOT}/..)
+target_link_libraries(coreml_backend PRIVATE executorch_core)
 
 if(EXECUTORCH_BUILD_DEVTOOLS)
-  target_sources(coremldelegate PRIVATE ${SDK_SOURCES} ${PROTOBUF_SOURCES})
+  target_sources(coreml_backend PRIVATE ${SDK_SOURCES} ${PROTOBUF_SOURCES})
   target_include_directories(
-    coremldelegate
+    coreml_backend
     PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/runtime/sdk
       ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/src
@@ -149,7 +151,7 @@ if(EXECUTORCH_BUILD_DEVTOOLS)
   )
 
   target_link_options_shared_lib(libprotobuf-lite)
-  target_link_libraries(coremldelegate PRIVATE libprotobuf-lite)
+  target_link_libraries(coreml_backend PRIVATE libprotobuf-lite)
 endif()
 
 find_library(ACCELERATE_FRAMEWORK Accelerate)
@@ -158,46 +160,46 @@ find_library(FOUNDATION_FRAMEWORK Foundation)
 find_library(SQLITE_LIBRARY sqlite3)
 
 target_link_libraries(
-  coremldelegate
+  coreml_backend
   PRIVATE executorch_core ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK}
           ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
 )
 
-target_link_options_shared_lib(coremldelegate)
+target_link_options_shared_lib(coreml_backend)
 
 if(COREML_BUILD_EXECUTOR_RUNNER)
   target_link_libraries(
-    coremldelegate PRIVATE portable_ops_lib portable_kernels
+    coreml_backend PRIVATE portable_ops_lib portable_kernels
   )
 endif()
 
-target_compile_options(coremldelegate PRIVATE "-fobjc-arc")
-target_compile_options(coremldelegate PRIVATE "-fno-exceptions")
+target_compile_options(coreml_backend PRIVATE "-fobjc-arc")
+target_compile_options(coreml_backend PRIVATE "-fno-exceptions")
 
 if(EXECUTORCH_BUILD_DEVTOOLS)
   target_compile_options(
     executorch_core PUBLIC -DET_EVENT_TRACER_ENABLED
   )
-  target_compile_options(coremldelegate PRIVATE "-frtti")
+  target_compile_options(coreml_backend PRIVATE "-frtti")
   target_compile_options(libprotobuf-lite PRIVATE "-frtti")
 else()
-  target_compile_options(coremldelegate PRIVATE "-fno-rtti")
+  target_compile_options(coreml_backend PRIVATE "-fno-rtti")
 endif()
 
-set(TARGET coremldelegate APPEND_STRING PROPERTY COMPILE_FLAGS
+set(TARGET coreml_backend APPEND_STRING PROPERTY COMPILE_FLAGS
            "-x objective-c++"
 )
 
-set(TARGET coremldelegate APPEND_STRING PROPERTY COMPILE_FLAGS
+set(TARGET coreml_backend APPEND_STRING PROPERTY COMPILE_FLAGS
            "-Wno-null-character"
 )
 
-set(TARGET coremldelegate APPEND_STRING PROPERTY COMPILE_FLAGS
+set(TARGET coreml_backend APPEND_STRING PROPERTY COMPILE_FLAGS
            "-Wno-receiver-expr"
 )
 
 install(
-  TARGETS coremldelegate
+  TARGETS coreml_backend
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}

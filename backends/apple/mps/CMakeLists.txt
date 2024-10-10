@@ -64,7 +64,8 @@ target_include_directories(
 )
 
 list(TRANSFORM _mps_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
-add_library(mpsdelegate ${_mps_backend__srcs})
+add_library(mps_backend ${_mps_backend__srcs})
+add_library(mpsdelegate ALIAS mps_backend)
 
 find_library(FOUNDATION_FRAMEWORK Foundation)
 find_library(METAL_FRAMEWORK Metal)
@@ -72,7 +73,7 @@ find_library(MPS_FRAMEWORK MetalPerformanceShaders)
 find_library(MPS_GRAPH_FRAMEWORK MetalPerformanceShadersGraph)
 
 target_link_libraries(
-  mpsdelegate
+  mps_backend
   PRIVATE bundled_program
           mps_schema
           executorch_core
@@ -82,12 +83,12 @@ target_link_libraries(
           ${MPS_GRAPH_FRAMEWORK}
 )
 
-target_link_options_shared_lib(mpsdelegate)
-target_compile_options(mpsdelegate PUBLIC ${_common_compile_options})
-target_compile_options(mpsdelegate PRIVATE "-fno-objc-arc")
+target_link_options_shared_lib(mps_backend)
+target_compile_options(mps_backend PUBLIC ${_common_compile_options})
+target_compile_options(mps_backend PRIVATE "-fno-objc-arc")
 
 install(
-  TARGETS mpsdelegate
+  TARGETS mps_backend
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}

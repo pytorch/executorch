@@ -26,10 +26,11 @@ set(_arm_baremetal_sources backends/arm/runtime/ArmBackendEthosU.cpp
 )
 list(TRANSFORM _arm_baremetal_sources PREPEND "${EXECUTORCH_ROOT}/")
 
-add_library(executorch_delegate_ethos_u STATIC ${_arm_baremetal_sources})
+add_library(ethos_u_backend STATIC ${_arm_baremetal_sources})
+add_library(executorch_delegate_ethos_u ALIAS ethos_u_backend)
 target_include_directories(
-  executorch_delegate_ethos_u PUBLIC ${_common_include_directories}
+  ethos_u_backend PUBLIC ${_common_include_directories}
 )
 target_include_directories(
-  executorch_delegate_ethos_u PUBLIC ${DRIVER_ETHOSU_INCLUDE_DIR}
+  ethos_u_backend PUBLIC ${DRIVER_ETHOSU_INCLUDE_DIR}
 )

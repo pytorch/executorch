@@ -40,8 +40,8 @@ set(lib_list
     bundled_program
     extension_data_loader
     ${FLATCCRT_LIB}
-    coremldelegate
-    mpsdelegate
+    coreml_backend
+    mps_backend
     qnn_executorch_backend
     portable_ops_lib
     extension_module
@@ -92,3 +92,12 @@ foreach(lib ${lib_list})
     target_include_directories(${lib} INTERFACE ${_root})
   endif()
 endforeach()
+
+# Legacy target names.
+add_library(executorch_no_prim_ops ALIAS executorch_core)
+if(TARGET coreml_backend)
+  add_library(coremldelegate ALIAS coreml_backend)
+endif()
+if(TARGET mps_backend)
+  add_library(mpsdelegate ALIAS mps_backend)
+endif()
