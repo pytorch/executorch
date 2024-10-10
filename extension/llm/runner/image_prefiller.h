@@ -30,7 +30,7 @@ class ImagePrefiller {
    * It's passed as reference and will be updated inside this function.
    * @return The next token of the LLM Module after prefill.
    */
-  virtual ::executorch::runtime::Result<exec_aten::Tensor> prefill(
+  virtual ::executorch::runtime::Result<executorch::aten::Tensor> prefill(
       Image& image,
       int64_t& start_pos) = 0;
 
