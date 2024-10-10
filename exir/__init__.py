@@ -65,4 +65,3 @@ def func(*args, **kwargs):
     raise RuntimeError("This function is not implemented yet.")
 
 torch._utils_internal.export_training_ir_rollout_check = func
-patch("torch._utils_internal.export_training_ir_rollout_check", func)
