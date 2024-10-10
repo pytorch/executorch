@@ -10,4 +10,6 @@ set -x
 pip install transformers accelerate sentencepiece tiktoken
 
 # Run llama2/install requirements for torchao deps
-bash ../llama2/install_requirements.sh
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
+bash "$SCRIPT_DIR"/../llama2/install_requirements.sh
