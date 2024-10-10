@@ -208,8 +208,8 @@ Create a file called main.cpp with the following contents:
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/result.h>
 
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::extension::from_blob;
 using executorch::extension::Module;
 using executorch::runtime::EValue;
@@ -309,28 +309,28 @@ penalties for repeated tokens, and biases to prioritize or de-prioritize specifi
 ```cpp
 // main.cpp
 
-using namespace torch::executor;
-
 int main() {
-    // Set up the prompt. This provides the seed text for the model to elaborate.
-    std::cout << "Enter model prompt: ";
-    std::string prompt;
-    std::getline(std::cin, prompt);
+  // Set up the prompt. This provides the seed text for the model to elaborate.
+  std::cout << "Enter model prompt: ";
+  std::string prompt;
+  std::getline(std::cin, prompt);
 
-    // The tokenizer is used to convert between tokens (used by the model) and
-    // human-readable strings.
-    BasicTokenizer tokenizer("vocab.json");
+  // The tokenizer is used to convert between tokens (used by the model) and
+  // human-readable strings.
+  BasicTokenizer tokenizer("vocab.json");
 
-    // The sampler is used to sample the next token from the logits.
-    BasicSampler sampler = BasicSampler();
+  // The sampler is used to sample the next token from the logits.
+  BasicSampler sampler = BasicSampler();
 
-    // Load the exported nanoGPT program, which was generated via the previous steps.
-    Module model("nanogpt.pte", Module::LoadMode::MmapUseMlockIgnoreErrors);
+  // Load the exported nanoGPT program, which was generated via the previous
+  // steps.
+  Module model("nanogpt.pte", Module::LoadMode::MmapUseMlockIgnoreErrors);
 
-    const auto max_input_tokens = 1024;
-    const auto max_output_tokens = 30;
-    std::cout << prompt;
-    generate(model, prompt, tokenizer, sampler, max_input_tokens, max_output_tokens);
+  const auto max_input_tokens = 1024;
+  const auto max_output_tokens = 30;
+  std::cout << prompt;
+  generate(
+      model, prompt, tokenizer, sampler, max_input_tokens, max_output_tokens);
 }
 ```
 

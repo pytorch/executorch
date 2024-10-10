@@ -201,14 +201,14 @@ This stage mainly focuses on executing the model with the bundled inputs and and
 ### Get ExecuTorch Program Pointer from `BundledProgram` Buffer
 We need the pointer to ExecuTorch program to do the execution. To unify the process of loading and executing `BundledProgram` and Program flatbuffer, we create an API:
 
-:::{dropdown} `GetProgramData`
+:::{dropdown} `get_program_data`
 
 ```{eval-rst}
-.. doxygenfunction:: torch::executor::bundled_program::GetProgramData
+.. doxygenfunction:: ::executorch::bundled_program::get_program_data
 ```
 :::
 
-Here's an example of how to use the `GetProgramData` API:
+Here's an example of how to use the `get_program_data` API:
 ```c++
 // Assume that the user has read the contents of the file into file_data using
 // whatever method works best for their application. The file could contain
@@ -216,36 +216,36 @@ Here's an example of how to use the `GetProgramData` API:
 void* file_data = ...;
 size_t file_data_len = ...;
 
-// If file_data contains a BundledProgram, GetProgramData() will return a
+// If file_data contains a BundledProgram, get_program_data() will return a
 // pointer to the Program data embedded inside it. Otherwise it will return
 // file_data, which already pointed to Program data.
 const void* program_ptr;
 size_t program_len;
-status = torch::executor::bundled_program::GetProgramData(
+status = executorch::bundled_program::get_program_data(
     file_data, file_data_len, &program_ptr, &program_len);
 ET_CHECK_MSG(
     status == Error::Ok,
-    "GetProgramData() failed with status 0x%" PRIx32,
+    "get_program_data() failed with status 0x%" PRIx32,
     status);
 ```
 
 ### Load Bundled Input to Method
-To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called `torch::executor::bundled_program::LoadBundledInput`:
+To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called `executorch::bundled_program::load_bundled_input`:
 
-:::{dropdown} `LoadBundledInput`
+:::{dropdown} `load_bundled_input`
 
 ```{eval-rst}
-.. doxygenfunction:: torch::executor::bundled_program::LoadBundledInput
+.. doxygenfunction:: ::executorch::bundled_program::load_bundled_input
 ```
 :::
 
 ### Verify the Method's Output.
-We call `torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput` to verify the method's output with bundled expected outputs. Here's the details of this API:
+We call `executorch::bundled_program::verify_method_outputs` to verify the method's output with bundled expected outputs. Here's the details of this API:
 
-:::{dropdown} `VerifyResultWithBundledExpectedOutput`
+:::{dropdown} `verify_method_outputs`
 
 ```{eval-rst}
-.. doxygenfunction:: torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput
+.. doxygenfunction:: ::executorch::bundled_program::verify_method_outputs
 ```
 :::
 
@@ -266,13 +266,13 @@ ET_CHECK_MSG(
     method.error());
 
 // Load testset_idx-th input in the buffer to plan
-status = torch::executor::bundled_program::LoadBundledInput(
+status = executorch::bundled_program::load_bundled_input(
         *method,
         program_data.bundled_program_data(),
         FLAGS_testset_idx);
 ET_CHECK_MSG(
     status == Error::Ok,
-    "LoadBundledInput failed with status 0x%" PRIx32,
+    "load_bundled_input failed with status 0x%" PRIx32,
     status);
 
 // Execute the plan
@@ -283,7 +283,7 @@ ET_CHECK_MSG(
     status);
 
 // Verify the result.
-status = torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput(
+status = executorch::bundled_program::verify_method_outputs(
         *method,
         program_data.bundled_program_data(),
         FLAGS_testset_idx,
