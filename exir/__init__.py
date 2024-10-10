@@ -61,6 +61,6 @@ __all__ = [
 
 
 def func(*args, **kwargs):
-    raise RuntimeError("This function is not implemented yet.")
+    return True
 
 torch._utils_internal.export_training_ir_rollout_check = func
