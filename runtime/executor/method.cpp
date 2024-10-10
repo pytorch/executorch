@@ -744,40 +744,6 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
     }
   }
 
-  // Validate input values and get tensor pre-allocation info.
-  pre_allocated_input_ = false;
-  for (int i = 0; i < inputs_size(); i++) {
-    // get_input() will panic if the index is invalid, so do this manually.
-    size_t index = get_input_index(i);
-    ET_CHECK_OR_RETURN_ERROR(
-        index < n_value_,
-        InvalidProgram,
-        "Input index %zu >= %zu",
-        index,
-        n_value_);
-    const EValue& input = values_[index];
-    if (input.isTensor()) {
-      pre_allocated_input_ |= input.toTensor().const_data_ptr() != nullptr;
-    }
-  }
-
-  // Validate output values and get tensor pre-allocation info.
-  pre_allocated_output_ = false;
-  for (int i = 0; i < outputs_size(); i++) {
-    // get_output() will panic if the index is invalid, so do this manually.
-    size_t index = get_output_index(i);
-    ET_CHECK_OR_RETURN_ERROR(
-        index < n_value_,
-        InvalidProgram,
-        "output index %zu >= %zu",
-        index,
-        n_value_);
-    const EValue& output = values_[index];
-    if (output.isTensor()) {
-      pre_allocated_output_ |= output.toTensor().const_data_ptr() != nullptr;
-    }
-  }
-
   step_state_ = StepState{0, 0};
 
   init_state_ = InitializationState::Initialized;
@@ -841,7 +807,8 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         input_idx,
         static_cast<uint32_t>(err));
     Error error;
-    if (pre_allocated_input_) {
+    auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
+    if (tensor_meta->is_memory_planned()) {
       error = internal::copy_tensor_data(t_dst, t_src);
     } else {
       error = internal::share_tensor_data(t_dst, t_src);
@@ -950,21 +917,11 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
       InvalidState,
       "Outputs can not be retrieved until method has been initialized.");
 
-  // ET_CHECK_OR_RETURN_ERROR(
-  //     !pre_allocated_output_,
-  //     InvalidState,
-  //     "Overriding output data pointer allocated by memory plan is not
-  //     allowed.");
-  // TODO(T188740925): for now, return error without logs.
-  if (pre_allocated_output_) {
-    return Error::InvalidState;
-  }
-
   // Check the args
   ET_CHECK_OR_RETURN_ERROR(
-      output_idx <= outputs_size(),
+      output_idx < outputs_size(),
       InvalidArgument,
-      "output_idx: %zu num_outputs: %zu",
+      "output_idx: %zu > num_outputs: %zu",
       output_idx,
       outputs_size());
 
@@ -974,6 +931,16 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
       InvalidArgument,
       "output type: %zu is not tensor",
       (size_t)output.tag);
+
+  auto tensor_meta = this->method_meta().output_tensor_meta(output_idx);
+  if (tensor_meta->is_memory_planned()) {
+    ET_LOG(
+        Error,
+        "Output %zu is memory planned, or is a constant. Cannot override \
+        the existing data pointer.",
+        output_idx);
+    return Error::InvalidState;
+  }
 
   auto& t = output.toTensor();
   ET_CHECK_OR_RETURN_ERROR(
