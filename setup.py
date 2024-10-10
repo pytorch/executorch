@@ -423,6 +423,11 @@ class CustomBuildPy(build_py):
                 "devtools/bundled_program/schema/scalar_type.fbs",
                 "devtools/bundled_program/serialize/scalar_type.fbs",
             ),
+            # Install executorch-config.cmake to the root of the package.
+            (
+                "build/executorch-config.cmake",
+                "executorch-config.cmake",
+            ),
         ]
         for src, dst in src_to_dst:
             dst = os.path.join(dst_root, dst)
