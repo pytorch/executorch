@@ -311,7 +311,6 @@ class SingleLlama:
             # Therefore, won't want to pre-allocate
             # by memory manager in runtime.
             memory_planning_pass=MemoryPlanningPass(
-                memory_planning_algo="greedy",
                 alloc_graph_input=False,
                 alloc_graph_output=False,
             ),
