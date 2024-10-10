@@ -35,5 +35,6 @@ from . import (  # noqa
     op_squeeze,
     op_sub,
     op_unsqueeze,
+    op_upsample_nearest2d,
     op_view,
 )
