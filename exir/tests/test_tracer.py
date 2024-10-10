@@ -100,6 +100,17 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
             any(node.meta.get("stack_trace", None) for node in traced_f.graph.nodes)
         )
 
+    def test_ones(self) -> None:
+        class M(torch.nn.Module):
+            def forward(self, x):
+                y = torch.ones(x.shape[0])
+                return x + y
+
+        ep = torch.export.export(
+            M(), (torch.ones(3),), dynamic_shapes={"x": {0: torch.export.Dim("x")}}
+        )
+        exir.to_edge(ep)
+
     def test_possible_input_mutation(self) -> None:
         def f(x: torch.Tensor) -> torch.Tensor:
             return torch.add(torch.ones(5), torch.ones(5), out=x)
