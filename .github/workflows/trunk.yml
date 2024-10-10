@@ -227,6 +227,8 @@ jobs:
         include:
           - dtype: bf16
             mode: portable
+          - dtype: bf16
+            mode: custom
       fail-fast: false
     with:
       runner: macos-m1-stable
