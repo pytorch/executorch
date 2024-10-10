@@ -29,7 +29,6 @@ from executorch.exir.serde.serialize import load, save
 from executorch.exir.tracer import ExirDynamoConfig
 from torch.export import ExportedProgram, ExportGraphSignature
 import torch 
-import mock
 
 
 
