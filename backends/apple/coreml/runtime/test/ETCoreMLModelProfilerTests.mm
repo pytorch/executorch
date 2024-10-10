@@ -59,7 +59,7 @@ ETCoreMLModelStructurePath *make_path_with_output_name(const std::string& output
 @implementation ETCoreMLModelProfilerTests
 
 + (void)setUp {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 }
 
 + (nullable NSURL *)bundledResourceWithName:(NSString *)name extension:(NSString *)extension {

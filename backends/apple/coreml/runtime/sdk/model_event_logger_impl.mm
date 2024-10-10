@@ -17,7 +17,11 @@
 
 namespace {
 
-using namespace torch::executor;
+using namespace executorch::runtime;
+
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::aten::TensorImpl;
 
 uint64_t time_units_to_nano_seconds(uint64_t time_units) {
     static mach_timebase_info_data_t info;
@@ -25,7 +29,7 @@ uint64_t time_units_to_nano_seconds(uint64_t time_units) {
     dispatch_once(&onceToken, ^{
         NSCAssert(mach_timebase_info(&info) == KERN_SUCCESS, @"ModelEventLogger: Failed to get time base.");
     });
-    
+
     return time_units * info.numer / info.denom;
 }
 
@@ -100,7 +104,7 @@ void ModelEventLoggerImpl::log_profiling_infos(NSDictionary<ETCoreMLModelStructu
                                         estimated_execution_end_time_in_ns,
                                         metadata.bytes,
                                         metadata.length);
-        
+
     }];
 }
 
@@ -109,7 +113,7 @@ void ModelEventLoggerImpl::log_intermediate_tensors(NSDictionary<ETCoreMLModelSt
     [op_path_to_value_map enumerateKeysAndObjectsUsingBlock:^(ETCoreMLModelStructurePath *path,
                                                               MLMultiArray *intermediate_value,
                                                               BOOL * _Nonnull __unused stop) {
-        using namespace torch::executor;
+        using namespace executorch::runtime;
 
         @autoreleasepool {
             NSString *debug_symbol = op_path_to_debug_symbol_name_map[path];
@@ -123,7 +127,7 @@ void ModelEventLoggerImpl::log_intermediate_tensors(NSDictionary<ETCoreMLModelSt
             }
 
             MLMultiArray *supported_value = value;
-            NSArray<NSNumber *> *shape = supported_value.shape; 
+            NSArray<NSNumber *> *shape = supported_value.shape;
             NSError *local_error = nil;
             MLMultiArrayDataType data_type = get_supported_data_type(value.dataType);
 
@@ -131,7 +135,7 @@ void ModelEventLoggerImpl::log_intermediate_tensors(NSDictionary<ETCoreMLModelSt
                 supported_value = [[MLMultiArray alloc] initWithShape:shape
                                                              dataType:data_type
                                                                  error:&local_error];
-                NSCAssert(supported_value != nil, 
+                NSCAssert(supported_value != nil,
                           @"ModelEventLoggerImpl: Failed to create packed multiarray with shape=%@, dataType=%ld, error=%@.",
                           shape,
                           static_cast<long>(value.dataType),
