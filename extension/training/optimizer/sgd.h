@@ -40,15 +40,15 @@ class ET_EXPERIMENTAL SGDParamState {
    * @param[in] momentum_buffer A tensor that stores the momentum at the last
    * epoch.
    */
-  explicit SGDParamState(exec_aten::Tensor& momentum_buffer)
+  explicit SGDParamState(executorch::aten::Tensor& momentum_buffer)
       : momentum_buffer_(momentum_buffer) {}
 
-  exec_aten::Tensor& momentum_buffer() {
+  executorch::aten::Tensor& momentum_buffer() {
     return momentum_buffer_;
   }
 
  private:
-  exec_aten::Tensor momentum_buffer_;
+  executorch::aten::Tensor momentum_buffer_;
 };
 
 /**
@@ -151,11 +151,11 @@ class ET_EXPERIMENTAL SGDParamGroup {
    * qualified names.
    */
   /* implicit */ SGDParamGroup(
-      const std::map<exec_aten::string_view, exec_aten::Tensor>&
+      const std::map<executorch::aten::string_view, executorch::aten::Tensor>&
           named_parameters)
       : named_parameters_(named_parameters) {}
   SGDParamGroup(
-      const std::map<exec_aten::string_view, exec_aten::Tensor>&
+      const std::map<executorch::aten::string_view, executorch::aten::Tensor>&
           named_parameters,
       std::unique_ptr<SGDOptions> options)
       : named_parameters_(named_parameters), options_(std::move(options)) {}
@@ -164,11 +164,12 @@ class ET_EXPERIMENTAL SGDParamGroup {
   SGDOptions& options();
   const SGDOptions& options() const;
   void set_options(std::unique_ptr<SGDOptions> options);
-  const std::map<exec_aten::string_view, exec_aten::Tensor>& named_parameters()
-      const;
+  const std::map<executorch::aten::string_view, executorch::aten::Tensor>&
+  named_parameters() const;
 
  private:
-  std::map<exec_aten::string_view, exec_aten::Tensor> named_parameters_;
+  std::map<executorch::aten::string_view, executorch::aten::Tensor>
+      named_parameters_;
   std::unique_ptr<SGDOptions> options_;
 };
 
@@ -188,7 +189,7 @@ class ET_EXPERIMENTAL SGD {
   }
 
   explicit SGD(
-      const std::map<exec_aten::string_view, exec_aten::Tensor>&
+      const std::map<executorch::aten::string_view, executorch::aten::Tensor>&
           named_parameters,
       SGDOptions defaults)
       : SGD({SGDParamGroup(named_parameters)}, defaults) {}
@@ -205,7 +206,7 @@ class ET_EXPERIMENTAL SGD {
    * fully qualified name.
    */
   ::executorch::runtime::Error step(
-      const std::map<exec_aten::string_view, exec_aten::Tensor>&
+      const std::map<executorch::aten::string_view, executorch::aten::Tensor>&
           named_gradients);
 
  private:
