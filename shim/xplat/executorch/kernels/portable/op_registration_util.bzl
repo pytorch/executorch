@@ -322,12 +322,10 @@ ATEN_OPS = (
     op_target(
         name = "op_bitwise_and",
         deps = [
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
+            ":scalar_utils",
             "//executorch/kernels/portable/cpu/pattern:bitwise_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
-            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -341,23 +339,19 @@ ATEN_OPS = (
     op_target(
         name = "op_bitwise_or",
         deps = [
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
+            ":scalar_utils",
             "//executorch/kernels/portable/cpu/pattern:bitwise_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
-            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
         name = "op_bitwise_xor",
         deps = [
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
+            ":scalar_utils",
             "//executorch/kernels/portable/cpu/pattern:bitwise_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
-            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
