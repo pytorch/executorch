@@ -22,7 +22,7 @@ struct TokenIndex {
 
 // A simple Byte Pair Encoding (BPE) Tokenizer. Note that the current C++ code
 // won't work with this class, it needs to go through tokenizer.py first.
-class BPETokenizer : public Tokenizer {
+class ET_EXPERIMENTAL BPETokenizer : public Tokenizer {
  public:
   explicit BPETokenizer();
   ~BPETokenizer() override;

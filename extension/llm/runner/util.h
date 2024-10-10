@@ -7,6 +7,7 @@
  */
 
 #pragma once
+#include <executorch/runtime/platform/compiler.h>
 #include <stdio.h>
 #include <time.h>
 #include <cctype>
@@ -18,7 +19,7 @@ namespace executorch {
 namespace extension {
 namespace llm {
 
-void inline safe_printf(const char* piece) {
+void inline ET_EXPERIMENTAL safe_printf(const char* piece) {
   // piece might be a raw byte token, and we only want to print printable chars
   // or whitespace because some of the other bytes can be various control codes,
   // backspace, etc.

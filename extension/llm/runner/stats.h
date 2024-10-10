@@ -19,7 +19,7 @@ namespace executorch {
 namespace extension {
 namespace llm {
 
-struct Stats {
+struct ET_EXPERIMENTAL Stats {
   // Scaling factor for timestamps - in this case, we use ms.
   const long SCALING_FACTOR_UNITS_PER_SECOND = 1000;
   // Time stamps for the different stages of the execution
