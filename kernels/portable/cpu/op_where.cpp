@@ -19,16 +19,6 @@ Tensor& where_out(
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
-  ET_KERNEL_CHECK(
-      ctx,
-      ((cond.scalar_type() == ScalarType::Bool ||
-        cond.scalar_type() == ScalarType::Byte) &&
-       executorch::runtime::tensor_is_realhbbf16_type(a) &&
-       executorch::runtime::tensor_is_realhbbf16_type(b) &&
-       executorch::runtime::tensor_is_realhbbf16_type(out)),
-      InvalidArgument,
-      out);
-
   // Common Dtype
   ScalarType common_type = promoteTypes(a.scalar_type(), b.scalar_type());
 
@@ -57,6 +47,7 @@ Tensor& where_out(
         [](const CTYPE_COMPUTE val_a,
            const CTYPE_COMPUTE val_b,
            const CTYPE_COMPUTE val_c) { return val_c ? val_a : val_b; },
+        ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
         b,

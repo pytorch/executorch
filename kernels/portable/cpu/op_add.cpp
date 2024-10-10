@@ -22,14 +22,6 @@ Tensor& add_out(
     const Tensor& b,
     const Scalar& alpha,
     Tensor& out) {
-  ET_KERNEL_CHECK(
-      ctx,
-      (executorch::runtime::tensor_is_realhbbf16_type(a) &&
-       executorch::runtime::tensor_is_realhbbf16_type(b) &&
-       executorch::runtime::tensor_is_realhbbf16_type(out)),
-      InvalidArgument,
-      out);
-
   // Common Dtype
   ScalarType common_type = promoteTypes(a.scalar_type(), b.scalar_type());
 
@@ -64,6 +56,7 @@ Tensor& add_out(
         [val_alpha](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
           return val_a + val_alpha * val_b;
         },
+        ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
         b,
@@ -81,13 +74,6 @@ Tensor& add_scalar_out(
     const Scalar& b,
     const Scalar& alpha,
     Tensor& out) {
-  ET_KERNEL_CHECK(
-      ctx,
-      (executorch::runtime::tensor_is_realhbbf16_type(a) &&
-       executorch::runtime::tensor_is_realhbbf16_type(out)),
-      InvalidArgument,
-      out);
-
   // Common Dtype
   ScalarType common_type = utils::promote_type_with_scalar(a.scalar_type(), b);
 
@@ -120,6 +106,7 @@ Tensor& add_scalar_out(
           CTYPE_COMPUTE val_alpha = utils::scalar_to<CTYPE_COMPUTE>(alpha);
           return val_a + val_alpha * val_b;
         },
+        ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
         out,

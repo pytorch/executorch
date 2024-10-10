@@ -80,6 +80,7 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "elementwise_util",
+        srcs = ["elementwise_util.cpp"],
         exported_headers = [
             "elementwise_util.h",
         ],
