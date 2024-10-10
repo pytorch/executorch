@@ -25,9 +25,6 @@ def define_common_targets():
             "bitwise_op.h",
         ],
         compiler_flags = [],
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-        ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
     )
 
