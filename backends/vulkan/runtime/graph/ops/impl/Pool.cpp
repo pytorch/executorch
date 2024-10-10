@@ -93,7 +93,7 @@ void add_max_pool2d_node(
       padding,
       dilation);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
@@ -167,7 +167,7 @@ void add_avg_pool2d_node(
   DivisorParams divisor_params =
       create_divisor_params(graph, divisor_override, count_include_pad);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,

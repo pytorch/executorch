@@ -148,7 +148,7 @@ void add_q_matmul_node(
 
   utils::uvec3 local_wg_size = adaptive_work_group_size(global_wg_size);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_wg_size,

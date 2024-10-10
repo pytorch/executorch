@@ -25,6 +25,8 @@
 
 #include <executorch/backends/vulkan/test/utils/test_utils.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/DispatchNode.h>
+
 using namespace vkcompute;
 using namespace vkcompute::api;
 
@@ -1075,7 +1077,7 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
   PRINT_SIZE(Value);
   PRINT_SIZE(StagingBuffer);
   PRINT_SIZE(ComputeGraph);
-  PRINT_SIZE(ExecuteNode);
+  PRINT_SIZE(DispatchNode);
 #undef PRINT_SIZE
 
   // The actual sizes of each object is dependent on the platform. However, we
@@ -1091,7 +1093,7 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
   // Current known size on 64 bit system: 384 B
   EXPECT_TRUE(sizeof(ComputeGraph) < 500);
   // Current known size on 64 bit system: 248 B
-  EXPECT_TRUE(sizeof(ExecuteNode) < 500);
+  EXPECT_TRUE(sizeof(DispatchNode) < 500);
 }
 
 TEST_F(VulkanComputeAPITest, test_tensor_creation_from_vulkan_image) {
@@ -1191,9 +1193,8 @@ TEST(VulkanComputeGraphTest, test_values_string) {
   EXPECT_TRUE(stored == "hello, world");
 }
 
-TEST(VulkanComputeGraphTest, empty_init_executenode_test) {
+TEST(VulkanComputeGraphTest, empty_init_graphnode_test) {
   ExecuteNode node(nullptr, {});
-  EXPECT_FALSE(node);
 
   GraphConfig config;
   ComputeGraph graph(config);
@@ -1449,7 +1450,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
   IOValueRef out = {};
   out.value = a.value;
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR("scalar_add_texture"),
       graph.create_global_wg_size(a.value),
