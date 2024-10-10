@@ -11,7 +11,7 @@ To see how you can use the model exported for training in a fully involved finet
 - `./examples/models/phi-3-mini-lora/install_requirements.sh`
 
 ### Step 3: Export and run the model
-1. Export the inferenace and training models to ExecuTorch.
+1. Export the inference and training models to ExecuTorch.
 ```
 python export_model.py
 ```
