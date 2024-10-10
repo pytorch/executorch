@@ -10,17 +10,17 @@ from typing import Optional
 
 import torch
 
-from examples.models.llama2.llama_transformer import ModelArgs
+from executorch.examples.models.llama2.llama_transformer import ModelArgs
 from executorch.extension.pybindings.portable_lib import _load_for_executorch
 
 # Load custom ops and quantized ops.
 from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
 
 # Note: import this after portable_lib
-from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa # usort: skip
+# from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa # usort: skip
 from executorch.kernels import quantized  # noqa
 
-from .generation import LlamaRunner
+from executorch.examples.models.llama2.runner.generation import LlamaRunner
 
 
 class NativeLlamaRunner(LlamaRunner):
@@ -35,7 +35,7 @@ class NativeLlamaRunner(LlamaRunner):
             max_seq_len=args.max_len,
             max_batch_size=1,
             use_kv_cache=args.kv_cache,
-            **params,
+            vocab_size=params["vocab_size"],
         )
         super().__init__(tokenizer_path=args.tokenizer, model_args=model_args)
         self.model = _load_for_executorch(args.pte)
@@ -45,11 +45,17 @@ class NativeLlamaRunner(LlamaRunner):
         tokens: Optional[torch.LongTensor] = None,
         input_pos: Optional[torch.LongTensor] = None,
     ) -> torch.Tensor:
-        return (
-            self.model.forward((tokens, input_pos))
-            if input_pos is not None
-            else self.model.forward((tokens,))
-        )[0]
+        # TODO: in LlamaRunner there is a generate function that automatically generates
+        # input_pos tensor and inputs it into the model. Atm TorchTune models use
+        # kwargs for the input_pos, so we will need to make some changes. At least
+        # for the time being, we can run the non-kv cache version of the Torchtune
+        # model with just the tokens like below.
+        return (self.model.forward((tokens,)))[0]
+        # return (
+        #     self.model.forward((tokens, input_pos))
+        #     if input_pos is not None
+        #     else self.model.forward((tokens,))
+        # )[0]
 
 
 def build_args_parser() -> argparse.ArgumentParser:
