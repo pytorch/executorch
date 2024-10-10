@@ -171,7 +171,7 @@ else
 fi
 
 # Check dtype.
-EXPORTED_MODEL_NAME="llama2"
+EXPORTED_MODEL_NAME="tinyllama_${MODE}_${DTYPE}"
 if [[ "${DTYPE}" == "fp16" ]]; then
   EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}_h"
 elif [[ "${DTYPE}" == "fp32" ]]; then
