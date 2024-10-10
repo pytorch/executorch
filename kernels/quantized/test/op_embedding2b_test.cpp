@@ -171,7 +171,7 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbeddingDeath3) {
 
   Tensor weight_scales = tf.make({2, 3}, {1.0, 1.0, 1.0, 1.0, 1.0, 1.0});
   Tensor weight_zero_points = tf.make({2, 3}, {0, 0, 0, 0, 0, 0});
-  Tensor qweight = tfb.make({2, 1}, {236, 134, 228});
+  Tensor qweight = tfb.make({2, 1}, {236, 134});
   Tensor indices = tfl.make({2}, {0, 2});
   Tensor out = tf.zeros({2, 8});
 
