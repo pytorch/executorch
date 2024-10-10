@@ -201,6 +201,10 @@ option(EXECUTORCH_BUILD_KERNELS_QUANTIZED "Build the quantized kernels" OFF)
 
 option(EXECUTORCH_BUILD_DEVTOOLS "Build the ExecuTorch Developer Tools")
 
+option(EXECUTORCH_NNLIB_OPT "Build Cadence backend Hifi nnlib kernel" OFF)
+
+option(EXECUTORCH_CADENCE_CPU_RUNNER "Build Cadence backend CPU runner" OFF)
+
 option(EXECUTORCH_BUILD_SIZE_TEST "Build the size test" OFF)
 
 option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
