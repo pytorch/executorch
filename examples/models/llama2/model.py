@@ -8,9 +8,13 @@
 
 import json
 import os
-from pathlib import Path
+from typing import Dict, Tuple
 
 import torch
+from executorch.examples.models.checkpoint import (
+    get_checkpoint_dtype,
+    get_default_model_resource_dir,
+)
 
 from executorch.examples.models.llama2.llama_transformer import ModelArgs, Transformer
 
@@ -30,48 +34,29 @@ from ..model_base import EagerModelBase
 
 class Llama2Model(EagerModelBase):
     def __init__(self, **kwargs):
-        import pkg_resources
-
-        # default path to the resource file
-        # It currently supports 3 ways of specifying the checkpoint location:
-        # 1. Using default path locates in examples/models/llama2/params
-        # 2. Passing in the checkpoint path and params via kwargs
-        # 3. Using the path from pkg_resources, only works with buck2
-        try:
-            # The 3rd way, if we can import this path, we are running with buck2, all resources can be accessed with pkg_resources.resource_filename
-            # pyre-ignore
-            from executorch.examples.models.llama2 import params
-
-            ckpt_dir = Path(
-                pkg_resources.resource_filename(
-                    "executorch.examples.models.llama2", "params"
-                )
-            )
-        except:
-            # The 1st way
-            ckpt_dir = Path(__file__).absolute().parent / "params"
-
-        # Check if checkpoint_dir was provided for a sharded checkpoint.
-        checkpoint_dir = kwargs.get("checkpoint_dir", None)
+        ckpt_dir = get_default_model_resource_dir()
 
         # Use single checkpoint file.
         checkpoint_path = kwargs.get("checkpoint", ckpt_dir / "demo_rand_params.pth")
-
         params_path = kwargs.get("params", ckpt_dir / "demo_config.json")
+
+        # Check if checkpoint_dir was provided for a sharded checkpoint.
+        checkpoint_dir = kwargs.get("checkpoint_dir", None)
 
         self.use_kv_cache = kwargs.get("use_kv_cache", False)
         self.use_sdpa_with_kv_cache_op = kwargs.get("use_sdpa_with_kv_cache", False)
         self.generate_full_logits = kwargs.get("generate_full_logits", False)
         self.enable_dynamic_shape = kwargs.get("enable_dynamic_shape", False)
         self.output_prune_map_path = kwargs.get("output_prune_map_path", None)
-
         self.max_seq_len = kwargs.get("max_seq_len", 128)
         self.args = kwargs.get("args", None)
+
         # The example is using a dummy small model with random weights for demo purpose only.
-        # Follow the instruction in https://github.com/facebookresearch/llama to download the model
+        # Follow the instruction in https://github.com/facebookresearch/llama to download the model.
         device = "cpu"
         # flake8: noqa: TOR102
         cps = []
+        # Load sharded checkpoint.
         if checkpoint_dir is not None:
             # Load multiple checkpoint; ignore the single path.
             checkpoint_path = None
@@ -98,8 +83,11 @@ class Llama2Model(EagerModelBase):
                 else:
                     # Do not duplicate layers shared between each checkpoint.
                     checkpoint[key] = cps[0][key]
+        # Load single checkpoint.
         else:
             checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
+
+        # If given checkpoint is fairseq, convert to llama checkpoint.
         fairseq2_checkpoint = kwargs.get("fairseq2", False)
         if fairseq2_checkpoint:
             print("Using fairseq2 checkpoint")
@@ -108,12 +96,12 @@ class Llama2Model(EagerModelBase):
             # NB: some checkpoint contains a "model" field, which is the actual weights dict
             checkpoint = checkpoint["model"]
 
+        # Check if user gave a fairseq2 checkpoint unknowingly without specifying --fairseq2.
         if (not fairseq2_checkpoint) and checkpoint.get(
             "final_proj.weight", None
         ) is not None:
-            print(
+            raise ValueError(
                 """
-
 ************************************************************
 This looks like a Fairseq2 checkpoint (based on the presence
 of `final_proj.weight`.
@@ -125,34 +113,21 @@ the checkpoint format to avoid generating faulty models.
 """
             )
 
-        # get checkpoint dtype
-        self.dtype = None
-        if len(checkpoint) > 0:
-            first_key = next(iter(checkpoint))
-            first = checkpoint[first_key]
-            self.dtype = first.dtype
-            mismatched_dtypes = [
-                (key, value.dtype)
-                for key, value in checkpoint.items()
-                if value.dtype != self.dtype
-            ]
-            if len(mismatched_dtypes) > 0:
-                print(
-                    f"Mixed dtype model. Dtype of {first_key}: {first.dtype}. Mismatches in the checkpoint: {mismatched_dtypes}"
-                )
+        # Get checkpoint dtype.
+        self.dtype = get_checkpoint_dtype(checkpoint)
+
         with open(params_path, "r") as f:
             params = json.loads(f.read())
         output_prune_map = None
         if self.output_prune_map_path is not None:
             with open(self.output_prune_map_path, "r") as f:
                 output_prune_map = json.load(f)
-            # change keys from string to int (json only supports string keys)
+            # Change keys from string to int (json only supports string keys).
             output_prune_map = {int(k): v for (k, v) in output_prune_map.items()}
-        max_seq_len = self.max_seq_len
-        max_batch_size = 1
+
         model_args: ModelArgs = ModelArgs(
-            max_seq_len=max_seq_len,
-            max_batch_size=max_batch_size,
+            max_seq_len=self.max_seq_len,
+            max_batch_size=1,
             use_kv_cache=self.use_kv_cache,
             use_sdpa_with_kv_cache_op=self.use_sdpa_with_kv_cache_op,
             generate_full_logits=self.generate_full_logits,
@@ -160,9 +135,6 @@ the checkpoint format to avoid generating faulty models.
             enable_dynamic_shape=self.enable_dynamic_shape,
             **params,
         )
-        if kwargs.get("fairseq2", False):
-            print("Using fairseq2 checkpoint")
-            checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
         if kwargs.get("verbose", False):
             print("============= weights ================")
             print("{key} : {weights.numel()} : {weights.size()}")
@@ -234,13 +206,13 @@ the checkpoint format to avoid generating faulty models.
             print(unexpected)
             print("============= /unexpected ================")
 
-        # prune the output layer if output_prune_map is provided
+        # Prune the output layer if output_prune_map is provided
         if output_prune_map is not None:
             from .source_transformation.prune_output import prune_output_vocab
 
             self.model_ = prune_output_vocab(self.model_, output_prune_map)
 
-    def get_eager_model(self):
+    def get_eager_model(self) -> torch.nn.Module:
         if self.dtype:
             # convert to the type of the provided checkpoint
             # input and output are torch.long, so signature unchanged
