@@ -18,7 +18,7 @@ namespace executorch {
 namespace extension {
 namespace llm {
 
-class TextTokenGenerator {
+class ET_EXPERIMENTAL TextTokenGenerator {
  public:
   TextTokenGenerator(
       Tokenizer* tokenizer,

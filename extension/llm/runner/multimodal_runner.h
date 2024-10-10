@@ -36,7 +36,7 @@ namespace executorch {
 namespace extension {
 namespace llm {
 
-class MultimodalRunner {
+class ET_EXPERIMENTAL MultimodalRunner {
  public:
   explicit MultimodalRunner(
       const std::string& model_path,

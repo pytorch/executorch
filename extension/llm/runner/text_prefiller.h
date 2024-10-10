@@ -20,7 +20,7 @@ namespace executorch {
 namespace extension {
 namespace llm {
 
-class TextPrefiller {
+class ET_EXPERIMENTAL TextPrefiller {
  public:
   TextPrefiller(
       TextDecoderRunner* text_decoder_runner,

@@ -19,6 +19,7 @@
 #endif
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/platform/compiler.h>
 
 namespace executorch {
 namespace extension {
@@ -26,12 +27,12 @@ namespace llm {
 // A simple llama2 sampler.
 
 template <typename T>
-struct ProbIndex {
+struct ET_EXPERIMENTAL ProbIndex {
   T prob;
   int32_t index;
 }; // struct used when sorting probabilities during top-p sampling
 
-class Sampler {
+class ET_EXPERIMENTAL Sampler {
  public:
   Sampler(
       int32_t vocab_size,
