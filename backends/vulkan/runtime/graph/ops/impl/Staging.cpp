@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/DispatchNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
@@ -34,7 +35,7 @@ void add_staging_to_tensor_node(
     ubos.append({graph.sizes_ubo(out_tensor), graph.axis_map_ubo(out_tensor)});
   }
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       shader,
       graph.create_global_wg_size(out_tensor),
@@ -94,7 +95,7 @@ void add_tensor_to_staging_node(
     ubos.append({graph.numel_ubo(in_tensor)});
   }
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       shader,
       global_wg_size,
