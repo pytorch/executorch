@@ -11,8 +11,8 @@ import os
 from typing import final, List
 
 import torch
-from executorch.backends.arm.arm_backend import ArmBackend
-from executorch.backends.arm.passes.tag_io_quant_pass import TagIOQuantPass
+from executorch.backends.arm.arm_backend import ArmBackend  # usort: skip
+from executorch.backends.arm._passes.tag_io_quant_pass import TagIOQuantPass
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
