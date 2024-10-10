@@ -8,13 +8,13 @@
 # pyre-unsafe
 
 import torch
-from executorch.backends.arm.passes.annotate_channels_last_dim_order_pass import (
+from executorch.backends.arm._passes.annotate_channels_last_dim_order_pass import (
     AnnotateChannelsLastDimOrder,
 )
-from executorch.backends.arm.passes.convert_expand_copy_to_repeat import (
+from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
 )
-from executorch.backends.arm.passes.convert_split_to_slice import (
+from executorch.backends.arm._passes.convert_split_to_slice import (
     ConvertSplitToSlicePass,
 )
 from executorch.backends.arm.passes.meandim_to_averagepool_pass import (
