@@ -12,9 +12,9 @@ import time
 from multiprocessing.connection import Client
 
 import torch
+from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
 
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
-from executorch.backends.qualcomm.passes.build_quant_io import BuildQuantIo
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
