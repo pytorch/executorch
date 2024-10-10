@@ -8,7 +8,7 @@
 
 import operator
 
-from executorch.backends.vulkan.passes.custom_ops_defs import (  # noqa
+from executorch.backends.vulkan._passes.custom_ops_defs import (  # noqa
     conv_with_clamp_op,
     grid_priors_op,
 )
