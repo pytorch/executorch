@@ -246,9 +246,16 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="list of lm-eluther tasks to evaluate usage: --tasks task1 task2",
     )
     parser.add_argument(
-        "--limit", type=int, default=5, help="number of samples to evalulate"
+        "--limit", type=int, default=None, help="number of samples to evalulate"
     )
-
+    parser.add_argument(
+        "-f",
+        "--num_fewshot",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Number of examples in few-shot context",
+    )
     # Add additional args specific to eval via an ET Runner
     # Note: For initial integration, the tokenizer.model is also required
     parser.add_argument(
@@ -282,9 +289,10 @@ def eval_llama(
 
     # Evaluate the model
     eval_results = evaluate_model(
-        eval_wrapper,
-        args.tasks,  # pyre-ignore
-        args.limit,  # pyre-ignore
+        eval_wrapper=eval_wrapper,
+        tasks=args.tasks,
+        num_fewshot=args.num_fewshot,
+        limit=args.limit,
     )
 
     for task, res in eval_results["results"].items():

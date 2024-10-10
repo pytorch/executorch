@@ -15,9 +15,8 @@ from executorch.extension.llm.tokenizer.tokenizer import (
 )
 
 from lm_eval.api.model import LM
-from lm_eval.evaluator import evaluate
+from lm_eval.evaluator import simple_evaluate
 from lm_eval.models.huggingface import HFLM as eval_wrapper
-from lm_eval.tasks import get_task_dict
 
 from torch import nn
 
@@ -85,6 +84,7 @@ class EagerEvalWrapper(eval_wrapper):
 def evaluate_model(
     eval_wrapper: LM,
     tasks: Optional[list] = None,
+    num_fewshot: Optional[int] = None,
     limit: Optional[int] = None,
 ) -> dict:
     """
@@ -93,6 +93,7 @@ def evaluate_model(
     Args:
         eval_wrapper (LM): A LM wrapper class compatible with lm-evaluation-harness evaluation
         tasks: Optional[list]: The names of the evaluation tasks to perform.
+        num_fewshot: Optional[int]: Number of examples in few-shot context.
         limit (Optional[int]): The maximum number of samples to evaluate (None for all available).
 
     Returns:
@@ -102,16 +103,10 @@ def evaluate_model(
     if tasks is None:
         tasks = ["wikitext"]
 
-    if "hendrycks_test" in tasks:
-        tasks.remove("hendrycks_test")
-        tasks += list(
-            lm_eval.tasks.hendrycks_test.create_all_tasks().keys()  # pyre-ignore
-        )
-    task_dict = get_task_dict(tasks)
-
-    eval_results = evaluate(
-        eval_wrapper,
-        task_dict,
+    eval_results = simple_evaluate(
+        model=eval_wrapper,
+        tasks=tasks,
+        num_fewshot=num_fewshot,
         limit=limit,
     )
     return eval_results
