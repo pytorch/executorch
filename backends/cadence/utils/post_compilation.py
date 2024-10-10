@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 
 XTENSA_ROOT = os.environ["XTENSA_TOOLCHAIN"]
-XTENSA_VER = os.environ["TOOLCHAIN_VER"]
+XTENSA_VER = os.environ["XTENSA_TOOLCHAIN_VER"]
 XTENSA_TOOLS = os.path.join(XTENSA_ROOT, f"{XTENSA_VER}/XtensaTools")
 XTENSA_SYSTEM = os.path.join(XTENSA_TOOLS, "config")
 XTENSA_CORE = os.environ["XTENSA_CORE"]

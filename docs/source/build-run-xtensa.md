@@ -148,7 +148,7 @@ In this step, you'll be building the DSP firmware image that consists of the sam
 export XTENSA_TOOLCHAIN=/home/user_name/cadence/XtDevTools/install/tools
 # The version of the toolchain that was installed. This is essentially the name of the directory
 # that is present in the XTENSA_TOOLCHAIN directory from above.
-export TOOLCHAIN_VER=RI-2021.8-linux
+export XTENSA_TOOLCHAIN_VER=RI-2021.8-linux
 # The Xtensa core that you're targeting.
 export XTENSA_CORE=nxp_rt600_RI2021_8_newlib
 ```
