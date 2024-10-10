@@ -196,6 +196,11 @@ class Context final {
       const vkapi::ShaderInfo&,
       const utils::uvec3&);
 
+  void register_blit(
+      vkapi::PipelineBarrier&,
+      vkapi::VulkanImage& src,
+      vkapi::VulkanImage& dst);
+
   template <typename... Arguments>
   bool submit_compute_job(
       const vkapi::ShaderInfo&,

@@ -179,6 +179,45 @@ void CommandBuffer::dispatch(const utils::uvec3& global_workgroup_size) {
   state_ = CommandBuffer::State::RECORDING;
 }
 
+void CommandBuffer::blit(vkapi::VulkanImage& src, vkapi::VulkanImage& dst) {
+  VK_CHECK_COND(
+      state_ == CommandBuffer::State::BARRIERS_INSERTED,
+      "Vulkan CommandBuffer: called blit() on a command buffer whose state "
+      "is not BARRIERS_INSERTED.");
+
+  auto src_extents = src.extents();
+  auto dst_extents = dst.extents();
+
+  VkImageBlit blit{};
+  blit.srcOffsets[0] = {0, 0, 0},
+  blit.srcOffsets[1] =
+      {static_cast<int32_t>(src_extents.width),
+       static_cast<int32_t>(src_extents.height),
+       static_cast<int32_t>(src_extents.depth)},
+  blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+  blit.srcSubresource.mipLevel = 0, blit.srcSubresource.baseArrayLayer = 0,
+  blit.srcSubresource.layerCount = 1, blit.dstOffsets[0] = {0, 0, 0},
+  blit.dstOffsets[1] =
+      {static_cast<int32_t>(dst_extents.width),
+       static_cast<int32_t>(dst_extents.height),
+       static_cast<int32_t>(dst_extents.depth)},
+  blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+  blit.dstSubresource.mipLevel = 0, blit.dstSubresource.baseArrayLayer = 0,
+  blit.dstSubresource.layerCount = 1,
+
+  vkCmdBlitImage(
+      handle_,
+      src.handle(),
+      src.layout(),
+      dst.handle(),
+      dst.layout(),
+      1,
+      &blit,
+      VK_FILTER_NEAREST);
+
+  state_ = CommandBuffer::State::RECORDING;
+}
+
 void CommandBuffer::write_timestamp(VkQueryPool querypool, const uint32_t idx)
     const {
   VK_CHECK_COND(

@@ -143,6 +143,14 @@ void Context::register_shader_dispatch(
   cmd_.dispatch(effective_global_wg);
 }
 
+void Context::register_blit(
+    vkapi::PipelineBarrier& pipeline_barrier,
+    vkapi::VulkanImage& src,
+    vkapi::VulkanImage& dst) {
+  cmd_.insert_barrier(pipeline_barrier);
+  cmd_.blit(src, dst);
+}
+
 void Context::submit_cmd_to_gpu(VkFence fence_handle, const bool final_use) {
   if (cmd_) {
     cmd_.end();
