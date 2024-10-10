@@ -66,12 +66,12 @@ struct decay_if_not_tensor final {
   using type = std::decay_t<T>;
 };
 template <>
-struct decay_if_not_tensor<exec_aten::Tensor&> final {
-  using type = exec_aten::Tensor&;
+struct decay_if_not_tensor<executorch::aten::Tensor&> final {
+  using type = executorch::aten::Tensor&;
 };
 template <>
-struct decay_if_not_tensor<const exec_aten::Tensor&> final {
-  using type = const exec_aten::Tensor&;
+struct decay_if_not_tensor<const executorch::aten::Tensor&> final {
+  using type = const executorch::aten::Tensor&;
 };
 
 template <class T>
@@ -82,29 +82,30 @@ struct evalue_to_arg final {
 };
 
 template <>
-struct evalue_to_arg<exec_aten::Tensor&> final {
-  static exec_aten::Tensor& call(executorch::runtime::EValue& v) {
+struct evalue_to_arg<executorch::aten::Tensor&> final {
+  static executorch::aten::Tensor& call(executorch::runtime::EValue& v) {
     return v.toTensor();
   }
 };
 
 template <>
-struct evalue_to_arg<const exec_aten::Tensor&> final {
-  static const exec_aten::Tensor& call(executorch::runtime::EValue& v) {
+struct evalue_to_arg<const executorch::aten::Tensor&> final {
+  static const executorch::aten::Tensor& call(executorch::runtime::EValue& v) {
     return v.toTensor();
   }
 };
 
 template <class T>
-struct evalue_to_arg<exec_aten::optional<T>> final {
-  static exec_aten::optional<T> call(executorch::runtime::EValue& v) {
+struct evalue_to_arg<executorch::aten::optional<T>> final {
+  static executorch::aten::optional<T> call(executorch::runtime::EValue& v) {
     return v.toOptional<T>();
   }
 };
 
 template <class T>
-struct evalue_to_arg<exec_aten::ArrayRef<exec_aten::optional<T>>> final {
-  static exec_aten::ArrayRef<exec_aten::optional<T>> call(
+struct evalue_to_arg<executorch::aten::ArrayRef<executorch::aten::optional<T>>>
+    final {
+  static executorch::aten::ArrayRef<executorch::aten::optional<T>> call(
       executorch::runtime::EValue& v) {
     return v.toListOptionalTensor();
   }
