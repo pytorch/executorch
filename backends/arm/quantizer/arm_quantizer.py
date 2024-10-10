@@ -19,7 +19,7 @@ from typing import Any, Callable, Dict, List, Optional, Set
 
 import torch
 import torch.nn.functional as F
-from executorch.backends.arm.passes.arm_pass_manager import ArmPassManager
+from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 
 from executorch.backends.arm.quantizer import arm_quantizer_utils
 from executorch.backends.arm.quantizer.arm_quantizer_utils import (
