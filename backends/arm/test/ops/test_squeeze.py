@@ -38,6 +38,7 @@ class TestSqueeze(unittest.TestCase):
 
     class SqueezeDims(torch.nn.Module):
         test_parameters: list[tuple[torch.Tensor, tuple[int]]] = [
+            (torch.randn(1, 1, 5), (0, 1)),
             (torch.randn(1, 5, 5, 1), (0, -1)),
             (torch.randn(1, 5, 1, 5), (0, -2)),
         ]
@@ -47,6 +48,7 @@ class TestSqueeze(unittest.TestCase):
 
     class Squeeze(torch.nn.Module):
         test_parameters: list[tuple[torch.Tensor]] = [
+            (torch.randn(1, 1, 5),),
             (torch.randn(1, 5, 5, 1),),
             (torch.randn(1, 5, 1, 5),),
         ]
@@ -64,7 +66,7 @@ class TestSqueeze(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=False),
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
             .check_count({export_target: 1})
@@ -86,7 +88,7 @@ class TestSqueeze(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=False),
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
@@ -184,7 +186,7 @@ class TestSqueeze(unittest.TestCase):
     @parameterized.expand(SqueezeDim.test_parameters)
     def test_squeeze_dim_u85_BI(self, test_tensor: torch.Tensor, dim: int):
         self._test_squeeze_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(permute_memory_to_nhwc=False),
+            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
             self.SqueezeDim(),
             (test_tensor, dim),
             "torch.ops.aten.squeeze.dim",
@@ -214,7 +216,7 @@ class TestSqueeze(unittest.TestCase):
     @parameterized.expand(SqueezeDims.test_parameters)
     def test_squeeze_dims_u85_BI(self, test_tensor: torch.Tensor, dims: tuple[int]):
         self._test_squeeze_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(permute_memory_to_nhwc=False),
+            common.get_u85_compile_spec(),
             self.SqueezeDims(),
             (test_tensor, dims),
             "torch.ops.aten.squeeze.dims",
