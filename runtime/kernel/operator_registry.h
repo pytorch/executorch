@@ -50,11 +50,13 @@ using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
  * Used by the Executor to hold the tensor metadata info and retrieve kernel.
  */
 struct TensorMeta {
-  exec_aten::ScalarType dtype_;
-  Span<exec_aten::DimOrderType> dim_order_;
+  executorch::aten::ScalarType dtype_;
+  Span<executorch::aten::DimOrderType> dim_order_;
 
   TensorMeta() = default;
-  TensorMeta(exec_aten::ScalarType dtype, Span<exec_aten::DimOrderType> order)
+  TensorMeta(
+      executorch::aten::ScalarType dtype,
+      Span<executorch::aten::DimOrderType> order)
       : dtype_(dtype), dim_order_(order) {}
 
   bool operator==(const TensorMeta& other) const {

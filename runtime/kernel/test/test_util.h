@@ -19,13 +19,14 @@ namespace runtime {
 namespace testing {
 
 inline void make_kernel_key(
-    std::vector<
-        std::pair<exec_aten::ScalarType, std::vector<exec_aten::DimOrderType>>>
-        tensors,
+    std::vector<std::pair<
+        executorch::aten::ScalarType,
+        std::vector<executorch::aten::DimOrderType>>> tensors,
     char* buf) {
   std::vector<TensorMeta> meta;
   for (auto& t : tensors) {
-    Span<exec_aten::DimOrderType> dim_order(t.second.data(), t.second.size());
+    Span<executorch::aten::DimOrderType> dim_order(
+        t.second.data(), t.second.size());
     meta.emplace_back(t.first, dim_order);
   }
   Span<const TensorMeta> metadata(meta.data(), meta.size());
