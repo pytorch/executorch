@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/quantized/cpu/embeddingxb.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <algorithm>
 #include <cassert>
