@@ -11,7 +11,7 @@ from typing import Optional
 
 import torch
 
-from executorch.backends.cadence.aot.passes import (
+from executorch.backends.cadence.aot._passes import (
     InitializePipeline,
     RemoveNopExpandOpPass,
     RemoveZeroSizedCatArgsPass,
