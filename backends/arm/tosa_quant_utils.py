@@ -44,30 +44,32 @@ def dequantize_value(qx, qargs: QuantArgs):
     return (qx - qargs.zp) * qargs.scale
 
 
-def is_quant_node(node: torch.fx.Node):
-
-    consumer_node_condition = False
-    if len(list(node.users)) > 0:
-        consumer_node = list(node.users)[0]
-
+def is_output_quant(node: torch.fx.Node):
+    if node.users:
+        consumer_node = tuple(node.users)[0]
         # For Rank > 2 Linear layers, the quant node is after the view_copy
         if (
             node.target == exir_ops.edge.aten.addmm.default
             and consumer_node.target == exir_ops.edge.aten.view_copy.default
         ):
-            consumer_consumer_node = list(consumer_node.users)[0]
-            return True if consumer_consumer_node.target == q_op else False
-        consumer_node_condition = consumer_node.target == q_op
+            consumer_consumer_node = tuple(consumer_node.users)[0]
+            return consumer_consumer_node.target == q_op
+        return consumer_node.target == q_op
+    return False
 
-    input_node_condition = False
-    if len(node.all_input_nodes) > 0:
+
+def is_input_quant(node: torch.fx.Node):
+    if node.all_input_nodes:
         input = node.all_input_nodes[0]
-        input_node_condition = input.target in dq_q_ops
+        return input.target in dq_q_ops
+    return False
 
-    return node.target in dq_q_ops or consumer_node_condition or input_node_condition
+
+def is_quant_node(node: torch.fx.Node):
+    return node.target in dq_q_ops or is_input_quant(node) or is_output_quant(node)
 
 
-def get_quant_node_dtype(node: torch.fx.Node):
+def get_output_quant_dtype(node: torch.fx.Node):
     # pyre-ignore[16]: Undefined attribute.
     if "tosa" in node.target.__name__:
         return node.meta["val"].dtype
