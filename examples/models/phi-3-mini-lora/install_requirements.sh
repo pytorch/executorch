@@ -11,4 +11,4 @@ pip install tiktoken
 
 # Install torchao.
 TORCHAO_VERSION=$(cat "$(dirname "$0")"/../../../.ci/docker/ci_commit_pins/torchao.txt)
-pip install --no-use-pep517 --user "git+https://github.com/pytorch/ao.git@${TORCHAO_VERSION}"
+pip install --no-use-pep517 "git+https://github.com/pytorch/ao.git@${TORCHAO_VERSION}"
