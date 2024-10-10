@@ -47,7 +47,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     QNN_TENSOR_TYPE_MAP,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
-from executorch.backends.qualcomm.passes.expand_broadcast_tensor_shape import (
+from executorch.backends.qualcomm._passes.expand_broadcast_tensor_shape import (
     ExpandBroadcastTensorShape,
 )
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
