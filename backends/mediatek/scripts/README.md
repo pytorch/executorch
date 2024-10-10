@@ -16,7 +16,7 @@ Before you begin, ensure you have the following prerequisites installed and conf
 
 ### 2. Android NDK
 
-- **Download Android NDK**: Acquire the Android NDK from the [Android developer site](https://developer.android.com/ndk/downloads).
+- **Download Android NDK**: Acquire the Android NDK version 26.3.11579264 from the [Android developer site](https://developer.android.com/ndk/downloads).
 - **Set NDK Path**: Ensure that the `$ANDROID_NDK` environment variable is set to the path where the NDK is located.
    ```bash
    export ANDROID_NDK=<path_to_android_ndk>

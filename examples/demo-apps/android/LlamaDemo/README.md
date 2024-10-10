@@ -34,6 +34,12 @@ First it’s important to note that currently ExecuTorch provides support across
 | QNN (Qualcomm AI Accelerators)  | [link](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/qualcomm_README.md) |
 | MediaTek (MediaTek AI Accelerators)  | [link](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/mediatek_README.md)  |
 
+**WARNING** NDK r27 will cause issues like:
+  ```
+  java.lang.UnsatisfiedLinkError: dlopen failed: cannot locate symbol "_ZTVNSt6__ndk114basic_ifstreamIcNS_11char_traitsIcEEEE" referenced by "/data/app/~~F5IwquaXUZPdLpSEYA-JGA==/com.example.executorchllamademo-FSyx80gEhsQCsxz7hvS2Ew==/lib/arm64/libexecutorch.so"...
+  ```
+  Please use NDK version 26.3.11579264.
+
 ## How to Use the App
 
 This section will provide the main steps to use the app, along with a code snippet of the ExecuTorch API.
