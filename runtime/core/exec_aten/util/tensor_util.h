@@ -469,6 +469,16 @@ inline bool tensor_is_bool_type(exec_aten::Tensor t) {
   return true;
 }
 
+inline bool tensor_is_type(exec_aten::Tensor t, exec_aten::ScalarType dtype) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      t.scalar_type() == dtype,
+      "Expected to find %s type, but tensor has type %s",
+      torch::executor::toString(dtype),
+      torch::executor::toString(t.scalar_type()));
+
+  return true;
+}
+
 inline bool tensor_is_integral_type(
     exec_aten::Tensor t,
     bool includeBool = false) {

@@ -73,13 +73,6 @@ Tensor& clamp_out(
     const exec_aten::optional<Scalar>& min_opt,
     const exec_aten::optional<Scalar>& max_opt,
     Tensor& out) {
-  ET_KERNEL_CHECK(
-      ctx,
-      (executorch::runtime::tensor_is_realhbbf16_type(in) &&
-       executorch::runtime::tensor_is_realhbbf16_type(out)),
-      InvalidArgument,
-      out);
-
   bool has_min = min_opt.has_value();
   bool has_max = max_opt.has_value();
 
@@ -154,6 +147,7 @@ Tensor& clamp_out(
           }
           return val_out;
         },
+        ctx,
         in,
         utils::SupportedTensorDtypes::REALHBBF16,
         out,
@@ -181,15 +175,6 @@ Tensor& clamp_tensor_out(
 
   const Tensor& min = has_min ? min_opt.value() : in;
   const Tensor& max = has_max ? max_opt.value() : in;
-
-  ET_KERNEL_CHECK(
-      ctx,
-      (executorch::runtime::tensor_is_realhbbf16_type(in) &&
-       executorch::runtime::tensor_is_realhbbf16_type(min) &&
-       executorch::runtime::tensor_is_realhbbf16_type(max) &&
-       executorch::runtime::tensor_is_realhbbf16_type(out)),
-      InvalidArgument,
-      out);
 
   // Common Dtype
   ScalarType common_type = in.scalar_type();
@@ -239,6 +224,7 @@ Tensor& clamp_tensor_out(
           }
           return val_out;
         },
+        ctx,
         in,
         utils::SupportedTensorDtypes::REALHBBF16,
         min,
