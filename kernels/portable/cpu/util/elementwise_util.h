@@ -80,6 +80,41 @@ load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn_bool_or_byte(
   return result;
 }
 
+template <typename CTYPE_COMMON, const char* op_name>
+load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn_same_as_compute(
+    const Tensor& t) {
+  constexpr auto common_scalar_type = CppTypeToScalarType<CTYPE_COMMON>::value;
+  ET_CHECK_MSG(
+      t.scalar_type() == common_scalar_type,
+      "Unhandled dtype %s for %s",
+      ::executorch::runtime::toString(common_scalar_type),
+      op_name);
+  return internal::load_and_convert<CTYPE_COMMON, CTYPE_COMMON>;
+}
+
+template <
+    typename CTYPE_COMMON,
+    const char* op_name,
+    std::enable_if_t<std::is_same_v<CTYPE_COMMON, float>, bool> = true>
+load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn_same_as_common(
+    const Tensor& t) {
+  CTYPE_COMMON (*result)(const void*) = nullptr;
+  ET_SWITCH_THREE_TYPES(
+      Float, Half, BFloat16, t.scalar_type(), unused, op_name, T, [&]() {
+        result = internal::load_and_convert<CTYPE_COMMON, T>;
+      });
+  return result;
+}
+
+template <
+    typename CTYPE_COMMON,
+    const char* op_name,
+    std::enable_if_t<!std::is_same_v<CTYPE_COMMON, float>, bool> = true>
+load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn_same_as_common(
+    const Tensor& t) {
+  return get_load_to_common_fn_same_as_compute<CTYPE_COMMON, op_name>(t);
+}
+
 template <typename CTYPE_COMMON>
 using store_common_to_tensor_fn = void (*)(CTYPE_COMMON, void*);
 
@@ -105,11 +140,48 @@ get_store_common_to_tensor_fn_bool_or_byte(const Tensor& t) {
   return result;
 }
 
+template <typename CTYPE_COMMON, const char* op_name>
+store_common_to_tensor_fn<CTYPE_COMMON>
+get_store_common_to_tensor_fn_same_as_compute(const Tensor& t) {
+  constexpr auto common_scalar_type = CppTypeToScalarType<CTYPE_COMMON>::value;
+  ET_CHECK_MSG(
+      t.scalar_type() == common_scalar_type,
+      "Unhandled dtype %s for %s",
+      ::executorch::runtime::toString(common_scalar_type),
+      op_name);
+  return internal::convert_and_store<CTYPE_COMMON, CTYPE_COMMON>;
+}
+
+template <
+    typename CTYPE_COMMON,
+    const char* op_name,
+    std::enable_if_t<std::is_same_v<CTYPE_COMMON, float>, bool> = true>
+store_common_to_tensor_fn<CTYPE_COMMON>
+get_store_common_to_tensor_fn_same_as_common(const Tensor& t) {
+  void (*result)(CTYPE_COMMON, void*) = nullptr;
+  ET_SWITCH_THREE_TYPES(
+      Float, Half, BFloat16, t.scalar_type(), unused, op_name, CTYPE, [&]() {
+        result = internal::convert_and_store<CTYPE, CTYPE_COMMON>;
+      });
+  return result;
+}
+
+template <
+    typename CTYPE_COMMON,
+    const char* op_name,
+    std::enable_if_t<!std::is_same_v<CTYPE_COMMON, float>, bool> = true>
+store_common_to_tensor_fn<CTYPE_COMMON>
+get_store_common_to_tensor_fn_same_as_common(const Tensor& t) {
+  return get_store_common_to_tensor_fn_same_as_compute<CTYPE_COMMON, op_name>(
+      t);
+}
+
 } // namespace internal
 
 enum class SupportedTensorDtypes {
   REALHBBF16,
   BOOL_OR_BYTE,
+  SAME_AS_COMPUTE,
   SAME_AS_COMMON,
 };
 
@@ -124,16 +196,10 @@ load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn(
       return get_load_to_common_fn_realhbbf16<CTYPE_COMMON, op_name>(t);
     case SupportedTensorDtypes::BOOL_OR_BYTE:
       return get_load_to_common_fn_bool_or_byte<CTYPE_COMMON, op_name>(t);
-    case SupportedTensorDtypes::SAME_AS_COMMON: {
-      constexpr auto common_scalar_type =
-          CppTypeToScalarType<CTYPE_COMMON>::value;
-      ET_CHECK_MSG(
-          t.scalar_type() == common_scalar_type,
-          "Unhandled dtype %s for %s",
-          ::executorch::runtime::toString(common_scalar_type),
-          op_name);
-      return internal::load_and_convert<CTYPE_COMMON, CTYPE_COMMON>;
-    }
+    case SupportedTensorDtypes::SAME_AS_COMPUTE:
+      return get_load_to_common_fn_same_as_compute<CTYPE_COMMON, op_name>(t);
+    case SupportedTensorDtypes::SAME_AS_COMMON:
+      return get_load_to_common_fn_same_as_common<CTYPE_COMMON, op_name>(t);
   }
   ET_CHECK(false);
   return nullptr;
@@ -149,15 +215,14 @@ store_common_to_tensor_fn<CTYPE_COMMON> get_store_common_to_tensor_fn(
     case SupportedTensorDtypes::BOOL_OR_BYTE:
       return get_store_common_to_tensor_fn_bool_or_byte<CTYPE_COMMON, op_name>(
           t);
+    case SupportedTensorDtypes::SAME_AS_COMPUTE:
+      return get_store_common_to_tensor_fn_same_as_compute<
+          CTYPE_COMMON,
+          op_name>(t);
     case SupportedTensorDtypes::SAME_AS_COMMON: {
-      constexpr auto common_scalar_type =
-          CppTypeToScalarType<CTYPE_COMMON>::value;
-      ET_CHECK_MSG(
-          t.scalar_type() == common_scalar_type,
-          "Unhandled dtype %s for %s",
-          ::executorch::runtime::toString(common_scalar_type),
-          op_name);
-      return internal::convert_and_store<CTYPE_COMMON, CTYPE_COMMON>;
+      return get_store_common_to_tensor_fn_same_as_common<
+          CTYPE_COMMON,
+          op_name>(t);
     }
   }
   ET_CHECK(false);
@@ -328,6 +393,14 @@ inline void apply_tritensor_elementwise_fn(
         load_c_to_common(&data_c[c_linear_index * c_element_size]));
     store_common_to_out(result, &data_out[i * out_element_size]);
   }
+}
+
+inline ScalarType get_compute_type(ScalarType& common_type) {
+  ScalarType compute_type = common_type;
+  if (common_type == ScalarType::Half || common_type == ScalarType::BFloat16) {
+    compute_type = ScalarType::Float;
+  }
+  return compute_type;
 }
 
 } // namespace utils
