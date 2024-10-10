@@ -31,7 +31,7 @@ class EagerLlamaRunner(LlamaRunner):
             **params,
         )
         super().__init__(tokenizer_path=args.tokenizer, model_args=model_args)
-        self.model, _, _ = EagerModelFactory.create_model(
+        self.model, _, _, _ = EagerModelFactory.create_model(
             "llama2",
             "Llama2Model",
             checkpoint=args.checkpoint,

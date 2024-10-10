@@ -661,10 +661,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
-            # TODO: Need to remove this once we have better way to handle buffer size
-            canonicalize_program(
-                builder.edge_manager.exported_program(), custom_buffer_size=542048256
-            )
+            canonicalize_program(builder.edge_manager.exported_program())
 
         builder = builder.to_executorch()
 
@@ -681,10 +678,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
-            # TODO: Need to remove this once we have better way to handle buffer size
-            canonicalize_program(
-                builder.edge_manager.exported_program(), custom_buffer_size=542048256
-            )
+            canonicalize_program(builder.edge_manager.exported_program())
 
         builder = builder.to_executorch()
 
@@ -723,12 +717,9 @@ def _load_llama_model_metadata(
 ):
     is_fairseq2 = weight_type == WeightType.FAIRSEQ2
     metadata = {
-        "append_eos_to_prompt": is_fairseq2,  # For language llama, tell the runtime to always append EOS token(s) to prompt.
         "get_bos_id": 3 if is_fairseq2 else 1,
         "get_eos_ids": [3] if is_fairseq2 else [2],
         "get_max_seq_len": model_args.max_seq_len,
-        "get_n_bos": 1,
-        "get_n_eos": 2 if is_fairseq2 else 1,
         "get_n_layers": model_args.n_layers,
         "get_vocab_size": model_args.vocab_size,
         "use_kv_cache": use_kv_cache,
@@ -780,7 +771,7 @@ def _load_llama_model(
     logging.info(
         f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}"
     )
-    model, example_inputs, _ = EagerModelFactory.create_model(
+    model, example_inputs, example_kwarg_inputs, _ = EagerModelFactory.create_model(
         "llama2",
         "Llama2Model",
         checkpoint=checkpoint,
@@ -830,6 +821,7 @@ def _load_llama_model(
         use_kv_cache=use_kv_cache,
         generate_full_logits=generate_full_logits,
         example_inputs=example_inputs,
+        example_kwarg_inputs=example_kwarg_inputs,
         enable_dynamic_shape=enable_dynamic_shape,
         calibration_tasks=calibration_tasks,
         calibration_limit=calibration_limit,

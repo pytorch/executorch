@@ -94,12 +94,13 @@ fi
 function generate_pte_file() {
     [[ $# -ne 2 ]] && { echo "[${FUNCNAME[0]}]" "Expecting model and model_compiler_flags flag, got, $*"; exit 1; }
     local model=${1}
+    local model_short_name=$(basename -- "${model}" ".py")
     local model_compiler_flags=${2}
 
-    local model_filename=${model}_arm_${target}.pte
+    local model_filename=${model_short_name}_arm_${target}.pte
     if [[ "${model_compiler_flags}" == *"--delegate"* ]]; then
-	# Name aligned with default aot_arm_compiler output
-        model_filename=${model}_arm_delegate_${target}.pte
+        # Name aligned with default aot_arm_compiler output
+        model_filename=${model_short_name}_arm_delegate_${target}.pte
     fi
     cd $et_root_dir
 
@@ -233,18 +234,20 @@ function run_fvp() {
             -C mps3_board.uart0.shutdown_on_eot=1               \
             -a "${elf}"                                         \
             --timelimit 120 || true # seconds
-        echo "[${FUNCNAME[0]} Simulation complete, $?"
+        echo "[${FUNCNAME[0]}] Simulation complete, $?"
     elif [[ ${target} == *"ethos-u85"*  ]]; then
-	${fvp_model}                                            \
-	    -C mps4_board.subsystem.cpu0.CFGITCMSZ=11           \
-	    -C mps4_board.subsystem.ethosu.num_macs=${num_macs} \
-	    -C mps4_board.visualisation.disable-visualisation=1 \
-	    -C vis_hdlcd.disable_visualisation=1                \
-	    -C mps4_board.telnetterminal0.start_telnet=0        \
-	    -C mps4_board.uart0.out_file='-'                    \
-	    -C mps4_board.uart0.shutdown_on_eot=1               \
+        echo "Running ${elf} for ${target} run with FVP:${fvp_model} num_macs:${num_macs}"
+    	${fvp_model}                                            \
+            -C mps4_board.subsystem.cpu0.CFGITCMSZ=11           \
+            -C mps4_board.subsystem.ethosu.num_macs=${num_macs} \
+            -C mps4_board.visualisation.disable-visualisation=1 \
+            -C vis_hdlcd.disable_visualisation=1                \
+            -C mps4_board.telnetterminal0.start_telnet=0        \
+            -C mps4_board.uart0.out_file='-'                    \
+            -C mps4_board.uart0.shutdown_on_eot=1               \
             -a "${elf}"                                         \
             --timelimit 120 || true # seconds
+        echo "[${FUNCNAME[0]}] Simulation complete, $?"
     else
         echo "Running ${elf} for ${target} is not supported"
         exit 1

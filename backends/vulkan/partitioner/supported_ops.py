@@ -8,7 +8,7 @@
 
 import operator
 
-from executorch.backends.vulkan.passes.custom_ops_defs import (  # noqa
+from executorch.backends.vulkan._passes.custom_ops_defs import (  # noqa
     conv_with_clamp_op,
     grid_priors_op,
 )
@@ -84,6 +84,8 @@ SUPPORTS_DYNAMIC_SHAPE = [
     # Convolution
     exir_ops.edge.aten.convolution.default,
     exir_ops.edge.et_vk.conv_with_clamp.default,
+    # Custom ops
+    "llama::sdpa_with_kv_cache",
 ]
 
 NO_DYNAMIC_SHAPE = [
@@ -101,6 +103,7 @@ NO_DYNAMIC_SHAPE = [
     exir_ops.edge.aten.t_copy.default,
     # Indexing and lookup
     exir_ops.edge.aten.embedding.default,
+    exir_ops.edge.aten.flip.default,
     exir_ops.edge.aten.index_select.default,
     exir_ops.edge.aten.select_copy.int,
     exir_ops.edge.aten.slice_copy.Tensor,

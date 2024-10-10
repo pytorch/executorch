@@ -169,6 +169,8 @@ jobs:
             DELEGATE_CONFIG="xnnpack+custom+qe"
           elif [[ ${{ matrix.delegate }} == "coreml" ]]; then
             DELEGATE_CONFIG="coreml"
+          elif [[ ${{ matrix.delegate }} == "mps" ]]; then
+            DELEGATE_CONFIG="mps"
           fi
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
             bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
@@ -235,9 +237,9 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
           build/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack
 
-        mkdir -p extension/apple/Benchmark/Frameworks
+        mkdir -p extension/benchmark/apple/Benchmark/Frameworks
         for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
-          cp -r "cmake-out/${FRAMEWORK}.xcframework" extension/apple/Benchmark/Frameworks/
+          cp -r "cmake-out/${FRAMEWORK}.xcframework" extension/benchmark/apple/Benchmark/Frameworks/
         ) done
         echo "::endgroup::"
 
@@ -245,7 +247,7 @@ jobs:
         # app, we don't use this in CI and rely on AWS extra data parameter to make the model and the
         # tokenizer available to the benchmark. This decouples the app and the model. We just need to
         # create the directory here to pass the build
-        mkdir -p extension/apple/Benchmark/Models
+        mkdir -p extension/benchmark/apple/Benchmark/Models
         ${CONDA_RUN} --no-capture-output \
           build/build_apple_llm_demo.sh ${ARTIFACTS_DIR_NAME}
 

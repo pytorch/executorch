@@ -47,7 +47,9 @@ Additionally, 1B/3B models are sensitive to accuracy loss when regular PTQ quant
 ## Quantization:
 We employed 4-bit groupwise per token dynamic quantization of all the linear layers of the model. Dynamic quantization refers to quantizating activations dynamically, such that quantization parameters for activations are calculated, from min/max range, at runtime. Here we quantized activations with 8bits (signed integer). Furthermore, weights are statically quantized. In our case weights were per-channel groupwise quantized with 4bit signed integer. For more information refer to this [page](https://github.com/pytorch/ao).
 
-We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness). Below are the results for two different groupsizes, with max_seq_len 2048, and 1000 samples.
+We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness). Please note that LM Eval reports perplexity normalized by word count instead of token count. You may see different perplexity for WikiText from other sources if they implement it differntly. More details could be found [here](https://github.com/EleutherAI/lm-evaluation-harness/issues/2301).
+
+Below are the results for two different groupsizes, with max_seq_len 2048, and 1000 samples.
 
 |Model | Baseline (FP32) | Groupwise 4-bit (128) | Groupwise 4-bit (256)
 |--------|-----------------| ---------------------- | ---------------
@@ -146,7 +148,7 @@ python -m examples.models.llama2.export_llama \
   --use_sdpa_with_kv_cache \
   -X \
   -d bf16 \
-  --metadata '{"append_eos_to_prompt": 0, "get_bos_id":128000, "get_eos_ids":[128009, 128001], "get_n_bos": 0, "get_n_eos": 0}' \
+  --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
   --output_name="llama3_2.pte"
 ```
 
@@ -172,7 +174,7 @@ python -m examples.models.llama2.export_llama \
    -d fp32 \
    --preq_embedding_quantize 8,0 \
    --use_spin_quant native \
-   --metadata '{"append_eos_to_prompt": 0, "get_bos_id":128000, "get_eos_ids":[128009, 128001], "get_n_bos": 0, "get_n_eos": 0}'
+   --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 ```
 
 ### Option B: Download and export Llama 3 8B instruct model
@@ -205,11 +207,6 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     ```
     python -m examples.models.llama2.export_llama -c stories110M.pt -p params.json -X -kv
     ```
-4. Create tokenizer.bin.
-
-    ```
-    python -m extension.llm.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
-    ```
 
 ### Option D: Download and export Llama 2 7B model
 
@@ -224,7 +221,6 @@ You can export and run the original Llama 2 7B model.
     python -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w --group_size 128 -d fp32
     ```
 4. Create tokenizer.bin.
-
     ```
     python -m extension.llm.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
     ```
@@ -286,7 +282,7 @@ tokenizer.path=<path_to_checkpoint_folder>/tokenizer.model
 
 Using the same arguments from above
 ```
-python -m examples.models.llama2.eval_llama -c <checkpoint.pth> -p <params.json> -t <tokenizer.model> -d fp32 --max_seq_len <max sequence length> --limit <number of samples>
+python -m examples.models.llama2.eval_llama -c <checkpoint.pth> -p <params.json> -t <tokenizer.model/bin> -d fp32 --max_seq_len <max sequence length> --limit <number of samples>
 ```
 
 The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
@@ -332,7 +328,7 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
     cmake-out/examples/models/llama2/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.model> --prompt=<prompt>
     ```
 
-For Llama2 and stories models, pass the converted `tokenizer.bin` file instead of `tokenizer.model`.
+For Llama2 models, pass the converted `tokenizer.bin` file instead of `tokenizer.model`.
 
 To build for CoreML backend and validate on Mac, replace `-DEXECUTORCH_BUILD_XNNPACK=ON` with `-DEXECUTORCH_BUILD_COREML=ON`
 

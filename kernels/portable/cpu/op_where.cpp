@@ -6,8 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/util/broadcast_util.h>
-#include <executorch/kernels/portable/cpu/util/functional_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -20,43 +19,43 @@ Tensor& where_out(
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
-  ScalarType cond_type = cond.scalar_type();
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = b.scalar_type();
-  ScalarType common_type = promoteTypes(a_type, b_type);
-  ScalarType out_type = out.scalar_type();
+  // Common Dtype
+  ScalarType common_type = promoteTypes(a.scalar_type(), b.scalar_type());
 
-  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
+  // Check Common Dtype
+  ET_KERNEL_CHECK(ctx, common_type == out.scalar_type(), InvalidArgument, out);
 
-  // Determine output size and resize for dynamic shapes
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(cond, a, b, out), InvalidArgument, out);
+
+  // Resize
   ET_KERNEL_CHECK(
       ctx,
       resize_to_broadcast_target_size(a, b, cond, out) == Error::Ok,
       InvalidArgument,
       out);
 
-  ET_KERNEL_CHECK(
-      ctx, tensors_have_same_dim_order(cond, a, b, out), InvalidArgument, out);
+  // Compute Dtype
+  ScalarType compute_type = utils::get_compute_type(common_type);
 
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "where.self_out";
 
-  ET_CHECK_MSG(
-      cond_type == ScalarType::Bool || cond_type == ScalarType::Byte,
-      "Unhandled dtype %s for where.self_out",
-      torch::executor::toString(cond_type));
-  ET_SWITCH_REALHBBF16_TYPES(common_type, ctx, op_name, CTYPE_COMMON, [&]() {
-    apply_ternary_elementwise_fn<CTYPE_COMMON, op_name>(
-        [](const CTYPE_COMMON val_a,
-           const CTYPE_COMMON val_b,
-           const CTYPE_COMMON val_c) { return val_c ? val_a : val_b; },
+  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    utils::apply_tritensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [](const CTYPE_COMPUTE val_a,
+           const CTYPE_COMPUTE val_b,
+           const CTYPE_COMPUTE val_c) { return val_c ? val_a : val_b; },
+        ctx,
         a,
-        SupportedTensorDtypes::REALHBBF16,
+        utils::SupportedTensorDtypes::REALHBBF16,
         b,
-        SupportedTensorDtypes::REALHBBF16,
+        utils::SupportedTensorDtypes::REALHBBF16,
         cond,
-        SupportedTensorDtypes::BOOL_OR_BYTE,
+        utils::SupportedTensorDtypes::BOOL_OR_BYTE,
         out,
-        SupportedTensorDtypes::SAME_AS_COMMON);
+        utils::SupportedTensorDtypes::SAME_AS_COMMON);
   });
 
   return out;

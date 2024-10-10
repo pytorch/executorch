@@ -10,6 +10,8 @@
 
 #define PRECISION ${PRECISION}
 
+${define_active_storage_type(STORAGE)}
+
 #include "indexing_utils.h"
 
 layout(std430) buffer;

@@ -212,6 +212,8 @@ ivec3 lpos_to_pos(const ivec3 lpos, const ivec4 axis_map) {
 #define load_texel(buf, idx) buf[idx]
 #elif defined(USING_TEXTURE2D)
 #define load_texel(im, pos) texelFetch(im, pos.xy, 0)
+#define load_texel_lpos(im, lpos, axis_map) \
+  texelFetch(im, lpos_to_pos(lpos, axis_map).xy, 0)
 #else // defined(USING_TEXTURE3D)
 #define load_texel(im, pos) texelFetch(im, pos, 0)
 #define load_texel_lpos(im, lpos, axis_map) \
@@ -222,6 +224,8 @@ ivec3 lpos_to_pos(const ivec3 lpos, const ivec4 axis_map) {
 #define write_texel(buf, idx, texel) buf[idx] = texel
 #elif defined(USING_TEXTURE2D)
 #define write_texel(im, pos, texel) imageStore(im, pos.xy, texel)
+#define write_texel_lpos(im, lpos, texel, axis_map) \
+  imageStore(im, lpos_to_pos(lpos, axis_map).xy, texel)
 #else // defined(USING_TEXTURE3D)
 #define write_texel(im, pos, texel) imageStore(im, pos, texel)
 #define write_texel_lpos(im, lpos, texel, axis_map) \

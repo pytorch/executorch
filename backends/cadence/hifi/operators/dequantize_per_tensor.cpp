@@ -14,9 +14,9 @@ namespace impl {
 namespace HiFi {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
-using ScalarType = exec_aten::ScalarType;
 
 void dequantize_per_tensor_out(
     KernelRuntimeContext& context,

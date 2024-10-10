@@ -254,7 +254,7 @@ class ComputeGraph final {
 #undef GET_AND_CHECK_VAL_AS_TYPE_FNS
 
   inline bool val_is_none(const ValueRef idx) {
-    return values_.at(idx).isNone();
+    return idx == kDummyValueRef ? true : values_.at(idx).isNone();
   }
 
   inline TypeTag get_val_type(const ValueRef idx) {
@@ -467,6 +467,11 @@ class ComputeGraph final {
       const int64_t shared_object_idx = -1);
 
   /*
+   * Add a `api::vTensor` value to the graph with the specified image.
+   */
+  ValueRef add_tensor(const vkapi::VulkanImage& image);
+
+  /*
    * Add a `api::vTensor` value to the graph with the properties of `vref`.
    */
   ValueRef add_tensor_like(
@@ -554,6 +559,14 @@ class ComputeGraph final {
   void set_symint(const ValueRef idx, const int32_t val);
 
   int32_t read_symint(const ValueRef idx);
+
+  inline void set_val_as_input(const ValueRef idx) {
+    inputs_.push_back({idx, kDummyValueRef});
+  }
+
+  inline void set_val_as_output(const ValueRef idx) {
+    outputs_.push_back({idx, kDummyValueRef});
+  }
 
   /*
    * Convenience function to add an input tensor along with its staging buffer

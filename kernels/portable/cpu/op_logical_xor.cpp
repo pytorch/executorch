@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/pattern/pattern.h>
+#include <executorch/kernels/portable/cpu/pattern/logical_op.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <cmath>
 
@@ -26,8 +26,9 @@ Tensor& logical_xor_out(
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
-  return internal::binary_ufunc_realb_realb_to_realb_logical(
-      logical_xor, ctx, a, b, out);
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "logical_xor.out";
+  return internal::logical_tensor_out<op_name>(logical_xor, ctx, a, b, out);
 }
 
 } // namespace native

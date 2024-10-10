@@ -9,8 +9,8 @@
 
 #include <executorch/backends/qualcomm/schema_generated.h>
 #include <executorch/runtime/core/error.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 using namespace qnn_delegate;
 
@@ -33,5 +33,5 @@ void Log(QnnExecuTorchLogLevel log_level, const char* format, ...);
 #define QNN_EXECUTORCH_LOG_DEBUG(fmt, ...) \
   QNN_EXECUTORCH_LOG(QnnExecuTorchLogLevel::kLogLevelDebug, fmt, ##__VA_ARGS__)
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch
