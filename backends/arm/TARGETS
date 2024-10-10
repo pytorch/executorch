@@ -8,7 +8,7 @@ python_library(
     typing = True,
     deps = [
         ":arm_backend",
-        "//executorch/backends/arm/passes:passes",
+        "//executorch/backends/arm/_passes:passes",
         "//executorch/exir:lib",
     ],
 )
@@ -27,7 +27,7 @@ python_library(
         ":arm_vela",
         "//executorch/backends/arm/operators:lib",
         "//executorch/backends/arm/operators:node_visitor",
-        "//executorch/backends/arm/passes:passes",
+        "//executorch/backends/arm/_passes:passes",
     ],
 )
 
