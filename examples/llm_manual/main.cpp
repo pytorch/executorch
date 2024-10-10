@@ -17,8 +17,8 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/result.h>
 
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::extension::from_blob;
 using executorch::extension::Module;
 using executorch::runtime::EValue;
@@ -90,7 +90,7 @@ std::string generate(
 
 int main() {
   // Set up the prompt. This provides the seed text for the model to elaborate.
-  std::cout << "Prompt: ";
+  std::cout << "Enter model prompt: ";
   std::string prompt;
   std::getline(std::cin, prompt);
 
