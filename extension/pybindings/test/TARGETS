@@ -10,7 +10,10 @@ runtime.python_library(
     srcs = [
         "make_test.py",
     ],
-    visibility = ["//executorch/extension/pybindings/..."],
+    visibility = [
+        "//executorch/extension/pybindings/...",
+        "//executorch/runtime/...",
+    ],
     deps = [
         "//caffe2:torch",
         "//caffe2:torch_fx",
