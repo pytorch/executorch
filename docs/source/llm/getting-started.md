@@ -687,7 +687,7 @@ structure the model in a way that is compatible with the target backend.
 The `get_delegation_info()` method provides a summary of what happened to the model after the `to_backend()` call:
 
 ```python
-from executorch.exir.backend.utils import get_delegation_info
+from executorch.devtools.backend_debug import get_delegation_info
 from tabulate import tabulate
 
 # ... After call to to_backend(), but before to_executorch()
@@ -698,11 +698,11 @@ df = delegation_info.get_operator_delegation_dataframe()
 print(tabulate(df, headers="keys", tablefmt="fancy_grid"))
 ```
 
-For nanoGPT targeting the XNNPACK backend, you might see the following:
+For nanoGPT targeting the XNNPACK backend, you might see the following (note that the numbers below are for illustration purposes only and actual values may vary):
 ```
-Total  delegated  subgraphs:  86
-Number  of  delegated  nodes:  473
-Number  of  non-delegated  nodes:  430
+Total  delegated  subgraphs:  145
+Number  of  delegated  nodes:  350
+Number  of  non-delegated  nodes:  760
 ```
 
 
@@ -711,13 +711,13 @@ Number  of  non-delegated  nodes:  430
 |  0  |  aten__softmax_default  |  12  |  0  |
 |  1  |  aten_add_tensor  |  37  |  0  |
 |  2  |  aten_addmm_default  |  48  |  0  |
-|  3  |  aten_arange_start_step  |  0  |  25  |
+|  3  |  aten_any_dim  |  0  |  12  |
 |      |  ...  |    |    |
-|  23  |  aten_view_copy_default  |  170  |  48  |
+|  25  |  aten_view_copy_default  |  96  |  122  |
 |      |  ...  |    |    |
-|  26  |  Total  |  473  |  430  |
+|  30  |  Total  |  350  |  760  |
 
-From the table, the operator `aten_view_copy_default` appears 170 times in delegate graphs and 48 times in non-delegated graphs.
+From the table, the operator `aten_view_copy_default` appears 96 times in delegate graphs and 122 times in non-delegated graphs.
 To see a more detailed view, use the `format_delegated_graph()` method to get a formatted str of printout of the whole graph or use `print_delegated_graph()` to print directly:
 
 ```python
@@ -728,20 +728,22 @@ print(format_delegated_graph(graph_module))
 This may generate a large amount of output for large models. Consider using "Control+F" or "Command+F" to locate the operator you’re interested in
 (e.g. “aten_view_copy_default”). Observe which instances are not under lowered graphs.
 
-In the fragment of the output for nanoGPT below, observe that embedding and add operators are delegated to XNNPACK while the sub operator is not.
+In the fragment of the output for nanoGPT below, observe that a transformer module has been delegated to XNNPACK while the where operator is not.
 
 ```
-%aten_unsqueeze_copy_default_22 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.unsqueeze_copy.default](args = (%aten_arange_start_step_23, -2), kwargs = {})
-  %aten_unsqueeze_copy_default_23 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.unsqueeze_copy.default](args = (%aten_arange_start_step_24, -1), kwargs = {})
-  %lowered_module_0 : [num_users=1] = get_attr[target=lowered_module_0]
-    backend_id: XnnpackBackend
-    lowered graph():
-      %aten_embedding_default : [num_users=1] = placeholder[target=aten_embedding_default]
-      %aten_embedding_default_1 : [num_users=1] = placeholder[target=aten_embedding_default_1]
-      %aten_add_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_embedding_default, %aten_embedding_default_1), kwargs = {})
-      return (aten_add_tensor,)
-  %executorch_call_delegate : [num_users=1] = call_function[target=torch.ops.higher_order.executorch_call_delegate](args = (%lowered_module_0, %aten_embedding_default, %aten_embedding_default_1), kwargs = {})
-  %aten_sub_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.sub.Tensor](args = (%aten_unsqueeze_copy_default, %aten_unsqueeze_copy_default_1), kwargs = {})
+%aten_where_self_22 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.where.self](args = (%aten_logical_not_default_33, %scalar_tensor_23, %scalar_tensor_22), kwargs = {})
+%lowered_module_144 : [num_users=1] = get_attr[target=lowered_module_144]
+backend_id: XnnpackBackend
+lowered graph():
+    %p_transformer_h_0_attn_c_attn_weight : [num_users=1] = placeholder[target=p_transformer_h_0_attn_c_attn_weight]
+    %p_transformer_h_0_attn_c_attn_bias : [num_users=1] = placeholder[target=p_transformer_h_0_attn_c_attn_bias]
+    %getitem : [num_users=1] = placeholder[target=getitem]
+    %sym_size : [num_users=2] = placeholder[target=sym_size]
+    %aten_view_copy_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.view_copy.default](args = (%getitem, [%sym_size, 768]), kwargs = {})
+    %aten_permute_copy_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.permute_copy.default](args = (%p_transformer_h_0_attn_c_attn_weight, [1, 0]), kwargs = {})
+    %aten_addmm_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.addmm.default](args = (%p_transformer_h_0_attn_c_attn_bias, %aten_view_copy_default, %aten_permute_copy_default), kwargs = {})
+    %aten_view_copy_default_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.view_copy.default](args = (%aten_addmm_default, [1, %sym_size, 2304]), kwargs = {})
+    return [aten_view_copy_default_1]
 ```
 
 ### Performance Analysis
