@@ -261,6 +261,15 @@ def _partition_and_lower_one_graph_module(
                     call_delegate_args.append(inp_node)
                     break
 
+        def generate_debug_handle(ep: ExportedProgram) -> int:
+            """
+            Generate a debug handle for the given ExportedProgram.
+            """
+            debug_handle = 0
+            for node in ep.graph_module.graph.nodes:
+                debug_handle = max(debug_handle, node.meta.get("debug_handle", 0))
+            return debug_handle + 1
+
         # Replace the partitioned submodule with a lowered submodule
         # Add call_method node with function "forward"
         with tagged_graph_module.graph.inserting_before(call_module_node):
@@ -273,8 +282,8 @@ def _partition_and_lower_one_graph_module(
                 (lowered_node,) + tuple(call_delegate_args),
                 call_module_node.kwargs,
             )
-            call_delegate_node.meta["debug_handle"] = len(
-                tagged_graph_module.graph.nodes
+            call_delegate_node.meta["debug_handle"] = generate_debug_handle(
+                owning_program
             )
             call_delegate_node.meta["val"] = submodule_output_node.meta["val"]
             call_module_node.replace_all_uses_with(call_delegate_node)
