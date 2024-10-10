@@ -84,7 +84,7 @@ void record_image_to_nchw_op(
     vkcompute::api::vTensor& v_src,
     vkcompute::vkapi::VulkanBuffer& dst_buffer);
 
-void record_int8_image_to_nchw_noint8_op(
+void record_bitw8_image_to_nchw_nobitw8buffer_op(
     vkcompute::api::Context* const context,
     vkcompute::api::vTensor& v_src,
     vkcompute::api::StagingBuffer& dst_buffer);

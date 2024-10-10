@@ -11,11 +11,20 @@
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/schema_generated.h>
-namespace torch {
-namespace executor {
-// ========== Public method implementations =========================
-using namespace qnn;
+namespace executorch {
+namespace backends {
+namespace qnn {
 using namespace qnn_delegate;
+using executorch::runtime::ArrayRef;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::Result;
+// ========== Public method implementations =========================
 constexpr const char* QNN_COMPILE_SPEC = "qnn_compile_spec";
 Result<DelegateHandle*> QnnExecuTorchBackend::init(
     BackendInitContext& context,
@@ -240,8 +249,9 @@ bool QnnExecuTorchBackend::is_available() const {
 
 namespace {
 auto cls = QnnExecuTorchBackend();
-Backend backend{"QnnBackend", &cls};
+executorch::runtime::Backend backend{"QnnBackend", &cls};
 static auto success_with_compiler = register_backend(backend);
 } // namespace
-} // namespace executor
-} // namespace torch
+} // namespace qnn
+} // namespace backends
+} // namespace executorch

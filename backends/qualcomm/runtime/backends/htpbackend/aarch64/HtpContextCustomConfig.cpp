@@ -9,8 +9,8 @@
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpContext.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpContextCustomConfig.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 
 std::vector<QnnContext_CustomConfig_t>
@@ -35,5 +35,5 @@ HtpContextCustomConfig::CreateContextCustomConfig() {
 }
 
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

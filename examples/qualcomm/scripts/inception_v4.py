@@ -45,7 +45,7 @@ def main(args):
             data_size=data_num,
             image_shape=(299, 299),
         )
-    pte_filename = "ic4_qnn"
+    pte_filename = "ic4_qnn_q8"
     instance = InceptionV4Model()
     build_executorch_binary(
         instance.get_eager_model().eval(),

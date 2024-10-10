@@ -11,6 +11,7 @@ import torch
 from executorch.backends.arm.passes.annotate_channels_last_dim_order_pass import (
     AnnotateChannelsLastDimOrder,
 )
+from executorch.backends.arm.passes.cast_int64_pass import CastInt64ToInt32Pass
 from executorch.backends.arm.passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
 )
@@ -40,6 +41,7 @@ class ArmPassManager(PassManager):
         self, exported_program: ExportedProgram, compile_spec: list[CompileSpec]
     ):
         """Apply passes before transforming program to backend"""
+        self.add_pass(CastInt64ToInt32Pass(exported_program))
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(RemoveClonePass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
