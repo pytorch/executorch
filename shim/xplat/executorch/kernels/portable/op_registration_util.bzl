@@ -408,6 +408,7 @@ ATEN_OPS = (
     op_target(
         name = "op_convolution",
         deps = [
+            "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             ":vec_ops",
         ],
