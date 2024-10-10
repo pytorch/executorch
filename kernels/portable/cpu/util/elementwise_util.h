@@ -70,6 +70,17 @@ load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn_realhbbf16(
 }
 
 template <typename CTYPE_COMMON, const char* op_name>
+load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn_realhbf16(
+    const Tensor& t) {
+  CTYPE_COMMON (*result)(const void*) = nullptr;
+  ET_SWITCH_REALHBF16_TYPES(
+      t.scalar_type(), unused, op_name, TENSOR_CTYPE, [&]() {
+        result = internal::load_and_convert<CTYPE_COMMON, TENSOR_CTYPE>;
+      });
+  return result;
+}
+
+template <typename CTYPE_COMMON, const char* op_name>
 load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn_bool_or_byte(
     const Tensor& t) {
   CTYPE_COMMON (*result)(const void*) = nullptr;
@@ -130,6 +141,17 @@ get_store_common_to_tensor_fn_realhbbf16(const Tensor& t) {
 }
 
 template <typename CTYPE_COMMON, const char* op_name>
+store_common_to_tensor_fn<CTYPE_COMMON> get_store_common_to_tensor_fn_realhbf16(
+    const Tensor& t) {
+  void (*result)(CTYPE_COMMON, void*) = nullptr;
+  ET_SWITCH_REALHBF16_TYPES(
+      t.scalar_type(), unused, op_name, TENSOR_CTYPE, [&]() {
+        result = internal::convert_and_store<TENSOR_CTYPE, CTYPE_COMMON>;
+      });
+  return result;
+}
+
+template <typename CTYPE_COMMON, const char* op_name>
 store_common_to_tensor_fn<CTYPE_COMMON>
 get_store_common_to_tensor_fn_bool_or_byte(const Tensor& t) {
   void (*result)(CTYPE_COMMON, void*) = nullptr;
@@ -180,6 +202,7 @@ get_store_common_to_tensor_fn_same_as_common(const Tensor& t) {
 
 enum class SupportedTensorDtypes {
   REALHBBF16,
+  REALHBF16,
   BOOL_OR_BYTE,
   SAME_AS_COMPUTE,
   SAME_AS_COMMON,
@@ -194,6 +217,8 @@ load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn(
   switch (dtypes) {
     case SupportedTensorDtypes::REALHBBF16:
       return get_load_to_common_fn_realhbbf16<CTYPE_COMMON, op_name>(t);
+    case SupportedTensorDtypes::REALHBF16:
+      return get_load_to_common_fn_realhbf16<CTYPE_COMMON, op_name>(t);
     case SupportedTensorDtypes::BOOL_OR_BYTE:
       return get_load_to_common_fn_bool_or_byte<CTYPE_COMMON, op_name>(t);
     case SupportedTensorDtypes::SAME_AS_COMPUTE:
@@ -212,6 +237,8 @@ store_common_to_tensor_fn<CTYPE_COMMON> get_store_common_to_tensor_fn(
   switch (dtypes) {
     case SupportedTensorDtypes::REALHBBF16:
       return get_store_common_to_tensor_fn_realhbbf16<CTYPE_COMMON, op_name>(t);
+    case SupportedTensorDtypes::REALHBF16:
+      return get_store_common_to_tensor_fn_realhbf16<CTYPE_COMMON, op_name>(t);
     case SupportedTensorDtypes::BOOL_OR_BYTE:
       return get_store_common_to_tensor_fn_bool_or_byte<CTYPE_COMMON, op_name>(
           t);
