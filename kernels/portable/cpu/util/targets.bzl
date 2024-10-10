@@ -266,6 +266,16 @@ def define_common_targets():
         visibility = ["//executorch/kernels/portable/cpu/..."],
     )
 
+    runtime.cxx_library(
+        name = "allocate_tensor_util",
+        srcs = ["allocate_tensor_util.cpp"],
+        exported_headers = ["allocate_tensor_util.h"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/..."],
+    )
+
     # Utility functions that can be used by operators that perform reduction
     for aten_mode in [True, False]:
         suffix = "_aten" if aten_mode else ""
