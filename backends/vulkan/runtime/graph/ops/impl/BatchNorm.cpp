@@ -80,7 +80,7 @@ void add_native_batch_norm_node(
   int32_t num_texel_per_batch =
       utils::div_up_4((dim_at<kChannel4D>(t_in->sizes())));
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out_ref),

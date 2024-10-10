@@ -52,7 +52,7 @@ void add_repeat_interleave_node(
   const utils::uvec3 global_wg_size = graph.logical_limits_of(in);
   const utils::uvec3 local_wg_size = graph.create_local_wg_size(global_wg_size);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       // Shader
       VK_KERNEL_FROM_STR(kernel_name),

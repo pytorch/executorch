@@ -7,7 +7,7 @@
 import unittest
 
 import torch
-from executorch.backends.arm.passes.meandim_to_averagepool_pass import (
+from executorch.backends.arm._passes.meandim_to_averagepool_pass import (
     ConvertMeanDimToAveragePool,
 )
 

@@ -7,7 +7,7 @@
 # pyre-unsafe
 
 import torch.fx
-from executorch.backends.arm.passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
