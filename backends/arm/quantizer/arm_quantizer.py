@@ -267,7 +267,6 @@ class ArmQuantizer(Quantizer):
         "add",
         "sub",
         "mul",
-        "sigmoid",
         "mm",
         "cat",
         "one_to_one",
