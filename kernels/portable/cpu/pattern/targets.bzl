@@ -14,6 +14,7 @@ def define_common_targets():
         deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",
             "//executorch/kernels/portable/cpu/pattern:bitwise_op",
+            "//executorch/kernels/portable/cpu/pattern:comparison_op",
         ],
         visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     )
@@ -27,6 +28,15 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+    )
+
+    runtime.cxx_library(
+        name = "comparison_op",
+        exported_headers = [
+            "comparison_op.h",
+        ],
+        compiler_flags = [],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
     )
 
