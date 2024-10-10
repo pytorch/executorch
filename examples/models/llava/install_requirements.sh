@@ -8,3 +8,6 @@
 set -x
 
 pip install transformers accelerate sentencepiece tiktoken
+
+# Run llama2/install requirements for torchao deps
+bash ../llama2/install_requirements.sh
