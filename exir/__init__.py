@@ -28,6 +28,10 @@ from executorch.exir.program import (
 from executorch.exir.serde.serialize import load, save
 from executorch.exir.tracer import ExirDynamoConfig
 from torch.export import ExportedProgram, ExportGraphSignature
+import torch 
+import mock
+
+
 
 Value = Any
 
@@ -55,3 +59,10 @@ __all__ = [
     "load",
     "save",
 ]
+
+
+def func(*args, **kwargs):
+    raise RuntimeError("This function is not implemented yet.")
+
+torch._utils_internal.export_training_ir_rollout_check = func
+patch("torch._utils_internal.export_training_ir_rollout_check", func)
