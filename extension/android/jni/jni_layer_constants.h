@@ -37,7 +37,7 @@ constexpr static int kTensorDTypeBits4x2 = 20;
 constexpr static int kTensorDTypeBits8 = 21;
 constexpr static int kTensorDTypeBits16 = 22;
 
-using exec_aten::ScalarType;
+using executorch::aten::ScalarType;
 
 const std::unordered_map<ScalarType, int> scalar_type_to_java_dtype = {
     {ScalarType::Byte, kTensorDTypeUInt8},
