@@ -10,6 +10,8 @@ import unittest
 from typing import Union
 
 import torch
+
+import torchvision
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -264,3 +266,65 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
 
         self.assertTrue(is_contiguous_dim_order(actual))
         self.assertTrue(is_contiguous_dim_order(expected))
+
+    def test_resnet18(self) -> None:
+        model = torchvision.models.resnet18()
+        MemoryFormatOpsPassTestUtils.memory_format_test_runner(
+            self,
+            MemoryFormatTestSet(
+                module=model.eval(),
+                sample_input=(torch.randn(1, 3, 224, 224),),
+                target_memory_format=torch.contiguous_format,
+                op_level_check=False,
+                _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+                atol=1e-3,
+                rtol=1e-3,
+            ),
+        )
+
+    def test_resnet18_xnnpack(self) -> None:
+        model = torchvision.models.resnet18()
+        MemoryFormatOpsPassTestUtils.memory_format_test_runner(
+            self,
+            MemoryFormatTestSet(
+                module=model.eval(),
+                sample_input=(torch.randn(1, 3, 224, 224),),
+                target_memory_format=torch.contiguous_format,
+                op_level_check=False,
+                use_xnnpack=True,
+                _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+                atol=1e-3,
+                rtol=1e-3,
+            ),
+        )
+
+    def test_mobilenet_v3(self) -> None:
+        model = torchvision.models.mobilenetv3.mobilenet_v3_small(pretrained=True)
+        MemoryFormatOpsPassTestUtils.memory_format_test_runner(
+            self,
+            MemoryFormatTestSet(
+                module=model.eval(),
+                sample_input=(torch.randn(1, 3, 224, 224),),
+                target_memory_format=torch.contiguous_format,
+                op_level_check=False,
+                _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+                atol=1e-3,
+                rtol=1e-3,
+            ),
+        )
+
+    def test_mobilenet_v3_xnnpack(self) -> None:
+        model = torchvision.models.mobilenetv3.mobilenet_v3_small(pretrained=True)
+        MemoryFormatOpsPassTestUtils.memory_format_test_runner(
+            self,
+            MemoryFormatTestSet(
+                module=model.eval(),
+                sample_input=(torch.randn(1, 3, 224, 224),),
+                target_memory_format=torch.contiguous_format,
+                op_level_check=False,
+                use_xnnpack=True,
+                _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+                atol=1e-3,
+                rtol=1e-3,
+            ),
+        )

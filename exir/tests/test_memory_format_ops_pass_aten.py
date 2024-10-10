@@ -7,6 +7,7 @@
 import unittest
 
 import torch
+import torchvision
 
 from executorch.exir.tests.test_memory_format_ops_pass_utils import (
     MemoryFormatOpsPassTestUtils,
@@ -75,5 +76,35 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
                 ),
                 target_memory_format=torch.channels_last,
                 _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+            ),
+        )
+
+    def test_resnet18(self) -> None:
+        model = torchvision.models.resnet18()
+        MemoryFormatOpsPassTestUtils.memory_format_test_runner(
+            self,
+            MemoryFormatTestSet(
+                module=model.eval(),
+                sample_input=(torch.randn(1, 3, 224, 224),),
+                target_memory_format=torch.contiguous_format,
+                op_level_check=False,
+                _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+                atol=1e-3,
+                rtol=1e-3,
+            ),
+        )
+
+    def test_mobilenet_v3(self) -> None:
+        model = torchvision.models.mobilenetv3.mobilenet_v3_small(pretrained=True)
+        MemoryFormatOpsPassTestUtils.memory_format_test_runner(
+            self,
+            MemoryFormatTestSet(
+                module=model.eval(),
+                sample_input=(torch.randn(1, 3, 224, 224),),
+                target_memory_format=torch.contiguous_format,
+                op_level_check=False,
+                _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+                atol=1e-3,
+                rtol=1e-3,
             ),
         )
