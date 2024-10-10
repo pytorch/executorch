@@ -7,7 +7,7 @@
 
 import torch
 
-from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
+from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import OutputMinMax
 
 from executorch.backends.xnnpack.utils.utils import check_or_raise

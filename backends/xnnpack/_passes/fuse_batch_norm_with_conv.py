@@ -8,7 +8,7 @@ import operator
 
 import torch
 
-from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
+from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 
 from executorch.backends.xnnpack.utils.utils import get_param_tensor, is_param_node
 from executorch.exir import ExportedProgram

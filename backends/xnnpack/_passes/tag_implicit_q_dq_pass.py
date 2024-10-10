@@ -7,11 +7,11 @@
 from typing import cast, List, Optional
 
 import torch
+from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.partition.configs import (
     SUPPORTED_IMPLICIT_Q_DQ_MODULES_SET,
     SUPPORTED_IMPLICIT_Q_DQ_OP_NAMES_SET,
 )
-from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import (
     is_dequant,
     is_dynamic_qdq,

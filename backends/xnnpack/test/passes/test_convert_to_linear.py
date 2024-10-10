@@ -7,7 +7,7 @@
 import unittest
 
 import torch
-from executorch.backends.xnnpack.passes.convert_to_linear import ConvertToLinearPass
+from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
 from executorch.backends.xnnpack.test.tester import RunPasses, Tester
 
 

@@ -7,7 +7,7 @@
 import unittest
 
 import torch
-from executorch.backends.xnnpack.passes.channels_last_tagged_reshape_pass import (
+from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass import (
     ChannelsLastTaggedReshapePass,
 )
 from executorch.backends.xnnpack.test.test_xnnpack_utils_classes import (
