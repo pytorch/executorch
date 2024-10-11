@@ -26,7 +26,7 @@
 
 namespace example {
 
-class Runner {
+class ET_EXPERIMENTAL Runner {
  public:
   explicit Runner(
       const std::string& model_path,
