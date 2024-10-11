@@ -8,20 +8,20 @@
 # pyre-unsafe
 
 import torch
-from executorch.backends.arm.passes.annotate_channels_last_dim_order_pass import (
+from executorch.backends.arm._passes.annotate_channels_last_dim_order_pass import (
     AnnotateChannelsLastDimOrder,
 )
-from executorch.backends.arm.passes.convert_expand_copy_to_repeat import (
+from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
 )
-from executorch.backends.arm.passes.convert_split_to_slice import (
+from executorch.backends.arm._passes.convert_split_to_slice import (
     ConvertSplitToSlicePass,
 )
-from executorch.backends.arm.passes.meandim_to_averagepool_pass import (
+from executorch.backends.arm._passes.meandim_to_averagepool_pass import (
     ConvertMeanDimToAveragePool,
 )
-from executorch.backends.arm.passes.remove_clone_pass import RemoveClonePass
-from executorch.backends.arm.passes.size_adjust_conv2d_pass import SizeAdjustConv2DPass
+from executorch.backends.arm._passes.remove_clone_pass import RemoveClonePass
+from executorch.backends.arm._passes.size_adjust_conv2d_pass import SizeAdjustConv2DPass
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_manager import PassManager
 
