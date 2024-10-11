@@ -1010,6 +1010,39 @@ def annotate_expand(node: Node, quantization_config: QuantizationConfig) -> None
         annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.group_norm.default])
+def annotate_group_norm(node: Node, quantization_config: QuantizationConfig) -> None:
+    act_node = node.args[0]
+    weight_node = node.args[2]
+    bias_node = None
+    if len(node.args) > 2:
+        bias_node = node.args[3]
+
+    if _is_annotated([node]):
+        return
+
+    _annotate_input_qspec_map(
+        node,
+        act_node,
+        quantization_config.input_activation,
+    )
+    _annotate_input_qspec_map(
+        node,
+        weight_node,
+        quantization_config.weight,
+    )
+    nodes_to_mark_annotated = [node, weight_node]
+    if bias_node:
+        _annotate_input_qspec_map(
+            node,
+            bias_node,
+            quantization_config.bias,
+        )
+        nodes_to_mark_annotated.append(bias_node)
+    _annotate_output_qspec(node, quantization_config.output_activation)
+    _mark_nodes_as_annotated(nodes_to_mark_annotated)
+
+
 @register_annotator([torch.ops.aten.flatten.using_ints])
 def annotate_flatten(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)
