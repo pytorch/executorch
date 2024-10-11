@@ -183,6 +183,19 @@ float get_scale(const Tensor& scale, size_t channel_ix) {
   }
 }
 
+int64_t get_zero_point(const Tensor& zero_point, size_t channel_ix) {
+  ET_CHECK_MSG(
+      (zero_point.scalar_type() == ScalarType::Long ||
+       zero_point.scalar_type() == ScalarType::Float),
+      "zero_point.scalar_type() %" PRId8 " is not long or float type",
+      static_cast<int8_t>(zero_point.scalar_type()));
+  if (zero_point.scalar_type() == ScalarType::Float) {
+    return static_cast<int64_t>(zero_point.const_data_ptr<float>()[channel_ix]);
+  } else {
+    return zero_point.const_data_ptr<int64_t>()[channel_ix];
+  }
+}
+
 Tensor& dequantize_per_channel_out(
     const Tensor& input,
     const Tensor& scale,
@@ -213,8 +226,9 @@ Tensor& dequantize_per_channel_out(
   if (opt_zero_points.has_value()) {
     auto zero_point = opt_zero_points.value();
     ET_CHECK_MSG(
-        zero_point.scalar_type() == ScalarType::Long,
-        "zero_point.scalar_type() %" PRId8 " is not integer type",
+        (zero_point.scalar_type() == ScalarType::Long ||
+         zero_point.scalar_type() == ScalarType::Float),
+        "zero_point.scalar_type() %" PRId8 " is not long or float type",
         static_cast<int8_t>(zero_point.scalar_type()));
 
     ET_CHECK_MSG(
@@ -235,12 +249,6 @@ Tensor& dequantize_per_channel_out(
     } else {
       dims[i] = i + 1;
     }
-  }
-  const int64_t* zero_point_data;
-  if (opt_zero_points.has_value()) {
-    zero_point_data = opt_zero_points.value().const_data_ptr<int64_t>();
-  } else {
-    zero_point_data = nullptr;
   }
 
   exec_aten::optional<exec_aten::ArrayRef<int64_t>> optional_dim_list{
@@ -263,14 +271,14 @@ Tensor& dequantize_per_channel_out(
           axis == 0, "Axis must be 0 for a single dimensional tensors");       \
       const optional<int64_t> dim;                                             \
       apply_over_dim(                                                          \
-          [input_data_ptr, out_data_ptr, zero_point_data, &scale](             \
+          [input_data_ptr, out_data_ptr, &opt_zero_points, &scale](            \
               size_t numel, size_t stride, size_t base_ix) {                   \
             for (size_t i = 0; i < numel; i++) {                               \
               size_t current_ix = base_ix * stride + i;                        \
               float _scale = get_scale(scale, current_ix);                     \
               int64_t zero_point = 0;                                          \
-              if (zero_point_data != nullptr) {                                \
-                zero_point = zero_point_data[current_ix];                      \
+              if (opt_zero_points.has_value()) {                               \
+                zero_point = get_zero_point(opt_zero_points.value(), current_ix);      \
               }                                                                \
               out_data_ptr[current_ix] =                                       \
                   static_cast<CTYPE_OUT>(                                      \
@@ -285,8 +293,8 @@ Tensor& dequantize_per_channel_out(
     for (size_t channel_ix = 0; channel_ix < input.size(axis); ++channel_ix) { \
       float _scale = get_scale(scale, channel_ix);                             \
       int64_t _zero_point = 0;                                                 \
-      if (zero_point_data != nullptr) {                                        \
-        _zero_point = zero_point_data[channel_ix];                             \
+      if (opt_zero_points.has_value()) {                                       \
+        _zero_point = get_zero_point(opt_zero_points.value(), channel_ix);     \
       }                                                                        \
       auto* out_data_ptr = out.mutable_data_ptr<CTYPE_OUT>();                  \
       const auto* input_data_ptr = input.const_data_ptr<CTYPE_IN>();           \
