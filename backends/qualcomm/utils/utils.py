@@ -52,6 +52,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     _soc_info_table,
+    HtpArch,
     QcomChipset,
     QnnExecuTorchBackendOptions,
     QnnExecuTorchBackendType,
@@ -852,6 +853,16 @@ def generate_qnn_executorch_compiler_spec(
             QCOM_QNN_COMPILE_SPEC, convert_to_flatbuffer(qnn_executorch_options)
         )
     ]
+
+
+def get_soc_to_arch_map():
+    return {
+        "SSG2115P": HtpArch.V73,
+        "SM8650": HtpArch.V75,
+        "SM8550": HtpArch.V73,
+        "SM8475": HtpArch.V69,
+        "SM8450": HtpArch.V69,
+    }
 
 
 def get_soc_to_chipset_map():
