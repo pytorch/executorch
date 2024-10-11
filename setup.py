@@ -423,6 +423,11 @@ class CustomBuildPy(build_py):
                 "devtools/bundled_program/schema/scalar_type.fbs",
                 "devtools/bundled_program/serialize/scalar_type.fbs",
             ),
+            # Install executorch-wheel-config.cmake to pip package.
+            (
+                "build/executorch-wheel-config.cmake",
+                "share/cmake/executorch-config.cmake",
+            ),
         ]
         for src, dst in src_to_dst:
             dst = os.path.join(dst_root, dst)
@@ -662,6 +667,10 @@ def get_ext_modules() -> List[Extension]:
     # platform-specific files using InstallerBuildExt.
     return ext_modules
 
+
+# Override extension suffix to be ".so", skipping package info such as
+# "cpython-311-darwin"
+os.environ["SETUPTOOLS_EXT_SUFFIX"] = ".so"
 
 setup(
     version=Version.string(),
