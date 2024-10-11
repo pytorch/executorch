@@ -247,7 +247,10 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="list of lm-eluther tasks to evaluate usage: --tasks task1 task2",
     )
     parser.add_argument(
-        "--limit", type=int, default=None, help="number of samples to evalulate"
+        "--limit",
+        type=int,
+        default=None,
+        help="number of samples to evalulate. If not set, evaluate all samples",
     )
     parser.add_argument(
         "-f",
