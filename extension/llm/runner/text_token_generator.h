@@ -18,7 +18,7 @@ namespace executorch {
 namespace extension {
 namespace llm {
 
-class TextTokenGenerator {
+class ET_EXPERIMENTAL TextTokenGenerator {
  public:
   TextTokenGenerator(
       Tokenizer* tokenizer,
@@ -72,9 +72,10 @@ class TextTokenGenerator {
     // initialize tensor wrappers
     auto tokens_managed = from_blob(
         token_data.data(), token_shape, executorch::aten::ScalarType::Long);
-
     auto start_pos_managed =
         from_blob(&pos, {1}, executorch::aten::ScalarType::Long);
+
+    should_stop_ = false;
 
     // Generate our tokens
     while (pos < seq_len - 1) {
