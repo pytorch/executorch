@@ -389,9 +389,7 @@ class LLMEdgeManager:
                     ConvertToLinearPass(),
                     QuantFusionPass(),
                 ],
-                memory_planning_pass=MemoryPlanningPass(
-                    "greedy", alloc_graph_input=False
-                ),
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
             )
         )

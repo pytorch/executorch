@@ -121,7 +121,6 @@ class ModuleDynamicCatUnallocatedIO(nn.Module):
 
     def get_memory_planning_pass(self):
         return MemoryPlanningPass(
-            memory_planning_algo="greedy",
             alloc_graph_input=False,
             alloc_graph_output=False,
         )

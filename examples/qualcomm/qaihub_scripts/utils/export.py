@@ -220,7 +220,6 @@ def compile(args):
     )
     # setup memory planning
     memory_planning_pass = MemoryPlanningPass(
-        memory_planning_algo="greedy",
         alloc_graph_input=args.allocate_graph_io,
         alloc_graph_output=args.allocate_graph_io,
     )
