@@ -7,15 +7,12 @@
 
 from typing import Optional, Union
 
-import lm_eval
 import torch
 from executorch.examples.models.llama2.tokenizer.tiktoken import Tokenizer as Tiktoken
 from executorch.extension.llm.tokenizer.tokenizer import (
     Tokenizer as SentencePieceTokenizer,
 )
 
-from lm_eval.api.model import LM
-from lm_eval.evaluator import simple_evaluate
 from lm_eval.models.huggingface import HFLM as eval_wrapper
 
 from torch import nn
