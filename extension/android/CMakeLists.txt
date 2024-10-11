@@ -28,13 +28,13 @@ set(FBJNI_AAR_URL https://repo1.maven.org/maven2/com/facebook/fbjni/fbjni/${FBJN
 set(FBJNI_DOWNLOAD_PATH ${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/fbjni.aar)
 
 if (NOT EXISTS "${FBJNI_DOWNLOAD_PATH}")
-    file(DOWNLOAD "${FBJNI_AAR_URL}" "${FBJNI_DOWNLOAD_PATH}")
+  file(DOWNLOAD "${FBJNI_AAR_URL}" "${FBJNI_DOWNLOAD_PATH}")
 endif()
 
 add_custom_command(
-    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/include/" "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
-    COMMAND unzip -o ${FBJNI_DOWNLOAD_PATH} -d ${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni
-    DEPENDS "${FBJNI_DOWNLOAD_PATH}")
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/include/" "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
+  COMMAND unzip -o ${FBJNI_DOWNLOAD_PATH} -d ${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni
+  DEPENDS "${FBJNI_DOWNLOAD_PATH}")
 
 add_custom_target(
   fbjni_prefab
@@ -47,7 +47,7 @@ set_target_properties(fbjni PROPERTIES
   IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
 )
 list(APPEND
-  _common_include_directories "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/include/"
+  _common_include_directories
 )
 
 set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../lib/cmake/ExecuTorch)
@@ -152,6 +152,7 @@ endif()
 
 target_include_directories(
   executorch_jni PRIVATE ${_common_include_directories}
+  "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/include/"
 )
 
 target_compile_options(executorch_jni PUBLIC ${_common_compile_options})
