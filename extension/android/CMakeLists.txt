@@ -27,7 +27,7 @@ endif()
 set(FBJNI_AAR_URL https://repo1.maven.org/maven2/com/facebook/fbjni/fbjni/${FBJNI_VERSION}/fbjni-${FBJNI_VERSION}.aar)
 set(FBJNI_DOWNLOAD_PATH ${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/fbjni.aar)
 
-if (NOT EXISTS "${FBJNI_DOWNLOAD_PATH}")
+if(NOT EXISTS "${FBJNI_DOWNLOAD_PATH}")
   file(DOWNLOAD "${FBJNI_AAR_URL}" "${FBJNI_DOWNLOAD_PATH}")
 endif()
 
