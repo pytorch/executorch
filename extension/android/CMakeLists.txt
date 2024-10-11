@@ -43,7 +43,8 @@ endif()
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/include/" "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
   COMMAND unzip -o ${FBJNI_DOWNLOAD_PATH} -d ${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni
-  DEPENDS "${FBJNI_DOWNLOAD_PATH}")
+  DEPENDS "${FBJNI_DOWNLOAD_PATH}"
+)
 
 add_custom_target(
   fbjni_prefab
