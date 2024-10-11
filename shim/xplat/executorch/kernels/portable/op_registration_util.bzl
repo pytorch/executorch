@@ -777,6 +777,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_masked_scatter",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+        ],
+    ),
+    op_target(
         name = "op_max",
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
