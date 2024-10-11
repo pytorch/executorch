@@ -494,6 +494,7 @@ def replace_embedding_weight_only_grouped_int8_per_channel(
                     group_size=group_size,
                     dtype=child.weight.dtype,
                     packed=packed,
+                    bitwidth=bitwidth,
                 ),
             )
         else:
@@ -614,6 +615,7 @@ class QuantizedGroupEmbedding(torch.nn.Module):
         group_size: Optional[int] = None,
         dtype=torch.half,
         packed=False,
+        bitwidth: int = 8,
     ) -> None:
         super().__init__()
         if group_size is None or group_size == 0:
@@ -621,6 +623,7 @@ class QuantizedGroupEmbedding(torch.nn.Module):
         self.group_size = group_size
         self.dtype = dtype
         self.packed = packed
+        self.bitwidth = bitwidth
         if not packed:
             self.register_buffer(
                 "weight",
@@ -629,12 +632,25 @@ class QuantizedGroupEmbedding(torch.nn.Module):
                 ),
             )
         else:  # packed
-            self.register_buffer(
-                "weight",
-                torch.empty(
-                    (vocab_size, embedding_dim // 2), dtype=torch.uint8, device=device
-                ),
-            )
+            if bitwidth == 2:
+                self.register_buffer(
+                    "weight",
+                    torch.empty(
+                        (vocab_size, embedding_dim // 4),
+                        dtype=torch.uint8,
+                        device=device,
+                    ),
+                )
+            elif bitwidth == 4:
+                self.register_buffer(
+                    "weight",
+                    torch.empty(
+                        (vocab_size, embedding_dim // 2),
+                        dtype=torch.uint8,
+                        device=device,
+                    ),
+                )
+
         groups_per_row = (embedding_dim + group_size - 1) // group_size
         if groups_per_row > 1:
             self.register_buffer(
@@ -654,10 +670,15 @@ class QuantizedGroupEmbedding(torch.nn.Module):
             return torch.ops.quantized_decomposed.embedding_byte.dtype(
                 self.weight, self.scales, None, 0, 0, indices, dtype=self.dtype
             )
-        else:  # 4bit packed
-            return torch.ops.quantized_decomposed.embedding_4bit.dtype(
-                self.weight, self.scales, None, 0, 0, indices, dtype=self.dtype
-            )
+        else:  # packed
+            if self.bitwidth == 2:
+                return torch.ops.quantized_decomposed.embedding_2bit.dtype(
+                    self.weight, self.scales, None, 0, 0, indices, dtype=self.dtype
+                )
+            elif self.bitwidth == 4:
+                return torch.ops.quantized_decomposed.embedding_4bit.dtype(
+                    self.weight, self.scales, None, 0, 0, indices, dtype=self.dtype
+                )
 
 
 ############################ Source Transform Start #######################
