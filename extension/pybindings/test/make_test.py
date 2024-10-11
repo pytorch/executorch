@@ -84,23 +84,6 @@ class ModuleAddConstReturn(torch.nn.Module):
         return (torch.ones(2, 2),)
 
 
-class ModuleAddConstReturn(torch.nn.Module):
-    """The module to serialize and execute."""
-
-    def __init__(self):
-        super(ModuleAddConstReturn, self).__init__()
-        self.state = torch.ones(2, 2)
-
-    def forward(self, x):
-        return x + self.state, self.state
-
-    def get_methods_to_export(self):
-        return ("forward",)
-
-    def get_inputs(self):
-        return (torch.ones(2, 2),)
-
-
 def create_program(
     eager_module: torch.nn.Module,
     et_config: Optional[ExecutorchBackendConfig] = None,
