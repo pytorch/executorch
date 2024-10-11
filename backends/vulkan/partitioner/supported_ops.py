@@ -45,6 +45,7 @@ class OpList:
 
 PRIM_OPS = [
     operator.getitem,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
 ]
 
 SUPPORTS_DYNAMIC_SHAPE = [
