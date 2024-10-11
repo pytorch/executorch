@@ -31,7 +31,7 @@ if(_portable_lib_LIBRARY)
   message(STATUS "ExecuTorch portable library is found at ${_portable_lib_LIBRARY}")
   list(APPEND EXECUTORCH_LIBRARIES _portable_lib)
   add_library(_portable_lib STATIC IMPORTED)
-  set(EXECUTORCH_INCLUDE_DIRS ${CMAKE_CURRENT_LIST_DIR}/include)
+  set(EXECUTORCH_INCLUDE_DIRS ${CMAKE_CURRENT_LIST_DIR}/../../include)
   set_target_properties(_portable_lib PROPERTIES
     IMPORTED_LOCATION "${_portable_lib_LIBRARY}"
     INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"

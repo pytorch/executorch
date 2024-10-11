@@ -282,7 +282,7 @@ tokenizer.path=<path_to_checkpoint_folder>/tokenizer.model
 
 We use [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness) to evaluate model accuracy.
 
-Using the following example command to calculate model's perplexity based on WikiText.
+For base models, use the following example command to calculate its perplexity based on WikiText.
 ```
 python -m examples.models.llama2.eval_llama \
 	-c <checkpoint.pth> \
@@ -294,7 +294,7 @@ python -m examples.models.llama2.eval_llama \
 	--limit <number of samples>
 ```
 
-For instruct models, you can use the following example command to calculate model's MMLU score.
+For instruct models, use the following example command to calculate its MMLU score.
 ```
 python -m examples.models.llama2.eval_llama \
 	-c <checkpoint.pth> \

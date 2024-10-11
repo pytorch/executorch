@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import warnings
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -47,7 +48,10 @@ class RmsNormVisitor(NodeVisitor):
             len(normalized_shapes) != 1
             and normalized_shapes[0] != input_tensor.shape[-1]
         ):
-            print("Only supports normalization with last input dimension")
+            warnings.warn(
+                "[QNN Delegate Op Builder]: Only supports normalization with last input dimension.",
+                stacklevel=1,
+            )
             return
         axes = [node.args[0].meta["val"].dim() - 1]
         axes_shape = [len(axes)]
