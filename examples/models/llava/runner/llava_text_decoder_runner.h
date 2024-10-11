@@ -14,7 +14,7 @@
 
 namespace example {
 
-class LlavaTextDecoderRunner
+class ET_EXPERIMENTAL LlavaTextDecoderRunner
     : public executorch::extension::llm::TextDecoderRunner {
  public:
   LlavaTextDecoderRunner(
