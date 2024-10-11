@@ -49,7 +49,7 @@ We employed 4-bit groupwise per token dynamic quantization of all the linear lay
 
 We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness). Please note that LM Eval reports perplexity normalized by word count instead of token count. You may see different perplexity for WikiText from other sources if they implement it differntly. More details could be found [here](https://github.com/EleutherAI/lm-evaluation-harness/issues/2301).
 
-Below are the results for two different groupsizes, with max_seq_len 2048, and 1000 samples.
+Below are the results for two different groupsizes, with max_seq_length 2048, and limit 1000.
 
 |Model | Baseline (FP32) | Groupwise 4-bit (128) | Groupwise 4-bit (256)
 |--------|-----------------| ---------------------- | ---------------
@@ -280,12 +280,32 @@ tokenizer.path=<path_to_checkpoint_folder>/tokenizer.model
 
 > Forewarning: Model evaluation without a GPU may take a long time, especially on larger models.
 
-Using the same arguments from above
+We use [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness) to evaluate model accuracy.
+
+Using the following example command to calculate model's perplexity based on WikiText.
 ```
-python -m examples.models.llama2.eval_llama -c <checkpoint.pth> -p <params.json> -t <tokenizer.model/bin> -d fp32 --max_seq_len <max sequence length> --limit <number of samples>
+python -m examples.models.llama2.eval_llama \
+	-c <checkpoint.pth> \
+	-p <params.json> \
+	-t <tokenizer.model/bin> \
+	-kv \
+	-d <checkpoint dtype> \
+	--max_seq_len <max sequence length> \
+	--limit <number of samples>
 ```
 
-The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
+For instruct models, you can use the following example command to calculate model's MMLU score.
+```
+python -m examples.models.llama2.eval_llama \
+	-c <checkpoint.pth> \
+	-p <params.json> \
+	-t <tokenizer.model/bin> \
+	-kv \
+	-d <checkpoint dtype> \
+	--tasks mmlu \
+	--num_fewshot 5 \
+	--max_seq_len <max sequence length>
+```
 
 ## Step 4: Run on your computer to validate
 
