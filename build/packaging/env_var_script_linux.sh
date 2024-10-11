@@ -11,6 +11,10 @@
 # Enable pybindings so that users can execute ExecuTorch programs from python.
 export EXECUTORCH_BUILD_PYBIND=1
 
+# Override extension suffix to be ".so", skipping package info such as
+# "cpython-311-x86_64-linux-gnu"
+export SETUPTOOLS_EXT_SUFFIX=".so"
+
 # Ensure that CMAKE_ARGS is defined before referencing it. Defaults to empty
 # if not defined.
 export CMAKE_ARGS="${CMAKE_ARGS:-}"
