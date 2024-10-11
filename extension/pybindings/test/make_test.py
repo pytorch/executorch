@@ -16,6 +16,125 @@ from executorch.exir.passes import MemoryPlanningPass
 from torch.export import export
 
 
+class ModuleAdd(torch.nn.Module):
+    """The module to serialize and execute."""
+
+    def __init__(self):
+        super(ModuleAdd, self).__init__()
+
+    def forward(self, x, y):
+        return x + y
+
+    def get_methods_to_export(self):
+        return ("forward",)
+
+    def get_inputs(self):
+        return (torch.ones(2, 2), torch.ones(2, 2))
+
+
+class ModuleMulti(torch.nn.Module):
+    """The module to serialize and execute."""
+
+    def __init__(self):
+        super(ModuleMulti, self).__init__()
+
+    def forward(self, x, y):
+        return x + y
+
+    def forward2(self, x, y):
+        return x + y + 1
+
+    def get_methods_to_export(self):
+        return ("forward", "forward2")
+
+    def get_inputs(self):
+        return (torch.ones(2, 2), torch.ones(2, 2))
+
+
+class ModuleAddSingleInput(torch.nn.Module):
+    """The module to serialize and execute."""
+
+    def __init__(self):
+        super(ModuleAddSingleInput, self).__init__()
+
+    def forward(self, x):
+        return x + x
+
+    def get_methods_to_export(self):
+        return ("forward",)
+
+    def get_inputs(self):
+        return (torch.ones(2, 2),)
+
+
+class ModuleAddConstReturn(torch.nn.Module):
+    """The module to serialize and execute."""
+
+    def __init__(self):
+        super(ModuleAddConstReturn, self).__init__()
+        self.state = torch.ones(2, 2)
+
+    def forward(self, x):
+        return x + self.state, self.state
+
+    def get_methods_to_export(self):
+        return ("forward",)
+
+    def get_inputs(self):
+        return (torch.ones(2, 2),)
+
+
+class ModuleAddConstReturn(torch.nn.Module):
+    """The module to serialize and execute."""
+
+    def __init__(self):
+        super(ModuleAddConstReturn, self).__init__()
+        self.state = torch.ones(2, 2)
+
+    def forward(self, x):
+        return x + self.state, self.state
+
+    def get_methods_to_export(self):
+        return ("forward",)
+
+    def get_inputs(self):
+        return (torch.ones(2, 2),)
+
+
+def create_program(
+    eager_module: torch.nn.Module,
+    et_config: Optional[ExecutorchBackendConfig] = None,
+) -> Tuple[ExecutorchProgramManager, Tuple[Any, ...]]:
+    """Returns an executorch program based on ModuleAdd, along with inputs."""
+
+    # Trace the test module and create a serialized ExecuTorch program.
+    inputs = eager_module.get_inputs()
+    input_map = {}
+    for method in eager_module.get_methods_to_export():
+        input_map[method] = inputs
+
+    class WrapperModule(torch.nn.Module):
+        def __init__(self, fn):
+            super().__init__()
+            self.fn = fn
+
+        def forward(self, *args, **kwargs):
+            return self.fn(*args, **kwargs)
+
+    exported_methods = {}
+    # These cleanup passes are required to convert the `add` op to its out
+    # variant, along with some other transformations.
+    for method_name, method_input in input_map.items():
+        wrapped_mod = WrapperModule(getattr(eager_module, method_name))
+        exported_methods[method_name] = export(wrapped_mod, method_input)
+
+    exec_prog = to_edge(exported_methods).to_executorch(config=et_config)
+
+    # Create the ExecuTorch program from the graph.
+    exec_prog.dump_executorch_program(verbose=True)
+    return (exec_prog, inputs)
+
+
 def make_test(  # noqa: C901
     tester: unittest.TestCase,
     runtime: ModuleType,
@@ -30,104 +149,6 @@ def make_test(  # noqa: C901
     load_fn: Callable = runtime._load_for_executorch_from_buffer
 
     def wrapper(tester: unittest.TestCase) -> None:
-        class ModuleAdd(torch.nn.Module):
-            """The module to serialize and execute."""
-
-            def __init__(self):
-                super(ModuleAdd, self).__init__()
-
-            def forward(self, x, y):
-                return x + y
-
-            def get_methods_to_export(self):
-                return ("forward",)
-
-            def get_inputs(self):
-                return (torch.ones(2, 2), torch.ones(2, 2))
-
-        class ModuleMulti(torch.nn.Module):
-            """The module to serialize and execute."""
-
-            def __init__(self):
-                super(ModuleMulti, self).__init__()
-
-            def forward(self, x, y):
-                return x + y
-
-            def forward2(self, x, y):
-                return x + y + 1
-
-            def get_methods_to_export(self):
-                return ("forward", "forward2")
-
-            def get_inputs(self):
-                return (torch.ones(2, 2), torch.ones(2, 2))
-
-        class ModuleAddSingleInput(torch.nn.Module):
-            """The module to serialize and execute."""
-
-            def __init__(self):
-                super(ModuleAddSingleInput, self).__init__()
-
-            def forward(self, x):
-                return x + x
-
-            def get_methods_to_export(self):
-                return ("forward",)
-
-            def get_inputs(self):
-                return (torch.ones(2, 2),)
-
-        class ModuleAddConstReturn(torch.nn.Module):
-            """The module to serialize and execute."""
-
-            def __init__(self):
-                super(ModuleAddConstReturn, self).__init__()
-                self.state = torch.ones(2, 2)
-
-            def forward(self, x):
-                return x + self.state, self.state
-
-            def get_methods_to_export(self):
-                return ("forward",)
-
-            def get_inputs(self):
-                return (torch.ones(2, 2),)
-
-        def create_program(
-            eager_module: torch.nn.Module,
-            et_config: Optional[ExecutorchBackendConfig] = None,
-        ) -> Tuple[ExecutorchProgramManager, Tuple[Any, ...]]:
-            """Returns an executorch program based on ModuleAdd, along with inputs."""
-
-            # Trace the test module and create a serialized ExecuTorch program.
-            inputs = eager_module.get_inputs()
-            input_map = {}
-            for method in eager_module.get_methods_to_export():
-                input_map[method] = inputs
-
-            class WrapperModule(torch.nn.Module):
-                def __init__(self, fn):
-                    super().__init__()
-                    self.fn = fn
-
-                def forward(self, *args, **kwargs):
-                    return self.fn(*args, **kwargs)
-
-            exported_methods = {}
-            # These cleanup passes are required to convert the `add` op to its out
-            # variant, along with some other transformations.
-            for method_name, method_input in input_map.items():
-                wrapped_mod = WrapperModule(  # pyre-ignore[16]
-                    getattr(eager_module, method_name)
-                )
-                exported_methods[method_name] = export(wrapped_mod, method_input)
-
-            exec_prog = to_edge(exported_methods).to_executorch(config=et_config)
-
-            # Create the ExecuTorch program from the graph.
-            exec_prog.dump_executorch_program(verbose=True)
-            return (exec_prog, inputs)
 
         ######### TEST CASES #########
 
@@ -300,7 +321,6 @@ def make_test(  # noqa: C901
         ######### RUN TEST CASES #########
 
         def test_method_meta(tester) -> None:
-            # pyre-fixme[16]: Callable `make_test` has no attribute `wrapper`.
             exported_program, inputs = create_program(ModuleAdd())
 
             # Use pybindings to load the program and query its metadata.
@@ -347,7 +367,6 @@ def make_test(  # noqa: C901
 
         def test_bad_name(tester) -> None:
             # Create an ExecuTorch program from ModuleAdd.
-            # pyre-fixme[16]: Callable `make_test` has no attribute `wrapper`.
             exported_program, inputs = create_program(ModuleAdd())
 
             # Use pybindings to load and execute the program.
@@ -358,7 +377,6 @@ def make_test(  # noqa: C901
 
         def test_verification_config(tester) -> None:
             # Create an ExecuTorch program from ModuleAdd.
-            # pyre-fixme[16]: Callable `make_test` has no attribute `wrapper`.
             exported_program, inputs = create_program(ModuleAdd())
             Verification = runtime.Verification
 

@@ -309,6 +309,15 @@ class Module final {
     return *methods_[method_name].get();
   }
 
+  /// Returns the names of all methods in the program.
+  std::vector<std::string> method_names() const {
+    std::vector<std::string> names;
+    for (const auto& method : methods_) {
+      names.push_back(method.first);
+    }
+    return names;
+  }
+
   bool has_etdump() {
     return static_cast<bool>(event_tracer_);
   }
@@ -903,6 +912,10 @@ struct PyModule final {
     return std::make_unique<PyMethodMeta>(module_, method.method_meta());
   }
 
+  std::vector<std::string> method_names() {
+    return module_->method_names();
+  }
+
  private:
   std::shared_ptr<Module> module_;
   // Need to keep-alive output storages until they can be compared in case of
@@ -1033,6 +1046,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           &PyModule::method_meta,
           py::arg("method_name"),
           call_guard)
+      .def("method_names", &PyModule::method_names, call_guard)
       .def(
           "run_method",
           &PyModule::run_method,
