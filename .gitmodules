@@ -28,9 +28,6 @@
 [submodule "backends/xnnpack/third-party/pthreadpool"]
 	path = backends/xnnpack/third-party/pthreadpool
 	url = https://github.com/Maratyszcza/pthreadpool.git
-[submodule "examples/third-party/fbjni"]
-	path = examples/third-party/fbjni
-	url = https://github.com/facebookincubator/fbjni.git
 [submodule "extension/llm/third-party/abseil-cpp"]
 	path = extension/llm/third-party/abseil-cpp
 	url = https://github.com/abseil/abseil-cpp.git
