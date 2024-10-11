@@ -103,14 +103,14 @@ struct ContentView: View {
         if showingSettings {
           VStack(spacing: 20) {
             Form {
-              Section(header: Text("Model and Tokenizer")
+              Section(header: Text(placeholder)
                         .font(.headline)
                         .foregroundColor(.primary)) {
                 Button(action: { pickerType = .model }) {
-                  Label(resourceManager.modelName == "" ? modelTitle : resourceManager.modelName, systemImage: "doc")
+                  Label(modelTitle, systemImage: "doc")
                 }
                 Button(action: { pickerType = .tokenizer }) {
-                  Label(resourceManager.tokenizerName == "" ? tokenizerTitle : resourceManager.tokenizerName, systemImage: "doc")
+                  Label(tokenizerTitle, systemImage: "doc")
                 }
               }
             }
