@@ -21,7 +21,8 @@
 
 namespace example {
 
-class LlavaRunner : public ::executorch::extension::llm::MultimodalRunner {
+class ET_EXPERIMENTAL LlavaRunner
+    : public ::executorch::extension::llm::MultimodalRunner {
  public:
   explicit LlavaRunner(
       const std::string& model_path,
