@@ -21,9 +21,18 @@ include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
+# We need to download fbjni library from maven, and use its "prefab" library
+# and headers, and link executorch library against that fbjni library.
+# We don't know which NDK is used to compile fbjni, and we need to link our
+# executorch library to the version which Android APK links against for runtime
+# to ensure the libc++ dependencies are consistent.
+# WARNING #
+# Users need to use the SAME fbjni version here and in app gradle dependency
+# for runtime compatibility!
 if(NOT FBJNI_VERSION)
   set(FBJNI_VERSION 0.5.1)
 endif()
+
 set(FBJNI_AAR_URL https://repo1.maven.org/maven2/com/facebook/fbjni/fbjni/${FBJNI_VERSION}/fbjni-${FBJNI_VERSION}.aar)
 set(FBJNI_DOWNLOAD_PATH ${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/fbjni.aar)
 
@@ -45,9 +54,6 @@ add_library(fbjni SHARED IMPORTED)
 add_dependencies(fbjni fbjni_prefab)
 set_target_properties(fbjni PROPERTIES
   IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
-)
-list(APPEND
-  _common_include_directories
 )
 
 set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../lib/cmake/ExecuTorch)
