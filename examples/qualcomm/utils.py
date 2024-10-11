@@ -30,7 +30,7 @@ from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
-    get_soc_to_chipset_map,
+    get_soc_to_arch_map,
 )
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 from executorch.exir.backend.backend_api import to_backend
@@ -83,7 +83,7 @@ class SimpleADB:
         self.dump_intermediate_outputs = dump_intermediate_outputs
         self.debug_output_path = f"{self.workspace}/debug_output.bin"
         self.output_folder = f"{self.workspace}/outputs"
-        self.soc_model = get_soc_to_chipset_map()[soc_model]
+        self.soc_model = get_soc_to_arch_map()[soc_model]
         self.error_only = error_only
         self.shared_buffer = shared_buffer
         self.runner = runner
