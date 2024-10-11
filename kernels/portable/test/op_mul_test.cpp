@@ -49,12 +49,14 @@ TEST_F(OpMulOutKernelTest, UnhandledDtypeDies) {
   std::vector<exec_aten::qint8> b_data(a_data);
   std::vector<exec_aten::qint8> out_data(a_data);
 
+  std::vector<exec_aten::DimOrderType> dim_order = {0, 1};
+
   auto a_impl = torch::executor::TensorImpl(
-      ScalarType::QInt8, 2, sizes.data(), a_data.data());
+      ScalarType::QInt8, 2, sizes.data(), a_data.data(), dim_order.data());
   auto b_impl = torch::executor::TensorImpl(
-      ScalarType::QInt8, 2, sizes.data(), b_data.data());
+      ScalarType::QInt8, 2, sizes.data(), b_data.data(), dim_order.data());
   auto out_impl = torch::executor::TensorImpl(
-      ScalarType::QInt8, 2, sizes.data(), out_data.data());
+      ScalarType::QInt8, 2, sizes.data(), out_data.data(), dim_order.data());
 
   // Two input tensors.
   Tensor a(&a_impl);

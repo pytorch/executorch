@@ -51,7 +51,7 @@ void add_unary_op_node(
   ubos.append(
       {graph.create_params_buffer(min), graph.create_params_buffer(max)});
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),

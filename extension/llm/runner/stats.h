@@ -19,7 +19,7 @@ namespace executorch {
 namespace extension {
 namespace llm {
 
-struct Stats {
+struct ET_EXPERIMENTAL Stats {
   // Scaling factor for timestamps - in this case, we use ms.
   const long SCALING_FACTOR_UNITS_PER_SECOND = 1000;
   // Time stamps for the different stages of the execution
@@ -29,7 +29,14 @@ struct Stats {
   long model_load_end_ms;
   // inference_start_ms: Immediately after the model is loaded (or we check
   // for model load), measure the inference time.
+  // NOTE: It's actually the tokenizer encode + model execution time.
   long inference_start_ms;
+  // End of the tokenizer encode time.
+  long token_encode_end_ms;
+  // Start of the model execution (forward function) time.
+  long model_execution_start_ms;
+  // End of the model execution (forward function) time.
+  long model_execution_end_ms;
   // prompt_eval_end_ms: Prompt array allocation and tokenization. Ends right
   // before the inference loop starts
   long prompt_eval_end_ms;

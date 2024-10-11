@@ -104,7 +104,7 @@ void add_addmm_naive_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   utils::uvec3 global_wg_size = graph.logical_limits_of(out);
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_wg_size,
@@ -199,7 +199,7 @@ void add_addmm_optimized_node(
   }
   utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,

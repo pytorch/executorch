@@ -22,7 +22,7 @@ final class MobileNetClassifierTest: XCTestCase {
   }
 
   func testV3WithMPSBackend() throws {
-    try run(model: "mv3_mps")
+    try run(model: "mv3_mps_float16")
   }
 
   func testV3WithXNNPACKBackend() throws {

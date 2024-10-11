@@ -115,7 +115,7 @@ class Method final {
    * @returns Error::Ok on success, non-Ok on failure.
    */
   ET_NODISCARD Error
-  set_inputs(const exec_aten::ArrayRef<EValue>& input_evalues);
+  set_inputs(const executorch::aten::ArrayRef<EValue>& input_evalues);
 
   /**
    * Sets the data buffer of the specified method output to the provided value.

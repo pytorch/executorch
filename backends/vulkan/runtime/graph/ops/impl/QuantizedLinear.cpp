@@ -97,7 +97,7 @@ void add_q_8w_linear_node(
     ubos.append({graph.logical_limits_ubo(out), graph.sizes_ubo(mat1)});
   }
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
