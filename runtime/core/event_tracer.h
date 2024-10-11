@@ -275,7 +275,7 @@ class EventTracer {
   virtual void log_intermediate_output_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
-      const exec_aten::Tensor& output) = 0;
+      const executorch::aten::Tensor& output) = 0;
 
   /**
    * Log an intermediate tensor array output from a delegate.
@@ -295,7 +295,7 @@ class EventTracer {
   virtual void log_intermediate_output_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
-      const ArrayRef<exec_aten::Tensor> output) = 0;
+      const ArrayRef<executorch::aten::Tensor> output) = 0;
 
   /**
    * Log an intermediate int output from a delegate.
