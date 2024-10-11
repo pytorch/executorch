@@ -242,6 +242,7 @@ def make_test(  # noqa: C901
 
             from executorch.exir import EdgeCompileConfig
             from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
+            from executorch.kernels import quantized  # noqa: F401
             from torch.ao.quantization import get_default_qconfig_mapping
             from torch.ao.quantization.backend_config.executorch import (
                 get_executorch_backend_config,
