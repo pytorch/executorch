@@ -1145,7 +1145,6 @@ class TestEmit(unittest.TestCase):
         config = exir.ExecutorchBackendConfig(
             sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
             memory_planning_pass=MemoryPlanningPass(
-                memory_planning_algo="greedy",
                 # allow_lifetime_and_storage_overlap: bool = False,
                 alloc_graph_input=True,
                 alloc_graph_output=False,
@@ -1606,9 +1605,7 @@ class TestEmit(unittest.TestCase):
         )
         model = model.to_executorch(
             config=ExecutorchBackendConfig(
-                memory_planning_pass=MemoryPlanningPass(
-                    "greedy", alloc_graph_input=False
-                ),
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
             )
         )

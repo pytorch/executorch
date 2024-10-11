@@ -48,7 +48,7 @@ python_library(
 python_library(
     name = "passes",
     srcs = [
-        "passes.py",
+        "_passes.py",
     ],
     deps = [
         ":utils",

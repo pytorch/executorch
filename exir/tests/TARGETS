@@ -377,6 +377,7 @@ python_unittest(
         ":test_memory_format_ops_pass_utils",
         "//caffe2:torch",
         "//executorch/extension/pybindings:aten_lib",  # @manual
+        "//pytorch/vision:torchvision",  # @manual
     ],
 )
 
@@ -394,6 +395,7 @@ python_unittest(
         "//executorch/exir/dialects:lib",
         "//executorch/exir/dialects/edge:lib",
         "//executorch/extension/pybindings:portable_lib",  # @manual
+        "//pytorch/vision:torchvision",  # @manual
     ],
 )
 
@@ -404,6 +406,7 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/exir:dim_order_utils",
         "//executorch/exir:lib",
         "//executorch/exir/capture:config",

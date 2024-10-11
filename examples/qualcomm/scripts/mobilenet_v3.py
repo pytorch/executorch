@@ -77,7 +77,7 @@ def main(args):
             dataset_path=f"{args.dataset}",
             data_size=data_num,
         )
-    pte_filename = "mv3_qnn"
+    pte_filename = "mv3_qnn_float16"
     instance = MV3Model()
     build_executorch_binary(
         instance.get_eager_model().eval(),

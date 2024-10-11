@@ -6,6 +6,7 @@
 
 import logging
 import os
+import shutil
 import tempfile
 import unittest
 
@@ -126,8 +127,62 @@ class TestNumericalDiffPrints(unittest.TestCase):
             self.fail()
 
 
-class TestDumpOperatorsAndDtypes(unittest.TestCase):
-    def test_dump_ops_and_dtypes(self):
+def test_dump_ops_and_dtypes():
+    model = Linear(20, 30)
+    (
+        ArmTester(
+            model,
+            example_inputs=model.get_inputs(),
+            compile_spec=common.get_tosa_compile_spec(),
+        )
+        .quantize()
+        .dump_dtype_distribution()
+        .dump_operator_distribution()
+        .export()
+        .dump_dtype_distribution()
+        .dump_operator_distribution()
+        .to_edge()
+        .dump_dtype_distribution()
+        .dump_operator_distribution()
+        .partition()
+        .dump_dtype_distribution()
+        .dump_operator_distribution()
+    )
+    # Just test that there are no execptions.
+
+
+def test_dump_ops_and_dtypes_parseable():
+    model = Linear(20, 30)
+    (
+        ArmTester(
+            model,
+            example_inputs=model.get_inputs(),
+            compile_spec=common.get_tosa_compile_spec(),
+        )
+        .quantize()
+        .dump_dtype_distribution(print_table=False)
+        .dump_operator_distribution(print_table=False)
+        .export()
+        .dump_dtype_distribution(print_table=False)
+        .dump_operator_distribution(print_table=False)
+        .to_edge()
+        .dump_dtype_distribution(print_table=False)
+        .dump_operator_distribution(print_table=False)
+        .partition()
+        .dump_dtype_distribution(print_table=False)
+        .dump_operator_distribution(print_table=False)
+    )
+    # Just test that there are no execptions.
+
+
+class TestCollateTosaTests(unittest.TestCase):
+    """Tests the collation of TOSA tests through setting the environment variable TOSA_TESTCASE_BASE_PATH."""
+
+    def test_collate_tosa_BI_tests(self):
+        # Set the environment variable to trigger the collation of TOSA tests
+        os.environ["TOSA_TESTCASES_BASE_PATH"] = "test_collate_tosa_tests"
+        # Clear out the directory
+
         model = Linear(20, 30)
         (
             ArmTester(
@@ -136,16 +191,59 @@ class TestDumpOperatorsAndDtypes(unittest.TestCase):
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize()
-            .dump_dtype_distribution()
-            .dump_operator_distribution()
             .export()
-            .dump_dtype_distribution()
-            .dump_operator_distribution()
             .to_edge()
-            .dump_dtype_distribution()
-            .dump_operator_distribution()
             .partition()
-            .dump_dtype_distribution()
-            .dump_operator_distribution()
+            .to_executorch()
         )
-        # Just test that there are no execeptions.
+        # test that the output directory is created and contains the expected files
+        assert os.path.exists(
+            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests"
+        )
+        assert os.path.exists(
+            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/output_tag8.tosa"
+        )
+        assert os.path.exists(
+            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/desc_tag8.json"
+        )
+
+        os.environ.pop("TOSA_TESTCASES_BASE_PATH")
+        shutil.rmtree("test_collate_tosa_tests", ignore_errors=True)
+
+
+def test_dump_tosa_ops(caplog):
+    caplog.set_level(logging.INFO)
+    model = Linear(20, 30)
+    (
+        ArmTester(
+            model,
+            example_inputs=model.get_inputs(),
+            compile_spec=common.get_tosa_compile_spec(),
+        )
+        .quantize()
+        .export()
+        .to_edge()
+        .partition()
+        .dump_operator_distribution()
+    )
+    assert "TOSA operators:" in caplog.text
+
+
+def test_fail_dump_tosa_ops(caplog):
+    caplog.set_level(logging.INFO)
+
+    class Add(torch.nn.Module):
+        def forward(self, x):
+            return x + x
+
+    model = Add()
+    compile_spec = common.get_u55_compile_spec()
+    (
+        ArmTester(model, example_inputs=(torch.ones(5),), compile_spec=compile_spec)
+        .quantize()
+        .export()
+        .to_edge()
+        .partition()
+        .dump_operator_distribution()
+    )
+    assert "Can not get operator distribution for Vela command stream." in caplog.text

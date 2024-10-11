@@ -16,7 +16,7 @@ import torch
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
-from executorch.backends.xnnpack.passes.convert_to_linear import ConvertToLinearPass
+from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
 from executorch.exir import EdgeProgramManager
 from executorch.exir.backend.partitioner import Partitioner
 
@@ -389,9 +389,7 @@ class LLMEdgeManager:
                     ConvertToLinearPass(),
                     QuantFusionPass(),
                 ],
-                memory_planning_pass=MemoryPlanningPass(
-                    "greedy", alloc_graph_input=False
-                ),
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
             )
         )

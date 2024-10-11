@@ -58,8 +58,8 @@ constexpr double kDefaultAtol = 1e-8;
  *     outside of the specified tolerance of each other.
  */
 bool tensors_are_close(
-    const exec_aten::Tensor& a,
-    const exec_aten::Tensor& b,
+    const executorch::aten::Tensor& a,
+    const executorch::aten::Tensor& b,
     double rtol = internal::kDefaultRtol,
     double atol = internal::kDefaultAtol);
 
@@ -89,8 +89,8 @@ bool tensors_are_close(
  *     outside of the specified tolerance of each other.
  */
 bool tensor_data_is_close(
-    const exec_aten::Tensor& a,
-    const exec_aten::Tensor& b,
+    const executorch::aten::Tensor& a,
+    const executorch::aten::Tensor& b,
     double rtol = internal::kDefaultRtol,
     double atol = internal::kDefaultAtol);
 
@@ -100,9 +100,9 @@ bool tensor_data_is_close(
  * i.
  */
 bool tensor_lists_are_close(
-    const exec_aten::Tensor* tensors_a,
+    const executorch::aten::Tensor* tensors_a,
     size_t num_tensors_a,
-    const exec_aten::Tensor* tensors_b,
+    const executorch::aten::Tensor* tensors_b,
     size_t num_tensors_b,
     double rtol = internal::kDefaultRtol,
     double atol = internal::kDefaultAtol);

@@ -67,6 +67,7 @@ runtime.python_library(
     srcs = ["portable_lib.py"],
     visibility = [
         "//executorch/exir/...",
+        "//executorch/runtime/...",
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [":_portable_lib"],

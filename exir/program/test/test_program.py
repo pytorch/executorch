@@ -250,12 +250,10 @@ class TestProgramManagers(unittest.TestCase):
         def get_executorch_memory_planning_passes() -> Dict[str, MemoryPlanningPass]:
             return {
                 "forward": MemoryPlanningPass(
-                    memory_planning_algo="greedy",
                     alloc_graph_input=True,
                     alloc_graph_output=False,
                 ),
                 "foo": MemoryPlanningPass(
-                    memory_planning_algo="greedy",
                     alloc_graph_input=False,
                     alloc_graph_output=True,
                 ),

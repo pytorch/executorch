@@ -78,6 +78,10 @@ fi
 ethos_u_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u"
 ethos_u_base_rev="24.05"
 
+# tosa reference model
+tosa_reference_model_url="https://review.mlplatform.org/tosa/reference_model"
+tosa_reference_model_rev="444eb365d92774430006e56a8c20161be2f2674f"
+ 
 ########
 ### Mandatory user args
 ########
@@ -179,8 +183,9 @@ function setup_tosa_reference_model() {
     # errors for the early codebase
     cd "${root_dir}"
     if [[ ! -e reference_model ]]; then
-        git clone https://review.mlplatform.org/tosa/reference_model -b v0.80
+        git clone ${tosa_reference_model_url}
         cd reference_model
+        git checkout ${tosa_reference_model_rev}
         git submodule update --init --recursive
         cd ..
     fi

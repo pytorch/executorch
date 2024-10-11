@@ -350,7 +350,6 @@ class TestQNN(unittest.TestCase):
                 # Therefore, won't want to pre-allocate
                 # by memory manager in runtime.
                 memory_planning_pass=MemoryPlanningPass(
-                    memory_planning_algo="greedy",
                     alloc_graph_input=not self.shared_buffer,
                     alloc_graph_output=not self.shared_buffer,
                 ),

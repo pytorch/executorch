@@ -8,5 +8,3 @@
 set -x
 
 pip install transformers accelerate sentencepiece tiktoken
-
-pip list

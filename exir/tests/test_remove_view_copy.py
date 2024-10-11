@@ -48,9 +48,7 @@ class TestRemoveViewCopy(unittest.TestCase):
         etpm = to_edge(ep).to_executorch(
             config=ExecutorchBackendConfig(
                 remove_view_copy=False,
-                memory_planning_pass=MemoryPlanningPass(
-                    "greedy", alloc_graph_input=False
-                ),
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
             ),
         )
 
@@ -72,9 +70,7 @@ class TestRemoveViewCopy(unittest.TestCase):
         etpm_remove = epm_remove.to_executorch(
             config=ExecutorchBackendConfig(
                 remove_view_copy=True,
-                memory_planning_pass=MemoryPlanningPass(
-                    "greedy", alloc_graph_input=False
-                ),
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
             ),
         )
 
@@ -82,9 +78,7 @@ class TestRemoveViewCopy(unittest.TestCase):
         etpm_no_remove = epm_no_remove.to_executorch(
             config=ExecutorchBackendConfig(
                 remove_view_copy=True,
-                memory_planning_pass=MemoryPlanningPass(
-                    "greedy", alloc_graph_input=False
-                ),
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
             ),
         )
 
@@ -107,9 +101,7 @@ class TestRemoveViewCopy(unittest.TestCase):
         etpm = to_edge(ep).to_executorch(
             config=ExecutorchBackendConfig(
                 remove_view_copy=True,
-                memory_planning_pass=MemoryPlanningPass(
-                    "greedy", alloc_graph_input=False
-                ),
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
             ),
         )
 

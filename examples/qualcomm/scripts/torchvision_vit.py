@@ -70,7 +70,7 @@ def main(args):
             data_size=data_num,
         )
 
-    pte_filename = "vit_qnn"
+    pte_filename = "vit_qnn_q8"
     instance = TorchVisionViTModel()
     build_executorch_binary(
         instance.get_eager_model().eval(),
