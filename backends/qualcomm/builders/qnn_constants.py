@@ -353,6 +353,13 @@ class OpTile:
 
 
 @dataclass(init=False, frozen=True)
+class OpTopK:
+    op_name: str = "TopK"
+    param_k: str = "k"
+    param_largest: str = "largest"
+
+
+@dataclass(init=False, frozen=True)
 class OpTranspose:
     op_name: str = "Transpose"
     param_perm: str = "perm"

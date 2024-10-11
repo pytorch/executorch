@@ -28,6 +28,7 @@ class InsertRequantize(ExportPass):
     # we don't use the 2nd output, 2nd output is an integer, etc.
     multi_output_op_ignore_set = {
         exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
+        exir_ops.edge.aten.topk.default,
     }
 
     def __init__(
