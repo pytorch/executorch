@@ -423,6 +423,11 @@ class CustomBuildPy(build_py):
                 "devtools/bundled_program/schema/scalar_type.fbs",
                 "devtools/bundled_program/serialize/scalar_type.fbs",
             ),
+            # Install executorch-wheel-config.cmake to pip package.
+            (
+                "build/executorch-wheel-config.cmake",
+                "share/cmake/executorch-config.cmake",
+            ),
         ]
         for src, dst in src_to_dst:
             dst = os.path.join(dst_root, dst)
@@ -663,6 +668,10 @@ def get_ext_modules() -> List[Extension]:
     return ext_modules
 
 
+# Override extension suffix to be ".so", skipping package info such as
+# "cpython-311-darwin"
+os.environ["SETUPTOOLS_EXT_SUFFIX"] = ".so"
+
 setup(
     version=Version.string(),
     # TODO(dbort): Could use py_modules to restrict the set of modules we
@@ -680,6 +689,7 @@ setup(
         "executorch/schema": "schema",
         "executorch/devtools": "devtools",
         "executorch/devtools/bundled_program": "devtools/bundled_program",
+        "executorch/runtime": "runtime",
         "executorch/util": "util",
         # Note: This will install a top-level module called "serializer",
         # which seems too generic and might conflict with other pip packages.
