@@ -98,6 +98,12 @@ jobs:
           - dtype: bf16
             build-tool: buck2
             mode: portable
+          - dtype: bf16
+            build-tool: cmake
+            mode: custom
+          - dtype: bf16
+            build-tool: buck2
+            mode: custom
       fail-fast: false
     with:
       runner: linux.2xlarge
