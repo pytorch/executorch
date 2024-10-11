@@ -65,6 +65,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.sqrt.default,
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.sum.dim_IntList,
+        exir_ops.edge.aten.topk.default,
         exir_ops.edge.aten._to_copy.default,
         exir_ops.edge.aten.split_with_sizes.default,
         *q_ops,
