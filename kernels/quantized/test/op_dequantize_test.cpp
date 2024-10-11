@@ -152,6 +152,25 @@ TEST(OpDequantizeOutTest, DequantizePerChannel) {
 
   EXPECT_TENSOR_EQ(out, expected);
 
+  // Test with float zero point
+  zero_point = tfo.make({2}, {30, 60});
+  out = tfo.zeros({3, 2});
+  // (100 - 30) * 0.5
+  // (100 - 60) * 1
+  expected = tfo.make({3, 2}, {35, 40, 35, 40, 35, 40});
+  dequantize_per_channel_out(
+      input,
+      scale,
+      zero_point,
+      /*axis=*/1,
+      quant_min,
+      quant_max,
+      ScalarType::Byte,
+      optional<ScalarType>(),
+      out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+
   // Test with a different axis
   out = tfo.zeros({3, 2});
   scale = tf_double.make({3}, {0.5, 0.75, 1});
