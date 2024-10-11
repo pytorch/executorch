@@ -166,7 +166,7 @@ class TestQNN(unittest.TestCase):
         ref_outputs = []
         if isinstance(ref_output, collections.OrderedDict):
             ref_outputs.append(ref_output["out"].detach())
-        elif isinstance(ref_output, tuple):
+        elif isinstance(ref_output, (list, tuple)):
             for output in ref_output:
                 ref_outputs.append(output.detach())
         else:

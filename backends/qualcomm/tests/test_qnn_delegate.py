@@ -37,6 +37,11 @@ from executorch.backends.qualcomm.utils.utils import (
     skip_annotation,
 )
 
+from executorch.examples.models.llama2.llama_transformer import (
+    ModelArgs,
+    MOEFeedForward,
+)
+
 from executorch.examples.qualcomm.utils import setup_common_args_and_variables
 
 from executorch.backends.qualcomm.tests.models import *  # noqa: F403
@@ -139,6 +144,28 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_einsum_outer_product(self):
+        module = EinsumOuterProduct()  # noqa: F405
+        x = torch.randn(5)
+        y = torch.randn(4)
+        sample_input = (
+            x,
+            y,
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_einsum_bilinear(self):
+        module = EinsumBilinear()  # noqa: F405
+        bn = torch.randn(2, 5)
+        anm = torch.randn(3, 5, 4)
+        bm = torch.randn(2, 4)
+        sample_input = (
+            bn,
+            anm,
+            bm,
+        )
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_element_wise_add(self):
         test_comb = [
@@ -546,6 +573,34 @@ class TestQNNFloatingPointModel(TestQNN):
         sample_input = (torch.randn([1, 1, 3, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv2d_topk(self):
+        module = Conv2dTopK()  # noqa: F405
+        sample_input = (torch.randn(1, 3, 32, 32),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_einsum_outer_product_relu(self):
+        module = EinsumOuterProductRelu()  # noqa: F405
+        x = torch.randn(5)
+        y = torch.randn(4)
+        sample_input = (
+            x,
+            y,
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
+    @unittest.skip("Fail because of bad accuracy")
+    def test_qnn_backend_moe_feed_forward(self):
+        args = ModelArgs()
+        args.dim = 32
+        args.n_heads = 8
+        args.n_layers = 2
+        self.head_dim = args.dim // args.n_heads
+        module = MOEFeedForward(args)  # noqa: F405
+        sample_input = (
+            torch.randint(low=0, high=100, size=(1, 32), dtype=torch.float32),
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_pixel_unshuffle_math_equivalent(self):
         module = PixelUnshuffleMathEquivalent(2)  # noqa: F405
         sample_input = (torch.rand(2, 2, 6, 6),)
@@ -559,6 +614,11 @@ class TestQNNFloatingPointModel(TestQNN):
     def test_qnn_backend_simple_model(self):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_topk_and_index(self):
+        module = TopKandIndex()  # noqa: F405
+        sample_input = (torch.randn(3, 10),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_view_permute_matmul(self):
@@ -748,6 +808,30 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_einsum_outer_product(self):
+        module = EinsumOuterProduct()  # noqa: F405
+        x = torch.randn(5)
+        y = torch.randn(4)
+        sample_input = (
+            x,
+            y,
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_einsum_bilinear(self):
+        module = EinsumBilinear()  # noqa: F405
+        bn = torch.randn(2, 5)
+        anm = torch.randn(3, 5, 4)
+        bm = torch.randn(2, 4)
+        sample_input = (
+            bn,
+            anm,
+            bm,
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_element_wise_add(self):
         test_comb = [
@@ -1211,6 +1295,37 @@ class TestQNNQuantizedModel(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv2d_topk(self):
+        module = Conv2dTopK()  # noqa: F405
+        sample_input = (torch.randn(1, 3, 32, 32),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_einsum_outer_product_relu(self):
+        module = EinsumOuterProductRelu()  # noqa: F405
+        x = torch.randn(5)
+        y = torch.randn(4)
+        sample_input = (
+            x,
+            y,
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    @unittest.skip("UT pass before QNN 2.26, segfault during partitioner")
+    def test_qnn_backend_moe_feed_forward(self):
+        args = ModelArgs()
+        args.dim = 32
+        args.n_heads = 8
+        args.n_layers = 2
+        self.head_dim = args.dim // args.n_heads
+        module = MOEFeedForward(args)  # noqa: F405
+        sample_input = (
+            torch.randint(low=0, high=100, size=(1, 32), dtype=torch.float32),
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_pixel_unshuffle_math_equivalent(self):
         module = PixelUnshuffleMathEquivalent(2)  # noqa: F405
         sample_input = (torch.rand(2, 2, 6, 6),)
@@ -1226,6 +1341,12 @@ class TestQNNQuantizedModel(TestQNN):
     def test_qnn_backend_simple_model(self):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_topk_and_index(self):
+        module = TopKandIndex()  # noqa: F405
+        sample_input = (torch.randn(3, 10),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
