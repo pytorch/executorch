@@ -50,7 +50,6 @@ git submodule update --init
 # Create a conda environment and install requirements.
 conda create -yn executorch python=3.10.0
 conda activate executorch
-pip install cmake zstd
 ./install_requirements.sh
 
 cd ../..
@@ -82,7 +81,6 @@ cd third-party/executorch
 git submodule update --init
 
 # Install requirements.
-pip install cmake zstd
 PYTHON_EXECUTABLE=python ./install_requirements.sh
 
 cd ../..
@@ -208,8 +206,9 @@ Create a file called main.cpp with the following contents:
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/result.h>
 
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::extension::from_blob;
 using executorch::extension::Module;
 using executorch::runtime::EValue;
 using executorch::runtime::Result;
@@ -234,56 +233,56 @@ std::string generate(
     BasicSampler& sampler,
     size_t max_input_length,
     size_t max_output_length) {
+  // Convert the input text into a list of integers (tokens) that represents it,
+  // using the string-to-token mapping that the model was trained on. Each token
+  // is an integer that represents a word or part of a word.
+  std::vector<int64_t> input_tokens = tokenizer.encode(prompt);
+  std::vector<int64_t> output_tokens;
 
-    // Convert the input text into a list of integers (tokens) that represents
-    // it, using the string-to-token mapping that the model was trained on.
-    // Each token is an integer that represents a word or part of a word.
-    std::vector<int64_t> input_tokens = tokenizer.encode(prompt);
-    std::vector<int64_t> output_tokens;
+  for (auto i = 0u; i < max_output_length; i++) {
+    // Convert the input_tokens from a vector of int64_t to EValue. EValue is a
+    // unified data type in the ExecuTorch runtime.
+    auto inputs = from_blob(
+        input_tokens.data(),
+        {1, static_cast<int>(input_tokens.size())},
+        ScalarType::Long);
 
-    for (auto i = 0u; i < max_output_length; i++) {
-        // Convert the input_tokens from a vector of int64_t to EValue.
-        // EValue is a unified data type in the ExecuTorch runtime.
-        auto inputs = from_blob(
-            input_tokens.data(),
-            {1, static_cast<int>(input_tokens.size())},
-            ScalarType::Long);
+    // Run the model. It will return a tensor of logits (log-probabilities).
+    auto logits_evalue = llm_model.forward(inputs);
 
-        // Run the model. It will return a tensor of logits (log-probabilities).
-        auto logits_evalue = llm_model.forward(inputs);
+    // Convert the output logits from EValue to std::vector, which is what the
+    // sampler expects.
+    Tensor logits_tensor = logits_evalue.get()[0].toTensor();
+    std::vector<float> logits(
+        logits_tensor.data_ptr<float>(),
+        logits_tensor.data_ptr<float>() + logits_tensor.numel());
 
-        // Convert the output logits from EValue to std::vector, which is what
-        // the sampler expects.
-        Tensor logits_tensor = logits_evalue.get()[0].toTensor();
-        std::vector<float> logits(logits_tensor.data_ptr<float>(),
-            logits_tensor.data_ptr<float>() + logits_tensor.numel());
+    // Sample the next token from the logits.
+    int64_t next_token = sampler.sample(logits);
 
-        // Sample the next token from the logits.
-        int64_t next_token = sampler.sample(logits);
-
-        // Break if we reached the end of the text.
-        if (next_token == ENDOFTEXT_TOKEN) {
-            break;
-        }
-
-        // Add the next token to the output.
-        output_tokens.push_back(next_token);
-
-        std::cout << tokenizer.decode({ next_token });
-        std::cout.flush();
-
-        // Update next input.
-        input_tokens.push_back(next_token);
-        if (input_tokens.size() > max_input_length) {
-            input_tokens.erase(input_tokens.begin());
-        }
+    // Break if we reached the end of the text.
+    if (next_token == ENDOFTEXT_TOKEN) {
+      break;
     }
 
-    std::cout << std::endl;
+    // Add the next token to the output.
+    output_tokens.push_back(next_token);
 
-    // Convert the output tokens into a human-readable string.
-    std::string output_string = tokenizer.decode(output_tokens);
-    return output_string;
+    std::cout << tokenizer.decode({next_token});
+    std::cout.flush();
+
+    // Update next input.
+    input_tokens.push_back(next_token);
+    if (input_tokens.size() > max_input_length) {
+      input_tokens.erase(input_tokens.begin());
+    }
+  }
+
+  std::cout << std::endl;
+
+  // Convert the output tokens into a human-readable string.
+  std::string output_string = tokenizer.decode(output_tokens);
+  return output_string;
 }
 ```
 
@@ -308,32 +307,32 @@ penalties for repeated tokens, and biases to prioritize or de-prioritize specifi
 ```cpp
 // main.cpp
 
-using namespace torch::executor;
-
 int main() {
-    // Set up the prompt. This provides the seed text for the model to elaborate.
-    std::cout << "Enter model prompt: ";
-    std::string prompt;
-    std::getline(std::cin, prompt);
+  // Set up the prompt. This provides the seed text for the model to elaborate.
+  std::cout << "Enter model prompt: ";
+  std::string prompt;
+  std::getline(std::cin, prompt);
 
-    // The tokenizer is used to convert between tokens (used by the model) and
-    // human-readable strings.
-    BasicTokenizer tokenizer("vocab.json");
+  // The tokenizer is used to convert between tokens (used by the model) and
+  // human-readable strings.
+  BasicTokenizer tokenizer("vocab.json");
 
-    // The sampler is used to sample the next token from the logits.
-    BasicSampler sampler = BasicSampler();
+  // The sampler is used to sample the next token from the logits.
+  BasicSampler sampler = BasicSampler();
 
-    // Load the exported nanoGPT program, which was generated via the previous steps.
-    Module model("nanogpt.pte", Module::LoadMode::MmapUseMlockIgnoreErrors);
+  // Load the exported nanoGPT program, which was generated via the previous
+  // steps.
+  Module model("nanogpt.pte", Module::LoadMode::MmapUseMlockIgnoreErrors);
 
-    const auto max_input_tokens = 1024;
-    const auto max_output_tokens = 30;
-    std::cout << prompt;
-    generate(model, prompt, tokenizer, sampler, max_input_tokens, max_output_tokens);
+  const auto max_input_tokens = 1024;
+  const auto max_output_tokens = 30;
+  std::cout << prompt;
+  generate(
+      model, prompt, tokenizer, sampler, max_input_tokens, max_output_tokens);
 }
 ```
 
-Finally, download the following files into the same directory as main.h:
+Finally, download the following files into the same directory as main.cpp:
 
 ```
 curl -O https://raw.githubusercontent.com/pytorch/executorch/main/examples/llm_manual/basic_sampler.h
@@ -367,17 +366,19 @@ option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "" ON)
 
 # Include the executorch subdirectory.
 add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/executorch
-    ${CMAKE_BINARY_DIR}/third-party/executorch)
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/executorch
+  ${CMAKE_BINARY_DIR}/executorch
+)
 
 add_executable(nanogpt_runner main.cpp)
 target_link_libraries(
-    nanogpt_runner
-    PRIVATE
-    executorch
-    extension_module_static # Provides the Module class
-    extension_tensor # Provides the TensorPtr class
-    optimized_native_cpu_ops_lib) # Provides baseline cross-platform kernels
+  nanogpt_runner
+  PRIVATE executorch
+          extension_module_static # Provides the Module class
+          extension_tensor # Provides the TensorPtr class
+          optimized_native_cpu_ops_lib # Provides baseline cross-platform
+                                       # kernels
+)
 ```
 
 At this point, the working directory should contain the following files:
@@ -523,20 +524,20 @@ option(EXECUTORCH_BUILD_XNNPACK "" ON) # Build with Xnnpack backend
 
 # Include the executorch subdirectory.
 add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/executorch
-    ${CMAKE_BINARY_DIR}/executorch)
-
-# include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/executorch
+  ${CMAKE_BINARY_DIR}/executorch
+)
 
 add_executable(nanogpt_runner main.cpp)
 target_link_libraries(
-    nanogpt_runner
-    PRIVATE
-    executorch
-    extension_module_static # Provides the Module class
-    extension_tensor # Provides the TensorPtr class
-    optimized_native_cpu_ops_lib # Provides baseline cross-platform kernels
-    xnnpack_backend) # Provides the XNNPACK CPU acceleration backend
+  nanogpt_runner
+  PRIVATE executorch
+          extension_module_static # Provides the Module class
+          extension_tensor # Provides the TensorPtr class
+          optimized_native_cpu_ops_lib # Provides baseline cross-platform
+                                       # kernels
+          xnnpack_backend # Provides the XNNPACK CPU acceleration backend
+)
 ```
 
 Keep the rest of the code the same. For more details refer to [Exporting
