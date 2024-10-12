@@ -317,6 +317,8 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-module.html#conclusion">Conclusion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Integrating and Running ExecuTorch on Apple Platforms</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
@@ -333,6 +335,9 @@
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">ExecuTorch Llama Android Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">ExecuTorch Llama iOS Demo App</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -381,13 +386,14 @@
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
@@ -489,6 +495,21 @@
 <p><strong>Note:</strong> To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the <code class="docutils literal notranslate"><span class="pre">executorch_debug</span></code> framework. For optimal performance, always link against the Release version of the deliverables (those without the <code class="docutils literal notranslate"><span class="pre">_debug</span></code> suffix), which have all logging overhead removed.</p>
 <div class="section" id="integration">
 <h2>Integration<a class="headerlink" href="#integration" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="setup">
+<h3>Setup<a class="headerlink" href="#setup" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="cmake">
+<h4>CMake<a class="headerlink" href="#cmake" title="Permalink to this heading">¶</a></h4>
+<p>Building the Xcode project requires CMake. Installing via homebrew does not
+typically work; instead, install the packaged application and commandline tools
+globally:</p>
+<ol class="arabic simple">
+<li><p>Download the macOS <code class="docutils literal notranslate"><span class="pre">.dmg</span></code> installer from https://cmake.org/download</p></li>
+<li><p>Open the <code class="docutils literal notranslate"><span class="pre">.dmg</span></code></p></li>
+<li><p>Drag the CMake app to the <code class="docutils literal notranslate"><span class="pre">/Applications</span></code> folder</p></li>
+<li><p>In a terminal, install the command line tools: <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">/Applications/CMake.app/Contents/bin/cmake-gui</span> <span class="pre">--install</span></code></p></li>
+</ol>
+</div>
+</div>
 <div class="section" id="swift-package-manager">
 <h3>Swift Package Manager<a class="headerlink" href="#swift-package-manager" title="Permalink to this heading">¶</a></h3>
 <p>The prebuilt ExecuTorch runtime, backend, and kernels are available as a <a class="reference external" href="https://www.swift.org/documentation/package-manager/">Swift PM</a> package.</p>
@@ -570,18 +591,6 @@ swift<span class="w"> </span>build
 </pre></div>
 </div>
 <ol class="arabic simple" start="5">
-<li><p>Install a compatible version of <a class="reference external" href="https://buck.build">Buck2</a>:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">BUCK2_RELEASE_DATE</span><span class="o">=</span><span class="s2">&quot;2024-05-15&quot;</span>
-<span class="nv">BUCK2_ARCHIVE</span><span class="o">=</span><span class="s2">&quot;buck2-aarch64-apple-darwin.zst&quot;</span>
-<span class="nv">BUCK2</span><span class="o">=</span><span class="s2">&quot;.venv/bin/buck2&quot;</span>
-
-curl<span class="w"> </span>-LO<span class="w"> </span><span class="s2">&quot;https://github.com/facebook/buck2/releases/download/</span><span class="nv">$BUCK2_RELEASE_DATE</span><span class="s2">/</span><span class="nv">$BUCK2_ARCHIVE</span><span class="s2">&quot;</span>
-zstd<span class="w"> </span>-cdq<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$BUCK2_ARCHIVE</span><span class="s2">&quot;</span><span class="w"> </span>&gt;<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$BUCK2</span><span class="s2">&quot;</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$BUCK2</span><span class="s2">&quot;</span>
-rm<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$BUCK2_ARCHIVE</span><span class="s2">&quot;</span>
-</pre></div>
-</div>
-<ol class="arabic simple" start="6">
 <li><p>Install the required dependencies, including those needed for the backends like <a class="reference internal" href="build-run-coreml.html"><span class="doc std std-doc">Core ML</span></a> or <a class="reference internal" href="build-run-mps.html"><span class="doc std std-doc">MPS</span></a>, if you plan to build them as well:</p></li>
 </ol>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_requirements.sh
@@ -593,14 +602,14 @@ rm<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$BUCK2_
 ./backends/apple/mps/install_requirements.sh
 </pre></div>
 </div>
-<ol class="arabic simple" start="7">
+<ol class="arabic simple" start="6">
 <li><p>Use the provided script to build .xcframeworks:</p></li>
 </ol>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./build/build_apple_frameworks.sh<span class="w"> </span>--help
 </pre></div>
 </div>
 <p>For example, the following invocation will build the ExecuTorch Runtime and all currently available kernels and backends for the Apple platform:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./build/build_apple_frameworks.sh<span class="w"> </span>--buck2<span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>realpath<span class="w"> </span><span class="nv">$BUCK2</span><span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>--coreml<span class="w"> </span>--custom<span class="w"> </span>--mps<span class="w"> </span>--optimized<span class="w"> </span>--portable<span class="w"> </span>--quantized<span class="w"> </span>--xnnpack
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./build/build_apple_frameworks.sh<span class="w"> </span>--coreml<span class="w"> </span>--custom<span class="w"> </span>--mps<span class="w"> </span>--optimized<span class="w"> </span>--portable<span class="w"> </span>--quantized<span class="w"> </span>--xnnpack
 </pre></div>
 </div>
 <p>After the build finishes successfully, the resulting frameworks can be found in the <code class="docutils literal notranslate"><span class="pre">cmake-out</span></code> directory.
@@ -781,6 +790,10 @@ Copy them to your project and link them against your targets.</p>
               <ul>
 <li><a class="reference internal" href="#">Integrating and Running ExecuTorch on Apple Platforms</a><ul>
 <li><a class="reference internal" href="#integration">Integration</a><ul>
+<li><a class="reference internal" href="#setup">Setup</a><ul>
+<li><a class="reference internal" href="#cmake">CMake</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#swift-package-manager">Swift Package Manager</a><ul>
 <li><a class="reference internal" href="#xcode">Xcode</a></li>
 <li><a class="reference internal" href="#cli">CLI</a></li>

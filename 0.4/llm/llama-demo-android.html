@@ -41,6 +41,8 @@
   <link rel="stylesheet" href="../_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html" />
+    <link rel="prev" title="Getting Started with LLMs via ExecuTorch" href="getting-started.html" />
 
 
   <!-- Google Tag Manager -->
@@ -315,6 +317,8 @@
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../extension-module.html#conclusion">Conclusion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../extension-tensor.html">Managing Tensor Memory in C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
@@ -329,8 +333,18 @@
 <li class="toctree-l1"><a class="reference internal" href="../build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">ExecuTorch Llama Android Demo App</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#key-concepts">Key Concepts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#supporting-models">Supporting Models</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#building-the-apk">Building the APK</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#how-to-use-the-app">How to Use the App</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#reporting-issues">Reporting Issues</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html">Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llama-demo-ios.html">ExecuTorch Llama iOS Demo App</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -379,13 +393,14 @@
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../model-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
@@ -488,6 +503,8 @@
 <h2>Supporting Models<a class="headerlink" href="#supporting-models" title="Permalink to this heading">¶</a></h2>
 <p>As a whole, the models that this app supports are (varies by delegate):</p>
 <ul class="simple">
+<li><p>Llama 3.2 1B/3B</p></li>
+<li><p>Llama Guard 3 1B</p></li>
 <li><p>Llama 3.1 8B</p></li>
 <li><p>Llama 3 8B</p></li>
 <li><p>Llama 2 7B</p></li>
@@ -505,16 +522,21 @@
 </thead>
 <tbody>
 <tr class="row-even"><td><p>XNNPACK (CPU-based library)</p></td>
-<td><p><span class="xref myst">link</span></p></td>
+<td><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/xnnpack_README.md">link</a></p></td>
 </tr>
 <tr class="row-odd"><td><p>QNN (Qualcomm AI Accelerators)</p></td>
-<td><p><span class="xref myst">link</span></p></td>
+<td><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/qualcomm_README.md">link</a></p></td>
 </tr>
 <tr class="row-even"><td><p>MediaTek (MediaTek AI Accelerators)</p></td>
-<td><p><span class="xref myst">link</span></p></td>
+<td><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/mediatek_README.md">link</a></p></td>
 </tr>
 </tbody>
 </table>
+<p><strong>WARNING</strong> NDK r27 will cause issues like:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">java</span><span class="o">.</span><span class="n">lang</span><span class="o">.</span><span class="n">UnsatisfiedLinkError</span><span class="p">:</span> <span class="n">dlopen</span> <span class="n">failed</span><span class="p">:</span> <span class="n">cannot</span> <span class="n">locate</span> <span class="n">symbol</span> <span class="s2">&quot;_ZTVNSt6__ndk114basic_ifstreamIcNS_11char_traitsIcEEEE&quot;</span> <span class="n">referenced</span> <span class="n">by</span> <span class="s2">&quot;/data/app/~~F5IwquaXUZPdLpSEYA-JGA==/com.example.executorchllamademo-FSyx80gEhsQCsxz7hvS2Ew==/lib/arm64/libexecutorch.so&quot;</span><span class="o">...</span>
+</pre></div>
+</div>
+<p>Please use NDK version 26.3.11579264.</p>
 </div>
 <div class="section" id="how-to-use-the-app">
 <h2>How to Use the App<a class="headerlink" href="#how-to-use-the-app" title="Permalink to this heading">¶</a></h2>
@@ -529,14 +551,14 @@
 <p>Below are the UI features for the app.</p>
 <p>Select the settings widget to get started with picking a model, its parameters and any prompts.</p>
 <p align="center">
-<img src="../_static/img/opening_the_app_details.png" width=800>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/opening_the_app_details.png" style="width:800px">
 </p>
 </div>
 <div class="section" id="select-models-and-parameters">
 <h3>Select Models and Parameters<a class="headerlink" href="#select-models-and-parameters" title="Permalink to this heading">¶</a></h3>
 <p>Once you’ve selected the model, tokenizer, and model type you are ready to click on “Load Model” to have the app load the model and go back to the main Chat activity.</p>
 <p align="center">
-      <img src="../_static/img/settings_menu.png" width=300>
+      <img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/settings_menu.png" style="width:300px">
 </p>
 <p>Optional Parameters:</p>
 <ul class="simple">
@@ -544,10 +566,8 @@
 <li><p>System Prompt: Without any formatting, you can enter in a system prompt. For example, “you are a travel assistant” or “give me a response in a few sentences”.</p></li>
 <li><p>User Prompt: More for the advanced user, if you would like to manually input a prompt then you can do so by modifying the <code class="docutils literal notranslate"><span class="pre">{{user</span> <span class="pre">prompt}}</span></code>. You can also modify the special tokens as well. Once changed then go back to the main Chat activity to send.</p></li>
 </ul>
-<blockquote>
-<div><p>[!TIP]
-Helpful ExecuTorch API in app</p>
-</div></blockquote>
+<div class="section" id="executorch-app-api">
+<h4>ExecuTorch App API<a class="headerlink" href="#executorch-app-api" title="Permalink to this heading">¶</a></h4>
 <div class="highlight-none notranslate highlight-java"><div class="highlight"><pre><span></span><span class="c1">// Upon returning to the Main Chat Activity</span>
 <span class="n">mModule</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">LlamaModule</span><span class="p">(</span>
 <span class="w">            </span><span class="n">ModelUtils</span><span class="p">.</span><span class="na">getModelCategory</span><span class="p">(</span><span class="n">mCurrentSettingsFields</span><span class="p">.</span><span class="na">getModelType</span><span class="p">()),</span>
@@ -564,20 +584,19 @@ Helpful ExecuTorch API in app</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">temperature</span></code>: model parameter to adjust the randomness of the model’s output</p></li>
 </ul>
 </div>
+</div>
 <div class="section" id="user-prompt">
 <h3>User Prompt<a class="headerlink" href="#user-prompt" title="Permalink to this heading">¶</a></h3>
 <p>Once model is successfully loaded then enter any prompt and click the send (i.e. generate) button to send it to the model.</p>
 <p align="center">
-<img src="../_static/img/load_complete_and_start_prompt.png" width=300>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/load_complete_and_start_prompt.png" style="width:300px">
 </p>
 <p>You can provide it more follow-up questions as well.</p>
 <p align="center">
-<img src="../_static/img/chat.png" width=300>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/chat.png" style="width:300px">
 </p>
-<blockquote>
-<div><p>[!TIP]
-Helpful ExecuTorch API in app</p>
-</div></blockquote>
+<div class="section" id="id1">
+<h4>ExecuTorch App API<a class="headerlink" href="#id1" title="Permalink to this heading">¶</a></h4>
 <div class="highlight-none notranslate highlight-java"><div class="highlight"><pre><span></span><span class="n">mModule</span><span class="p">.</span><span class="na">generate</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span><span class="n">sequence_length</span><span class="p">,</span><span class="w"> </span><span class="n">MainActivity</span><span class="p">.</span><span class="na">this</span><span class="p">);</span>
 </pre></div>
 </div>
@@ -589,19 +608,18 @@ Helpful ExecuTorch API in app</p>
 <p>[<em>LLaVA-1.5: Only for XNNPACK delegate</em>]</p>
 <p>For LLaVA-1.5 implementation, select the exported LLaVA .pte and tokenizer file in the Settings menu and load the model. After this you can send an image from your gallery or take a live picture along with a text prompt to the model.</p>
 <p align="center">
-<img src="../_static/img/llava_example.png" width=300>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/llava_example.png" style="width:300px">
 </p>
+</div>
 </div>
 <div class="section" id="output-generated">
 <h3>Output Generated<a class="headerlink" href="#output-generated" title="Permalink to this heading">¶</a></h3>
 <p>To show completion of the follow-up question, here is the complete detailed response from the model.</p>
 <p align="center">
-<img src="../_static/img/chat_response.png" width=300>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/chat_response.png" style="width:300px">
 </p>
-<blockquote>
-<div><p>[!TIP]
-Helpful ExecuTorch API in app</p>
-</div></blockquote>
+<div class="section" id="id2">
+<h4>ExecuTorch App API<a class="headerlink" href="#id2" title="Permalink to this heading">¶</a></h4>
 <p>Ensure you have the following functions in your callback class that you provided in the <code class="docutils literal notranslate"><span class="pre">mModule.generate()</span></code>. For this example, it is <code class="docutils literal notranslate"><span class="pre">MainActivity.this</span></code>.</p>
 <div class="highlight-none notranslate highlight-java"><div class="highlight"><pre><span></span><span class="w">  </span><span class="nd">@Override</span>
 <span class="w">  </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">onResult</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">result</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
@@ -617,6 +635,7 @@ Helpful ExecuTorch API in app</p>
 </div>
 </div>
 </div>
+</div>
 <div class="section" id="reporting-issues">
 <h2>Reporting Issues<a class="headerlink" href="#reporting-issues" title="Permalink to this heading">¶</a></h2>
 <p>If you encountered any bugs or issues following this tutorial please file a bug/issue here on <a class="reference external" href="https://github.com/pytorch/executorch/issues/new">Github</a>.</p>
@@ -628,6 +647,15 @@ Helpful ExecuTorch API in app</p>
              
             </div>
             <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="build-run-llama3-qualcomm-ai-engine-direct-backend.html" class="btn btn-neutral float-right" title="Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="getting-started.html" class="btn btn-neutral" title="Getting Started with LLMs via ExecuTorch" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
   
 
   
@@ -665,9 +693,18 @@ Helpful ExecuTorch API in app</p>
 <li><a class="reference internal" href="#building-the-apk">Building the APK</a></li>
 <li><a class="reference internal" href="#how-to-use-the-app">How to Use the App</a><ul>
 <li><a class="reference internal" href="#opening-the-app">Opening the App</a></li>
-<li><a class="reference internal" href="#select-models-and-parameters">Select Models and Parameters</a></li>
-<li><a class="reference internal" href="#user-prompt">User Prompt</a></li>
-<li><a class="reference internal" href="#output-generated">Output Generated</a></li>
+<li><a class="reference internal" href="#select-models-and-parameters">Select Models and Parameters</a><ul>
+<li><a class="reference internal" href="#executorch-app-api">ExecuTorch App API</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#user-prompt">User Prompt</a><ul>
+<li><a class="reference internal" href="#id1">ExecuTorch App API</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#output-generated">Output Generated</a><ul>
+<li><a class="reference internal" href="#id2">ExecuTorch App API</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li><a class="reference internal" href="#reporting-issues">Reporting Issues</a></li>

@@ -317,6 +317,8 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-module.html#conclusion">Conclusion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
@@ -333,6 +335,9 @@
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">ExecuTorch Llama Android Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">ExecuTorch Llama iOS Demo App</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -381,13 +386,14 @@
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
@@ -500,7 +506,7 @@ functions or <a class="reference internal" href="kernel-library-overview.html"><
 semantics of those operators.</p></li>
 <li><p>Dispatching predetermined sections of the model to <a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">backend
 delegates</span></a> for acceleration.</p></li>
-<li><p>Optionally gathering <a class="reference internal" href="sdk-profiling.html"><span class="doc std std-doc">profiling data</span></a> during load and
+<li><p>Optionally gathering <a class="reference internal" href="runtime-profiling.html"><span class="doc std std-doc">profiling data</span></a> during load and
 execution.</p></li>
 </ul>
 <div class="section" id="design-goals">
@@ -637,7 +643,7 @@ libraries that they use.</p></li>
 <li><p><a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Simplified Runtime APIs Tutorial</span></a></p></li>
 <li><p><a class="reference internal" href="runtime-build-and-cross-compilation.html"><span class="doc std std-doc">Runtime Build and Cross Compilation</span></a></p></li>
 <li><p><a class="reference internal" href="runtime-platform-abstraction-layer.html"><span class="doc std std-doc">Runtime Platform Abstraction Layer</span></a></p></li>
-<li><p><a class="reference internal" href="sdk-profiling.html"><span class="doc std std-doc">Runtime Profiling</span></a></p></li>
+<li><p><a class="reference internal" href="runtime-profiling.html"><span class="doc std std-doc">Runtime Profiling</span></a></p></li>
 <li><p><a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">Backends and Delegates</span></a></p></li>
 <li><p><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html"><span class="doc std std-doc">Backend Delegate Implementation</span></a></p></li>
 <li><p><a class="reference internal" href="kernel-library-overview.html"><span class="doc std std-doc">Kernel Library Overview</span></a></p></li>

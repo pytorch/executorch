@@ -41,6 +41,8 @@
   <link rel="stylesheet" href="../_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Export to ExecuTorch API Reference" href="../export-to-executorch-api-reference.html" />
+    <link rel="prev" title="Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html" />
 
 
   <!-- Google Tag Manager -->
@@ -315,6 +317,8 @@
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../extension-module.html#conclusion">Conclusion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../extension-tensor.html">Managing Tensor Memory in C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
@@ -329,8 +333,20 @@
 <li class="toctree-l1"><a class="reference internal" href="../build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llama-demo-android.html">ExecuTorch Llama Android Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html">Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">ExecuTorch Llama iOS Demo App</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#key-concepts">Key Concepts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#supported-models">Supported Models</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#building-the-application">Building the application</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#how-to-use-the-app">How to Use the App</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#copy-the-model-to-simulator">Copy the model to Simulator</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#copy-the-model-to-device">Copy the model to Device</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#reporting-issues">Reporting Issues</a></li>
+</ul>
+</li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -379,13 +395,14 @@
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../model-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
@@ -505,10 +522,10 @@
 </thead>
 <tbody>
 <tr class="row-even"><td><p>XNNPACK (CPU-based library)</p></td>
-<td><p><span class="xref myst">link</span></p></td>
+<td><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/apple_ios/LLaMA/docs/delegates/xnnpack_README.md">link</a></p></td>
 </tr>
 <tr class="row-odd"><td><p>MPS (Metal Performance Shader)</p></td>
-<td><p><span class="xref myst">link</span></p></td>
+<td><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/apple_ios/LLaMA/docs/delegates/mps_README.md">link</a></p></td>
 </tr>
 </tbody>
 </table>
@@ -516,17 +533,39 @@
 <div class="section" id="how-to-use-the-app">
 <h2>How to Use the App<a class="headerlink" href="#how-to-use-the-app" title="Permalink to this heading">¶</a></h2>
 <p>This section will provide the main steps to use the app, along with a code snippet of the ExecuTorch API.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
+<div class="section" id="swift-package-manager">
+<h3>Swift Package Manager<a class="headerlink" href="#swift-package-manager" title="Permalink to this heading">¶</a></h3>
 <p>ExecuTorch runtime is distributed as a Swift package providing some .xcframework as prebuilt binary targets.
 Xcode will download and cache the package on the first run, which will take some time.</p>
+<p>Note: If you’re running into any issues related to package dependencies, quit Xcode entirely, delete the whole executorch repo, clean the caches by running the command below in terminal and clone the repo again.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">rm</span> <span class="o">-</span><span class="n">rf</span> \
+  <span class="o">~/</span><span class="n">Library</span><span class="o">/</span><span class="n">org</span><span class="o">.</span><span class="n">swift</span><span class="o">.</span><span class="n">swiftpm</span> \
+  <span class="o">~/</span><span class="n">Library</span><span class="o">/</span><span class="n">Caches</span><span class="o">/</span><span class="n">org</span><span class="o">.</span><span class="n">swift</span><span class="o">.</span><span class="n">swiftpm</span> \
+  <span class="o">~/</span><span class="n">Library</span><span class="o">/</span><span class="n">Caches</span><span class="o">/</span><span class="n">com</span><span class="o">.</span><span class="n">apple</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">Xcode</span> \
+  <span class="o">~/</span><span class="n">Library</span><span class="o">/</span><span class="n">Developer</span><span class="o">/</span><span class="n">Xcode</span><span class="o">/</span><span class="n">DerivedData</span>
+</pre></div>
 </div>
+<p>Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.</p>
+<p>Note: To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the executorch_debug framework. For optimal performance, always link against the Release version of the deliverables (those without the _debug suffix), which have all logging overhead removed.</p>
+<p>For more details integrating and Running ExecuTorch on Apple Platforms, checkout this <a class="reference external" href="https://pytorch.org/executorch/main/apple-runtime.html">link</a>.</p>
+</div>
+<div class="section" id="xcode">
+<h3>XCode<a class="headerlink" href="#xcode" title="Permalink to this heading">¶</a></h3>
 <ul class="simple">
 <li><p>Open XCode and select “Open an existing project” to open <code class="docutils literal notranslate"><span class="pre">examples/demo-apps/apple_ios/LLama</span></code>.</p></li>
-<li><p>Ensure that the ExecuTorch package dependencies are installed correctly.</p></li>
+<li><p>Ensure that the ExecuTorch package dependencies are installed correctly, then select which ExecuTorch framework should link against which target.</p></li>
+</ul>
+<p align="center">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_swift_pm.png" alt="iOS LLaMA App Swift PM" style="width:600px">
+</p>
+<p align="center">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" style="width:600px">
+</p>
+<ul class="simple">
 <li><p>Run the app. This builds and launches the app on the phone.</p></li>
 <li><p>In app UI pick a model and tokenizer to use, type a prompt and tap the arrow buton</p></li>
 </ul>
+</div>
 </div>
 <div class="section" id="copy-the-model-to-simulator">
 <h2>Copy the model to Simulator<a class="headerlink" href="#copy-the-model-to-simulator" title="Permalink to this heading">¶</a></h2>
@@ -544,11 +583,11 @@ Xcode will download and cache the package on the first run, which will take some
 </ul>
 <p>If the app successfully run on your device, you should see something like below:</p>
 <p align="center">
-<img src="./docs/screenshots/ios_demo_app.jpg" alt="iOS LLaMA App" width="300">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app.jpg" alt="iOS LLaMA App" style="width:300px">
 </p>
 <p>For Llava 1.5 models, you can select and image (via image/camera selector button) before typing prompt and send button.</p>
 <p align="center">
-<img src="./docs/screenshots/ios_demo_app_llava.jpg" alt="iOS LLaMA App" width="300">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_llava.jpg" alt="iOS LLaMA App" style="width:300px">
 </p>
 </div>
 <div class="section" id="reporting-issues">
@@ -562,6 +601,15 @@ Xcode will download and cache the package on the first run, which will take some
              
             </div>
             <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="../export-to-executorch-api-reference.html" class="btn btn-neutral float-right" title="Export to ExecuTorch API Reference" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="build-run-llama3-qualcomm-ai-engine-direct-backend.html" class="btn btn-neutral" title="Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
   
 
   
@@ -597,7 +645,11 @@ Xcode will download and cache the package on the first run, which will take some
 <li><a class="reference internal" href="#key-concepts">Key Concepts</a></li>
 <li><a class="reference internal" href="#supported-models">Supported Models</a></li>
 <li><a class="reference internal" href="#building-the-application">Building the application</a></li>
-<li><a class="reference internal" href="#how-to-use-the-app">How to Use the App</a></li>
+<li><a class="reference internal" href="#how-to-use-the-app">How to Use the App</a><ul>
+<li><a class="reference internal" href="#swift-package-manager">Swift Package Manager</a></li>
+<li><a class="reference internal" href="#xcode">XCode</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#copy-the-model-to-simulator">Copy the model to Simulator</a></li>
 <li><a class="reference internal" href="#copy-the-model-to-device">Copy the model to Device</a></li>
 <li><a class="reference internal" href="#reporting-issues">Reporting Issues</a></li>

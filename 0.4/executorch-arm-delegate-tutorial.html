@@ -317,6 +317,8 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-module.html#conclusion">Conclusion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
@@ -333,6 +335,9 @@
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">ExecuTorch Llama Android Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">ExecuTorch Llama iOS Demo App</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -381,13 +386,14 @@
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
@@ -527,15 +533,8 @@ What you will learn in this tutorial:</div>
 </div>
 <div class="section" id="set-up-the-developer-environment">
 <h2>Set Up the Developer Environment<a class="headerlink" href="#set-up-the-developer-environment" title="Permalink to this heading">¶</a></h2>
-<p>In this section, we will do a one-time setup, like downloading and installing necessary software, for the platform support files needed to run ExecuTorch programs in this tutorial. There are two approaches available:</p>
-<ol class="arabic simple">
-<li><p>Method 1: Use the <code class="docutils literal notranslate"><span class="pre">examples/arm/setup.sh</span></code> script to pull each item in an automated fashion (recommended). It is recommended to run the script in a conda environment. Upon successful execution, you can directly go to <a class="reference internal" href="#convert-the-pytorch-model-to-the-pte-file"><span class="std std-doc">the next step</span></a>.</p></li>
-<li><p>Method 2: Follow the guide step by step to understand all the components and the logic of the script. You may want to use this method if you intend to change the behavior of the flow significantly.</p></li>
-</ol>
-<div class="admonition tip">
-<p class="admonition-title">Tip</p>
-<p>In the ExecuTorch repository we have a functioning script which follows the exact same steps to speed things up. It is located at <code class="docutils literal notranslate"><span class="pre">examples/arm/setup.sh</span></code>. Feel free to use that instead if it is convenient, or use it as a reference if some of the steps in the manual instruction aren’t very clear.</p>
-</div>
+<p>In this section, we will do a one-time setup, like downloading and installing necessary software, for the platform support files needed to run ExecuTorch programs in this tutorial.</p>
+<p>For that we will use the <code class="docutils literal notranslate"><span class="pre">examples/arm/setup.sh</span></code> script to pull each item in an automated fashion. It is recommended to run the script in a conda environment. Upon successful execution, you can directly go to <a class="reference internal" href="#convert-the-pytorch-model-to-the-pte-file"><span class="std std-doc">the next step</span></a>.</p>
 <p>As mentioned before, we currently support only Linux based platforms with x86_64 or aarch64 processor architecture. Let’s make sure we are indeed on a supported platform.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>uname<span class="w"> </span>-s
 <span class="c1"># Linux</span>
@@ -544,7 +543,7 @@ uname<span class="w"> </span>-m
 <span class="c1"># x86_64 or aarch64</span>
 </pre></div>
 </div>
-<p>Let’s create an empty directory, and use this as a top level development directory.</p>
+<p>Next we will walk through the steps performed by the <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script to better understand the development setup.</p>
 <div class="section" id="download-and-set-up-the-corstone-300-fvp">
 <h3>Download and Set Up the Corstone-300 FVP<a class="headerlink" href="#download-and-set-up-the-corstone-300-fvp" title="Permalink to this heading">¶</a></h3>
 <p>Fixed Virtual Platforms (FVPs) are pre-configured, functionally accurate simulations of popular system configurations. Here in this tutorial, we are interested in the Corstone-300 system. We can download this from the Arm website.</p>
@@ -552,116 +551,25 @@ uname<span class="w"> </span>-m
 <p class="admonition-title">Note</p>
 <p>By downloading and running the FVP software, you will be agreeing to the FVP <a class="reference external" href="https://developer.arm.com/downloads/-/arm-ecosystem-fvps/eula">End-user license agreement (EULA)</a>.</p>
 </div>
-<p>To download, we can either download <code class="docutils literal notranslate"><span class="pre">Corstone-300</span> <span class="pre">Ecosystem</span> <span class="pre">FVP</span></code> from <a class="reference external" href="https://developer.arm.com/downloads/-/arm-ecosystem-fvps">here</a>. Alternatively, you can download the same version we tested with like this,</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># for aarch64</span>
-curl<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--output<span class="w"> </span>FVP_cs300.tgz<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span><span class="s1">&#39;https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_35_Linux64_armv8l.tgz?rev=b083dc5ac9c546899fbb7ccd67b74c17&amp;hash=BFE589289ECF12B07192636382C15C01&#39;</span>
-
-<span class="c1"># for x86_64</span>
-curl<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--output<span class="w"> </span>FVP_cs300.tgz<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span><span class="s1">&#39;https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64.tgz?rev=018659bd574f4e7b95fa647e7836ccf4&amp;hash=22A79103C6FA5FFA7AFF3BE0447F3FF9&#39;</span>
-</pre></div>
-</div>
-<p>Now, extract the <code class="docutils literal notranslate"><span class="pre">FVP_cs300.tgz</span></code> file in a new dir, and run the provided script which will install the FVP.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./FVP_Corstone_SSE-300.sh<span class="w">          </span><span class="se">\</span>
-<span class="w">   </span>--i-agree-to-the-contained-eula<span class="w"> </span><span class="se">\</span>
-<span class="w">   </span>--force<span class="w">                         </span><span class="se">\</span>
-<span class="w">   </span>--destination<span class="w"> </span>./<span class="w">                </span><span class="se">\</span>
-<span class="w">   </span>--quiet<span class="w">                         </span><span class="se">\</span>
-<span class="w">   </span>--no-interactive
-</pre></div>
-</div>
-<p>Once successful, let’s make sure the FVP simulator is available on the PATH for later use.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># for x86-64 hosts</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="si">${</span><span class="nv">PATH</span><span class="si">}</span>:&lt;install_dir&gt;/FVP/models/Linux64_GCC-9.3
-<span class="c1"># for aarch64 hosts</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="si">${</span><span class="nv">PATH</span><span class="si">}</span>:&lt;install_dir&gt;/FVP/models/Linux64_armv8l_GCC-9.3/
-
-<span class="nb">hash</span><span class="w"> </span>FVP_Corstone_SSE-300_Ethos-U55<span class="w"> </span><span class="c1"># To make sure we are ready to use</span>
-</pre></div>
-</div>
+<p>To download, we can either download <code class="docutils literal notranslate"><span class="pre">Corstone-300</span> <span class="pre">Ecosystem</span> <span class="pre">FVP</span></code> from <a class="reference external" href="https://developer.arm.com/downloads/-/arm-ecosystem-fvps">here</a>. or <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script will does that for you under <code class="docutils literal notranslate"><span class="pre">setup_fvp</span></code> function.</p>
 </div>
 <div class="section" id="download-and-install-the-arm-gnu-aarch32-bare-metal-toolchain">
 <h3>Download and Install the Arm GNU AArch32 Bare-Metal Toolchain<a class="headerlink" href="#download-and-install-the-arm-gnu-aarch32-bare-metal-toolchain" title="Permalink to this heading">¶</a></h3>
 <p>Similar to the FVP, we would also need a tool-chain to cross-compile ExecuTorch runtime, executor-runner bare-metal application, as well as the rest of the bare-metal stack for Cortex-M55 CPU available on the Corstone-300 platform.</p>
-<p>These toolchains are available <a class="reference external" href="https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads">here</a>. We will be using GCC 12.3 targeting <code class="docutils literal notranslate"><span class="pre">arm-none-eabi</span></code> here for our tutorial. Just like FVP, to download the same version as we tested with in the top-level development dir,</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># for aarch64</span>
-curl<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--output<span class="w"> </span>gcc.tar.xz<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span><span class="s1">&#39;https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi.tar.xz&#39;</span>
-
-<span class="c1"># for x86_64</span>
-curl<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--output<span class="w"> </span>gcc.tar.xz<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span><span class="s1">&#39;https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi.tar.xz&#39;</span>
-</pre></div>
-</div>
-<p>Once downloaded, you can extract its contents in a new dir. Then, let’s make sure the toolchain is available on the PATH for later use.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="si">${</span><span class="nv">PATH</span><span class="si">}</span>:/&lt;install_dir&gt;/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi/bin
-<span class="nb">export</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="si">${</span><span class="nv">PATH</span><span class="si">}</span>:/&lt;install_dir&gt;/arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi/bin
-
-<span class="nb">hash</span><span class="w"> </span>arm-none-eabi-gcc<span class="w"> </span><span class="c1"># To make sure we are ready to use</span>
-</pre></div>
-</div>
+<p>These toolchains are available <a class="reference external" href="https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads">here</a>. We will be using GCC 12.3 targeting <code class="docutils literal notranslate"><span class="pre">arm-none-eabi</span></code> here for our tutorial. Just like FVP, <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script will down the toolchain for you. See <code class="docutils literal notranslate"><span class="pre">setup_toolchain</span></code> function.</p>
 </div>
 <div class="section" id="setup-the-arm-ethos-u-software-development">
 <h3>Setup the Arm Ethos-U Software Development<a class="headerlink" href="#setup-the-arm-ethos-u-software-development" title="Permalink to this heading">¶</a></h3>
-<p>This git repository is the root directory for all Arm Ethos-U software. It is to help us download required repositories and place them in a tree structure. In the top-level devlopment dir,</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Download the repo</span>
-git<span class="w"> </span>clone<span class="w"> </span>https://review.mlplatform.org/ml/ethos-u/ethos-u
-<span class="nb">cd</span><span class="w"> </span>ethos-u
-
-<span class="c1"># To align with the version we have tested</span>
-git<span class="w"> </span>reset<span class="w"> </span>--hard<span class="w"> </span>0995223100e3da8011700f58e491f1bf59511e3c
-
-<span class="c1"># Download the necessary repos and properly install them</span>
-./fetch_externals.py<span class="w"> </span>fetch
-
-<span class="c1"># Download the Vela compiler</span>
-<span class="nb">cd</span><span class="w"> </span>..<span class="w"> </span><span class="c1"># To the top-level development dir</span>
-git<span class="w"> </span>clone<span class="w"> </span>https://review.mlplatform.org/ml/ethos-u/ethos-u-vela
-</pre></div>
-</div>
+<p>This git repository is the root directory for all Arm Ethos-U software. It is to help us download required repositories and place them in a tree structure. See <code class="docutils literal notranslate"><span class="pre">setup_ethos_u</span></code> function of the setup script for more details.</p>
 <p>Once this is done, you should have a working FVP simulator, a functioning toolchain for cross compilation, and the Ethos-U software development setup ready for the bare-metal developement.</p>
-<div class="section" id="applying-local-patches">
-<h4>Applying Local Patches<a class="headerlink" href="#applying-local-patches" title="Permalink to this heading">¶</a></h4>
-<p>Since this is under active development, we have some patches for the Arm Ethos-u software development kit. Let’s apply them on the download SDK and the Vela compiler.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>ethos-u<span class="w"> </span><span class="c1"># this is the top level Ethos-U software directory</span>
-
-<span class="c1"># Let&#39;s patch core_platform repo</span>
-<span class="nb">cd</span><span class="w"> </span>core_platform
-git<span class="w"> </span>reset<span class="w"> </span>--hard<span class="w"> </span>204210b1074071532627da9dc69950d058a809f4
-git<span class="w"> </span>am<span class="w"> </span>-3<span class="w"> </span>&lt;path_to&gt;/executorch/examples/arm/ethos-u-setup/core_platform/patches/*.patch
-<span class="nb">cd</span><span class="w"> </span>../..<span class="w"> </span><span class="c1"># To the top-level development dir</span>
-</pre></div>
-</div>
-</div>
 </div>
 <div class="section" id="install-the-vela-compiler">
 <h3>Install the Vela Compiler<a class="headerlink" href="#install-the-vela-compiler" title="Permalink to this heading">¶</a></h3>
-<p>Once the patching is done, let’s finish the setup by installing the Vela compiler.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>ethos-u-vela
-pip<span class="w"> </span>install<span class="w"> </span>.
-</pre></div>
-</div>
+<p>Once this is done, the script will finish the setup by installing the Vela compiler for you, details are in <code class="docutils literal notranslate"><span class="pre">setup_vela</span></code> function.</p>
 </div>
 <div class="section" id="install-the-tosa-reference-model">
 <h3>Install the TOSA reference model<a class="headerlink" href="#install-the-tosa-reference-model" title="Permalink to this heading">¶</a></h3>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://review.mlplatform.org/tosa/reference_model<span class="w"> </span>-b<span class="w"> </span>v0.80
-<span class="nb">cd</span><span class="w"> </span>reference_model
-git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init<span class="w"> </span>--recursive
-mkdir<span class="w"> </span>-p<span class="w"> </span>build
-<span class="nb">cd</span><span class="w"> </span>build
-cmake<span class="w"> </span>..
-<span class="nv">n</span><span class="o">=</span><span class="k">$(</span>nproc<span class="k">)</span>
-make<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((</span><span class="nv">n</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="m">5</span><span class="k">))</span><span class="s2">&quot;</span>
-<span class="nb">cd</span><span class="w"> </span>reference_model<span class="w"> </span><span class="c1"># Within the build directory</span>
-<span class="c1"># Add tosa_reference_model to the path</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="si">${</span><span class="nv">PATH</span><span class="si">}</span>:<span class="sb">`</span><span class="nb">pwd</span><span class="sb">`</span>
-</pre></div>
-</div>
+<p>This is the last step of the setup process, using <code class="docutils literal notranslate"><span class="pre">setup_tosa_reference_model</span></code> function <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script will install TOSA reference model for you.</p>
 <p>At the end of the setup, if everything goes well, your top level devlopement dir might look something like this,</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>.
 ├──<span class="w"> </span>arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi<span class="w"> </span><span class="c1"># for x86-64 hosts</span>
@@ -786,7 +694,7 @@ It’s also available as a default model in <a class="reference external" href="
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">SITE_PACKAGES</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;from distutils.sysconfig import get_python_lib; print(get_python_lib())&#39;</span><span class="k">)</span><span class="s2">&quot;</span>
 <span class="nv">CMAKE_PREFIX_PATH</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">SITE_PACKAGES</span><span class="si">}</span><span class="s2">/torch&quot;</span>
 
-<span class="nb">cd</span><span class="w"> </span><span class="nv">$et_root_dir</span>
+<span class="nb">cd</span><span class="w"> </span>&lt;executorch_root_dir&gt;
 mkdir<span class="w"> </span>-p<span class="w"> </span>cmake-out-aot-lib
 cmake<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
@@ -818,11 +726,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-aot-lib<sp
 </div>
 <div class="section" id="getting-a-bare-metal-executable">
 <h2>Getting a Bare-Metal Executable<a class="headerlink" href="#getting-a-bare-metal-executable" title="Permalink to this heading">¶</a></h2>
-<p>In this section, we will go over steps that you need to go through to build the runtime application. This then run on the target device.</p>
-<div class="admonition tip">
-<p class="admonition-title">Tip</p>
-<p>In the executorch repository we have a functioning script which does the exact same steps. It is located at <code class="docutils literal notranslate"><span class="pre">executorch/examples/arm/run.sh</span></code>. Feel free to use that instead if it is convenient, or use it as a reference if some of the steps in the manual instruction aren’t very clear.</p>
-</div>
+<p>In this section, we will go over steps that you need to go through to build the runtime application. This then run on the target device. In the executorch repository we have a functioning script which does the exact same steps. It is located at <code class="docutils literal notranslate"><span class="pre">executorch/examples/arm/run.sh</span></code>. We will use that to build necessary pieces and finally run the previously generated PTE file on an FVP.</p>
 <p>Also before we get started, make sure that you have completed ExecuTorch cmake build setup, and the instructions to setup the development environment described <a class="reference internal" href="#set-up-the-developer-environment"><span class="std std-doc">earlier</span></a>.</p>
 <p>The block diagram below demonstrates, at the high level, how the various build artifacts are generated and are linked together to generate the final bare-metal executable.</p>
 <p><img alt="" src="_images/arm-delegate-runtime-build.svg" /></p>
@@ -839,61 +743,15 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-aot-lib<sp
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">libexecutorch_delegate_ethos_u.a</span></code></p></li>
 </ul>
-<p>To generate these libraries, use following commands,</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Empty and already created</span>
-<span class="nb">cd</span><span class="w"> </span>&lt;executorch_source_root_dir&gt;
-
-<span class="c1"># Use provided cmake toolchain for bare-metal builds</span>
-<span class="nv">toolchain_cmake</span><span class="o">=</span>&lt;executorch_source_root_dir&gt;/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
-
-cmake<span class="w">                                                 </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>&lt;executorch_build_dir&gt;<span class="w">     </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_EXECUTOR_RUNNER<span class="o">=</span>OFF<span class="w">            </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w">                        </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_ENABLE_LOGGING<span class="o">=</span>ON<span class="w">                    </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_ARM_BAREMETAL<span class="o">=</span>ON<span class="w">               </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL<span class="o">=</span>ON<span class="w">       </span><span class="se">\</span>
-<span class="w">    </span>-DFLATC_EXECUTABLE<span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>which<span class="w"> </span>flatc<span class="k">)</span><span class="s2">&quot;</span><span class="w">               </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">toolchain_cmake</span><span class="si">}</span><span class="s2">&quot;</span><span class="w">       </span><span class="se">\</span>
-<span class="w">    </span>-B&lt;executorch_build_dir&gt;<span class="w">                          </span><span class="se">\</span>
-<span class="w">    </span>&lt;executorch_source_root_dir&gt;
-
-cmake<span class="w"> </span>--build<span class="w"> </span>&lt;executorch_build_dir&gt;<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Release
-
-cmake<span class="w">                                                 </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>&lt;executorch_build_dir&gt;<span class="w">     </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w">                        </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_SELECT_OPS_LIST<span class="o">=</span><span class="s2">&quot;aten::_softmax.out&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">toolchain_cmake</span><span class="si">}</span><span class="s2">&quot;</span><span class="w">       </span><span class="se">\</span>
-<span class="w">    </span>-B&lt;executorch_build_dir&gt;/examples/arm<span class="w">             </span><span class="se">\</span>
-<span class="w">    </span>&lt;executorch_source_root_dir&gt;/examples/arm
-
-cmake<span class="w"> </span>--build<span class="w"> </span>&lt;executorch_build_dir&gt;/examples/arm<span class="w"> </span>--config<span class="w"> </span>Release
-</pre></div>
-</div>
-<p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_LIST</span></code> will decide the number of portable operators included in the build and are available at runtime. It must match with <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file’s requirements, otherwise you will get <code class="docutils literal notranslate"><span class="pre">Missing</span> <span class="pre">Operator</span></code> error at runtime.</p>
-<p>For example, here in the command line above, to run SoftmaxModule, we only included the softmax CPU operator. Similarly, to run AddModule in a non-delegated manner you will need add op and so on. As you might have already realized, for the delegated operators, which will be executed by the Arm backend delegate, we do not need to include those operators in this list. This is only for <em>non-delegated</em> operators.</p>
+<p>These libraries are generated in <code class="docutils literal notranslate"><span class="pre">build_executorch</span></code> function of the <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script.</p>
+<p>In this function, <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_LIST</span></code> will decide the number of portable operators included in the build and are available at runtime. It must match with <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file’s requirements, otherwise you will get <code class="docutils literal notranslate"><span class="pre">Missing</span> <span class="pre">Operator</span></code> error at runtime.</p>
+<p>For example, there  in the command line above, to run SoftmaxModule, we only included the softmax CPU operator. Similarly, to run AddModule in a non-delegated manner you will need add op and so on. As you might have already realized, for the delegated operators, which will be executed by the Arm backend delegate, we do not need to include those operators in this list. This is only for <em>non-delegated</em> operators.</p>
 </div>
 <div class="section" id="building-the-executor-runner-bare-metal-application">
 <h3>Building the executor_runner Bare-Metal Application<a class="headerlink" href="#building-the-executor-runner-bare-metal-application" title="Permalink to this heading">¶</a></h3>
 <p>The SDK dir is the same one prepared <a class="reference internal" href="#setup-the-arm-ethos-u-software-development"><span class="std std-doc">earlier</span></a>. And, we will be passing the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file (any one of them) generated above.</p>
 <p>Note, you have to generate a new <code class="docutils literal notranslate"><span class="pre">executor-runner</span></code> binary if you want to change the model or the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. This constraint is from the constrained bare-metal runtime environment we have for Corstone-300 platform.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>&lt;executorch_source_root_dir&gt;
-<span class="nb">cd</span><span class="w"> </span>examples/arm/executor_runner
-
-cmake<span class="w">                                                    </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">toolchain_cmake</span><span class="si">}</span><span class="s2">&quot;</span><span class="w">          </span><span class="se">\</span>
-<span class="w">    </span>-DTARGET_CPU<span class="o">=</span>cortex-m55<span class="w">                              </span><span class="se">\</span>
-<span class="w">    </span>-B<span class="w"> </span>build<span class="w">                                             </span><span class="se">\</span>
-<span class="w">    </span>-DETHOS_SDK_PATH:PATH<span class="o">=</span>&lt;ethos-u_clone_directory&gt;<span class="w">      </span><span class="se">\</span>
-<span class="w">    </span>-DET_DIR_PATH:PATH<span class="o">=</span>&lt;executorch_source_root_dir&gt;<span class="w">      </span><span class="se">\</span>
-<span class="w">    </span>-DET_BUILD_DIR_PATH:PATH<span class="o">=</span>&lt;executorch_build_dir&gt;<span class="w">      </span><span class="se">\</span>
-<span class="w">    </span>-DET_PTE_FILE_PATH:PATH<span class="o">=</span>&lt;path_to_pte_file_of_choice&gt;<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span><span class="k">$(</span>which<span class="w"> </span>python3<span class="k">)</span>
-
-cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"> </span>--<span class="w"> </span>arm_executor_runner
-</pre></div>
-</div>
+<p>This is performed by the <code class="docutils literal notranslate"><span class="pre">build_executorch_runner</span></code> function in <code class="docutils literal notranslate"><span class="pre">run.sh</span></code>.</p>
 </div>
 </div>
 <div class="section" id="running-on-corstone-300-fvp-platform">
@@ -1077,10 +935,7 @@ Describe what common errors users may see and how to resolve them.
 <li><a class="reference internal" href="#set-up-the-developer-environment">Set Up the Developer Environment</a><ul>
 <li><a class="reference internal" href="#download-and-set-up-the-corstone-300-fvp">Download and Set Up the Corstone-300 FVP</a></li>
 <li><a class="reference internal" href="#download-and-install-the-arm-gnu-aarch32-bare-metal-toolchain">Download and Install the Arm GNU AArch32 Bare-Metal Toolchain</a></li>
-<li><a class="reference internal" href="#setup-the-arm-ethos-u-software-development">Setup the Arm Ethos-U Software Development</a><ul>
-<li><a class="reference internal" href="#applying-local-patches">Applying Local Patches</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#setup-the-arm-ethos-u-software-development">Setup the Arm Ethos-U Software Development</a></li>
 <li><a class="reference internal" href="#install-the-vela-compiler">Install the Vela Compiler</a></li>
 <li><a class="reference internal" href="#install-the-tosa-reference-model">Install the TOSA reference model</a></li>
 </ul>

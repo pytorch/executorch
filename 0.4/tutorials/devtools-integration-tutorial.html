@@ -42,7 +42,7 @@
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Integrating and Running ExecuTorch on Apple Platforms" href="../apple-runtime.html" />
-    <link rel="prev" title="Running an ExecuTorch Model Using the Module Extension in C++" href="../extension-module.html" />
+    <link rel="prev" title="Managing Tensor Memory in C++" href="../extension-tensor.html" />
 
 
   <!-- Google Tag Manager -->
@@ -317,6 +317,8 @@
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../extension-module.html#conclusion">Conclusion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../extension-tensor.html">Managing Tensor Memory in C++</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
@@ -333,6 +335,9 @@
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../llm/llama-demo-android.html">ExecuTorch Llama Android Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../llm/llama-demo-ios.html">ExecuTorch Llama iOS Demo App</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -381,13 +386,14 @@
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-delegate-integration.html">Developer Tools Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../model-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
@@ -507,7 +513,7 @@ models.</p>
 <p>This tutorial will show a full end-to-end flow of how to utilize the Developer Tools to profile a model.
 Specifically, it will:</p>
 <ol class="arabic simple">
-<li><p>Generate the artifacts consumed by the Developer Tools (<a class="reference external" href="../sdk-etrecord.html">ETRecord</a>, <a class="reference external" href="../sdk-etdump.html">ETDump</a>).</p></li>
+<li><p>Generate the artifacts consumed by the Developer Tools (<a class="reference external" href="../etrecord.html">ETRecord</a>, <a class="reference external" href="../etdump.html">ETDump</a>).</p></li>
 <li><p>Create an Inspector class consuming these artifacts.</p></li>
 <li><p>Utilize the Inspector class to analyze the model profiling result.</p></li>
 </ol>
@@ -596,7 +602,7 @@ lose debug data in the process.</p>
 <div class="section" id="generate-etdump">
 <h2>Generate ETDump<a class="headerlink" href="#generate-etdump" title="Permalink to this heading">¶</a></h2>
 <p>Next step is to generate an <code class="docutils literal notranslate"><span class="pre">ETDump</span></code>. <code class="docutils literal notranslate"><span class="pre">ETDump</span></code> contains runtime results
-from executing a <a class="reference external" href="../sdk-bundled-io.html">Bundled Program Model</a>.</p>
+from executing a <a class="reference external" href="../bundled-io.html">Bundled Program Model</a>.</p>
 <p>In this tutorial, a <cite>Bundled Program</cite> is created from the example model above.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">from</span> <span class="nn">executorch.devtools</span> <span class="kn">import</span> <span class="n">BundledProgram</span>
@@ -656,6 +662,7 @@ the Inspector will show runtime results without operator correlation.</p>
 <p>To visualize all runtime events, call Inspector’s <code class="docutils literal notranslate"><span class="pre">print_data_tabular</span></code>.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.devtools</span> <span class="kn">import</span> <span class="n">Inspector</span>
 
+<a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">etrecord_path</span></a> <span class="o">=</span> <span class="s2">&quot;etrecord.bin&quot;</span>
 <a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">etdump_path</span></a> <span class="o">=</span> <span class="s2">&quot;etdump.etdp&quot;</span>
 <span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">etdump_path</span></a><span class="o">=</span><a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">etdump_path</span></a><span class="p">,</span> <span class="n">etrecord</span><span class="o">=</span><a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">etrecord_path</span></a><span class="p">)</span>
 <span class="n">inspector</span><span class="o">.</span><span class="n">print_data_tabular</span><span class="p">()</span>
@@ -667,7 +674,7 @@ the Inspector will show runtime results without operator correlation.</p>
 </div>
 <div class="section" id="analyzing-with-an-inspector">
 <h2>Analyzing with an Inspector<a class="headerlink" href="#analyzing-with-an-inspector" title="Permalink to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">Inspector</span></code> provides 2 ways of accessing ingested information: <a class="reference external" href="../sdk-inspector#eventblock-class">EventBlocks</a>
+<p><code class="docutils literal notranslate"><span class="pre">Inspector</span></code> provides 2 ways of accessing ingested information: <a class="reference external" href="../model-inspector#eventblock-class">EventBlocks</a>
 and <code class="docutils literal notranslate"><span class="pre">DataFrames</span></code>. These mediums give users the ability to perform custom
 analysis about their model performance.</p>
 <p>Below are examples usages, with both <code class="docutils literal notranslate"><span class="pre">EventBlock</span></code> and <code class="docutils literal notranslate"><span class="pre">DataFrame</span></code> approaches.</p>
@@ -735,7 +742,7 @@ slowest <code class="docutils literal notranslate"><span class="pre">convolution
 </pre></div>
 </div>
 <p>Note: <code class="docutils literal notranslate"><span class="pre">find_total_for_module</span></code> is a special first class method of
-<a class="reference external" href="../sdk-inspector.html">Inspector</a></p>
+<a class="reference external" href="../model-inspector.html">Inspector</a></p>
 </div>
 <div class="section" id="conclusion">
 <h2>Conclusion<a class="headerlink" href="#conclusion" title="Permalink to this heading">¶</a></h2>
@@ -746,11 +753,11 @@ to analyze the model run results.</p>
 <h3>Links Mentioned<a class="headerlink" href="#links-mentioned" title="Permalink to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><a class="reference external" href="../devtools-overview.html">ExecuTorch Developer Tools Overview</a></p></li>
-<li><p><a class="reference external" href="../sdk-etrecord.html">ETRecord</a></p></li>
-<li><p><a class="reference external" href="../sdk-etdump.html">ETDump</a></p></li>
-<li><p><a class="reference external" href="../sdk-inspector.html">Inspector</a></p></li>
+<li><p><a class="reference external" href="../etrecord.html">ETRecord</a></p></li>
+<li><p><a class="reference external" href="../etdump.html">ETDump</a></p></li>
+<li><p><a class="reference external" href="../model-inspector.html">Inspector</a></p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.183 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.399 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-devtools-integration-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/19eb0a842fd17829284e2ef09d1cda78/devtools-integration-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">devtools-integration-tutorial.py</span></code></a></p>
@@ -775,7 +782,7 @@ to analyze the model run results.</p>
         <a href="../apple-runtime.html" class="btn btn-neutral float-right" title="Integrating and Running ExecuTorch on Apple Platforms" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="../extension-module.html" class="btn btn-neutral" title="Running an ExecuTorch Model Using the Module Extension in C++" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="../extension-tensor.html" class="btn btn-neutral" title="Managing Tensor Memory in C++" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   

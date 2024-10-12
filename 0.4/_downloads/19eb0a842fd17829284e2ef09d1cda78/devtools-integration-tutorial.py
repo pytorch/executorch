@@ -20,7 +20,7 @@ Using the ExecuTorch Developer Tools to Profile a Model
 # This tutorial will show a full end-to-end flow of how to utilize the Developer Tools to profile a model.
 # Specifically, it will:
 #
-# 1. Generate the artifacts consumed by the Developer Tools (`ETRecord <../sdk-etrecord.html>`__, `ETDump <../sdk-etdump.html>`__).
+# 1. Generate the artifacts consumed by the Developer Tools (`ETRecord <../etrecord.html>`__, `ETDump <../etdump.html>`__).
 # 2. Create an Inspector class consuming these artifacts.
 # 3. Utilize the Inspector class to analyze the model profiling result.
 
@@ -124,7 +124,7 @@ from unittest.mock import patch
 # ---------------
 #
 # Next step is to generate an ``ETDump``. ``ETDump`` contains runtime results
-# from executing a `Bundled Program Model <../sdk-bundled-io.html>`__.
+# from executing a `Bundled Program Model <../bundled-io.html>`__.
 #
 # In this tutorial, a `Bundled Program` is created from the example model above.
 
@@ -196,6 +196,7 @@ inspector_patch_print = patch.object(Inspector, "print_data_tabular", return_val
 inspector_patch.start()
 inspector_patch_print.start()
 # sphinx_gallery_end_ignore
+etrecord_path = "etrecord.bin"
 etdump_path = "etdump.etdp"
 inspector = Inspector(etdump_path=etdump_path, etrecord=etrecord_path)
 # sphinx_gallery_start_ignore
@@ -212,7 +213,7 @@ inspector_patch_print.stop()
 # Analyzing with an Inspector
 # ---------------------------
 #
-# ``Inspector`` provides 2 ways of accessing ingested information: `EventBlocks <../sdk-inspector#eventblock-class>`__
+# ``Inspector`` provides 2 ways of accessing ingested information: `EventBlocks <../model-inspector#eventblock-class>`__
 # and ``DataFrames``. These mediums give users the ability to perform custom
 # analysis about their model performance.
 #
@@ -281,7 +282,7 @@ print(inspector.find_total_for_module("L__self___conv2"))
 
 ######################################################################
 # Note: ``find_total_for_module`` is a special first class method of
-# `Inspector <../sdk-inspector.html>`__
+# `Inspector <../model-inspector.html>`__
 
 ######################################################################
 # Conclusion
@@ -295,6 +296,6 @@ print(inspector.find_total_for_module("L__self___conv2"))
 # ^^^^^^^^^^^^^^^
 #
 # - `ExecuTorch Developer Tools Overview <../devtools-overview.html>`__
-# - `ETRecord <../sdk-etrecord.html>`__
-# - `ETDump <../sdk-etdump.html>`__
-# - `Inspector <../sdk-inspector.html>`__
+# - `ETRecord <../etrecord.html>`__
+# - `ETDump <../etdump.html>`__
+# - `Inspector <../model-inspector.html>`__
