@@ -503,7 +503,7 @@
 </div>
 <div class="section" id="aten-mode">
 <h2>ATen mode<a class="headerlink" href="#aten-mode" title="Permalink to this heading">¶</a></h2>
-<p>ATen mode uses the ATen implementation of Tensor (<code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>) and related types, such as <code class="docutils literal notranslate"><span class="pre">ScalarType</span></code>, from the PyTorch core. This is in contrast to portable mode, which uses ExecuTorch’s smaller implementation of tensor (<code class="docutils literal notranslate"><span class="pre">torch::executor::Tensor</span></code>) and related types, such as <code class="docutils literal notranslate"><span class="pre">torch::executor::ScalarType</span></code>.</p>
+<p>ATen mode uses the ATen implementation of Tensor (<code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>) and related types, such as <code class="docutils literal notranslate"><span class="pre">ScalarType</span></code>, from the PyTorch core. This is in contrast to ETensor mode, which uses ExecuTorch’s smaller implementation of tensor (<code class="docutils literal notranslate"><span class="pre">executorch::runtime::etensor::Tensor</span></code>) and related types, such as <code class="docutils literal notranslate"><span class="pre">executorch::runtime::etensor::ScalarType</span></code>.</p>
 <ul class="simple">
 <li><p>ATen kernels that rely on the full <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code> API are usable in this configuration.</p></li>
 <li><p>ATen kernels tend to do dynamic memory allocation and often have extra flexibility (and thus overhead) to handle cases not needed by mobile/embedded clients. e.g.,  CUDA support, sparse tensor support, and dtype promotion.</p></li>
@@ -720,11 +720,11 @@ The default PAL implementation can be overridden if it doesn’t work for a part
 <h2><span class="xref myst">Partitioner</span><a class="headerlink" href="#partitioner" title="Permalink to this heading">¶</a></h2>
 <p>Parts of a model may be delegated to run on an optimized backend. The partitioner splits the graph into the appropriate sub-networks and tags them for delegation.</p>
 </div>
-<div class="section" id="portable-mode-lean-mode">
-<h2>Portable mode (lean mode)<a class="headerlink" href="#portable-mode-lean-mode" title="Permalink to this heading">¶</a></h2>
-<p>Portable mode uses ExecuTorch’s smaller implementation of tensor (<code class="docutils literal notranslate"><span class="pre">torch::executor::Tensor</span></code>) along with related types (<code class="docutils literal notranslate"><span class="pre">torch::executor::ScalarType</span></code>, etc.). This is in contrast to ATen mode, which uses the ATen implementation of Tensor (<code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>) and related types (<code class="docutils literal notranslate"><span class="pre">ScalarType</span></code>, etc.)</p>
+<div class="section" id="etensor-mode">
+<h2>ETensor mode<a class="headerlink" href="#etensor-mode" title="Permalink to this heading">¶</a></h2>
+<p>ETensor mode uses ExecuTorch’s smaller implementation of tensor (<code class="docutils literal notranslate"><span class="pre">executorch::runtime::etensor::Tensor</span></code>) along with related types (<code class="docutils literal notranslate"><span class="pre">executorch::runtime::etensor::ScalarType</span></code>, etc.). This is in contrast to ATen mode, which uses the ATen implementation of Tensor (<code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>) and related types (<code class="docutils literal notranslate"><span class="pre">ScalarType</span></code>, etc.)</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">torch::executor::Tensor</span></code>, also known as ETensor, is a source-compatible subset of <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>. Code written against ETensor can build against <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch::runtime::etensor::Tensor</span></code>, also known as ETensor, is a source-compatible subset of <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>. Code written against ETensor can build against <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>.</p></li>
 <li><p>ETensor does not own or allocate memory on its own. To support dynamic shapes, kernels can allocate Tensor data using the MemoryAllocator provided by the client.</p></li>
 </ul>
 </div>
@@ -879,7 +879,7 @@ The default PAL implementation can be overridden if it doesn’t work for a part
 <li><a class="reference internal" href="#pal-platform-abstraction-layer"><span class="xref myst">PAL (Platform Abstraction Layer)</span></a></li>
 <li><a class="reference internal" href="#partial-kernels">Partial kernels</a></li>
 <li><a class="reference internal" href="#partitioner"><span class="xref myst">Partitioner</span></a></li>
-<li><a class="reference internal" href="#portable-mode-lean-mode">Portable mode (lean mode)</a></li>
+<li><a class="reference internal" href="#etensor-mode">ETensor mode</a></li>
 <li><a class="reference internal" href="#portable-kernels">Portable kernels</a></li>
 <li><a class="reference internal" href="#program">Program</a></li>
 <li><a class="reference internal" href="#program-source-code">Program source code</a></li>
