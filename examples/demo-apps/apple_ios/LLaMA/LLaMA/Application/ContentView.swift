@@ -176,6 +176,7 @@ struct ContentView: View {
         .padding([.leading, .trailing, .bottom], 10)
         .sheet(isPresented: $isImagePickerPresented, onDismiss: addSelectedImageMessage) {
           ImagePicker(selectedImage: $selectedImage, sourceType: imagePickerSourceType)
+            .id(imagePickerSourceType.rawValue)
         }
       }
       .navigationBarTitle(title, displayMode: .inline)
