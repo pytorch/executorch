@@ -10,7 +10,6 @@ option(SEMIHOSTING "Enable semihosting" OFF)
 option(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE "Set ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE to specify memory alloction pool size" OFF)
 option(ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE "Set ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE to specify temp alloction pool size" OFF)
 
-
 if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
   message(
     FATAL_ERROR
@@ -220,10 +219,8 @@ target_sources(
 # Include the target's bare-metal linker script
 ethosu_eval_link_options(arm_executor_runner)
 
-# Need whole-archive to ensure C++ ctor's are called - this may be wasteful for
-# bin size as we link in a number of other symbols
-target_link_libraries(
-  arm_executor_runner
+set(arm_executor_runner_link)
+list(APPEND arm_executor_runner_link
   extension_runner_util
   ethosu_target_init
   executorch
@@ -236,6 +233,44 @@ target_link_libraries(
   "-Wl,--no-whole-archive"
   -Xlinker -Map=arm_executor_runner.map
 )
+
+if(EXECUTORCH_ENABLE_EVENT_TRACER)
+  target_compile_options(arm_executor_runner PUBLIC -DET_EVENT_TRACER_ENABLED)
+
+  add_library(etdump STATIC IMPORTED)
+  set_property(
+      TARGET etdump
+      PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/lib/libetdump.a"
+  )
+
+  if(CMAKE_BUILD_TYPE MATCHES "Debug")
+    set(FLATCCRT_LIB flatccrt_d)
+  else()
+    set(FLATCCRT_LIB flatccrt)
+  endif()
+
+  add_library(${FLATCCRT_LIB} STATIC IMPORTED)
+  set_property(
+      TARGET ${FLATCCRT_LIB}
+      PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/lib/lib${FLATCCRT_LIB}.a"
+  )
+
+  list(APPEND arm_executor_runner_link
+    etdump
+    ${FLATCCRT_LIB}
+  )
+endif()
+
+# Need whole-archive to ensure C++ ctor's are called - this may be wasteful for
+# bin size as we link in a number of other symbols
+target_link_libraries(
+  arm_executor_runner
+  ${arm_executor_runner_link}
+)
+
+target_link_options( arm_executor_runner PUBLIC LINKER:-Map=arm_executor_runner.map )
 
 # ET headers and generated headers includes
 target_include_directories(
