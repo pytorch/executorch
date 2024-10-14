@@ -70,15 +70,26 @@ def quantize(  # noqa C901
     if qmode == "int8":
         # Add quantization mode options here: group size, bit width, etc.
         return WeightOnlyInt8QuantHandler(model).quantized_model()
+    elif qmode.startswith("torchao"):
+        # format is torchao:8daxw
+        bitwidth = int(qmode[len("torchao:8da")])
+        if group_size is None:
+            raise Exception(f"For {qmode} quantization, group size must be specified.")
+        from torchao.experimental.quant_api import Int8DynActIntxWeightQuantizer
+        model = Int8DynActIntxWeightQuantizer(
+            device="cpu",
+            precision=torch_dtype, groupsize=group_size, bitwidth=bitwidth, has_weight_zeros=False).quantize(model)
+        if verbose:
+            print("quantized model:", model)
+        return model
     elif qmode == "8da4w":
         # Check for required args
         if group_size is None:
             raise Exception("For 8da4w quantization, group size must be specified.")
         from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
-        model = Int8DynActInt4WeightQuantizer(
-            precision=torch_dtype, groupsize=group_size
-        ).quantize(model)
+        model = Int8DynActInt4WeightQuantizer(precision=torch_dtype, groupsize=group_size, bitwidth=4).quantize(model)
+
         if verbose:
             print("quantized model:", model)
         return model

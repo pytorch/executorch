@@ -121,6 +121,12 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   list(APPEND link_libraries custom_ops)
 endif()
 
+if (EXECUTORCH_BUILD_TORCHAO)
+  set(torchao_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/torchao)
+  find_package(torchao CONFIG REQUIRED)
+  list(APPEND link_libraries ${TORCHAO_LIBRARIES})
+endif()
+
 set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)
 # Extra compile option and include dir for pthreadpool
 if(EXECUTORCH_BUILD_PTHREADPOOL)
