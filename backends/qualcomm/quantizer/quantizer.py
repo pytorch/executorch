@@ -28,6 +28,7 @@ from .utils import (
     get_default_16bit_qnn_ptq_config,
     get_default_8bit_qnn_ptq_config,
     get_ptq_per_channel_quant_config,
+    get_default_8bit_qat_proto,
     OP_ANNOTATOR,
     QuantizationConfig,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "get_16a8w_qnn_ptq_config",
     "get_default_16bit_qnn_ptq_config",
     "get_default_8bit_qnn_ptq_config",
+    "get_default_8bit_qat_proto",
 ]
 
 
