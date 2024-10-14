@@ -18,64 +18,39 @@ class RunnerHolder: ObservableObject {
 
 extension UIImage {
   func resized(to newSize: CGSize) -> UIImage {
-    UIGraphicsImageRenderer(size: newSize).image { _ in
-      draw(in: CGRect(origin: .zero, size: newSize))
+    let format = UIGraphicsImageRendererFormat.default()
+    format.scale = 1
+    return UIGraphicsImageRenderer(size: newSize, format: format).image {
+      _ in draw(in: CGRect(origin: .zero, size: newSize))
     }
   }
 
   func toRGBArray() -> [UInt8]? {
-    guard let cgImage = self.cgImage else {
-      NSLog("Failed to get CGImage from UIImage")
-      return nil
-    }
+    guard let cgImage = self.cgImage else { return nil }
 
-    let width = cgImage.width
-    let height = cgImage.height
-    let colorSpace = CGColorSpaceCreateDeviceRGB()
-    let bytesPerPixel = 4
-    let bytesPerRow = bytesPerPixel * width
-    let bitsPerComponent = 8
-    let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+    let width = Int(cgImage.width), height = Int(cgImage.height)
+    let totalPixels = width * height, bytesPerPixel = 4, bytesPerRow = bytesPerPixel * width
+    var rgbValues = [UInt8](repeating: 0, count: totalPixels * 3)
+    var pixelData = [UInt8](repeating: 0, count: width * height * bytesPerPixel)
 
     guard let context = CGContext(
-      data: nil,
-      width: width,
-      height: height,
-      bitsPerComponent: bitsPerComponent,
-      bytesPerRow: bytesPerRow,
-      space: colorSpace,
-      bitmapInfo: bitmapInfo
-    ) else {
-      NSLog("Failed to create CGContext")
-      return nil
-    }
+      data: &pixelData, width: width, height: height, bitsPerComponent: 8,
+      bytesPerRow: bytesPerRow, space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+    ) else { return nil }
 
     context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-
-    guard let pixelBuffer = context.data else {
-      NSLog("Failed to get pixel data from CGContext")
-      return nil
-    }
-
-    let pixelData = pixelBuffer.bindMemory(to: UInt8.self, capacity: width * height * bytesPerPixel)
-
-    var rgbArray = [UInt8](repeating: 0, count: width * height * 3)
 
     for y in 0..<height {
       for x in 0..<width {
         let pixelIndex = (y * width + x) * bytesPerPixel
-        let r = UInt8(pixelData[pixelIndex])
-        let g = UInt8(pixelData[pixelIndex + 1])
-        let b = UInt8(pixelData[pixelIndex + 2])
-
-        let rgbIndex = (y * width + x) * 3
-        rgbArray[rgbIndex] = r
-        rgbArray[rgbIndex + 1] = g
-        rgbArray[rgbIndex + 2] = b
+        let rgbIndex = y * width + x
+        rgbValues[rgbIndex] = pixelData[pixelIndex]
+        rgbValues[rgbIndex + totalPixels] = pixelData[pixelIndex + 1]
+        rgbValues[rgbIndex + totalPixels * 2] = pixelData[pixelIndex + 2]
       }
     }
-
-    return rgbArray
+    return rgbValues
   }
 }
 
@@ -201,6 +176,7 @@ struct ContentView: View {
         .padding([.leading, .trailing, .bottom], 10)
         .sheet(isPresented: $isImagePickerPresented, onDismiss: addSelectedImageMessage) {
           ImagePicker(selectedImage: $selectedImage, sourceType: imagePickerSourceType)
+            .id(imagePickerSourceType.rawValue)
         }
       }
       .navigationBarTitle(title, displayMode: .inline)

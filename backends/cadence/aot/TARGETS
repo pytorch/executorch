@@ -43,6 +43,7 @@ python_library(
         "//executorch/backends/transforms:decompose_sdpa",
         "//executorch/backends/transforms:remove_clone_ops",
         "//executorch/exir:lib",
+        "//executorch/devtools:lib",
     ],
 )
 

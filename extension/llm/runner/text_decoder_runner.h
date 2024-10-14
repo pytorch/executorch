@@ -13,6 +13,7 @@
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
+#include <executorch/runtime/platform/compiler.h>
 // patternlint-disable-next-line executorch-cpp-nostdinc
 #include <functional>
 
@@ -20,7 +21,7 @@ namespace executorch {
 namespace extension {
 namespace llm {
 
-class TextDecoderRunner {
+class ET_EXPERIMENTAL TextDecoderRunner {
  public:
   TextDecoderRunner(
       Module* module,

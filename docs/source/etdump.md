@@ -15,7 +15,7 @@ Generating an ETDump is a relatively straightforward process. Users can follow t
 2. ***Create*** an Instance of the ETDumpGen class and pass it into the `load_method` call that is invoked in the runtime.
 
 ```C++
-torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();
+executorch::etdump::ETDumpGen etdump_gen;
 Result<Method> method =
       program->load_method(method_name, &memory_manager, &etdump_gen);
 ```

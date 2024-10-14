@@ -19,7 +19,7 @@ namespace executorch {
 namespace extension {
 namespace llm {
 
-struct Stats {
+struct ET_EXPERIMENTAL Stats {
   // Scaling factor for timestamps - in this case, we use ms.
   const long SCALING_FACTOR_UNITS_PER_SECOND = 1000;
   // Time stamps for the different stages of the execution
@@ -59,9 +59,16 @@ struct Stats {
     aggregate_sampling_timer_start_timestamp = 0;
   }
 
-  void reset() {
-    model_load_start_ms = 0;
-    model_load_end_ms = 0;
+  void reset(bool all_stats = false) {
+    // Not resetting model_load_start_ms and model_load_end_ms because reset is
+    // typically called after warmup and before running the actual run.
+    // However, we don't load the model again during the actual run after
+    // warmup. So, we don't want to reset these timestamps unless we are
+    // resetting everything.
+    if (all_stats) {
+      model_load_start_ms = 0;
+      model_load_end_ms = 0;
+    }
     inference_start_ms = 0;
     prompt_eval_end_ms = 0;
     first_token_ms = 0;

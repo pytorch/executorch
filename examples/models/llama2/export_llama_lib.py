@@ -41,6 +41,7 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_pt2e_quantization_params,
     get_pt2e_quantizers,
     get_qnn_quantizer,
+    get_vulkan_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
@@ -147,6 +148,7 @@ def build_args_parser() -> argparse.ArgumentParser:
             "coreml_8a_c4w",
             "coreml_baseline_8a_c8w",
             "coreml_baseline_8a_c4w",
+            "vulkan_8w",
         ],
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
@@ -548,6 +550,12 @@ def get_quantizer_and_quant_params(args):
         assert len(quantizers) == 0, "Should not enable both xnnpack / qnn and coreml"
         coreml_quantizer = get_coreml_quantizer(args.pt2e_quantize)
         quantizers.append(coreml_quantizer)
+    if args.vulkan and args.pt2e_quantize:
+        assert (
+            len(quantizers) == 0
+        ), "Should not enable both vulkan and other quantizers"
+        vulkan_quantizer = get_vulkan_quantizer(args.pt2e_quantize)
+        quantizers.append(vulkan_quantizer)
     logging.info(f"Applying quantizers: {quantizers}")
     return pt2e_quant_params, quantizers, quant_dtype
 

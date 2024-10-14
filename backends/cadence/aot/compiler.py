@@ -7,6 +7,7 @@
 # pyre-strict
 
 import logging
+from pathlib import Path
 from typing import Optional
 
 import torch
@@ -29,7 +30,13 @@ from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
-from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
+from executorch.devtools import generate_etrecord
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    ExecutorchProgramManager,
+    to_edge,
+)
 from torch.ao.quantization.pt2e.export_utils import model_is_exported
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -197,11 +204,12 @@ def export_to_edge(
 # Export the model and lower it to an EdgeProgramManager (in edge IR), and
 # apply passes specific to Cadence DSP execution. Return both to print the
 # differences.
-def export_to_cadence(
+def export_to_cadence_edge_executorch(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
-) -> EdgeProgramManager:
+    output_dir: Optional[str] = None,
+) -> ExecutorchProgramManager:
     edge_prog_manager = export_to_edge(model, inputs)
 
     # Run a couple required passes for quant/dequant ops
@@ -225,4 +233,29 @@ def export_to_cadence(
         cadence_prog_manager.exported_program().graph_module,
     )
 
-    return cadence_prog_manager
+    # Get executorch program after Cadence specific passes
+    exec_prog: ExecutorchProgramManager = cadence_prog_manager.to_executorch()
+    if output_dir:
+        _gen_etrecord(edge_prog_manager, exec_prog, Path(output_dir))
+    else:
+        logging.warning("No output directory provided, skipping ETRecord generation")
+
+    return exec_prog
+
+
+def _gen_etrecord(
+    edge_program: EdgeProgramManager,
+    et_program: ExecutorchProgramManager,
+    output_dir: Path,
+) -> None:
+    etrec_path = output_dir / "etrecord.bin"
+    try:
+        generate_etrecord(
+            et_record=etrec_path,
+            edge_dialect_program=edge_program,
+            executorch_program=et_program,
+        )
+        logging.info(f"Generated ETRecord at {etrec_path}")
+    except Exception:
+        # Any errors here shouldn't block the rest of the flow
+        logging.exception("Encountered exception while generating ETRecord")

@@ -13,6 +13,7 @@ from executorch.backends.transforms.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
 from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
+from executorch.backends.transforms.fuse_dequant_linear import FuseDequantLinearPass
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.backends.transforms.mean_to_sum_div import MeanToSumDiv
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
@@ -59,6 +60,7 @@ class VulkanBackend(BackendDetails):
         passes = [
             RemoveCloneOpsTransform(),
             AddmmToLinearTransform(),
+            FuseDequantLinearPass(),
             FuseViewCopyTransform(),
             FuseBatchNormWithConvPass(program),
             FuseClampPass(),

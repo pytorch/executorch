@@ -25,6 +25,7 @@ main() {
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_DEVTOOLS=ON \
     -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
+    -DEXECUTORCH_ENABLE_LOGGING=ON \
     -Bcmake-out .
   cmake --build cmake-out --target install --config Release -j16
 
@@ -35,6 +36,7 @@ main() {
   cmake -DCMAKE_PREFIX_PATH="${cmake_prefix_path}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_CADENCE_CPU_RUNNER=ON \
+    -DEXECUTORCH_ENABLE_LOGGING=ON \
     -B"${build_dir}" \
     "${example_dir}"
   cmake --build "${build_dir}" --config Release -j16
