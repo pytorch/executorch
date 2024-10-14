@@ -77,6 +77,7 @@ SUPPORTS_DYNAMIC_SHAPE = [
     exir_ops.edge.aten.sin.default,
     exir_ops.edge.aten.sqrt.default,
     exir_ops.edge.aten.tanh.default,
+    exir_ops.edge.aten._to_copy.default,
     # Matrix Multiplication
     exir_ops.edge.aten.bmm.default,
     exir_ops.edge.aten.mm.default,
