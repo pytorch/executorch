@@ -40,7 +40,10 @@ class EagerEvalWrapper(eval_wrapper):
 
     @property
     def eot_token_id(self):
-        return self._tokenizer.eot_id
+        try:
+            return self._tokenizer.eot_id
+        except:
+            return self._tokenizer.eos_id
 
     @property
     def max_length(self):
