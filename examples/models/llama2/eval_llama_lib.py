@@ -295,6 +295,7 @@ def eval_llama(
     with torch.no_grad():
         eval_results = simple_evaluate(
             model=eval_wrapper,
+            model_args="trust_remote_code=True",
             tasks=args.tasks,  # pyre-ignore: Undefined attribute [16]: `argparse.ArgumentParser` has no attribute `tasks`
             num_fewshot=args.num_fewshot,  # pyre-ignore: Undefined attribute [16]: `argparse.ArgumentParser` has no attribute `num_fewshot`
             limit=args.limit,  # pyre-ignore: Undefined attribute [16]: `argparse.ArgumentParser` has no attribute `limit`
