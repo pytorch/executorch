@@ -122,35 +122,8 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
 endif()
 
 if(EXECUTORCH_BUILD_TORCHAO)
-  include(ExternalProject)
-  # set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
-
-  ExternalProject_Add(
-      torchao
-      PREFIX ${CMAKE_BINARY_DIR}/../../../third-party/ao/torchao/experimental
-      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental
-      CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=cmake-out
-        -DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}
-        -DTORCHAO_BUILD_EXECUTORCH_OPS=ON
-        -DEXECUTORCH_INCLUDE_DIRS=$HOME/repos
-        -DEXECUTORCH_LIBRARIES=${CMAKE_BINARY_DIR}/lib/libexecutorch.a;$HOME/repos/executorch/cmake-out/lib/libextension_threadpool.a;$HOME/repos/executorch/cmake-out/lib/libcpuinfo.a;$HOME/repos/executorch/cmake-out/lib/libpthreadpool.a
-  )
-  set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental)
-
-  set(torchao_DIR /Users/scroy/repos/executorch/cmake-out/lib/cmake/torchao)
-  find_package(torchao REQUIRED)
-
-  # set(torchao_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental)
-  # find_package(torchao CONFIG REQUIRED)
-
-  # find_package(Torch CONFIG REQUIRED HINT ${CMAKE_PREFIX_PATH}/torch/share/cmake/Torch)
-  # add_compile_options("-frtti")
-  # set(Torch_DIR /opt/miniconda3/envs/et_env/lib/python3.10/site-packages/torch/share/cmake/Torch)
-
-  # add_subdirectory(third-party/ao/torchao/experimental)
-  target_link_options_shared_lib(torchao::torchao_ops_executorch)
-  list(APPEND link_libraries torchao::torchao_ops_executorch)
+  list(APPEND link_libraries "$<LINK_LIBRARY:WHOLE_ARCHIVE,${CMAKE_CURRENT_BINARY_DIR}/../../../lib/libtorchao_ops_executorch.a>")
+  list(APPEND link_libraries "${CMAKE_CURRENT_BINARY_DIR}/../../../lib/libtorchao_kernels_aarch64.a")
 endif()
 
 set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)
