@@ -291,11 +291,17 @@ def eval_llama(
     # Generate the eval wrapper
     eval_wrapper = gen_eval_wrapper(model_name, args)
 
+    # Needed for loading mmlu dataset.
+    # See https://github.com/EleutherAI/lm-evaluation-harness/pull/1998/files
+    if args.tasks and "mmlu" in args.tasks:
+        import datasets
+
+        datasets.config.HF_DATASETS_TRUST_REMOTE_CODE = True
+
     # Evaluate the model
     with torch.no_grad():
         eval_results = simple_evaluate(
             model=eval_wrapper,
-            model_args="trust_remote_code=True",
             tasks=args.tasks,  # pyre-ignore: Undefined attribute [16]: `argparse.ArgumentParser` has no attribute `tasks`
             num_fewshot=args.num_fewshot,  # pyre-ignore: Undefined attribute [16]: `argparse.ArgumentParser` has no attribute `num_fewshot`
             limit=args.limit,  # pyre-ignore: Undefined attribute [16]: `argparse.ArgumentParser` has no attribute `limit`
