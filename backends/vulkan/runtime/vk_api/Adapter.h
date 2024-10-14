@@ -155,30 +155,34 @@ class Adapter final {
 
   // Physical Device Features
 
-  inline bool has_16bit_storage() {
+  inline bool supports_16bit_storage_buffers() {
     return physical_device_.shader_16bit_storage.storageBuffer16BitAccess ==
         VK_TRUE;
   }
 
-  inline bool has_8bit_storage() {
+  inline bool supports_8bit_storage_buffers() {
     return physical_device_.shader_8bit_storage.storageBuffer8BitAccess ==
         VK_TRUE;
   }
 
-  inline bool has_16bit_compute() {
+  inline bool supports_float16_shader_types() {
     return physical_device_.shader_float16_int8_types.shaderFloat16 == VK_TRUE;
   }
 
-  inline bool has_8bit_compute() {
+  inline bool supports_int8_shader_types() {
     return physical_device_.shader_float16_int8_types.shaderInt8 == VK_TRUE;
   }
 
+  inline bool supports_int16_shader_types() {
+    return physical_device_.supports_int16_shader_types;
+  }
+
   inline bool has_full_float16_buffers_support() {
-    return has_16bit_storage() && has_16bit_compute();
+    return supports_16bit_storage_buffers() && supports_float16_shader_types();
   }
 
   inline bool has_full_int8_buffers_support() {
-    return has_8bit_storage() && has_8bit_compute();
+    return supports_16bit_storage_buffers() && supports_int8_shader_types();
   }
 
   // Command Buffer Submission

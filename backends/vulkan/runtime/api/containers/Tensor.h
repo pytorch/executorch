@@ -436,7 +436,7 @@ class vTensor final {
    * dim is mapped to the height axis of the texture, the channels dim is mapped
    * to the depth axis of the texture.
    */
-  inline bool is_standard_axis_map() const {
+  inline bool has_standard_axis_map() const {
     return axis_map_.at(0) == 0 && axis_map_.at(1) == 1 && axis_map_.at(2) == 2;
   }
 

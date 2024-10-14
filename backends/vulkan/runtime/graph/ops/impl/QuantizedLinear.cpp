@@ -127,6 +127,8 @@ void check_q_4w_linear_args(
     const ValueRef group_size,
     const ValueRef scales_and_zeros,
     const ValueRef out) {
+  VK_CHECK_COND(graph.int16_shader_types_enabled());
+
   VK_CHECK_COND(graph.val_is_tensor(mat1));
   VK_CHECK_COND(graph.val_is_tref(mat2_data));
   VK_CHECK_COND(graph.val_is_tref(scales_and_zeros));
@@ -145,8 +147,8 @@ void check_q_4w_linear_args(
   VK_CHECK_COND(graph.packed_dim_of(mat1) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kWidthDim);
 
-  VK_CHECK_COND(graph.is_standard_axis_map(mat1));
-  VK_CHECK_COND(graph.is_standard_axis_map(out));
+  VK_CHECK_COND(graph.has_standard_axis_map(mat1));
+  VK_CHECK_COND(graph.has_standard_axis_map(out));
 }
 
 void resize_q_4w_linear_node(
@@ -201,19 +203,10 @@ void add_q_4w_linear_node(
   const uint32_t group_size_val = graph.extract_scalar<uint32_t>(group_size);
 
   vkapi::ParamsBindList ubos({});
-  if (storage_type == utils::kBuffer) {
-    ubos.append(graph.sizes_ubo(out));
-    ubos.append(graph.strides_ubo(out));
-    ubos.append(graph.sizes_ubo(mat1));
-    ubos.append(graph.strides_ubo(mat1));
-    ubos.append(graph.strides_ubo(mat2));
-    ubos.append(graph.strides_ubo(scales_and_zeros));
-  } else {
-    ubos.append(graph.logical_limits_ubo(out));
-    ubos.append(graph.sizes_ubo(mat1));
-    ubos.append(graph.strides_ubo(mat2));
-    ubos.append(graph.strides_ubo(scales_and_zeros));
-  }
+  ubos.append(graph.logical_limits_ubo(out));
+  ubos.append(graph.sizes_ubo(mat1));
+  ubos.append(graph.strides_ubo(mat2));
+  ubos.append(graph.strides_ubo(scales_and_zeros));
 
   auto out_sizes = graph.sizes_of(out);
   uint32_t N = utils::val_at(-1, out_sizes);
@@ -248,7 +241,10 @@ void linear_weight_int4(
       args[1], // mat2
       args[2], // group_size
       args[3], // scales_and_zeros
-      args[4] // out
+      // There is an unused variable inner_k_tiles which is used to call
+      // _convert_weight_to_int4pack in the AOT custom op, which is why the 4th
+      // argument is skipped.
+      args[5] // out
   );
 }
 

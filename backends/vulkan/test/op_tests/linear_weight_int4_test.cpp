@@ -176,6 +176,7 @@ void test_vulkan_linear_int4(
     r_weights_4x2,
     graph.add_scalar<int64_t>(group_size),
     r_scales_and_zeros,
+    kDummyValueRef,
     r_out});
 
   ValueRef staging_out = graph.set_output_tensor(r_out);
@@ -210,6 +211,9 @@ TEST(VulkanSDPATest, test_reference_impl) {
 }
 
 TEST(VulkanSDPATest, test_vulkan_impl) {
+  if (!vkcompute::api::context()->adapter_ptr()->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_linear_int4(
       /*B = */ 1,
       /*M = */ 4,

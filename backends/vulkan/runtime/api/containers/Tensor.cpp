@@ -474,7 +474,7 @@ vTensor::vTensor(
 
   if (dtype == vkapi::kHalf) {
     VK_CHECK_COND(
-        api::context()->adapter_ptr()->has_16bit_storage(),
+        api::context()->adapter_ptr()->supports_16bit_storage_buffers(),
         "Half dtype is only available if the physical device supports float16 "
         "storage buffers!");
   }
