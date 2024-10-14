@@ -122,12 +122,20 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
 endif()
 
 if(EXECUTORCH_BUILD_TORCHAO)
-  set(torchao_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/torchao)
-  find_package(torchao REQUIRED)
-  target_link_options_shared_lib(torchao::torchao_ops_executorch)
-  list(APPEND link_libraries torchao::torchao_ops_executorch)
+  # Method1: torchao has a config
+  # set(torchao_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/torchao)
+  # find_package(torchao REQUIRED)
+  # target_link_options_shared_lib(torchao::torchao_ops_executorch)
+  # list(APPEND link_libraries torchao::torchao_ops_executorch)
+
+  # Method2: torchao is built at top-level CMakeLists.txt
   # list(APPEND link_libraries "$<LINK_LIBRARY:WHOLE_ARCHIVE,${CMAKE_CURRENT_BINARY_DIR}/../../../lib/libtorchao_ops_executorch.a>")
   # list(APPEND link_libraries "${CMAKE_CURRENT_BINARY_DIR}/../../../lib/libtorchao_kernels_aarch64.a")
+
+  # Method3: submodule
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental)
+  target_link_options_shared_lib(torchao_ops_executorch)
+  list(APPEND link_libraries torchao_ops_executorch)
 endif()
 
 set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)
