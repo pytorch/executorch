@@ -144,6 +144,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         return False
 
+    def is_valid_to_copy(self, node: torch.fx.node) -> bool:  # pyre-ignore[11]
+        # lower only if floating point dtype conversion
+        return len(node.args) > 1 and node.args[1] in (torch.float32, torch.float16)
+
     def is_node_supported(
         self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
     ) -> bool:
@@ -171,6 +175,11 @@ class VulkanSupportedOperators(OperatorSupportBase):
             return False
 
         features = VulkanSupportedOperators._ops[target]
+
+        if target == exir_ops.edge.aten._to_copy.default and not self.is_valid_to_copy(
+            node
+        ):
+            return False
 
         if self.require_dynamic_shapes and not features.supports_dynamic_shape:
             return False
