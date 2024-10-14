@@ -12,7 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 readonly SCRIPT_DIR
 
-readonly EXECUTORCH_ROOT="${SCRIPT_DIR}/../../.."
+readonly EXECUTORCH_ROOT="${SCRIPT_DIR}/../.."
 
 # Allow overriding the number of build jobs. Default to 9.
 export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-9}"
@@ -25,15 +25,8 @@ main() {
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_DEVTOOLS=ON \
     -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
-    -DPYTHON_EXECUTABLE=python3 \
-    -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
-    -DEXECUTORCH_BUILD_HOST_TARGETS=ON \
-    -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
-    -DEXECUTORCH_BUILD_PTHREADPOOL=OFF \
-    -DEXECUTORCH_BUILD_CPUINFO=OFF \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
-    -DEXECUTORCH_NNLIB_OPT=OFF \
-    -Bcmake-out
+    -Bcmake-out .
   cmake --build cmake-out --target install --config Release -j16
 
   local example_dir=backends/cadence
@@ -42,6 +35,8 @@ main() {
   rm -rf ${build_dir}
   cmake -DCMAKE_PREFIX_PATH="${cmake_prefix_path}" \
     -DCMAKE_BUILD_TYPE=Release \
+    -DEXECUTORCH_CADENCE_CPU_RUNNER=ON \
+    -DEXECUTORCH_ENABLE_LOGGING=ON \
     -B"${build_dir}" \
     "${example_dir}"
   cmake --build "${build_dir}" --config Release -j16

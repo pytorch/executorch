@@ -50,7 +50,7 @@ def get_model_and_inputs_from_name(model_name: str):
         logging.warning(
             "Using a model from examples/models not all of these are currently supported"
         )
-        model, example_inputs, _ = EagerModelFactory.create_model(
+        model, example_inputs, _, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL[model_name]
         )
     # Case 3: Model is in an external python file loaded as a module.

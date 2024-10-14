@@ -7,12 +7,13 @@ from enum import IntEnum, unique
 from typing import Callable, Dict, Optional, Sequence, Set
 
 import torch
-from executorch.backends.qualcomm.passes.decompose_silu import DecomposeSilu
-from executorch.backends.qualcomm.passes.recompose_pixel_unshuffle import (
+from executorch.backends.qualcomm._passes.decompose_einsum import DecomposeEinsum
+from executorch.backends.qualcomm._passes.decompose_silu import DecomposeSilu
+from executorch.backends.qualcomm._passes.recompose_pixel_unshuffle import (
     RecomposePixelUnshuffle,
 )
-from executorch.backends.qualcomm.passes.reduce_dynamic_range import ReduceDynamicRange
-from executorch.backends.qualcomm.passes.replace_inf_buffer import ReplaceInfBuffer
+from executorch.backends.qualcomm._passes.reduce_dynamic_range import ReduceDynamicRange
+from executorch.backends.qualcomm._passes.replace_inf_buffer import ReplaceInfBuffer
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
@@ -190,6 +191,7 @@ class QnnQuantizer(Quantizer):
         model = RecomposePixelUnshuffle(quantization_capture=True)(model).graph_module
         model = DecomposeScaledDotProductAttention()(model).graph_module
         model = DecomposeSilu()(model).graph_module
+        model = DecomposeEinsum()(model).graph_module
         model = ReplaceInfBuffer()(model).graph_module
         return model
 

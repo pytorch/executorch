@@ -366,7 +366,7 @@ void add_conv2d_node(
   vkapi::ShaderInfo shader = get_conv2d_shader(
       graph, *t_out, /*prepack_weights = */ false, method, weight, clamp_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       shader,
       create_conv2d_global_wg_size(graph, method, out),
@@ -464,7 +464,7 @@ void add_conv1d_node(
 
   add_dtype_suffix(kernel_name, *t_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,

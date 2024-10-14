@@ -457,9 +457,10 @@ def prep_data_for_save(
     data_np = np.array(data.detach(), order="C").astype(np.float32)
 
     if is_quantized:
-        assert (
-            quant_param.node_name in input_name
-        ), "These quantization params do not match the input tensor name"
+        assert quant_param.node_name in input_name, (
+            f"The quantization params name '{quant_param.node_name}' does not "
+            f"match the input tensor name '{input_name}'."
+        )
         data_np = (
             ((data_np / np.float32(quant_param.scale)) + quant_param.zp)
             .round()

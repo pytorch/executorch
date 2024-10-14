@@ -70,7 +70,7 @@ void add_debugging_result(NSDictionary<ETCoreMLModelStructurePath *, MLMultiArra
 @implementation ETCoreMLModelDebuggerTests
 
 + (void)setUp {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 }
 
 + (nullable NSURL *)bundledResourceWithName:(NSString *)name extension:(NSString *)extension {

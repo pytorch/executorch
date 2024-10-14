@@ -139,6 +139,12 @@ class VkGraphBuilder:
         return constant_id
 
     def create_node_value(self, node: Node) -> int:
+        # If the node has been marked as a scalar tensor, create a SymInt instead of a tensor
+        if node.meta.get("vkdg_is_scalar_tensor", False):
+            new_id = self.create_symint_value()
+            self.node_to_value_ids[node] = new_id
+            return new_id
+
         spec = node.meta.get("spec")
         if isinstance(spec, TensorSpec):
             constant_id = self.maybe_add_constant_tensor(node)
@@ -167,6 +173,11 @@ class VkGraphBuilder:
             self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Int(scalar)))
         elif isinstance(scalar, float):
             self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Double(scalar)))
+        return new_id
+
+    def create_symint_value(self) -> int:
+        new_id = len(self.values)
+        self.values.append(vk_graph_schema.VkValue(vk_graph_schema.SymInt(0)))
         return new_id
 
     def create_tensor_value(self, spec: TensorSpec, constant_id: int = -1) -> int:

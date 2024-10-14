@@ -14,7 +14,7 @@ from typing import Any, Tuple
 
 from executorch.backends.cadence.aot.compiler import (
     convert_pt2,
-    export_to_cadence,
+    export_to_cadence_edge_executorch,
     fuse_pt2,
 )
 from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
@@ -53,10 +53,9 @@ def export_model(
     quantized_model = fuse_pt2(converted_model, quantizer)
 
     # Get edge program after Cadence specific passes
-    cadence_prog_manager = export_to_cadence(quantized_model, example_inputs)
-
-    # Get executorch program after Cadence specific passes
-    exec_prog: ExecutorchProgramManager = cadence_prog_manager.to_executorch()
+    exec_prog: ExecutorchProgramManager = export_to_cadence_edge_executorch(
+        quantized_model, example_inputs, working_dir
+    )
 
     logging.info("Final exported graph:\n")
     exec_prog.exported_program().graph_module.graph.print_tabular()

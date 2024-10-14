@@ -41,6 +41,7 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_pt2e_quantization_params,
     get_pt2e_quantizers,
     get_qnn_quantizer,
+    get_vulkan_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
@@ -147,6 +148,7 @@ def build_args_parser() -> argparse.ArgumentParser:
             "coreml_8a_c4w",
             "coreml_baseline_8a_c8w",
             "coreml_baseline_8a_c4w",
+            "vulkan_8w",
         ],
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
@@ -548,6 +550,12 @@ def get_quantizer_and_quant_params(args):
         assert len(quantizers) == 0, "Should not enable both xnnpack / qnn and coreml"
         coreml_quantizer = get_coreml_quantizer(args.pt2e_quantize)
         quantizers.append(coreml_quantizer)
+    if args.vulkan and args.pt2e_quantize:
+        assert (
+            len(quantizers) == 0
+        ), "Should not enable both vulkan and other quantizers"
+        vulkan_quantizer = get_vulkan_quantizer(args.pt2e_quantize)
+        quantizers.append(vulkan_quantizer)
     logging.info(f"Applying quantizers: {quantizers}")
     return pt2e_quant_params, quantizers, quant_dtype
 
@@ -661,10 +669,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
-            # TODO: Need to remove this once we have better way to handle buffer size
-            canonicalize_program(
-                builder.edge_manager.exported_program(), custom_buffer_size=542048256
-            )
+            canonicalize_program(builder.edge_manager.exported_program())
 
         builder = builder.to_executorch()
 
@@ -681,10 +686,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
-            # TODO: Need to remove this once we have better way to handle buffer size
-            canonicalize_program(
-                builder.edge_manager.exported_program(), custom_buffer_size=542048256
-            )
+            canonicalize_program(builder.edge_manager.exported_program())
 
         builder = builder.to_executorch()
 
@@ -723,12 +725,9 @@ def _load_llama_model_metadata(
 ):
     is_fairseq2 = weight_type == WeightType.FAIRSEQ2
     metadata = {
-        "append_eos_to_prompt": is_fairseq2,  # For language llama, tell the runtime to always append EOS token(s) to prompt.
         "get_bos_id": 3 if is_fairseq2 else 1,
         "get_eos_ids": [3] if is_fairseq2 else [2],
         "get_max_seq_len": model_args.max_seq_len,
-        "get_n_bos": 1,
-        "get_n_eos": 2 if is_fairseq2 else 1,
         "get_n_layers": model_args.n_layers,
         "get_vocab_size": model_args.vocab_size,
         "use_kv_cache": use_kv_cache,
@@ -780,7 +779,7 @@ def _load_llama_model(
     logging.info(
         f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}"
     )
-    model, example_inputs, _ = EagerModelFactory.create_model(
+    model, example_inputs, example_kwarg_inputs, _ = EagerModelFactory.create_model(
         "llama2",
         "Llama2Model",
         checkpoint=checkpoint,
@@ -830,6 +829,7 @@ def _load_llama_model(
         use_kv_cache=use_kv_cache,
         generate_full_logits=generate_full_logits,
         example_inputs=example_inputs,
+        example_kwarg_inputs=example_kwarg_inputs,
         enable_dynamic_shape=enable_dynamic_shape,
         calibration_tasks=calibration_tasks,
         calibration_limit=calibration_limit,

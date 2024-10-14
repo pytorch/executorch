@@ -248,6 +248,12 @@ class GraphBuilder {
     ref_mapping_[fb_id] = ref;
   }
 
+  void add_symint_to_graph(const uint32_t fb_id, VkValuePtr value) {
+    const int32_t fb_symint = value->value_as_SymInt()->value();
+    ValueRef ref = compute_graph_->add_symint(fb_symint);
+    ref_mapping_[fb_id] = ref;
+  }
+
   void add_value_to_graph(const uint32_t fb_id, VkValuePtr value) {
     ET_CHECK_MSG(
         !fb_id_exists(fb_id),
@@ -299,6 +305,9 @@ class GraphBuilder {
         break;
       case vkgraph::GraphTypes::String:
         add_string_to_graph(fb_id, value);
+        break;
+      case vkgraph::GraphTypes::SymInt:
+        add_symint_to_graph(fb_id, value);
         break;
       default:
         ET_CHECK_MSG(false, "Unsupported value type.");

@@ -7,8 +7,7 @@
  */
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
-#include <executorch/kernels/portable/cpu/util/broadcast_util.h>
-#include <executorch/kernels/portable/cpu/util/functional_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
@@ -16,55 +15,6 @@
 namespace torch {
 namespace executor {
 namespace native {
-namespace {
-
-template <
-    bool can_cast,
-    typename CTYPE_A,
-    typename CTYPE_B,
-    typename CTYPE_IN,
-    typename CTYPE_OUT>
-struct AddInner;
-
-template <
-    typename CTYPE_A,
-    typename CTYPE_B,
-    typename CTYPE_IN,
-    typename CTYPE_OUT>
-struct AddInner<true, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT> {
-  static void
-  run(const Tensor& a, const Tensor& b, CTYPE_IN alpha_val, Tensor& out) {
-    apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-        // NOLINTNEXTLINE(facebook-hte-ConstantArgumentPassByValue)
-        [alpha_val](const CTYPE_A val_a, const CTYPE_B val_b) {
-          CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-          CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-          CTYPE_IN value = a_casted + alpha_val * b_casted;
-
-          return static_cast<CTYPE_OUT>(value);
-        },
-        a,
-        b,
-        out);
-  }
-};
-
-template <typename CTYPE_IN>
-struct ReportCanCastBug {
-  static void run(const Tensor&, const Tensor&, CTYPE_IN, Tensor&) {
-    ET_DCHECK_MSG(false, "BUG: canCast should have been checked above");
-  }
-};
-
-template <
-    typename CTYPE_A,
-    typename CTYPE_B,
-    typename CTYPE_IN,
-    typename CTYPE_OUT>
-struct AddInner<false, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT>
-    : public ReportCanCastBug<CTYPE_IN> {};
-
-} // namespace
 
 Tensor& add_out(
     KernelRuntimeContext& ctx,
@@ -72,49 +22,47 @@ Tensor& add_out(
     const Tensor& b,
     const Scalar& alpha,
     Tensor& out) {
+  // Common Dtype
+  ScalarType common_type = promoteTypes(a.scalar_type(), b.scalar_type());
+
+  // Check Common Dtype
+  ET_KERNEL_CHECK(
+      ctx,
+      (canCast(common_type, out.scalar_type()) &&
+       check_alpha_type(utils::get_scalar_dtype(alpha), common_type)),
+      InvalidArgument,
+      out);
+
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
+
+  // Resize
   ET_KERNEL_CHECK(
       ctx,
       resize_to_broadcast_target_size(a, b, out) == Error::Ok,
       InvalidArgument,
       out);
 
-  ET_KERNEL_CHECK(
-      ctx,
-      executorch::runtime::tensor_is_realhbbf16_type(out),
-      InvalidArgument,
-      out);
-  ET_KERNEL_CHECK(
-      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
+  // Compute Dtype
+  ScalarType compute_type = utils::get_compute_type(common_type);
 
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = b.scalar_type();
-  ScalarType alpha_type = utils::get_scalar_dtype(alpha);
-  ScalarType common_type = promoteTypes(a_type, b_type, /*half_to_float*/ true);
-  ScalarType out_type = out.scalar_type();
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "add.out";
 
-  ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
-  ET_KERNEL_CHECK(
-      ctx, check_alpha_type(alpha_type, common_type), InvalidArgument, out);
-
-  constexpr auto name = "add.out";
-
-  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
-    ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
-      using CTYPE_IN = typename torch::executor::
-          promote_types<CTYPE_A, CTYPE_B, /*half_to_float*/ true>::type;
-      ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
-      CTYPE_IN alpha_val;
-      utils::extract_scalar(alpha, &alpha_val);
-
-      ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
-        AddInner<
-            can_cast<CTYPE_IN, CTYPE_OUT>::value,
-            CTYPE_A,
-            CTYPE_B,
-            CTYPE_IN,
-            CTYPE_OUT>::run(a, b, alpha_val, out);
-      });
-    });
+  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    const CTYPE_COMPUTE val_alpha = utils::scalar_to<CTYPE_COMPUTE>(alpha);
+    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [val_alpha](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+          return val_a + val_alpha * val_b;
+        },
+        ctx,
+        a,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        b,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        out,
+        utils::SupportedTensorDtypes::REALHBBF16);
   });
 
   return out;
@@ -126,71 +74,43 @@ Tensor& add_scalar_out(
     const Scalar& b,
     const Scalar& alpha,
     Tensor& out) {
-  (void)ctx;
+  // Common Dtype
+  ScalarType common_type = utils::promote_type_with_scalar(a.scalar_type(), b);
 
-  // Resize for dynamic shape
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      resize_tensor(out, a.sizes()) == Error::Ok,
-      InvalidArgument,
-      out,
-      "Failed to resize output tensor.");
-
+  // Check Common Dtype
   ET_KERNEL_CHECK(
       ctx,
-      executorch::runtime::tensor_is_realhbbf16_type(out),
+      (common_type == out.scalar_type() &&
+       check_alpha_type(utils::get_scalar_dtype(alpha), common_type)),
       InvalidArgument,
       out);
+
+  // Check Dim Order
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = utils::get_scalar_dtype(b);
-  ScalarType alpha_type = utils::get_scalar_dtype(alpha);
-  ScalarType common_type =
-      utils::promote_type_with_scalar(a_type, b, /*half_to_float*/ false);
-  ScalarType out_type = out.scalar_type();
-
-  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
+  // Resize
   ET_KERNEL_CHECK(
-      ctx, check_alpha_type(alpha_type, common_type), InvalidArgument, out);
+      ctx, resize_tensor(out, a.sizes()) == Error::Ok, InvalidArgument, out);
 
-  if (common_type == ScalarType::Half) {
-    common_type = ScalarType::Float;
-  }
+  // Compute Dtype
+  ScalarType compute_type = utils::get_compute_type(common_type);
 
-  constexpr auto name = "add.Scalar_out";
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "add.Scalar_out";
 
-  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
-    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
-      using CTYPE_IN = typename utils::promote_type_with_scalar_type<
-          CTYPE_A,
-          CTYPE_B,
-          /*half_to_float*/ true>::type;
-      ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
-
-      CTYPE_B b_val;
-      utils::extract_scalar(b, &b_val);
-      CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
-
-      CTYPE_IN alpha_val;
-      utils::extract_scalar(alpha, &alpha_val);
-
-      using CTYPE_OUT = typename std::conditional<
-          std::is_same<CTYPE_A, internal::F2>::value,
-          internal::F2,
-          CTYPE_IN>::type;
-
-      apply_unary_map_fn(
-          [b_casted, alpha_val](const CTYPE_A val_a) {
-            CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-            CTYPE_IN value = a_casted + alpha_val * b_casted;
-            return static_cast<CTYPE_OUT>(value);
-          },
-          a.const_data_ptr<CTYPE_A>(),
-          out.mutable_data_ptr<CTYPE_OUT>(),
-          out.numel());
-    });
+  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [b, alpha](const CTYPE_COMPUTE val_a) {
+          CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
+          CTYPE_COMPUTE val_alpha = utils::scalar_to<CTYPE_COMPUTE>(alpha);
+          return val_a + val_alpha * val_b;
+        },
+        ctx,
+        a,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        out,
+        utils::SupportedTensorDtypes::SAME_AS_COMMON);
   });
 
   return out;

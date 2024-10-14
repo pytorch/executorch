@@ -46,7 +46,7 @@ backends/qualcomm
 |   └── python # Python interface for using QNN libraries.
 ├── builders # Codes for lowering each operators (AoT Part).
 ├── partition # QNN Partitioner (AoT Part).
-├── passes # Various passes helping lower models to QNN backend (AoT Part).
+├── _passes # Various private passes helping lower models to QNN backend (AoT Part).
 ├── python # Places to put pybind artifacts for accessing QNN APIs, structures, etc (AoT Part).
 ├── quantizer # QNN Quantizer
 ├── runtime # Here is QNN runtime responsbile for compiling a model on x64.

@@ -1,4 +1,5 @@
 load("@fbsource//tools/build_defs/android:fb_android_cxx_library.bzl", "fb_android_cxx_library")
+load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "executorch_generated_lib")
 
 oncall("executorch")
@@ -41,6 +42,8 @@ fb_android_cxx_library(
         "//xplat/executorch/extension/module:module_static",
         "//xplat/executorch/extension/runner_util:inputs_static",
         "//xplat/executorch/extension/tensor:tensor_static",
+        "//xplat/executorch/extension/threadpool:threadpool_static",
+        third_party_dep("cpuinfo"),
     ],
 )
 

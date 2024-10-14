@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <bitset>
 #include <utility>
 #include <vector>
 
@@ -24,6 +25,8 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/QPackUtils.h>
 
 #include <executorch/backends/vulkan/test/utils/test_utils.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/DispatchNode.h>
 
 using namespace vkcompute;
 using namespace vkcompute::api;
@@ -1075,7 +1078,7 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
   PRINT_SIZE(Value);
   PRINT_SIZE(StagingBuffer);
   PRINT_SIZE(ComputeGraph);
-  PRINT_SIZE(ExecuteNode);
+  PRINT_SIZE(DispatchNode);
 #undef PRINT_SIZE
 
   // The actual sizes of each object is dependent on the platform. However, we
@@ -1091,7 +1094,50 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
   // Current known size on 64 bit system: 384 B
   EXPECT_TRUE(sizeof(ComputeGraph) < 500);
   // Current known size on 64 bit system: 248 B
-  EXPECT_TRUE(sizeof(ExecuteNode) < 500);
+  EXPECT_TRUE(sizeof(DispatchNode) < 500);
+}
+
+TEST_F(VulkanComputeAPITest, test_tensor_creation_from_vulkan_image) {
+  const auto w = 16;
+  const auto h = 12;
+  const auto d = 1;
+  const utils::uvec3 image_extents = {w, h, d};
+
+  vkapi::Adapter* adapter_ptr = context()->adapter_ptr();
+
+  vkapi::ImageSampler::Properties sampler_props{
+      VK_FILTER_NEAREST,
+      VK_SAMPLER_MIPMAP_MODE_NEAREST,
+      VK_SAMPLER_ADDRESS_MODE_REPEAT,
+      VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
+  };
+
+  VkFormat image_format = VK_FORMAT_R32G32B32A32_SFLOAT;
+  VkImageType image_type = VK_IMAGE_TYPE_3D;
+  VkImageViewType image_view_type = VK_IMAGE_VIEW_TYPE_3D;
+
+  VkSampler sampler = adapter_ptr->sampler_cache().retrieve(sampler_props);
+
+  auto image = adapter_ptr->vma().create_image(
+      context()->device(),
+      vkapi::create_extent3d(image_extents),
+      image_format,
+      image_type,
+      image_view_type,
+      sampler_props,
+      sampler,
+      /*allow_transfer = */ true,
+      /*allocate_memory = */ true);
+
+  auto tensor = vTensor(context(), image);
+
+  const auto exp_sizes = std::vector<int64_t>{w, h, d * 4};
+  EXPECT_TRUE(tensor.sizes() == exp_sizes);
+  EXPECT_TRUE(tensor.packed_dim() == 2);
+
+  const auto exp_numel = w * h * d * 4;
+  EXPECT_TRUE(tensor.numel() == exp_numel);
+  EXPECT_TRUE(tensor.padded_numel() == exp_numel);
 }
 
 TEST(VulkanComputeGraphTest, test_values_scalars) {
@@ -1148,9 +1194,8 @@ TEST(VulkanComputeGraphTest, test_values_string) {
   EXPECT_TRUE(stored == "hello, world");
 }
 
-TEST(VulkanComputeGraphTest, empty_init_executenode_test) {
+TEST(VulkanComputeGraphTest, empty_init_graphnode_test) {
   ExecuteNode node(nullptr, {});
-  EXPECT_FALSE(node);
 
   GraphConfig config;
   ComputeGraph graph(config);
@@ -1406,7 +1451,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
   IOValueRef out = {};
   out.value = a.value;
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR("scalar_add_texture"),
       graph.create_global_wg_size(a.value),
@@ -3205,5 +3250,112 @@ void test_transpose_view_mm(
 TEST(VulkanComputeGraphOpsTest, test_transpose_with_mm) {
   for (auto storage_type : {utils::kBuffer, utils::kTexture3D}) {
     test_transpose_view_mm(2, 7, 17, 5, storage_type);
+  }
+}
+
+void test_to_copy() {
+  GraphConfig config;
+  config.set_storage_type_override(utils::kTexture3D);
+  ComputeGraph graph(config);
+  int M = 8;
+  int N = 8;
+  int K = 8;
+  // Build graph
+  IOValueRef in = graph.add_input_tensor(
+      {1, M, N, K},
+      vkapi::kFloat,
+      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+
+  std::vector<float> data_in =
+      create_random_float_buffer(M * N * K, -1024, 1024);
+  graph.copy_into_staging(in.staging, data_in.data(), data_in.size());
+
+  IOValueRef out;
+  out.value = graph.add_tensor(
+      {1, M, N, K},
+      vkapi::kHalf,
+      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+
+  auto op = VK_GET_OP_FN("aten._to_copy.default");
+  op(graph,
+     {in.value,
+      graph.add_none(),
+      graph.add_none(),
+      graph.add_none(),
+      graph.add_none(),
+      graph.add_none(),
+      graph.add_none(),
+      out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+  graph.propagate_resize();
+  graph.execute();
+
+  std::vector<torch::executor::Half> output_data(graph.numel_of(out.value));
+  graph.copy_from_staging(out.staging, output_data.data(), output_data.size());
+
+  EXPECT_EQ(data_in.size(), output_data.size());
+
+  float mse_ex = 0.0f;
+  float mse_vk = 0.0f;
+
+  // check results
+  for (size_t i = 0; i < output_data.size(); ++i) {
+    float input = data_in[i];
+    torch::executor::Half expected_output =
+        static_cast<torch::executor::Half>(input);
+    uint16_t* expected_bits = reinterpret_cast<uint16_t*>(&expected_output);
+    torch::executor::Half output = output_data[i];
+    uint16_t* output_bits = reinterpret_cast<uint16_t*>(&output);
+
+    std::string msg;
+    msg.reserve(64);
+    msg = "input = " + std::to_string(input) + "(0b" +
+        std::bitset<32>(*reinterpret_cast<uint32_t*>(&input)).to_string() +
+        "), expected output = " + std::to_string(expected_output) + "(0b" +
+        std::bitset<16>(*expected_bits).to_string() +
+        "), recieved output = " + std::to_string(output) + "(0b" +
+        std::bitset<16>(*output_bits).to_string() + ")";
+
+    std::cout << msg << std::endl;
+
+    // Note: Torch executor half "rounds up" when converting to fp16 whereas
+    // most driver implementations of Vulkan's opFConvert() just truncates the
+    // extra bits for performance (rounding introduces conditional).
+    // Example:
+    // INPUT F32 = 25.248 (sign{0b0}, exp{0b10000011},
+    // mantissa{0b10010011111101111100111}),
+    // TORCH HALF OUTPUT F16 = 25.25 (sign{0b0}, exp{0b10011},
+    // mantissa{0b1001010000}),
+    // VULKAN OUTPUT F16 = 25.2344 (sign{0b0}, exp{0b10011},
+    // mantissa{0b1001001111})
+    // Note:
+    // The vulkan mantissa exactly matches the first 10
+    // bits of the input 23 bit mantissa. But since the 11th bit is 1, the
+    // torch half output is rounded up (essentially adding a 1).
+    // Vulkan mantissa{0b1001001111} + 1 = Torch half mantissa{0b1001010000}
+
+    EXPECT_TRUE(
+        (*output_bits == *expected_bits) ||
+        /*rounding error*/ ((*output_bits + 1u) == *expected_bits));
+    mse_ex += std::pow(expected_output - input, 2);
+    mse_vk += std::pow(output - input, 2);
+  }
+
+  mse_ex /= output_data.size();
+  mse_vk /= output_data.size();
+  std::cout << "========================================================="
+            << std::endl;
+  std::cout << "mse_ex = " << mse_ex << ", mse_vk = " << mse_vk << std::endl;
+}
+
+TEST(VulkanComputeGraphOpsTest, test_to_copy) {
+  if (context()->adapter_ptr()->has_16bit_storage()) {
+    test_to_copy();
   }
 }
