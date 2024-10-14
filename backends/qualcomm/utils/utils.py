@@ -331,7 +331,7 @@ def _transform(
 def capture_program(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
-    custom_pass_config: Set[str] = None,
+    custom_pass_config: Set[str] = frozenset(),
 ) -> exir.ExirExportedProgram:
     ep = torch.export.export(module, inputs)
     decomposed_ep = ep.run_decompositions(get_decomp_table())
