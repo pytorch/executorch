@@ -675,10 +675,12 @@ class QuantizedGroupEmbedding(torch.nn.Module):
                 return torch.ops.quantized_decomposed.embedding_2bit.dtype(
                     self.weight, self.scales, None, 0, 0, indices, dtype=self.dtype
                 )
-            elif self.bitwidth == 4:
-                return torch.ops.quantized_decomposed.embedding_4bit.dtype(
-                    self.weight, self.scales, None, 0, 0, indices, dtype=self.dtype
-                )
+
+            # Remaining case (always return to make pyre happy)
+            assert self.bitwidth == 4
+            return torch.ops.quantized_decomposed.embedding_4bit.dtype(
+                self.weight, self.scales, None, 0, 0, indices, dtype=self.dtype
+            )
 
 
 ############################ Source Transform Start #######################
