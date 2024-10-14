@@ -186,7 +186,6 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--quantization_mode",
         type=_qmode_type,
         default=None,
-        # choices=["int8", "8da4w", "8da4w-gptq"] + [f"torchao:8da{x}w" for x in range(1, 9)],
         help="type of quantization",
     )
 
