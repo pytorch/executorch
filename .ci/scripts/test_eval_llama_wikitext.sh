@@ -40,7 +40,7 @@ run_and_verify() {
 	-t tokenizer.model \
 	-kv \
 	-d fp32 \
-	--max_seq_len 2048 \
+	--max_seq_length 2048 \
 	--limit 5 > result.txt
 
     # Verify result.txt
