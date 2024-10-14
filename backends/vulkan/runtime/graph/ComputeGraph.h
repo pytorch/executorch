@@ -342,6 +342,10 @@ class ComputeGraph final {
     return values_.at(idx).toTensor().axis_map_ubo();
   }
 
+  inline bool is_standard_axis_map(const ValueRef idx) {
+    return values_.at(idx).toTensor().is_standard_axis_map();
+  }
+
   inline vkapi::BufferBindInfo logical_limits_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().logical_limits_ubo();
   }
