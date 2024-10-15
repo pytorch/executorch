@@ -25,14 +25,14 @@ using ScalarType = exec_aten::ScalarType;
  * them in out. The weight is quantized per channel, with a scale and zero_point
  * for each embedding.
  *
- * Corresponds as the out variant to torch.ops.quantized.embedding_4bit
+ * Corresponds as the out variant to torch.ops.quantized.embedding_2bit
  *
  * NOTE: quant_min, quant_max, and Dtype are not used in computation, but rather
  * metadata that is passed around which can be useful for pattern matching. See
  * https://github.com/pytorch/pytorch/pull/87093#discussion_r1000841181 for more
  * info.
  */
-Tensor& quantized_embedding_4bit_out(
+Tensor& quantized_embedding_2bit_out(
     // TODO Evaluate whether this name is appropriate for an operator that takes
     // non quant input and returns fp output
     const Tensor& weight,
@@ -50,10 +50,10 @@ Tensor& quantized_embedding_4bit_out(
       weight_quant_max,
       indices,
       out,
-      4);
+      2);
 }
 
-Tensor& quantized_embedding_4bit_out(
+Tensor& quantized_embedding_2bit_out(
     KernelRuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
@@ -71,17 +71,15 @@ Tensor& quantized_embedding_4bit_out(
       weight_quant_max,
       indices,
       out,
-      4);
+      2);
 }
 
-Tensor& quantized_embedding_4bit_dtype_out(
-    // TODO Evaluate whether this name is appropriate for an operator that takes
-    // non quant input and returns fp output
+Tensor& quantized_embedding_2bit_dtype_out(
     const Tensor& weight,
     const Tensor& weight_scales,
     const optional<Tensor>& opt_weight_zero_points,
-    const int64_t weight_quant_min,
-    const int64_t weight_quant_max,
+    int64_t weight_quant_min,
+    int64_t weight_quant_max,
     const Tensor& indices,
     exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
@@ -94,10 +92,10 @@ Tensor& quantized_embedding_4bit_dtype_out(
       indices,
       out_dtype,
       out,
-      4);
+      2);
 }
 
-Tensor& quantized_embedding_4bit_dtype_out(
+Tensor& quantized_embedding_2bit_dtype_out(
     KernelRuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
@@ -117,7 +115,7 @@ Tensor& quantized_embedding_4bit_dtype_out(
       indices,
       out_dtype,
       out,
-      4);
+      2);
 }
 
 } // namespace native
