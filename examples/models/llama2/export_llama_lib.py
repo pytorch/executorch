@@ -800,26 +800,26 @@ def _load_llama_model(
         modelname = "llama2"
         model_class_name = "Llama2Model"
     elif modelname in TORCHTUNE_DEFINED_MODELS:
-        raise NotImplementedError("Torchtune Llama models are not yet supported in ExecuTorch export.")
+        raise NotImplementedError(
+            "Torchtune Llama models are not yet supported in ExecuTorch export."
+        )
     else:
         raise ValueError(f"{modelname} is not a valid Llama model.")
 
-    model, example_inputs, example_kwarg_inputs, _ = (
-        EagerModelFactory.create_model(
-            modelname,
-            model_class_name,
-            checkpoint=checkpoint,
-            checkpoint_dir=checkpoint_dir,
-            params=params_path,
-            use_kv_cache=use_kv_cache,
-            use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
-            generate_full_logits=generate_full_logits,
-            fairseq2=weight_type == WeightType.FAIRSEQ2,
-            max_seq_len=max_seq_len,
-            enable_dynamic_shape=enable_dynamic_shape,
-            output_prune_map_path=output_prune_map_path,
-            args=args,
-        )
+    model, example_inputs, example_kwarg_inputs, _ = EagerModelFactory.create_model(
+        modelname,
+        model_class_name,
+        checkpoint=checkpoint,
+        checkpoint_dir=checkpoint_dir,
+        params=params_path,
+        use_kv_cache=use_kv_cache,
+        use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
+        generate_full_logits=generate_full_logits,
+        fairseq2=weight_type == WeightType.FAIRSEQ2,
+        max_seq_len=max_seq_len,
+        enable_dynamic_shape=enable_dynamic_shape,
+        output_prune_map_path=output_prune_map_path,
+        args=args,
     )
     if dtype_override:
         assert isinstance(
