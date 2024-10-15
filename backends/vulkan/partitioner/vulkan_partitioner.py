@@ -144,9 +144,24 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         return False
 
-    def is_valid_to_copy(self, node: torch.fx.node) -> bool:  # pyre-ignore[11]
-        # lower only if floating point dtype conversion
-        return len(node.args) > 1 and node.args[1] in (torch.float32, torch.float16)
+    def is_valid_to_copy(self, node: torch.fx.Node) -> bool:
+        float_dtypes = [torch.float16, torch.float32]
+
+        if len(node.args) != 1:
+            return False
+
+        in_arg = node.args[0]
+        if not isinstance(in_arg, torch.fx.Node):
+            return False
+
+        in_tensor = in_arg.meta.get("val", None)
+        out_tensor = node.meta.get("val", None)
+
+        if isinstance(in_tensor, FakeTensor) and isinstance(out_tensor, FakeTensor):
+            if out_tensor.dtype in float_dtypes and in_tensor.dtype in float_dtypes:
+                return True
+
+        return False
 
     def is_node_supported(
         self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
@@ -174,12 +189,12 @@ class VulkanSupportedOperators(OperatorSupportBase):
         if target not in VulkanSupportedOperators._ops:
             return False
 
-        features = VulkanSupportedOperators._ops[target]
-
         if target == exir_ops.edge.aten._to_copy.default and not self.is_valid_to_copy(
             node
         ):
             return False
+
+        features = VulkanSupportedOperators._ops[target]
 
         if self.require_dynamic_shapes and not features.supports_dynamic_shape:
             return False
