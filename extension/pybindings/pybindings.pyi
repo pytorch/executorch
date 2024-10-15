@@ -7,9 +7,21 @@
 # pyre-strict
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Enum, List, Optional, Sequence, Tuple
 
 from executorch.exir._warnings import experimental
+
+@experimental("This API is experimental and subject to change without notice.")
+class Verification(Enum):
+    """Verification maps C++ Program::Verification to Python.
+
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+
+    Minimal: ...
+    InternalConsistency: ...
 
 @experimental("This API is experimental and subject to change without notice.")
 class ExecuTorchModule:
@@ -46,6 +58,7 @@ class ExecuTorchModule:
         self, path: str, debug_buffer_path: Optional[str] = None
     ) -> None: ...
     def method_meta(self, method_name: str) -> MethodMeta: ...
+    def method_names(self) -> List[str]: ...
 
 @experimental("This API is experimental and subject to change without notice.")
 class BundledModule:
@@ -125,7 +138,10 @@ class MethodMeta:
 
 @experimental("This API is experimental and subject to change without notice.")
 def _load_for_executorch(
-    path: str, enable_etdump: bool = False, debug_buffer_size: int = 0
+    path: str,
+    enable_etdump: bool = False,
+    debug_buffer_size: int = 0,
+    program_verification: Verification = Verification.InternalConsistency,
 ) -> ExecuTorchModule:
     """Load an ExecuTorch Program from a file.
 
@@ -148,7 +164,10 @@ def _load_for_executorch(
 
 @experimental("This API is experimental and subject to change without notice.")
 def _load_for_executorch_from_buffer(
-    buffer: bytes, enable_etdump: bool = False, debug_buffer_size: int = 0
+    buffer: bytes,
+    enable_etdump: bool = False,
+    debug_buffer_size: int = 0,
+    program_verification: Verification = Verification.InternalConsistency,
 ) -> ExecuTorchModule:
     """Same as _load_for_executorch, but takes a byte buffer instead of a file path.
 

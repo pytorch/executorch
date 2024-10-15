@@ -12,9 +12,9 @@ import time
 from multiprocessing.connection import Client
 
 import torch
+from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
 
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
-from executorch.backends.qualcomm.passes.build_quant_io import BuildQuantIo
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
@@ -26,6 +26,7 @@ from executorch.backends.qualcomm.utils.utils import (
     convert_linear_to_conv2d,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
+    get_soc_to_chipset_map,
 )
 from executorch.examples.qualcomm.oss_scripts.llama2.model.static_llama import (
     LlamaModel,
@@ -45,15 +46,6 @@ from executorch.extension.llm.export.builder import DType
 from sentencepiece import SentencePieceProcessor
 from torch.ao.quantization.observer import MinMaxObserver
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-
-
-soc_to_chipset_map = {
-    "SSG2115P": QcomChipset.SSG2115P,
-    "SM8650": QcomChipset.SM8650,
-    "SM8550": QcomChipset.SM8550,
-    "SM8475": QcomChipset.SM8475,
-    "SM8450": QcomChipset.SM8450,
-}
 
 
 pte_filename = "llama2_qnn"
@@ -402,7 +394,7 @@ def compile(args):
     end_quantize_ts = time.time()
     print("single_llama.quantize(quant_dtype)", end_quantize_ts - start_quantize_ts)
     single_llama.lowering_modules(
-        args.artifact, kv_type=kv_type, soc_model=soc_to_chipset_map[args.model]
+        args.artifact, kv_type=kv_type, soc_model=get_soc_to_chipset_map()[args.model]
     )
     end_lowering_ts = time.time()
     print("Complete Compile", end_lowering_ts - end_quantize_ts)

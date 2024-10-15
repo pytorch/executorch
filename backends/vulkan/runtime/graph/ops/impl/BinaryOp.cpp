@@ -75,7 +75,7 @@ void add_binary_op_node(
   kernel_name += op_name;
   add_dtype_suffix(kernel_name, *t_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),

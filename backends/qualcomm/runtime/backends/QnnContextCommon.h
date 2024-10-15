@@ -13,8 +13,8 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnDeviceCommon.h>
 
 #include <memory>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 class QnnContext {
  public:
@@ -22,16 +22,15 @@ class QnnContext {
       const QnnImplementation& implementation,
       QnnBackend* backend,
       QnnDevice* device,
-      const QnnExecuTorchContextBinary& qnn_context_blob)
+      QnnBackendCache* cache)
       : handle_(nullptr),
         implementation_(implementation),
         backend_(backend),
-        device_(device) {
-    cache_ = std::make_unique<QnnBackendCache>(qnn_context_blob);
-  }
+        device_(device),
+        cache_(cache) {}
 
   virtual ~QnnContext();
-  Error Configure();
+  executorch::runtime::Error Configure();
 
   Qnn_ContextHandle_t GetHandle() const {
     return handle_;
@@ -51,15 +50,16 @@ class QnnContext {
     return cache_->GetCacheState();
   };
 
-  Error GetContextBinary(
+  executorch::runtime::Error GetContextBinary(
       QnnExecuTorchContextBinary& qnn_executorch_context_binary);
 
  protected:
-  virtual Error MakeConfig(std::vector<const QnnContext_Config_t*>& config) {
-    return Error::Ok;
+  virtual executorch::runtime::Error MakeConfig(
+      std::vector<const QnnContext_Config_t*>& config) {
+    return executorch::runtime::Error::Ok;
   };
-  virtual Error AfterConfigure() {
-    return Error::Ok;
+  virtual executorch::runtime::Error AfterConfigure() {
+    return executorch::runtime::Error::Ok;
   };
 
  private:
@@ -67,9 +67,9 @@ class QnnContext {
   const QnnImplementation& implementation_;
   QnnBackend* backend_;
   QnnDevice* device_;
-  std::unique_ptr<QnnBackendCache> cache_;
+  QnnBackendCache* cache_;
   std::vector<char> binary_buffer_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

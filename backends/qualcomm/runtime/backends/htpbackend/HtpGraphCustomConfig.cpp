@@ -8,8 +8,8 @@
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCache.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpGraphCustomConfig.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 std::vector<QnnGraph_CustomConfig_t>
 HtpGraphCustomConfig::CreateGraphCustomConfig(
@@ -74,5 +74,5 @@ HtpGraphCustomConfig::CreateGraphCustomConfig(
   return ret;
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

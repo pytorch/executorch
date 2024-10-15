@@ -106,9 +106,7 @@ class Executor:
         working_dir: str = "",
     ):
         self.working_dir = working_dir
-        self.executor_builder = (
-            "./backends/cadence/cadence_runner/build_cadence_runner.sh"
-        )
+        self.executor_builder = "./backends/cadence/build_cadence_runner.sh"
         self.execute_runner = "./cmake-out/backends/cadence/cadence_runner"
         self.bundled_program_path: str = "CadenceDemoModel.bpte"
 
@@ -125,6 +123,7 @@ class Executor:
             ),
             "etdump_path": os.path.join(self.working_dir, "etdump.etdp"),
             "debug_output_path": os.path.join(self.working_dir, "debug_output.bin"),
+            "dump_outputs": "true",
         }
         args = self.get_bash_command(self.execute_runner, cmd_args)
         logging.info(f"\33[33m{' '.join(args)}\33[0m")

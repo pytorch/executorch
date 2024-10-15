@@ -8,7 +8,7 @@
 
 import operator
 
-from executorch.backends.vulkan.passes.custom_ops_defs import (  # noqa
+from executorch.backends.vulkan._passes.custom_ops_defs import (  # noqa
     conv_with_clamp_op,
     grid_priors_op,
 )
@@ -45,6 +45,13 @@ class OpList:
 
 PRIM_OPS = [
     operator.getitem,
+    # Quantization related ops will be fused via graph passes
+    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
 ]
 
 SUPPORTS_DYNAMIC_SHAPE = [
@@ -70,6 +77,7 @@ SUPPORTS_DYNAMIC_SHAPE = [
     exir_ops.edge.aten.sin.default,
     exir_ops.edge.aten.sqrt.default,
     exir_ops.edge.aten.tanh.default,
+    exir_ops.edge.aten._to_copy.default,
     # Matrix Multiplication
     exir_ops.edge.aten.bmm.default,
     exir_ops.edge.aten.mm.default,

@@ -416,6 +416,17 @@ class Conv2dSumReduceDim(torch.nn.Module):
         return torch.sum(self.first(x), dim=(2, 3), keepdim=False)
 
 
+class Conv2dTopK(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 16, 3)
+
+    def forward(self, x):
+        x = self.conv(x)
+        topk_values, topk_indices = torch.topk(x, 5, dim=1)
+        return topk_values
+
+
 class Div(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -438,6 +449,30 @@ class DivConstantLong(torch.nn.Module):
 
     def forward(self, x):
         return x / 10
+
+
+class EinsumBilinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, bn, anm, bm):
+        return torch.einsum("bn,anm,bm->ba", bn, anm, bm)
+
+
+class EinsumOuterProduct(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, i, j):
+        return torch.einsum("i,j->ij", i, j)
+
+
+class EinsumOuterProductRelu(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, i, j):
+        return torch.relu(torch.einsum("i,j->ij", i, j))
 
 
 class Embedding(torch.nn.Module):
@@ -976,6 +1011,16 @@ class Tanh(torch.nn.Module):
 
     def forward(self, x):
         return torch.tanh(x)
+
+
+class TopKandIndex(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.idx_source = torch.rand(10, 3)
+
+    def forward(self, x):
+        a, b = torch.topk(x, 3)
+        return a + self.idx_source[b]
 
 
 class Unbind(torch.nn.Module):

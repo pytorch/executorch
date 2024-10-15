@@ -21,8 +21,9 @@ from executorch.extension.llm.tokenizer.tokenizer import (
 )
 from executorch.extension.llm.tokenizer.utils import get_tokenizer
 from lm_eval.api.model import LM
+from lm_eval.evaluator import simple_evaluate
 
-from .evaluate.eager_eval import EagerEvalWrapper, evaluate_model
+from .evaluate.eager_eval import EagerEvalWrapper
 
 from .export_llama_lib import (
     _prepare_for_llama_export,
@@ -246,9 +247,19 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="list of lm-eluther tasks to evaluate usage: --tasks task1 task2",
     )
     parser.add_argument(
-        "--limit", type=int, default=5, help="number of samples to evalulate"
+        "--limit",
+        type=int,
+        default=None,
+        help="number of samples to evalulate. If not set, evaluate all samples",
     )
-
+    parser.add_argument(
+        "-f",
+        "--num_fewshot",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Number of examples in few-shot context",
+    )
     # Add additional args specific to eval via an ET Runner
     # Note: For initial integration, the tokenizer.model is also required
     parser.add_argument(
@@ -281,11 +292,13 @@ def eval_llama(
     eval_wrapper = gen_eval_wrapper(model_name, args)
 
     # Evaluate the model
-    eval_results = evaluate_model(
-        eval_wrapper,
-        args.tasks,  # pyre-ignore
-        args.limit,  # pyre-ignore
-    )
+    with torch.no_grad():
+        eval_results = simple_evaluate(
+            model=eval_wrapper,
+            tasks=args.tasks,  # pyre-ignore: Undefined attribute [16]: `argparse.ArgumentParser` has no attribute `tasks`
+            num_fewshot=args.num_fewshot,  # pyre-ignore: Undefined attribute [16]: `argparse.ArgumentParser` has no attribute `num_fewshot`
+            limit=args.limit,  # pyre-ignore: Undefined attribute [16]: `argparse.ArgumentParser` has no attribute `limit`
+        )
 
     for task, res in eval_results["results"].items():
         print(f"{task}: {res}")

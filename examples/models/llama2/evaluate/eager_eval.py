@@ -7,17 +7,13 @@
 
 from typing import Optional, Union
 
-import lm_eval
 import torch
 from executorch.examples.models.llama2.tokenizer.tiktoken import Tokenizer as Tiktoken
 from executorch.extension.llm.tokenizer.tokenizer import (
     Tokenizer as SentencePieceTokenizer,
 )
 
-from lm_eval.api.model import LM
-from lm_eval.evaluator import evaluate
 from lm_eval.models.huggingface import HFLM as eval_wrapper
-from lm_eval.tasks import get_task_dict
 
 from torch import nn
 
@@ -44,7 +40,7 @@ class EagerEvalWrapper(eval_wrapper):
 
     @property
     def eot_token_id(self):
-        return self._tokenizer.eos_id
+        return self._tokenizer.eot_id
 
     @property
     def max_length(self):
@@ -63,17 +59,10 @@ class EagerEvalWrapper(eval_wrapper):
         return self._device
 
     def tok_encode(self, string: str, **kwargs):  # pyre-ignore
-        tokens = self._tokenizer.encode(string, bos=True, eos=False)
-        encoded = torch.tensor(tokens, dtype=torch.int, device=self.device)
-        # encoded is a pytorch tensor, but some internal logic in the
-        # eval harness expects it to be a list instead
-        # TODO: verify this for multi-batch as well
-        encoded = encoded.tolist()
-        return encoded
+        return self._tokenizer.encode(string, bos=False, eos=False)
 
     def tok_decode(self, tokens):
-        decoded = self._tokenizer.decode(tokens)
-        return decoded
+        return self._tokenizer.decode(tokens)
 
     def _model_call(self, inps):
         if self._use_kv_cache:
@@ -86,39 +75,3 @@ class EagerEvalWrapper(eval_wrapper):
 
     def _model_generate(self, context, max_length, eos_token_id):
         raise Exception("unimplemented")
-
-
-@torch.no_grad()
-def evaluate_model(
-    eval_wrapper: LM,
-    tasks: Optional[list] = None,
-    limit: Optional[int] = None,
-) -> dict:
-    """
-    Evaluates a language model on a specified task using the lm-evaluation-harness library.
-
-    Args:
-        eval_wrapper (LM): A LM wrapper class compatible with lm-evaluation-harness evaluation
-        tasks: Optional[list]: The names of the evaluation tasks to perform.
-        limit (Optional[int]): The maximum number of samples to evaluate (None for all available).
-
-    Returns:
-        eval_results (dict): A dictionary of evaluation results for the specified task(s).
-    """
-
-    if tasks is None:
-        tasks = ["wikitext"]
-
-    if "hendrycks_test" in tasks:
-        tasks.remove("hendrycks_test")
-        tasks += list(
-            lm_eval.tasks.hendrycks_test.create_all_tasks().keys()  # pyre-ignore
-        )
-    task_dict = get_task_dict(tasks)
-
-    eval_results = evaluate(
-        eval_wrapper,
-        task_dict,
-        limit=limit,
-    )
-    return eval_results

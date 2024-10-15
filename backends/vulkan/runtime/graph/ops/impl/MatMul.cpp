@@ -72,7 +72,7 @@ void add_matmul_naive_buffer_node(
       graph.size_at<uint32_t>(-2, out),
       graph.size_at<uint32_t>(-3, out) * graph.size_at<uint32_t>(-4, out)};
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
@@ -113,7 +113,7 @@ void add_matmul_naive_texture3d_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   utils::uvec3 global_wg_size = graph.logical_limits_of(out);
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_wg_size,
@@ -198,7 +198,7 @@ void add_matmul_optimized_node(
 
   utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,

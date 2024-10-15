@@ -1,0 +1,14 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "runtime",
+    srcs = ["__init__.py"],
+    deps = [
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+    visibility = [
+        "//executorch/runtime/...",
+    ],
+)

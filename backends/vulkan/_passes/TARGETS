@@ -40,3 +40,16 @@ runtime.python_library(
         "//executorch/exir/dialects:lib",
     ],
 )
+
+runtime.python_library(
+    name = "vulkan_passes",
+    srcs = [
+        "__init__.py",
+    ],
+    visibility = [
+        "//executorch/backends/...",
+    ],
+    deps = [
+        ":remove_local_scalar_dense",
+    ]
+)

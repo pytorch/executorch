@@ -45,7 +45,7 @@ def main(args):
             image_shape=(256, 256),
             crop_size=224,
         )
-    pte_filename = "mv3_qnn"
+    pte_filename = "mv3_qnn_float16"
     instance = MV3Model()
     build_executorch_binary(
         instance.get_eager_model().eval(),

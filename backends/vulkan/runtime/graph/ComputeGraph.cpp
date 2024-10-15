@@ -296,6 +296,13 @@ ValueRef ComputeGraph::add_tensor(
       sizes, dtype, suggested_memory_layout(sizes), shared_object_idx);
 }
 
+ValueRef ComputeGraph::add_tensor(const vkapi::VulkanImage& image) {
+  ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
+  values_.emplace_back(api::vTensor(context(), image));
+  return idx;
+}
+
 ValueRef ComputeGraph::add_tensor_view(const ValueRef vref) {
   const vTensorPtr t = get_tensor(vref);
   ValueRef idx(static_cast<int>(values_.size()));

@@ -26,6 +26,7 @@ import android.system.ErrnoException;
 import android.system.Os;
 import android.util.Log;
 import android.view.View;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -662,6 +663,12 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     mSendButton.setImageResource(R.drawable.baseline_send_24);
     mSendButton.setOnClickListener(
         view -> {
+          try {
+            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            imm.hideSoftInputFromWindow(getCurrentFocus().getWindowToken(), 0);
+          } catch (Exception e) {
+            ETLogging.getInstance().log("Keyboard dismissal error: " + e.getMessage());
+          }
           addSelectedImagesToChatThread(mSelectedImageUri);
           String finalPrompt;
           String rawPrompt = mEditTextMessage.getText().toString();
