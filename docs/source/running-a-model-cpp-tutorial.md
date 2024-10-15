@@ -2,8 +2,7 @@
 
 **Author:** [Jacob Szwejbka](https://github.com/JacobSzwejbka)
 
-In this tutorial, we will cover the APIs to load an ExecuTorch model,
-prepare the MemoryManager, set inputs, execute the model, and retrieve outputs.
+In this tutorial, we will cover how to run an ExecuTorch model in C++ using the more detailed, lower-level APIs: prepare the `MemoryManager`, set inputs, execute the model, and retrieve outputs. However, if you’re looking for a simpler interface that works out of the box, consider trying the [Module Extension Tutorial](extension-module.md).
 
 For a high level overview of the ExecuTorch Runtime please see [Runtime Overview](runtime-overview.md), and for more in-depth documentation on
 each API please see the [Runtime API Reference](executorch-runtime-api-reference.rst).
@@ -153,5 +152,4 @@ assert(output.isTensor());
 
 ## Conclusion
 
-In this tutorial, we went over the APIs and steps required to load and perform an inference with an ExecuTorch model in C++.
-Also, check out the [Simplified Runtime APIs Tutorial](extension-module.md).
+This tutorial demonstrated how to run an ExecuTorch model using low-level runtime APIs, which offer granular control over memory management and execution. However, for most use cases, we recommend using the Module APIs, which provide a more streamlined experience without sacrificing flexibility. For more details, check out the [Module Extension Tutorial](extension-module.md).
