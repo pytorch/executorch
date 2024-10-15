@@ -650,6 +650,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0:
             model_sharding.split_graph(
                 builder_exported_to_edge.edge_manager.exported_program(),
+                # pyre-fixme[16]: `Optional` has no attribute `__getitem__`.
                 builder_exported_to_edge.metadata["get_n_layers"],
                 shares=args.num_sharding,
             )
@@ -669,6 +670,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
+            # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
             canonicalize_program(builder.edge_manager.exported_program())
 
         builder = builder.to_executorch()
@@ -686,6 +688,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
+            # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
             canonicalize_program(builder.edge_manager.exported_program())
 
         builder = builder.to_executorch()
@@ -912,7 +915,6 @@ def _get_source_transforms(  # noqa
 
     if args.use_kv_cache:
         if args.qnn:
-            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
             from executorch.backends.qualcomm.utils.utils import (
                 convert_linear_to_conv2d,
             )
@@ -924,6 +926,7 @@ def _get_source_transforms(  # noqa
             if args.optimized_rotation_path:
                 transforms.append(fuse_layer_norms)
                 transforms.append(get_model_with_r1_r2(args.optimized_rotation_path))
+            # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
             transforms.append(convert_linear_to_conv2d)
 
         elif args.mps:
