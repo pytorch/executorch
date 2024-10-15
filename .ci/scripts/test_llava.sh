@@ -55,8 +55,7 @@ cmake_install_executorch_libraries() {
 cmake_install_executorch_libraries_for_android() {
     cmake                                                                       \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
-        -DANDROID_ABI=arm64-v8a                                                 \
-        -DANDROID_PLATFORM=android-23                                           \
+        -DANDROID_ABI=arm64-v8a                                                                                     \
         ${EXECUTORCH_COMMON_CMAKE_ARGS}                                         \
         -B${BUILD_DIR} .
 
@@ -92,8 +91,7 @@ cmake_build_llava_runner_for_android() {
 
     cmake                                                                       \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
-        -DANDROID_ABI=arm64-v8a                                                 \
-        -DANDROID_PLATFORM=android-23                                           \
+        -DANDROID_ABI=arm64-v8a                                                    \
         ${LLAVA_COMMON_CMAKE_ARGS}                                              \
         -DCMAKE_PREFIX_PATH="$python_lib"                                       \
         -DLLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE=ON                                  \
