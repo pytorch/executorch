@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Getting Started with LLMs via ExecuTorch &mdash; ExecuTorch main documentation</title>
+  <title>Intro to LLMs in Executorch &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,8 +42,8 @@
   <link rel="stylesheet" href="../_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="ExecuTorch Llama Android Demo App" href="llama-demo-android.html" />
-    <link rel="prev" title="Building and Running ExecuTorch on Xtensa HiFi4 DSP" href="../build-run-xtensa.html" />
+    <link rel="next" title="Export to ExecuTorch API Reference" href="../export-to-executorch-api-reference.html" />
+    <link rel="prev" title="Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html" />
 
 
   <!-- Google Tag Manager -->
@@ -334,7 +334,11 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Getting Started with LLMs via ExecuTorch</a><ul>
+<li class="toctree-l1"><a class="reference internal" href="llama.html">Llama</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llama-demo-android.html">Llama on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llama-demo-ios.html">Llama on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Intro to LLMs in Executorch</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#table-of-contents">Table Of Contents</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#running-a-large-language-model-locally">Running a Large Language Model Locally</a></li>
@@ -345,9 +349,6 @@
 <li class="toctree-l2"><a class="reference internal" href="#how-to-build-mobile-apps">How to Build Mobile Apps</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="llama-demo-android.html">ExecuTorch Llama Android Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html">Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llama-demo-ios.html">ExecuTorch Llama iOS Demo App</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -449,7 +450,7 @@
       </li>
 
         
-      <li>Getting Started with LLMs via ExecuTorch</li>
+      <li>Intro to LLMs in Executorch</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
@@ -487,8 +488,8 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="getting-started-with-llms-via-executorch">
-<h1>Getting Started with LLMs via ExecuTorch<a class="headerlink" href="#getting-started-with-llms-via-executorch" title="Permalink to this heading">¶</a></h1>
+  <div class="section" id="intro-to-llms-in-executorch">
+<h1>Intro to LLMs in Executorch<a class="headerlink" href="#intro-to-llms-in-executorch" title="Permalink to this heading">¶</a></h1>
 <p>Welcome to LLM Manual! This manual is designed to provide a practical example to leverage
 ExecuTorch in onboarding your own Large Language Models (LLMs). Our primary goal is to offer
 a clear and concise guideline on how to integrate our system with your own LLMs.</p>
@@ -499,6 +500,7 @@ Consequently, the results produced by the model may vary and might not always be
 <p>We encourage users to use this project as a starting point and adapt it to their specific needs,
 which includes creating your own versions of the tokenizer, sampler, acceleration backends, and
 other components. We hope this project serves as a useful guide in your journey with LLMs and ExecuTorch.</p>
+<p>For deploying Llama with optimal performance, please see <a class="reference internal" href="llama.html"><span class="doc std std-doc">Llama guide</span></a>.</p>
 <div class="section" id="table-of-contents">
 <h2>Table Of Contents<a class="headerlink" href="#table-of-contents" title="Permalink to this heading">¶</a></h2>
 <ol class="arabic simple">
@@ -1405,10 +1407,10 @@ all instances of <code class="docutils literal notranslate"><span class="pre">to
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="llama-demo-android.html" class="btn btn-neutral float-right" title="ExecuTorch Llama Android Demo App" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="../export-to-executorch-api-reference.html" class="btn btn-neutral float-right" title="Export to ExecuTorch API Reference" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="../build-run-xtensa.html" class="btn btn-neutral" title="Building and Running ExecuTorch on Xtensa HiFi4 DSP" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="build-run-llama3-qualcomm-ai-engine-direct-backend.html" class="btn btn-neutral" title="Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -1442,7 +1444,7 @@ all instances of <code class="docutils literal notranslate"><span class="pre">to
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Getting Started with LLMs via ExecuTorch</a><ul>
+<li><a class="reference internal" href="#">Intro to LLMs in Executorch</a><ul>
 <li><a class="reference internal" href="#table-of-contents">Table Of Contents</a></li>
 <li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
 <li><a class="reference internal" href="#running-a-large-language-model-locally">Running a Large Language Model Locally</a><ul>

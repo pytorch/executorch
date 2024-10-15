@@ -56,13 +56,12 @@ Topics in this section will help you get started with ExecuTorch.
         ExecuTorch.
 
      .. grid-item-card:: :octicon:`file-code;1em`
-        ExecuTorch Intermediate Representation API
+        ExecuTorch Llama
         :img-top: _static/img/card-background.svg
-        :link: ir-exir.html
+        :link: llm/llama.html
         :link-type: url
 
-        Learn about EXIR, a graph-based intermediate
-        representation (IR) of PyTorch programs.
+        Learn about running Llama models via ExecuTorch
 
 .. toctree::
    :glob:
@@ -118,10 +117,11 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Working with LLMs
    :hidden:
 
-   llm/getting-started
-   llm/llama-demo-android
-   llm/build-run-llama3-qualcomm-ai-engine-direct-backend
-   llm/llama-demo-ios
+   Llama <llm/llama>
+   Llama on Android <llm/llama-demo-android>
+   Llama on iOS <llm/llama-demo-ios>
+   Llama on Android via Qualcomm backend <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
+   Intro to LLMs in Executorch <llm/getting-started>
 
 .. toctree::
    :glob:
