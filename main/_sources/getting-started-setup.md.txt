@@ -80,7 +80,9 @@ Alternatively, if you would like to experiment with ExecuTorch quickly and easil
 
    ```bash
    # Clone the ExecuTorch repo from GitHub
-   git clone https://github.com/pytorch/executorch.git
+   # 'main' branch is the primary development branch where you see the latest changes.
+   # 'viable/strict' contains all of the commits on main that pass all of the necessary CI checks.
+   git clone --branch viable/strict https://github.com/pytorch/executorch.git
    cd executorch
 
    # Update and pull submodules
