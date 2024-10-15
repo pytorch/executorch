@@ -123,6 +123,7 @@ class Executor:
             ),
             "etdump_path": os.path.join(self.working_dir, "etdump.etdp"),
             "debug_output_path": os.path.join(self.working_dir, "debug_output.bin"),
+            "dump_outputs": "true",
         }
         args = self.get_bash_command(self.execute_runner, cmd_args)
         logging.info(f"\33[33m{' '.join(args)}\33[0m")
