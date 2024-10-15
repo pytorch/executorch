@@ -55,9 +55,9 @@ if [[ "${ARCH}" == "x86_64" ]]; then
     corstone320_md5_checksum="3deb3c68f9b2d145833f15374203514d"
 
     # toochain
-    toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi.tar.xz"
-    toolchain_dir="arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi"
-    toolchain_md5_checksum="00ebb1b70b1f88906c61206457eacb61"
+    toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz"
+    toolchain_dir="arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi"
+    toolchain_md5_checksum="0601a9588bc5b9c99ad2b56133b7f118"
 elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
     # FVPs
     corstone300_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64_armv8l.tgz?rev=9cc6e9a32bb947ca9b21fa162144cb01&hash=7657A4CF27D42E892E3F08D452AAB073"
@@ -70,13 +70,13 @@ elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
 
     # toochain
     if [[ "${OS}" == "Darwin" ]]; then
-        toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-darwin-arm64-arm-none-eabi.tar.xz"
-        toolchain_dir="arm-gnu-toolchain-12.3.rel1-darwin-arm64-arm-none-eabi"
-        toolchain_md5_checksum="53d034e9423e7f470acc5ed2a066758e"
+        toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi.tar.xz"
+        toolchain_dir="arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi"
+        toolchain_md5_checksum="f1c18320bb3121fa89dca11399273f4e"
     elif [[ "${OS}" == "Linux" ]]; then
-        toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi.tar.xz"
-        toolchain_dir="arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi"
-        toolchain_md5_checksum="02c9b0d3bb1110575877d8eee1f223f2"
+        toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi.tar.xz"
+        toolchain_dir="arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi"
+        toolchain_md5_checksum="303102d97b877ebbeb36b3158994b218"
     fi
 else
     echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
@@ -178,15 +178,15 @@ function setup_fvp() {
 function setup_toolchain() {
     # Download and install the arm-none-eabi toolchain
     cd "${root_dir}"
-    if [[ ! -e gcc.tar.xz ]]; then
+    if [[ ! -e "${toolchain_dir}.tar.xz" ]]; then
         echo "[${FUNCNAME[0]}] Downloading toolchain ..."
-        curl --output gcc.tar.xz "${toolchain_url}"
-        verify_md5 ${toolchain_md5_checksum} gcc.tar.xz
+        curl --output "${toolchain_dir}.tar.xz" "${toolchain_url}"
+        verify_md5 ${toolchain_md5_checksum} "${toolchain_dir}.tar.xz"
     fi
 
     echo "[${FUNCNAME[0]}] Installing toolchain ..."
     rm -rf "${toolchain_dir}"
-    tar xf gcc.tar.xz
+    tar xf "${toolchain_dir}.tar.xz"
     toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
     export PATH=${PATH}:${toolchain_bin_path}
     hash arm-none-eabi-gcc
