@@ -142,8 +142,7 @@ import torch
 
 from executorch.exir import EdgeCompileConfig, to_edge
 from torch.nn.attention import sdpa_kernel, SDPBackend
-from torch._export import capture_pre_autograd_graph
-from torch.export import export
+from torch.export import export, export_for_training
 
 from model import GPT
 
@@ -168,7 +167,7 @@ dynamic_shape = (
 # Trace the model, converting it to a portable intermediate representation.
 # The torch.no_grad() call tells PyTorch to exclude training-specific logic.
 with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-    m = capture_pre_autograd_graph(model, example_inputs, dynamic_shapes=dynamic_shape)
+    m = export_for_training(model, example_inputs, dynamic_shapes=dynamic_shape).module()
     traced_model = export(m, example_inputs, dynamic_shapes=dynamic_shape)
 
 # Convert the model into a runnable ExecuTorch program.
@@ -457,9 +456,8 @@ from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_c
 from executorch.exir import EdgeCompileConfig, to_edge
 
 import torch
-from torch.export import export
+from torch.export import export, export_for_training
 from torch.nn.attention import sdpa_kernel, SDPBackend
-from torch._export import capture_pre_autograd_graph
 
 from model import GPT
 
@@ -486,7 +484,7 @@ dynamic_shape = (
 # Trace the model, converting it to a portable intermediate representation.
 # The torch.no_grad() call tells PyTorch to exclude training-specific logic.
 with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-    m = capture_pre_autograd_graph(model, example_inputs, dynamic_shapes=dynamic_shape)
+    m = export_for_training(model, example_inputs, dynamic_shapes=dynamic_shape).module()
     traced_model = export(m, example_inputs, dynamic_shapes=dynamic_shape)
 
 # Convert the model into a runnable ExecuTorch program.
@@ -631,7 +629,7 @@ xnnpack_quant_config = get_symmetric_quantization_config(
 xnnpack_quantizer = XNNPACKQuantizer()
 xnnpack_quantizer.set_global(xnnpack_quant_config)
 
-m = capture_pre_autograd_graph(model, example_inputs)
+m = export_for_training(model, example_inputs).module()
 
 # Annotate the model for quantization. This prepares the model for calibration.
 m = prepare_pt2e(m, xnnpack_quantizer)
