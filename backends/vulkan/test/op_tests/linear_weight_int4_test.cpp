@@ -211,7 +211,9 @@ TEST(VulkanSDPATest, test_reference_impl) {
 }
 
 TEST(VulkanSDPATest, test_vulkan_impl) {
-  if (!vkcompute::api::context()->adapter_ptr()->has_full_int8_buffers_support()) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
     GTEST_SKIP();
   }
   test_vulkan_linear_int4(

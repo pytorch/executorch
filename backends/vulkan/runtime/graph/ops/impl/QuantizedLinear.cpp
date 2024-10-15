@@ -128,6 +128,7 @@ void check_q_4w_linear_args(
     const ValueRef scales_and_zeros,
     const ValueRef out) {
   VK_CHECK_COND(graph.int16_shader_types_enabled());
+  VK_CHECK_COND(graph.int8_buffers_enabled());
 
   VK_CHECK_COND(graph.val_is_tensor(mat1));
   VK_CHECK_COND(graph.val_is_tref(mat2_data));
