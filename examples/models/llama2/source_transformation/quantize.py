@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
+import re
 from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -31,7 +33,7 @@ except:
     fsLinear = nn.Linear
 
 
-def quantize(
+def quantize(  # noqa: C901
     model: torch.nn.Module,
     qmode: str,
     activation_dtype: Optional[DType],
@@ -68,6 +70,34 @@ def quantize(
     if qmode == "int8":
         # Add quantization mode options here: group size, bit width, etc.
         return WeightOnlyInt8QuantHandler(model).quantized_model()
+    elif qmode.startswith("torchao:"):
+        logging.warning(
+            "When qmode is torchao, the groupsize is obtained from the qmode string with regex parse; blocksize is ignored."
+        )
+        linear_pattern = r"lin.8da(\d+)b(\d+)gw"
+        linear_matches = re.findall(linear_pattern, qmode)
+        if linear_matches:
+            bitwidth = int(linear_matches[0][0])
+            group_size = int(linear_matches[0][1])
+            from torchao.experimental.quant_api import Int8DynActIntxWeightQuantizer
+
+            model = Int8DynActIntxWeightQuantizer(
+                device="cpu",
+                precision=torch_dtype,
+                groupsize=group_size,
+                bitwidth=bitwidth,
+                has_weight_zeros=False,
+            ).quantize(model)
+
+        embedding_pattern = r"emb.(\d+)b(\d+)gw"
+        embedding_matches = re.findall(embedding_pattern, qmode)
+        if embedding_matches:
+            pass  # TODO: add when embedding PR lands in torchao
+
+        if verbose:
+            print("quantized model:", model)
+
+        return model
     elif qmode == "8da4w":
         # Check for required args
         if group_size is None:
@@ -75,8 +105,9 @@ def quantize(
         from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
         model = Int8DynActInt4WeightQuantizer(
-            precision=torch_dtype, groupsize=group_size
+            precision=torch_dtype, groupsize=group_size, bitwidth=4
         ).quantize(model)
+
         if verbose:
             print("quantized model:", model)
         return model
