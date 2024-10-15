@@ -202,7 +202,7 @@ void test_vulkan_linear_int4(
   ASSERT_TRUE(at::allclose(vk_out, out_ref, 1e-4, 1e-4));
 }
 
-TEST(VulkanSDPATest, test_reference_impl) {
+TEST(VulkanInt4LinearTest, test_reference_impl) {
   test_reference_linear_int4(
       /*B = */ 1,
       /*M = */ 4,
@@ -210,7 +210,7 @@ TEST(VulkanSDPATest, test_reference_impl) {
       /*N = */ 32);
 }
 
-TEST(VulkanSDPATest, test_vulkan_impl) {
+TEST(VulkanInt4LinearTest, test_vulkan_impl) {
   if (!vkcompute::api::context()
            ->adapter_ptr()
            ->has_full_int8_buffers_support()) {
