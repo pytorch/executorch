@@ -43,6 +43,8 @@ enum class ElementwiseOptimizedPath {
   kBroadcast2dBy1dReverseArguments,
   kBroadcastNdByNd,
   kBroadcastNdByNdReverseArguments,
+  kBroadcastLastDim,
+  kBroadcastLastDimReverseArguments,
 };
 
 namespace internal {
@@ -116,6 +118,12 @@ inline ElementwiseOptimizedPath select_broadcast_optimized_path(
       return ElementwiseOptimizedPath::kBroadcastNdByNd;
     } else {
       return ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments;
+    }
+  } else if (broadcast_dim == -1) {
+    if (std::count_if(lhs_begin, lhs_end, [](Tensor::SizesType x) { return x == 1; }) == 1) {
+      return ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments;
+    } else {
+      return ElementwiseOptimizedPath::kBroadcastLastDim;
     }
   }
   return ElementwiseOptimizedPath::kNone;
