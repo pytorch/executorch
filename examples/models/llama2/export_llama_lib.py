@@ -157,7 +157,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--quantization_mode",
         type=str,
         default=None,
-        choices=["int8", "8da4w", "8da4w-gptq"],
+        choices=["int8", "8da4w", "8da4w-gptq", "vulkan_4w"],
         help="type of quantization",
     )
 
