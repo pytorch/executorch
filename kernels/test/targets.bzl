@@ -254,6 +254,7 @@ def define_common_targets():
     _common_op_test("op_logit_test", ["aten", "portable"])
     _common_op_test("op_lt_test", ["aten", "portable"])
     _common_op_test("op_masked_fill_test", ["aten", "portable"])
+    _common_op_test("op_masked_scatter_test", ["aten", "portable"])
     _common_op_test("op_max_test", ["aten", "portable"])
     _common_op_test("op_max_pool2d_with_indices_test", ["aten", "portable"])
     _common_op_test("op_maximum_test", ["aten", "portable"])
