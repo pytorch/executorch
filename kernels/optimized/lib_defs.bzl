@@ -144,7 +144,7 @@ def define_libs():
                 (
                     "^android-arm64.*$",
                     [
-                        "fbsource//arvr/third-party/eigen:eigen3_blas",
+                        "fbsource//third-party/openblas:openblas",
                     ],
                 ),
             ],
