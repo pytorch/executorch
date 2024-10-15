@@ -318,7 +318,6 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-module.html#conclusion">Conclusion</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
@@ -481,8 +480,7 @@
   <div class="section" id="running-an-executorch-model-in-c-tutorial">
 <h1>Running an ExecuTorch Model in C++ Tutorial<a class="headerlink" href="#running-an-executorch-model-in-c-tutorial" title="Permalink to this heading">¶</a></h1>
 <p><strong>Author:</strong> <a class="reference external" href="https://github.com/JacobSzwejbka">Jacob Szwejbka</a></p>
-<p>In this tutorial, we will cover the APIs to load an ExecuTorch model,
-prepare the MemoryManager, set inputs, execute the model, and retrieve outputs.</p>
+<p>In this tutorial, we will cover how to run an ExecuTorch model in C++ using the more detailed, lower-level APIs: prepare the <code class="docutils literal notranslate"><span class="pre">MemoryManager</span></code>, set inputs, execute the model, and retrieve outputs. However, if you’re looking for a simpler interface that works out of the box, consider trying the <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Module Extension Tutorial</span></a>.</p>
 <p>For a high level overview of the ExecuTorch Runtime please see <a class="reference internal" href="runtime-overview.html"><span class="doc std std-doc">Runtime Overview</span></a>, and for more in-depth documentation on
 each API please see the <a class="reference internal" href="executorch-runtime-api-reference.html"><span class="doc std std-doc">Runtime API Reference</span></a>.
 <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp">Here</a> is a fully functional version C++ model runner, and the <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up ExecuTorch</span></a> doc shows how to build and run it.</p>
@@ -617,8 +615,7 @@ not contain buffer space for your inputs and outputs.</p>
 </div>
 <div class="section" id="conclusion">
 <h2>Conclusion<a class="headerlink" href="#conclusion" title="Permalink to this heading">¶</a></h2>
-<p>In this tutorial, we went over the APIs and steps required to load and perform an inference with an ExecuTorch model in C++.
-Also, check out the <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Simplified Runtime APIs Tutorial</span></a>.</p>
+<p>This tutorial demonstrated how to run an ExecuTorch model using low-level runtime APIs, which offer granular control over memory management and execution. However, for most use cases, we recommend using the Module APIs, which provide a more streamlined experience without sacrificing flexibility. For more details, check out the <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Module Extension Tutorial</span></a>.</p>
 </div>
 </div>
 
