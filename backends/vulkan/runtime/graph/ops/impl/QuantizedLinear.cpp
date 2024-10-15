@@ -209,11 +209,7 @@ void add_q_4w_linear_node(
   ubos.append(graph.strides_ubo(mat2));
   ubos.append(graph.strides_ubo(scales_and_zeros));
 
-  auto out_sizes = graph.sizes_of(out);
-  uint32_t N = utils::val_at(-1, out_sizes);
-  uint32_t M = utils::val_at(-2, out_sizes);
-
-  utils::uvec3 global_wg_size = {N, M, 1};
+  utils::uvec3 global_wg_size = graph.logical_limits_of(out);
   utils::uvec3 local_wg_size = graph.create_local_wg_size(global_wg_size);
 
   graph.execute_nodes().emplace_back(new DispatchNode(
