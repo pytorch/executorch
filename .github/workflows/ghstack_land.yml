@@ -8,6 +8,8 @@ jobs:
   ghstack_land:
     name: ghstack-land
     runs-on: ubuntu-22.04
+    permissions:
+      pull-requests: write
     steps:
     - uses: actions/checkout@v3
       with:
@@ -16,8 +18,6 @@ jobs:
       with:
         python-version: '3.10'
     - name: Try to merge PR to main
-      permissions:
-        - pull-requests: write
       run: |
         pip install ghstack
         pip install pygithub
