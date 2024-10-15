@@ -181,10 +181,11 @@ class LLMEdgeManager:
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-            # pyre-fixme[8]
             if hasattr(self.args, "qnn") and self.args.qnn:
                 # TODO: this is temporary and export_for_training doesn't work with qnn either. We need a
                 # functional graph. See issue https://github.com/pytorch/executorch/pull/4627 for more details
+                # pyre-fixme[8]: Attribute has type `Optional[GraphModule]`; used as
+                #  `Module`.
                 self.pre_autograd_graph_module = torch.export.export(
                     self.model,
                     self.example_inputs,
@@ -193,6 +194,8 @@ class LLMEdgeManager:
                     strict=True,
                 ).module()
             else:
+                # pyre-fixme[8]: Attribute has type `Optional[GraphModule]`; used as
+                #  `Module`.
                 self.pre_autograd_graph_module = export_for_training(
                     self.model,
                     self.example_inputs,

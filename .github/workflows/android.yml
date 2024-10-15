@@ -80,6 +80,11 @@ jobs:
           # Reuse the script that install Android on ET Docker image
           sudo -E bash .ci/docker/common/install_android.sh
 
+          # After https://github.com/ReactiveCircus/android-emulator-runner/releases/tag/v2.33.0 release,
+          # it seems that we need to chown the Android setup to the current user instead of root to
+          # avoid permission issue
+          sudo chown -R "${USER}" /opt/android
+
       - name: Gradle cache
         uses: gradle/actions/setup-gradle@v3
 

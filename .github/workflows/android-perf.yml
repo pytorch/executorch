@@ -205,6 +205,7 @@ jobs:
 
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   benchmark-on-device:
+    if: always()
     permissions:
       id-token: write
       contents: read
