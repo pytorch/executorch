@@ -41,5 +41,5 @@ jobs:
         EOF
         # ghstack land "https://github.com/pytorch/executorch/pull/${PR_NUMBER}"
       env:
-        GITHUB_TOKEN: ${{ secrets.GARDENER_PAT }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GITHUB_REF: ${{ github.ref }}
