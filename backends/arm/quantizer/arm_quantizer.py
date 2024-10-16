@@ -271,6 +271,7 @@ class ArmQuantizer(Quantizer):
         "cat",
         "one_to_one",
         "generic",
+        "sum",
     ]
 
     def __init__(self) -> None:
