@@ -26,7 +26,6 @@ build_android_native_library() {
     EXECUTORCH_BUILD_QNN=OFF
   fi
 
-
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
@@ -150,19 +149,27 @@ collect_artifacts_to_be_uploaded() {
   cp extension/benchmark/android/benchmark/app/build/outputs/apk/androidTest/debug/*.apk "${MINIBENCH_APP_DIR}"
 }
 
-BUILD_AAR_DIR="$(mktemp -d)"
-export BUILD_AAR_DIR
-if [ -z "$ANDROID_ABIS" ]; then
-  ANDROID_ABIS=("arm64-v8a" "x86_64")
+main() {
+  BUILD_AAR_DIR="$(mktemp -d)"
+  export BUILD_AAR_DIR
+  if [ -z "$ANDROID_ABIS" ]; then
+    ANDROID_ABIS=("arm64-v8a" "x86_64")
+  fi
+  export ANDROID_ABIS
+
+  ARTIFACTS_DIR_NAME="$1"
+
+  build_jar
+  for ANDROID_ABI in "${ANDROID_ABIS[@]}"; do
+    build_android_native_library ${ANDROID_ABI}
+  done
+  build_aar
+  build_android_demo_apps
+  if [ -n "$ARTIFACTS_DIR_NAME" ]; then
+    collect_artifacts_to_be_uploaded ${ARTIFACTS_DIR_NAME}
+  fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
 fi
-export ANDROID_ABIS
-
-ARTIFACTS_DIR_NAME="$1"
-
-build_jar
-for ANDROID_ABI in "${ANDROID_ABIS[@]}"; do
-  build_android_native_library ${ANDROID_ABI}
-done
-build_aar
-build_android_demo_apps
-collect_artifacts_to_be_uploaded ${ARTIFACTS_DIR_NAME}
