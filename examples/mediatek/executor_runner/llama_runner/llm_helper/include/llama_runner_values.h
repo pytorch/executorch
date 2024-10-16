@@ -1,7 +1,17 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+// Contains values that are used by the mtk_llama_runner.cpp
+
 #pragma once
 
-namespace torch::executor {
-  using llm_helper::LLMType;
+namespace mtk::vars {
+  using example::llm_helper::LLMType;
 
   // Sizes
   const size_t PROMPT_TOKEN_BATCH_SIZE = 128;
@@ -29,4 +39,4 @@ namespace torch::executor {
   // Comma-Separated Paths
   const std::string GEN_MODEL_PATHS="/data/local/tmp/et-mtk/llama3/llama3-8B-instruct_A16W4_4_chunks_1t512c_0.pte,/data/local/tmp/et-mtk/llama3/llama3-8B-instruct_A16W4_4_chunks_1t512c_1.pte,/data/local/tmp/et-mtk/llama3/llama3-8B-instruct_A16W4_4_chunks_1t512c_2.pte,/data/local/tmp/et-mtk/llama3/llama3-8B-instruct_A16W4_4_chunks_1t512c_3.pte,";
 
-} // namespace torch::executor
+} // namespace mtk:vars

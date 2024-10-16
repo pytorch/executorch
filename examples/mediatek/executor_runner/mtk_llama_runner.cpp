@@ -73,9 +73,14 @@ static uint64_t MAX_RESPONSE = 50; // Maximum number of tokens to generate.
 static constexpr int8_t kAddBos = 1;
 static constexpr int8_t kAddEos = 0;
 
-using namespace torch::executor;
-using namespace torch::executor::llm_helper;
-using torch::executor::utils::Timer;
+using namespace example::llm_helper;
+using example::utils::argmax;
+using example::utils::split;
+using example::utils::Timer;
+using example::utils::to_string;
+using namespace mtk::vars;
+
+namespace llm = ::executorch::extension::llm;
 
 MTKLlamaRunner::MTKLlamaRunner(
   const std::string& model_path,
@@ -83,7 +88,7 @@ MTKLlamaRunner::MTKLlamaRunner(
   const float temperature)
   : modeloptions_(get_model_options()),
     modelpaths_(get_model_paths()) {
-  runtime_init();
+  executorch::runtime::runtime_init();
   ET_LOG(
         Info,
         "Creating MTK Llama runner. Current it will self-load .pte, .bin, and .so files. Initiated runtime_init().");
@@ -125,7 +130,7 @@ Error MTKLlamaRunner::generate(
   // Wrap the token_callback with print function
   std::function<void(const std::string&)> wrapped_callback =
       [token_callback](const std::string& piece) {
-        util::safe_printf(piece.c_str());
+        llm::safe_printf(piece.c_str());
         fflush(stdout);
         if (token_callback) {
           token_callback(piece);
@@ -172,8 +177,8 @@ LlamaModelPaths MTKLlamaRunner::get_model_paths() {
   LlamaModelPaths model_paths = {
       .tokenizer_path = TOKENIZER_PATH,
       .token_embedding_path = TOKEN_EMBEDDING_PATH,
-      .prompt_model_paths = utils::split(PROMPT_MODEL_PATHS, ','),
-      .gen_model_paths = utils::split(GEN_MODEL_PATHS, ',')};
+      .prompt_model_paths = split(PROMPT_MODEL_PATHS, ','),
+      .gen_model_paths = split(GEN_MODEL_PATHS, ',')};
   ET_LOG(Info, "Completed get_model_paths");   
   return model_paths;
 }
@@ -225,8 +230,7 @@ Result<uint64_t> MTKLlamaRunner::digest_prompt(
 
   const auto vocab_size = tokenizer->vocab_size();
   const auto logits_type = llama_runtime.GetModelOptions().model_output_type;
-  const auto first_output_token =
-      utils::argmax(logits_type, logits, vocab_size);
+  const auto first_output_token = argmax(logits_type, logits, vocab_size);
   return first_output_token;
 }
 
@@ -273,7 +277,7 @@ Error MTKLlamaRunner::gen_response(
     timer_gen_token.End();
 
     prev_token = output_token;
-    output_token = utils::argmax(logits_type, logits, vocab_size);
+    output_token = argmax(logits_type, logits, vocab_size);
     full_response_tokens.push_back(output_token);
 
     // Stop when output is EOS
@@ -293,7 +297,7 @@ Error MTKLlamaRunner::gen_response(
   }
 
   std::cout << "\n\n[Generated Tokens]\n"
-            << utils::to_string(full_response_tokens) << std::endl;
+            << to_string(full_response_tokens) << std::endl;
 
   ET_LOG(
       Info,
@@ -327,7 +331,7 @@ Error MTKLlamaRunner::inference(
 std::unique_ptr<Tokenizer> MTKLlamaRunner::load_tokenizer() {
   std::unique_ptr<Tokenizer> tokenizer;
   // Assumes that tokenizer type is Tiktoken
-  tokenizer = torch::executor::get_tiktoken_for_llama();
+  tokenizer = example::get_tiktoken_for_llama();
   tokenizer->load(modelpaths_.tokenizer_path);
   return tokenizer;
 }
