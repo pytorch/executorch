@@ -83,7 +83,7 @@ def create_prs_for_orig_branch(pr_stack: List[int], repo: Repository):
         pr = repo.get_pull(pr_stack[i])
         if not pr.is_merged():
             print("The PR (and stack above) is not merged yet, skipping")
-            # return
+            return
         # Check for invariant: For the current PR, it must be gh/user/x/base <- gh/user/x/head
         assert pr.base.ref.replace("base", "head") == pr.head.ref
         # The PR we want to create is then "branch_to_merge" <- gh/user/x/orig
@@ -102,17 +102,23 @@ Merge bot PR base: https://github.com/pytorch/executorch/tree/{orig_branch_merge
 Merge bot PR head: https://github.com/pytorch/executorch/tree/{orig_branch_merge_head}
 \nOriginal PR body:\n
         """
-        repo.create_pull(base=orig_branch_merge_base, head=orig_branch_merge_head, title=pr.title, body=bot_metadata + pr.body)
+        repo.create_pull(
+            base=orig_branch_merge_base,
+            head=orig_branch_merge_head,
+            title=pr.title,
+            body=bot_metadata + pr.body,
+        )
         # Advance the base for the next PR
         orig_branch_merge_base = orig_branch_merge_head
+
 
 def main():
     args = parse_args()
 
-    with Github(auth=Auth.Token(os.environ['GITHUB_TOKEN'])) as gh:
+    with Github(auth=Auth.Token(os.environ["GITHUB_TOKEN"])) as gh:
         repo = gh.get_repo(args.repo)
         create_prs_for_orig_branch(get_pr_stack_from_number(args.pr, repo), repo)
-    
+
 
 if __name__ == "__main__":
     main()

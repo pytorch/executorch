@@ -7,7 +7,7 @@ on:
       - 'kirklandsigntest/*'
 jobs:
   ghstack_merge_to_main:
-    name: ghstack-land
+    name: Try to create a PR with ghstack /orig branch
     runs-on: ubuntu-22.04
     permissions:
       pull-requests: write
