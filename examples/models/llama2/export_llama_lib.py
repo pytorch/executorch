@@ -581,7 +581,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
     # export_to_edge
     builder_exported_to_edge = (
         _prepare_for_llama_export(modelname, args)
-        .capture_pre_autograd_graph()
+        .export()
         .pt2e_quantize(quantizers)
         .export_to_edge()
     )
