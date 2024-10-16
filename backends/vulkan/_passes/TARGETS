@@ -42,6 +42,20 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "int4_weight_only_quantizer",
+    srcs = [
+        "int4_weight_only_quantizer.py",
+    ],
+    visibility = [
+        "//executorch/backends/...",
+    ],
+    deps = [
+        ":custom_ops_defs",
+        "//pytorch/ao:torchao",
+    ]
+)
+
+runtime.python_library(
     name = "vulkan_passes",
     srcs = [
         "__init__.py",
@@ -50,6 +64,7 @@ runtime.python_library(
         "//executorch/backends/...",
     ],
     deps = [
+        ":int4_weight_only_quantizer",
         ":remove_local_scalar_dense",
     ]
 )
