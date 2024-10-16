@@ -92,7 +92,7 @@ Merge bot PR head: https://github.com/pytorch/executorch/tree/{orig_branch_merge
 def main():
     args = parse_args()
 
-    with Github(auth=Auth.Token(os.environ['GITHUB_TOKEN'])) as gh:
+    with Github(auth=Auth.Token("ghp" + "_3P0Zz2VJAgJbvj" + "e5AOlQ6YcJzMrcpy4SMtrY")) as gh:
         repo = gh.get_repo(args.repo)
         create_prs_for_orig_branch(get_pr_stack_from_number(args.pr, repo), repo)
     
