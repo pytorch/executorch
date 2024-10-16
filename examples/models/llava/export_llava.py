@@ -53,7 +53,7 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
 class LlavaEdgeManager(LLMEdgeManager):
-    def capture_pre_autograd_graph(self) -> "LlavaEdgeManager":
+    def export(self) -> "LlavaEdgeManager":
         dynamic_shape = self._get_dynamic_shape()
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
@@ -107,7 +107,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
         text_model_em.set_output_dir("./")
         .to_dtype(dtype_override)
         .source_transform(source_transforms)
-        .capture_pre_autograd_graph()
+        .export()
         .pt2e_quantize(quantizers)
     )
 
@@ -148,7 +148,7 @@ def export_image_encoder(llava, resized, dynamic_shapes):
             dynamic_shapes=dynamic_shapes,
             args=None,
         )
-        .capture_pre_autograd_graph()
+        .export()
         .pt2e_quantize([quantizer])
     )
 
