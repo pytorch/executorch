@@ -15,6 +15,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <executorch/examples/mediatek/executor_runner/mtk_llama_runner.h>
 #include <executorch/examples/models/llama2/runner/runner.h>
 #include <executorch/examples/models/llava/runner/llava_runner.h>
 #include <executorch/extension/llm/runner/image.h>
@@ -69,6 +70,7 @@ class ExecuTorchLlamaJni
   int model_type_category_;
   std::unique_ptr<example::Runner> runner_;
   std::unique_ptr<llm::MultimodalRunner> multi_modal_runner_;
+  std::unique_ptr<MTKLlamaRunner> mtk_llama_runner_;
 
  public:
   constexpr static auto kJavaDescriptor =
@@ -76,6 +78,7 @@ class ExecuTorchLlamaJni
 
   constexpr static int MODEL_TYPE_CATEGORY_LLM = 1;
   constexpr static int MODEL_TYPE_CATEGORY_MULTIMODAL = 2;
+  constexpr static int MODEL_TYPE_MEDIATEK_LLAMA = 3;
 
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
@@ -111,6 +114,11 @@ class ExecuTorchLlamaJni
           temperature);
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
       runner_ = std::make_unique<example::Runner>(
+          model_path->toStdString().c_str(),
+          tokenizer_path->toStdString().c_str(),
+          temperature);
+    } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
+      mtk_llama_runner_ = std::make_unique<MTKLlamaRunner>(
           model_path->toStdString().c_str(),
           tokenizer_path->toStdString().c_str(),
           temperature);
@@ -153,6 +161,12 @@ class ExecuTorchLlamaJni
           [callback](std::string result) { callback->onResult(result); },
           [callback](const llm::Stats& result) { callback->onStats(result); },
           echo);
+    } else if (model_type_category_ == MODEL_TYPE_MEDIATEK_LLAMA) {
+      mtk_llama_runner_->generate(
+          prompt->toStdString(),
+          seq_len,
+          [callback](std::string result) { callback->onResult(result); },
+          [callback](const Stats& result) { callback->onStats(result); });
     }
     return 0;
   }
@@ -242,6 +256,8 @@ class ExecuTorchLlamaJni
       multi_modal_runner_->stop();
     } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
       runner_->stop();
+    } else if (model_type_category_ == MODEL_TYPE_MEDIATEK_LLAMA) {
+      mtk_llama_runner_->stop();
     }
   }
 
@@ -250,6 +266,8 @@ class ExecuTorchLlamaJni
       return static_cast<jint>(multi_modal_runner_->load());
     } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
       return static_cast<jint>(runner_->load());
+    } else if (model_type_category_ == MODEL_TYPE_MEDIATEK_LLAMA) {
+      return static_cast<jint>(mtk_llama_runner_->load());
     }
     return static_cast<jint>(Error::InvalidArgument);
   }
