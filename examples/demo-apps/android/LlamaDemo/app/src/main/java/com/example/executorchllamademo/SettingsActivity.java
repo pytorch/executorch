@@ -14,11 +14,13 @@ import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.compose.foundation.BackgroundKt;
 import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
@@ -32,6 +34,7 @@ public class SettingsActivity extends AppCompatActivity {
 
   private String mModelFilePath = "";
   private String mTokenizerFilePath = "";
+  private TextView mBackendTextView;
   private TextView mModelTextView;
   private TextView mTokenizerTextView;
   private TextView mModelTypeTextView;
@@ -41,6 +44,7 @@ public class SettingsActivity extends AppCompatActivity {
   private double mSetTemperature;
   private String mSystemPrompt;
   private String mUserPrompt;
+  private BackendType mBackendType;
   private ModelType mModelType;
   public SettingsFields mSettingsFields;
 
@@ -68,9 +72,11 @@ public class SettingsActivity extends AppCompatActivity {
   }
 
   private void setupSettings() {
+    mBackendTextView = requireViewById(R.id.backendTextView);
     mModelTextView = requireViewById(R.id.modelTextView);
     mTokenizerTextView = requireViewById(R.id.tokenizerTextView);
     mModelTypeTextView = requireViewById(R.id.modelTypeTextView);
+    ImageButton backendImageButton = requireViewById(R.id.backendImageButton);
     ImageButton modelImageButton = requireViewById(R.id.modelImageButton);
     ImageButton tokenizerImageButton = requireViewById(R.id.tokenizerImageButton);
     ImageButton modelTypeImageButton = requireViewById(R.id.modelTypeImageButton);
@@ -79,6 +85,10 @@ public class SettingsActivity extends AppCompatActivity {
     loadSettings();
 
     // TODO: The two setOnClickListeners will be removed after file path issue is resolved
+    backendImageButton.setOnClickListener(
+        view -> {
+          setupBackendSelectorDialog();
+        });
     modelImageButton.setOnClickListener(
         view -> {
           setupModelSelectorDialog();
@@ -103,6 +113,12 @@ public class SettingsActivity extends AppCompatActivity {
     ETLogging.getInstance().log("mModelType from settings " + mModelType);
     if (mModelType != null) {
       mModelTypeTextView.setText(mModelType.toString());
+    }
+    mBackendType = mSettingsFields.getBackendType();
+    ETLogging.getInstance().log("mBackendType from settings " + mBackendType);
+    if (mBackendType != null) {
+      mBackendTextView.setText(mBackendType.toString());
+      setBackendSettingMode();
     }
 
     setupParameterSettings();
@@ -285,6 +301,29 @@ public class SettingsActivity extends AppCompatActivity {
         .show();
   }
 
+  private void setupBackendSelectorDialog() {
+    // Convert enum to list
+    List<String> backendTypesList = new ArrayList<>();
+    for (BackendType backendType : BackendType.values()) {
+      backendTypesList.add(backendType.toString());
+    }
+    // Alert dialog builder takes in arr of string instead of list
+    String[] backendTypes = backendTypesList.toArray(new String[0]);
+    AlertDialog.Builder backendTypeBuilder = new AlertDialog.Builder(this);
+    backendTypeBuilder.setTitle("Select backend type");
+    backendTypeBuilder.setSingleChoiceItems(
+            backendTypes,
+            -1,
+            (dialog, item) -> {
+              mBackendTextView.setText(backendTypes[item]);
+              mBackendType = BackendType.valueOf(backendTypes[item]);
+              setBackendSettingMode();
+              dialog.dismiss();
+            });
+
+    backendTypeBuilder.create().show();
+  }
+
   private void setupModelSelectorDialog() {
     String[] pteFiles = listLocalFile("/data/local/tmp/llama/", ".pte");
     AlertDialog.Builder modelPathBuilder = new AlertDialog.Builder(this);
@@ -370,6 +409,28 @@ public class SettingsActivity extends AppCompatActivity {
     return "";
   }
 
+  private void setBackendSettingMode() {
+    if(mBackendType.equals(BackendType.XNNPACK)) {
+      setXNNPACKSettingMode();
+    } else if(mBackendType.equals(BackendType.MEDIATEK)) {
+      setMediaTekSettingMode();
+    }
+  }
+
+  private void setXNNPACKSettingMode() {
+    requireViewById(R.id.modelLayout).setVisibility(View.VISIBLE);
+    requireViewById(R.id.tokenizerLayout).setVisibility(View.VISIBLE);
+    requireViewById(R.id.parametersView).setVisibility(View.VISIBLE);
+    requireViewById(R.id.temperatureLayout).setVisibility(View.VISIBLE);
+  }
+
+  private void setMediaTekSettingMode() {
+    requireViewById(R.id.modelLayout).setVisibility(View.GONE);
+    requireViewById(R.id.tokenizerLayout).setVisibility(View.GONE);
+    requireViewById(R.id.parametersView).setVisibility(View.GONE);
+    requireViewById(R.id.temperatureLayout).setVisibility(View.GONE);
+  }
+
   private void loadSettings() {
     Gson gson = new Gson();
     String settingsFieldsJSON = mDemoSharedPreferences.getSettings();
@@ -384,6 +445,7 @@ public class SettingsActivity extends AppCompatActivity {
     mSettingsFields.saveParameters(mSetTemperature);
     mSettingsFields.savePrompts(mSystemPrompt, mUserPrompt);
     mSettingsFields.saveModelType(mModelType);
+    mSettingsFields.saveBackendType(mBackendType);
     mDemoSharedPreferences.addSettings(mSettingsFields);
   }
 
