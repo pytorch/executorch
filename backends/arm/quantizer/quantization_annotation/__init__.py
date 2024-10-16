@@ -60,4 +60,5 @@ from . import (  # noqa
     mul_annotator,
     one_to_one_annotator,
     sub_annotator,
+    sum_annotator,
 )
