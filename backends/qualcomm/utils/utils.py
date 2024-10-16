@@ -69,6 +69,7 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_serialize impor
 )
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_EXPAND_BROADCAST_SHAPE,
+    QCOM_PASS_SKIP_ADVANCED_REQUANT,
     QCOM_QNN_COMPILE_SPEC,
 )
 
@@ -305,7 +306,9 @@ def _transform(
     ConvertBmmToMatmul()(graph_module)
     ConvertInterpolateWithUpsample2D()(graph_module)
     I64toI32(edge_program)(graph_module)
-    AnnotateQuantAttrs(edge_program)(graph_module)
+    AnnotateQuantAttrs(
+        edge_program, QCOM_PASS_SKIP_ADVANCED_REQUANT in custom_pass_config
+    )(graph_module)
     AnnotateAndQuantScalar(edge_program)(graph_module)
     AnnotateDecomposed(edge_program)(graph_module)
     FoldQDQ()(graph_module)
