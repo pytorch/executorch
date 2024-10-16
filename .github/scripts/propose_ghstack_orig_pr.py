@@ -104,8 +104,7 @@ Merge bot PR head: https://github.com/pytorch/executorch/tree/{orig_branch_merge
 
         existing_orig_pr = repo.get_pulls(head="pytorch:" + orig_branch_merge_head, base=orig_branch_merge_base, state="open")
         if existing_orig_pr.totalCount > 0:
-            for p in existing_orig_pr:
-                print(f"PR for {orig_branch_merge_head} already exists {p.number}")
+            print(f"PR for {orig_branch_merge_head} already exists {existing_orig_pr[0]}")
             # We don't need to create/edit because the head PR is merged and orig is finalized.
         else:
             repo.create_pull(
