@@ -11,14 +11,14 @@
 
 #pragma once
 
+#include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
+#include <executorch/extension/llm/runner/stats.h>
+#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
+#include <executorch/extension/llm/tokenizer/tiktoken.h>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
-#include <executorch/extension/llm/runner/stats.h>
-#include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
-#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
-#include <executorch/extension/llm/tokenizer/tiktoken.h>
 
 #include "llama_runner/LlamaConfig.h"
 #include "llama_runner/LlamaRuntime.h"
@@ -64,7 +64,6 @@ class MTKLlamaRunner {
       const std::string& prompt,
       std::function<void(const std::string&)> token_callback);
   std::unique_ptr<Tokenizer> load_tokenizer();
-
 
  private:
   // model
