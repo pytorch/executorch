@@ -159,7 +159,7 @@ sh examples/demo-apps/android/LlamaDemo/setup.sh
 
 This is running the shell script which configures the required core ExecuTorch, Llama2/3, and Android libraries, builds them, and copies them to jniLibs.
 
-**Output**: The executorch-llama.aar file will be generated in a newly created folder in the example/demo-apps/android/LlamaDemo/app/libs directory. This is the path that the Android app expects it to be in.
+**Output**: The executorch.aar file will be generated in a newly created folder in the example/demo-apps/android/LlamaDemo/app/libs directory. This is the path that the Android app expects it to be in.
 
 **Note**: If you are building the Android app mentioned in the next section on a separate machine (i.e. MacOS but building and exporting on Linux), make sure you copy the aar file generated from setup script to “examples/demo-apps/android/LlamaDemo/app/libs” before building the Android app.
 
