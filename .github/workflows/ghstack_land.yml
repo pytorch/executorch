@@ -34,5 +34,5 @@ jobs:
 
         python .github/scripts/propose_ghstack_orig_pr.py --pr $PR_NUMBER --repo pytorch/executorch
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GH_PYTORCHBOT_CHERRY_PICK_TOKEN }}
         GITHUB_REF: ${{ github.ref }}
