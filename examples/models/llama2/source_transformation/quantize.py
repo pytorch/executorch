@@ -12,6 +12,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from executorch.backends.vulkan._passes import VkInt4WeightOnlyQuantizer
+
 from executorch.extension.llm.export.builder import DType
 
 from sentencepiece import SentencePieceProcessor
@@ -31,7 +33,7 @@ except:
     fsLinear = nn.Linear
 
 
-def quantize(
+def quantize(  # noqa C901
     model: torch.nn.Module,
     qmode: str,
     activation_dtype: Optional[DType],
@@ -130,6 +132,9 @@ def quantize(
             group_size,
         )
         model = gptq_quantizer.quantize(model, inputs)
+        return model
+    elif qmode == "vulkan_4w":
+        model = VkInt4WeightOnlyQuantizer().quantize(model)
         return model
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")

@@ -62,6 +62,7 @@ runtime.python_library(
     ],
     visibility = [
         "//executorch/backends/...",
+        "//executorch/examples/...",
     ],
     deps = [
         ":int4_weight_only_quantizer",
