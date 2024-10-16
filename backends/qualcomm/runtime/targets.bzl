@@ -24,7 +24,7 @@ def define_common_targets():
         platforms = [ANDROID],
         visibility = ["@EXECUTORCH_CLIENTS"],
         deps = [
-            "fbsource//third-party/qualcomm/qnn:api",
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
             "//executorch/runtime/backend:interface",
         ],
         exported_deps = [
