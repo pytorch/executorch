@@ -3,6 +3,7 @@ load(
     "ANDROID",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_verision")
 
 PYTHON_MODULE_NAME = "PyQnnManagerAdaptor"
 
@@ -32,7 +33,7 @@ def define_common_targets():
             "//executorch/backends/qualcomm:schema",
             "//executorch/backends/qualcomm/aot/ir:qcir_utils",
             "//executorch/backends/qualcomm/runtime:runtime",
-            "fbsource//third-party/qualcomm/qnn:api",
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
         ],
         external_deps = [
             "pybind11",
@@ -65,7 +66,7 @@ def define_common_targets():
             "//executorch/backends/qualcomm:schema",
             "//executorch/backends/qualcomm/aot/ir:qcir_utils",
             "//executorch/backends/qualcomm/runtime:runtime",
-            "fbsource//third-party/qualcomm/qnn:api",
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
         ],
         external_deps = [
             "pybind11",
@@ -92,7 +93,7 @@ def define_common_targets():
             "//executorch/backends/qualcomm:schema",
             "//executorch/backends/qualcomm/aot/ir:qcir_utils",
             "//executorch/backends/qualcomm/runtime:runtime",
-            "fbsource//third-party/qualcomm/qnn:api",
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
         ],
         external_deps = [
             "pybind11",
