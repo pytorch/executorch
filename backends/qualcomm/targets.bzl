@@ -92,3 +92,6 @@ def define_common_targets():
             ":schema",
         ],
     )
+
+def get_qnn_library_verision():
+    return "2.26"

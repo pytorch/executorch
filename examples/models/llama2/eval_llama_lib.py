@@ -194,7 +194,7 @@ def gen_eval_wrapper(
     manager: LLMEdgeManager = _prepare_for_llama_export(model_name, args)
 
     if len(quantizers) != 0:
-        manager = manager.capture_pre_autograd_graph().pt2e_quantize(quantizers)
+        manager = manager.export().pt2e_quantize(quantizers)
         model = (
             manager.pre_autograd_graph_module.to(device="cuda")  # pyre-ignore
             if torch.cuda.is_available()
@@ -209,7 +209,7 @@ def gen_eval_wrapper(
         )
     else:
         # TODO: use manager.pre_autograd_graph_module for the eval to remove the if-else branch
-        # for quantizers. Currently capture_pre_autograd_graph only works with --kv_cache, but
+        # for quantizers. Currently export_for_training only works with --kv_cache, but
         # fails without the kv_cache mode
         model = (
             manager.model.eval().to(device="cuda")
