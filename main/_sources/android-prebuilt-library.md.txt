@@ -23,14 +23,14 @@ To add the Java library to your app, simply download the AAR, and add it to your
 In your app working directory, such as example executorch/examples/demo-apps/android/LlamaDemo,
 ```
 mkdir -p app/libs
-curl https://ossci-android.s3.amazonaws.com/executorch/release/executorch-241002/executorch.aar -o app/libs/executorch-llama.aar
+curl https://ossci-android.s3.amazonaws.com/executorch/release/executorch-241002/executorch.aar -o app/libs/executorch.aar
 ```
 
 And include it in gradle:
 ```
 # app/build.grardle.kts
 dependencies {
-    implementation(files("libs/executorch-llama.aar"))
+    implementation(files("libs/executorch.aar"))
 }
 ```
 

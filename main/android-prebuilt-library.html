@@ -514,13 +514,13 @@
 <p>To add the Java library to your app, simply download the AAR, and add it to your gradle build rule.</p>
 <p>In your app working directory, such as example executorch/examples/demo-apps/android/LlamaDemo,</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">mkdir</span> <span class="o">-</span><span class="n">p</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span>
-<span class="n">curl</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">ossci</span><span class="o">-</span><span class="n">android</span><span class="o">.</span><span class="n">s3</span><span class="o">.</span><span class="n">amazonaws</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">release</span><span class="o">/</span><span class="n">executorch</span><span class="o">-</span><span class="mi">241002</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span> <span class="o">-</span><span class="n">o</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span><span class="o">/</span><span class="n">executorch</span><span class="o">-</span><span class="n">llama</span><span class="o">.</span><span class="n">aar</span>
+<span class="n">curl</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">ossci</span><span class="o">-</span><span class="n">android</span><span class="o">.</span><span class="n">s3</span><span class="o">.</span><span class="n">amazonaws</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">release</span><span class="o">/</span><span class="n">executorch</span><span class="o">-</span><span class="mi">241002</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span> <span class="o">-</span><span class="n">o</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span>
 </pre></div>
 </div>
 <p>And include it in gradle:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># app/build.grardle.kts</span>
 <span class="n">dependencies</span> <span class="p">{</span>
-    <span class="n">implementation</span><span class="p">(</span><span class="n">files</span><span class="p">(</span><span class="s2">&quot;libs/executorch-llama.aar&quot;</span><span class="p">))</span>
+    <span class="n">implementation</span><span class="p">(</span><span class="n">files</span><span class="p">(</span><span class="s2">&quot;libs/executorch.aar&quot;</span><span class="p">))</span>
 <span class="p">}</span>
 </pre></div>
 </div>
