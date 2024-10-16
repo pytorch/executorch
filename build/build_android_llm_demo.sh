@@ -26,11 +26,10 @@ build_android_native_library() {
     EXECUTORCH_BUILD_QNN=OFF
   fi
 
-
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
-    -DANDROID_PLATFORM=android-23 \
+    -DANDROID_PLATFORM=android-26 \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DEXECUTORCH_LOG_LEVEL=Info \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
@@ -42,6 +41,8 @@ build_android_native_library() {
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_NEURON="${EXECUTORCH_BUILD_NEURON}" \
+    -DNEURON_BUFFER_ALLOCATOR_LIB="${NEURON_BUFFER_ALLOCATOR_LIB}" \
     -DEXECUTORCH_BUILD_QNN="${EXECUTORCH_BUILD_QNN}" \
     -DQNN_SDK_ROOT="${QNN_SDK_ROOT}" \
     -DCMAKE_BUILD_TYPE=Release \
@@ -57,10 +58,12 @@ build_android_native_library() {
   cmake extension/android \
     -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="${ANDROID_ABI}" \
-    -DANDROID_PLATFORM=android-23 \
+    -DANDROID_PLATFORM=android-26 \
     -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DEXECUTORCH_LOG_LEVEL=Info \
+    -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+    -DNEURON_BUFFER_ALLOCATOR_LIB="$NEURON_BUFFER_ALLOCATOR_LIB" \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
     -DCMAKE_BUILD_TYPE=Release \
@@ -84,6 +87,13 @@ build_android_native_library() {
     cp "${QNN_SDK_ROOT}"/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/"
     cp "${QNN_SDK_ROOT}"/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/"
   fi
+
+  # Copy MTK related so library
+  if [ -n "$NEURON_BUFFER_ALLOCATOR_LIB" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then
+    cp "${CMAKE_OUT}"/backends/mediatek/libneuron_backend.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
+    cp "$NEURON_BUFFER_ALLOCATOR_LIB"/libneuron_buffer_allocator.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
+    cp "$NEURON_BUFFER_ALLOCATOR_LIB"/libneuronusdk_adapter.mtk.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
+  fi
 }
 
 build_aar() {
@@ -96,7 +106,7 @@ build_aar() {
   # between Java and JNI
   find jni -type f -name "libexecutorch_jni.so" -exec bash -c 'mv "$1" "${1/_jni/}"' bash {} \;
   # Zip all necessary files into the AAR file
-  zip -r executorch.aar libs jni/*/libexecutorch.so jni/*/libqnn*.so jni/*/libQnn*.so AndroidManifest.xml
+  zip -r executorch.aar libs jni/*/libexecutorch.so jni/*/libqnn*.so jni/*/libQnn*.so jni/*/libneuron_backend.so jni/*/libneuron_buffer_allocator.so jni/*/libneuronusdk_adapter.mtk.so AndroidManifest.xml
   cp executorch.aar executorch-llama.aar
   popd
 }
@@ -139,19 +149,27 @@ collect_artifacts_to_be_uploaded() {
   cp extension/benchmark/android/benchmark/app/build/outputs/apk/androidTest/debug/*.apk "${MINIBENCH_APP_DIR}"
 }
 
-BUILD_AAR_DIR="$(mktemp -d)"
-export BUILD_AAR_DIR
-if [ -z "$ANDROID_ABIS" ]; then
-  ANDROID_ABIS=("arm64-v8a" "x86_64")
+main() {
+  BUILD_AAR_DIR="$(mktemp -d)"
+  export BUILD_AAR_DIR
+  if [ -z "$ANDROID_ABIS" ]; then
+    ANDROID_ABIS=("arm64-v8a" "x86_64")
+  fi
+  export ANDROID_ABIS
+
+  ARTIFACTS_DIR_NAME="$1"
+
+  build_jar
+  for ANDROID_ABI in "${ANDROID_ABIS[@]}"; do
+    build_android_native_library ${ANDROID_ABI}
+  done
+  build_aar
+  build_android_demo_apps
+  if [ -n "$ARTIFACTS_DIR_NAME" ]; then
+    collect_artifacts_to_be_uploaded ${ARTIFACTS_DIR_NAME}
+  fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
 fi
-export ANDROID_ABIS
-
-ARTIFACTS_DIR_NAME="$1"
-
-build_jar
-for ANDROID_ABI in "${ANDROID_ABIS[@]}"; do
-  build_android_native_library ${ANDROID_ABI}
-done
-build_aar
-build_android_demo_apps
-collect_artifacts_to_be_uploaded ${ARTIFACTS_DIR_NAME}

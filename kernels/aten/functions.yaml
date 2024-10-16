@@ -241,6 +241,8 @@
 
 - op: masked_fill.Scalar_out
 
+- op: masked_scatter.out
+
 - op: max_pool2d_with_indices.out
 
 - op: max.dim_max

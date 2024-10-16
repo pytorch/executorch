@@ -41,7 +41,7 @@ case "${IMAGE_NAME}" in
     LINTRUNNER=""
     CLANG_VERSION=12
     # From https://developer.android.com/ndk/downloads
-    ANDROID_NDK_VERSION=r26c
+    ANDROID_NDK_VERSION=r27b
     ;;
   *)
     echo "Invalid image name ${IMAGE_NAME}"

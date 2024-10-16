@@ -279,6 +279,7 @@ jobs:
           path: ${{ runner.temp }}/artifacts/
 
   benchmark-on-device:
+    if: always()
     needs:
       - set-parameters
       - upload-benchmark-app
