@@ -90,10 +90,10 @@ build_android_native_library() {
   fi
 
   # Copy MTK related so library
-  if [ -n "$NEURON_BUFFER_ALLOCATOR_LIB" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then
+  if [ -n "$NEURON_BUFFER_ALLOCATOR_LIB" ] && [ -n "$NEURON_USDK_ADAPTER_LIB" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then
     cp "${CMAKE_OUT}"/backends/mediatek/libneuron_backend.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
-    cp "$NEURON_BUFFER_ALLOCATOR_LIB"/libneuron_buffer_allocator.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
-    cp "$NEURON_BUFFER_ALLOCATOR_LIB"/libneuronusdk_adapter.mtk.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
+    cp "${NEURON_BUFFER_ALLOCATOR_LIB}" ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
+    cp "${NEURON_USDK_ADAPTER_LIB}" ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
   fi
 }
 
