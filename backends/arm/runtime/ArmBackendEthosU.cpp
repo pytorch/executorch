@@ -115,7 +115,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
     ArmBackendExecuteCallbacks ArmBackend_execute_callbacks;
     // Command stream - we know at this point it's aligned
     char* data = (char*)execution_handle->processed->data();
-    ET_LOG(Info, "ArmBackend::execute %p", data);
+    ET_LOG(Debug, "ArmBackend::execute %p", data);
 
     // Read key sections from the vela_bin_stream
     if (vela_bin_read(data, &handles, execution_handle->processed->size()) ==
@@ -295,7 +295,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
           tensor.size(1) == io->shape[3] && tensor.size(2) == io->shape[1] &&
           tensor.size(3) == io->shape[2];
       if (permuted_shape) {
-        ET_LOG(Info, "Tensor input/output %d will be permuted", index);
+        ET_LOG(Debug, "Tensor input/output %d will be permuted", index);
       }
       if (permuted_io_flag != permuted_shape) {
         ET_LOG(
