@@ -25,6 +25,7 @@ _OPTIMIZED_ATEN_OPS = (
         ],
     ),
     op_target(name = "op_exp"),
+    op_target(name = "op_sigmoid"),
     op_target(
         name = "op_gelu",
         deps = select({
