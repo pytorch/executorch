@@ -348,7 +348,9 @@ def segmentation_metrics(predictions, targets, classes):
     return (pa, mpa, miou, cls_iou)
 
 
-def get_imagenet_dataset(dataset_path, data_size, image_shape, crop_size=None):
+def get_imagenet_dataset(
+    dataset_path, data_size, image_shape, crop_size=None, shuffle=True
+):
     from torchvision import datasets, transforms
 
     def get_data_loader():
@@ -365,7 +367,7 @@ def get_imagenet_dataset(dataset_path, data_size, image_shape, crop_size=None):
         imagenet_data = datasets.ImageFolder(dataset_path, transform=preprocess)
         return torch.utils.data.DataLoader(
             imagenet_data,
-            shuffle=True,
+            shuffle=shuffle,
         )
 
     # prepare input data
