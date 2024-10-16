@@ -284,6 +284,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
       }
       boolean isUpdated = !mCurrentSettingsFields.equals(updatedSettingsFields);
       boolean isLoadModel = updatedSettingsFields.getIsLoadModel();
+      setBackendMode(updatedSettingsFields.getBackendType());
       if (isUpdated) {
         if (isLoadModel) {
           // If users change the model file, but not pressing loadModelButton, we won't load the new
@@ -292,6 +293,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
         } else {
           askUserToSelectModel();
         }
+
         checkForClearChatHistory(updatedSettingsFields);
         // Update current to point to the latest
         mCurrentSettingsFields = new SettingsFields(updatedSettingsFields);
@@ -299,6 +301,22 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     } else {
       askUserToSelectModel();
     }
+  }
+
+  private void setBackendMode(BackendType backendType) {
+    if(backendType.equals(BackendType.XNNPACK)) {
+      setXNNPACKMode();
+    } else if(backendType.equals(BackendType.MEDIATEK)) {
+      setMediaTekMode();
+    }
+  }
+
+  private void setXNNPACKMode() {
+    requireViewById(R.id.addMediaButton).setVisibility(View.VISIBLE);
+  }
+
+  private void setMediaTekMode() {
+    requireViewById(R.id.addMediaButton).setVisibility(View.GONE);
   }
 
   private void checkForClearChatHistory(SettingsFields updatedSettingsFields) {
