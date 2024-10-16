@@ -28,7 +28,7 @@ def parse_args():
     parser.add_argument(
         "--pr",
         type=int,
-        help="Number of the PR in the stack to check and create follow up PR",
+        help="Number of the PR in the stack to check and create corresponding PR",
         required=True,
     )
     return parser.parse_args()
@@ -64,7 +64,15 @@ def extract_stack_from_body(pr_body: str) -> List[int]:
 
 
 def get_pr_stack_from_number(pr_number: int, repo: Repository) -> List[int]:
-    return extract_stack_from_body(repo.get_pull(pr_number).body)
+    pr_stack = extract_stack_from_body(repo.get_pull(pr_number).body)
+
+    if not pr_stack:
+        raise Exception(
+            f"Could not find PR stack in body of #{pr_number}. "
+            + "Please make sure that the PR was created with ghexport."
+        )
+
+    return pr_stack
 
 
 def create_prs_for_orig_branch(pr_stack: List[int], repo: Repository):
@@ -73,19 +81,28 @@ def create_prs_for_orig_branch(pr_stack: List[int], repo: Repository):
     orig_branch_merge_base = "main"
     for i in range(len(pr_stack)):
         pr = repo.get_pull(pr_stack[i])
+        if not pr.is_merged():
+            print("The PR (and stack above) is not merged yet, skipping")
+            # return
         # Check for invariant: For the current PR, it must be gh/user/x/base <- gh/user/x/head
         assert pr.base.ref.replace("base", "head") == pr.head.ref
         # The PR we want to create is then "branch_to_merge" <- gh/user/x/orig
         # gh/user/x/orig is the clean diff between gh/user/x/base <- gh/user/x/head
         orig_branch_merge_head = pr.base.ref.replace("base", "orig")
-        bot_metadata = f"""\nThis PR was created by the merge bot to help merge the original PR into the base branch.
+        if repo.get_pulls(head=orig_branch_merge_head).totalCount > 0:
+            # There is already a PR for this diff, so we can skip it
+            print(f"PR for {orig_branch_merge_head} already exists, skipping")
+            continue
+        bot_metadata = f"""This PR was created by the merge bot to help merge the original PR into the main branch.
 ghstack PR number: https://github.com/pytorch/executorch/pull/{pr.number}
+^ Please use this as the source of truth for the PR number to reference in comments
 ghstack PR base: https://github.com/pytorch/executorch/tree/{pr.base.ref}
 ghstack PR head: https://github.com/pytorch/executorch/tree/{pr.head.ref}
 Merge bot PR base: https://github.com/pytorch/executorch/tree/{orig_branch_merge_base}
 Merge bot PR head: https://github.com/pytorch/executorch/tree/{orig_branch_merge_head}
+\nOriginal PR body:\n
         """
-        repo.create_pull(base=orig_branch_merge_base, head=orig_branch_merge_head, title=pr.title, body=pr.body + bot_metadata)
+        repo.create_pull(base=orig_branch_merge_base, head=orig_branch_merge_head, title=pr.title, body=bot_metadata + pr.body)
         # Advance the base for the next PR
         orig_branch_merge_base = orig_branch_merge_head
 
