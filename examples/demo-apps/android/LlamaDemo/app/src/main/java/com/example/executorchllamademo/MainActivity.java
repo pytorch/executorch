@@ -125,7 +125,8 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     long runStartTime = System.currentTimeMillis();
     mModule =
         new LlamaModule(
-            ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType()),
+            //ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType()),
+                3, //TODO: Modify this based on JNI change for how to select MTK backend
             modelPath,
             tokenizerPath,
             temperature);
@@ -229,6 +230,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
 
     try {
       Os.setenv("ADSP_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir, true);
+      Os.setenv("LD_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir, true);
     } catch (ErrnoException e) {
       finish();
     }

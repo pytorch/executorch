@@ -12,6 +12,7 @@ public class ModelUtils {
   static final int TEXT_MODEL = 1;
   static final int VISION_MODEL = 2;
   static final int VISION_MODEL_IMAGE_CHANNELS = 3;
+  //TODO: Make change here based on JNI change on how to indicate MTK backend
   static final int VISION_MODEL_SEQ_LEN = 768;
   static final int TEXT_MODEL_SEQ_LEN = 256;
 
