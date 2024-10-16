@@ -45,9 +45,9 @@ def sample_top_p(probs, p):
 
 def next_token(logits: torch.Tensor, temperature: float, top_p: float) -> int:
     if temperature > 0:
-        probs = torch.softmax(logits[:, -1] / temperature, dim=-1)
+        probs = torch.softmax(logits / temperature, dim=-1)
         return sample_top_p(probs, top_p).item()
-    return torch.argmax(logits[:, -1], dim=-1).item()
+    return torch.argmax(logits, dim=-1).item()
 
 
 class LlamaRunner(ABC):
