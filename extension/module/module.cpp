@@ -152,6 +152,11 @@ runtime::Error Module::load_method(
         memory_allocator_.get(),
         method_holder.planned_memory.get(),
         temp_allocator_.get());
+        
+    // Use class member event_tracer_ when the tracer function parameter is null
+    if (tracer == nullptr && event_tracer_ != nullptr) {
+      tracer = event_tracer_.get();
+    }
     method_holder.method = ET_UNWRAP_UNIQUE(program_->load_method(
         method_name.c_str(), method_holder.memory_manager.get(), tracer));
     method_holder.inputs.resize(method_holder.method->inputs_size());
