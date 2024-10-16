@@ -19,6 +19,9 @@ from executorch.backends.arm._passes.convert_split_to_slice import (
     ConvertSplitToSlicePass,
 )
 from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
+from executorch.backends.arm._passes.insert_squeeze_after_sum_pass import (
+    InsertSqueezeAfterSumPass,
+)
 from executorch.backends.arm._passes.meandim_to_averagepool_pass import (
     ConvertMeanDimToAveragePool,
 )
@@ -49,6 +52,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(ConvertMeanDimToAveragePool())
         self.add_pass(DecomposeDivPass())
+        self.add_pass(InsertSqueezeAfterSumPass())
         self.add_pass(ConvertSplitToSlicePass())
         for spec in compile_spec:
             if spec.key == "permute_memory_format":
