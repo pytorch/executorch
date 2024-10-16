@@ -44,8 +44,8 @@
  * any receiver's applicable license agreements with MediaTek Inc.
  */
 
-#include "executorch/backends/mediatek/runtime/include/NeuronBufferAllocator.h"
 #include <executorch/examples/mediatek/executor_runner/mtk_llama_runner.h>
+#include "executorch/backends/mediatek/runtime/include/NeuronBufferAllocator.h"
 
 #include <ctime>
 #include <iostream>
@@ -65,8 +65,8 @@
 
 #include "llama_runner/ModelChunk.h"
 #include "llama_runner/Utils.h"
-#include "llama_runner/llm_helper/include/llm_types.h"
 #include "llama_runner/llm_helper/include/llama_runner_values.h"
+#include "llama_runner/llm_helper/include/llm_types.h"
 
 static uint64_t MAX_RESPONSE = 50; // Maximum number of tokens to generate.
 // Global BOS and EOS option for tokenization (encoding)
@@ -83,15 +83,14 @@ using namespace mtk::vars;
 namespace llm = ::executorch::extension::llm;
 
 MTKLlamaRunner::MTKLlamaRunner(
-  const std::string& model_path,
-  const std::string& tokenizer_path,
-  const float temperature)
-  : modeloptions_(get_model_options()),
-    modelpaths_(get_model_paths()) {
+    const std::string& model_path,
+    const std::string& tokenizer_path,
+    const float temperature)
+    : modeloptions_(get_model_options()), modelpaths_(get_model_paths()) {
   executorch::runtime::runtime_init();
   ET_LOG(
-        Info,
-        "Creating MTK Llama runner. Current it will self-load .pte, .bin, and .so files. Initiated runtime_init().");
+      Info,
+      "Creating MTK Llama runner. Current it will self-load .pte, .bin, and .so files. Initiated runtime_init().");
 }
 
 Error MTKLlamaRunner::load() {
@@ -122,7 +121,6 @@ Error MTKLlamaRunner::generate(
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
-
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
   }
@@ -137,9 +135,9 @@ Error MTKLlamaRunner::generate(
         }
       };
 
-  ET_LOG(Info, "Starting inference from MTKLlamaRunner");    
+  ET_LOG(Info, "Starting inference from MTKLlamaRunner");
   inference(*runtime_.get(), tokenizer_, prompt, wrapped_callback);
-  ET_LOG(Info, "Completed inference from MTKLlamaRunner"); 
+  ET_LOG(Info, "Completed inference from MTKLlamaRunner");
 
   return Error::Ok;
 }
@@ -169,7 +167,7 @@ LlamaModelOptions MTKLlamaRunner::get_model_options() {
       .cache_type = CACHE_TYPE,
       .mask_type = MASK_TYPE,
       .rot_emb_type = ROT_EMB_TYPE};
-  ET_LOG(Info, "Completed get_model_options");    
+  ET_LOG(Info, "Completed get_model_options");
   return options;
 }
 
@@ -179,7 +177,7 @@ LlamaModelPaths MTKLlamaRunner::get_model_paths() {
       .token_embedding_path = TOKEN_EMBEDDING_PATH,
       .prompt_model_paths = split(PROMPT_MODEL_PATHS, ','),
       .gen_model_paths = split(GEN_MODEL_PATHS, ',')};
-  ET_LOG(Info, "Completed get_model_paths");   
+  ET_LOG(Info, "Completed get_model_paths");
   return model_paths;
 }
 
@@ -325,7 +323,8 @@ Error MTKLlamaRunner::inference(
   const auto first_output_token = prefill_res.get();
 
   // run generation mode (decoding)
-  return gen_response(llama_runtime, tokenizer, first_output_token, token_callback);
+  return gen_response(
+      llama_runtime, tokenizer, first_output_token, token_callback);
 }
 
 std::unique_ptr<Tokenizer> MTKLlamaRunner::load_tokenizer() {
