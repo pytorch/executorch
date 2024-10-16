@@ -42,12 +42,12 @@ In this demo app, we support text-only inference with Llama 3.1, Llama 3, and Ll
 Install the required packages to export the model
 
 ```
-sh examples/models/llama2/install_requirements.sh
+sh examples/models/llama/install_requirements.sh
 ```
 
 Export the model
 ```
-python -m examples.models.llama2.export_llama --checkpoint "${MODEL_DIR}/consolidated.00.pth" --params "${MODEL_DIR}/params.json" -kv --use_sdpa_with_kv_cache --mps -d fp32 --disable_dynamic_shape -qmode 8da4w -G 32
+python -m examples.models.llama.export_llama --checkpoint "${MODEL_DIR}/consolidated.00.pth" --params "${MODEL_DIR}/params.json" -kv --use_sdpa_with_kv_cache --mps -d fp32 --disable_dynamic_shape -qmode 8da4w -G 32
 ```
 
 ## Pushing Model and Tokenizer
