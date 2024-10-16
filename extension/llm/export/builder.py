@@ -82,7 +82,7 @@ class LLMEdgeManager:
         dynamic_shapes: Optional[Any] = None,
     ):
         self.model = model
-        # graph module returned from capture_pre_autograd_graph
+        # graph module returned from export()
         self.pre_autograd_graph_module: Optional[torch.fx.GraphModule] = None
         self.modelname = modelname
         self.max_seq_len = max_seq_len
@@ -176,7 +176,7 @@ class LLMEdgeManager:
         )
         return edge_config
 
-    def capture_pre_autograd_graph(self) -> "LLMEdgeManager":
+    def export(self) -> "LLMEdgeManager":
         dynamic_shape = self._get_dynamic_shape()
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
@@ -296,7 +296,7 @@ class LLMEdgeManager:
                 composed_quantizer = ComposableQuantizer(quantizers)
                 assert (
                     self.pre_autograd_graph_module is not None
-                ), "Please run capture_pre_autograd_graph first"
+                ), "Please run export() first"
                 m = prepare_pt2e(self.pre_autograd_graph_module, composed_quantizer)
                 logging.info(
                     f"Calibrating with tasks: {self.calibration_tasks}, limit: {self.calibration_limit}, calibration_data: {self.calibration_data}, tokenizer_path: {self.tokenizer_path}, seq_length: {self.calibration_seq_length}"
@@ -344,8 +344,8 @@ class LLMEdgeManager:
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             if self.pre_autograd_graph_module is None:
-                # Run capture_pre_autograd_graph if it didn't run
-                self.capture_pre_autograd_graph()
+                # Run export() if it didn't run
+                self.export()
             self.edge_manager = export_to_edge(
                 self.pre_autograd_graph_module,  # pyre-fixme[6]
                 self.example_inputs,
