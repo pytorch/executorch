@@ -22,8 +22,14 @@
 
 #include "llama_runner/LlamaConfig.h"
 #include "llama_runner/LlamaRuntime.h"
-using namespace torch::executor;
 using Stats = ::executorch::llm::Stats;
+
+using example::LlamaModelOptions;
+using example::LlamaModelPaths;
+using example::LlamaRuntime;
+using executorch::extension::llm::Tokenizer;
+using executorch::runtime::Error;
+using executorch::runtime::Result;
 
 class MTKLlamaRunner {
  public:
@@ -62,8 +68,8 @@ class MTKLlamaRunner {
 
  private:
   // model
-  const torch::executor::LlamaModelOptions modeloptions_;
-  const torch::executor::LlamaModelPaths modelpaths_;
+  const LlamaModelOptions modeloptions_;
+  const LlamaModelPaths modelpaths_;
   std::unique_ptr<Tokenizer> tokenizer_;
   std::unique_ptr<LlamaRuntime> runtime_;
 };
