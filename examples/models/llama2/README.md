@@ -356,7 +356,7 @@ To build for CoreML backend and validate on Mac, replace `-DEXECUTORCH_BUILD_XNN
 
 **1. Build llama runner binary for Android**
 
-*Pre-requisite*: Android NDK (tested with r26c) which can be downloaded from [here](https://developer.android.com/ndk/downloads). Note that the mac binary can be unpackaged and you can locate NDK folder from it.
+*Pre-requisite*: Android NDK (tested with r27b) which can be downloaded from [here](https://developer.android.com/ndk/downloads). Note that the mac binary can be unpackaged and you can locate NDK folder from it.
 
 **1.1 Set Android NDK**
 ```
