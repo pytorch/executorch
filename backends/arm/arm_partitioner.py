@@ -13,6 +13,7 @@ from typing import Callable, cast, final, List, Optional, Tuple
 import torch
 from executorch.backends.arm.arm_backend import ArmBackend  # usort: skip
 from executorch.backends.arm._passes.tag_io_quant_pass import TagIOQuantPass
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -36,6 +37,10 @@ if TOSA_DBG_VERBOSE:
 
 
 class TOSASupportedOperators(OperatorSupportBase):
+    def __init__(self, tosa_spec: TosaSpecification):
+        super().__init__()
+        self.tosa_spec = tosa_spec
+
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         supported = node.op == "call_function" and node.target in [
             exir_ops.edge.aten.add.Tensor,
@@ -111,6 +116,12 @@ class ArmPartitioner(Partitioner):
         logger.info("ArmPartitioner::partition")
         partition_tags = {}
 
+        tosa_spec = TosaSpecification.create_from_compilespecs(
+            self.delegation_spec.compile_specs
+        )
+
+        logger.info(f"Partitioning for {tosa_spec}")
+
         for spec in self.delegation_spec.compile_specs:
             if spec.key == "quantize_io" and spec.value.decode() == "True":
                 # Exclude IO quantization from the partition
@@ -123,7 +134,7 @@ class ArmPartitioner(Partitioner):
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            TOSASupportedOperators(),
+            TOSASupportedOperators(tosa_spec),
             allows_single_node_partition=True,
         )
         partition_list = capability_partitioner.propose_partitions()
