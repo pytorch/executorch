@@ -8,7 +8,7 @@
 
 #import "ResourceTestCase.h"
 
-#import <executorch/examples/models/llama2/runner/runner.h>
+#import <executorch/examples/models/llama/runner/runner.h>
 
 using namespace ::executorch::extension;
 using namespace ::executorch::runtime;
