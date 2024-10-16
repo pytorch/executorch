@@ -9,7 +9,7 @@
 #import "LLaMARunner.h"
 
 #import <ExecuTorch/ExecuTorchLog.h>
-#import <executorch/examples/models/llama2/runner/runner.h>
+#import <executorch/examples/models/llama/runner/runner.h>
 #import <executorch/examples/models/llava/runner/llava_runner.h>
 
 using executorch::extension::llm::Image;
