@@ -600,7 +600,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     }
 
 #ifdef ET_EVENT_TRACER_ENABLED
-    EventTracer* event_tracer = context.event_tracer();
+    runtime::EventTracer* event_tracer = context.event_tracer();
     compute_graph->context()->querypool().extract_results();
     for (const auto& tup :
          compute_graph->context()->querypool().get_shader_timestamp_data()) {
