@@ -99,8 +99,8 @@
 		035A5E942BB4B523001E0553 /* LLaMA.entitlements */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.entitlements; path = LLaMA.entitlements; sourceTree = "<group>"; };
 		036CAF9D2BB1444500D6C2D5 /* LLaMA.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LLaMA.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = LLaMARunner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		03729F072BB203B300152F2E /* runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = runner.cpp; path = ../../../examples/models/llama2/runner/runner.cpp; sourceTree = "<group>"; };
-		03729F082BB203B300152F2E /* runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = runner.h; path = ../../../examples/models/llama2/runner/runner.h; sourceTree = "<group>"; };
+		03729F072BB203B300152F2E /* runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = runner.cpp; path = ../../../examples/models/llama/runner/runner.cpp; sourceTree = "<group>"; };
+		03729F082BB203B300152F2E /* runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = runner.h; path = ../../../examples/models/llama/runner/runner.h; sourceTree = "<group>"; };
 		03729F092BB203B300152F2E /* util.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = util.h; sourceTree = "<group>"; };
 		03729F102BB2042B00152F2E /* sampler.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = sampler.h; sourceTree = "<group>"; };
 		03729F112BB2042B00152F2E /* sampler.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = sampler.cpp; sourceTree = "<group>"; };
@@ -275,7 +275,7 @@
 				03729F152BB2043600152F2E /* tokenizer.h */,
 			);
 			name = tokenizer;
-			path = ../../../../../models/llama2/tokenizer;
+			path = ../../../../../models/llama/tokenizer;
 			sourceTree = "<group>";
 		};
 		03729F0F2BB203E100152F2E /* sampler */ = {
