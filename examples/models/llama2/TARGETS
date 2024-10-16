@@ -103,6 +103,7 @@ runtime.python_library(
     deps = [
         "//ai_codesign/gen_ai/fast_hadamard_transform:fast_hadamard_transform",
         "//caffe2:torch",
+        "//executorch/backends/vulkan/_passes:vulkan_passes",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models:models",
         "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
