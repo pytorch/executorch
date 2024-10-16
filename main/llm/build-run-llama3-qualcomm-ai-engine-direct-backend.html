@@ -495,7 +495,7 @@
 <ul class="simple">
 <li><p>Set up your ExecuTorch repo and environment if you haven’t done so by following <a class="reference internal" href="../getting-started-setup.html"><span class="doc std std-doc">the Setting up ExecuTorch</span></a> to set up the repo and dev environment.</p></li>
 <li><p>Read <a class="reference internal" href="../build-run-qualcomm-ai-engine-direct-backend.html"><span class="doc std std-doc">the Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend page</span></a> to understand how to export and run a model with Qualcomm AI Engine Direct Backend on Qualcomm device.</p></li>
-<li><p>Follow <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/models/llama2">the README for executorch llama</a> to know how to run a llama model on mobile via ExecuTorch.</p></li>
+<li><p>Follow <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/models/llama">the README for executorch llama</a> to know how to run a llama model on mobile via ExecuTorch.</p></li>
 <li><p>A Qualcomm device with 16GB RAM</p>
 <ul>
 <li><p>We are continuing to optimize our memory usage to ensure compatibility with lower memory devices.</p></li>
@@ -535,7 +535,7 @@
 <li><p>The entire process takes a few hours.</p></li>
 </ol>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Please note that calibration_data must include the prompt template for special tokens.</span>
-python<span class="w"> </span>-m<span class="w"> </span>examples.models.llama2.export_llama<span class="w">  </span>-t<span class="w"> </span>&lt;path_to_tokenizer.model&gt;
+python<span class="w"> </span>-m<span class="w"> </span>examples.models.llama.export_llama<span class="w">  </span>-t<span class="w"> </span>&lt;path_to_tokenizer.model&gt;
 llama3/Meta-Llama-3-8B-Instruct/tokenizer.model<span class="w"> </span>-p<span class="w"> </span>&lt;path_to_params.json&gt;<span class="w"> </span>-c<span class="w"> </span>&lt;path_to_checkpoint_for_Meta-Llama-3-8B-Instruct&gt;<span class="w">  </span>--use_kv_cache<span class="w">  </span>--qnn<span class="w"> </span>--pt2e_quantize<span class="w"> </span>qnn_16a4w<span class="w"> </span>--disable_dynamic_shape<span class="w"> </span>--num_sharding<span class="w"> </span><span class="m">8</span><span class="w"> </span>--calibration_tasks<span class="w"> </span>wikitext<span class="w"> </span>--calibration_limit<span class="w"> </span><span class="m">1</span><span class="w"> </span>--calibration_seq_length<span class="w"> </span><span class="m">128</span><span class="w"> </span>--optimized_rotation_path<span class="w"> </span>&lt;path_to_optimized_matrix&gt;<span class="w"> </span>--calibration_data<span class="w"> </span><span class="s2">&quot;&lt;|start_header_id|&gt;system&lt;|end_header_id|&gt;\n\nYou are a funny chatbot.&lt;|eot_id|&gt;&lt;|start_header_id|&gt;user&lt;|end_header_id|&gt;\n\nCould you tell me about Facebook?&lt;|eot_id|&gt;&lt;|start_header_id|&gt;assistant&lt;|end_header_id|&gt;\n\n&quot;</span>
 </pre></div>
 </div>
@@ -576,9 +576,9 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out<sp
 <span class="w">        </span>-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">        </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">        </span>-DEXECUTORCH_BUILD_KERNELS_CUSTOM<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">        </span>-Bcmake-android-out/examples/models/llama2<span class="w"> </span>examples/models/llama2
+<span class="w">        </span>-Bcmake-android-out/examples/models/llama<span class="w"> </span>examples/models/llama
 
-<span class="w">    </span>cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out/examples/models/llama2<span class="w"> </span>-j16<span class="w"> </span>--config<span class="w"> </span>Release
+<span class="w">    </span>cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out/examples/models/llama<span class="w"> </span>-j16<span class="w"> </span>--config<span class="w"> </span>Release
 </pre></div>
 </div>
 <ol class="arabic simple" start="3">
@@ -604,7 +604,7 @@ adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>adb<span class="w"> </span>push<span class="w"> </span>&lt;model.pte&gt;<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
 adb<span class="w"> </span>push<span class="w"> </span>&lt;tokenizer.model&gt;<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
 adb<span class="w"> </span>push<span class="w"> </span>cmake-android-out/lib/libqnn_executorch_backend.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
-adb<span class="w"> </span>push<span class="w"> </span>cmake-out-android/examples/models/llama2/llama_main<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span>cmake-out-android/examples/models/llama/llama_main<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
 </pre></div>
 </div>
 <p><strong>3.4 Run model</strong></p>
