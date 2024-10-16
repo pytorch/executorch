@@ -76,7 +76,7 @@ sudo /Applications/CMake.app/Contents/bin/cmake-gui --install
 The prebuilt ExecuTorch runtime, backend, and kernels are available as a Swift PM package.
 
 ### Xcode
-Open the project in Xcode.In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the ExecuTorch repo into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version, e.g., “0.3.0”, or just use the “latest” branch name for the latest stable build.
+Open the project in Xcode.In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the ExecuTorch repo into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version, e.g., “0.4.0”, or just use the “latest” branch name for the latest stable build.
 
 Note: If you're running into any issues related to package dependencies, quit Xcode entirely, delete the whole executorch repo, clean the caches by running the command below in terminal and clone the repo again.
 
