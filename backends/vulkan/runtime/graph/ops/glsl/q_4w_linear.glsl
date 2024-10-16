@@ -77,7 +77,7 @@ void main() {
     vec4 scales;
     vec4 zeros;
 
-    [[unroll]] for (int comp = 0; comp < 4; ++comp) {
+    [[unroll]] for (int comp = 0; comp < 4; comp++) {
       const vec4 scale_and_zero = load_texel(
           qparams, u16vec3(0, n + comp, block_idx));
       scales[comp] = scale_and_zero.x;
@@ -88,7 +88,7 @@ void main() {
       const VEC4_T x_texel = load_texel(
           x, u16vec3(k_texel_i, ret_pos.y, ret_pos.z));
 
-      [[unroll]] for (int comp = 0; comp < 4; ++comp) {
+      [[unroll]] for (int comp = 0; comp < 4; comp++) {
         const int weights_bufi = (n + comp) * weights_strides.y + (k_texel_i * 2);
         // Need to read 4 unpacked values, which corresponds to 2 packed values
         const uint8_t weights_val_1 = weights[weights_bufi];
