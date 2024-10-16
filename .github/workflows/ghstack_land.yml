@@ -29,7 +29,7 @@ jobs:
         PR_MERGED=$(python -c "from github import Github; g = Github(); repo = g.get_repo('pytorch/executorch'); pr = repo.get_pull(${PR_NUMBER}); print(1 if pr.merged else 0)")
         if [ "$PR_MERGED" = "0" ]; then
           echo $"PR $PR_NUMBER is not merged. No op here."
-          exit 0
+          # exit 0
         fi
 
         python .github/scripts/propose_ghstack_orig_pr.py --pr $PR_NUMBER --repo pytorch/executorch
