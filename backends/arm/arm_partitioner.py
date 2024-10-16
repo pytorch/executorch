@@ -63,6 +63,7 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten._softmax.default,
             exir_ops.edge.aten.slice_copy.Tensor,
             exir_ops.edge.aten.sub.Tensor,
+            exir_ops.edge.aten.sum.dim_IntList,
             exir_ops.edge.aten.view_copy.default,
             exir_ops.edge.aten.clone.default,
             exir_ops.edge.aten.mean.dim,

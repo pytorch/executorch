@@ -9,8 +9,7 @@ jobs:
   ghstack_merge_to_main:
     name: ghstack-land
     runs-on: ubuntu-22.04
-    permissions:
-      pull-requests: write
+    environment: cherry-pick-bot
     steps:
     - uses: actions/checkout@v3
       with:
