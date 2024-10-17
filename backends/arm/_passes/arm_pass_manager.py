@@ -19,6 +19,9 @@ from executorch.backends.arm._passes.convert_split_to_slice import (
     ConvertSplitToSlicePass,
 )
 from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
+from executorch.backends.arm._passes.decompose_softmaxes_pass import (
+    DecomposeSoftmaxesPass,
+)
 from executorch.backends.arm._passes.insert_squeeze_after_sum_pass import (
     InsertSqueezeAfterSumPass,
 )
@@ -52,6 +55,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeDivPass())
         self.add_pass(InsertSqueezeAfterSumPass())
         self.add_pass(ConvertSplitToSlicePass())
+        self.add_pass(DecomposeSoftmaxesPass())
         for spec in compile_spec:
             if spec.key == "permute_memory_format":
                 memory_format = spec.value.decode()
@@ -63,4 +67,5 @@ class ArmPassManager(PassManager):
     def transform_for_annotation_pipeline(self, graph_module: torch.fx.GraphModule):
         self.add_pass(DecomposeDivPass())
         self.add_pass(ScalarsToAttributePass())
+        self.add_pass(DecomposeSoftmaxesPass())
         return self._transform(graph_module)
