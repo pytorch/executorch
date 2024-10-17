@@ -120,7 +120,7 @@ Topics in this section will help you get started with ExecuTorch.
    Llama on Android <llm/llama-demo-android>
    Llama on iOS <llm/llama-demo-ios>
    Llama on Android via Qualcomm backend <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
-   Intro to LLMs in Executorch <llm/getting-started>
+   Intro to LLMs in ExecuTorch <llm/getting-started>
 
 .. toctree::
    :glob:
