@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Debugging Models in ExecuTorch &mdash; ExecuTorch 0.4 documentation</title>
+  <title>ExecuTorch Runtime Python API Reference &mdash; ExecuTorch 0.4 documentation</title>
   
 
   
@@ -41,8 +41,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Inspector APIs" href="model-inspector.html" />
-    <link rel="prev" title="Profiling Models in ExecuTorch" href="runtime-profiling.html" />
+    <link rel="next" title="ExecuTorch API Life Cycle and Deprecation Policy" href="api-life-cycle.html" />
+    <link rel="prev" title="ExecuTorch Runtime API Reference" href="executorch-runtime-api-reference.html" />
 
 
   <!-- Google Tag Manager -->
@@ -340,10 +340,10 @@
 <li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">ExecuTorch Runtime Python API Reference</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">ExecuTorch Runtime Python API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
@@ -385,13 +385,13 @@
 <li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debug Backend Delegate</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
-<ul class="current">
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
 <li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
@@ -440,13 +440,13 @@
       </li>
 
         
-      <li>Debugging Models in ExecuTorch</li>
+      <li>ExecuTorch Runtime Python API Reference</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/model-debugging.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/runtime-python-api-reference.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -478,94 +478,141 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="debugging-models-in-executorch">
-<h1>Debugging Models in ExecuTorch<a class="headerlink" href="#debugging-models-in-executorch" title="Permalink to this heading">¶</a></h1>
-<p>With the ExecuTorch Developer Tools, users can debug their models for numerical inaccurcies and extract model outputs from their device to do quality analysis (such as Signal-to-Noise, Mean square error etc.).</p>
-<p>Currently, ExecuTorch supports the following debugging flows:</p>
-<ul class="simple">
-<li><p>Extraction of model level outputs via ETDump.</p></li>
-<li><p>Extraction of intermediate outputs (outside of delegates) via ETDump:</p>
-<ul>
-<li><p>Linking of these intermediate outputs back to the eager model python code.</p></li>
-</ul>
-</li>
-</ul>
-<div class="section" id="steps-to-debug-a-model-in-executorch">
-<h2>Steps to debug a model in ExecuTorch<a class="headerlink" href="#steps-to-debug-a-model-in-executorch" title="Permalink to this heading">¶</a></h2>
-<div class="section" id="runtime">
-<h3>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
-<p>For a real example reflecting the steps below, please refer to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/devtools/example_runner/example_runner.cpp">example_runner.cpp</a>.</p>
-<ol class="arabic">
-<li><p>[Optional] Generate an <a class="reference internal" href="etrecord.html"><span class="doc std std-doc">ETRecord</span></a> while exporting your model. When provided, this enables users to link profiling information back to the eager model source code (with stack traces and module hierarchy).</p></li>
-<li><p>Integrate <a class="reference internal" href="etdump.html"><span class="doc std std-doc">ETDump generation</span></a> into the runtime and set the debugging level by configuring the <code class="docutils literal notranslate"><span class="pre">ETDumpGen</span></code> object. Then, provide an additional buffer to which intermediate outputs and program outputs will be written. Currently we support two levels of debugging:</p>
-<ul class="simple">
-<li><p>Program level outputs</p></li>
-</ul>
-<div class="highlight-none notranslate highlight-C++"><div class="highlight"><pre><span></span><span class="n">Span</span><span class="o">&lt;</span><span class="kt">uint8_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buffer</span><span class="p">((</span><span class="kt">uint8_t</span><span class="o">*</span><span class="p">)</span><span class="n">debug_buffer</span><span class="p">,</span><span class="w"> </span><span class="n">debug_buffer_size</span><span class="p">);</span>
-<span class="n">etdump_gen</span><span class="p">.</span><span class="n">set_debug_buffer</span><span class="p">(</span><span class="n">buffer</span><span class="p">);</span>
-<span class="n">etdump_gen</span><span class="p">.</span><span class="n">set_event_tracer_debug_level</span><span class="p">(</span>
-<span class="w">    </span><span class="n">EventTracerDebugLogLevel</span><span class="o">::</span><span class="n">kProgramOutputs</span><span class="p">);</span>
+  <div class="section" id="executorch-runtime-python-api-reference">
+<h1>ExecuTorch Runtime Python API Reference<a class="headerlink" href="#executorch-runtime-python-api-reference" title="Permalink to this heading">¶</a></h1>
+<p>The Python <code class="docutils literal notranslate"><span class="pre">executorch.runtime</span></code> module wraps the C++ ExecuTorch runtime. It can load and execute serialized <code class="docutils literal notranslate"><span class="pre">.pte</span></code> program files: see the <a class="reference external" href="tutorials/export-to-executorch-tutorial.html">Export to ExecuTorch Tutorial</a> for how to convert a PyTorch <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code> to an ExecuTorch <code class="docutils literal notranslate"><span class="pre">.pte</span></code> program file. Execution accepts and returns <code class="docutils literal notranslate"><span class="pre">torch.Tensor</span></code> values, making it a quick way to validate the correctness of the program.</p>
+<p>For detailed information on how APIs evolve and the deprecation process, please refer to the <a class="reference external" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a>.</p>
+<span class="target" id="module-executorch.runtime"></span><p>Example usage:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">pathlib</span> <span class="kn">import</span> <span class="n">Path</span>
+
+<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">from</span> <span class="nn">executorch.runtime</span> <span class="kn">import</span> <span class="n">Verification</span><span class="p">,</span> <span class="n">Runtime</span><span class="p">,</span> <span class="n">Program</span><span class="p">,</span> <span class="n">Method</span>
+
+<span class="n">et_runtime</span><span class="p">:</span> <span class="n">Runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+<span class="n">program</span><span class="p">:</span> <span class="n">Program</span> <span class="o">=</span> <span class="n">et_runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span>
+    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/tmp/program.pte&quot;</span><span class="p">),</span>
+    <span class="n">verification</span><span class="o">=</span><span class="n">Verification</span><span class="o">.</span><span class="n">Minimal</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Program methods:&quot;</span><span class="p">,</span> <span class="n">program</span><span class="o">.</span><span class="n">method_names</span><span class="p">)</span>
+<span class="n">forward</span><span class="p">:</span> <span class="n">Method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;forward&quot;</span><span class="p">)</span>
+
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+<span class="n">outputs</span> <span class="o">=</span> <span class="n">forward</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Ran forward(</span><span class="si">{</span><span class="n">inputs</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  outputs: </span><span class="si">{</span><span class="n">outputs</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
-<ul class="simple">
-<li><p>Intermediate outputs of executed (non-delegated) operations (will include the program level outputs too)</p></li>
+<p>Example output:</p>
+<div class="highlight-none notranslate highlight-text"><div class="highlight"><pre><span></span>Program methods: (&#39;forward&#39;, &#39;forward2&#39;)
+Ran forward((tensor([[1., 1.],
+        [1., 1.]]), tensor([[1., 1.],
+        [1., 1.]])))
+  outputs: [tensor([[1., 1.],
+        [1., 1.]])]
+</pre></div>
+</div>
+<dl class="py class">
+<dt class="sig sig-object py" id="executorch.runtime.Runtime">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">executorch.runtime.</span></span><span class="sig-name descname"><span class="pre">Runtime</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">legacy_module</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Runtime"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Runtime" title="Permalink to this definition">¶</a></dt>
+<dd><p>An instance of the ExecuTorch runtime environment.</p>
+<p>This can be used to concurrently load and execute any number of ExecuTorch
+programs and methods.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="executorch.runtime.Runtime.get">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Runtime.get"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Runtime.get" title="Permalink to this definition">¶</a></dt>
+<dd><p>Gets the Runtime singleton.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="executorch.runtime.Runtime.load_program">
+<span class="sig-name descname"><span class="pre">load_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verification=&lt;Verification.InternalConsistency:</span> <span class="pre">1&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Runtime.load_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Runtime.load_program" title="Permalink to this definition">¶</a></dt>
+<dd><p>Loads an ExecuTorch program from a PTE binary.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – The binary program data to load; typically PTE data.</p></li>
+<li><p><strong>verification</strong> – level of program verification to perform.</p></li>
 </ul>
-<div class="highlight-none notranslate highlight-C++"><div class="highlight"><pre><span></span><span class="n">Span</span><span class="o">&lt;</span><span class="kt">uint8_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buffer</span><span class="p">((</span><span class="kt">uint8_t</span><span class="o">*</span><span class="p">)</span><span class="n">debug_buffer</span><span class="p">,</span><span class="w"> </span><span class="n">debug_buffer_size</span><span class="p">);</span>
-<span class="n">etdump_gen</span><span class="p">.</span><span class="n">set_debug_buffer</span><span class="p">(</span><span class="n">buffer</span><span class="p">);</span>
-<span class="n">etdump_gen</span><span class="p">.</span><span class="n">set_event_tracer_debug_level</span><span class="p">(</span>
-<span class="w">    </span><span class="n">EventTracerDebugLogLevel</span><span class="o">::</span><span class="n">kIntermediateOutputs</span><span class="p">);</span>
-</pre></div>
-</div>
-</li>
-<li><p>Build the runtime with the pre-processor flag that enables tracking of debug events. Instructions are in the <a class="reference internal" href="etdump.html"><span class="doc std std-doc">ETDump documentation</span></a>.</p></li>
-<li><p>Run your model and dump out the ETDump buffer as described <a class="reference internal" href="etdump.html"><span class="doc std std-doc">here</span></a>. (Do so similarly for the debug buffer if configured above)</p></li>
-</ol>
-</div>
-<div class="section" id="accessing-the-debug-outputs-post-run-using-the-inspector-api-s">
-<h3>Accessing the debug outputs post run using the Inspector API’s<a class="headerlink" href="#accessing-the-debug-outputs-post-run-using-the-inspector-api-s" title="Permalink to this heading">¶</a></h3>
-<p>Once a model has been run, using the generated ETDump and debug buffers, users can leverage the <a class="reference internal" href="model-inspector.html"><span class="doc std std-doc">Inspector API’s</span></a> to inspect these debug outputs.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.devtools</span> <span class="kn">import</span> <span class="n">Inspector</span>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The loaded program.</p>
+</dd>
+</dl>
+</dd></dl>
 
-<span class="c1"># Create an Inspector instance with etdump and the debug buffer.</span>
-<span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="n">etdump_path</span><span class="p">,</span>
-            <span class="n">buffer_path</span> <span class="o">=</span> <span class="n">buffer_path</span><span class="p">,</span>
-            <span class="c1"># etrecord is optional, if provided it&#39;ll link back</span>
-            <span class="c1"># the runtime events to the eager model python source code.</span>
-            <span class="n">etrecord</span> <span class="o">=</span> <span class="n">etrecord_path</span><span class="p">)</span>
+</dd></dl>
 
-<span class="c1"># Accessing program outputs is as simple as this:</span>
-<span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
-    <span class="k">if</span> <span class="n">event_block</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;Execute&quot;</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="n">event_blocks</span><span class="o">.</span><span class="n">run_output</span><span class="p">)</span>
+<dl class="py class">
+<dt class="sig sig-object py" id="executorch.runtime.OperatorRegistry">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">executorch.runtime.</span></span><span class="sig-name descname"><span class="pre">OperatorRegistry</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">legacy_module</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#OperatorRegistry"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.OperatorRegistry" title="Permalink to this definition">¶</a></dt>
+<dd><p>The registry of operators that are available to the runtime.</p>
+<dl class="py property">
+<dt class="sig sig-object py" id="executorch.runtime.OperatorRegistry.operator_names">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">operator_names</span></span><a class="headerlink" href="#executorch.runtime.OperatorRegistry.operator_names" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns the names of all registered operators as a set of strings.</p>
+</dd></dl>
 
-<span class="c1"># Accessing intermediate outputs from each event (an event here is essentially an instruction that executed in the runtime).</span>
-<span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
-    <span class="k">if</span> <span class="n">event_block</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;Execute&quot;</span><span class="p">:</span>
-        <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">event_block</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">debug_data</span><span class="p">)</span>
-            <span class="c1"># If an ETRecord was provided by the user during Inspector initialization, users</span>
-            <span class="c1"># can print the stacktraces and module hierarchy of these events.</span>
-            <span class="nb">print</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">stack_traces</span><span class="p">)</span>
-            <span class="nb">print</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">module_hierarchy</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>We’ve also provided a simple set of utilities that let users perform quality analysis of their model outputs with respect to a set of reference outputs (possibly from the eager mode model).</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.devtools.inspector</span> <span class="kn">import</span> <span class="n">compare_results</span>
+</dd></dl>
 
-<span class="c1"># Run a simple quality analysis between the model outputs sourced from the</span>
-<span class="c1"># runtime and a set of reference outputs.</span>
-<span class="c1">#</span>
-<span class="c1"># Setting plot to True will result in the quality metrics being graphed</span>
-<span class="c1"># and displayed (when run from a notebook) and will be written out to the</span>
-<span class="c1"># filesystem. A dictionary will always be returned which will contain the</span>
-<span class="c1"># results.</span>
-<span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
-    <span class="k">if</span> <span class="n">event_block</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;Execute&quot;</span><span class="p">:</span>
-        <span class="n">compare_results</span><span class="p">(</span><span class="n">event_blocks</span><span class="o">.</span><span class="n">run_output</span><span class="p">,</span> <span class="n">ref_outputs</span><span class="p">,</span> <span class="n">plot</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
+<dl class="py class">
+<dt class="sig sig-object py" id="executorch.runtime.Program">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">executorch.runtime.</span></span><span class="sig-name descname"><span class="pre">Program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">module</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Program" title="Permalink to this definition">¶</a></dt>
+<dd><p>An ExecuTorch program, loaded from binary PTE data.</p>
+<p>This can be used to load the methods/models defined by the program.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="executorch.runtime.Program.load_method">
+<span class="sig-name descname"><span class="pre">load_method</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Program.load_method"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Program.load_method" title="Permalink to this definition">¶</a></dt>
+<dd><p>Loads a method from the program.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>name</strong> – The name of the method to load.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The loaded method.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="executorch.runtime.Program.method_names">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">method_names</span></span><a class="headerlink" href="#executorch.runtime.Program.method_names" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns method names of the <cite>Program</cite> as a set of strings.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="executorch.runtime.Method">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">executorch.runtime.</span></span><span class="sig-name descname"><span class="pre">Method</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">method_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Method"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Method" title="Permalink to this definition">¶</a></dt>
+<dd><p>An ExecuTorch method, loaded from a Program.
+This can be used to execute the method with inputs.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="executorch.runtime.Method.execute">
+<span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">inputs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Method.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Method.execute" title="Permalink to this definition">¶</a></dt>
+<dd><p>Executes the method with the given inputs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>inputs</strong> – The inputs to the method.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The outputs of the method.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="executorch.runtime.Method.metadata">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">metadata</span></span><a class="headerlink" href="#executorch.runtime.Method.metadata" title="Permalink to this definition">¶</a></dt>
+<dd><p>Gets the metadata for the method.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>The metadata for the method.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
 </div>
 
 
@@ -576,10 +623,10 @@
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="model-inspector.html" class="btn btn-neutral float-right" title="Inspector APIs" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="api-life-cycle.html" class="btn btn-neutral float-right" title="ExecuTorch API Life Cycle and Deprecation Policy" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="runtime-profiling.html" class="btn btn-neutral" title="Profiling Models in ExecuTorch" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="executorch-runtime-api-reference.html" class="btn btn-neutral" title="ExecuTorch Runtime API Reference" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -613,10 +660,24 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Debugging Models in ExecuTorch</a><ul>
-<li><a class="reference internal" href="#steps-to-debug-a-model-in-executorch">Steps to debug a model in ExecuTorch</a><ul>
-<li><a class="reference internal" href="#runtime">Runtime</a></li>
-<li><a class="reference internal" href="#accessing-the-debug-outputs-post-run-using-the-inspector-api-s">Accessing the debug outputs post run using the Inspector API’s</a></li>
+<li><a class="reference internal" href="#">ExecuTorch Runtime Python API Reference</a><ul>
+<li><a class="reference internal" href="#executorch.runtime.Runtime"><code class="docutils literal notranslate"><span class="pre">Runtime</span></code></a><ul>
+<li><a class="reference internal" href="#executorch.runtime.Runtime.get"><code class="docutils literal notranslate"><span class="pre">Runtime.get()</span></code></a></li>
+<li><a class="reference internal" href="#executorch.runtime.Runtime.load_program"><code class="docutils literal notranslate"><span class="pre">Runtime.load_program()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#executorch.runtime.OperatorRegistry"><code class="docutils literal notranslate"><span class="pre">OperatorRegistry</span></code></a><ul>
+<li><a class="reference internal" href="#executorch.runtime.OperatorRegistry.operator_names"><code class="docutils literal notranslate"><span class="pre">OperatorRegistry.operator_names</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#executorch.runtime.Program"><code class="docutils literal notranslate"><span class="pre">Program</span></code></a><ul>
+<li><a class="reference internal" href="#executorch.runtime.Program.load_method"><code class="docutils literal notranslate"><span class="pre">Program.load_method()</span></code></a></li>
+<li><a class="reference internal" href="#executorch.runtime.Program.method_names"><code class="docutils literal notranslate"><span class="pre">Program.method_names</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#executorch.runtime.Method"><code class="docutils literal notranslate"><span class="pre">Method</span></code></a><ul>
+<li><a class="reference internal" href="#executorch.runtime.Method.execute"><code class="docutils literal notranslate"><span class="pre">Method.execute()</span></code></a></li>
+<li><a class="reference internal" href="#executorch.runtime.Method.metadata"><code class="docutils literal notranslate"><span class="pre">Method.metadata</span></code></a></li>
 </ul>
 </li>
 </ul>

@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Getting Started with LLMs via ExecuTorch &mdash; ExecuTorch 0.4 documentation</title>
+  <title>Intro to LLMs in ExecuTorch &mdash; ExecuTorch 0.4 documentation</title>
   
 
   
@@ -41,8 +41,8 @@
   <link rel="stylesheet" href="../_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="ExecuTorch Llama Android Demo App" href="llama-demo-android.html" />
-    <link rel="prev" title="Building and Running ExecuTorch on Xtensa HiFi4 DSP" href="../build-run-xtensa.html" />
+    <link rel="next" title="Export to ExecuTorch API Reference" href="../export-to-executorch-api-reference.html" />
+    <link rel="prev" title="Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html" />
 
 
   <!-- Google Tag Manager -->
@@ -317,7 +317,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../extension-module.html#conclusion">Conclusion</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../extension-tensor.html">Managing Tensor Memory in C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
@@ -334,7 +333,11 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Getting Started with LLMs via ExecuTorch</a><ul>
+<li class="toctree-l1"><a class="reference internal" href="llama.html">Llama</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llama-demo-android.html">Llama on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llama-demo-ios.html">Llama on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Intro to LLMs in ExecuTorch</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#table-of-contents">Table Of Contents</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#running-a-large-language-model-locally">Running a Large Language Model Locally</a></li>
@@ -345,14 +348,12 @@
 <li class="toctree-l2"><a class="reference internal" href="#how-to-build-mobile-apps">How to Build Mobile Apps</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="llama-demo-android.html">ExecuTorch Llama Android Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html">Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llama-demo-ios.html">ExecuTorch Llama iOS Demo App</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-python-api-reference.html">ExecuTorch Runtime Python API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
@@ -449,7 +450,7 @@
       </li>
 
         
-      <li>Getting Started with LLMs via ExecuTorch</li>
+      <li>Intro to LLMs in ExecuTorch</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
@@ -487,8 +488,8 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="getting-started-with-llms-via-executorch">
-<h1>Getting Started with LLMs via ExecuTorch<a class="headerlink" href="#getting-started-with-llms-via-executorch" title="Permalink to this heading">¶</a></h1>
+  <div class="section" id="intro-to-llms-in-executorch">
+<h1>Intro to LLMs in ExecuTorch<a class="headerlink" href="#intro-to-llms-in-executorch" title="Permalink to this heading">¶</a></h1>
 <p>Welcome to LLM Manual! This manual is designed to provide a practical example to leverage
 ExecuTorch in onboarding your own Large Language Models (LLMs). Our primary goal is to offer
 a clear and concise guideline on how to integrate our system with your own LLMs.</p>
@@ -499,6 +500,7 @@ Consequently, the results produced by the model may vary and might not always be
 <p>We encourage users to use this project as a starting point and adapt it to their specific needs,
 which includes creating your own versions of the tokenizer, sampler, acceleration backends, and
 other components. We hope this project serves as a useful guide in your journey with LLMs and ExecuTorch.</p>
+<p>For deploying Llama with optimal performance, please see <a class="reference internal" href="llama.html"><span class="doc std std-doc">Llama guide</span></a>.</p>
 <div class="section" id="table-of-contents">
 <h2>Table Of Contents<a class="headerlink" href="#table-of-contents" title="Permalink to this heading">¶</a></h2>
 <ol class="arabic simple">
@@ -535,7 +537,6 @@ conda</label><div class="sd-tab-content docutils">
 <span class="c1"># Create a conda environment and install requirements.</span>
 <span class="n">conda</span> <span class="n">create</span> <span class="o">-</span><span class="n">yn</span> <span class="n">executorch</span> <span class="n">python</span><span class="o">=</span><span class="mf">3.10.0</span>
 <span class="n">conda</span> <span class="n">activate</span> <span class="n">executorch</span>
-<span class="n">pip</span> <span class="n">install</span> <span class="n">cmake</span> <span class="n">zstd</span>
 <span class="o">./</span><span class="n">install_requirements</span><span class="o">.</span><span class="n">sh</span>
 
 <span class="n">cd</span> <span class="o">../..</span>
@@ -567,7 +568,6 @@ See the pyenv-virtualenv installation guide above on how to add this to your .ba
 <span class="n">git</span> <span class="n">submodule</span> <span class="n">update</span> <span class="o">--</span><span class="n">init</span>
 
 <span class="c1"># Install requirements.</span>
-<span class="n">pip</span> <span class="n">install</span> <span class="n">cmake</span> <span class="n">zstd</span>
 <span class="n">PYTHON_EXECUTABLE</span><span class="o">=</span><span class="n">python</span> <span class="o">./</span><span class="n">install_requirements</span><span class="o">.</span><span class="n">sh</span>
 
 <span class="n">cd</span> <span class="o">../..</span>
@@ -683,8 +683,9 @@ file which can be loaded by a desktop or mobile application at runtime.</p>
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/runtime/core/exec_aten/exec_aten.h&gt;</span>
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/runtime/core/result.h&gt;</span>
 
-<span class="k">using</span><span class="w"> </span><span class="n">exec_aten</span><span class="o">::</span><span class="n">ScalarType</span><span class="p">;</span>
-<span class="k">using</span><span class="w"> </span><span class="n">exec_aten</span><span class="o">::</span><span class="n">Tensor</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">aten</span><span class="o">::</span><span class="n">ScalarType</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">aten</span><span class="o">::</span><span class="n">Tensor</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">extension</span><span class="o">::</span><span class="n">from_blob</span><span class="p">;</span>
 <span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">extension</span><span class="o">::</span><span class="n">Module</span><span class="p">;</span>
 <span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">runtime</span><span class="o">::</span><span class="n">EValue</span><span class="p">;</span>
 <span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">runtime</span><span class="o">::</span><span class="n">Result</span><span class="p">;</span>
@@ -706,56 +707,56 @@ output token by token. Each generated token is passed as input for the next run.
 <span class="w">    </span><span class="n">BasicSampler</span><span class="o">&amp;</span><span class="w"> </span><span class="n">sampler</span><span class="p">,</span>
 <span class="w">    </span><span class="kt">size_t</span><span class="w"> </span><span class="n">max_input_length</span><span class="p">,</span>
 <span class="w">    </span><span class="kt">size_t</span><span class="w"> </span><span class="n">max_output_length</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="c1">// Convert the input text into a list of integers (tokens) that represents it,</span>
+<span class="w">  </span><span class="c1">// using the string-to-token mapping that the model was trained on. Each token</span>
+<span class="w">  </span><span class="c1">// is an integer that represents a word or part of a word.</span>
+<span class="w">  </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">int64_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">input_tokens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">tokenizer</span><span class="p">.</span><span class="n">encode</span><span class="p">(</span><span class="n">prompt</span><span class="p">);</span>
+<span class="w">  </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">int64_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">output_tokens</span><span class="p">;</span>
 
-<span class="w">    </span><span class="c1">// Convert the input text into a list of integers (tokens) that represents</span>
-<span class="w">    </span><span class="c1">// it, using the string-to-token mapping that the model was trained on.</span>
-<span class="w">    </span><span class="c1">// Each token is an integer that represents a word or part of a word.</span>
-<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">int64_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">input_tokens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">tokenizer</span><span class="p">.</span><span class="n">encode</span><span class="p">(</span><span class="n">prompt</span><span class="p">);</span>
-<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">int64_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">output_tokens</span><span class="p">;</span>
+<span class="w">  </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0u</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">max_output_length</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// Convert the input_tokens from a vector of int64_t to EValue. EValue is a</span>
+<span class="w">    </span><span class="c1">// unified data type in the ExecuTorch runtime.</span>
+<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">inputs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">from_blob</span><span class="p">(</span>
+<span class="w">        </span><span class="n">input_tokens</span><span class="p">.</span><span class="n">data</span><span class="p">(),</span>
+<span class="w">        </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="kt">int</span><span class="o">&gt;</span><span class="p">(</span><span class="n">input_tokens</span><span class="p">.</span><span class="n">size</span><span class="p">())},</span>
+<span class="w">        </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Long</span><span class="p">);</span>
 
-<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0u</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">max_output_length</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// Convert the input_tokens from a vector of int64_t to EValue.</span>
-<span class="w">        </span><span class="c1">// EValue is a unified data type in the ExecuTorch runtime.</span>
-<span class="w">        </span><span class="k">auto</span><span class="w"> </span><span class="n">inputs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">from_blob</span><span class="p">(</span>
-<span class="w">            </span><span class="n">input_tokens</span><span class="p">.</span><span class="n">data</span><span class="p">(),</span>
-<span class="w">            </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="kt">int</span><span class="o">&gt;</span><span class="p">(</span><span class="n">input_tokens</span><span class="p">.</span><span class="n">size</span><span class="p">())},</span>
-<span class="w">            </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Long</span><span class="p">);</span>
+<span class="w">    </span><span class="c1">// Run the model. It will return a tensor of logits (log-probabilities).</span>
+<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">logits_evalue</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">llm_model</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">inputs</span><span class="p">);</span>
 
-<span class="w">        </span><span class="c1">// Run the model. It will return a tensor of logits (log-probabilities).</span>
-<span class="w">        </span><span class="k">auto</span><span class="w"> </span><span class="n">logits_evalue</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">llm_model</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">inputs</span><span class="p">);</span>
+<span class="w">    </span><span class="c1">// Convert the output logits from EValue to std::vector, which is what the</span>
+<span class="w">    </span><span class="c1">// sampler expects.</span>
+<span class="w">    </span><span class="n">Tensor</span><span class="w"> </span><span class="n">logits_tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">logits_evalue</span><span class="p">.</span><span class="n">get</span><span class="p">()[</span><span class="mi">0</span><span class="p">].</span><span class="n">toTensor</span><span class="p">();</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="w"> </span><span class="n">logits</span><span class="p">(</span>
+<span class="w">        </span><span class="n">logits_tensor</span><span class="p">.</span><span class="n">data_ptr</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">logits_tensor</span><span class="p">.</span><span class="n">data_ptr</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">logits_tensor</span><span class="p">.</span><span class="n">numel</span><span class="p">());</span>
 
-<span class="w">        </span><span class="c1">// Convert the output logits from EValue to std::vector, which is what</span>
-<span class="w">        </span><span class="c1">// the sampler expects.</span>
-<span class="w">        </span><span class="n">Tensor</span><span class="w"> </span><span class="n">logits_tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">logits_evalue</span><span class="p">.</span><span class="n">get</span><span class="p">()[</span><span class="mi">0</span><span class="p">].</span><span class="n">toTensor</span><span class="p">();</span>
-<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="w"> </span><span class="n">logits</span><span class="p">(</span><span class="n">logits_tensor</span><span class="p">.</span><span class="n">data_ptr</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="p">(),</span>
-<span class="w">            </span><span class="n">logits_tensor</span><span class="p">.</span><span class="n">data_ptr</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">logits_tensor</span><span class="p">.</span><span class="n">numel</span><span class="p">());</span>
+<span class="w">    </span><span class="c1">// Sample the next token from the logits.</span>
+<span class="w">    </span><span class="kt">int64_t</span><span class="w"> </span><span class="n">next_token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sampler</span><span class="p">.</span><span class="n">sample</span><span class="p">(</span><span class="n">logits</span><span class="p">);</span>
 
-<span class="w">        </span><span class="c1">// Sample the next token from the logits.</span>
-<span class="w">        </span><span class="kt">int64_t</span><span class="w"> </span><span class="n">next_token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sampler</span><span class="p">.</span><span class="n">sample</span><span class="p">(</span><span class="n">logits</span><span class="p">);</span>
-
-<span class="w">        </span><span class="c1">// Break if we reached the end of the text.</span>
-<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">next_token</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">ENDOFTEXT_TOKEN</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="k">break</span><span class="p">;</span>
-<span class="w">        </span><span class="p">}</span>
-
-<span class="w">        </span><span class="c1">// Add the next token to the output.</span>
-<span class="w">        </span><span class="n">output_tokens</span><span class="p">.</span><span class="n">push_back</span><span class="p">(</span><span class="n">next_token</span><span class="p">);</span>
-
-<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">tokenizer</span><span class="p">.</span><span class="n">decode</span><span class="p">({</span><span class="w"> </span><span class="n">next_token</span><span class="w"> </span><span class="p">});</span>
-<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="p">.</span><span class="n">flush</span><span class="p">();</span>
-
-<span class="w">        </span><span class="c1">// Update next input.</span>
-<span class="w">        </span><span class="n">input_tokens</span><span class="p">.</span><span class="n">push_back</span><span class="p">(</span><span class="n">next_token</span><span class="p">);</span>
-<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">input_tokens</span><span class="p">.</span><span class="n">size</span><span class="p">()</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="n">max_input_length</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="n">input_tokens</span><span class="p">.</span><span class="n">erase</span><span class="p">(</span><span class="n">input_tokens</span><span class="p">.</span><span class="n">begin</span><span class="p">());</span>
-<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="c1">// Break if we reached the end of the text.</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">next_token</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">ENDOFTEXT_TOKEN</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="k">break</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 
-<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">endl</span><span class="p">;</span>
+<span class="w">    </span><span class="c1">// Add the next token to the output.</span>
+<span class="w">    </span><span class="n">output_tokens</span><span class="p">.</span><span class="n">push_back</span><span class="p">(</span><span class="n">next_token</span><span class="p">);</span>
 
-<span class="w">    </span><span class="c1">// Convert the output tokens into a human-readable string.</span>
-<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="w"> </span><span class="n">output_string</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">tokenizer</span><span class="p">.</span><span class="n">decode</span><span class="p">(</span><span class="n">output_tokens</span><span class="p">);</span>
-<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">output_string</span><span class="p">;</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">tokenizer</span><span class="p">.</span><span class="n">decode</span><span class="p">({</span><span class="n">next_token</span><span class="p">});</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="p">.</span><span class="n">flush</span><span class="p">();</span>
+
+<span class="w">    </span><span class="c1">// Update next input.</span>
+<span class="w">    </span><span class="n">input_tokens</span><span class="p">.</span><span class="n">push_back</span><span class="p">(</span><span class="n">next_token</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">input_tokens</span><span class="p">.</span><span class="n">size</span><span class="p">()</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="n">max_input_length</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="n">input_tokens</span><span class="p">.</span><span class="n">erase</span><span class="p">(</span><span class="n">input_tokens</span><span class="p">.</span><span class="n">begin</span><span class="p">());</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+
+<span class="w">  </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">endl</span><span class="p">;</span>
+
+<span class="w">  </span><span class="c1">// Convert the output tokens into a human-readable string.</span>
+<span class="w">  </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="w"> </span><span class="n">output_string</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">tokenizer</span><span class="p">.</span><span class="n">decode</span><span class="p">(</span><span class="n">output_tokens</span><span class="p">);</span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="n">output_string</span><span class="p">;</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -773,32 +774,32 @@ on some strategy. The simplest approach, used here, is to take the token with th
 penalties for repeated tokens, and biases to prioritize or de-prioritize specific tokens.</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// main.cpp</span>
 
-<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">torch</span><span class="o">::</span><span class="nn">executor</span><span class="p">;</span>
-
 <span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="c1">// Set up the prompt. This provides the seed text for the model to elaborate.</span>
-<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="s">&quot;Enter model prompt: &quot;</span><span class="p">;</span>
-<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="w"> </span><span class="n">prompt</span><span class="p">;</span>
-<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">getline</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">cin</span><span class="p">,</span><span class="w"> </span><span class="n">prompt</span><span class="p">);</span>
+<span class="w">  </span><span class="c1">// Set up the prompt. This provides the seed text for the model to elaborate.</span>
+<span class="w">  </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="s">&quot;Enter model prompt: &quot;</span><span class="p">;</span>
+<span class="w">  </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="w"> </span><span class="n">prompt</span><span class="p">;</span>
+<span class="w">  </span><span class="n">std</span><span class="o">::</span><span class="n">getline</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">cin</span><span class="p">,</span><span class="w"> </span><span class="n">prompt</span><span class="p">);</span>
 
-<span class="w">    </span><span class="c1">// The tokenizer is used to convert between tokens (used by the model) and</span>
-<span class="w">    </span><span class="c1">// human-readable strings.</span>
-<span class="w">    </span><span class="n">BasicTokenizer</span><span class="w"> </span><span class="n">tokenizer</span><span class="p">(</span><span class="s">&quot;vocab.json&quot;</span><span class="p">);</span>
+<span class="w">  </span><span class="c1">// The tokenizer is used to convert between tokens (used by the model) and</span>
+<span class="w">  </span><span class="c1">// human-readable strings.</span>
+<span class="w">  </span><span class="n">BasicTokenizer</span><span class="w"> </span><span class="n">tokenizer</span><span class="p">(</span><span class="s">&quot;vocab.json&quot;</span><span class="p">);</span>
 
-<span class="w">    </span><span class="c1">// The sampler is used to sample the next token from the logits.</span>
-<span class="w">    </span><span class="n">BasicSampler</span><span class="w"> </span><span class="n">sampler</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BasicSampler</span><span class="p">();</span>
+<span class="w">  </span><span class="c1">// The sampler is used to sample the next token from the logits.</span>
+<span class="w">  </span><span class="n">BasicSampler</span><span class="w"> </span><span class="n">sampler</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BasicSampler</span><span class="p">();</span>
 
-<span class="w">    </span><span class="c1">// Load the exported nanoGPT program, which was generated via the previous steps.</span>
-<span class="w">    </span><span class="n">Module</span><span class="w"> </span><span class="n">model</span><span class="p">(</span><span class="s">&quot;nanogpt.pte&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Module</span><span class="o">::</span><span class="n">LoadMode</span><span class="o">::</span><span class="n">MmapUseMlockIgnoreErrors</span><span class="p">);</span>
+<span class="w">  </span><span class="c1">// Load the exported nanoGPT program, which was generated via the previous</span>
+<span class="w">  </span><span class="c1">// steps.</span>
+<span class="w">  </span><span class="n">Module</span><span class="w"> </span><span class="n">model</span><span class="p">(</span><span class="s">&quot;nanogpt.pte&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Module</span><span class="o">::</span><span class="n">LoadMode</span><span class="o">::</span><span class="n">MmapUseMlockIgnoreErrors</span><span class="p">);</span>
 
-<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">max_input_tokens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1024</span><span class="p">;</span>
-<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">max_output_tokens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">30</span><span class="p">;</span>
-<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">prompt</span><span class="p">;</span>
-<span class="w">    </span><span class="n">generate</span><span class="p">(</span><span class="n">model</span><span class="p">,</span><span class="w"> </span><span class="n">prompt</span><span class="p">,</span><span class="w"> </span><span class="n">tokenizer</span><span class="p">,</span><span class="w"> </span><span class="n">sampler</span><span class="p">,</span><span class="w"> </span><span class="n">max_input_tokens</span><span class="p">,</span><span class="w"> </span><span class="n">max_output_tokens</span><span class="p">);</span>
+<span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">max_input_tokens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1024</span><span class="p">;</span>
+<span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">max_output_tokens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">30</span><span class="p">;</span>
+<span class="w">  </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">prompt</span><span class="p">;</span>
+<span class="w">  </span><span class="n">generate</span><span class="p">(</span>
+<span class="w">      </span><span class="n">model</span><span class="p">,</span><span class="w"> </span><span class="n">prompt</span><span class="p">,</span><span class="w"> </span><span class="n">tokenizer</span><span class="p">,</span><span class="w"> </span><span class="n">sampler</span><span class="p">,</span><span class="w"> </span><span class="n">max_input_tokens</span><span class="p">,</span><span class="w"> </span><span class="n">max_output_tokens</span><span class="p">);</span>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p>Finally, download the following files into the same directory as main.h:</p>
+<p>Finally, download the following files into the same directory as main.cpp:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">curl</span> <span class="o">-</span><span class="n">O</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">raw</span><span class="o">.</span><span class="n">githubusercontent</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">pytorch</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">llm_manual</span><span class="o">/</span><span class="n">basic_sampler</span><span class="o">.</span><span class="n">h</span>
 <span class="n">curl</span> <span class="o">-</span><span class="n">O</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">raw</span><span class="o">.</span><span class="n">githubusercontent</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">pytorch</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">llm_manual</span><span class="o">/</span><span class="n">basic_tokenizer</span><span class="o">.</span><span class="n">h</span>
 </pre></div>
@@ -820,6 +821,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # Set options for executorch build.
+option(EXECUTORCH_ENABLE_LOGGING &quot;&quot; ON)
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER &quot;&quot; ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE &quot;&quot; ON)
 option(EXECUTORCH_BUILD_EXTENSION_TENSOR &quot;&quot; ON)
@@ -827,17 +829,19 @@ option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED &quot;&quot; ON)
 
 # Include the executorch subdirectory.
 add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/executorch
-    ${CMAKE_BINARY_DIR}/third-party/executorch)
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/executorch
+  ${CMAKE_BINARY_DIR}/executorch
+)
 
 add_executable(nanogpt_runner main.cpp)
 target_link_libraries(
-    nanogpt_runner
-    PRIVATE
-    executorch
-    extension_module_static # Provides the Module class
-    extension_tensor # Provides the TensorPtr class
-    optimized_native_cpu_ops_lib) # Provides baseline cross-platform kernels
+  nanogpt_runner
+  PRIVATE executorch
+          extension_module_static # Provides the Module class
+          extension_tensor # Provides the TensorPtr class
+          optimized_native_cpu_ops_lib # Provides baseline cross-platform
+                                       # kernels
+)
 </pre></div>
 </div>
 <p>At this point, the working directory should contain the following files:</p>
@@ -963,6 +967,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # Set options for executorch build.
+option(EXECUTORCH_ENABLE_LOGGING &quot;&quot; ON)
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER &quot;&quot; ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE &quot;&quot; ON)
 option(EXECUTORCH_BUILD_EXTENSION_TENSOR &quot;&quot; ON)
@@ -971,20 +976,20 @@ option(EXECUTORCH_BUILD_XNNPACK &quot;&quot; ON) # Build with Xnnpack backend
 
 # Include the executorch subdirectory.
 add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/executorch
-    ${CMAKE_BINARY_DIR}/executorch)
-
-# include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/executorch
+  ${CMAKE_BINARY_DIR}/executorch
+)
 
 add_executable(nanogpt_runner main.cpp)
 target_link_libraries(
-    nanogpt_runner
-    PRIVATE
-    executorch
-    extension_module_static # Provides the Module class
-    extension_tensor # Provides the TensorPtr class
-    optimized_native_cpu_ops_lib # Provides baseline cross-platform kernels
-    xnnpack_backend) # Provides the XNNPACK CPU acceleration backend
+  nanogpt_runner
+  PRIVATE executorch
+          extension_module_static # Provides the Module class
+          extension_tensor # Provides the TensorPtr class
+          optimized_native_cpu_ops_lib # Provides baseline cross-platform
+                                       # kernels
+          xnnpack_backend # Provides the XNNPACK CPU acceleration backend
+)
 </pre></div>
 </div>
 <p>Keep the rest of the code the same. For more details refer to <a class="reference internal" href="#step-1-exporting-to-executorch"><span class="std std-doc">Exporting
@@ -1215,7 +1220,9 @@ To see a more detailed view, use the <code class="docutils literal notranslate">
 <h5>ETRecord generation (Optional)<a class="headerlink" href="#etrecord-generation-optional" title="Permalink to this heading">¶</a></h5>
 <p>An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see <a class="reference internal" href="../etrecord.html"><span class="doc std std-doc">the ETRecord docs</span></a>.</p>
 <p>In your export script, after calling <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>, call <code class="docutils literal notranslate"><span class="pre">generate_etrecord()</span></code> with the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and the <code class="docutils literal notranslate"><span class="pre">ExecuTorchProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>. Make sure to copy the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code>, as the call to <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> mutates the graph in-place.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">copy</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># export_nanogpt.py</span>
+
+<span class="kn">import</span> <span class="nn">copy</span>
 <span class="kn">from</span> <span class="nn">executorch.devtools</span> <span class="kn">import</span> <span class="n">generate_etrecord</span>
 
 <span class="c1"># Make the deep copy immediately after to to_edge()</span>
@@ -1259,24 +1266,25 @@ model runs in a single trace, if desired.</p>
 </pre></div>
 </div>
 <p>Additionally, update CMakeLists.txt to build with Developer Tools and enable events to be traced and logged into ETDump:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">option</span><span class="p">(</span><span class="n">EXECUTORCH_BUILD_DEVTOOLS</span> <span class="s2">&quot;&quot;</span> <span class="n">ON</span><span class="p">)</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">option</span><span class="p">(</span><span class="n">EXECUTORCH_ENABLE_EVENT_TRACER</span> <span class="s2">&quot;&quot;</span> <span class="n">ON</span><span class="p">)</span>
+<span class="n">option</span><span class="p">(</span><span class="n">EXECUTORCH_BUILD_DEVTOOLS</span> <span class="s2">&quot;&quot;</span> <span class="n">ON</span><span class="p">)</span>
 
 <span class="c1"># ...</span>
 
 <span class="n">target_link_libraries</span><span class="p">(</span>
-    <span class="n">nanogpt_runner</span>
-    <span class="n">PRIVATE</span>
-    <span class="n">executorch</span>
-    <span class="n">extension_module_static</span> <span class="c1"># Provides the Module class</span>
-    <span class="n">optimized_native_cpu_ops_lib</span> <span class="c1"># Provides baseline cross-platform kernels</span>
-    <span class="n">xnnpack_backend</span> <span class="c1"># Provides the XNNPACK CPU acceleration backend</span>
+    <span class="c1"># ... omit existing ones</span>
     <span class="n">etdump</span><span class="p">)</span> <span class="c1"># Provides event tracing and logging</span>
 
 <span class="n">target_compile_options</span><span class="p">(</span><span class="n">executorch</span> <span class="n">PUBLIC</span> <span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span><span class="p">)</span>
 <span class="n">target_compile_options</span><span class="p">(</span><span class="n">portable_ops_lib</span> <span class="n">PUBLIC</span> <span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>Run the runner, you will see “etdump.etdp” generated.</p>
+<p>Build and run the runner, you will see a file named “etdump.etdp” is generated. (Note that this time we build in release mode to get around a flatccrt build limitation.)</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span>..<span class="o">)</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j10
+./cmake-out/nanogpt_runner
+</pre></div>
+</div>
 </div>
 </div>
 <div class="section" id="analyze-with-inspector-apis">
@@ -1404,10 +1412,10 @@ all instances of <code class="docutils literal notranslate"><span class="pre">to
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="llama-demo-android.html" class="btn btn-neutral float-right" title="ExecuTorch Llama Android Demo App" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="../export-to-executorch-api-reference.html" class="btn btn-neutral float-right" title="Export to ExecuTorch API Reference" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="../build-run-xtensa.html" class="btn btn-neutral" title="Building and Running ExecuTorch on Xtensa HiFi4 DSP" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="build-run-llama3-qualcomm-ai-engine-direct-backend.html" class="btn btn-neutral" title="Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -1441,7 +1449,7 @@ all instances of <code class="docutils literal notranslate"><span class="pre">to
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Getting Started with LLMs via ExecuTorch</a><ul>
+<li><a class="reference internal" href="#">Intro to LLMs in ExecuTorch</a><ul>
 <li><a class="reference internal" href="#table-of-contents">Table Of Contents</a></li>
 <li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
 <li><a class="reference internal" href="#running-a-large-language-model-locally">Running a Large Language Model Locally</a><ul>

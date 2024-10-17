@@ -42,7 +42,7 @@
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="ExecuTorch Runtime API Reference" href="executorch-runtime-api-reference.html" />
-    <link rel="prev" title="ExecuTorch Llama iOS Demo App" href="llm/llama-demo-ios.html" />
+    <link rel="prev" title="Intro to LLMs in ExecuTorch" href="llm/getting-started.html" />
 
 
   <!-- Google Tag Manager -->
@@ -317,7 +317,6 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-module.html#conclusion">Conclusion</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
@@ -334,15 +333,17 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">ExecuTorch Llama Android Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">ExecuTorch Llama iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Export to ExecuTorch API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">ExecuTorch Runtime Python API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
@@ -491,6 +492,49 @@ ATen dialect. Upon construction those programs are transformed into edge dialect
 <li><p><strong>programs</strong> – Can be a single ExportedProgram or a dictionary mapping function names to their corresponding ExportedPrograms. If only a single ExportedProgram is provided it will be assigned the name “forward”.</p></li>
 <li><p><strong>constant_methods</strong> – An optional dictionary of method name to the constant value returned by that method in eager mode. Often used to store config information on Edge models.</p></li>
 <li><p><strong>compile_config</strong> – An optional argument used to provide greater control over the transformation to edge dialect process.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>EdgeProgramManager</p>
+</dd>
+</dl>
+</dd></dl>
+
+<span class="target" id="module-0"></span><dl class="py function">
+<dt class="sig sig-object py" id="executorch.exir.to_edge_transform_and_lower">
+<span class="sig-prename descclassname"><span class="pre">executorch.exir.</span></span><span class="sig-name descname"><span class="pre">to_edge_transform_and_lower</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">programs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transform_passes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">partitioner</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constant_methods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compile_config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#to_edge_transform_and_lower"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.exir.to_edge_transform_and_lower" title="Permalink to this definition">¶</a></dt>
+<dd><p><a class="reference internal" href="#executorch.exir.to_edge_transform_and_lower" title="executorch.exir.to_edge_transform_and_lower"><code class="xref py py-func docutils literal notranslate"><span class="pre">to_edge_transform_and_lower()</span></code></a> constructs an EdgeProgramManager from a set of
+exported programs in ATen dialect. It differs fundamentally from to_edge in that it
+combines the conversion of the ATen dialect to the edge dialect program, then running
+the transformation passes and then subsequently lowering the programs to their
+corresponding backends all into a single API.</p>
+<p>This is fundamentally useful for lowering to backends that have ops registered that they
+do not want to be decomposed and thus rely on matching with these non-decomposed ops. For
+these sorts of backends this is the <em>only</em> API that should be used to lower to the edge
+dialect. Using a combination of to_edge(…) and to_backend(…) will result in inconsistent
+or wrong behavior.</p>
+<p>This API is the primary recommended way to lower to the CPU based XNNPack backend.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>programs</strong> – Can be a single ExportedProgram or a dictionary mapping function names
+to their corresponding ExportedPrograms. If only a single ExportedProgram is
+provided it will be assigned the name “forward”.</p></li>
+<li><p><strong>transform_passes</strong> – The passes can either be a list of passes, or a dictionary
+mapping method names to lists of passes. If it is just a list of passes, all methods
+in the given EdgeProgramManager will be transformed with the provided passes. If it
+is a dictionary, only method names specified in the dictionary will be transformed
+with their corresponding passes.</p></li>
+<li><p><strong>partitioner</strong> – The partitioner can either be a Partitioner subclass instance, or a
+dictionary mapping method names to Partitioner subclass instance. If it is a
+Partitioner subclass, all programs in the given EdgeProgramManager will be lowered
+using the given partitioner. If it is a dictionary, only method names specified in
+the dictionary will be lowered with the given partitioner.</p></li>
+<li><p><strong>constant_methods</strong> – An optional dictionary of method name to the constant value
+returned by that method in eager mode. Often used to store config information on
+Edge models.</p></li>
+<li><p><strong>compile_config</strong> – An optional argument used to provide greater control over the
+transformation to edge dialect process.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns</dt>
@@ -739,7 +783,7 @@ delegated functions. This is can be created by calling <cite>to_backend</cite>.<
         <a href="executorch-runtime-api-reference.html" class="btn btn-neutral float-right" title="ExecuTorch Runtime API Reference" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="llm/llama-demo-ios.html" class="btn btn-neutral" title="ExecuTorch Llama iOS Demo App" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="llm/getting-started.html" class="btn btn-neutral" title="Intro to LLMs in ExecuTorch" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -775,6 +819,7 @@ delegated functions. This is can be created by calling <cite>to_backend</cite>.<
               <ul>
 <li><a class="reference internal" href="#">Export to ExecuTorch API Reference</a><ul>
 <li><a class="reference internal" href="#executorch.exir.to_edge"><code class="docutils literal notranslate"><span class="pre">to_edge()</span></code></a></li>
+<li><a class="reference internal" href="#executorch.exir.to_edge_transform_and_lower"><code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower()</span></code></a></li>
 <li><a class="reference internal" href="#executorch.exir.EdgeProgramManager"><code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code></a><ul>
 <li><a class="reference internal" href="#executorch.exir.EdgeProgramManager.config_methods"><code class="docutils literal notranslate"><span class="pre">EdgeProgramManager.config_methods</span></code></a></li>
 <li><a class="reference internal" href="#executorch.exir.EdgeProgramManager.exported_program"><code class="docutils literal notranslate"><span class="pre">EdgeProgramManager.exported_program()</span></code></a></li>

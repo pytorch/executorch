@@ -317,7 +317,6 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-module.html#conclusion">Conclusion</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
@@ -334,15 +333,17 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">ExecuTorch Llama Android Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">ExecuTorch Llama iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">ExecuTorch Runtime Python API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
@@ -753,66 +754,66 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 <p>We need the pointer to ExecuTorch program to do the execution. To unify the process of loading and executing <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> and Program flatbuffer, we create an API:</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
-<code class="docutils literal notranslate"><span class="pre">GetProgramData</span></code><div class="sd-summary-down docutils">
+<code class="docutils literal notranslate"><span class="pre">get_program_data</span></code><div class="sd-summary-down docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.72a.75.75 0 000 1.06l6.25 6.25a.75.75 0 001.06 0l6.25-6.25a.75.75 0 00-1.06-1.06L12 14.44 6.28 8.72a.75.75 0 00-1.06 0z"></path></svg></div>
 <div class="sd-summary-up docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
 </summary><div class="sd-summary-content sd-card-body docutils">
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p class="sd-card-text">doxygenfunction: Cannot find function “torch::executor::bundled_program::GetProgramData” in doxygen xml output for project “ExecuTorch” from directory: ../build/xml/</p>
+<p class="sd-card-text">doxygenfunction: Cannot find function “::executorch::bundled_program::get_program_data” in doxygen xml output for project “ExecuTorch” from directory: ../build/xml/</p>
 </div>
 </div>
-</details><p>Here’s an example of how to use the <code class="docutils literal notranslate"><span class="pre">GetProgramData</span></code> API:</p>
+</details><p>Here’s an example of how to use the <code class="docutils literal notranslate"><span class="pre">get_program_data</span></code> API:</p>
 <div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="c1">// Assume that the user has read the contents of the file into file_data using</span>
 <span class="c1">// whatever method works best for their application. The file could contain</span>
 <span class="c1">// either BundledProgram data or Program data.</span>
 <span class="kt">void</span><span class="o">*</span><span class="w"> </span><span class="n">file_data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">...;</span>
 <span class="kt">size_t</span><span class="w"> </span><span class="n">file_data_len</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">...;</span>
 
-<span class="c1">// If file_data contains a BundledProgram, GetProgramData() will return a</span>
+<span class="c1">// If file_data contains a BundledProgram, get_program_data() will return a</span>
 <span class="c1">// pointer to the Program data embedded inside it. Otherwise it will return</span>
 <span class="c1">// file_data, which already pointed to Program data.</span>
 <span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="o">*</span><span class="w"> </span><span class="n">program_ptr</span><span class="p">;</span>
 <span class="kt">size_t</span><span class="w"> </span><span class="n">program_len</span><span class="p">;</span>
-<span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">bundled_program</span><span class="o">::</span><span class="n">GetProgramData</span><span class="p">(</span>
+<span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">bundled_program</span><span class="o">::</span><span class="n">get_program_data</span><span class="p">(</span>
 <span class="w">    </span><span class="n">file_data</span><span class="p">,</span><span class="w"> </span><span class="n">file_data_len</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">program_ptr</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">program_len</span><span class="p">);</span>
 <span class="n">ET_CHECK_MSG</span><span class="p">(</span>
 <span class="w">    </span><span class="n">status</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">Error</span><span class="o">::</span><span class="n">Ok</span><span class="p">,</span>
-<span class="w">    </span><span class="s">&quot;GetProgramData() failed with status 0x%&quot;</span><span class="w"> </span><span class="n">PRIx32</span><span class="p">,</span>
+<span class="w">    </span><span class="s">&quot;get_program_data() failed with status 0x%&quot;</span><span class="w"> </span><span class="n">PRIx32</span><span class="p">,</span>
 <span class="w">    </span><span class="n">status</span><span class="p">);</span>
 </pre></div>
 </div>
 </div>
 <div class="section" id="load-bundled-input-to-method">
 <h3>Load Bundled Input to Method<a class="headerlink" href="#load-bundled-input-to-method" title="Permalink to this heading">¶</a></h3>
-<p>To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called <code class="docutils literal notranslate"><span class="pre">torch::executor::bundled_program::LoadBundledInput</span></code>:</p>
+<p>To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called <code class="docutils literal notranslate"><span class="pre">executorch::bundled_program::load_bundled_input</span></code>:</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
-<code class="docutils literal notranslate"><span class="pre">LoadBundledInput</span></code><div class="sd-summary-down docutils">
+<code class="docutils literal notranslate"><span class="pre">load_bundled_input</span></code><div class="sd-summary-down docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.72a.75.75 0 000 1.06l6.25 6.25a.75.75 0 001.06 0l6.25-6.25a.75.75 0 00-1.06-1.06L12 14.44 6.28 8.72a.75.75 0 00-1.06 0z"></path></svg></div>
 <div class="sd-summary-up docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
 </summary><div class="sd-summary-content sd-card-body docutils">
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p class="sd-card-text">doxygenfunction: Cannot find function “torch::executor::bundled_program::LoadBundledInput” in doxygen xml output for project “ExecuTorch” from directory: ../build/xml/</p>
+<p class="sd-card-text">doxygenfunction: Cannot find function “::executorch::bundled_program::load_bundled_input” in doxygen xml output for project “ExecuTorch” from directory: ../build/xml/</p>
 </div>
 </div>
 </details></div>
 <div class="section" id="verify-the-method-s-output">
 <h3>Verify the Method’s Output.<a class="headerlink" href="#verify-the-method-s-output" title="Permalink to this heading">¶</a></h3>
-<p>We call <code class="docutils literal notranslate"><span class="pre">torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput</span></code> to verify the method’s output with bundled expected outputs. Here’s the details of this API:</p>
+<p>We call <code class="docutils literal notranslate"><span class="pre">executorch::bundled_program::verify_method_outputs</span></code> to verify the method’s output with bundled expected outputs. Here’s the details of this API:</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
-<code class="docutils literal notranslate"><span class="pre">VerifyResultWithBundledExpectedOutput</span></code><div class="sd-summary-down docutils">
+<code class="docutils literal notranslate"><span class="pre">verify_method_outputs</span></code><div class="sd-summary-down docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.72a.75.75 0 000 1.06l6.25 6.25a.75.75 0 001.06 0l6.25-6.25a.75.75 0 00-1.06-1.06L12 14.44 6.28 8.72a.75.75 0 00-1.06 0z"></path></svg></div>
 <div class="sd-summary-up docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
 </summary><div class="sd-summary-content sd-card-body docutils">
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p class="sd-card-text">doxygenfunction: Cannot find function “torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput” in doxygen xml output for project “ExecuTorch” from directory: ../build/xml/</p>
+<p class="sd-card-text">doxygenfunction: Cannot find function “::executorch::bundled_program::verify_method_outputs” in doxygen xml output for project “ExecuTorch” from directory: ../build/xml/</p>
 </div>
 </div>
 </details></div>
@@ -830,13 +831,13 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 <span class="w">    </span><span class="n">method</span><span class="p">.</span><span class="n">error</span><span class="p">());</span>
 
 <span class="c1">// Load testset_idx-th input in the buffer to plan</span>
-<span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">bundled_program</span><span class="o">::</span><span class="n">LoadBundledInput</span><span class="p">(</span>
+<span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">bundled_program</span><span class="o">::</span><span class="n">load_bundled_input</span><span class="p">(</span>
 <span class="w">        </span><span class="o">*</span><span class="n">method</span><span class="p">,</span>
 <span class="w">        </span><span class="n">program_data</span><span class="p">.</span><span class="n">bundled_program_data</span><span class="p">(),</span>
 <span class="w">        </span><span class="n">FLAGS_testset_idx</span><span class="p">);</span>
 <span class="n">ET_CHECK_MSG</span><span class="p">(</span>
 <span class="w">    </span><span class="n">status</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">Error</span><span class="o">::</span><span class="n">Ok</span><span class="p">,</span>
-<span class="w">    </span><span class="s">&quot;LoadBundledInput failed with status 0x%&quot;</span><span class="w"> </span><span class="n">PRIx32</span><span class="p">,</span>
+<span class="w">    </span><span class="s">&quot;load_bundled_input failed with status 0x%&quot;</span><span class="w"> </span><span class="n">PRIx32</span><span class="p">,</span>
 <span class="w">    </span><span class="n">status</span><span class="p">);</span>
 
 <span class="c1">// Execute the plan</span>
@@ -847,7 +848,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 <span class="w">    </span><span class="n">status</span><span class="p">);</span>
 
 <span class="c1">// Verify the result.</span>
-<span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">bundled_program</span><span class="o">::</span><span class="n">VerifyResultWithBundledExpectedOutput</span><span class="p">(</span>
+<span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">bundled_program</span><span class="o">::</span><span class="n">verify_method_outputs</span><span class="p">(</span>
 <span class="w">        </span><span class="o">*</span><span class="n">method</span><span class="p">,</span>
 <span class="w">        </span><span class="n">program_data</span><span class="p">.</span><span class="n">bundled_program_data</span><span class="p">(),</span>
 <span class="w">        </span><span class="n">FLAGS_testset_idx</span><span class="p">,</span>

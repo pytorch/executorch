@@ -317,7 +317,6 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-module.html#conclusion">Conclusion</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Integrating and Running ExecuTorch on Apple Platforms</a></li>
@@ -334,15 +333,17 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">ExecuTorch Llama Android Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">ExecuTorch Llama iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">ExecuTorch Runtime Python API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
@@ -515,7 +516,7 @@ globally:</p>
 <p>The prebuilt ExecuTorch runtime, backend, and kernels are available as a <a class="reference external" href="https://www.swift.org/documentation/package-manager/">Swift PM</a> package.</p>
 <div class="section" id="xcode">
 <h4>Xcode<a class="headerlink" href="#xcode" title="Permalink to this heading">¶</a></h4>
-<p>In Xcode, go to <code class="docutils literal notranslate"><span class="pre">File</span> <span class="pre">&gt;</span> <span class="pre">Add</span> <span class="pre">Package</span> <span class="pre">Dependencies</span></code>. Paste the URL of the <a class="reference external" href="https://github.com/pytorch/executorch">ExecuTorch repo</a> into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version, e.g., “0.3.0”, or just use the “latest” branch name for the latest stable build.</p>
+<p>In Xcode, go to <code class="docutils literal notranslate"><span class="pre">File</span> <span class="pre">&gt;</span> <span class="pre">Add</span> <span class="pre">Package</span> <span class="pre">Dependencies</span></code>. Paste the URL of the <a class="reference external" href="https://github.com/pytorch/executorch">ExecuTorch repo</a> into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version, e.g., “0.4.0”, or just use the “latest” branch name for the latest stable build.</p>
 <p><img alt="" src="_images/swiftpm_xcode1.png" /></p>
 <p>Then select which ExecuTorch framework should link against which target.</p>
 <p><img alt="" src="_images/swiftpm_xcode2.png" /></p>
@@ -537,7 +538,7 @@ globally:</p>
   <span class="p">],</span>
   <span class="n">dependencies</span><span class="p">:</span> <span class="p">[</span>
     <span class="c1">// Use &quot;latest&quot; branch name for the latest stable build.</span>
-    <span class="p">.</span><span class="n">package</span><span class="p">(</span><span class="n">url</span><span class="p">:</span> <span class="s">&quot;https://github.com/pytorch/executorch.git&quot;</span><span class="p">,</span> <span class="p">.</span><span class="n">branch</span><span class="p">(</span><span class="s">&quot;0.3.0&quot;</span><span class="p">))</span>
+    <span class="p">.</span><span class="n">package</span><span class="p">(</span><span class="n">url</span><span class="p">:</span> <span class="s">&quot;https://github.com/pytorch/executorch.git&quot;</span><span class="p">,</span> <span class="p">.</span><span class="n">branch</span><span class="p">(</span><span class="s">&quot;0.4.0&quot;</span><span class="p">))</span>
   <span class="p">],</span>
   <span class="n">targets</span><span class="p">:</span> <span class="p">[</span>
     <span class="p">.</span><span class="n">target</span><span class="p">(</span>

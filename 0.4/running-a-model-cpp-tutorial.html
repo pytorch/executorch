@@ -317,7 +317,6 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-module.html#conclusion">Conclusion</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
@@ -334,15 +333,17 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">ExecuTorch Llama Android Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">ExecuTorch Llama iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">ExecuTorch Runtime Python API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
@@ -480,8 +481,7 @@
   <div class="section" id="running-an-executorch-model-in-c-tutorial">
 <h1>Running an ExecuTorch Model in C++ Tutorial<a class="headerlink" href="#running-an-executorch-model-in-c-tutorial" title="Permalink to this heading">¶</a></h1>
 <p><strong>Author:</strong> <a class="reference external" href="https://github.com/JacobSzwejbka">Jacob Szwejbka</a></p>
-<p>In this tutorial, we will cover the APIs to load an ExecuTorch model,
-prepare the MemoryManager, set inputs, execute the model, and retrieve outputs.</p>
+<p>In this tutorial, we will cover how to run an ExecuTorch model in C++ using the more detailed, lower-level APIs: prepare the <code class="docutils literal notranslate"><span class="pre">MemoryManager</span></code>, set inputs, execute the model, and retrieve outputs. However, if you’re looking for a simpler interface that works out of the box, consider trying the <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Module Extension Tutorial</span></a>.</p>
 <p>For a high level overview of the ExecuTorch Runtime please see <a class="reference internal" href="runtime-overview.html"><span class="doc std std-doc">Runtime Overview</span></a>, and for more in-depth documentation on
 each API please see the <a class="reference internal" href="executorch-runtime-api-reference.html"><span class="doc std std-doc">Runtime API Reference</span></a>.
 <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp">Here</a> is a fully functional version C++ model runner, and the <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up ExecuTorch</span></a> doc shows how to build and run it.</p>
@@ -495,14 +495,25 @@ the model <code class="docutils literal notranslate"><span class="pre">SimpleCon
 <p>The first step towards running your model is to load it. ExecuTorch uses an abstraction called a <code class="docutils literal notranslate"><span class="pre">DataLoader</span></code> to handle the specifics of retrieving the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file data, and then <code class="docutils literal notranslate"><span class="pre">Program</span></code> represents the loaded state.</p>
 <p>Users can define their own <code class="docutils literal notranslate"><span class="pre">DataLoader</span></code>s to fit the needs of their particular system. In this tutorial we will be using the <code class="docutils literal notranslate"><span class="pre">FileDataLoader</span></code>, but you can look under <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/extension/data_loader">Example Data Loader Implementations</a> to see other options provided by the ExecuTorch project.</p>
 <p>For the <code class="docutils literal notranslate"><span class="pre">FileDataLoader</span></code> all we need to do is provide a file path to the constructor.</p>
-<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">torch</span><span class="o">::</span><span class="nn">executor</span><span class="p">;</span>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">aten</span><span class="o">::</span><span class="n">Tensor</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">aten</span><span class="o">::</span><span class="n">TensorImpl</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">extension</span><span class="o">::</span><span class="n">FileDataLoader</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">extension</span><span class="o">::</span><span class="n">MallocMemoryAllocator</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">runtime</span><span class="o">::</span><span class="n">Error</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">runtime</span><span class="o">::</span><span class="n">EValue</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">runtime</span><span class="o">::</span><span class="n">HierarchicalAllocator</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">runtime</span><span class="o">::</span><span class="n">MemoryManager</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">runtime</span><span class="o">::</span><span class="n">Method</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">runtime</span><span class="o">::</span><span class="n">MethodMeta</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">runtime</span><span class="o">::</span><span class="n">Program</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">runtime</span><span class="o">::</span><span class="n">Result</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">runtime</span><span class="o">::</span><span class="n">Span</span><span class="p">;</span>
 
-<span class="n">Result</span><span class="o">&lt;</span><span class="n">util</span><span class="o">::</span><span class="n">FileDataLoader</span><span class="o">&gt;</span><span class="w"> </span><span class="n">loader</span><span class="w"> </span><span class="o">=</span>
-<span class="w">        </span><span class="n">util</span><span class="o">::</span><span class="n">FileDataLoader</span><span class="o">::</span><span class="n">from</span><span class="p">(</span><span class="s">&quot;/tmp/model.pte&quot;</span><span class="p">);</span>
+<span class="n">Result</span><span class="o">&lt;</span><span class="n">FileDataLoader</span><span class="o">&gt;</span><span class="w"> </span><span class="n">loader</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">FileDataLoader</span><span class="o">::</span><span class="n">from</span><span class="p">(</span><span class="s">&quot;/tmp/model.pte&quot;</span><span class="p">);</span>
 <span class="n">assert</span><span class="p">(</span><span class="n">loader</span><span class="p">.</span><span class="n">ok</span><span class="p">());</span>
 
-<span class="n">Result</span><span class="o">&lt;</span><span class="n">Program</span><span class="o">&gt;</span><span class="w"> </span><span class="n">program</span><span class="w"> </span><span class="o">=</span>
-<span class="w">      </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">Program</span><span class="o">::</span><span class="n">load</span><span class="p">(</span><span class="o">&amp;</span><span class="n">loader</span><span class="p">.</span><span class="n">get</span><span class="p">());</span>
+<span class="n">Result</span><span class="o">&lt;</span><span class="n">Program</span><span class="o">&gt;</span><span class="w"> </span><span class="n">program</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Program</span><span class="o">::</span><span class="n">load</span><span class="p">(</span><span class="o">&amp;</span><span class="n">loader</span><span class="p">.</span><span class="n">get</span><span class="p">());</span>
 <span class="n">assert</span><span class="p">(</span><span class="n">program</span><span class="p">.</span><span class="n">ok</span><span class="p">());</span>
 </pre></div>
 </div>
@@ -516,13 +527,13 @@ the model <code class="docutils literal notranslate"><span class="pre">SimpleCon
 <li><p>Planned Memory: A <code class="docutils literal notranslate"><span class="pre">HierarchicalAllocator</span></code> containing 1 or more memory arenas where internal mutable tensor data buffers are placed. At <code class="docutils literal notranslate"><span class="pre">Method</span></code> load time internal tensors have their data pointers assigned to various offsets within. The positions of those offsets and the sizes of the arenas are determined by memory planning ahead of time.</p></li>
 </ul>
 <p>For this example we will retrieve the size of the planned memory arenas dynamically from the <code class="docutils literal notranslate"><span class="pre">Program</span></code>, but for heapless environments users could retrieve this information from the <code class="docutils literal notranslate"><span class="pre">Program</span></code> ahead of time and allocate the arena statically. We will also be using a malloc based allocator for the method allocator.</p>
-<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// Method names map back to Python nn.Module method names. Most users will only have the singular method &quot;forward&quot;.</span>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// Method names map back to Python nn.Module method names. Most users will only</span>
+<span class="c1">// have the singular method &quot;forward&quot;.</span>
 <span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">method_name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;forward&quot;</span><span class="p">;</span>
 
 <span class="c1">// MethodMeta is a lightweight structure that lets us gather metadata</span>
-<span class="c1">// information about a specific method. In this case we are looking to</span>
-<span class="c1">// get the required size of the memory planned buffers for the method</span>
-<span class="c1">// &quot;forward&quot;.</span>
+<span class="c1">// information about a specific method. In this case we are looking to get the</span>
+<span class="c1">// required size of the memory planned buffers for the method &quot;forward&quot;.</span>
 <span class="n">Result</span><span class="o">&lt;</span><span class="n">MethodMeta</span><span class="o">&gt;</span><span class="w"> </span><span class="n">method_meta</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">program</span><span class="o">-&gt;</span><span class="n">method_meta</span><span class="p">(</span><span class="n">method_name</span><span class="p">);</span>
 <span class="n">assert</span><span class="p">(</span><span class="n">method_meta</span><span class="p">.</span><span class="n">ok</span><span class="p">());</span>
 
@@ -531,7 +542,8 @@ the model <code class="docutils literal notranslate"><span class="pre">SimpleCon
 
 <span class="kt">size_t</span><span class="w"> </span><span class="n">num_memory_planned_buffers</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">method_meta</span><span class="o">-&gt;</span><span class="n">num_memory_planned_buffers</span><span class="p">();</span>
 
-<span class="c1">// It is possible to have multiple layers in our memory hierarchy; for example, SRAM and DRAM.</span>
+<span class="c1">// It is possible to have multiple layers in our memory hierarchy; for example,</span>
+<span class="c1">// SRAM and DRAM.</span>
 <span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">size_t</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">num_memory_planned_buffers</span><span class="p">;</span><span class="w"> </span><span class="o">++</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="c1">// .get() will always succeed because id &lt; num_memory_planned_buffers.</span>
 <span class="w">  </span><span class="kt">size_t</span><span class="w"> </span><span class="n">buffer_size</span><span class="w"> </span><span class="o">=</span>
@@ -542,12 +554,12 @@ the model <code class="docutils literal notranslate"><span class="pre">SimpleCon
 <span class="n">HierarchicalAllocator</span><span class="w"> </span><span class="n">planned_memory</span><span class="p">(</span>
 <span class="w">    </span><span class="p">{</span><span class="n">planned_arenas</span><span class="p">.</span><span class="n">data</span><span class="p">(),</span><span class="w"> </span><span class="n">planned_arenas</span><span class="p">.</span><span class="n">size</span><span class="p">()});</span>
 
-<span class="c1">// Version of MemoryAllocator that uses malloc to handle allocations</span>
-<span class="c1">// rather then a fixed buffer.</span>
-<span class="n">util</span><span class="o">::</span><span class="n">MallocMemoryAllocator</span><span class="w"> </span><span class="n">method_allocator</span><span class="p">;</span>
+<span class="c1">// Version of MemoryAllocator that uses malloc to handle allocations rather then</span>
+<span class="c1">// a fixed buffer.</span>
+<span class="n">MallocMemoryAllocator</span><span class="w"> </span><span class="n">method_allocator</span><span class="p">;</span>
 
-<span class="c1">// Assemble all of the allocators into the MemoryManager that the Executor</span>
-<span class="c1">// will use.</span>
+<span class="c1">// Assemble all of the allocators into the MemoryManager that the Executor will</span>
+<span class="c1">// use.</span>
 <span class="n">MemoryManager</span><span class="w"> </span><span class="nf">memory_manager</span><span class="p">(</span><span class="o">&amp;</span><span class="n">method_allocator</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">planned_memory</span><span class="p">);</span>
 </pre></div>
 </div>
@@ -604,8 +616,7 @@ not contain buffer space for your inputs and outputs.</p>
 </div>
 <div class="section" id="conclusion">
 <h2>Conclusion<a class="headerlink" href="#conclusion" title="Permalink to this heading">¶</a></h2>
-<p>In this tutorial, we went over the APIs and steps required to load and perform an inference with an ExecuTorch model in C++.
-Also, check out the <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Simplified Runtime APIs Tutorial</span></a>.</p>
+<p>This tutorial demonstrated how to run an ExecuTorch model using low-level runtime APIs, which offer granular control over memory management and execution. However, for most use cases, we recommend using the Module APIs, which provide a more streamlined experience without sacrificing flexibility. For more details, check out the <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Module Extension Tutorial</span></a>.</p>
 </div>
 </div>
 

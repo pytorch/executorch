@@ -317,7 +317,6 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-module.html#conclusion">Conclusion</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
@@ -334,15 +333,17 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">ExecuTorch Llama Android Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">ExecuTorch Llama iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">ExecuTorch Runtime Python API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
@@ -502,7 +503,7 @@
 </div>
 <div class="section" id="aten-mode">
 <h2>ATen mode<a class="headerlink" href="#aten-mode" title="Permalink to this heading">¶</a></h2>
-<p>ATen mode uses the ATen implementation of Tensor (<code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>) and related types, such as <code class="docutils literal notranslate"><span class="pre">ScalarType</span></code>, from the PyTorch core. This is in contrast to portable mode, which uses ExecuTorch’s smaller implementation of tensor (<code class="docutils literal notranslate"><span class="pre">torch::executor::Tensor</span></code>) and related types, such as <code class="docutils literal notranslate"><span class="pre">torch::executor::ScalarType</span></code>.</p>
+<p>ATen mode uses the ATen implementation of Tensor (<code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>) and related types, such as <code class="docutils literal notranslate"><span class="pre">ScalarType</span></code>, from the PyTorch core. This is in contrast to ETensor mode, which uses ExecuTorch’s smaller implementation of tensor (<code class="docutils literal notranslate"><span class="pre">executorch::runtime::etensor::Tensor</span></code>) and related types, such as <code class="docutils literal notranslate"><span class="pre">executorch::runtime::etensor::ScalarType</span></code>.</p>
 <ul class="simple">
 <li><p>ATen kernels that rely on the full <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code> API are usable in this configuration.</p></li>
 <li><p>ATen kernels tend to do dynamic memory allocation and often have extra flexibility (and thus overhead) to handle cases not needed by mobile/embedded clients. e.g.,  CUDA support, sparse tensor support, and dtype promotion.</p></li>
@@ -719,11 +720,11 @@ The default PAL implementation can be overridden if it doesn’t work for a part
 <h2><span class="xref myst">Partitioner</span><a class="headerlink" href="#partitioner" title="Permalink to this heading">¶</a></h2>
 <p>Parts of a model may be delegated to run on an optimized backend. The partitioner splits the graph into the appropriate sub-networks and tags them for delegation.</p>
 </div>
-<div class="section" id="portable-mode-lean-mode">
-<h2>Portable mode (lean mode)<a class="headerlink" href="#portable-mode-lean-mode" title="Permalink to this heading">¶</a></h2>
-<p>Portable mode uses ExecuTorch’s smaller implementation of tensor (<code class="docutils literal notranslate"><span class="pre">torch::executor::Tensor</span></code>) along with related types (<code class="docutils literal notranslate"><span class="pre">torch::executor::ScalarType</span></code>, etc.). This is in contrast to ATen mode, which uses the ATen implementation of Tensor (<code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>) and related types (<code class="docutils literal notranslate"><span class="pre">ScalarType</span></code>, etc.)</p>
+<div class="section" id="etensor-mode">
+<h2>ETensor mode<a class="headerlink" href="#etensor-mode" title="Permalink to this heading">¶</a></h2>
+<p>ETensor mode uses ExecuTorch’s smaller implementation of tensor (<code class="docutils literal notranslate"><span class="pre">executorch::runtime::etensor::Tensor</span></code>) along with related types (<code class="docutils literal notranslate"><span class="pre">executorch::runtime::etensor::ScalarType</span></code>, etc.). This is in contrast to ATen mode, which uses the ATen implementation of Tensor (<code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>) and related types (<code class="docutils literal notranslate"><span class="pre">ScalarType</span></code>, etc.)</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">torch::executor::Tensor</span></code>, also known as ETensor, is a source-compatible subset of <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>. Code written against ETensor can build against <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch::runtime::etensor::Tensor</span></code>, also known as ETensor, is a source-compatible subset of <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>. Code written against ETensor can build against <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>.</p></li>
 <li><p>ETensor does not own or allocate memory on its own. To support dynamic shapes, kernels can allocate Tensor data using the MemoryAllocator provided by the client.</p></li>
 </ul>
 </div>
@@ -878,7 +879,7 @@ The default PAL implementation can be overridden if it doesn’t work for a part
 <li><a class="reference internal" href="#pal-platform-abstraction-layer"><span class="xref myst">PAL (Platform Abstraction Layer)</span></a></li>
 <li><a class="reference internal" href="#partial-kernels">Partial kernels</a></li>
 <li><a class="reference internal" href="#partitioner"><span class="xref myst">Partitioner</span></a></li>
-<li><a class="reference internal" href="#portable-mode-lean-mode">Portable mode (lean mode)</a></li>
+<li><a class="reference internal" href="#etensor-mode">ETensor mode</a></li>
 <li><a class="reference internal" href="#portable-kernels">Portable kernels</a></li>
 <li><a class="reference internal" href="#program">Program</a></li>
 <li><a class="reference internal" href="#program-source-code">Program source code</a></li>
