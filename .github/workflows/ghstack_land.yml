@@ -1,9 +1,9 @@
 name: Propose to merge ghstack orig PRs to main
 on:
   pull_request:
-    types: [opened, synchronize, closed]
+    types: [closed]
     branches:
-      - 'gh/*/[0-9]+/base'
+      - 'gh/kirklandsign/[0-9]+/base'
 jobs:
   ghstack_merge_to_main:
     name: Try to create a PR with ghstack /orig branch
