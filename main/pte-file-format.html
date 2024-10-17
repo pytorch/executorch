@@ -509,6 +509,12 @@ Optional ─┤  ├────────────────────
           └─ └───────────────────────────────────┘
 </pre></div>
 </div>
+<div class="section" id="compatibility">
+<h2>Compatibility<a class="headerlink" href="#compatibility" title="Permalink to this heading">¶</a></h2>
+<p>See the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/runtime/COMPATIBILITY.md">Runtime Compatibility Policy</a> for
+details about the compatibility guarantees between the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> format and the
+ExecuTorch runtime.</p>
+</div>
 <div class="section" id="headers">
 <h2>Headers<a class="headerlink" href="#headers" title="Permalink to this heading">¶</a></h2>
 <p>Program files can be recognized by the magic string at byte offset 4, beginning
@@ -624,6 +630,7 @@ relative to the segment offet in the extended header.</p>
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
 <li><a class="reference internal" href="#"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a><ul>
+<li><a class="reference internal" href="#compatibility">Compatibility</a></li>
 <li><a class="reference internal" href="#headers">Headers</a></li>
 <li><a class="reference internal" href="#program-data">Program data</a></li>
 <li><a class="reference internal" href="#segment-data">Segment data</a></li>
