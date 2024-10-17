@@ -126,8 +126,6 @@ class MultiHeadAttention(nn.Module):
         self.head_dim = head_dim
         self.max_seq_len = max_seq_len
         self.is_causal = is_causal
-        # Number of queries per k, v
-        self.q_per_kv = self.num_heads // self.num_kv_heads
 
         # Set layers
         self.kv_cache = kv_cache
@@ -145,7 +143,7 @@ class MultiHeadAttention(nn.Module):
             num_kv_heads=self.num_kv_heads,
             num_heads=self.num_heads,
             head_dim=self.head_dim,
-            q_per_kv=self.q_per_kv,
+            q_per_kv=self.num_heads // self.num_kv_heads,
             attn_dropout=self.attn_dropout if self.training else 0.0,
             is_causal=self.is_causal,
             attention_fn=self._attention_call,
@@ -239,7 +237,10 @@ class MultiHeadAttention(nn.Module):
 
         # q has shape [b, s_x, num_heads * head_dim]
         q = self.q_proj(x)
-        q = q.view(b, s_x, self.num_kv_heads * self.q_per_kv, self.head_dim)
+
+        # number of queries per key/value
+        q_per_kv = self.num_heads // self.num_kv_heads
+        q = q.view(b, s_x, self.num_kv_heads * q_per_kv, self.head_dim)
 
         # Apply positional embeddings
         if self.pos_embeddings is not None:
