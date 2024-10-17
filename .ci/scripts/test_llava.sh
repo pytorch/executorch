@@ -55,7 +55,7 @@ cmake_install_executorch_libraries() {
 cmake_install_executorch_libraries_for_android() {
     cmake                                                                       \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
-        -DANDROID_ABI=arm64-v8a                                                                                     \
+        -DANDROID_ABI=arm64-v8a                                                 \
         ${EXECUTORCH_COMMON_CMAKE_ARGS}                                         \
         -B${BUILD_DIR} .
 
