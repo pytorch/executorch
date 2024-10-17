@@ -1,4 +1,4 @@
-# Intro to LLMs in Executorch
+# Intro to LLMs in ExecuTorch
 
 Welcome to LLM Manual! This manual is designed to provide a practical example to leverage
 ExecuTorch in onboarding your own Large Language Models (LLMs). Our primary goal is to offer
