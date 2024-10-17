@@ -422,6 +422,8 @@ public class SettingsActivity extends AppCompatActivity {
     requireViewById(R.id.tokenizerLayout).setVisibility(View.VISIBLE);
     requireViewById(R.id.parametersView).setVisibility(View.VISIBLE);
     requireViewById(R.id.temperatureLayout).setVisibility(View.VISIBLE);
+    mModelFilePath="";
+    mTokenizerFilePath="";
   }
 
   private void setMediaTekSettingMode() {
@@ -429,6 +431,8 @@ public class SettingsActivity extends AppCompatActivity {
     requireViewById(R.id.tokenizerLayout).setVisibility(View.GONE);
     requireViewById(R.id.parametersView).setVisibility(View.GONE);
     requireViewById(R.id.temperatureLayout).setVisibility(View.GONE);
+    mModelFilePath="/in/mtk/llama/runner";
+    mTokenizerFilePath="/in/mtk/llama/runner";
   }
 
   private void loadSettings() {
