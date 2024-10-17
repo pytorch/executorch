@@ -12,6 +12,7 @@
 #include <stddef.h>
 #include <xa_type_def.h>
 
+namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace kernels {
@@ -63,3 +64,4 @@ void dequantize(
 }; // namespace kernels
 }; // namespace HiFi
 }; // namespace impl
+}; // namespace cadence
