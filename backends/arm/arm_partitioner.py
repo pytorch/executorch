@@ -53,6 +53,7 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.full.default,
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
+            exir_ops.edge.aten.native_layer_norm.default,
             exir_ops.edge.aten.avg_pool2d.default,
             exir_ops.edge.aten.sigmoid.default,
             exir_ops.edge.aten.mm.default,
@@ -67,6 +68,7 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.view_copy.default,
             exir_ops.edge.aten.clone.default,
             exir_ops.edge.aten.mean.dim,
+            exir_ops.edge.aten.var.correction,
             exir_ops.edge.aten.unsqueeze_copy.default,
             exir_ops.edge.aten.squeeze_copy.dims,
             operator.getitem,
@@ -85,10 +87,11 @@ class TOSASupportedOperators(OperatorSupportBase):
 
     def is_node_supported_custom(self, node: torch.fx.Node) -> bool:
         if node.target == exir_ops.edge.aten.mean.dim:
-            dim = node.args[1]
-            keep_dim = node.args[2]
-            if dim != [-1, -2] or keep_dim is False:
-                return False
+            keep_dim = node.args[2] if len(node.args) > 2 else False
+            return keep_dim
+        if node.target == exir_ops.edge.aten.var.correction:
+            keep_dim = node.kwargs.get("keepdim", False)
+            return keep_dim
         return True
 
 
