@@ -110,11 +110,12 @@ void add_tensor_to_staging_node(
       {SV(graph.packed_dim_of(in_tensor))}));
 }
 
-ValueRef prepack(
+ValueRef add_standard_prepack_node(
     ComputeGraph& graph,
     const ValueRef vref,
+    const utils::StorageType storage_type,
     const utils::GPUMemoryLayout layout) {
-  ValueRef v = graph.add_tensor_like(vref, layout);
+  ValueRef v = graph.add_tensor_like(vref, storage_type, layout);
 
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
       *graph.get_tensor(v), graph.int8_buffers_enabled());
@@ -142,11 +143,37 @@ ValueRef prepack(
   return v;
 }
 
-ValueRef prepack_buffer(
+ValueRef prepack_standard(
     ComputeGraph& graph,
-    const ValueRef vref,
-    const utils::GPUMemoryLayout layout) {
-  ValueRef v = graph.add_tensor_like(vref, utils::kBuffer, layout);
+    const ValueRef v,
+    const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout layout,
+    const bool passthrough) {
+  if (passthrough && graph.val_is_tensor(v)) {
+    return v;
+  }
+  VK_CHECK_COND(graph.val_is_tref(v));
+  return add_standard_prepack_node(graph, v, storage_type, layout);
+}
+
+ValueRef prepack_standard_like(
+    ComputeGraph& graph,
+    const ValueRef v,
+    const ValueRef to_copy,
+    const bool passthrough) {
+  VK_CHECK_COND(graph.val_is_tensor(to_copy));
+  return prepack_standard(
+      graph,
+      v,
+      graph.storage_type_of(to_copy),
+      graph.estimate_memory_layout_of(to_copy),
+      passthrough);
+}
+
+ValueRef add_direct_buffer_copy_prepack_node(
+    ComputeGraph& graph,
+    const ValueRef vref) {
+  ValueRef v = graph.add_tensor_like(vref, utils::kBuffer, utils::kWidthPacked);
 
   std::string kernel_name = "buffer_to_buffer";
   add_dtype_suffix(kernel_name, graph.dtype_of(vref));
@@ -171,46 +198,8 @@ ValueRef prepack_buffer(
   return v;
 }
 
-ValueRef prepack_if_tensor_ref(
-    ComputeGraph& graph,
-    const ValueRef v,
-    const utils::GPUMemoryLayout layout) {
-  if (graph.val_is_tref(v)) {
-    return prepack(graph, v, layout);
-  } else {
-    return v;
-  }
-}
-
-ValueRef prepack_buffer_if_tensor_ref(
-    ComputeGraph& graph,
-    const ValueRef v,
-    const utils::GPUMemoryLayout layout) {
-  if (graph.val_is_tref(v)) {
-    return prepack_buffer(graph, v, layout);
-  } else {
-    return v;
-  }
-}
-
-ValueRef prepack_if_tensor_ref(ComputeGraph& graph, const ValueRef v) {
-  if (graph.val_is_tref(v)) {
-    utils::GPUMemoryLayout layout =
-        graph.suggested_memory_layout(graph.get_tref(v)->sizes);
-    return prepack(graph, v, layout);
-  } else {
-    return v;
-  }
-}
-
-ValueRef prepack_buffer_if_tensor_ref(ComputeGraph& graph, const ValueRef v) {
-  if (graph.val_is_tref(v)) {
-    utils::GPUMemoryLayout layout =
-        graph.suggested_memory_layout(graph.get_tref(v)->sizes);
-    return prepack_buffer(graph, v, layout);
-  } else {
-    return v;
-  }
+ValueRef prepack_direct_copy_buffer(ComputeGraph& graph, const ValueRef v) {
+  return add_direct_buffer_copy_prepack_node(graph, v);
 }
 
 } // namespace vkcompute

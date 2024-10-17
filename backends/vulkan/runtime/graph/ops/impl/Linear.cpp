@@ -94,8 +94,11 @@ void add_addmm_naive_node(
     const ValueRef out,
     const Params& params,
     const ValueRef mat2_is_transposed) {
-  ValueRef self = prepack_if_tensor_ref(graph, self_data, utils::kWidthPacked);
-  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kHeightPacked);
+  utils::StorageType stype = graph.storage_type_of(out);
+  ValueRef self =
+      prepack_standard(graph, self_data, stype, utils::kWidthPacked, true);
+  ValueRef mat2 =
+      prepack_standard(graph, mat2_data, stype, utils::kHeightPacked, true);
 
   std::string kernel_name =
       graph.get_bool(mat2_is_transposed) ? "linear_naive" : "addmm_naive";
@@ -145,9 +148,11 @@ void add_addmm_optimized_node(
     const ValueRef out,
     const Params& params,
     const ValueRef mat2_is_transposed) {
+  utils::StorageType stype = graph.storage_type_of(out);
   ValueRef self =
-      prepack_if_tensor_ref(graph, self_data, utils::kChannelsPacked);
-  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kHeightPacked);
+      prepack_standard(graph, self_data, stype, utils::kChannelsPacked, true);
+  ValueRef mat2 =
+      prepack_standard(graph, mat2_data, stype, utils::kHeightPacked, true);
 
   // Ensure mat1 is width packed
   ValueRef mat1_W_packed = graph.add_tensor_like(mat1, utils::kWidthPacked);
@@ -276,8 +281,8 @@ void linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   ValueRef weight_data = args.at(1);
   ValueRef bias = args.at(2);
   ValueRef out = args.at(3);
-  ValueRef weight =
-      prepack_if_tensor_ref(graph, weight_data, utils::kWidthPacked);
+  ValueRef weight = prepack_standard(
+      graph, weight_data, graph.storage_type_of(out), utils::kWidthPacked);
   ValueRef mat2_is_transposed = graph.add_scalar(true);
   if (graph.val_is_none(bias)) {
     return add_matmul_node(graph, input, weight, out, mat2_is_transposed);

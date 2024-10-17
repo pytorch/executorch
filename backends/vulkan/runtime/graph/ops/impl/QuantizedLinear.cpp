@@ -82,10 +82,10 @@ void add_q_8w_linear_node(
     // Ensure out is packed correctly
     out_W_packed = graph.add_tensor_like(out, utils::kWidthPacked);
   }
-  ValueRef q_mat2 =
-      prepack_if_tensor_ref(graph, q_mat2_data, utils::kWidthPacked);
-  ValueRef scales =
-      prepack_if_tensor_ref(graph, scales_data, utils::kWidthPacked);
+  ValueRef q_mat2 = prepack_standard(
+      graph, q_mat2_data, graph.storage_type_of(out), utils::kWidthPacked);
+  ValueRef scales = prepack_standard(
+      graph, scales_data, graph.storage_type_of(out), utils::kWidthPacked);
 
   std::string kernel_name = "q_8w_linear";
   kernel_name.reserve(kShaderNameReserve);
@@ -208,11 +208,13 @@ void add_q_4w_linear_node(
 
   utils::StorageType storage_type = graph.storage_type_of(out);
 
-  ValueRef mat2 =
-      prepack_buffer_if_tensor_ref(graph, mat2_data, utils::kWidthPacked);
+  ValueRef mat2 = prepack_direct_copy_buffer(graph, mat2_data);
 
-  ValueRef scales_and_zeros =
-      prepack_if_tensor_ref(graph, scales_and_zeros_data, utils::kWidthPacked);
+  ValueRef scales_and_zeros = prepack_standard(
+      graph,
+      scales_and_zeros_data,
+      graph.storage_type_of(out),
+      utils::kWidthPacked);
 
   std::string kernel_name = "q_4w_linear";
   add_storage_type_suffix(kernel_name, storage_type);
