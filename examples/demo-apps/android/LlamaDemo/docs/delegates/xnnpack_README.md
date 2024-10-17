@@ -66,12 +66,12 @@ In this demo app, we support text-only inference with up-to-date Llama models an
 We have supported BFloat16 as a data type on the XNNPACK backend for Llama 3.2 1B/3B models.
 * You can request and download model weights for Llama through Meta official [website](https://llama.meta.com/).
 * For chat use-cases, download the instruct models instead of pretrained.
-* Run `examples/models/llama2/install_requirements.sh` to install dependencies.
+* Run `examples/models/llama/install_requirements.sh` to install dependencies.
 * The 1B model in BFloat16 format can run on mobile devices with 8GB RAM. The 3B model will require 12GB+ RAM.
 * Export Llama model and generate .pte file as below:
 
 ```
-python -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -d bf16 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="llama3_2.pte"
+python -m examples.models.llama.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -d bf16 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="llama3_2.pte"
 ```
 
 * Rename tokenizer for Llama 3.2 with command: `mv tokenizer.model tokenizer.bin`. We are updating the demo app to support tokenizer in original format directly.
@@ -88,19 +88,19 @@ To safeguard your application, you can use our Llama Guard models for prompt cla
 * We prepared this model using the following command
 
 ```
-python -m examples.models.llama2.export_llama --checkpoint <pruned llama guard 1b checkpoint.pth> --params <params.json> -d fp32 -kv --use_sdpa_with_kv_cache --quantization_mode 8da4w --group_size 256 --xnnpack --max_seq_length 8193 --embedding-quantize 4,32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_prune_map <llama_guard pruned layers map.json> --output_name="llama_guard_3_1b_pruned_xnnpack.pte"
+python -m examples.models.llama.export_llama --checkpoint <pruned llama guard 1b checkpoint.pth> --params <params.json> -d fp32 -kv --use_sdpa_with_kv_cache --quantization_mode 8da4w --group_size 256 --xnnpack --max_seq_length 8193 --embedding-quantize 4,32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_prune_map <llama_guard pruned layers map.json> --output_name="llama_guard_3_1b_pruned_xnnpack.pte"
 ```
 
 
 ### For Llama 3.1 and Llama 2 models
 * You can download original model weights for Llama through Meta official [website](https://llama.meta.com/).
 * For Llama 2 models, Edit params.json file. Replace "vocab_size": -1 with "vocab_size": 32000. This is a short-term workaround
-* Run `examples/models/llama2/install_requirements.sh` to install dependencies.
+* Run `examples/models/llama/install_requirements.sh` to install dependencies.
 * The Llama 3.1 and Llama 2 models (8B and 7B) can run on devices with 12GB+ RAM.
 * Export Llama model and generate .pte file
 
 ```
-python -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w --group_size 128 -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="llama.pte"
+python -m examples.models.llama.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w --group_size 128 -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="llama.pte"
 ```
 
 You may wonder what the ‘--metadata’ flag is doing. This flag helps export the model with proper special tokens added that the runner can detect EOS tokens easily.
@@ -159,7 +159,7 @@ sh examples/demo-apps/android/LlamaDemo/setup.sh
 
 This is running the shell script which configures the required core ExecuTorch, Llama2/3, and Android libraries, builds them, and copies them to jniLibs.
 
-**Output**: The executorch-llama.aar file will be generated in a newly created folder in the example/demo-apps/android/LlamaDemo/app/libs directory. This is the path that the Android app expects it to be in.
+**Output**: The executorch.aar file will be generated in a newly created folder in the example/demo-apps/android/LlamaDemo/app/libs directory. This is the path that the Android app expects it to be in.
 
 **Note**: If you are building the Android app mentioned in the next section on a separate machine (i.e. MacOS but building and exporting on Linux), make sure you copy the aar file generated from setup script to “examples/demo-apps/android/LlamaDemo/app/libs” before building the Android app.
 

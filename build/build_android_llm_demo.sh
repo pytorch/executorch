@@ -26,6 +26,14 @@ build_android_native_library() {
     EXECUTORCH_BUILD_QNN=OFF
   fi
 
+  NEURON_BUFFER_ALLOCATOR_LIB="${NEURON_BUFFER_ALLOCATOR_LIB:-}"
+  NEURON_USDK_ADAPTER_LIB="${NEURON_USDK_ADAPTER_LIB:-}"
+  if [ -n "$NEURON_BUFFER_ALLOCATOR_LIB" ]; then
+    EXECUTORCH_BUILD_NEURON=ON
+  else
+    EXECUTORCH_BUILD_NEURON=OFF
+  fi
+
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
@@ -89,10 +97,10 @@ build_android_native_library() {
   fi
 
   # Copy MTK related so library
-  if [ -n "$NEURON_BUFFER_ALLOCATOR_LIB" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then
+  if [ -n "$NEURON_BUFFER_ALLOCATOR_LIB" ] && [ -n "$NEURON_USDK_ADAPTER_LIB" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then
     cp "${CMAKE_OUT}"/backends/mediatek/libneuron_backend.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
-    cp "$NEURON_BUFFER_ALLOCATOR_LIB"/libneuron_buffer_allocator.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
-    cp "$NEURON_BUFFER_ALLOCATOR_LIB"/libneuronusdk_adapter.mtk.so ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
+    cp "${NEURON_BUFFER_ALLOCATOR_LIB}" ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
+    cp "${NEURON_USDK_ADAPTER_LIB}" ${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/
   fi
 }
 
@@ -107,13 +115,12 @@ build_aar() {
   find jni -type f -name "libexecutorch_jni.so" -exec bash -c 'mv "$1" "${1/_jni/}"' bash {} \;
   # Zip all necessary files into the AAR file
   zip -r executorch.aar libs jni/*/libexecutorch.so jni/*/libqnn*.so jni/*/libQnn*.so jni/*/libneuron_backend.so jni/*/libneuron_buffer_allocator.so jni/*/libneuronusdk_adapter.mtk.so AndroidManifest.xml
-  cp executorch.aar executorch-llama.aar
   popd
 }
 
 build_android_demo_apps() {
   mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
-  cp ${BUILD_AAR_DIR}/executorch-llama.aar examples/demo-apps/android/LlamaDemo/app/libs
+  cp ${BUILD_AAR_DIR}/executorch.aar examples/demo-apps/android/LlamaDemo/app/libs
   pushd examples/demo-apps/android/LlamaDemo
   ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
   popd

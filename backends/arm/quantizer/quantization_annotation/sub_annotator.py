@@ -6,8 +6,6 @@
 
 # pyre-unsafe
 
-import itertools
-import operator
 from typing import Callable, List, Optional
 
 import torch
@@ -16,7 +14,6 @@ from executorch.backends.arm.quantizer.quantization_annotation import register_a
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from torch.ao.quantization.quantizer import QuantizationAnnotation
 from torch.fx import GraphModule, Node
-from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
 @register_annotator("sub")
@@ -25,14 +22,12 @@ def _annotate_sub(
     quantization_config: QuantizationConfig,
     filter_fn: Optional[Callable[[Node], bool]] = None,
 ) -> Optional[List[List[Node]]]:
-    sub_partitions = get_source_partitions(
-        gm.graph, [operator.sub, torch.sub, operator.isub], filter_fn
-    )
-    sub_partitions = list(itertools.chain.from_iterable(sub_partitions.values()))
     annotated_partitions = []
-    for sub_partition in sub_partitions:
-        annotated_partitions.append(sub_partition.nodes)
-        sub_node = sub_partition.output_nodes[0]
+    for node in gm.graph.nodes:
+        if node.target not in (torch.ops.aten.sub.Tensor, torch.ops.aten.sub_.Tensor):
+            continue
+        annotated_partitions.append(node)
+        sub_node = node
         if arm_quantizer_utils.is_annotated(sub_node):
             continue
 
