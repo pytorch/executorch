@@ -8,7 +8,9 @@
 
 #include <cassert>
 #include <chrono>
+#include <codecvt>
 #include <iostream>
+#include <locale>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -21,6 +23,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <android/log.h>
 
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
@@ -45,7 +48,10 @@ class ExecuTorchLlamaCallbackJni
     static auto cls = ExecuTorchLlamaCallbackJni::javaClassStatic();
     static const auto method =
         cls->getMethod<void(facebook::jni::local_ref<jstring>)>("onResult");
-    facebook::jni::local_ref<jstring> s = facebook::jni::make_jstring(result);
+    static std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
+    std::u16string result_u16 = converter.from_bytes(result);
+    __android_log_print(ANDROID_LOG_ERROR, "ExecuTorchDBG", "U16:%s", result_u16.c_str());
+    facebook::jni::local_ref<jstring> s = facebook::jni::make_jstring(result_u16);
     method(self(), s);
   }
 
