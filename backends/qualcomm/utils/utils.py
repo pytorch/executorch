@@ -7,7 +7,7 @@
 import operator
 import warnings
 from collections import OrderedDict
-from typing import Callable, Dict, FrozenSet, List, Set, Tuple
+from typing import Callable, Dict, List, Set, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 
@@ -291,8 +291,9 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
 
 
 def _transform(
-    edge_program: ExportedProgram, custom_pass_config: FrozenSet[str] = frozenset()
-) -> ExportedProgram:
+    edge_program: ExportedProgram, custom_pass_config: Set[str] = None
+) -> None:
+    custom_pass_config = custom_pass_config or {}
     # currently ExirExportedProgram.transform does not accept
     # changes of input number which was caused by FoldQDQ
     # apply passes one by one here to avoid IR capture failure
@@ -324,7 +325,6 @@ def _transform(
         edge_program.graph_module,
     )
     edge_program._validate()
-    return edge_program
 
 
 def capture_program(
