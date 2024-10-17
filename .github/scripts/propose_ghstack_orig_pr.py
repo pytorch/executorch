@@ -94,13 +94,11 @@ def create_prs_for_orig_branch(pr_stack: List[int], repo: Repository):
         orig_branch_merge_head = pr.base.ref.replace("base", "orig")
         bot_metadata = f"""This PR was created by the merge bot to help merge the original PR into the main branch.
 ghstack PR number: https://github.com/pytorch/executorch/pull/{pr.number}
-^ Please use this as the source of truth for the PR number to reference in comments
+^ Please use this as the source of truth for the PR details, comments, and reviews
 ghstack PR base: https://github.com/pytorch/executorch/tree/{pr.base.ref}
 ghstack PR head: https://github.com/pytorch/executorch/tree/{pr.head.ref}
 Merge bot PR base: https://github.com/pytorch/executorch/tree/{orig_branch_merge_base}
-Merge bot PR head: https://github.com/pytorch/executorch/tree/{orig_branch_merge_head}
-\nOriginal PR body:\n
-        """
+Merge bot PR head: https://github.com/pytorch/executorch/tree/{orig_branch_merge_head}"""
 
         existing_orig_pr = repo.get_pulls(head="pytorch:" + orig_branch_merge_head, base=orig_branch_merge_base, state="open")
         if existing_orig_pr.totalCount > 0:
@@ -111,7 +109,7 @@ Merge bot PR head: https://github.com/pytorch/executorch/tree/{orig_branch_merge
                 base=orig_branch_merge_base,
                 head=orig_branch_merge_head,
                 title=pr.title,
-                body=bot_metadata + pr.body,
+                body=bot_metadata,
             )
         # Advance the base for the next PR
         orig_branch_merge_base = orig_branch_merge_head
