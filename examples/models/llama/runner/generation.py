@@ -10,7 +10,7 @@ from typing import List, Optional, TypedDict
 import torch
 
 from executorch.examples.models.llama.llama_transformer import ModelArgs
-from executorch.examples.models.llama.tokenizer.tiktoken import Tokenizer
+from executorch.extension.llm.tokenizer.utils import get_tokenizer
 
 
 class CompletionPrediction(TypedDict, total=False):
@@ -53,7 +53,7 @@ def next_token(logits: torch.Tensor, temperature: float, top_p: float) -> int:
 class LlamaRunner(ABC):
     def __init__(self, tokenizer_path: str, model_args: ModelArgs):
         self.params = model_args
-        self.tokenizer = Tokenizer(tokenizer_path)
+        self.tokenizer = get_tokenizer(tokenizer_path)
         assert model_args.vocab_size == self.tokenizer.n_words
 
     @abstractmethod
@@ -93,7 +93,9 @@ class LlamaRunner(ABC):
             else:
                 logits = self.forward(tokens=torch.tensor([tokens], dtype=torch.long))
             current_token = next_token(logits, temperature, top_p)
-            if current_token in self.tokenizer.stop_tokens:
+            if current_token == self.tokenizer.eos_id or (
+                hasattr(self, "stop_tokens") and current_token in self.stop_tokens
+            ):
                 break
             tokens.append(current_token)
 
