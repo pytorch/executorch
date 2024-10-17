@@ -67,8 +67,7 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
             )
             .quantize()
             .export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .dump_artifact(dump_file)
             .dump_artifact()
         )
@@ -108,12 +107,11 @@ class TestNumericalDiffPrints(unittest.TestCase):
                 model,
                 example_inputs=model.get_inputs(),
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=False
+                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
                 ),
             )
             .export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .to_executorch()
         )
         # We expect an assertion error here. Any other issues will cause the
@@ -142,10 +140,7 @@ def test_dump_ops_and_dtypes():
         .export()
         .dump_dtype_distribution()
         .dump_operator_distribution()
-        .to_edge()
-        .dump_dtype_distribution()
-        .dump_operator_distribution()
-        .partition()
+        .to_edge_transform_and_lower()
         .dump_dtype_distribution()
         .dump_operator_distribution()
     )
@@ -166,10 +161,7 @@ def test_dump_ops_and_dtypes_parseable():
         .export()
         .dump_dtype_distribution(print_table=False)
         .dump_operator_distribution(print_table=False)
-        .to_edge()
-        .dump_dtype_distribution(print_table=False)
-        .dump_operator_distribution(print_table=False)
-        .partition()
+        .to_edge_transform_and_lower()
         .dump_dtype_distribution(print_table=False)
         .dump_operator_distribution(print_table=False)
     )
@@ -193,8 +185,7 @@ class TestCollateTosaTests(unittest.TestCase):
             )
             .quantize()
             .export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .to_executorch()
         )
         # test that the output directory is created and contains the expected files
@@ -202,10 +193,10 @@ class TestCollateTosaTests(unittest.TestCase):
             "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests"
         )
         assert os.path.exists(
-            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/output_tag8.tosa"
+            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/output_tag5.tosa"
         )
         assert os.path.exists(
-            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/desc_tag8.json"
+            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/desc_tag5.json"
         )
 
         os.environ.pop("TOSA_TESTCASES_BASE_PATH")
@@ -223,8 +214,7 @@ def test_dump_tosa_ops(caplog):
         )
         .quantize()
         .export()
-        .to_edge()
-        .partition()
+        .to_edge_transform_and_lower()
         .dump_operator_distribution()
     )
     assert "TOSA operators:" in caplog.text
@@ -243,8 +233,7 @@ def test_fail_dump_tosa_ops(caplog):
         ArmTester(model, example_inputs=(torch.ones(5),), compile_spec=compile_spec)
         .quantize()
         .export()
-        .to_edge()
-        .partition()
+        .to_edge_transform_and_lower()
         .dump_operator_distribution()
     )
     assert "Can not get operator distribution for Vela command stream." in caplog.text
