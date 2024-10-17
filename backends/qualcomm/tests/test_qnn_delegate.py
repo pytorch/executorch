@@ -37,10 +37,7 @@ from executorch.backends.qualcomm.utils.utils import (
     skip_annotation,
 )
 
-from executorch.examples.models.llama2.llama_transformer import (
-    ModelArgs,
-    MOEFeedForward,
-)
+from executorch.examples.models.llama.llama_transformer import ModelArgs, MOEFeedForward
 
 from executorch.examples.qualcomm.utils import setup_common_args_and_variables
 
@@ -51,7 +48,7 @@ from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.models.inception_v3 import InceptionV3Model
 from executorch.examples.models.inception_v4 import InceptionV4Model
 
-# from executorch.examples.models.llama2 import Llama2Model
+# from executorch.examples.models.llama import Llama2Model
 from executorch.examples.models.mobilebert import MobileBertModelExample
 from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.examples.models.mobilenet_v3 import MV3Model

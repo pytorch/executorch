@@ -98,6 +98,12 @@ jobs:
           - dtype: bf16
             build-tool: buck2
             mode: portable
+          - dtype: bf16
+            build-tool: cmake
+            mode: custom
+          - dtype: bf16
+            build-tool: buck2
+            mode: custom
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -117,7 +123,7 @@ jobs:
         # Setup executorch
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh buck2
         # Install requirements for export_llama
-        PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
+        PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
         # Test llama2
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh stories110M "${BUILD_TOOL}" "${DTYPE}" "${MODE}"
 
@@ -216,7 +222,7 @@ jobs:
         bash install_requirements.sh --pybind xnnpack
 
         # install Llava requirements
-        bash examples/models/llama2/install_requirements.sh
+        bash examples/models/llama/install_requirements.sh
         bash examples/models/llava/install_requirements.sh
 
         # run python unittest
@@ -411,7 +417,7 @@ jobs:
         # Setup executorch
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh buck2
         # Install requirements for export_llama
-        PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
+        PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
         # Test llama2
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh stories110M "${BUILD_TOOL}" "${DTYPE}" "${MODE}"
 

@@ -27,9 +27,12 @@ class AnnotateQuantAttrs(ExportPass):
     generated after quatization process.
     """
 
-    def __init__(self, edge_program: torch.export.ExportedProgram):
+    def __init__(
+        self, edge_program: torch.export.ExportedProgram, skip_advanced_requat: bool
+    ):
         super(AnnotateQuantAttrs, self).__init__()
         self.edge_program = edge_program
+        self.skip_advanced_requant = skip_advanced_requat
 
     def _annotate_source_nodes(
         self, quant_node: torch.fx.Node, quant_attrs: Dict[str, Any]
@@ -68,9 +71,26 @@ class AnnotateQuantAttrs(ExportPass):
 
             # TODO: Store multiple pairs of requantize attributes when we have an op builder
             # that has multiple outputs that requires quant attributes.
-            if q_attrs["dtype"] != dq_attrs["dtype"]:
-                dq_attrs[QCOM_ENCODING] = q_attrs[QCOM_ENCODING]
-                n.args[0].meta[QCOM_REQUANTIZE] = dq_attrs
+            if self.skip_advanced_requant:
+                if q_attrs["dtype"] != dq_attrs["dtype"]:
+                    dq_attrs[QCOM_ENCODING] = q_attrs[QCOM_ENCODING]
+                    n.args[0].meta[QCOM_REQUANTIZE] = dq_attrs
+            else:
+                # When dtype is the same but other specs such as scale and offset are different,
+                # insert requant to improve accuracy.
+                # Users can turn this feature off if any inference speed drop is observed.
+                if any(
+                    q_attrs[attr] != dq_attrs[attr]
+                    for attr in [
+                        "scale",
+                        "zero_point",
+                        "quant_min",
+                        "quant_max",
+                        "dtype",
+                    ]
+                ):
+                    dq_attrs[QCOM_ENCODING] = q_attrs[QCOM_ENCODING]
+                    n.args[0].meta[QCOM_REQUANTIZE] = dq_attrs
 
     # Dequant all the fold_quant parameters back to fp32.
     # If an operation is not supported by QNN and got fallback, it will expect a fp32 param.
