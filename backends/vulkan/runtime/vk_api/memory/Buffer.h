@@ -35,6 +35,13 @@ enum MemoryAccessType : MemoryAccessFlags {
   WRITE = 1u << 1u,
 };
 
+static constexpr MemoryAccessFlags kReadWrite =
+    MemoryAccessType::WRITE | MemoryAccessType::READ;
+
+static constexpr MemoryAccessFlags kRead = MemoryAccessType::READ;
+
+static constexpr MemoryAccessFlags kWrite = MemoryAccessType::WRITE;
+
 class VulkanBuffer final {
  public:
   struct BufferProperties final {
@@ -154,7 +161,9 @@ class VulkanBuffer final {
 
   inline void bind_allocation(const Allocation& memory) {
     VK_CHECK_COND(!memory_, "Cannot bind an already bound allocation!");
-    VK_CHECK(vmaBindBufferMemory(allocator_, memory.allocation, handle_));
+    if (!is_copy_) {
+      VK_CHECK(vmaBindBufferMemory(allocator_, memory.allocation, handle_));
+    }
     memory_.allocation = memory.allocation;
   }
 

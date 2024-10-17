@@ -9,9 +9,12 @@ import unittest
 
 from typing import Tuple
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
 
 logger = logging.getLogger(__name__)
@@ -153,6 +156,32 @@ class ComboConvRelu6(torch.nn.Module):
         return x
 
 
+class ComboConvAvgPool2d(torch.nn.Module):
+    edge_op_list = [
+        "executorch_exir_dialects_edge__ops_aten_convolution_default",
+        "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default",
+    ]
+
+    test_data = [
+        (20 * torch.randn(1, 3, 64, 32),),
+        (torch.randn(1, 3, 100, 200),),
+        (5 * torch.randn(1, 3, 256, 256),),
+        (torch.rand(1, 3, 512, 128),),
+    ]
+
+    def __init__(self):
+        super().__init__()
+        self.conv2d = torch.nn.Conv2d(
+            in_channels=3, out_channels=3, kernel_size=3, stride=1, groups=1
+        )
+        self.avg_pool2d = torch.nn.AvgPool2d(kernel_size=(2, 2))
+
+    def forward(self, x):
+        x = self.conv2d(x)
+        x = self.avg_pool2d(x)
+        return x
+
+
 class TestConvCombos(unittest.TestCase):
     """Tests conv combined with other ops."""
 
@@ -199,14 +228,17 @@ class TestConvCombos(unittest.TestCase):
             )
         )
 
-    def _test_conv_combo_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
+    def _test_conv_combo_ethos_BI_pipeline(
+        self,
+        module: torch.nn.Module,
+        compile_spec: CompileSpec,
+        test_data: Tuple[torch.Tensor],
     ):
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=compile_spec,
             )
             .quantize()
             .export()
@@ -230,7 +262,19 @@ class TestConvCombos(unittest.TestCase):
 
     def test_conv_meandim_u55_BI(self):
         model = ComboConv2dMeandim()
-        self._test_conv_combo_u55_BI_pipeline(model, model.get_inputs())
+        self._test_conv_combo_ethos_BI_pipeline(
+            model,
+            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            model.get_inputs(),
+        )
+
+    def test_conv_meandim_u85_BI(self):
+        model = ComboConv2dMeandim()
+        self._test_conv_combo_ethos_BI_pipeline(
+            model,
+            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            model.get_inputs(),
+        )
 
     ##############################
     ## Conv + batch norm + relu ##
@@ -245,7 +289,17 @@ class TestConvCombos(unittest.TestCase):
 
     def test_conv_batchnorm_relu6_u55_BI(self):
         model = ComboConvBatchnormRelu6()
-        self._test_conv_combo_u55_BI_pipeline(model, model.get_inputs())
+        self._test_conv_combo_ethos_BI_pipeline(
+            model, common.get_u55_compile_spec(), model.get_inputs()
+        )
+
+    def test_conv_batchnorm_relu_u85_BI(self):
+        model = ComboConvBatchnormRelu6()
+        self._test_conv_combo_ethos_BI_pipeline(
+            model,
+            common.get_u85_compile_spec(),
+            model.get_inputs(),
+        )
 
     ##################
     ## Conv + ReLU6 ##
@@ -266,7 +320,17 @@ class TestConvCombos(unittest.TestCase):
     def test_conv_relu6_u55_BI(self, test_data: torch.Tensor):
         model = ComboConvRelu6()
         test_data = (test_data,)
-        self._test_conv_combo_u55_BI_pipeline(model, test_data)
+        self._test_conv_combo_ethos_BI_pipeline(
+            model, common.get_u55_compile_spec(permute_memory_to_nhwc=True), test_data
+        )
+
+    @parameterized.expand(ComboConvRelu6.test_data)
+    def test_conv_relu6_u85_BI(self, test_data: torch.Tensor):
+        model = ComboConvRelu6()
+        test_data = (test_data,)
+        self._test_conv_combo_ethos_BI_pipeline(
+            model, common.get_u85_compile_spec(permute_memory_to_nhwc=True), test_data
+        )
 
     ###############################
     ## Block bottleneck residual ##
@@ -275,10 +339,59 @@ class TestConvCombos(unittest.TestCase):
         model = ComboBlockBottleneckResidual()
         self._test_conv_combo_tosa_MI_pipeline(model, model.get_inputs())
 
+    # TODO: Investigate flakyness (MLTORCH-307)
+    @pytest.mark.flaky(reruns=3)
     def test_block_bottleneck_residual_tosa_BI(self):
         model = ComboBlockBottleneckResidual()
         self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())
 
     def test_block_bottleneck_residual_u55_BI(self):
         model = ComboBlockBottleneckResidual()
-        self._test_conv_combo_u55_BI_pipeline(model, model.get_inputs())
+        self._test_conv_combo_ethos_BI_pipeline(
+            model,
+            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            model.get_inputs(),
+        )
+
+    def test_block_bottleneck_residual_u85_BI(self):
+        model = ComboBlockBottleneckResidual()
+        self._test_conv_combo_ethos_BI_pipeline(
+            model,
+            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            model.get_inputs(),
+        )
+
+    ######################
+    ## Conv + AvgPool2d ##
+    ######################
+    @parameterized.expand(ComboConvAvgPool2d.test_data)
+    def test_conv_avgpool2d_tosa_MI(self, test_data: torch.Tensor):
+        model = ComboConvAvgPool2d()
+        test_data = (test_data,)
+        self._test_conv_combo_tosa_MI_pipeline(model, test_data)
+
+    @parameterized.expand(ComboConvAvgPool2d.test_data)
+    def test_conv_avgpool2d_tosa_BI(self, test_data: torch.Tensor):
+        model = ComboConvAvgPool2d()
+        test_data = (test_data,)
+        self._test_conv_combo_tosa_BI_pipeline(model, test_data)
+
+    @parameterized.expand(ComboConvAvgPool2d.test_data)
+    def test_conv_avgpool2d_u55_BI(self, test_data: torch.Tensor):
+        model = ComboConvAvgPool2d()
+        test_data = (test_data,)
+        self._test_conv_combo_ethos_BI_pipeline(
+            model,
+            common.get_u55_compile_spec(),
+            test_data,
+        )
+
+    @parameterized.expand(ComboConvAvgPool2d.test_data)
+    def test_conv_avgpool2d_u85_BI(self, test_data: torch.Tensor):
+        model = ComboConvAvgPool2d()
+        test_data = (test_data,)
+        self._test_conv_combo_ethos_BI_pipeline(
+            model,
+            common.get_u85_compile_spec(),
+            test_data,
+        )

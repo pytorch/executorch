@@ -15,6 +15,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
 
@@ -93,13 +94,11 @@ class TestFull(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data)
         )
 
-    def _test_full_tosa_u55_pipeline(self, module: torch.nn.Module, test_data: Tuple):
+    def _test_full_tosa_ethos_pipeline(
+        self, compile_spec: list[CompileSpec], module: torch.nn.Module, test_data: Tuple
+    ):
         (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(),
-            )
+            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize()
             .export()
             .check_count({"torch.ops.aten.full.default": 1})
@@ -108,6 +107,16 @@ class TestFull(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_full_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+        )
+
+    def _test_full_tosa_u55_pipeline(self, module: torch.nn.Module, test_data: Tuple):
+        self._test_full_tosa_ethos_pipeline(
+            common.get_u55_compile_spec(), module, test_data
+        )
+
+    def _test_full_tosa_u85_pipeline(self, module: torch.nn.Module, test_data: Tuple):
+        self._test_full_tosa_ethos_pipeline(
+            common.get_u85_compile_spec(), module, test_data
         )
 
     def test_only_full_tosa_MI(self):
@@ -134,6 +143,13 @@ class TestFull(unittest.TestCase):
     @parameterized.expand(AddVariableFull.test_parameters)
     def test_full_u55_BI(self, test_tensor: Tuple):
         self._test_full_tosa_u55_pipeline(
+            self.AddVariableFull(),
+            test_tensor,
+        )
+
+    @parameterized.expand(AddVariableFull.test_parameters)
+    def test_full_u85_BI(self, test_tensor: Tuple):
+        self._test_full_tosa_u85_pipeline(
             self.AddVariableFull(),
             test_tensor,
         )

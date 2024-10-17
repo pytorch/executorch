@@ -20,6 +20,7 @@ from torch.ao.quantization.observer import (
     MinMaxObserver,
     MovingAverageMinMaxObserver,
     PerChannelMinMaxObserver,
+    UniformQuantizationObserverBase,
 )
 
 from torch.ao.quantization.quantizer import (
@@ -33,6 +34,107 @@ from torch.ao.quantization.quantizer.utils import (
     _annotate_output_qspec,
 )
 from torch.fx import Node
+
+
+class ParamObserver(UniformQuantizationObserverBase):
+    def __init__(
+        self,
+        ch_axis=0,
+        use_mse=True,
+        steps=100,
+        dtype=torch.int8,
+        qscheme=torch.per_channel_symmetric,
+        reduce_range=False,
+        quant_min=None,
+        quant_max=None,
+        factory_kwargs=None,
+        eps=torch.finfo(torch.float32).eps,  # noqa: B008
+        is_dynamic=False,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            dtype=dtype,
+            qscheme=qscheme,
+            reduce_range=reduce_range,
+            quant_min=quant_min,
+            quant_max=quant_max,
+            factory_kwargs=factory_kwargs,
+            eps=eps,
+            is_dynamic=is_dynamic,
+            **kwargs,
+        )
+
+        factory_kwargs = torch.nn.factory_kwargs(factory_kwargs)
+        self.register_buffer("min_val", torch.tensor(float("inf"), **factory_kwargs))
+        self.register_buffer("max_val", torch.tensor(float("-inf"), **factory_kwargs))
+        self.ch_axis = ch_axis
+        self.use_mse = use_mse
+        self.steps = steps
+        self.calibrated = False
+
+    def to_ch_axis(self, x):
+        axis_order = list(range(len(x.size())))
+        axis_order[self.ch_axis], axis_order[0] = 0, self.ch_axis
+        return torch.flatten(x.permute(axis_order), start_dim=1)
+
+    def mse(self, pred, expect):
+        loss = (pred - expect).abs().pow(2)
+        return self.to_ch_axis(loss).mean(1)
+
+    def cosine(self, pred, expect):
+        target = torch.ones(pred.shape[self.ch_axis])
+        pred_n = self.to_ch_axis(pred).reshape(pred.shape[0], -1)
+        expect_n = self.to_ch_axis(expect).reshape(expect.shape[0], -1)
+        return torch.nn.CosineEmbeddingLoss()(pred_n, expect_n, target)
+
+    def loss_fn(self, x, new_min, new_max):
+        scale, offset = self._calculate_qparams(new_min, new_max)
+        x_q = torch.fake_quantize_per_channel_affine(
+            x,
+            scale.data,
+            offset.data.int(),
+            self.ch_axis,
+            self.quant_min,
+            self.quant_max,
+        )
+        return self.mse(x_q, x) if self.use_mse else self.cosine(x_q, x)
+
+    def line_search(self, x):
+        x_min, x_max = torch.aminmax(self.to_ch_axis(x), dim=1)
+        x_range = torch.max(x_min.abs(), x_max)
+        optimal_loss = torch.zeros_like(x_min) + 1e9
+
+        # check which clip range could produce smallest loss
+        for i in range(1, self.steps + 1):
+            thres = x_range / self.steps * i
+            current_loss = self.loss_fn(x, -thres, thres)
+            x_min = torch.where(current_loss < optimal_loss, -thres, x_min)
+            x_max = torch.where(current_loss < optimal_loss, thres, x_max)
+            optimal_loss = torch.min(current_loss, optimal_loss)
+
+        return x_min, x_max
+
+    def forward(self, x_orig):
+        # since params are static, one calibration is enough
+        if not self.calibrated:
+            x = x_orig.detach().to(self.min_val.dtype)
+            self.min_val, self.max_val = self.line_search(x)
+            self.calibrated = True
+
+        # return fake-quant result for saturating outliers
+        scale, zero_point = self._calculate_qparams(self.min_val, self.max_val)
+        return torch.fake_quantize_per_channel_affine(
+            x_orig,
+            scale.data,
+            zero_point.data.int(),
+            self.ch_axis,
+            self.quant_min,
+            self.quant_max,
+        )
+
+    @torch.jit.export
+    def calculate_qparams(self):
+        return self._calculate_qparams(self.min_val, self.max_val)
 
 
 @dataclass(eq=True, frozen=True)
@@ -235,7 +337,7 @@ def get_default_16bit_qnn_ptq_config(
     return quantization_config
 
 
-def get_ptq_per_channel_weight_config(
+def get_ptq_per_channel_quant_config(
     act_dtype=torch.uint8, weight_dtype=torch.int8
 ) -> QuantizationConfig:
     extra_args: Dict[str, Any] = {"eps": 2**-12}
@@ -262,7 +364,7 @@ def get_ptq_per_channel_weight_config(
         quant_min=torch.iinfo(act_dtype).min,
         quant_max=torch.iinfo(act_dtype).max,
         qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(**extra_args),
     )
 
     weight_quantization_spec = QuantizationSpec(
@@ -313,8 +415,8 @@ def _is_annotated(nodes: List[Node]):
     return annotated
 
 
-def _is_input_float_tensor(node: Node):
-    """Check if the input is not a float tensor, so that we can skip quantization for the node
+def _is_float_tensor(node: Node):
+    """Check if the node's tensor is a float tensor, so that we can skip quantization for the node
     since observers only works with float Tensors
     """
     if (
@@ -372,12 +474,20 @@ def annotate_single_in_single_out(
     assert isinstance(input_act, Node)
     input_qspec_map[input_act] = quantization_config.input_activation
 
-    if _is_input_float_tensor(node):
+    if _is_float_tensor(node):
         node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,
         )
+
+
+@register_annotator([torch.ops.aten.topk.default])
+def annotate_topk(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_annotated([node]):
+        return
+    # We can use single_in_single_out since we don't want to quantize indices output
+    annotate_single_in_single_out(node, quantization_config)
 
 
 def annotate_binary(node: Node, quantization_config: QuantizationConfig) -> None:
@@ -386,16 +496,16 @@ def annotate_binary(node: Node, quantization_config: QuantizationConfig) -> None
 
     input_act_qspec = quantization_config.input_activation
     output_act_qspec = (
-        quantization_config.output_activation if _is_input_float_tensor(node) else None
+        quantization_config.output_activation if _is_float_tensor(node) else None
     )
 
     input_qspec_map = {}
     input_act0 = node.args[0]
-    if _is_input_float_tensor(input_act0):
+    if _is_float_tensor(input_act0):
         input_qspec_map[input_act0] = input_act_qspec
 
     input_act1 = node.args[1]
-    if _is_input_float_tensor(input_act1):
+    if _is_float_tensor(input_act1):
         input_qspec_map[input_act1] = input_act_qspec
 
     node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -477,7 +587,7 @@ def annotate_div(node: Node, quantization_config: QuantizationConfig) -> None:
         )
         input_qspec_map = {}
         input_act0 = node.args[0]
-        if _is_input_float_tensor(input_act0):
+        if _is_float_tensor(input_act0):
             input_qspec_map[input_act0] = input_act_qspec
 
         node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -585,7 +695,7 @@ def annotate_prelu(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.view.default])
+@register_annotator([torch.ops.aten.view.default, torch.ops.aten._unsafe_view.default])
 def annotate_view(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)
     if not _is_annotated([node]):
@@ -762,7 +872,7 @@ def annotate_sigmoid(node: Node, quantization_config: QuantizationConfig) -> Non
         qscheme=torch.torch.per_tensor_affine,
     )
 
-    if _is_input_float_tensor(node):
+    if _is_float_tensor(node):
         node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=out_act_quantization_spec,
@@ -941,7 +1051,13 @@ def annotate_bmm(node: Node, quantization_config: QuantizationConfig) -> None:
     node.meta["source_fn_stack"] = [(node, torch.bmm)]
 
 
-@register_annotator([torch.ops.aten.conv2d.default, torch.ops.aten.conv1d.default])
+@register_annotator(
+    [
+        torch.ops.aten.conv2d.default,
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.conv_transpose2d.input,
+    ]
+)
 def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return
@@ -1035,8 +1151,12 @@ def annotate_batch_norm(node: Node, quantization_config: QuantizationConfig) -> 
 
 @register_annotator([operator.getitem])
 def annotate_getitem(node: Node, quantization_config: QuantizationConfig) -> None:
-    _annotate_output_qspec(node, quantization_config.output_activation)
-    _mark_nodes_as_annotated([node])
+    if _is_annotated([node]):
+        return
+
+    if _is_float_tensor(node):
+        _annotate_output_qspec(node, quantization_config.output_activation)
+        _mark_nodes_as_annotated([node])
 
 
 @register_annotator([torch.ops.aten.layer_norm.default])
@@ -1049,17 +1169,25 @@ def annotate_layer_norm(node: Node, quantization_config: QuantizationConfig) -> 
 
     if _is_annotated([node]):
         return
+    input_act_qspec = quantization_config.input_activation
 
     _annotate_input_qspec_map(
         node,
         act_node,
-        quantization_config.input_activation,
+        input_act_qspec,
     )
-    _annotate_input_qspec_map(
-        node,
-        weight_node,
-        quantization_config.input_activation,
-    )
+    if input_act_qspec.dtype == torch.int32:
+        _annotate_input_qspec_map(
+            node,
+            weight_node,
+            get_default_16bit_qnn_ptq_config().weight,
+        )
+    else:
+        _annotate_input_qspec_map(
+            node,
+            weight_node,
+            input_act_qspec,
+        )
     nodes_to_mark_annotated = [node, weight_node]
     if bias_node:
         _annotate_input_qspec_map(

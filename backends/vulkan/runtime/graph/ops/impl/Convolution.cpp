@@ -108,7 +108,7 @@ ValueRef prepack_biases(
       v,
       {t->sizes_ubo(), t->axis_map_ubo()},
       // Specialization constants
-      {SV(t->packed_dim_whcn_idx())}));
+      {SV(t->packed_dim())}));
 
   return v;
 }
@@ -216,14 +216,14 @@ ValueRef prepack_weights(
        graph.create_params_buffer(
            utils::make_ivec4(original_sizes, /*reverse = */ true))},
       // Specialization constants
-      {SV(t->packed_dim_whcn_idx())}));
+      {SV(t->packed_dim())}));
 
   return v;
 }
 
 void check_conv_args(const api::vTensor& in, const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
+  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
 }
 
 struct Conv2dParams final {
@@ -366,7 +366,7 @@ void add_conv2d_node(
   vkapi::ShaderInfo shader = get_conv2d_shader(
       graph, *t_out, /*prepack_weights = */ false, method, weight, clamp_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       shader,
       create_conv2d_global_wg_size(graph, method, out),
@@ -444,7 +444,7 @@ void add_conv1d_node(
   int32_t out_group_size = static_cast<int64_t>(out_channels / groups_val);
 
   utils::uvec3 global_size = {1, static_cast<uint32_t>(out_channels), 1};
-  utils::uvec3 local_size = {1, 1, 1};
+  utils::uvec3 local_size = {1, 64, 1};
 
   Kernel1dParams kernel_params = {
       kernel_size,
@@ -464,7 +464,7 @@ void add_conv1d_node(
 
   add_dtype_suffix(kernel_name, *t_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
@@ -476,6 +476,10 @@ void add_conv1d_node(
       {
           t_out->logical_limits_ubo(),
           t_in->sizes_ubo(),
+          t_out->axis_map_ubo(),
+          t_in->axis_map_ubo(),
+          t_weight->axis_map_ubo(),
+          t_bias->axis_map_ubo(),
           graph.create_params_buffer(kernel_params),
           graph.create_params_buffer(out_params),
       },

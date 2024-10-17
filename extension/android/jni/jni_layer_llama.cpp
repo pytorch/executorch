@@ -15,7 +15,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include <executorch/examples/models/llama2/runner/runner.h>
+#include <executorch/examples/models/llama/runner/runner.h>
 #include <executorch/examples/models/llava/runner/llava_runner.h>
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/runtime/platform/log.h>
@@ -95,11 +95,11 @@ class ExecuTorchLlamaJni
 #if defined(ET_USE_THREADPOOL)
     // Reserve 1 thread for the main thread.
     uint32_t num_performant_cores =
-        torch::executorch::cpuinfo::get_num_performant_cores() - 1;
+        ::executorch::extension::cpuinfo::get_num_performant_cores() - 1;
     if (num_performant_cores > 0) {
       ET_LOG(Info, "Resetting threadpool to %d threads", num_performant_cores);
-      torch::executorch::threadpool::get_threadpool()->_unsafe_reset_threadpool(
-          num_performant_cores);
+      ::executorch::extension::threadpool::get_threadpool()
+          ->_unsafe_reset_threadpool(num_performant_cores);
     }
 #endif
 

@@ -6,7 +6,7 @@
 
 # Qualcomm specific key
 
-# constants in backends/qualcomm/passes & backends/qualcomm/builders
+# constants in backends/qualcomm/_passes & backends/qualcomm/builders
 QCOM_AXIS = "axis"
 QCOM_AXIS_ORDER = "axis_order"
 QCOM_BITWIDTH = "bitwidth"
@@ -25,6 +25,8 @@ QCOM_SCALES = "scales"
 QCOM_SCALE_OFFSET = "scale_offset"
 QCOM_ZERO_POINT = "zero_point"
 QCOM_ZERO_POINTS = "zero_points"
+QCOM_PASS_EXPAND_BROADCAST_SHAPE = "expand_broadcast_shape"
+QCOM_PASS_SKIP_ADVANCED_REQUANT = "skip_advanced_requant"
 
 # constants in backends/qualcomm/tests
 QCOM_ANNOTATION = "annotation"

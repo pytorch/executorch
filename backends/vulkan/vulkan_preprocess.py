@@ -13,9 +13,12 @@ from executorch.backends.transforms.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
 from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
+from executorch.backends.transforms.fuse_dequant_linear import FuseDequantLinearPass
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.backends.transforms.mean_to_sum_div import MeanToSumDiv
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
+
+from executorch.backends.vulkan._passes import RemoveLocalScalarDenseOpsTransform
 
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
@@ -36,6 +39,10 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 
 from executorch.exir.program._program import _copy_module
 
+from torch.export._remove_auto_functionalized_pass import (
+    unsafe_remove_auto_functionalized_pass,
+)
+
 DEFAULT_DEBUG_HANDLE = 65535
 
 
@@ -48,15 +55,19 @@ class VulkanBackend(BackendDetails):
         program: ExportedProgram,
         module_compile_spec: List[CompileSpec],
     ) -> PreprocessResult:
+        program = unsafe_remove_auto_functionalized_pass(program)
+
         passes = [
             RemoveCloneOpsTransform(),
             AddmmToLinearTransform(),
+            FuseDequantLinearPass(),
             FuseViewCopyTransform(),
             FuseBatchNormWithConvPass(program),
             FuseClampPass(),
             MeanToSumDiv(),
             SpecPropPass(),
             ConstraintBasedSymShapeEvalPass(),
+            RemoveLocalScalarDenseOpsTransform(),
             MemoryPlanningPass(),
         ]
 

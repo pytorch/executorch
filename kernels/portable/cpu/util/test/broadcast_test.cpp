@@ -22,6 +22,12 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using executorch::runtime::ArrayRef;
 using executorch::runtime::testing::TensorFactory;
+using torch::executor::broadcast_tensor;
+using torch::executor::delinearize_index;
+using torch::executor::get_broadcast_target_size;
+using torch::executor::linearize_access_indexes;
+using torch::executor::tensor_is_broadcastable_to;
+using torch::executor::tensors_are_broadcastable_between;
 
 TEST(BroadcastUtilTest, BroadcastTensor) {
   TensorFactory<ScalarType::Int> tf;

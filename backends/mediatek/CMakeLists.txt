@@ -25,10 +25,10 @@ include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include)
 
 # targets
 add_library(neuron_backend SHARED)
+target_compile_options(neuron_backend PRIVATE "-frtti" "-fexceptions")
 target_link_libraries(neuron_backend
     PRIVATE
-    executorch_no_prim_ops
-    portable_ops_lib
+    executorch_core
     android
     log
     ${NEURON_BUFFER_ALLOCATOR_LIB}

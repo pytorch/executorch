@@ -41,11 +41,21 @@ DEFINE_string(
     "Model serialized in flatbuffer format.");
 DEFINE_int32(iteration, 1, "Iterations of inference.");
 
-using namespace torch::executor;
-using torch::executor::util::FileDataLoader;
+using executorch::extension::FileDataLoader;
+using executorch::extension::prepare_input_tensors;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::HierarchicalAllocator;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::MemoryManager;
+using executorch::runtime::Method;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 int main(int argc, char** argv) {
-  runtime_init();
+  executorch::runtime::runtime_init();
 
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
@@ -158,7 +168,7 @@ int main(int argc, char** argv) {
   // Allocate input tensors and set all of their elements to 1. The `inputs`
   // variable owns the allocated memory and must live past the last call to
   // `execute()`.
-  auto inputs = util::prepare_input_tensors(*method);
+  auto inputs = prepare_input_tensors(*method);
   ET_CHECK_MSG(
       inputs.ok(),
       "Could not prepare inputs: 0x%" PRIx32,
@@ -196,7 +206,7 @@ int main(int argc, char** argv) {
   status = method->get_outputs(outputs.data(), outputs.size());
   ET_CHECK(status == Error::Ok);
   // Print the first and last 100 elements of long lists of scalars.
-  std::cout << torch::executor::util::evalue_edge_items(100);
+  std::cout << executorch::extension::evalue_edge_items(100);
   for (int i = 0; i < outputs.size(); ++i) {
     std::cout << "Output " << i << ": " << outputs[i] << std::endl;
   }

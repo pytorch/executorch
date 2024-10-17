@@ -7,10 +7,13 @@
 # pyre-unsafe
 
 import math
+import sys
 from enum import Enum
-from typing import Dict, List, Mapping, Optional, Tuple, TypeAlias, Union
+from typing import Dict, IO, List, Mapping, Optional, Tuple, TypeAlias, Union
 
 import executorch.devtools.etdump.schema_flatcc as flatcc
+
+import pandas as pd
 
 import torch
 
@@ -29,6 +32,8 @@ from executorch.devtools.etdump.schema_flatcc import (
 
 from executorch.devtools.etdump.serialize import deserialize_from_etdump_flatcc
 from executorch.devtools.etrecord import ETRecord
+
+from tabulate import tabulate
 
 FORWARD = "forward"
 EDGE_DIALECT_GRAPH_KEY = "edge_dialect_graph_module"
@@ -279,13 +284,42 @@ def create_debug_handle_to_op_node_mapping(
     return debug_handle_to_op_node_map
 
 
-def gen_etdump_object(etdump_path: Optional[str] = None) -> ETDumpFlatCC:
+def gen_etdump_object(
+    etdump_path: Optional[str] = None, etdump_data: Optional[bytes] = None
+) -> ETDumpFlatCC:
     # Gen event blocks from etdump
-    if etdump_path is None:
-        raise ValueError("Etdump_path must be specified.")
-    with open(etdump_path, "rb") as buff:
-        etdump = deserialize_from_etdump_flatcc(buff.read())
-        return etdump
+    if etdump_data is None and etdump_path is not None:
+        with open(etdump_path, "rb") as buff:
+            etdump_data = buff.read()
+
+    if etdump_data is None:
+        raise ValueError(
+            "Unable to get ETDump data. One and only one of etdump_path and etdump_data must be specified."
+        )
+
+    return deserialize_from_etdump_flatcc(etdump_data)
+
+
+def display_or_print_df(df: pd.DataFrame, file: IO[str] = sys.stdout):
+    try:
+        from IPython import get_ipython
+        from IPython.display import display
+
+        def style_text_size(val, size=12):
+            return f"font-size: {size}px"
+
+        if get_ipython() is not None:
+            styled_df = df.style.applymap(style_text_size)
+            display(styled_df)
+        else:
+            raise Exception(
+                "Environment unable to support IPython. Fall back to print()."
+            )
+    except:
+        print(
+            tabulate(df, headers="keys", tablefmt="fancy_grid"),
+            file=file,
+        )
 
 
 def plot_metric(result: List[float], metric_name: str):

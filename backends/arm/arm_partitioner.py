@@ -11,8 +11,8 @@ import os
 from typing import final, List
 
 import torch
-from executorch.backends.arm.arm_backend import ArmBackend
-from executorch.backends.arm.passes.tag_io_quant_pass import TagIOQuantPass
+from executorch.backends.arm.arm_backend import ArmBackend  # usort: skip
+from executorch.backends.arm._passes.tag_io_quant_pass import TagIOQuantPass
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -57,14 +57,18 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.sigmoid.default,
             exir_ops.edge.aten.mm.default,
             exir_ops.edge.aten.repeat.default,
+            exir_ops.edge.aten.reciprocal.default,
             exir_ops.edge.aten.relu.default,
+            exir_ops.edge.aten.rsqrt.default,
             exir_ops.edge.aten._softmax.default,
             exir_ops.edge.aten.slice_copy.Tensor,
             exir_ops.edge.aten.sub.Tensor,
+            exir_ops.edge.aten.sum.dim_IntList,
             exir_ops.edge.aten.view_copy.default,
             exir_ops.edge.aten.clone.default,
             exir_ops.edge.aten.mean.dim,
             exir_ops.edge.aten.unsqueeze_copy.default,
+            exir_ops.edge.aten.squeeze_copy.dims,
             operator.getitem,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,

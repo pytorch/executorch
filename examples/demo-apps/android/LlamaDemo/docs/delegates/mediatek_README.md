@@ -5,14 +5,18 @@ More specifically, it covers:
 2. Building and linking libraries that are required to inference on-device for Android platform using MediaTek AI accelerators.
 3. Loading the needed files on the device and running inference.
 
-Verified on MacOS, Linux CentOS (model export), Python 3.10, Android NDK 25.0.8775105
+Verified on MacOS, Linux CentOS (model export), Python 3.10, Android NDK 26.3.11579264
 Phone verified: MediaTek Dimensity 9300 (D9300) chip.
 
 ## Prerequisites
 * Download and link the Buck2 build, Android NDK, and MediaTek ExecuTorch Libraries from the MediaTek Backend Readme ([link](https://github.com/pytorch/executorch/tree/main/backends/mediatek/scripts#prerequisites)).
 * MediaTek Dimensity 9300 (D9300) chip device
 * Desired Llama 3 model weights. You can download them on HuggingFace [Example](https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct)).
-* `libneuronusdk_adapter.mtk.so`,  `libneuron_buffer_allocator.so`, and `.whl` files  (will be available soon by MediaTek)
+* Download NeuroPilot Express SDK from the [MediaTek NeuroPilot Portal](https://neuropilot.mediatek.com/resources/public/npexpress/en/docs/npexpress):
+  - `libneuronusdk_adapter.mtk.so`: This universal SDK contains the implementation required for executing target-dependent code on the MediaTek chip.
+  - `libneuron_buffer_allocator.so`: This utility library is designed for allocating DMA buffers necessary for model inference.
+  - `mtk_converter-8.8.0.dev20240723+public.d1467db9-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl`: This library preprocess the model into a MediaTek representation.
+  - `mtk_neuron-8.2.2-py3-none-linux_x86_64.whl`: This library converts the model to binaries.
 
 ## Setup ExecuTorch
 In this section, we will need to set up the ExecuTorch repo first with Conda environment management. Make sure you have Conda available in your system (or follow the instructions to install it [here](https://anaconda.org/anaconda/conda)). The commands below are running on Linux (CentOS).
@@ -42,11 +46,6 @@ Install dependencies
 zstd -cdq "<downloaded_buck2_file>.zst" > "<path_to_store_buck2>/buck2" && chmod +x "<path_to_store_buck2>/buck2"
 ```
 
-### MediaTek ExecuTorch Libraries
-The following libraries will be available soon by MediaTek:
-libneuronusdk_adapter.mtk.so: This universal SDK contains the implementation required for executing target-dependent code on the MediaTek chip.
-libneuron_buffer_allocator.so: This utility library is designed for allocating DMA buffers necessary for model inference.
-
 ### Set Environment Variables
 ```
 export BUCK2=path_to_buck/buck2 # Download BUCK2 and create BUCK2 executable
@@ -75,7 +74,6 @@ MTK currently supports Llama 3 exporting.
 // Ensure that you are inside executorch/examples/mediatek directory
 pip3 install -r requirements.txt
 
-// The following .whl file will be available soon
 pip3 install mtk_neuron-8.2.2-py3-none-linux_x86_64.whl
 pip3 install mtk_converter-8.8.0.dev20240723+public.d1467db9-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
@@ -112,7 +110,7 @@ Before continuing forward, make sure to modify the tokenizer, token embedding, a
 Prior to deploying the files on device, make sure to modify the tokenizer, token embedding, and model file names in  examples/mediatek/executor_runner/run_llama3_sample.sh reflect what was generated during the Export Llama Model step.
 
 <p align="center">
-<img src="../screenshots/mtk_changes_to_shell_file.png" width=600>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/mtk_changes_to_shell_file.png" style="width:600px">
 </p>
 
 In addition, create a sample_prompt.txt file with a prompt. This will be deployed to the device in the next step.
@@ -150,7 +148,7 @@ adb shell
 ```
 
 <p align="center">
-<img src="../screenshots/mtk_output.png" width=800>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/mtk_output.png" style="width:800px">
 </p>
 
 ## Reporting Issues

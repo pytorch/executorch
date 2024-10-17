@@ -12,6 +12,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
 
 logger = logging.getLogger(__name__)
@@ -87,14 +88,17 @@ class TestMM(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data)
         )
 
-    def _test_mm_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
+    def _test_mm_ethosu_BI_pipeline(
+        self,
+        compile_spec: CompileSpec,
+        module: torch.nn.Module,
+        test_data: Tuple[torch.Tensor],
     ):
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(),
+                compile_spec=compile_spec,
             )
             .quantize()
             .export()
@@ -131,11 +135,29 @@ class TestMM(unittest.TestCase):
     @unittest.expectedFailure
     def test_mm_u55_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
-        self._test_mm_u55_BI_pipeline(self.MM(), test_data)
+        self._test_mm_ethosu_BI_pipeline(
+            common.get_u55_compile_spec(), self.MM(), test_data
+        )
 
     # Expected to fail with error: Warning, unsupported fusing of TOSA Rescale previous operator is of type: Memcpy
     @parameterized.expand(MMSingleInput.test_parameters)
     @unittest.expectedFailure
     def test_mm_single_input_u55_BI(self, operand1: torch.Tensor):
         test_data = (operand1,)
-        self._test_mm_u55_BI_pipeline(self.MMSingleInput(), test_data)
+        self._test_mm_ethosu_BI_pipeline(
+            common.get_u55_compile_spec(), self.MMSingleInput(), test_data
+        )
+
+    @parameterized.expand(MM.test_parameters)
+    def test_mm_u85_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
+        test_data = (operand1, operand2)
+        self._test_mm_ethosu_BI_pipeline(
+            common.get_u85_compile_spec(), self.MM(), test_data
+        )
+
+    @parameterized.expand(MMSingleInput.test_parameters)
+    def test_mm_single_input_u85_BI(self, operand1: torch.Tensor):
+        test_data = (operand1,)
+        self._test_mm_ethosu_BI_pipeline(
+            common.get_u85_compile_spec(), self.MMSingleInput(), test_data
+        )

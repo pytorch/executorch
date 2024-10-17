@@ -11,7 +11,7 @@
 #include <stddef.h>
 #include <strings.h>
 
-namespace torch::executor {
+namespace example {
 namespace llm_helper {
 
 typedef enum { INT4, INT8, INT16, FP16, INT32, FP32, INVALID } LLMType;
@@ -72,4 +72,4 @@ inline const char* getLLMTypeName(const LLMType llm_type) {
 }
 
 } // namespace llm_helper
-} // namespace torch::executor
+} // namespace example

@@ -7,12 +7,13 @@ from enum import IntEnum, unique
 from typing import Callable, Dict, Optional, Sequence, Set
 
 import torch
-from executorch.backends.qualcomm.passes.decompose_silu import DecomposeSilu
-from executorch.backends.qualcomm.passes.recompose_pixel_unshuffle import (
+from executorch.backends.qualcomm._passes.decompose_einsum import DecomposeEinsum
+from executorch.backends.qualcomm._passes.decompose_silu import DecomposeSilu
+from executorch.backends.qualcomm._passes.recompose_pixel_unshuffle import (
     RecomposePixelUnshuffle,
 )
-from executorch.backends.qualcomm.passes.reduce_dynamic_range import ReduceDynamicRange
-from executorch.backends.qualcomm.passes.replace_inf_buffer import ReplaceInfBuffer
+from executorch.backends.qualcomm._passes.reduce_dynamic_range import ReduceDynamicRange
+from executorch.backends.qualcomm._passes.replace_inf_buffer import ReplaceInfBuffer
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
@@ -26,7 +27,7 @@ from .utils import (
     get_16a8w_qnn_ptq_config,
     get_default_16bit_qnn_ptq_config,
     get_default_8bit_qnn_ptq_config,
-    get_ptq_per_channel_weight_config,
+    get_ptq_per_channel_quant_config,
     OP_ANNOTATOR,
     QuantizationConfig,
 )
@@ -72,6 +73,7 @@ class QnnQuantizer(Quantizer):
             "8bit_act": torch.int8,
             "16bit_act": torch.int16,
         }
+        self.per_channel_quant_config = None
 
     def _annotate(self, gm: GraphModule) -> None:
         for node in gm.graph.nodes:
@@ -96,13 +98,17 @@ class QnnQuantizer(Quantizer):
             return
 
         if op in self.use_per_channel_weight_quant_ops:
-            if op in self.bit16_quant_ops:
-                return get_ptq_per_channel_weight_config(
-                    torch.uint16, self.per_channel_weight_dtype["16bit_act"]
+            if self.per_channel_quant_config is None:
+                if op in self.bit16_quant_ops:
+                    return get_ptq_per_channel_quant_config(
+                        act_dtype=torch.uint16,
+                        weight_dtype=self.per_channel_weight_dtype["16bit_act"],
+                    )
+                return get_ptq_per_channel_quant_config(
+                    act_dtype=torch.uint8,
+                    weight_dtype=self.per_channel_weight_dtype["8bit_act"],
                 )
-            return get_ptq_per_channel_weight_config(
-                weight_dtype=self.per_channel_weight_dtype["8bit_act"]
-            )
+            return self.per_channel_quant_config
 
         if op in self.bit8_quant_ops:
             return self.bit8_quant_config
@@ -185,6 +191,7 @@ class QnnQuantizer(Quantizer):
         model = RecomposePixelUnshuffle(quantization_capture=True)(model).graph_module
         model = DecomposeScaledDotProductAttention()(model).graph_module
         model = DecomposeSilu()(model).graph_module
+        model = DecomposeEinsum()(model).graph_module
         model = ReplaceInfBuffer()(model).graph_module
         return model
 

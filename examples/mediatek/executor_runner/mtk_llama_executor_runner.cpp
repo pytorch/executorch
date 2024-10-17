@@ -67,7 +67,7 @@
 #include "llama_runner/Utils.h"
 #include "llama_runner/llm_helper/include/llm_types.h"
 
-#include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
+#include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #include <executorch/extension/llm/tokenizer/tiktoken.h>
 
@@ -131,9 +131,19 @@ DEFINE_string(prompt_file, "", "File containing the prompt text.");
 static constexpr int8_t kAddBos = 1;
 static constexpr int8_t kAddEos = 0;
 
-using namespace torch::executor;
-using namespace torch::executor::llm_helper;
-using torch::executor::utils::Timer;
+using namespace example::llm_helper;
+using example::LlamaModelOptions;
+using example::LlamaModelPaths;
+using example::LlamaRuntime;
+using example::utils::argmax;
+using example::utils::read_file;
+using example::utils::split;
+using example::utils::Timer;
+using example::utils::to_string;
+using executorch::extension::llm::BPETokenizer;
+using executorch::extension::llm::Tokenizer;
+using executorch::runtime::Error;
+using executorch::runtime::Result;
 
 LlamaModelOptions get_model_options() {
   LlamaModelOptions options = {
@@ -159,8 +169,8 @@ LlamaModelPaths get_model_paths() {
   LlamaModelPaths model_paths = {
       .tokenizer_path = FLAGS_tokenizer_path,
       .token_embedding_path = FLAGS_token_embedding_path,
-      .prompt_model_paths = utils::split(FLAGS_prompt_model_paths, ','),
-      .gen_model_paths = utils::split(FLAGS_gen_model_paths, ',')};
+      .prompt_model_paths = split(FLAGS_prompt_model_paths, ','),
+      .gen_model_paths = split(FLAGS_gen_model_paths, ',')};
   return model_paths;
 }
 
@@ -211,8 +221,7 @@ Result<uint64_t> digest_prompt(
 
   const auto vocab_size = tokenizer->vocab_size();
   const auto logits_type = llama_runtime.GetModelOptions().model_output_type;
-  const auto first_output_token =
-      utils::argmax(logits_type, logits, vocab_size);
+  const auto first_output_token = argmax(logits_type, logits, vocab_size);
   return first_output_token;
 }
 
@@ -259,7 +268,7 @@ Error gen_response(
     timer_gen_token.End();
 
     prev_token = output_token;
-    output_token = utils::argmax(logits_type, logits, vocab_size);
+    output_token = argmax(logits_type, logits, vocab_size);
     full_response_tokens.push_back(output_token);
 
     // Stop when output is EOS
@@ -279,7 +288,7 @@ Error gen_response(
   }
 
   std::cout << "\n\n[Generated Tokens]\n"
-            << utils::to_string(full_response_tokens) << std::endl;
+            << to_string(full_response_tokens) << std::endl;
 
   ET_LOG(
       Info,
@@ -314,7 +323,7 @@ Error inference(
 std::unique_ptr<Tokenizer> load_tokenizer() {
   std::unique_ptr<Tokenizer> tokenizer;
   if (FLAGS_tokenizer_type == "bpe") {
-    tokenizer = std::make_unique<torch::executor::BPETokenizer>();
+    tokenizer = std::make_unique<BPETokenizer>();
   } else if (FLAGS_tokenizer_type == "tiktoken") {
     tokenizer = example::get_tiktoken_for_llama();
   }
@@ -325,7 +334,7 @@ std::unique_ptr<Tokenizer> load_tokenizer() {
 }
 
 int main(int argc, char** argv) {
-  runtime_init();
+  executorch::runtime::runtime_init();
 
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
@@ -364,7 +373,7 @@ int main(int argc, char** argv) {
 
   // Run model
   ET_CHECK_MSG(!FLAGS_prompt_file.empty(), "No prompt file provided.");
-  std::string prompt = utils::read_file(FLAGS_prompt_file);
+  std::string prompt = read_file(FLAGS_prompt_file);
   inference(llama_runtime, tokenizer, prompt);
 
   // Release model

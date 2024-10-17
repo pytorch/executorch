@@ -11,6 +11,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
 torch.manual_seed(1)
@@ -83,14 +84,17 @@ class TestBMM(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data)
         )
 
-    def _test_bmm_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor, ...]
+    def _test_bmm_ethosu_BI_pipeline(
+        self,
+        module: torch.nn.Module,
+        compile_spec: CompileSpec,
+        test_data: Tuple[torch.Tensor, ...],
     ):
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(),
+                compile_spec=compile_spec,
             )
             .quantize()
             .export()
@@ -132,4 +136,13 @@ class TestBMM(unittest.TestCase):
     @unittest.expectedFailure
     def test_bmm_single_input_u55_BI(self, operand1: torch.Tensor):
         test_data = (operand1,)
-        self._test_bmm_u55_BI_pipeline(self.BMMSingleInput(), test_data)
+        self._test_bmm_ethosu_BI_pipeline(
+            self.BMMSingleInput(), common.get_u55_compile_spec(), test_data
+        )
+
+    @parameterized.expand(BMMSingleInput.test_parameters)
+    def test_bmm_single_input_u85_BI(self, operand1: torch.Tensor):
+        test_data = (operand1,)
+        self._test_bmm_ethosu_BI_pipeline(
+            self.BMMSingleInput(), common.get_u85_compile_spec(), test_data
+        )

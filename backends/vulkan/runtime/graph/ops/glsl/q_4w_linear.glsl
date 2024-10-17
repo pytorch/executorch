@@ -19,128 +19,94 @@
 
 ${define_active_storage_type(STORAGE)}
 
-${define_required_extensions(DTYPE)}
-${define_required_extensions("int8")}
+${define_required_extensions([DTYPE, "uint8", "uint16"])}
+#extension GL_EXT_control_flow_attributes : require
 
 layout(std430) buffer;
 
-${layout_declare_tensor(0, "w", "t_out", DTYPE, STORAGE)}
-${layout_declare_tensor(1, "r", "t_mat1", DTYPE, STORAGE)}
-${layout_declare_tensor(2, "r", "t_mat2", "int8", STORAGE)}
-${layout_declare_tensor(3, "r", "t_scales_and_zeros", DTYPE, STORAGE)}
-
-$if STORAGE == "texture3d":
-  ${layout_declare_ubo(4, "ivec4", "out_sizes")}
-  ${layout_declare_ubo(5, "ivec4", "mat1_sizes")}
-  ${layout_declare_ubo(6, "ivec4", "scales_strides")}
-$else:
-  ${layout_declare_ubo(4, "ivec4", "out_sizes")}
-  ${layout_declare_ubo(5, "ivec4", "out_strides")}
-  ${layout_declare_ubo(6, "ivec4", "mat1_sizes")}
-  ${layout_declare_ubo(7, "ivec4", "mat1_strides")}
-  ${layout_declare_ubo(8, "ivec4", "mat2_strides")}
-  ${layout_declare_ubo(9, "ivec4", "scales_strides")}
+${layout_declare_tensor(B, "w", "ret", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "r", "x", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "r", "weights", "uint8", "buffer")}
+${layout_declare_tensor(B, "r", "qparams", DTYPE, STORAGE)}
+${layout_declare_ubo(B, "ivec3", "ret_limits")}
+${layout_declare_ubo(B, "ivec4", "x_sizes")}
+${layout_declare_ubo(B, "ivec4", "weights_strides")}
+${layout_declare_ubo(B, "ivec4", "qparams_strides")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 layout(constant_id = 3) const int group_size = 1;
 
+/*
+ * This shader computes a linear operator between a floating point input matrix
+ * x and a weights matrix that is quantized to 4 bits.
+ *
+ * The (W, H, C) shape of each tensor is:
+ * - x: (K, M)
+ * - weights: (K / 2, N)
+ *   - The weights tensor has a data type of `uint8`. Each element in the tensor
+ *     contains 2 4-bit values packed into a uint8.
+ * - qparams: (2, N, number_of_groups)
+ *   - This tensor contains the scales and zeros quantization parameters for the
+ *     weights tensor. The weight tensor is quantized group-wise, which means
+ *     that every `group_size` elements along the K dimension of the weights
+ *     tensor has independent quantization parameters. Along the width dim, the
+ *     first value contains the scale for the group and the second value
+ *     contains the zero point for the group.
+ *
+ * Note that this shader assumes that all tensors are width packed.
+ */
 void main() {
+  // output positions being calculated are (n, m), (n + 1, m), ...
+  // This means multiplying the m-th row of x with the n-th, (n+1)-th, ... rows
+  // of the weights tensor.
+  const u16vec3 ret_pos = u16vec3(gl_GlobalInvocationID);
+  if (any(greaterThanEqual(ret_pos, ret_limits))) {
+    return;
+  }
 
-    const ivec4 out_pos = ivec4(
-      gl_GlobalInvocationID.x, // n = 0..N-1
-      gl_GlobalInvocationID.y, // m = 0..M-1
-      gl_GlobalInvocationID.z % out_sizes.z,
-      gl_GlobalInvocationID.z / out_sizes.z);
+  // Since ret is width packed, need to multiply by 4
+  const uint16_t n = uint16_t(ret_pos.x * 4);
 
-    if (any(greaterThanEqual(out_pos, out_sizes))) {
-      return;
+  // K is guaranteed to be a multiple of group size
+  const uint16_t num_blocks = uint16_t(x_sizes.x / group_size);
+
+  uint16_t k_texel_i = uint16_t(0);
+  vec4 sums = vec4(0.0);
+  for (uint16_t block_idx = uint16_t(0); block_idx < num_blocks; block_idx++) {
+    vec4 scales;
+    vec4 zeros;
+
+    [[unroll]] for (int comp = 0; comp < 4; comp++) {
+      const vec4 scale_and_zero = load_texel(
+          qparams, u16vec3(0, n + comp, block_idx));
+      scales[comp] = scale_and_zero.x;
+      zeros[comp] = scale_and_zero.y;
     }
 
-    const uint K = mat1_sizes.x;
-    const uint n = out_pos.x;
-    const uint m = out_pos.y;
-    const uint mask = uint(0x0f);
+    for (uint16_t i = uint16_t(0); i < group_size; i += uint16_t(4), k_texel_i++) {
+      const VEC4_T x_texel = load_texel(
+          x, u16vec3(k_texel_i, ret_pos.y, ret_pos.z));
 
-    float rc = 0.0;
-    int k = 0;
+      [[unroll]] for (int comp = 0; comp < 4; comp++) {
+        const int weights_bufi = (n + comp) * weights_strides.y + (k_texel_i * 2);
+        // Need to read 4 unpacked values, which corresponds to 2 packed values
+        const uint8_t weights_val_1 = weights[weights_bufi];
+        const uint8_t weights_val_2 = weights[weights_bufi + 1];
 
-    #ifdef USING_BUFFER
-      const uint k_block = (K + group_size - 1) / group_size;
-      ivec4 mat1_pos = ivec4(0, m, out_pos.z, out_pos.w);
-      ivec4 mat2_pos = ivec4(0, n, out_pos.z, out_pos.w);
-      ivec4 scale_pos = ivec4(0, n, 0, out_pos.w);
-      ivec4 zero_pos = ivec4(0, n, 1, out_pos.w);
+        const u8vec4 weights_texel = u8vec4(
+          (weights_val_1 & 0xF0) >> 4,
+          weights_val_1 & 0x0F,
+          (weights_val_2 & 0xF0) >> 4,
+          weights_val_2 & 0x0F);
 
-      for (int kb = 0; kb < k_block; kb++) {
-        scale_pos.x = kb;
-        const int scale_bufi = tidx_to_bufi(scale_pos, scales_strides);
-        const float scale = float(t_scales_and_zeros[scale_bufi]);
-
-        zero_pos.x = kb;
-        const int zero_bufi = tidx_to_bufi(zero_pos, scales_strides);
-        const float zero = float(t_scales_and_zeros[zero_bufi]) - scale * 8.0;
-
-        for(uint idx = 0; idx < group_size && k < K; idx++, k++) {
-          mat1_pos.x = k;
-          const int mat1_bufi = tidx_to_bufi(mat1_pos, mat1_strides);
-          const float mat1_val = float(t_mat1[mat1_bufi]);
-
-          mat2_pos.x = k / 2;
-          const int mat2_bufi = tidx_to_bufi(mat2_pos, mat2_strides);
-          // Bitwise op treats sign bit from int8 as a value bit instead,
-          // since there is no uint8_t datatype
-          uint mat2_val = (t_mat2[mat2_bufi] & 0xFF);
-          mat2_val = (k & 1) == 0 ? mat2_val & mask : (mat2_val >> 4);
-
-          rc += mat1_val * (scale * float(mat2_val) + zero);
-        }
+        // Note that the unpacked 4-bit values are unsigned, therefore they must
+        // first be "centered" around 0 by subtracting 8 before applying the
+        // scale and zero point.
+        sums[comp] += dot(
+            x_texel, (vec4(weights_texel) - 8.0) * scales[comp] + zeros[comp]);
       }
-
-      const int out_bufi = tidx_to_bufi(out_pos, out_strides);
-      t_out[out_bufi] = FLOAT_T(rc);
-
-    #else // Using texture
-      const uint texel_group_size = group_size / FOUR;
-      const uint k_block = (K + texel_group_size - 1) / texel_group_size;
-      ivec3 mat1_pos = ivec3(0, m, out_pos.z);
-      ivec3 mat2_pos = ivec3(0, n, out_pos.z);
-      ivec3 scale_pos = ivec3(0, n, 0);
-      ivec3 zero_pos = ivec3(0, n, 1);
-
-      for (int kb = 0; kb < k_block; kb++) {
-        const int texel_kb = kb / FOUR;
-        const int kb_offset = kb % FOUR;
-
-        scale_pos.x = texel_kb;
-        const VEC4_T scale_texel = load_texel(t_scales_and_zeros, scale_pos);
-        const float scale = float(scale_texel[kb_offset]);
-
-        zero_pos.x = texel_kb;
-        const VEC4_T zero_texel = load_texel(t_scales_and_zeros, zero_pos);
-        const float zero = float(zero_texel[kb_offset]) - scale * 8.0;
-
-        for(uint idx = 0; idx < texel_group_size && k < K; idx++, k++) {
-          mat1_pos.x = k;
-          const VEC4_T mat1_tex = load_texel(t_mat1, mat1_pos);
-
-          mat2_pos.x = k / 2;
-          const i8vec4 mat2_tex = i8vec4(load_texel(t_mat2, mat2_pos));
-
-          // Every two texels of mat1 correspond to one texel of mat2
-          // Even mat1 indeces correspond to first half of mat2 texel and
-          // odd indeces correspond to second half
-          const int mat2_offset = (k & 1) == 0 ? 0 : 2;
-          for (int texel_idx = 0; texel_idx < FOUR; texel_idx++){
-            // Bitwise op treats sign bit from int8 as a value bit instead,
-            // since there is no uint8_t datatype
-            uint mat2_val = (mat2_tex[mat2_offset + texel_idx / 2] & 0xFF);
-            mat2_val = (texel_idx & 1) == 0 ? mat2_val & mask : (mat2_val >> 4);
-            rc += mat1_tex[texel_idx] * (scale * float(mat2_val) + zero);
-          }
-        }
-      }
-      write_texel(t_out, out_pos.xyz, vec4(rc, 0, 0, 0));
-
-    #endif
+    }
+  }
+  write_texel(ret, ret_pos, sums);
 }

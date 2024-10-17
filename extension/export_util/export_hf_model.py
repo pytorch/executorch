@@ -12,7 +12,7 @@ import torch.export._trace
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
 from torch.nn.attention import SDPBackend
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM
 from transformers.generation.configuration_utils import GenerationConfig
 from transformers.integrations.executorch import convert_and_export_with_cache
 from transformers.modeling_utils import PreTrainedModel
@@ -28,6 +28,14 @@ def main() -> None:
         help="a valid huggingface model repo name",
     )
     parser.add_argument(
+        "-d",
+        "--dtype",
+        type=str,
+        choices=["float32", "float16", "bfloat16"],
+        default="float32",
+        help="specify the dtype for loading the model",
+    )
+    parser.add_argument(
         "-o",
         "--output_name",
         required=False,
@@ -39,7 +47,8 @@ def main() -> None:
 
     # Configs to HF model
     device = "cpu"
-    dtype = torch.float32
+    # TODO: remove getattr once https://github.com/huggingface/transformers/pull/33741 is merged
+    dtype = getattr(torch, args.dtype)
     batch_size = 1
     max_length = 123
     cache_implementation = "static"
@@ -64,25 +73,23 @@ def main() -> None:
     print(f"{model.config}")
     print(f"{model.generation_config}")
 
-    tokenizer = AutoTokenizer.from_pretrained(args.hf_model_repo)
-    input_ids = tokenizer([""], return_tensors="pt").to(device)["input_ids"]
+    input_ids = torch.tensor([[1]], dtype=torch.long)
     cache_position = torch.tensor([0], dtype=torch.long)
 
     def _get_constant_methods(model: PreTrainedModel):
-        return {
+        metadata = {
             "get_dtype": 5 if model.config.torch_dtype == torch.float16 else 6,
             "get_bos_id": model.config.bos_token_id,
             "get_eos_id": model.config.eos_token_id,
             "get_head_dim": model.config.hidden_size / model.config.num_attention_heads,
             "get_max_batch_size": model.generation_config.cache_config.batch_size,
             "get_max_seq_len": model.generation_config.cache_config.max_cache_len,
-            "get_n_bos": 1,
-            "get_n_eos": 1,
             "get_n_kv_heads": model.config.num_key_value_heads,
             "get_n_layers": model.config.num_hidden_layers,
             "get_vocab_size": model.config.vocab_size,
             "use_kv_cache": model.generation_config.use_cache,
         }
+        return {k: v for k, v in metadata.items() if v is not None}
 
     with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
 

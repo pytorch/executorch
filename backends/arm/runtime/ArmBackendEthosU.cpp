@@ -15,16 +15,31 @@
 
 #include <ethosu_driver.h>
 
-#include "executorch/backends/arm/runtime/VelaBinStream.h"
-#include "executorch/runtime/backend/interface.h"
-#include "executorch/runtime/core/error.h"
-#include "executorch/runtime/core/evalue.h"
-#include "executorch/runtime/core/exec_aten/util/scalar_type_util.h"
+#include <executorch/backends/arm/runtime/VelaBinStream.h>
+#include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 using namespace std;
 
-namespace torch {
-namespace executor {
+using executorch::aten::ScalarType;
+using executorch::runtime::ArrayRef;
+using executorch::runtime::Backend;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::Result;
+
+namespace executorch {
+namespace backends {
+namespace arm {
 
 typedef struct {
   FreeableBuffer* processed;
@@ -100,7 +115,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
     ArmBackendExecuteCallbacks ArmBackend_execute_callbacks;
     // Command stream - we know at this point it's aligned
     char* data = (char*)execution_handle->processed->data();
-    ET_LOG(Info, "ArmBackend::execute %p", data);
+    ET_LOG(Debug, "ArmBackend::execute %p", data);
 
     // Read key sections from the vela_bin_stream
     if (vela_bin_read(data, &handles, execution_handle->processed->size()) ==
@@ -141,7 +156,16 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
             Error,
             "Input %d expected Integer (4 byte) or Char (1 byte) integer inputs, got ScalarType id %s",
             i,
-            toString(tensor_in.scalar_type()));
+            executorch::runtime::toString(tensor_in.scalar_type()));
+        return Error::InvalidProgram;
+      }
+      supported = executorch::runtime::is_contiguous_dim_order(
+          tensor_in.dim_order().data(), tensor_in.dim());
+      if (!supported) {
+        ET_LOG(
+            Error,
+            "Input %d expected contiguous dim_order, but got non-contiguous dim_order",
+            i);
         return Error::InvalidProgram;
       }
 
@@ -258,7 +282,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
  private:
   Error check_requires_permute(
       int index,
-      const exec_aten::Tensor tensor,
+      const executorch::aten::Tensor tensor,
       VelaIO* io,
       bool permuted_io_flag,
       bool* is_permuted) const {
@@ -271,7 +295,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
           tensor.size(1) == io->shape[3] && tensor.size(2) == io->shape[1] &&
           tensor.size(3) == io->shape[2];
       if (permuted_shape) {
-        ET_LOG(Info, "Tensor input/output %d will be permuted", index);
+        ET_LOG(Debug, "Tensor input/output %d will be permuted", index);
       }
       if (permuted_io_flag != permuted_shape) {
         ET_LOG(
@@ -333,5 +357,6 @@ Backend backend_id{"ArmBackend", &backend};
 static auto registered = register_backend(backend_id);
 } // namespace
 
-} // namespace executor
-} // namespace torch
+} // namespace arm
+} // namespace backends
+} // namespace executorch

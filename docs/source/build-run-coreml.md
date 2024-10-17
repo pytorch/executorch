@@ -87,7 +87,7 @@ cd executorch
 
 Note that profiling is supported on [macOS](https://developer.apple.com/macos) >= 14.4.
 
-1. [Optional] Generate an [ETRecord](./sdk-etrecord.rst) when exporting your model.
+1. [Optional] Generate an [ETRecord](./etrecord.rst) when exporting your model.
 ```bash
 cd executorch
 
@@ -100,7 +100,7 @@ python3 -m examples.apple.coreml.scripts.export --model_name mv3 --generate_etre
 # Builds `coreml_executor_runner`.
 ./examples/apple/coreml/scripts/build_executor_runner.sh
 ```
-3. Run and generate an [ETDump](./sdk-etdump.md).
+3. Run and generate an [ETDump](./etdump.md).
 ```bash
 cd executorch
 
@@ -108,7 +108,7 @@ cd executorch
 ./coreml_executor_runner --model_path mv3_coreml_all.pte --profile_model --etdump_path etdump.etdp
 ```
 
-4. Create an instance of the [Inspector API](./sdk-inspector.rst) by passing in the [ETDump](./sdk-etdump.md) you have sourced from the runtime along with the optionally generated [ETRecord](./sdk-etrecord.rst) from step 1 or execute the following command in your terminal to display the profiling data table.
+4. Create an instance of the [Inspector API](./model-inspector.rst) by passing in the [ETDump](./etdump.md) you have sourced from the runtime along with the optionally generated [ETRecord](./etrecord.rst) from step 1 or execute the following command in your terminal to display the profiling data table.
 ```bash
 python examples/apple/coreml/scripts/inspector_cli.py --etdump_path etdump.etdp --etrecord_path mv3_coreml.bin
 ```
@@ -147,11 +147,10 @@ libsqlite3.tbd
 
 7. Update the code to load the program from the Application's bundle.
 ``` objective-c
-using namespace torch::executor;
-
 NSURL *model_url = [NBundle.mainBundle URLForResource:@"mv3_coreml_all" extension:@"pte"];
 
-Result<util::FileDataLoader> loader = util::FileDataLoader::from(model_url.path.UTF8String);
+Result<executorch::extension::FileDataLoader> loader =
+    executorch::extension::FileDataLoader::from(model_url.path.UTF8String);
 ```
 
 8. Use [Xcode](https://developer.apple.com/documentation/xcode/building-and-running-an-app#Build-run-and-debug-your-app) to deploy the application on the device.

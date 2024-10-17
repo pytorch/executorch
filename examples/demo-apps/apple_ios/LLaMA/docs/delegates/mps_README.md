@@ -42,12 +42,12 @@ In this demo app, we support text-only inference with Llama 3.1, Llama 3, and Ll
 Install the required packages to export the model
 
 ```
-sh examples/models/llama2/install_requirements.sh
+sh examples/models/llama/install_requirements.sh
 ```
 
 Export the model
 ```
-python -m examples.models.llama2.export_llama --checkpoint "${MODEL_DIR}/consolidated.00.pth" --params "${MODEL_DIR}/params.json" -kv --use_sdpa_with_kv_cache --mps -d fp32 --disable_dynamic_shape -qmode 8da4w -G 32
+python -m examples.models.llama.export_llama --checkpoint "${MODEL_DIR}/consolidated.00.pth" --params "${MODEL_DIR}/params.json" -kv --use_sdpa_with_kv_cache --mps -d fp32 --disable_dynamic_shape -qmode 8da4w -G 32
 ```
 
 ## Pushing Model and Tokenizer
@@ -76,11 +76,12 @@ sudo /Applications/CMake.app/Contents/bin/cmake-gui --install
 The prebuilt ExecuTorch runtime, backend, and kernels are available as a Swift PM package.
 
 ### Xcode
-Open the project in Xcode.In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the ExecuTorch repo into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version, e.g., “0.3.0”, or just use the “latest” branch name for the latest stable build.
+Open the project in Xcode.In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the ExecuTorch repo into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version, e.g., “0.4.0”, or just use the “latest” branch name for the latest stable build.
 
 Note: If you're running into any issues related to package dependencies, quit Xcode entirely, delete the whole executorch repo, clean the caches by running the command below in terminal and clone the repo again.
 
-```rm -rf \
+```
+rm -rf \
   ~/Library/org.swift.swiftpm \
   ~/Library/Caches/org.swift.swiftpm \
   ~/Library/Caches/com.apple.dt.Xcode \
@@ -94,19 +95,19 @@ Note: To access logs, link against the Debug build of the ExecuTorch runtime, i.
 For more details integrating and Running ExecuTorch on Apple Platforms, checkout this [link](https://pytorch.org/executorch/main/apple-runtime.html).
 
 <p align="center">
-<img src="../screenshots/ios_demo_app_swift_pm.png" alt="iOS LLaMA App Swift PM" width="600">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_swift_pm.png" alt="iOS LLaMA App Swift PM" style="width:600px">
 </p>
 
 Then select which ExecuTorch framework should link against which target.
 
 <p align="center">
-<img src="../screenshots/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" width="600">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" style="width:600px">
 </p>
 
 Click “Run” to build the app and run in on your iPhone. If the app successfully run on your device, you should see something like below:
 
 <p align="center">
-<img src="../screenshots/ios_demo_app_mps.jpg" alt="iOS LLaMA App mps" width="300">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_mps.jpg" alt="iOS LLaMA App mps" style="width:300px">
 </p>
 
 ## Reporting Issues

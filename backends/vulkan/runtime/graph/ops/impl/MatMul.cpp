@@ -29,7 +29,7 @@ void check_matmul_args(
   VK_CHECK_COND(mat1_sizes.size() == 2 || mat1_sizes.size() == 3);
   VK_CHECK_COND(mat1_sizes.size() == mat2_sizes.size());
 
-  VK_CHECK_COND(graph.memory_layout_of(mat1) == graph.memory_layout_of(out));
+  VK_CHECK_COND(graph.packed_dim_of(mat1) == graph.packed_dim_of(out));
 
   VK_CHECK_COND(utils::val_at(-1, mat1_sizes) == utils::val_at(-2, mat2_sizes));
 }
@@ -48,16 +48,10 @@ void resize_matmul_node(
   const int out_rows = mat2_is_transposed ? utils::val_at(-2, mat2->sizes())
                                           : utils::val_at(-1, mat2->sizes());
 
-  std::vector<int64_t> new_out_sizes(3);
-  if (mat1->sizes().size() == 2) {
-    new_out_sizes.resize(2);
-    new_out_sizes.at(0) = out_cols;
-    new_out_sizes.at(1) = out_rows;
-  } else {
-    new_out_sizes.at(0) = mat1->sizes().at(0);
-    new_out_sizes.at(1) = out_cols;
-    new_out_sizes.at(2) = out_rows;
-  }
+  const int64_t out_dim = out->dim();
+  std::vector<int64_t> new_out_sizes(mat1->sizes());
+  new_out_sizes.at(out_dim - 1) = out_rows;
+  new_out_sizes.at(out_dim - 2) = out_cols;
 
   out->virtual_resize(new_out_sizes);
 }
@@ -78,7 +72,7 @@ void add_matmul_naive_buffer_node(
       graph.size_at<uint32_t>(-2, out),
       graph.size_at<uint32_t>(-3, out) * graph.size_at<uint32_t>(-4, out)};
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
@@ -119,7 +113,7 @@ void add_matmul_naive_texture3d_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   utils::uvec3 global_wg_size = graph.logical_limits_of(out);
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_wg_size,
@@ -138,9 +132,9 @@ void add_matmul_naive_texture3d_node(
           graph.axis_map_ubo(mat2),
       },
       // Specialization Constants
-      {graph.packed_dim_whcn_idx_of(out),
-       graph.packed_dim_whcn_idx_of(mat1),
-       graph.packed_dim_whcn_idx_of(mat2)},
+      {graph.packed_dim_of(out),
+       graph.packed_dim_of(mat1),
+       graph.packed_dim_of(mat2)},
       // Resizing Logic
       resize_matmul_node,
       {mat2_is_transposed}));
@@ -165,7 +159,7 @@ void add_matmul_optimized_node(
   ValueRef mat2_packed = mat2;
   const utils::GPUMemoryLayout mat2_layout =
       mat2_is_transposed_val ? utils::kWidthPacked : utils::kHeightPacked;
-  if (graph.memory_layout_of(mat2) != mat2_layout) {
+  if (graph.estimate_memory_layout_of(mat2) != mat2_layout) {
     mat2_packed = graph.add_tensor_like(mat2, mat2_layout);
     viewFn(graph, {mat2, graph.add_none(), mat2_packed});
   }
@@ -204,7 +198,7 @@ void add_matmul_optimized_node(
 
   utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
@@ -222,7 +216,7 @@ void add_matmul_optimized_node(
           graph.axis_map_ubo(mat2_packed),
       },
       // Specialization Constants
-      {graph.packed_dim_whcn_idx_of(out)},
+      {graph.packed_dim_of(out)},
       // Resizing Logic
       resize_matmul_node,
       {mat2_is_transposed}));
@@ -237,9 +231,9 @@ void add_matmul_node(
   if (graph.is_buffer_storage(out)) {
     add_matmul_naive_buffer_node(
         graph, mat1, mat2_data, out, mat2_is_transposed);
-  } else if (graph.memory_layout_of(mat1) == utils::kChannelsPacked) {
+  } else if (graph.packed_dim_of(mat1) == WHCN::kChannelsDim) {
     add_matmul_optimized_node(graph, mat1, mat2_data, out, mat2_is_transposed);
-  } else if (graph.memory_layout_of(mat1) == utils::kWidthPacked) {
+  } else if (graph.packed_dim_of(mat1) == WHCN::kWidthDim) {
     add_matmul_naive_texture3d_node(
         graph, mat1, mat2_data, out, mat2_is_transposed);
   } else {

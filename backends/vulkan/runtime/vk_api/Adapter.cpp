@@ -70,6 +70,9 @@ VkDevice create_logical_device(
 #ifdef VK_KHR_portability_subset
       VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME,
 #endif /* VK_KHR_portability_subset */
+#ifdef VK_ANDROID_external_memory_android_hardware_buffer
+      VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME,
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
       VK_KHR_16BIT_STORAGE_EXTENSION_NAME,
       VK_KHR_8BIT_STORAGE_EXTENSION_NAME,
       VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME,

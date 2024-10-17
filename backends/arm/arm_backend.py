@@ -20,7 +20,9 @@ from executorch.backends.arm.arm_vela import vela_compile
 from executorch.backends.arm.operators.node_visitor import get_node_visitors
 from executorch.backends.arm.operators.op_output import process_output
 from executorch.backends.arm.operators.op_placeholder import process_placeholder
-from executorch.backends.arm.passes.arm_pass_manager import ArmPassManager
+from executorch.backends.arm._passes.arm_pass_manager import (
+    ArmPassManager,
+)  # usort: skip
 from executorch.backends.arm.tosa_utils import (
     dbg_fail,
     dbg_tosa_dump,
@@ -52,8 +54,8 @@ class ArmCompileSpecBuilder:
     def ethosu_compile_spec(
         self,
         config: str,
-        system_config: Optional[str] = None,
-        memory_mode: Optional[str] = None,
+        system_config: str,
+        memory_mode: str,
         extra_flags: Optional[str] = None,
         config_ini: Optional[str] = "Arm/vela.ini",
     ) -> "ArmCompileSpecBuilder":
@@ -217,7 +219,7 @@ class ArmBackend(BackendDetails):
         # const data directly. Path created and data written only in debug builds.
         tosa_graph = ts.TosaSerializer(artifact_path)
         graph_module = ArmPassManager().transform_to_backend_pipeline(
-            graph_module=edge_program.graph_module, compile_spec=compile_spec
+            exported_program=edge_program, compile_spec=compile_spec
         )
 
         node_visitors = get_node_visitors(edge_program)

@@ -132,14 +132,6 @@ def define_libs():
                 ] if not runtime.is_oss else [],
                 "DEFAULT": [],
             }),
-            fbandroid_platform_compiler_flags = [
-                (
-                    "^android-arm64.*$",
-                    [
-                        "-march=armv8+bf16",
-                    ],
-                ),
-            ],
             fbandroid_platform_preprocessor_flags = [
                 (
                     "^android-arm64.*$",
@@ -152,14 +144,8 @@ def define_libs():
                 (
                     "^android-arm64.*$",
                     [
-                        "fbsource//third-party/openblas:openblas",
+                        "fbsource//arvr/third-party/eigen:eigen3_blas",
                     ],
-                ),
-            ],
-            fbobjc_platform_compiler_flags = [
-                (
-                    ".*arm64.*",
-                    ["-march=armv8+bf16"],
                 ),
             ],
             fbobjc_exported_preprocessor_flags = [

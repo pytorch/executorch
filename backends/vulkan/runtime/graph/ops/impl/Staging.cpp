@@ -8,6 +8,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/DispatchNode.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
@@ -34,7 +36,7 @@ void add_staging_to_tensor_node(
     ubos.append({graph.sizes_ubo(out_tensor), graph.axis_map_ubo(out_tensor)});
   }
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       shader,
       graph.create_global_wg_size(out_tensor),
@@ -45,10 +47,18 @@ void add_staging_to_tensor_node(
       // Parameter Buffers
       ubos,
       // Specialization Constants
-      {SV(graph.packed_dim_whcn_idx_of(out_tensor))},
+      {SV(graph.packed_dim_of(out_tensor))},
       // Resizing Logic
       nullptr,
       {}));
+}
+
+const std::string kBitw8PrefixStr = "bitw8_image_to_nchw_nobitw8buffer";
+
+bool is_bitw8_shader(const vkapi::ShaderInfo& shader) {
+  const auto size = kBitw8PrefixStr.size();
+  const std::string& shader_prefix_str = shader.kernel_name.substr(0, size);
+  return shader_prefix_str == kBitw8PrefixStr;
 }
 
 void add_tensor_to_staging_node(
@@ -80,13 +90,13 @@ void add_tensor_to_staging_node(
   // output buffer. Therefore, the global work group size for this shader will
   // be the number of elements in the output buffer divided by 4, as opposed to
   // the extents of the input texture.
-  if (shader.kernel_name == "int8_image_to_nchw_noint8") {
+  if (is_bitw8_shader(shader)) {
     uint32_t buffer_len = graph.get_staging(out_staging)->numel() / 4;
     global_wg_size = {buffer_len, 1, 1};
     ubos.append({graph.numel_ubo(in_tensor)});
   }
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       shader,
       global_wg_size,
@@ -97,7 +107,7 @@ void add_tensor_to_staging_node(
       // Parameter Buffers
       ubos,
       // Specialization Constants
-      {SV(graph.packed_dim_whcn_idx_of(in_tensor))}));
+      {SV(graph.packed_dim_of(in_tensor))}));
 }
 
 ValueRef prepack(
@@ -127,7 +137,7 @@ ValueRef prepack(
       // Parameter Buffers
       ubos,
       // Specialization Constants
-      {SV(graph.packed_dim_whcn_idx_of(v))}));
+      {SV(graph.packed_dim_of(v))}));
 
   return v;
 }
@@ -138,7 +148,9 @@ ValueRef prepack_buffer(
     const utils::GPUMemoryLayout layout) {
   ValueRef v = graph.add_tensor_like(vref, utils::kBuffer, layout);
 
-  vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR("buffer_to_buffer");
+  std::string kernel_name = "buffer_to_buffer";
+  add_dtype_suffix(kernel_name, graph.dtype_of(vref));
+  vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
   vkapi::ParamsBindList ubos;
   ubos.append({graph.numel_ubo(v)});

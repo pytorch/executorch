@@ -116,8 +116,12 @@ DescriptorSet& DescriptorSet::bind(
 DescriptorSet& DescriptorSet::bind(
     const uint32_t idx,
     const VulkanImage& image) {
+  // If the image does not have an allocator attached, then it is externally
+  // allocated; assume it is already bound to memory. Otherwise, it must be
+  // bound to a VmaAllocation to be used.
   VK_CHECK_COND(
-      image.has_memory(), "Image must be bound to memory for it to be usable");
+      image.vma_allocator() == VK_NULL_HANDLE || image.has_memory(),
+      "Image must be bound to memory for it to be usable");
 
   VkImageLayout binding_layout = image.layout();
   if (shader_layout_signature_[idx] == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
@@ -261,7 +265,7 @@ DescriptorPool::DescriptorPool(
 }
 
 DescriptorPool::~DescriptorPool() {
-  if (VK_NULL_HANDLE == pool_) {
+  if (pool_ == VK_NULL_HANDLE) {
     return;
   }
   vkDestroyDescriptorPool(device_, pool_, nullptr);

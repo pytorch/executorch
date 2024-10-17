@@ -8,7 +8,7 @@
 
 import operator
 
-from executorch.backends.vulkan.passes.custom_ops_defs import (  # noqa
+from executorch.backends.vulkan._passes.custom_ops_defs import (  # noqa
     conv_with_clamp_op,
     grid_priors_op,
 )
@@ -45,9 +45,17 @@ class OpList:
 
 PRIM_OPS = [
     operator.getitem,
+    # Quantization related ops will be fused via graph passes
+    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
 ]
 
-BINARY_OPS = [
+SUPPORTS_DYNAMIC_SHAPE = [
+    # Binary broadcasting
     exir_ops.edge.aten.add.Tensor,
     exir_ops.edge.aten.sub.Tensor,
     exir_ops.edge.aten.minimum.default,
@@ -55,9 +63,7 @@ BINARY_OPS = [
     exir_ops.edge.aten.div.Tensor,
     exir_ops.edge.aten.div.Tensor_mode,
     exir_ops.edge.aten.pow.Tensor_Tensor,
-]
-
-UNARY_OPS = [
+    # Unary elementwise
     exir_ops.edge.aten.abs.default,
     exir_ops.edge.aten.clamp.default,
     exir_ops.edge.aten.cos.default,
@@ -71,60 +77,51 @@ UNARY_OPS = [
     exir_ops.edge.aten.sin.default,
     exir_ops.edge.aten.sqrt.default,
     exir_ops.edge.aten.tanh.default,
-]
-
-MATMUL_OPS = [
+    exir_ops.edge.aten._to_copy.default,
+    # Matrix Multiplication
     exir_ops.edge.aten.bmm.default,
     exir_ops.edge.aten.mm.default,
     exir_ops.edge.aten.addmm.default,
     exir_ops.edge.aten.linear.default,
-]
-
-POOLING_OPS = [
-    exir_ops.edge.aten.avg_pool2d.default,
-    exir_ops.edge.aten.max_pool2d_with_indices.default,
-]
-
-CONVOLUTION_OPS = [
-    exir_ops.edge.aten.convolution.default,
-    exir_ops.edge.et_vk.conv_with_clamp.default,
-]
-
-REDUCTION_OPS = [
-    exir_ops.edge.aten.mean.dim,
-    exir_ops.edge.aten.sum.dim_IntList,
+    exir_ops.edge.et_vk.linear_weight_int4.default,
+    # Reduction
     exir_ops.edge.aten._log_softmax.default,
     exir_ops.edge.aten._softmax.default,
+    # 2D Pooling
+    exir_ops.edge.aten.avg_pool2d.default,
+    exir_ops.edge.aten.max_pool2d_with_indices.default,
+    # Convolution
+    exir_ops.edge.aten.convolution.default,
+    exir_ops.edge.et_vk.conv_with_clamp.default,
+    # Custom ops
+    "llama::sdpa_with_kv_cache",
 ]
 
-NORMALIZATION_OPS = [
+NO_DYNAMIC_SHAPE = [
+    # Reduction
+    exir_ops.edge.aten.mean.dim,
+    exir_ops.edge.aten.sum.dim_IntList,
+    # Normalization
     exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
     exir_ops.edge.aten.native_layer_norm.default,
-]
-
-SHAPE_MANIPULATION_OPS = [
+    # Shape Manipulation
     exir_ops.edge.aten.squeeze_copy.dims,
     exir_ops.edge.aten.unsqueeze_copy.default,
     exir_ops.edge.aten.view_copy.default,
     exir_ops.edge.aten.permute_copy.default,
     exir_ops.edge.aten.t_copy.default,
-]
-
-INDEXING_OPS = [
+    # Indexing and lookup
     exir_ops.edge.aten.embedding.default,
+    exir_ops.edge.aten.flip.default,
     exir_ops.edge.aten.index_select.default,
     exir_ops.edge.aten.select_copy.int,
     exir_ops.edge.aten.slice_copy.Tensor,
-]
-
-ORCHESTRATION_OPS = [
+    # Tensor combination
     exir_ops.edge.aten.cat.default,
     exir_ops.edge.aten.split_with_sizes_copy.default,
     exir_ops.edge.aten.split.Tensor,
     exir_ops.edge.aten.repeat.default,
-]
-
-CREATION_OPS = [
+    # Tensor creation
     exir_ops.edge.aten.arange.start_step,
     exir_ops.edge.aten.clone.default,
     exir_ops.edge.aten.constant_pad_nd.default,
@@ -139,39 +136,20 @@ CREATION_OPS = [
 ]
 
 
-def register_prim_ops(ops: OpList):
+def enumerate_supported_ops():
+    ops = OpList()
+
+    # Register in order of least to most capabilities
+
+    for op in NO_DYNAMIC_SHAPE:
+        ops[op].supports_dynamic_shape = False
+
+    for op in SUPPORTS_DYNAMIC_SHAPE:
+        ops[op].supports_dynamic_shape = True
+
     for op in PRIM_OPS:
         ops[op].supports_texture = True
         ops[op].supports_buffer = True
         ops[op].supports_dynamic_shape = True
 
-
-def register_no_dynamic_shape_ops(ops: OpList):
-    for op in [
-        *REDUCTION_OPS,
-        *NORMALIZATION_OPS,
-        *SHAPE_MANIPULATION_OPS,
-        *INDEXING_OPS,
-        *ORCHESTRATION_OPS,
-        *CREATION_OPS,
-    ]:
-        ops[op].supports_dynamic_shape = False
-
-
-def register_dynamic_shape_ops(ops: OpList):
-    for op in [
-        *BINARY_OPS,
-        *UNARY_OPS,
-        *MATMUL_OPS,
-        *POOLING_OPS,
-        *CONVOLUTION_OPS,
-    ]:
-        ops[op].supports_dynamic_shape = True
-
-
-def enumerate_supported_ops():
-    ops = OpList()
-    register_prim_ops(ops)
-    register_no_dynamic_shape_ops(ops)
-    register_dynamic_shape_ops(ops)
     return ops

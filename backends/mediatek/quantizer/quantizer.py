@@ -7,7 +7,7 @@
 from torch.ao.quantization.quantizer import Quantizer
 from torch.fx import GraphModule
 
-from ..passes.decompose_scaled_dot_product_attention import (
+from .._passes.decompose_scaled_dot_product_attention import (
     DecomposeScaledDotProductAttention,
 )
 from .annotator import annotate

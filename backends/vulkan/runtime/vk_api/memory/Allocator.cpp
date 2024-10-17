@@ -52,7 +52,7 @@ Allocator::Allocator(Allocator&& other) noexcept
 }
 
 Allocator::~Allocator() {
-  if (VK_NULL_HANDLE == allocator_) {
+  if (allocator_ == VK_NULL_HANDLE) {
     return;
   }
   vmaDestroyAllocator(allocator_);
@@ -95,6 +95,7 @@ Allocation Allocator::create_allocation(
 }
 
 VulkanImage Allocator::create_image(
+    const VkDevice device,
     const VkExtent3D& extents,
     const VkFormat image_format,
     const VkImageType image_type,
@@ -127,13 +128,14 @@ VulkanImage Allocator::create_image(
   const VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 
   return VulkanImage(
+      device,
       allocator_,
       alloc_create_info,
       image_props,
       view_props,
       sampler_props,
-      initial_layout,
       sampler,
+      initial_layout,
       allocate_memory);
 }
 

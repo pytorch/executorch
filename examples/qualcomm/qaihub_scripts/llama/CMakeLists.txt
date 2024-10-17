@@ -32,7 +32,7 @@ target_include_directories(
 target_link_libraries(
   qaihub_llama2_7b_runner
   qnn_executorch_backend
-  executorch_no_prim_ops
+  executorch_core
   extension_data_loader
   extension_module
   extension_tensor
@@ -78,7 +78,7 @@ list(
 list(
   APPEND
   _qaihub_llama3_8b_runner__srcs
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../../models/llama2/tokenizer/llama_tiktoken.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../../models/llama/tokenizer/llama_tiktoken.cpp
 )
 
 # build qaihub llama3 8b runner
@@ -90,7 +90,7 @@ target_include_directories(
 target_link_libraries(
   qaihub_llama3_8b_runner
   qnn_executorch_backend
-  executorch_no_prim_ops
+  executorch_core
   extension_data_loader
   extension_module
   extension_tensor

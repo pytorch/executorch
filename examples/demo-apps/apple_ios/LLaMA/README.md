@@ -17,6 +17,7 @@ The goal is for you to see the type of support ExecuTorch provides and feel comf
 ## Supported Models
 
 As a whole, the models that this app supports are (varies by delegate):
+* Llama 3.2 1B/3B
 * Llama 3.1 8B
 * Llama 3 8B
 * Llama 2 7B
@@ -27,8 +28,8 @@ First it’s important to note that currently ExecuTorch provides support across
 
 | Delegate                       | Resource                           |
 | ------------------------------ | ---------------------------------  |
-| XNNPACK (CPU-based library)    | [link](docs/delegates/xnnpack_README.md)|
-| MPS (Metal Performance Shader) | [link](docs/delegates/mps_README.md)    |
+| XNNPACK (CPU-based library)    | [link](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/apple_ios/LLaMA/docs/delegates/xnnpack_README.md)|
+| MPS (Metal Performance Shader) | [link](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/apple_ios/LLaMA/docs/delegates/mps_README.md)    |
 
 ## How to Use the App
 This section will provide the main steps to use the app, along with a code snippet of the ExecuTorch API.
@@ -40,7 +41,8 @@ Xcode will download and cache the package on the first run, which will take some
 
 Note: If you're running into any issues related to package dependencies, quit Xcode entirely, delete the whole executorch repo, clean the caches by running the command below in terminal and clone the repo again.
 
-```rm -rf \
+```
+rm -rf \
   ~/Library/org.swift.swiftpm \
   ~/Library/Caches/org.swift.swiftpm \
   ~/Library/Caches/com.apple.dt.Xcode \
@@ -58,11 +60,11 @@ For more details integrating and Running ExecuTorch on Apple Platforms, checkout
 * Ensure that the ExecuTorch package dependencies are installed correctly, then select which ExecuTorch framework should link against which target.
 
 <p align="center">
-<img src="docs/screenshots/ios_demo_app_swift_pm.png" alt="iOS LLaMA App Swift PM" width="600">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_swift_pm.png" alt="iOS LLaMA App Swift PM" style="width:600px">
 </p>
 
 <p align="center">
-<img src="docs/screenshots/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" width="600">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" style="width:600px">
 </p>
 
 * Run the app. This builds and launches the app on the phone.
@@ -82,13 +84,13 @@ For more details integrating and Running ExecuTorch on Apple Platforms, checkout
 If the app successfully run on your device, you should see something like below:
 
 <p align="center">
-<img src="./docs/screenshots/ios_demo_app.jpg" alt="iOS LLaMA App" width="300">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app.jpg" alt="iOS LLaMA App" style="width:300px">
 </p>
 
 For Llava 1.5 models, you can select and image (via image/camera selector button) before typing prompt and send button.
 
 <p align="center">
-<img src="./docs/screenshots/ios_demo_app_llava.jpg" alt="iOS LLaMA App" width="300">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_llava.jpg" alt="iOS LLaMA App" style="width:300px">
 </p>
 
 ## Reporting Issues

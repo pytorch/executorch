@@ -7,46 +7,52 @@
 import operator
 import warnings
 from collections import OrderedDict
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Set, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 
 import executorch.exir as exir
 
 import torch
+from executorch.backends.qualcomm._passes.annotate_and_quant_scalar import (
+    AnnotateAndQuantScalar,
+)
+from executorch.backends.qualcomm._passes.annotate_decomposed import AnnotateDecomposed
+from executorch.backends.qualcomm._passes.annotate_quant_attrs import AnnotateQuantAttrs
+from executorch.backends.qualcomm._passes.convert_binary_op_with_scalar import (
+    ConvertBinaryOpsWithScalar,
+)
+from executorch.backends.qualcomm._passes.convert_bmm_to_matmul import (
+    ConvertBmmToMatmul,
+)
+from executorch.backends.qualcomm._passes.convert_interpolate_with_upsample2d import (
+    ConvertInterpolateWithUpsample2D,
+)
+from executorch.backends.qualcomm._passes.convert_prelu import ConvertPReLU
+from executorch.backends.qualcomm._passes.convert_to_linear import ConvertToLinear
+from executorch.backends.qualcomm._passes.expand_broadcast_tensor_shape import (
+    ExpandBroadcastTensorShape,
+)
+from executorch.backends.qualcomm._passes.fold_qdq import FoldQDQ
+from executorch.backends.qualcomm._passes.i64_to_i32 import I64toI32
+from executorch.backends.qualcomm._passes.layout_transform import LayoutTransform
+from executorch.backends.qualcomm._passes.recompose_pixel_unshuffle import (
+    RecomposePixelUnshuffle,
+)
+from executorch.backends.qualcomm._passes.recompose_rms_norm import RecomposeRmsNorm
+from executorch.backends.qualcomm._passes.remove_redundancy import RemoveRedundancy
+from executorch.backends.qualcomm._passes.replace_index_put_input import (
+    ReplaceIndexPutInput,
+)
 
 from executorch.backends.qualcomm.builders.node_visitor import (
     QNN_QUANT_TYPE_MAP,
     QNN_TENSOR_TYPE_MAP,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
-from executorch.backends.qualcomm.passes.annotate_and_quant_scalar import (
-    AnnotateAndQuantScalar,
-)
-from executorch.backends.qualcomm.passes.annotate_decomposed import AnnotateDecomposed
-from executorch.backends.qualcomm.passes.annotate_quant_attrs import AnnotateQuantAttrs
-from executorch.backends.qualcomm.passes.convert_binary_op_with_scalar import (
-    ConvertBinaryOpsWithScalar,
-)
-from executorch.backends.qualcomm.passes.convert_bmm_to_matmul import ConvertBmmToMatmul
-from executorch.backends.qualcomm.passes.convert_interpolate_with_upsample2d import (
-    ConvertInterpolateWithUpsample2D,
-)
-from executorch.backends.qualcomm.passes.convert_prelu import ConvertPReLU
-from executorch.backends.qualcomm.passes.convert_to_linear import ConvertToLinear
-from executorch.backends.qualcomm.passes.fold_qdq import FoldQDQ
-from executorch.backends.qualcomm.passes.i64_to_i32 import I64toI32
-from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
-from executorch.backends.qualcomm.passes.recompose_pixel_unshuffle import (
-    RecomposePixelUnshuffle,
-)
-from executorch.backends.qualcomm.passes.recompose_rms_norm import RecomposeRmsNorm
-from executorch.backends.qualcomm.passes.remove_redundancy import RemoveRedundancy
-from executorch.backends.qualcomm.passes.replace_index_put_input import (
-    ReplaceIndexPutInput,
-)
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     _soc_info_table,
+    HtpArch,
     QcomChipset,
     QnnExecuTorchBackendOptions,
     QnnExecuTorchBackendType,
@@ -61,7 +67,11 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_serialize impor
     convert_to_flatbuffer,
     convert_to_option,
 )
-from executorch.backends.qualcomm.utils.constants import QCOM_QNN_COMPILE_SPEC
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_PASS_EXPAND_BROADCAST_SHAPE,
+    QCOM_PASS_SKIP_ADVANCED_REQUANT,
+    QCOM_QNN_COMPILE_SPEC,
+)
 
 from executorch.exir import ExirExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -208,16 +218,28 @@ def canonicalize_program(
                     == QnnExecuTorchBackendType.kHtpBackend
                     and options.backend_options.htp_options.use_multi_contexts
                 ):
-                    max_sf_buf_size = max(max_sf_buf_size, len(m.processed_bytes))
+                    qnn_mgr = PyQnnManagerAdaptor.QnnManager(
+                        m.compile_specs[0].value, m.processed_bytes
+                    )
+                    assert qnn_mgr.Init().value == 0, "failed to load context binary"
+                    max_sf_buf_size = max(
+                        max_sf_buf_size, qnn_mgr.GetSpillFillBufferSize()
+                    )
                     module_map[m] = options
+                    qnn_mgr.Destroy()
             return max_sf_buf_size, module_map
 
         def process_lowered_module(module):
+            qnn_mgr = PyQnnManagerAdaptor.QnnManager(
+                module.compile_specs[0].value, module.processed_bytes
+            )
+            assert qnn_mgr.Init().value == 0, "failed to load context binary"
             spill_fill_size = (
-                len(module.processed_bytes)
+                qnn_mgr.GetSpillFillBufferSize()
                 if custom_buffer_size is None
                 else custom_buffer_size
             )
+            qnn_mgr.Destroy()
             return spill_fill_size, {
                 module: convert_to_option(module.compile_specs[0].value)
             }
@@ -268,7 +290,10 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
     return source_decompositions
 
 
-def _transform(edge_program: ExportedProgram) -> None:
+def _transform(
+    edge_program: ExportedProgram, custom_pass_config: Set[str] = None
+) -> None:
+    custom_pass_config = custom_pass_config or {}
     # currently ExirExportedProgram.transform does not accept
     # changes of input number which was caused by FoldQDQ
     # apply passes one by one here to avoid IR capture failure
@@ -281,10 +306,16 @@ def _transform(edge_program: ExportedProgram) -> None:
     ConvertBmmToMatmul()(graph_module)
     ConvertInterpolateWithUpsample2D()(graph_module)
     I64toI32(edge_program)(graph_module)
-    AnnotateQuantAttrs(edge_program)(graph_module)
+    AnnotateQuantAttrs(
+        edge_program, QCOM_PASS_SKIP_ADVANCED_REQUANT in custom_pass_config
+    )(graph_module)
     AnnotateAndQuantScalar(edge_program)(graph_module)
     AnnotateDecomposed(edge_program)(graph_module)
     FoldQDQ()(graph_module)
+    # this pass is not necessary for network without layout-sensitive ops
+    # enable defaultly will introduce overhead from extra view_copy nodes
+    if QCOM_PASS_EXPAND_BROADCAST_SHAPE in custom_pass_config:
+        ExpandBroadcastTensorShape()(graph_module)
     LayoutTransform(edge_program)(graph_module)
     ReplaceIndexPutInput(edge_program)(graph_module)
 
@@ -299,6 +330,7 @@ def _transform(edge_program: ExportedProgram) -> None:
 def capture_program(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
+    custom_pass_config: Set[str] = None,
 ) -> exir.ExirExportedProgram:
     ep = torch.export.export(module, inputs)
     decomposed_ep = ep.run_decompositions(get_decomp_table())
@@ -310,7 +342,7 @@ def capture_program(
     core_ep = ExirExportedProgram(decomposed_ep, False)
     core_ep.transform(ConvertBinaryOpsWithScalar())
     edge_ep = core_ep.to_edge(qnn_edge_config())
-    _transform(edge_ep.exported_program)
+    _transform(edge_ep.exported_program, custom_pass_config)
     return edge_ep
 
 
@@ -824,3 +856,23 @@ def generate_qnn_executorch_compiler_spec(
             QCOM_QNN_COMPILE_SPEC, convert_to_flatbuffer(qnn_executorch_options)
         )
     ]
+
+
+def get_soc_to_arch_map():
+    return {
+        "SSG2115P": HtpArch.V73,
+        "SM8650": HtpArch.V75,
+        "SM8550": HtpArch.V73,
+        "SM8475": HtpArch.V69,
+        "SM8450": HtpArch.V69,
+    }
+
+
+def get_soc_to_chipset_map():
+    return {
+        "SSG2115P": QcomChipset.SSG2115P,
+        "SM8650": QcomChipset.SM8650,
+        "SM8550": QcomChipset.SM8550,
+        "SM8475": QcomChipset.SM8475,
+        "SM8450": QcomChipset.SM8450,
+    }

@@ -173,7 +173,7 @@ public class LlamaModule {
    * @param prompt The text prompt to LLaVA.
    * @param seqLen The total sequence length, including the prompt tokens and new tokens.
    * @param startPos The starting position in KV cache of the input in the LLM.
-   * @param llamaCallback callback object to receive results.
+   * @param callback callback object to receive results.
    * @param echo indicate whether to echo the input prompt or not.
    * @return The error code.
    */

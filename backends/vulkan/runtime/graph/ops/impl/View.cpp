@@ -65,7 +65,7 @@ void add_view_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
@@ -76,7 +76,7 @@ void add_view_node(
       // Parameter Buffers
       {t_out->sizes_ubo(), t_in->sizes_ubo()},
       // Specialization Constants
-      {SV(t_in->packed_dim_whcn_idx()), SV(t_out->packed_dim_whcn_idx())},
+      {SV(t_in->packed_dim()), SV(t_out->packed_dim())},
       // Resizing Logic
       resize_view_node,
       {sizes}));

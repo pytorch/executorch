@@ -13,8 +13,8 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 class QnnImplementation {
  public:
@@ -23,20 +23,20 @@ class QnnImplementation {
   explicit QnnImplementation(std::string lib_path)
       : lib_path_(std::move(lib_path)){};
 
-  Error Load(const QnnSaver_Config_t** saver_config);
+  executorch::runtime::Error Load(const QnnSaver_Config_t** saver_config);
 
   const QnnInterface& GetQnnInterface() const;
 
-  Error TerminateAllBackends();
+  executorch::runtime::Error TerminateAllBackends();
 
  private:
   static constexpr const int required_num_providers_{1};
 
-  static Error StartBackend(
+  static executorch::runtime::Error StartBackend(
       const std::string& lib_path,
       const QnnSaver_Config_t** saver_config);
 
-  static Error InitBackend(
+  static executorch::runtime::Error InitBackend(
       void* const lib_handle,
       const QnnSaver_Config_t** saver_config);
 
@@ -50,5 +50,5 @@ class QnnImplementation {
   static std::mutex be_init_mutex_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

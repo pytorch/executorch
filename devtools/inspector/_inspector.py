@@ -43,6 +43,7 @@ from executorch.devtools.etrecord import ETRecord, parse_etrecord
 from executorch.devtools.inspector._inspector_utils import (
     calculate_time_scale_factor,
     create_debug_handle_to_op_node_mapping,
+    display_or_print_df,
     EDGE_DIALECT_GRAPH_KEY,
     EXCLUDED_COLUMNS_WHEN_PRINTING,
     EXCLUDED_EVENTS_WHEN_PRINTING,
@@ -59,8 +60,6 @@ from executorch.devtools.inspector._inspector_utils import (
     verify_debug_data_equivalence,
 )
 from executorch.exir import ExportedProgram
-
-from tabulate import tabulate
 
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -967,6 +966,7 @@ class Inspector:
     def __init__(
         self,
         etdump_path: Optional[str] = None,
+        etdump_data: Optional[bytes] = None,
         etrecord: Optional[Union[ETRecord, str]] = None,
         source_time_scale: TimeScale = TimeScale.NS,
         target_time_scale: TimeScale = TimeScale.MS,
@@ -980,11 +980,12 @@ class Inspector:
         enable_module_hierarchy: bool = False,
     ) -> None:
         r"""
-        Initialize an `Inspector` instance with the underlying `EventBlock`\ s populated with data from the provided ETDump path
+        Initialize an `Inspector` instance with the underlying `EventBlock`\ s populated with data from the provided ETDump path or binary,
         and optional ETRecord path.
 
         Args:
-            etdump_path: Path to the ETDump file.
+            etdump_path: Path to the ETDump file. Either this parameter or etdump_data should be provided.
+            etdump_data: ETDump binary. Either this parameter or etdump_path should be provided.
             etrecord: Optional ETRecord object or path to the ETRecord file.
             source_time_scale: The time scale of the performance data retrieved from the runtime. The default time hook implentation in the runtime returns NS.
             target_time_scale: The target time scale to which the users want their performance data converted to. Defaults to MS.
@@ -1025,8 +1026,13 @@ class Inspector:
         else:
             raise TypeError("Unsupported ETRecord type")
 
+        if (etdump_path is None) == (etdump_data is None):
+            raise ValueError(
+                "Expecting exactly one of etdump_path or etdump_data to be specified."
+            )
+
         # Create EventBlocks from ETDump
-        etdump = gen_etdump_object(etdump_path=etdump_path)
+        etdump = gen_etdump_object(etdump_path=etdump_path, etdump_data=etdump_data)
         if debug_buffer_path is not None:
             with open(debug_buffer_path, "rb") as f:
                 output_buffer = f.read()
@@ -1165,25 +1171,7 @@ class Inspector:
             ]
         filtered_column_df.reset_index(drop=True, inplace=True)
 
-        try:
-            from IPython import get_ipython
-            from IPython.display import display
-
-            def style_text_size(val, size=12):
-                return f"font-size: {size}px"
-
-            if get_ipython() is not None:
-                styled_df = filtered_column_df.style.applymap(style_text_size)
-                display(styled_df)
-            else:
-                raise Exception(
-                    "Environment unable to support IPython. Fall back to print()."
-                )
-        except:
-            print(
-                tabulate(filtered_column_df, headers="keys", tablefmt="fancy_grid"),
-                file=file,
-            )
+        display_or_print_df(filtered_column_df, file)
 
     # TODO: write unit test
     def find_total_for_module(self, module_name: str) -> float:

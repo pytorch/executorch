@@ -73,6 +73,8 @@ torch::executor::ScalarType torch_to_executorch_scalar_type(
       return torch::executor::ScalarType::Short;
     case c10::ScalarType::Half:
       return torch::executor::ScalarType::Half;
+    case c10::ScalarType::BFloat16:
+      return torch::executor::ScalarType::BFloat16;
     case c10::ScalarType::Int:
       return torch::executor::ScalarType::Int;
     case c10::ScalarType::Float:
@@ -103,6 +105,8 @@ c10::ScalarType executorch_to_torch_scalar_type(
       return c10::ScalarType::Short;
     case torch::executor::ScalarType::Half:
       return c10::ScalarType::Half;
+    case torch::executor::ScalarType::BFloat16:
+      return c10::ScalarType::BFloat16;
     case torch::executor::ScalarType::Int:
       return c10::ScalarType::Int;
     case torch::executor::ScalarType::Float:
@@ -164,6 +168,13 @@ at::Tensor alias_attensor_to_etensor(const torch::executor::Tensor& etensor) {
 
   check_tensor_meta(t, etensor);
   return t;
+}
+
+TensorPtr alias_tensor_ptr_to_attensor(at::Tensor& t) {
+  return make_tensor_ptr(
+      {t.sizes().begin(), t.sizes().end()},
+      t.mutable_data_ptr(),
+      torch::executor::ScalarType(t.scalar_type()));
 }
 
 } // namespace extension

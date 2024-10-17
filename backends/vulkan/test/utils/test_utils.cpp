@@ -70,8 +70,7 @@ void record_nchw_to_image_op(
     vkapi::VulkanBuffer& src_buffer,
     api::vTensor& v_dst) {
   vkapi::PipelineBarrier pipeline_barrier{};
-  vkapi::SpecVarList specialization_constants = {
-      SV(v_dst.packed_dim_whcn_idx())};
+  vkapi::SpecVarList specialization_constants = {SV(v_dst.packed_dim())};
 
   context->submit_compute_job(
       get_nchw_to_tensor_shader(
@@ -96,8 +95,7 @@ void record_image_to_nchw_op(
     api::vTensor& v_src,
     vkapi::VulkanBuffer& dst_buffer) {
   vkapi::PipelineBarrier pipeline_barrier{};
-  vkapi::SpecVarList specialization_constants = {
-      SV(v_src.packed_dim_whcn_idx())};
+  vkapi::SpecVarList specialization_constants = {SV(v_src.packed_dim())};
 
   context->submit_compute_job(
       get_tensor_to_nchw_shader(v_src),
@@ -113,19 +111,24 @@ void record_image_to_nchw_op(
       v_src.axis_map_ubo());
 }
 
-void record_int8_image_to_nchw_noint8_op(
+void record_bitw8_image_to_nchw_nobitw8buffer_op(
     api::Context* const context,
     api::vTensor& v_src,
     api::StagingBuffer& dst_buffer) {
   vkapi::PipelineBarrier pipeline_barrier{};
   uint32_t buffer_len = utils::safe_downcast<uint32_t>(dst_buffer.numel() / 4);
   utils::uvec3 global_wg_size = {buffer_len, 1, 1};
+
+  std::string kernel_name = "bitw8_image_to_nchw_nobitw8buffer";
+  add_dtype_suffix(kernel_name, v_src);
+  add_storage_type_suffix(kernel_name, v_src);
+
   context->submit_compute_job(
-      VK_KERNEL(int8_image_to_nchw_noint8),
+      VK_KERNEL_FROM_STR(kernel_name),
       pipeline_barrier,
       global_wg_size,
       adaptive_work_group_size(global_wg_size),
-      {v_src.packed_dim_whcn_idx()},
+      {v_src.packed_dim()},
       VK_NULL_HANDLE,
       0,
       dst_buffer.buffer(),
@@ -334,9 +337,7 @@ void record_matmul_texture3d(
       pipeline_barrier,
       global_wg_size,
       {8, 8, 1},
-      {out.packed_dim_whcn_idx(),
-       mat1.packed_dim_whcn_idx(),
-       mat2.packed_dim_whcn_idx()},
+      {out.packed_dim(), mat1.packed_dim(), mat2.packed_dim()},
       VK_NULL_HANDLE,
       0,
       out.image(
@@ -362,7 +363,7 @@ void record_matmul_texture3d(
   _(uint8_t, Byte)                \
   _(int8_t, Char)                 \
   _(int32_t, Int)                 \
-  _(exec_aten::Half, Half)        \
+  _(executorch::aten::Half, Half) \
   _(float, Float)                 \
   _(int8_t, QInt8)
 

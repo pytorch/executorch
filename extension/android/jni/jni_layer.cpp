@@ -25,6 +25,11 @@
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
 
+#ifdef ET_USE_THREADPOOL
+#include <cpuinfo.h>
+#include <executorch/extension/threadpool/threadpool.h>
+#endif
+
 #include <fbjni/ByteBuffer.h>
 #include <fbjni/fbjni.h>
 
@@ -243,19 +248,11 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
       facebook::jni::alias_ref<jstring> modelPath,
-      facebook::jni::alias_ref<
-          facebook::jni::JMap<facebook::jni::JString, facebook::jni::JString>>
-          extraFiles,
       jint loadMode) {
-    return makeCxxInstance(modelPath, extraFiles, loadMode);
+    return makeCxxInstance(modelPath, loadMode);
   }
 
-  ExecuTorchJni(
-      facebook::jni::alias_ref<jstring> modelPath,
-      facebook::jni::alias_ref<
-          facebook::jni::JMap<facebook::jni::JString, facebook::jni::JString>>
-          extraFiles,
-      jint loadMode) {
+  ExecuTorchJni(facebook::jni::alias_ref<jstring> modelPath, jint loadMode) {
     Module::LoadMode load_mode = Module::LoadMode::Mmap;
     if (loadMode == 0) {
       load_mode = Module::LoadMode::File;
@@ -268,6 +265,25 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     }
 
     module_ = std::make_unique<Module>(modelPath->toStdString(), load_mode);
+
+#ifdef ET_USE_THREADPOOL
+    // Default to using cores/2 threadpool threads. The long-term plan is to
+    // improve performant core detection in CPUInfo, but for now we can use
+    // cores/2 as a sane default.
+    //
+    // Based on testing, this is almost universally faster than using all
+    // cores, as efficiency cores can be quite slow. In extreme cases, using
+    // all cores can be 10x slower than using cores/2.
+    //
+    // TODO Allow overriding this default from Java.
+    auto threadpool = executorch::extension::threadpool::get_threadpool();
+    if (threadpool) {
+      int thread_count = cpuinfo_get_processors_count() / 2;
+      if (thread_count > 0) {
+        threadpool->_unsafe_reset_threadpool(thread_count);
+      }
+    }
+#endif
   }
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> forward(
