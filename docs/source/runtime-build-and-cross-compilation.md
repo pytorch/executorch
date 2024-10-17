@@ -12,7 +12,7 @@ likely to be useful to embedded systems users.
 - `libexecutorch.a`: The core of the ExecuTorch runtime. Does not contain any
   operator/kernel definitions or backend definitions.
 - `libportable_kernels.a`: The implementations of ATen-compatible operators,
-  following the signatures in `[functions.yaml](https://github.com/pytorch/executorch/blob/main/kernels/portable/functions.yaml)`.
+  following the signatures in `[functions.yaml](https://github.com/pytorch/executorch/blob/release/0.4/kernels/portable/functions.yaml)`.
 - `libportable_ops_lib.a`: Generated code that registers the contents
   of `libportable_kernels.a` with the runtime.
   - NOTE: This must be linked into your application with a flag like
@@ -62,7 +62,7 @@ To further optimize the release build for size, add:
 CMAKE_FLAGS="$CMAKE_FLAGS -DOPTIMIZE_SIZE=ON"
 ```
 
-See [CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt)
+See [CMakeLists.txt](https://github.com/pytorch/executorch/blob/release/0.4/CMakeLists.txt)
 
 ## Build the runtime components
 
