@@ -1,4 +1,4 @@
-# Getting Started with LLMs via ExecuTorch
+# Intro to LLMs in ExecuTorch
 
 Welcome to LLM Manual! This manual is designed to provide a practical example to leverage
 ExecuTorch in onboarding your own Large Language Models (LLMs). Our primary goal is to offer
@@ -12,6 +12,8 @@ Consequently, the results produced by the model may vary and might not always be
 We encourage users to use this project as a starting point and adapt it to their specific needs,
 which includes creating your own versions of the tokenizer, sampler, acceleration backends, and
 other components. We hope this project serves as a useful guide in your journey with LLMs and ExecuTorch.
+
+For deploying Llama with optimal performance, please see [Llama guide](./llama.md).
 
 ### Table Of Contents
 
