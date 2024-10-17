@@ -6,12 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
-#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
@@ -86,7 +86,7 @@ mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
   ScalarType common_type = promoteTypes(a_type, b_type, /*half_to_float*/ true);
   ScalarType out_type = out.scalar_type();
   constexpr int kNnlibMaxDim = 4;  /*fallback if broadcast and dim > 4 */
-  
+
   int a_dim = a.dim(), b_dim = b.dim(), out_dim = out.dim();
   bool optimized = 1;
   /*find broadcast*/
@@ -97,28 +97,25 @@ mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
   max_dim = out.dim() > max_dim ? out.dim() : max_dim;
 
   
-  if((a_type != ScalarType::Float) || (b_type != ScalarType::Float))
+  if ((a_type != ScalarType::Float) || (b_type != ScalarType::Float))
     optimized = 0;
   
-  if( (a_dim == 0) || (b_dim == 0) )
+  if ((a_dim == 0) || (b_dim == 0) )
     optimized = 0;
   
-  if((broadcast == 1) && (max_dim > kNnlibMaxDim))
+  if ((broadcast == 1) && (max_dim > kNnlibMaxDim))
     optimized = 0;
 
-  if(optimized)
-  {
+  if (optimized) {
     float* a_data = a.mutable_data_ptr<float>();
     float* b_data = b.mutable_data_ptr<float>();
     float* out_data = out.mutable_data_ptr<float>();
 
-    if(broadcast == 1)
-    {
+    if (broadcast == 1) {
        int out_shape[kNnlibMaxDim];
        int inp1_shape[kNnlibMaxDim];
        int inp2_shape[kNnlibMaxDim];
-       for(int i = 0; i < kNnlibMaxDim; i++)
-       {
+       for (int i = 0; i < kNnlibMaxDim; i++) {
           out_shape[i] = 1;
           inp1_shape[i] = 1;
           inp2_shape[i] = 1;
@@ -126,14 +123,15 @@ mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
        int off_o = kNnlibMaxDim - out.dim();
        int off_a = kNnlibMaxDim - a.dim();
        int off_b = kNnlibMaxDim - b.dim();
-       for(int i = 0; i < out.dim(); i++){
-            out_shape[i+off_o] = out.size(i);}
-       for(int i = 0; i < a.dim(); i++)
+       for (int i = 0; i < out.dim(); i++)
+            out_shape[i+off_o] = out.size(i);
+       for (int i = 0; i < a.dim(); i++)
             inp1_shape[i+off_a] = a.size(i);
-       for(int i = 0; i < b.dim(); i++)
+       for (int i = 0; i < b.dim(); i++)
             inp2_shape[i+off_b] = b.size(i);
         
-       xa_nn_elm_mul_broadcast_4D_f32xf32_f32(out_data, out_shape, a_data, inp1_shape, b_data, inp2_shape);
+       xa_nn_elm_mul_broadcast_4D_f32xf32_f32(
+        out_data, out_shape, a_data, inp1_shape, b_data, inp2_shape);
     }
     else
     {
@@ -154,7 +152,7 @@ mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
             CTYPE_A,
             CTYPE_B,
             CTYPE_IN,
-            CTYPE_OUT>::run(a, b, out); 
+            CTYPE_OUT>::run(a, b, out);
       });
     });
   });
@@ -162,6 +160,6 @@ mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
   return out;
 }
 
-} // namespace impl
-} // namespace HiFi
 } // namespace native
+} // namespace HiFi
+} // namespace impl

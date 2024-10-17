@@ -8,9 +8,9 @@
 
 #include <cmath>
 
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
@@ -18,7 +18,7 @@ using executorch::aten::RuntimeContext;
 using torch::executor::Error;
 
 namespace impl {
-namespace HiFi { 
+namespace HiFi {
 namespace native {
 
 using Tensor = exec_aten::Tensor;
@@ -40,13 +40,12 @@ Tensor& sigmoid_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
-  
+
   bool optimized = 1;
-  if((in_type != ScalarType::Float) || (out_type != ScalarType::Float))
+  if ((in_type != ScalarType::Float) || (out_type != ScalarType::Float))
       optimized = 0;
   
-  if(optimized)
-  {
+  if (optimized) {
     float* data_in = in.mutable_data_ptr<float>();
     float* data_out = out.mutable_data_ptr<float>();
     xa_nn_vec_sigmoid_f32_f32(data_out, data_in, in.numel());

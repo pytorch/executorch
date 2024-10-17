@@ -6,25 +6,25 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
-#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
+using executorch::aten::RuntimeContext;
 using executorch::runtime::can_cast;
 using executorch::runtime::CppTypeToScalarType;
-using executorch::aten::RuntimeContext;
 using torch::executor::Error;
 
 
 namespace impl {
-namespace HiFi { 
+namespace HiFi {
 namespace native {
 
 namespace {
@@ -92,7 +92,8 @@ Tensor& sub_out(
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
-  ScalarType alpha_type = torch::executor::native::utils::get_scalar_dtype(alpha);
+  ScalarType alpha_type =
+    torch::executor::native::utils::get_scalar_dtype(alpha);
   ScalarType common_type = promoteTypes(a_type, b_type, /*half_to_float*/ true);
   ScalarType out_type = out.scalar_type();
 
@@ -115,18 +116,17 @@ Tensor& sub_out(
   int max_dim = a.dim() > b.dim() ? a.dim() : b.dim();
   max_dim = out.dim() > max_dim ? out.dim() : max_dim;
   
-  if((out_type != ScalarType::Float) || (alpha_val != 1.0))
+  if ((out_type != ScalarType::Float) || (alpha_val != 1.0))
     optimized = 0;
   
-  if((a_dim == 0) || (b_dim == 0))
+  if ((a_dim == 0) || (b_dim == 0))
     optimized = 0;
 
-  if((broadcast == 1) && (max_dim > kNnlibMaxDim))
+  if ((broadcast == 1) && (max_dim > kNnlibMaxDim))
     optimized = 0;
   
 
-  if(optimized)
-  {
+  if (optimized) {
       /*logic to find broadcast*/
       const int a_is_broadcasted = !out.sizes().equals(a.sizes());
       const int b_is_broadcasted = !out.sizes().equals(b.sizes());
@@ -135,14 +135,12 @@ Tensor& sub_out(
       const float* const a_data = a.const_data_ptr<float>();
       const float* const b_data = b.const_data_ptr<float>();
       float* const out_data = out.mutable_data_ptr<float>();
-      if(broadcast == 1)
-      {
+      if (broadcast == 1) {
          int out_shape[kNnlibMaxDim];
          int inp1_shape[kNnlibMaxDim];
          int inp2_shape[kNnlibMaxDim];
          
-         for(int i = 0; i < kNnlibMaxDim; i++)
-         {
+         for (int i = 0; i < kNnlibMaxDim; i++) {
             out_shape[i] = 1;
             inp1_shape[i] = 1;
             inp2_shape[i] = 1;
@@ -151,14 +149,15 @@ Tensor& sub_out(
          int off_o = kNnlibMaxDim - out_dim;
          int off_a = kNnlibMaxDim - a_dim;
          int off_b = kNnlibMaxDim - b_dim;
-         for(int i = 0; i < out_dim; i++)
+         for (int i = 0; i < out_dim; i++)
              out_shape[i+off_o] = out.size(i);
-         for(int i = 0; i < a_dim; i++)
+         for (int i = 0; i < a_dim; i++)
              inp1_shape[i+off_a] = a.size(i);
-         for(int i = 0; i < b_dim; i++)
+         for (int i = 0; i < b_dim; i++)
              inp2_shape[i+off_b] = b.size(i);
 
-         xa_nn_elm_sub_broadcast_4D_f32xf32_f32(out_data, out_shape, a_data, inp1_shape,b_data, inp2_shape);
+         xa_nn_elm_sub_broadcast_4D_f32xf32_f32(
+           out_data, out_shape, a_data, inp1_shape,b_data, inp2_shape);
       }                      
       else
       {
@@ -190,6 +189,6 @@ Tensor& sub_out(
   return out;
 }
 
-} // namespace impl
-} // namespace HiFi
 } // namespace native
+} // namespace HiFi
+} // namespace impl
