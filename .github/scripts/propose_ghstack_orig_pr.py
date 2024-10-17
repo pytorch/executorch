@@ -52,7 +52,9 @@ def extract_stack_from_body(pr_body: str) -> List[int]:
     """
 
     prs = []
-    ghstack_begin = "Stack from [ghstack](https://github.com/ezyang/ghstack) (oldest at bottom):"
+    ghstack_begin = (
+        "Stack from [ghstack](https://github.com/ezyang/ghstack) (oldest at bottom):"
+    )
     ghstack_begin_seen = False
     for line in pr_body.splitlines():
         if ghstack_begin in line:
@@ -100,9 +102,15 @@ ghstack PR head: https://github.com/pytorch/executorch/tree/{pr.head.ref}
 Merge bot PR base: https://github.com/pytorch/executorch/tree/{orig_branch_merge_base}
 Merge bot PR head: https://github.com/pytorch/executorch/tree/{orig_branch_merge_head}"""
 
-        existing_orig_pr = repo.get_pulls(head="pytorch:" + orig_branch_merge_head, base=orig_branch_merge_base, state="open")
+        existing_orig_pr = repo.get_pulls(
+            head="pytorch:" + orig_branch_merge_head,
+            base=orig_branch_merge_base,
+            state="open",
+        )
         if existing_orig_pr.totalCount > 0:
-            print(f"PR for {orig_branch_merge_head} already exists {existing_orig_pr[0]}")
+            print(
+                f"PR for {orig_branch_merge_head} already exists {existing_orig_pr[0]}"
+            )
             # We don't need to create/edit because the head PR is merged and orig is finalized.
         else:
             repo.create_pull(
