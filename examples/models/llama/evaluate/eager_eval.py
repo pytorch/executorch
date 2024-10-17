@@ -40,7 +40,12 @@ class EagerEvalWrapper(eval_wrapper):
 
     @property
     def eot_token_id(self):
-        return self._tokenizer.eot_id
+        """
+        The stories model does not have an EOT token, so we use the EOS token instead.
+        """
+        if hasattr(self._tokenizer, "eot_id"):
+            return self._tokenizer.eot_id
+        return self._tokenizer.eos_id
 
     @property
     def max_length(self):
