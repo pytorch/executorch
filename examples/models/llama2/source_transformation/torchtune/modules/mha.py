@@ -70,9 +70,8 @@ class MultiHeadAttention(nn.Module):
         max_seq_len (int): maximum sequence length supported by the model.
             This is needed to compute the RoPE Cache. Default: 4096.
         is_causal (bool): sets the default mask to causal when no mask is provided
-        attn_dropout (float): dropout value passed onto the
-            scaled_dot_product_attention function. This argument is ignored if the
-            self.training is False. Default value is 0.0.
+        attn_dropout (float): dropout value passed onto the scaled_dot_product_attention function.
+            This argument is ignored if self.training is False. Default value is 0.0.
 
     Raises:
         ValueError: If ``num_heads % num_kv_heads != 0``
@@ -147,7 +146,7 @@ class MultiHeadAttention(nn.Module):
             num_heads=self.num_heads,
             head_dim=self.head_dim,
             q_per_kv=self.q_per_kv,
-            attn_dropout=self.attn_dropout,
+            attn_dropout=self.attn_dropout if self.training else 0.0,
             is_causal=self.is_causal,
             attention_fn=self._attention_call,
             kv_cache=self.kv_cache,
