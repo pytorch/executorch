@@ -57,7 +57,7 @@ partially lower the Llama model to Vulkan.
 
 ```shell
 # The files will usually be downloaded to ~/.llama
-python -m examples.models.llama2.export_llama \
+python -m examples.models.llama.export_llama \
   --disable_dynamic_shape --vulkan -kv --use_sdpa_with_kv_cache -d fp32 \
   -c ~/.llama/checkpoints/Llama3.2-1B/consolidated.00.pth \
   -p ~/.llama/checkpoints/Llama3.2-1B/params.json \
@@ -95,23 +95,23 @@ binary using the Android NDK toolchain.
   cmake --build cmake-android-out -j16 --target install)
 
 # Build LLaMA Runner library
-(rm -rf cmake-android-out/examples/models/llama2 && \
-  cmake examples/models/llama2 \
+(rm -rf cmake-android-out/examples/models/llama && \
+  cmake examples/models/llama \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI=$ANDROID_ABI \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DPYTHON_EXECUTABLE=python \
-    -Bcmake-android-out/examples/models/llama2 && \
-  cmake --build cmake-android-out/examples/models/llama2 -j16)
+    -Bcmake-android-out/examples/models/llama && \
+  cmake --build cmake-android-out/examples/models/llama -j16)
 ```
 
 Finally, push and run the llama runner binary on your Android device. Note that
 your device must have sufficient GPU memory to execute the model.
 
 ```shell
-adb push cmake-android-out/examples/models/llama2/llama_main /data/local/tmp/llama_main
+adb push cmake-android-out/examples/models/llama/llama_main /data/local/tmp/llama_main
 
 adb shell /data/local/tmp/llama_main \
     --model_path=/data/local/tmp/vulkan_llama2.pte \

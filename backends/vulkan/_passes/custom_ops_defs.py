@@ -9,6 +9,10 @@ import torch.library
 namespace = "et_vk"
 lib = torch.library.Library(namespace, "DEF")
 
+#####################
+## conv_with_clamp ##
+#####################
+
 
 def conv_with_clamp_impl(
     input,
@@ -47,6 +51,10 @@ lib.define(
 lib.impl(name, conv_with_clamp_impl, "CompositeExplicitAutograd")
 conv_with_clamp_op = getattr(getattr(torch.ops, namespace), name)
 
+#########################
+## conv_with_clamp.out ##
+#########################
+
 
 def conv_with_clamp_out_impl(
     input,
@@ -83,6 +91,10 @@ lib.define(
     f"{name}(Tensor input, Tensor weight, Tensor? bias, SymInt[] stride, SymInt[] padding, SymInt[] dilation, bool transposed, SymInt[] output_padding, SymInt groups, Scalar? output_min, Scalar? output_max, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.impl(name, conv_with_clamp_out_impl, "CompositeExplicitAutograd")
+
+#################
+## grid_priors ##
+#################
 
 
 # The dimension of x should be larger than 1
@@ -125,3 +137,35 @@ lib.define(
     f"{name}(Tensor self, int stride, float offset, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.impl(name, grid_priors_out_impl, "CompositeExplicitAutograd")
+
+########################
+## linear_weight_int4 ##
+########################
+
+
+def linear_weight_int4_impl(
+    x: torch.Tensor,
+    weights_4x8: torch.Tensor,
+    groupsize: int,
+    scales_and_zeros: torch.Tensor,
+    inner_k_tiles: int,
+):
+    original_x_size = x.size()
+    out_features = weights_4x8.size(0)
+    x = x.reshape(-1, original_x_size[-1])
+    weight_int4pack = torch.ops.aten._convert_weight_to_int4pack(
+        weights_4x8, inner_k_tiles
+    )
+    out = torch.ops.aten._weight_int4pack_mm(
+        x, weight_int4pack, groupsize, scales_and_zeros
+    )
+    out_shape = original_x_size[:-1] + (out_features,)
+    return out.reshape(out_shape)
+
+
+name = "linear_weight_int4"
+lib.define(
+    f"{name}(Tensor self, Tensor mat2, int qGroupSize, Tensor qScaleAndZeros, int inner_k_tiles) -> Tensor"
+)
+lib.impl(name, linear_weight_int4_impl, "CompositeExplicitAutograd")
+linear_weight_int4_op = getattr(getattr(torch.ops, namespace), name)
