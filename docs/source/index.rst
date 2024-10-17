@@ -4,12 +4,16 @@ Welcome to the ExecuTorch Documentation
 =======================================
 
 .. important::
-   This is a beta release. As of this ExecuTorch beta release, the API
-   will follow the `lifecycle and deprecation policy <api-life-cycle.html.html>`__
-   and ``.pte`` binary format will comply with the *runtime compatibility policy* (TODO: add link).
-   This ensures that application developers can update to the latest version of ExecuTorch
-   without breaking existing integration code, in accordance with these policies.
-   If any issues arise or compatibility breaks occur, please `report them in GitHub <https://github.com/pytorch/executorch/issues/new/choose>`__.
+   v0.4.0 is a beta release of ExecuTorch. As of this release, the API will
+   follow the `API Lifecycle and Deprecation Policy <api-life-cycle.html>`__,
+   and the ``.pte`` binary format will comply with the `Runtime Compatibility
+   Policy
+   <https://github.com/pytorch/executorch/tree/main/runtime/COMPATIBILITY.md>`__.
+   This helps ensure that application developers can update to the latest
+   version of ExecuTorch without breaking existing integration code, in
+   accordance with these policies. If any issues arise or compatibility breaks
+   occur, please `report them in GitHub
+   <https://github.com/pytorch/executorch/issues/new/choose>`__.
 
    We welcome any feedback, suggestions, and bug reports from the community
    to help us improve the technology. Please use the `PyTorch Forums

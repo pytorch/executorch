@@ -152,8 +152,8 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   )
 
   add_subdirectory(
-    ${EXECUTORCH_ROOT}/examples/models/llama2/runner
-    ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama2/runner
+    ${EXECUTORCH_ROOT}/examples/models/llama/runner
+    ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama/runner
   )
 endif()
 

@@ -149,7 +149,7 @@ if(${ANDROID})
     PRIVATE
       ${LLAMA2_TOKENIZER_DIR}/tiktoken.cpp
       ${LLAMA2_TOKENIZER_DIR}/bpe_tokenizer.cpp
-      ${CMAKE_CURRENT_SOURCE_DIR}/../models/llama2/tokenizer/llama_tiktoken.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/../models/llama/tokenizer/llama_tiktoken.cpp
   )
 
   # Include directory for neuron headers

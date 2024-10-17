@@ -24,7 +24,7 @@ def define_common_targets():
         platforms = [ANDROID],
         visibility = ["@EXECUTORCH_CLIENTS"],
         deps = [
-            "fbsource//third-party/qualcomm/qnn:api",
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
             "//executorch/runtime/backend:interface",
         ],
         exported_deps = [
@@ -53,7 +53,7 @@ def define_common_targets():
             exclude = ["Logging.h"],
         ),
         define_static_target = True,
-        link_whole = True,  # needed for executorch/examples/models/llama2:main to register QnnBackend
+        link_whole = True,  # needed for executorch/examples/models/llama:main to register QnnBackend
         platforms = [ANDROID],
         visibility = ["@EXECUTORCH_CLIENTS"],
         resources = {
