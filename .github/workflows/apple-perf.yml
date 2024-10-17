@@ -76,7 +76,7 @@ jobs:
           # on-demand and periodic benchmarking.
           CRON_DEFAULT_MODELS: "stories110M,mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l"
           CRON_DEFAULT_DEVICES: "apple_iphone_15"
-          CRON_DEFAULT_DELEGATES: "xnnpack,coreml,mps"
+          CRON_DEFAULT_DELEGATES: "nnpack,coreml,mps"
         run: |
           set -ex
           MODELS="${{ inputs.models }}"
