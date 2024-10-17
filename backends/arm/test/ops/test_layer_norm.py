@@ -74,7 +74,7 @@ class TestLayerNorm(unittest.TestCase):
             ArmTester(
                 model=module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=False),
+                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
             .export()
             .check(["torch.ops.aten.layer_norm.default"])
@@ -93,7 +93,7 @@ class TestLayerNorm(unittest.TestCase):
             ArmTester(
                 model=module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=False),
+                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
             .quantize()
             .check_not(["torch.ops.aten.layer_norm.default"])
@@ -148,7 +148,8 @@ class TestLayerNorm(unittest.TestCase):
             self.LayerNorm(*model_params), (test_data,)
         )
 
-    @parameterized.expand(test_data_suite)
+    # Skip last test since it requires transpose.
+    @parameterized.expand(test_data_suite[:-1])
     def test_layer_norm_u55_BI(
         self,
         test_name: str,
