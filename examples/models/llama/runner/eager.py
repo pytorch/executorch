@@ -11,11 +11,11 @@ from typing import Optional
 import torch
 
 from examples.models.llama.llama_transformer import ModelArgs
-from executorch.examples.models.llama2.export_llama_lib import (
+from executorch.examples.models.llama.export_llama_lib import (
     _prepare_for_llama_export,
     build_args_parser as _build_args_parser,
 )
-from executorch.examples.models.llama2.runner.generation import LlamaRunner
+from executorch.examples.models.llama.runner.generation import LlamaRunner
 from executorch.extension.llm.export import LLMEdgeManager
 
 
