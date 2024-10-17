@@ -12,8 +12,8 @@ likely to be useful to embedded systems users.
 - `libexecutorch.a`: The core of the ExecuTorch runtime. Does not contain any
   operator/kernel definitions or backend definitions.
 - `libportable_kernels.a`: The implementations of ATen-compatible operators,
-  following the signatures in `//kernels/portable/functions.yaml`.
-- `libportable_kernels_bindings.a`: Generated code that registers the contents
+  following the signatures in `[functions.yaml](https://github.com/pytorch/executorch/blob/main/kernels/portable/functions.yaml)`.
+- `libportable_ops_lib.a`: Generated code that registers the contents
   of `libportable_kernels.a` with the runtime.
   - NOTE: This must be linked into your application with a flag like
     `-Wl,-force_load` or `-Wl,--whole-archive`. It contains load-time functions
@@ -43,9 +43,9 @@ dependencies may have changed.
 # cd to the root of the executorch repo
 cd executorch
 
-# Clean and configure the CMake build system. It's good practice to do this
+# Clean cmake cache directory (cmake-out). It's a good practice to do this
 # whenever cloning or pulling the upstream repo.
-(rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake ..)
+bash install_requirements.sh --clean
 ```
 
 Once this is done, you don't need to do it again until you pull from the upstream repo again, or if you modify any CMake-related files.
@@ -54,13 +54,12 @@ Once this is done, you don't need to do it again until you pull from the upstrea
 
 The release build offers optimizations intended to improve performance and reduce binary size. It disables program verification and executorch logging, and adds optimizations flags.
 ```bash
--DCMAKE_BUILD_TYPE=Release
+CMAKE_FLAGS="-DCMAKE_BUILD_TYPE=Release"
 ```
 
-To further optimize the release build for size, use both:
+To further optimize the release build for size, add:
 ```bash
--DCMAKE_BUILD_TYPE=Release \
--DOPTIMIZE_SIZE=ON
+CMAKE_FLAGS="$CMAKE_FLAGS -DOPTIMIZE_SIZE=ON"
 ```
 
 See [CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt)
@@ -70,12 +69,10 @@ See [CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/CMakeLists.
 Build all targets with
 
 ```bash
-# cd to the root of the executorch repo
-cd executorch
-
 # Build using the configuration that you previously generated under the
 # `cmake-out` directory.
-#
+cmake "$CMAKE_FLAGS" -Bcmake-out .
+
 # NOTE: The `-j` argument specifies how many jobs/processes to use when
 # building, and tends to speed up the build significantly. It's typical to use
 # "core count + 1" as the `-j` value.
