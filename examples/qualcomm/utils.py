@@ -234,7 +234,7 @@ def build_executorch_binary(
     shared_buffer=False,
     metadata=None,
     dump_intermediate_outputs=False,
-    custom_pass_config=None,
+    custom_pass_config=frozenset(),
 ):
     if quant_dtype is not None:
         quantizer = custom_quantizer or make_quantizer(quant_dtype=quant_dtype)
