@@ -34,6 +34,7 @@ class ETStaticCache(StaticCache):
         )
 
     def get_seq_length(self, layer_idx: Optional[int] = 0) -> int:
+        # pyre-fixme[16]: `ETStaticCache` has no attribute `key_cache`.
         return (self.key_cache[layer_idx][0, 0].any(dim=-1)).sum().item()
 
     def get_usable_length(

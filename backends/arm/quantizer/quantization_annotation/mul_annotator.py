@@ -24,7 +24,7 @@ def _annotate_mul(
 
     annotated_partitions = []
     for node in gm.graph.nodes:
-        if node.target not in (torch.ops.aten.mul.Tensor,):
+        if node.target not in (torch.ops.aten.mul.Tensor, torch.ops.aten.mul_.Tensor):
             continue
         mul_node = node
         annotated_partitions.append([mul_node])

@@ -221,7 +221,7 @@ int main(int argc, char** argv) {
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
       method_name,
-      method.error());
+      static_cast<int>(method.error()));
   ET_LOG(Info, "Method loaded.");
 
   void* debug_buffer = malloc(FLAGS_debug_buffer_size);
@@ -242,7 +242,7 @@ int main(int argc, char** argv) {
   ET_CHECK_MSG(
       status == Error::Ok,
       "LoadBundledInput failed with status 0x%" PRIx32,
-      status);
+      static_cast<int>(status));
 
   ET_LOG(Info, "Inputs prepared.");
 
@@ -252,7 +252,7 @@ int main(int argc, char** argv) {
       status == Error::Ok,
       "Execution of method %s failed with status 0x%" PRIx32,
       method_name,
-      status);
+      static_cast<int>(status));
   ET_LOG(Info, "Model executed successfully.");
 
   // Print the outputs.
@@ -294,7 +294,7 @@ int main(int argc, char** argv) {
     ET_CHECK_MSG(
         status == Error::Ok,
         "Bundle verification failed with status 0x%" PRIx32,
-        status);
+        static_cast<int>(status));
     ET_LOG(Info, "Model verified successfully.");
   }
 

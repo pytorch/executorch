@@ -53,7 +53,7 @@ jobs:
     # NB: Use metal install for KVM support to run the emulator faster
     runs-on: linux.24xl.spr-metal
     env:
-      ANDROID_NDK_VERSION: r26c
+      ANDROID_NDK_VERSION: r27b
       API_LEVEL: 34
     steps:
       - name: Setup SSH (Click me for login details)
@@ -79,6 +79,11 @@ jobs:
 
           # Reuse the script that install Android on ET Docker image
           sudo -E bash .ci/docker/common/install_android.sh
+
+          # After https://github.com/ReactiveCircus/android-emulator-runner/releases/tag/v2.33.0 release,
+          # it seems that we need to chown the Android setup to the current user instead of root to
+          # avoid permission issue
+          sudo chown -R "${USER}" /opt/android
 
       - name: Gradle cache
         uses: gradle/actions/setup-gradle@v3

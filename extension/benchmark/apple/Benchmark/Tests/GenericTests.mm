@@ -85,7 +85,10 @@ using namespace ::executorch::runtime;
           XCTFail("Unsupported tag %i at input %d", *input_tag, index);
         }
       }
+      XCTMeasureOptions *options = [[XCTMeasureOptions alloc] init];
+      options.iterationCount = 20;
       [testCase measureWithMetrics:@[ [XCTClockMetric new], [XCTMemoryMetric new] ]
+                            options:options
                             block:^{
                               XCTAssertEqual(module->forward().error(), Error::Ok);
                             }];

@@ -31,6 +31,13 @@ Optional ─┤  ├────────────────────
           └─ └───────────────────────────────────┘
 ```
 
+## Compatibility
+
+See the [Runtime Compatibility Policy](
+https://github.com/pytorch/executorch/tree/main/runtime/COMPATIBILITY.md) for
+details about the compatibility guarantees between the `.pte` format and the
+ExecuTorch runtime.
+
 ## Headers
 
 Program files can be recognized by the magic string at byte offset 4, beginning

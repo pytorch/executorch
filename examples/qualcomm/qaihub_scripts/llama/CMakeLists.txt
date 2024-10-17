@@ -78,7 +78,7 @@ list(
 list(
   APPEND
   _qaihub_llama3_8b_runner__srcs
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../../models/llama2/tokenizer/llama_tiktoken.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../../models/llama/tokenizer/llama_tiktoken.cpp
 )
 
 # build qaihub llama3 8b runner

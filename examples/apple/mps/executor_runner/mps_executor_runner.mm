@@ -372,7 +372,7 @@ int main(int argc, char** argv) {
         strstr(model_path, "emformer_transcribe")  ||
         strstr(model_path, "emformer_join")        ||
         strstr(model_path, "edsr")                 ||
-        strstr(model_path, "llama2")               ||
+        strstr(model_path, "llama")                ||
         strstr(model_path, "ic3")                  ||
         strstr(model_path, "ic4")) {
       atol = 1e-04;

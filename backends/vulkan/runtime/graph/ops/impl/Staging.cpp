@@ -9,6 +9,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/DispatchNode.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
@@ -147,7 +148,9 @@ ValueRef prepack_buffer(
     const utils::GPUMemoryLayout layout) {
   ValueRef v = graph.add_tensor_like(vref, utils::kBuffer, layout);
 
-  vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR("buffer_to_buffer");
+  std::string kernel_name = "buffer_to_buffer";
+  add_dtype_suffix(kernel_name, graph.dtype_of(vref));
+  vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
   vkapi::ParamsBindList ubos;
   ubos.append({graph.numel_ubo(v)});

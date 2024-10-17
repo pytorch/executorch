@@ -342,6 +342,10 @@ class ComputeGraph final {
     return values_.at(idx).toTensor().axis_map_ubo();
   }
 
+  inline bool has_standard_axis_map(const ValueRef idx) {
+    return values_.at(idx).toTensor().has_standard_axis_map();
+  }
+
   inline vkapi::BufferBindInfo logical_limits_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().logical_limits_ubo();
   }
@@ -689,6 +693,10 @@ class ComputeGraph final {
   //
   // Miscellaneous Utilities
   //
+
+  inline bool int16_shader_types_enabled() const {
+    return context_->adapter_ptr()->supports_int16_shader_types();
+  }
 
   /*
    * Check whether the GPU supports 8 bit buffers.

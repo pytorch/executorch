@@ -394,7 +394,7 @@ def compile(args):
     end_quantize_ts = time.time()
     print("single_llama.quantize(quant_dtype)", end_quantize_ts - start_quantize_ts)
     single_llama.lowering_modules(
-        args.artifact, kv_type=kv_type, soc_model=get_soc_to_chipset_map[args.model]
+        args.artifact, kv_type=kv_type, soc_model=get_soc_to_chipset_map()[args.model]
     )
     end_lowering_ts = time.time()
     print("Complete Compile", end_lowering_ts - end_quantize_ts)

@@ -439,6 +439,9 @@ class RunnerUtil:
 
             if self.is_quantized:
                 # Need to dequant back to FP32 for comparison with torch output
+                # Convert to int32 prior to dequantize the output
+                if tosa_ref_output.dtype == np.int8:
+                    tosa_ref_output = tosa_ref_output.astype(np.int32)
                 quant_param = self.qp_output
                 assert (
                     quant_param is not None

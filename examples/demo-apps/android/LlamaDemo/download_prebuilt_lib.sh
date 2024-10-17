@@ -15,6 +15,5 @@ mkdir -p "$LIBS_PATH"
 
 pushd "$LIBS_PATH"
 curl -O "${AAR_SHASUM_URL}"
-sed -i -e 's/executorch.aar/executorch-llama.aar/g' executorch.aar.sha256sums
-shasum --check --status executorch.aar.sha256sums || curl "${AAR_URL}" -o executorch-llama.aar
+shasum --check --status executorch.aar.sha256sums || curl "${AAR_URL}" -o executorch.aar
 popd

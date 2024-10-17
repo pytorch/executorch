@@ -9,7 +9,7 @@ import unittest
 import torch
 
 from executorch.backends.xnnpack.test.tester import Tester
-from executorch.examples.models.llama2.model import Llama2Model
+from executorch.examples.models.llama.model import Llama2Model
 
 
 class TestLlama2ETExample(unittest.TestCase):

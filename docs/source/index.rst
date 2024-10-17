@@ -4,11 +4,16 @@ Welcome to the ExecuTorch Documentation
 =======================================
 
 .. important::
-   This is an alpha release; the ExecuTorch APIs and the ``.pte`` binary format
-   may change in incompatible ways before stabilizing in a future beta release.
-   When deploying models, we currently recommend using a version of the runtime
-   built from the same git revision that was used to generate the ``.pte`` file.
-   Once the format has stabilized, this will no longer be necessary.
+   v0.4.0 is a beta release of ExecuTorch. As of this release, the API will
+   follow the `API Lifecycle and Deprecation Policy <api-life-cycle.html>`__,
+   and the ``.pte`` binary format will comply with the `Runtime Compatibility
+   Policy
+   <https://github.com/pytorch/executorch/tree/main/runtime/COMPATIBILITY.md>`__.
+   This helps ensure that application developers can update to the latest
+   version of ExecuTorch without breaking existing integration code, in
+   accordance with these policies. If any issues arise or compatibility breaks
+   occur, please `report them in GitHub
+   <https://github.com/pytorch/executorch/issues/new/choose>`__.
 
    We welcome any feedback, suggestions, and bug reports from the community
    to help us improve the technology. Please use the `PyTorch Forums
@@ -55,13 +60,12 @@ Topics in this section will help you get started with ExecuTorch.
         ExecuTorch.
 
      .. grid-item-card:: :octicon:`file-code;1em`
-        ExecuTorch Intermediate Representation API
+        ExecuTorch Llama
         :img-top: _static/img/card-background.svg
-        :link: ir-exir.html
+        :link: llm/llama.html
         :link-type: url
 
-        Learn about EXIR, a graph-based intermediate
-        representation (IR) of PyTorch programs.
+        Learn about running Llama models via ExecuTorch
 
 .. toctree::
    :glob:
@@ -117,10 +121,11 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Working with LLMs
    :hidden:
 
-   llm/getting-started
-   llm/llama-demo-android
-   llm/build-run-llama3-qualcomm-ai-engine-direct-backend
-   llm/llama-demo-ios
+   Llama <llm/llama>
+   Llama on Android <llm/llama-demo-android>
+   Llama on iOS <llm/llama-demo-ios>
+   Llama on Android via Qualcomm backend <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
+   Intro to LLMs in Executorch <llm/getting-started>
 
 .. toctree::
    :glob:
@@ -130,6 +135,7 @@ Topics in this section will help you get started with ExecuTorch.
 
    export-to-executorch-api-reference
    executorch-runtime-api-reference
+   runtime-python-api-reference
    api-life-cycle
 
 .. toctree::

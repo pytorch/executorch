@@ -12,7 +12,7 @@ Phone verified: MediaTek Dimensity 9300 (D9300) chip.
 * Download and link the Buck2 build, Android NDK, and MediaTek ExecuTorch Libraries from the MediaTek Backend Readme ([link](https://github.com/pytorch/executorch/tree/main/backends/mediatek/scripts#prerequisites)).
 * MediaTek Dimensity 9300 (D9300) chip device
 * Desired Llama 3 model weights. You can download them on HuggingFace [Example](https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct)).
-* Download NeuroPilot Express SDK from the [MediaTek NeuroPilot Portal](https://neuropilot.mediatek.com/resources/public/npexpress/en/docs/npexpress) (coming soon):
+* Download NeuroPilot Express SDK from the [MediaTek NeuroPilot Portal](https://neuropilot.mediatek.com/resources/public/npexpress/en/docs/npexpress):
   - `libneuronusdk_adapter.mtk.so`: This universal SDK contains the implementation required for executing target-dependent code on the MediaTek chip.
   - `libneuron_buffer_allocator.so`: This utility library is designed for allocating DMA buffers necessary for model inference.
   - `mtk_converter-8.8.0.dev20240723+public.d1467db9-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl`: This library preprocess the model into a MediaTek representation.

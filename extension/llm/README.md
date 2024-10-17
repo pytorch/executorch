@@ -10,7 +10,7 @@ Commonly used methods in this class include:
 - _source_transform_: execute a series of source transform passes. Some transform passes include
   - weight only quantization, which can be done at source (eager mode) level.
   - replace some torch operators to a custom operator. For example, _replace_sdpa_with_custom_op_.
-- _capture_pre_autograd_graph_: get a graph that is ready for pt2 graph-based quantization.
+- _torch.export_for_training_: get a graph that is ready for pt2 graph-based quantization.
 - _pt2e_quantize_ with passed in quantizers.
   - util functions in _quantizer_lib.py_ can help to get different quantizers based on the needs.
 - _export_to_edge_: export to edge dialect
@@ -18,7 +18,7 @@ Commonly used methods in this class include:
 - _to_executorch_: get the executorch graph with optional optimization passes.
 - _save_to_pte_: finally, the lowered and optimized graph can be saved into a .pte file for the runtime.
 
-Some usage of LLMEdgeManager can be found in executorch/examples/models/llama2, and executorch/examples/models/llava.
+Some usage of LLMEdgeManager can be found in executorch/examples/models/llama, and executorch/examples/models/llava.
 
 When the .pte file is exported and saved, we can load and run it in a runner (see below).
 
@@ -44,6 +44,6 @@ Contains custom op, such as:
 ## runner
 It hosts the libary components used in a C++ llm runner. Currently, it hosts _stats.h_ on runtime status like token numbers and latency.
 
-With the components above, an actual runner can be built for a model or a series of models. An example is in //executorch/examples/models/llama2/runner, where a C++ runner code is built to run Llama 2, 3, 3.1 and other models using the same architecture.
+With the components above, an actual runner can be built for a model or a series of models. An example is in //executorch/examples/models/llama/runner, where a C++ runner code is built to run Llama 2, 3, 3.1 and other models using the same architecture.
 
 Usages can also be found in the [torchchat repo](https://github.com/pytorch/torchchat/tree/main/runner).

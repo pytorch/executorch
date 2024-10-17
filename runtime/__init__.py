@@ -4,15 +4,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Interface to the native C++ ExecuTorch runtime.
-
+"""
 Example usage:
-.. code-block:: text
+
+.. code-block:: python
 
     from pathlib import Path
 
     import torch
-    from executorch.runtime import Verification, Runtime
+    from executorch.runtime import Verification, Runtime, Program, Method
 
     et_runtime: Runtime = Runtime.get()
     program: Program = et_runtime.load_program(
@@ -28,6 +28,7 @@ Example usage:
     print(f"  outputs: {outputs}")
 
 Example output:
+
 .. code-block:: text
 
     Program methods: ('forward', 'forward2')
@@ -107,6 +108,9 @@ class Program:
 
     @property
     def method_names(self) -> Set[str]:
+        """
+        Returns method names of the `Program` as a set of strings.
+        """
         return set(self._methods.keys())
 
     def load_method(self, name: str) -> Optional[Method]:
@@ -130,7 +134,9 @@ class OperatorRegistry:
 
     @property
     def operator_names(self) -> Set[str]:
-        """The names of all registered operators."""
+        """
+        Returns the names of all registered operators as a set of strings.
+        """
         return set(self._legacy_module._get_operator_names())
 
 

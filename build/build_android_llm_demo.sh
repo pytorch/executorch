@@ -26,11 +26,17 @@ build_android_native_library() {
     EXECUTORCH_BUILD_QNN=OFF
   fi
 
+  NEURON_BUFFER_ALLOCATOR_LIB="${NEURON_BUFFER_ALLOCATOR_LIB:-}"
+  NEURON_USDK_ADAPTER_LIB="${NEURON_USDK_ADAPTER_LIB:-}"
+  if [ -n "$NEURON_BUFFER_ALLOCATOR_LIB" ]; then
+    EXECUTORCH_BUILD_NEURON=ON
+  else
+    EXECUTORCH_BUILD_NEURON=OFF
+  fi
 
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
-    -DANDROID_PLATFORM=android-26 \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DEXECUTORCH_LOG_LEVEL=Info \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
@@ -59,7 +65,6 @@ build_android_native_library() {
   cmake extension/android \
     -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="${ANDROID_ABI}" \
-    -DANDROID_PLATFORM=android-26 \
     -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DEXECUTORCH_LOG_LEVEL=Info \
@@ -108,13 +113,12 @@ build_aar() {
   find jni -type f -name "libexecutorch_jni.so" -exec bash -c 'mv "$1" "${1/_jni/}"' bash {} \;
   # Zip all necessary files into the AAR file
   zip -r executorch.aar libs jni/*/libexecutorch.so jni/*/libqnn*.so jni/*/libQnn*.so jni/*/libneuron_backend.so jni/*/libneuron_buffer_allocator.so jni/*/libneuronusdk_adapter.mtk.so AndroidManifest.xml
-  cp executorch.aar executorch-llama.aar
   popd
 }
 
 build_android_demo_apps() {
   mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
-  cp ${BUILD_AAR_DIR}/executorch-llama.aar examples/demo-apps/android/LlamaDemo/app/libs
+  cp ${BUILD_AAR_DIR}/executorch.aar examples/demo-apps/android/LlamaDemo/app/libs
   pushd examples/demo-apps/android/LlamaDemo
   ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
   popd
@@ -150,19 +154,27 @@ collect_artifacts_to_be_uploaded() {
   cp extension/benchmark/android/benchmark/app/build/outputs/apk/androidTest/debug/*.apk "${MINIBENCH_APP_DIR}"
 }
 
-BUILD_AAR_DIR="$(mktemp -d)"
-export BUILD_AAR_DIR
-if [ -z "$ANDROID_ABIS" ]; then
-  ANDROID_ABIS=("arm64-v8a" "x86_64")
+main() {
+  BUILD_AAR_DIR="$(mktemp -d)"
+  export BUILD_AAR_DIR
+  if [ -z "$ANDROID_ABIS" ]; then
+    ANDROID_ABIS=("arm64-v8a" "x86_64")
+  fi
+  export ANDROID_ABIS
+
+  ARTIFACTS_DIR_NAME="$1"
+
+  build_jar
+  for ANDROID_ABI in "${ANDROID_ABIS[@]}"; do
+    build_android_native_library ${ANDROID_ABI}
+  done
+  build_aar
+  build_android_demo_apps
+  if [ -n "$ARTIFACTS_DIR_NAME" ]; then
+    collect_artifacts_to_be_uploaded ${ARTIFACTS_DIR_NAME}
+  fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
 fi
-export ANDROID_ABIS
-
-ARTIFACTS_DIR_NAME="$1"
-
-build_jar
-for ANDROID_ABI in "${ANDROID_ABIS[@]}"; do
-  build_android_native_library ${ANDROID_ABI}
-done
-build_aar
-build_android_demo_apps
-collect_artifacts_to_be_uploaded ${ARTIFACTS_DIR_NAME}

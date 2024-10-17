@@ -88,7 +88,7 @@ ethos_u_base_rev="24.08"
 
 # tosa reference model
 tosa_reference_model_url="https://review.mlplatform.org/tosa/reference_model"
-tosa_reference_model_rev="444eb365d92774430006e56a8c20161be2f2674f"
+tosa_reference_model_rev="f9ea4ab7da19318fe36b1c34d68a3e40fd6e56c5"
  
 ########
 ### Mandatory user args

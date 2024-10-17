@@ -1018,16 +1018,13 @@ class TestPasses(unittest.TestCase):
             torch.ones(2, 2),
         )
 
-        graph_module = (
-            to_edge(
-                export(
-                    f,
-                    inputs,
-                )
+        ep = to_edge(
+            export(
+                f,
+                inputs,
             )
-            .exported_program()
-            .graph_module
-        )
+        ).exported_program()
+        graph_module = ep.graph_module
 
         def check_debug_handle_metadata(graph_module: torch.fx.GraphModule) -> None:
             queue = [graph_module]
@@ -1045,6 +1042,7 @@ class TestPasses(unittest.TestCase):
 
         DebugHandleGeneratorPass()(graph_module)
         check_debug_handle_metadata(graph_module)
+        generate_missing_debug_handles(ep)
 
         # Check debug handle still preserved after ScalarToTensorPass
         ScalarToTensorPass()(graph_module)

@@ -293,9 +293,9 @@ class ArmTester(Tester):
             test_input: list[torch.Tensor] = []
             for arg in reference_input:
                 if isinstance(arg, torch.Tensor):
-                    test_input.append(arg)
+                    test_input.append(arg.clone())
                 if isinstance(arg, tuple) and isinstance(arg[0], torch.Tensor):
-                    test_input.extend(list(arg))
+                    test_input.extend([tensor.clone() for tensor in arg])
 
             if (
                 is_nhwc

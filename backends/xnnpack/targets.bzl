@@ -6,7 +6,7 @@ def _get_preprocessor_flags():
     Disable if someone explictly specified a config option,
     else Enable otherwise
     """
-    if native.read_config("executorch", "xnnpack_workspace_sharing", "1") == "0":
+    if native.read_config("executorch", "xnnpack_workspace_sharing", "0") == "0":
         return []
 
     # Enable if not disabled through config

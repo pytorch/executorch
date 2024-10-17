@@ -25,6 +25,7 @@ set(_kernels_quantized_test_sources
     op_add_test.cpp
     op_choose_qparams_test.cpp
     op_dequantize_test.cpp
+    op_embedding2b_test.cpp
     op_embedding4b_test.cpp
     op_embedding_test.cpp
     op_mixed_linear_test.cpp

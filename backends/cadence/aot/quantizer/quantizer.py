@@ -141,13 +141,20 @@ class CadenceAtenQuantizer(Quantizer):
 
 
 class CadenceQuantizer(ComposableQuantizer):
-    def __init__(self) -> None:
-        static_qconfig = QuantizationConfig(
-            act_qspec,
-            act_qspec,
-            wgt_qspec,
-            None,
+    def __init__(
+        self, quantization_config: Optional[QuantizationConfig] = None
+    ) -> None:
+        static_qconfig = (
+            QuantizationConfig(
+                act_qspec,
+                act_qspec,
+                wgt_qspec,
+                None,
+            )
+            if not quantization_config
+            else quantization_config
         )
+
         super().__init__(
             [
                 CadenceAtenQuantizer(AddmmPattern(), static_qconfig),

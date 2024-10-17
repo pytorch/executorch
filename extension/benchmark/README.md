@@ -8,7 +8,7 @@ The ExecuTorch project introduces an advanced benchmarking infrastructure design
 
 - **Device Support**: Includes popular phones like latest Apple iPhone, Google Pixel, and Samsung Galaxy, etc.
 
-- **Backend Delegates**: Supports XNNPACK, Apple CoreML, Qualcomm QNN, and more in the near future.
+- **Backend Delegates**: Supports XNNPACK, Apple CoreML and MPS, Qualcomm QNN, and more in the near future.
 
 - **Benchmark Apps:** Generic apps that support both GenAI and non-GenAI models, capable of measuring performance offline. [Android App](android/benchmark/) | [iOS App](apple/Benchmark/). Popular Android and iOS profilers with in-depth performance analysis will be integrated with these apps in the future.
 
@@ -17,35 +17,22 @@ The ExecuTorch project introduces an advanced benchmarking infrastructure design
 > **Disclaimer:** The infrastructure is new and experimental. We're working on improving its accessibility and stability over time.
 
 
-## Preliminary Benchmark Results
+## Dashboard
 
-Below is a table summarizing some example data points obtained via the infra. These numbers represent model load time and average inference latency across different platforms and backends.
+The ExecuTorch Benchmark Dashboard tracks performance metrics for various models across different backend delegates and devices. It enables users to compare metrics, monitor trends, and identify optimizations or regressions in Executorch. The dashboard is accessible at **[ExecuTorch Benchmark Dashboard](https://hud.pytorch.org/benchmark/llms?repoName=pytorch%2Fexecutorch)**.
 
-| Model                 | Backend      | Model Load Time (ms) | Avg Inference Latency (ms) | Device                 |
-|-----------------------|--------------|----------------------|----------------------------|------------------------|
-| MobileNetV3 (mv3)     | XNNPACK Q8   | [34.024](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218988461)               | [252.628](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218988461)                    | Samsung S22            |
-| MobileNetV3 (mv3)     | QNN FP16     | [168.414](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218987785)              | [1.182](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218987785)                      | Samsung S22            |
-| MobileNetV3 (mv3)     | COREML FP16  | [57.372](https://github.com/pytorch/executorch/actions/runs/11136241814/job/30999930691)               | [0.429](https://github.com/pytorch/executorch/actions/runs/11136241814/job/30999930691)                    | Apple iPhone 15 Pro    |
-| MobileNetV2 (mv2)     | XNNPACK Q8   | [14.397](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218987379)               | [10.796](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218987379)                     | Samsung S22            |
-| MobileNetV2 (mv2)     | QNN FP16     | [136.862](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218987097)              | [0.673](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218987097)                      | Samsung S22            |
-| MobileNetV2 (mv2)     | COREML FP16  | [50.892](https://github.com/pytorch/executorch/actions/runs/11171117103/job/31056078594)               | [0.631](https://github.com/pytorch/executorch/actions/runs/11171117103/job/31056078594)                    | Apple iPhone 15 Pro   |
-| InceptionV4 (ic4)     | XNNPACK Q8   | [87.617](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218986716)               | [117.937](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218986716)                    | Samsung S22            |
-| InceptionV4 (ic4)     | QNN FP16     | [163.943](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218986381)              | [2.734](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218986381)                      | Samsung S22            |
-| InceptionV4 (ic4)     | COREML FP16  | [118.686](https://github.com/pytorch/executorch/actions/runs/11136241814/job/30999930140)              | [4.289](https://github.com/pytorch/executorch/actions/runs/11136241814/job/30999930140)                   | Apple iPhone 15 Pro    |
-| InceptionV3 (ic3)     | XNNPACK Q8   | [60.708](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218986023)               | [98.390](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218986023)                     | Samsung S22            |
-| InceptionV3 (ic3)     | QNN FP16     | [134.732](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218985425)              | [1.351](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218985425)                      | Samsung S22            |
-| InceptionV3 (ic3)     | COREML FP16  | [86.728](https://github.com/pytorch/executorch/actions/runs/11171117103/job/31056078753)               | [1.391](https://github.com/pytorch/executorch/actions/runs/11171117103/job/31056078753)                   | Apple iPhone 15 Pro    |
-| DeepLabV3 (dl3)       | XNNPACK Q8   | [90.616](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218985758)               | [666.219](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218985758)                    | Samsung S22            |
-| DeepLabV3 (dl3)       | QNN FP16     | [182.207](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218985141)              | [9.759](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218985141)                      | Samsung S22            |
-| ResNet50 (resnet50)   | XNNPACK Q8   | [55.462](https://github.com/pytorch/executorch/actions/runs/10911725781/job/30285857102)               | [37.021](https://github.com/pytorch/executorch/actions/runs/10911725781/job/30285857102)                     | Apple iPhone 15 Pro    |
-| ResNet50 (resnet50)   | COREML FP16  | [68.943](https://github.com/pytorch/executorch/actions/runs/11136241814/job/30999930818)               | [1.979](https://github.com/pytorch/executorch/actions/runs/11136241814/job/30999930818)                   | Apple iPhone 15 Pro    |
-| TorchVisionVit (vit)  | QNN FP16     | [174.430](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218989581)              | [199.279](https://github.com/pytorch/executorch/actions/runs/10875550238/job/30218989581)                    | Samsung S22            |
-| Wave2Letter (w2l)     | XNNPACK Q8   | [33.913](https://github.com/pytorch/executorch/actions/runs/10857890364/job/30139445319)               | [135.584](https://github.com/pytorch/executorch/actions/runs/10857890364/job/30139445319)                    | Apple iPhone 15 Pro    |
-| Wave2Letter (w2l)     | COREML FP16  | [109.254](https://github.com/pytorch/executorch/actions/runs/11136241814/job/30999931566)               | [28.465](https://github.com/pytorch/executorch/actions/runs/11136241814/job/30999931566)                    | Apple iPhone 15    |
-| MobileBERT (mobilebert) | XNNPACK FP32 | [26.499](https://github.com/pytorch/executorch/actions/runs/11136241814/job/30999930558)               | [33.978](https://github.com/pytorch/executorch/actions/runs/11136241814/job/30999930558)                    | Apple iPhone 15 Pro    |
-| MobileBERT (mobilebert) | COREML FP16  | [206.202](https://github.com/pytorch/executorch/actions/runs/11136241814/job/30999930398)               | [1.873](https://github.com/pytorch/executorch/actions/runs/11136241814/job/30999930398)                    | Apple iPhone 15 Pro    |
-| EDSR (edsr)           | XNNPACK Q8   | [3.190](https://github.com/pytorch/executorch/actions/runs/11136241814/job/30999929836)               | [168.429](https://github.com/pytorch/executorch/actions/runs/11136241814/job/30999929836)                    | Apple iPhone 15 Pro    |
-| EDSR (edsr)           | COREML FP16  | [156.075](https://github.com/pytorch/executorch/actions/runs/11136241814/job/30999929690)               | [77.346](https://github.com/pytorch/executorch/actions/runs/11136241814/job/30999929690)                    | Apple iPhone 15 Pro    |
+**Comprehensive Comparisons**:
+- Analyze performance differences between backend delegates (e.g., XNNPACK, CoreML, QNN, MPS) for the same model.
+- Compare performance across different models.
+- Track performance changes over time and across different commits.
+
+**Metrics Tracking**:
+- Monitor essential metrics such as load time and inference time. For LLMs, additional metrics like tokens/s are available.
+- Observe performance trends over time to identify improvements or regressions.
+
+**Visualizations**:
+- View detailed performance data through charts and graphs.
+- Color-coded highlights for improvements (green) and regressions (red) exceeding 5% compared to the baseline.
 
 
 ## Supported Use Cases
@@ -74,7 +61,7 @@ Users can schedule a benchmarking workflow on a pull request through GitHub Acti
 
 ## Retrieving Benchmark Results
 
-Currently, retrieving benchmark results involves manually extracting the `benchmark_results.json` from the `Customer_Artifacts.zip` stored on AWS S3 from the benchmarking job. This process is not yet streamlined. We are working on simplifying this process and linking the results directly to the dashboard, which will be available soon.
+The easiest way to view benchmark results is on the [dashboard](./README.md#dashboard), while raw results for individual configurations can be manually accessed by downloading the `Customer_Artifacts.zip` from the CI.
 
 
 ## Feedback and Issue Reporting

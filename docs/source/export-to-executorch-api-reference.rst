@@ -6,6 +6,9 @@ For detailed information on how APIs evolve and the deprecation process, please 
 .. automodule:: executorch.exir
 .. autofunction:: to_edge
 
+.. automodule:: executorch.exir
+.. autofunction:: to_edge_transform_and_lower
+
 .. autoclass:: EdgeProgramManager
     :members: methods, config_methods, exported_program, transform, to_backend, to_executorch
 

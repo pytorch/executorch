@@ -8,18 +8,21 @@
 # Example script for exporting simple models to flatbuffer
 
 import argparse
+import json
 import logging
 import os
-from typing import Optional
+
+from pathlib import Path
+from typing import Optional, Tuple
 
 import torch
-
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
+from executorch.backends.arm.util.arm_model_evaluator import GenericModelEvaluator
 
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
@@ -151,6 +154,8 @@ models = {
     "softmax": SoftmaxModule,
 }
 
+evaluators = {}
+
 targets = [
     "ethos-u55-32",
     "ethos-u55-64",
@@ -202,6 +207,37 @@ def get_compile_spec(target: str, intermediates: bool) -> ArmCompileSpecBuilder:
     return spec_builder.build()
 
 
+def get_evaluator(model_name: str) -> GenericModelEvaluator:
+    if model_name not in evaluators:
+        return GenericModelEvaluator
+    else:
+        return evaluators[model_name]
+
+
+def evaluate_model(
+    model_name: str,
+    intermediates: str,
+    model_fp32: torch.nn.Module,
+    model_int8: torch.nn.Module,
+    example_inputs: Tuple[torch.Tensor],
+):
+    evaluator = get_evaluator(model_name)
+
+    # Get the path of the TOSA flatbuffer that is dumped
+    intermediates_path = Path(intermediates)
+    tosa_paths = list(intermediates_path.glob("*.tosa"))
+
+    init_evaluator = evaluator(
+        model_name, model_fp32, model_int8, example_inputs, str(tosa_paths[0])
+    )
+
+    quant_metrics = init_evaluator.evaluate()
+    output_json_path = intermediates_path / "quant_metrics.json"
+
+    with output_json_path.open("w") as json_file:
+        json.dump(quant_metrics, json_file)
+
+
 def dump_delegation_info(edge, intermediate_files_folder: Optional[str] = None):
     graph_module = edge.exported_program().graph_module
     delegation_info = get_delegation_info(graph_module)
@@ -243,6 +279,14 @@ def get_args():
         help=f"For ArmBackend delegated models, pick the target, and therefore the instruction set generated. valid targets are {targets}",
     )
     parser.add_argument(
+        "-e",
+        "--evaluate",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Flag for running evaluation of the model.",
+    )
+    parser.add_argument(
         "-q",
         "--quantize",
         action="store_true",
@@ -275,11 +319,11 @@ def get_args():
         help="Location for outputs, if not the default of cwd.",
     )
     args = parser.parse_args()
-    return args
 
-
-if __name__ == "__main__":
-    args = get_args()
+    if args.evaluate and (args.quantize is None or args.intermediates is None):
+        raise RuntimeError(
+            "--evaluate requires --quantize and --intermediates to be enabled."
+        )
 
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
@@ -302,16 +346,26 @@ if __name__ == "__main__":
     ):
         raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
 
+    return args
+
+
+if __name__ == "__main__":
+    args = get_args()
+
     # Pick model from one of the supported lists
     model, example_inputs = get_model_and_inputs_from_name(args.model_name)
     model = model.eval()
+
+    model_fp32 = model
 
     # pre-autograd export. eventually this will become torch.export
     model = torch.export.export_for_training(model, example_inputs).module()
 
     # Quantize if required
+    model_int8 = None
     if args.quantize:
         model = quantize(model, example_inputs)
+        model_int8 = model
 
     edge = export_to_edge(
         model,
@@ -361,3 +415,8 @@ if __name__ == "__main__":
         output_name = os.path.join(args.output, output_name)
 
     save_pte_program(exec_prog, output_name)
+
+    if args.evaluate:
+        evaluate_model(
+            args.model_name, args.intermediates, model_fp32, model_int8, example_inputs
+        )

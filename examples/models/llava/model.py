@@ -12,9 +12,9 @@ from typing import Any, Dict, Optional, Tuple
 
 import requests
 import torch
-from executorch.examples.models.llama2.llama_transformer import ModelArgs, Transformer
+from executorch.examples.models.llama.llama_transformer import ModelArgs, Transformer
 
-from executorch.examples.models.llama2.source_transformation.sdpa import (
+from executorch.examples.models.llama.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
 from executorch.examples.models.llava.image_util import prepare_image

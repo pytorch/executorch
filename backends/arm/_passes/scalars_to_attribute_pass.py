@@ -7,7 +7,7 @@
 from typing import cast, Union
 
 import torch
-from executorch.backends.arm.tosa_mapping import extract_tensor_meta
+from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.ao.quantization.fx.utils import get_new_attr_name_with_prefix
@@ -22,10 +22,14 @@ class ScalarsToAttributePass(ExportPass):
 
     targeted_ops = [
         torch.ops.aten.add.Tensor,
+        torch.ops.aten.add_.Tensor,
         torch.ops.aten.sub.Tensor,
         torch.ops.aten.sub_.Tensor,
+        torch.ops.aten.rsub.Scalar,
         torch.ops.aten.mul.Tensor,
+        torch.ops.aten.mul_.Tensor,
         torch.ops.aten.div.Tensor,
+        torch.ops.aten.div_.Tensor,
     ]
 
     def call(self, graph_module: GraphModule) -> PassResult:
@@ -37,7 +41,7 @@ class ScalarsToAttributePass(ExportPass):
             biggest_rank = 1
             for arg in n.args:
                 if isinstance(arg, Node):
-                    _, shape, _ = extract_tensor_meta(arg.meta)
+                    shape = get_first_fake_tensor(arg).shape
                     biggest_rank = max(biggest_rank, len(shape))
 
             new_args = []

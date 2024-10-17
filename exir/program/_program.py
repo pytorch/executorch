@@ -972,36 +972,39 @@ def to_edge_transform_and_lower(
     exported programs in ATen dialect. It differs fundamentally from to_edge in that it
     combines the conversion of the ATen dialect to the edge dialect program, then running
     the transformation passes and then subsequently lowering the programs to their
-    corresponding backends all in a single pass.
+    corresponding backends all into a single API.
+
     This is fundamentally useful for lowering to backends that have ops registered that they
     do not want to be decomposed and thus rely on matching with these non-decomposed ops. For
     these sorts of backends this is the *only* API that should be used to lower to the edge
     dialect. Using a combination of to_edge(...) and to_backend(...) will result in inconsistent
     or wrong behavior.
 
+    This API is the primary recommended way to lower to the CPU based XNNPack backend.
+
     Args:
         programs: Can be a single ExportedProgram or a dictionary mapping function names
-        to their corresponding ExportedPrograms. If only a single ExportedProgram is
-        provided it will be assigned the name "forward".
+            to their corresponding ExportedPrograms. If only a single ExportedProgram is
+            provided it will be assigned the name "forward".
 
         transform_passes: The passes can either be a list of passes, or a dictionary
-        mapping method names to lists of passes. If it is just a list of passes, all methods
-        in the given EdgeProgramManager will be transformed with the provided passes. If it
-        is a dictionary, only method names specified in the dictionary will be transformed
-        with their corresponding passes.
+            mapping method names to lists of passes. If it is just a list of passes, all methods
+            in the given EdgeProgramManager will be transformed with the provided passes. If it
+            is a dictionary, only method names specified in the dictionary will be transformed
+            with their corresponding passes.
 
         partitioner: The partitioner can either be a Partitioner subclass instance, or a
-        dictionary mapping method names to Partitioner subclass instance. If it is a
-        Partitioner subclass, all programs in the given EdgeProgramManager will be lowered
-        using the given partitioner. If it is a dictionary, only method names specified in
-        the dictionary will be lowered with the given partitioner.
+            dictionary mapping method names to Partitioner subclass instance. If it is a
+            Partitioner subclass, all programs in the given EdgeProgramManager will be lowered
+            using the given partitioner. If it is a dictionary, only method names specified in
+            the dictionary will be lowered with the given partitioner.
 
         constant_methods: An optional dictionary of method name to the constant value
-        returned by that method in eager mode. Often used to store config information on
-        Edge models.
+            returned by that method in eager mode. Often used to store config information on
+            Edge models.
 
         compile_config: An optional argument used to provide greater control over the
-        transformation to edge dialect process.
+            transformation to edge dialect process.
 
     Returns:
         EdgeProgramManager

@@ -30,6 +30,7 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR},
       queue_families{},
       num_compute_queues(0),
+      supports_int16_shader_types(false),
       has_unified_memory(false),
       has_timestamps(properties.limits.timestampComputeAndGraphics),
       timestamp_period(properties.limits.timestampPeriod),
@@ -48,6 +49,10 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
   shader_float16_int8_types.pNext = nullptr;
 
   vkGetPhysicalDeviceFeatures2(handle, &features2);
+
+  if (features2.features.shaderInt16 == VK_TRUE) {
+    supports_int16_shader_types = true;
+  }
 
   // Check if there are any memory types have both the HOST_VISIBLE and the
   // DEVICE_LOCAL property flags

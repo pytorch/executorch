@@ -151,7 +151,8 @@ command = [
     'lintrunner_adapters',
     'run',
     'grep_linter',
-    '--pattern= Executorch\W+',
+    # Exclude "ExecuTorch" pattern within URLs
+    '--pattern= Executorch(?!\\W*(://|\\.[a-z]{2,}))\\W+',
     '--linter-name=ExecuTorchCapitalization',
     '--error-name=Incorrect capitalization for ExecuTorch',
     """--error-description=

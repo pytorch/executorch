@@ -21,7 +21,7 @@ Note that the pre-compiled context binaries could not be futher fine-tuned for o
 ```bash
 # tokenizer.model: https://huggingface.co/meta-llama/Llama-2-7b-chat-hf/blob/main/tokenizer.model
 # tokenizer.bin:
-python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+python -m examples.models.llama.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 ```
 
 #### Step3: Run default examples

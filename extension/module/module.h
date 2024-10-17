@@ -133,7 +133,10 @@ class Module {
    * needed. The loaded method is cached to reuse the next time it's executed.
    *
    * @param[in] method_name The name of the method to load.
-   * @param[in] event_tracer A EventTracer used for tracking and logging events.
+   * @param[in] event_tracer Per-method event tracer to profile/trace methods
+   * individually. When not given, the event tracer passed to the Module
+   * constructor is used. Otherwise, this per-method event tracer takes
+   * precedence.
    *
    * @returns An Error to indicate success or failure.
    */

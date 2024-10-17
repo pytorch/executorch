@@ -1,4 +1,4 @@
-# Getting Started with LLMs via ExecuTorch
+# Intro to LLMs in Executorch
 
 Welcome to LLM Manual! This manual is designed to provide a practical example to leverage
 ExecuTorch in onboarding your own Large Language Models (LLMs). Our primary goal is to offer
@@ -12,6 +12,8 @@ Consequently, the results produced by the model may vary and might not always be
 We encourage users to use this project as a starting point and adapt it to their specific needs,
 which includes creating your own versions of the tokenizer, sampler, acceleration backends, and
 other components. We hope this project serves as a useful guide in your journey with LLMs and ExecuTorch.
+
+For deploying Llama with optimal performance, please see [Llama guide](./llama.md).
 
 ### Table Of Contents
 
@@ -359,6 +361,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # Set options for executorch build.
+option(EXECUTORCH_ENABLE_LOGGING "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_TENSOR "" ON)
@@ -516,6 +519,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # Set options for executorch build.
+option(EXECUTORCH_ENABLE_LOGGING "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_TENSOR "" ON)
@@ -761,6 +765,8 @@ An ETRecord is an artifact generated at the time of export that contains model g
 In your export script, after calling `to_edge()` and `to_executorch()`, call `generate_etrecord()` with the `EdgeProgramManager` from `to_edge()` and the `ExecuTorchProgramManager` from `to_executorch()`. Make sure to copy the `EdgeProgramManager`, as the call to `to_backend()` mutates the graph in-place.
 
 ```
+# export_nanogpt.py
+
 import copy
 from executorch.devtools import generate_etrecord
 
@@ -811,23 +817,24 @@ if (result.buf != nullptr && result.size > 0) {
 Additionally, update CMakeLists.txt to build with Developer Tools and enable events to be traced and logged into ETDump:
 
 ```
+option(EXECUTORCH_ENABLE_EVENT_TRACER "" ON)
 option(EXECUTORCH_BUILD_DEVTOOLS "" ON)
 
 # ...
 
 target_link_libraries(
-    nanogpt_runner
-    PRIVATE
-    executorch
-    extension_module_static # Provides the Module class
-    optimized_native_cpu_ops_lib # Provides baseline cross-platform kernels
-    xnnpack_backend # Provides the XNNPACK CPU acceleration backend
+    # ... omit existing ones
     etdump) # Provides event tracing and logging
 
 target_compile_options(executorch PUBLIC -DET_EVENT_TRACER_ENABLED)
 target_compile_options(portable_ops_lib PUBLIC -DET_EVENT_TRACER_ENABLED)
 ```
-Run the runner, you will see “etdump.etdp” generated.
+Build and run the runner, you will see a file named “etdump.etdp” is generated. (Note that this time we build in release mode to get around a flatccrt build limitation.)
+```bash
+(rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DCMAKE_BUILD_TYPE=Release ..)
+cmake --build cmake-out -j10
+./cmake-out/nanogpt_runner
+```
 
 #### Analyze with Inspector APIs
 

@@ -14,7 +14,7 @@ import torch
 
 from executorch.backends.cadence.aot.export_example import export_model
 
-from executorch.examples.models.llama2.llama_transformer import ModelArgs, Transformer
+from executorch.examples.models.llama.llama_transformer import ModelArgs, Transformer
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"

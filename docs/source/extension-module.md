@@ -240,6 +240,6 @@ if (auto* etdump = dynamic_cast<ETDumpGen*>(module.event_tracer())) {
 }
 ```
 
-# Conclusion
+## Conclusion
 
 The `Module` APIs provide a simplified interface for running ExecuTorch models in C++, closely resembling the experience of PyTorch's eager mode. By abstracting away the complexities of the lower-level runtime APIs, developers can focus on model execution without worrying about the underlying details.

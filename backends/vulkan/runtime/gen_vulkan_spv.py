@@ -319,21 +319,26 @@ def define_active_storage_type(storage_type: str):
         raise AssertionError(f"Invalid storage type: {storage_type}")
 
 
-def define_required_extensions(dtype: str):
+def define_required_extensions(dtypes: Union[str, List[str]]):
     out_str = "\n"
-    nbit = None
-    glsl_type = None
+    dtype_list = dtypes if isinstance(dtypes, list) else [dtypes]
 
-    if dtype == "half":
-        nbit = "16bit"
-        glsl_type = "float16"
-    if dtype == "int8":
-        nbit = "8bit"
-        glsl_type = "int8"
+    for dtype in dtype_list:
+        nbit = None
+        glsl_type = None
+        if dtype == "half":
+            nbit = "16bit"
+            glsl_type = "float16"
+        elif dtype == "int16" or dtype == "uint16":
+            nbit = "16bit"
+            glsl_type = "int16"
+        elif dtype == "int8" or dtype == "uint8":
+            nbit = "8bit"
+            glsl_type = "int8"
 
-    if nbit is not None and glsl_type is not None:
-        out_str += f"#extension GL_EXT_shader_{nbit}_storage : require\n"
-        out_str += f"#extension GL_EXT_shader_explicit_arithmetic_types_{glsl_type} : require\n"
+        if nbit is not None and glsl_type is not None:
+            out_str += f"#extension GL_EXT_shader_{nbit}_storage : require\n"
+            out_str += f"#extension GL_EXT_shader_explicit_arithmetic_types_{glsl_type} : require\n"
 
     return out_str
 

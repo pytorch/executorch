@@ -430,6 +430,16 @@ class vTensor final {
     return axis_map_;
   }
 
+  /*
+   * Return true if the tensor's axis map is {0, 1, 2, concat_dim}. This means
+   * that the width dim is mapped to the width axis of the texture, the height
+   * dim is mapped to the height axis of the texture, the channels dim is mapped
+   * to the depth axis of the texture.
+   */
+  inline bool has_standard_axis_map() const {
+    return axis_map_.at(0) == 0 && axis_map_.at(1) == 1 && axis_map_.at(2) == 2;
+  }
+
   inline const std::vector<int64_t>& strides() const {
     return strides_;
   }

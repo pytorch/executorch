@@ -253,11 +253,11 @@ bool write_directory_node(InMemoryDirectoryNode* node,
         return false;
     }
 
-    for (const auto& [_, node]: node->get_items()) {
-        if (node.get()->isDirectory() && !recursive) {
+    for (const auto& [_, node_2]: node->get_items()) {
+        if (node_2.get()->isDirectory() && !recursive) {
             continue;
         }
-        if (!write_node(node.get(), dir_path, recursive, error)) {
+        if (!write_node(node_2.get(), dir_path, recursive, error)) {
             return false;
         }
     }
@@ -383,9 +383,9 @@ FlattenedInMemoryNode::unflatten(const std::vector<FlattenedInMemoryNode>& flatt
             case InMemoryFileSystem::InMemoryNode::Kind::Directory: {
                 std::unordered_map<std::string, std::unique_ptr<InMemoryFileSystem::InMemoryNode>> items;
                 items.reserve(flattened_node_metadata.child_name_to_indices_map.size());
-                for (const auto& [name, index]: flattened_node_metadata.child_name_to_indices_map) {
-                    auto moveIt = std::make_move_iterator(nodes.begin() + index);
-                    items[name] = *moveIt;
+                for (const auto& [name_2, index_2]: flattened_node_metadata.child_name_to_indices_map) {
+                    auto moveIt = std::make_move_iterator(nodes.begin() + index_2);
+                    items[name_2] = *moveIt;
                 }
                 auto directory_node =
                     std::make_unique<InMemoryDirectoryNode>(std::move(name), std::move(attributes), std::move(items));

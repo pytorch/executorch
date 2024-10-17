@@ -1,0 +1,28 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "test_simple_sdpa",
+    srcs = [
+        "test_simple_sdpa.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:export_library",
+        "//executorch/examples/models/llama:llama_transformer",
+    ],
+)
+
+python_unittest(
+    name = "test_pre_quantization_transforms",
+    srcs = [
+        "test_pre_quantization_transforms.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:export_library",
+        "//executorch/examples/models/llama:llama_transformer",
+        "//pytorch/ao:torchao",
+    ],
+)

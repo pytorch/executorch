@@ -39,7 +39,7 @@ For specific details related to models and backend, you can explore the various 
 
 ### Llama Models
 
-[This page](./models/llama2/README.md) demonstrates how to run Llama 3.2 (1B, 3B), Llama 3.1 (8B), Llama 3 (8B), and Llama 2 7B models on mobile via ExecuTorch. We use XNNPACK, QNNPACK, MediaTek, and MPS to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on Android and iOS mobile phones.
+[This page](./models/llama/README.md) demonstrates how to run Llama 3.2 (1B, 3B), Llama 3.1 (8B), Llama 3 (8B), and Llama 2 7B models on mobile via ExecuTorch. We use XNNPACK, QNNPACK, MediaTek, and MPS to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on Android and iOS mobile phones.
 
 ### Llava1.5 7B
 

@@ -120,7 +120,7 @@ class TestQNN(unittest.TestCase):
     build_folder: Literal = ""
     model: QcomChipset = None
     compiler_specs: List[CompileSpec] = None
-    arch_table = get_soc_to_chipset_map()
+    chipset_table = get_soc_to_chipset_map()
     error_only = False
     ip = "localhost"
     port = 8080

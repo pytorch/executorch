@@ -364,7 +364,7 @@ def get_ptq_per_channel_quant_config(
         quant_min=torch.iinfo(act_dtype).min,
         quant_max=torch.iinfo(act_dtype).max,
         qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(**extra_args),
     )
 
     weight_quantization_spec = QuantizationSpec(

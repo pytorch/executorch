@@ -51,7 +51,7 @@ def generate_missing_debug_handles(ep: ExportedProgram):
         for node in current_graph_module.graph.nodes:
             if "debug_handle" in node.meta:
                 max_handle = max(max_handle, node.meta["debug_handle"])
-        control_flow_submodules = get_control_flow_submodules_list(ep.graph_module)
+        control_flow_submodules = get_control_flow_submodules_list(current_graph_module)
         queue.extend(control_flow_submodules)
 
     queue = [ep.graph_module]
@@ -61,5 +61,5 @@ def generate_missing_debug_handles(ep: ExportedProgram):
             if node.meta.get("debug_handle", 0) in (0, None):
                 node.meta["debug_handle"] = max_handle + 1
                 max_handle += 1
-        control_flow_submodules = get_control_flow_submodules_list(ep.graph_module)
+        control_flow_submodules = get_control_flow_submodules_list(current_graph_module)
         queue.extend(control_flow_submodules)

@@ -34,6 +34,7 @@ from . import (  # noqa
     op_softmax,
     op_squeeze,
     op_sub,
+    op_sum,
     op_unsqueeze,
     op_view,
 )
