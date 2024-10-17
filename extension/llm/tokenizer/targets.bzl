@@ -20,6 +20,7 @@ def define_common_targets():
             "//executorch/extension/llm/export/...",
             "//bento/...",
             "//bento_kernels/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         _is_external_target = True,
         deps = [
