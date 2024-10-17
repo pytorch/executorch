@@ -488,11 +488,11 @@ like Make, Ninja or Xcode. For information, see <a class="reference external" hr
 <p>ExecuTorch’s CMake build system covers the pieces of the runtime that are
 likely to be useful to embedded systems users.</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">libexecutorch.a</span></code>: The core of the ExecuTorch runtime. Does not contain any
+<li><p><code class="docutils literal notranslate"><span class="pre">libexecutorch_core.a</span></code>: The core of the ExecuTorch runtime. Does not contain any
 operator/kernel definitions or backend definitions.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">libportable_kernels.a</span></code>: The implementations of ATen-compatible operators,
-following the signatures in <code class="docutils literal notranslate"><span class="pre">//kernels/portable/functions.yaml</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">libportable_kernels_bindings.a</span></code>: Generated code that registers the contents
+following the signatures in <code class="docutils literal notranslate"><span class="pre">[functions.yaml](https://github.com/pytorch/executorch/blob/release/0.4/kernels/portable/functions.yaml)</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">libportable_ops_lib.a</span></code>: Generated code that registers the contents
 of <code class="docutils literal notranslate"><span class="pre">libportable_kernels.a</span></code> with the runtime.</p>
 <ul>
 <li><p>NOTE: This must be linked into your application with a flag like
@@ -530,35 +530,32 @@ dependencies may have changed.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of the executorch repo</span>
 <span class="nb">cd</span><span class="w"> </span>executorch
 
-<span class="c1"># Clean and configure the CMake build system. It&#39;s good practice to do this</span>
+<span class="c1"># Clean cmake cache directory (cmake-out). It&#39;s a good practice to do this</span>
 <span class="c1"># whenever cloning or pulling the upstream repo.</span>
-<span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
+bash<span class="w"> </span>install_requirements.sh<span class="w"> </span>--clean
 </pre></div>
 </div>
 <p>Once this is done, you don’t need to do it again until you pull from the upstream repo again, or if you modify any CMake-related files.</p>
 <div class="section" id="cmake-build-options">
 <h3>CMake Build Options<a class="headerlink" href="#cmake-build-options" title="Permalink to this heading">¶</a></h3>
 <p>The release build offers optimizations intended to improve performance and reduce binary size. It disables program verification and executorch logging, and adds optimizations flags.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">CMAKE_FLAGS</span><span class="o">=</span><span class="s2">&quot;-DCMAKE_BUILD_TYPE=Release&quot;</span>
 </pre></div>
 </div>
-<p>To further optimize the release build for size, use both:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
--DOPTIMIZE_SIZE<span class="o">=</span>ON
+<p>To further optimize the release build for size, add:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">CMAKE_FLAGS</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$CMAKE_FLAGS</span><span class="s2"> -DOPTIMIZE_SIZE=ON&quot;</span>
 </pre></div>
 </div>
-<p>See <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/CMakeLists.txt">CMakeLists.txt</a></p>
+<p>See <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.4/CMakeLists.txt">CMakeLists.txt</a></p>
 </div>
 </div>
 <div class="section" id="build-the-runtime-components">
 <h2>Build the runtime components<a class="headerlink" href="#build-the-runtime-components" title="Permalink to this heading">¶</a></h2>
 <p>Build all targets with</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of the executorch repo</span>
-<span class="nb">cd</span><span class="w"> </span>executorch
-
-<span class="c1"># Build using the configuration that you previously generated under the</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Build using the configuration that you previously generated under the</span>
 <span class="c1"># `cmake-out` directory.</span>
-<span class="c1">#</span>
+cmake<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$CMAKE_FLAGS</span><span class="s2">&quot;</span><span class="w"> </span>-Bcmake-out<span class="w"> </span>.
+
 <span class="c1"># NOTE: The `-j` argument specifies how many jobs/processes to use when</span>
 <span class="c1"># building, and tends to speed up the build significantly. It&#39;s typical to use</span>
 <span class="c1"># &quot;core count + 1&quot; as the `-j` value.</span>
