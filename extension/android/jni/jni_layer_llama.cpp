@@ -48,10 +48,10 @@ class ExecuTorchLlamaCallbackJni
     static auto cls = ExecuTorchLlamaCallbackJni::javaClassStatic();
     static const auto method =
         cls->getMethod<void(facebook::jni::local_ref<jstring>)>("onResult");
-    static std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
-    std::u16string result_u16 = converter.from_bytes(result);
-    __android_log_print(ANDROID_LOG_ERROR, "ExecuTorchDBG", "U16:%s", result_u16.c_str());
-    facebook::jni::local_ref<jstring> s = facebook::jni::make_jstring(result_u16);
+    // static std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
+    // std::u16string result_u16 = converter.from_bytes(result);
+    // __android_log_print(ANDROID_LOG_ERROR, "ExecuTorchDBG", "U16:%s", result_u16.c_str());
+    facebook::jni::local_ref<jstring> s = facebook::jni::make_jstring(result);
     method(self(), s);
   }
 
@@ -153,12 +153,14 @@ class ExecuTorchLlamaJni
           [callback](const llm::Stats& result) { callback->onStats(result); },
           echo);
     } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
+      std::string my_result;
       runner_->generate(
           prompt->toStdString(),
           seq_len,
-          [callback](std::string result) { callback->onResult(result); },
+          [callback, &my_result](std::string result) { my_result += result; },
           [callback](const llm::Stats& result) { callback->onStats(result); },
           echo);
+          callback->onResult(my_result);
     }
     return 0;
   }
