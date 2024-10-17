@@ -147,11 +147,10 @@ libsqlite3.tbd
 
 7. Update the code to load the program from the Application's bundle.
 ``` objective-c
-using namespace torch::executor;
-
 NSURL *model_url = [NBundle.mainBundle URLForResource:@"mv3_coreml_all" extension:@"pte"];
 
-Result<util::FileDataLoader> loader = util::FileDataLoader::from(model_url.path.UTF8String);
+Result<executorch::extension::FileDataLoader> loader =
+    executorch::extension::FileDataLoader::from(model_url.path.UTF8String);
 ```
 
 8. Use [Xcode](https://developer.apple.com/documentation/xcode/building-and-running-an-app#Build-run-and-debug-your-app) to deploy the application on the device.
