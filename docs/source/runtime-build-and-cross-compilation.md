@@ -9,7 +9,7 @@ like Make, Ninja or Xcode. For information, see [cmake-generators(7)](https://cm
 ExecuTorch's CMake build system covers the pieces of the runtime that are
 likely to be useful to embedded systems users.
 
-- `libexecutorch.a`: The core of the ExecuTorch runtime. Does not contain any
+- `libexecutorch_core.a`: The core of the ExecuTorch runtime. Does not contain any
   operator/kernel definitions or backend definitions.
 - `libportable_kernels.a`: The implementations of ATen-compatible operators,
   following the signatures in `[functions.yaml](https://github.com/pytorch/executorch/blob/release/0.4/kernels/portable/functions.yaml)`.
