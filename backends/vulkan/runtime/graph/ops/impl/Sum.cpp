@@ -57,8 +57,6 @@ void add_sum_dim_node(
     const int64_t dim,
     const bool keepdim,
     const ValueRef out) {
-  ValueRef arg = prepack_if_tensor_ref(graph, in);
-
   vTensorPtr t_out = graph.get_tensor(out);
   vTensorPtr t_input = graph.get_tensor(in);
 
@@ -83,7 +81,7 @@ void add_sum_dim_node(
       graph.create_local_wg_size(out),
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
-       {arg, vkapi::MemoryAccessType::READ}},
+       {in, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {t_out->logical_limits_ubo(),
        graph.create_params_buffer(dim + 4 - in_dim),

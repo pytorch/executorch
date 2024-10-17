@@ -57,9 +57,9 @@ void add_embedding_node(
 }
 
 void embedding(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  ValueRef weight = prepack_if_tensor_ref(graph, args[0]);
-  ValueRef in = prepack_if_tensor_ref(graph, args[1]);
+  ValueRef in = args[1];
   ValueRef out = args[5];
+  ValueRef weight = prepack_standard_like(graph, args[0], out);
 
   add_embedding_node(graph, weight, in, out);
 }

@@ -37,8 +37,7 @@ void add_to_copy_node(ComputeGraph& graph, ValueRef in, ValueRef out) {
       " <-> ",
       vkapi::to_string(graph.dtype_of(out)));
 
-  graph.execute_nodes().emplace_back(
-      new BlitNode(graph, prepack_if_tensor_ref(graph, in), out));
+  graph.execute_nodes().emplace_back(new BlitNode(graph, in, out));
 }
 
 void to_copy(ComputeGraph& graph, const std::vector<ValueRef>& args) {

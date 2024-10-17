@@ -304,7 +304,7 @@ utils::uvec3 create_conv2d_global_wg_size(
 void add_conv2d_node(
     ComputeGraph& graph,
     const ValueRef in,
-    const ValueRef weight,
+    const ValueRef weight_data,
     const ValueRef bias,
     const ValueRef stride,
     const ValueRef padding,
@@ -330,19 +330,18 @@ void add_conv2d_node(
   const int64_t groups_val = graph.get_int(groups);
 
   const Conv2dMethod method =
-      get_conv2d_method(graph, weight, groups_val, transposed_val);
+      get_conv2d_method(graph, weight_data, groups_val, transposed_val);
 
-  ValueRef arg_in = prepack_if_tensor_ref(graph, in);
-  ValueRef arg_weight = prepack_weights(graph, weight, method);
+  ValueRef arg_weight = prepack_weights(graph, weight_data, method);
   ValueRef arg_bias = prepack_biases(
       graph,
       bias,
-      weight,
+      weight_data,
       transposed_val,
       /* storage_type = */ utils::kTexture2D,
       /* memory_layout = */ utils::kWidthPacked);
 
-  vTensorPtr t_in = graph.get_tensor(arg_in);
+  vTensorPtr t_in = graph.get_tensor(in);
   vTensorPtr t_out = graph.get_tensor(out);
   if (t_in->sizes().at(0) > 1) {
     VK_THROW("conv2d: input batch size > 1 is not supported yet!");
@@ -351,20 +350,25 @@ void add_conv2d_node(
 
   Kernel2dParams kernel_params = create_kernel2d_params(
       graph,
-      weight,
+      weight_data,
       /*kernel_size_only = */ false,
       stride,
       padding,
       dilation);
   Conv2dParams extra_params =
-      create_conv2d_params(graph, weight, kernel_params, transposed_val);
+      create_conv2d_params(graph, weight_data, kernel_params, transposed_val);
 
   OutputParams out_params = {out_min_val, out_max_val};
 
   check_conv2d_params(kernel_params, transposed_val);
 
   vkapi::ShaderInfo shader = get_conv2d_shader(
-      graph, *t_out, /*prepack_weights = */ false, method, weight, clamp_out);
+      graph,
+      *t_out,
+      /*prepack_weights = */ false,
+      method,
+      weight_data,
+      clamp_out);
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
@@ -373,7 +377,7 @@ void add_conv2d_node(
       graph.create_local_wg_size(out),
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
-       {{arg_in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
+       {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {
           t_out->logical_limits_ubo(),
@@ -386,7 +390,7 @@ void add_conv2d_node(
       {},
       // Resizing Logic
       resize_conv2d_node,
-      {weight, stride, padding, dilation, transposed, output_padding}));
+      {weight_data, stride, padding, dilation, transposed, output_padding}));
 }
 
 void add_conv1d_node(
@@ -402,9 +406,8 @@ void add_conv1d_node(
     const ValueRef out_max,
     const ValueRef out,
     const bool clamp_out) {
-  ValueRef arg_in = prepack_if_tensor_ref(graph, in);
-  ValueRef arg_weight =
-      prepack_if_tensor_ref(graph, weight, utils::kWidthPacked);
+  ValueRef arg_weight = prepack_standard(
+      graph, weight, graph.storage_type_of(out), utils::kWidthPacked);
   ValueRef arg_bias = prepack_biases(
       graph,
       bias,
@@ -422,7 +425,7 @@ void add_conv1d_node(
     out_max_val = graph.extract_scalar<float>(out_max);
   }
 
-  vTensorPtr t_in = graph.get_tensor(arg_in);
+  vTensorPtr t_in = graph.get_tensor(in);
   vTensorPtr t_weight = graph.get_tensor(arg_weight);
   vTensorPtr t_bias = graph.get_tensor(arg_bias);
   vTensorPtr t_out = graph.get_tensor(out);
@@ -471,7 +474,7 @@ void add_conv1d_node(
       local_size,
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
-       {{arg_in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
+       {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {
           t_out->logical_limits_ubo(),
