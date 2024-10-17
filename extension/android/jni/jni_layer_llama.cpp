@@ -7,8 +7,12 @@
  */
 
 #include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <chrono>
+#include <codecvt>
 #include <iostream>
+#include <locale>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -21,6 +25,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <android/log.h>
 
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
@@ -32,6 +37,30 @@
 
 namespace llm = ::executorch::extension::llm;
 using ::executorch::runtime::Error;
+
+namespace {
+bool utf8_check_validity(const char* str, size_t length) {
+    for (size_t i = 0; i < length; ++i) {
+        uint8_t byte = static_cast<uint8_t>(str[i]);
+        if (byte >= 0x80) { // Non-ASCII byte
+            if (i + 1 >= length) { // Incomplete sequence
+                return false;
+            }
+            uint8_t next_byte = static_cast<uint8_t>(str[i + 1]);
+            if ((byte & 0xE0) == 0xC0 && (next_byte & 0xC0) == 0x80) { // 2-byte sequence
+                i += 2;
+            } else if ((byte & 0xF0) == 0xE0 && (next_byte & 0xC0) == 0x80 && (i + 2 < length) && (static_cast<uint8_t>(str[i + 2]) & 0xC0) == 0x80) { // 3-byte sequence
+                i += 3;
+            } else {
+                return false; // Invalid sequence
+            }
+        }
+    }
+    return true; // All bytes were valid
+}
+
+std::string token_buffer;
+}
 
 namespace executorch_jni {
 
@@ -45,6 +74,17 @@ class ExecuTorchLlamaCallbackJni
     static auto cls = ExecuTorchLlamaCallbackJni::javaClassStatic();
     static const auto method =
         cls->getMethod<void(facebook::jni::local_ref<jstring>)>("onResult");
+    
+    token_buffer += result;
+    if (utf8_check_validity(token_buffer.c_str(), token_buffer.size())) {
+      __android_log_print(ANDROID_LOG_ERROR, "ExecuTorchDBG", "CONTINUE8:%s", token_buffer.c_str());
+      return;
+    }
+    result = token_buffer;
+    token_buffer = "";
+    static std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
+    std::u16string result_u16 = converter.from_bytes(result);
+    __android_log_print(ANDROID_LOG_ERROR, "ExecuTorchDBG", "U16:%s", result_u16.c_str());
     facebook::jni::local_ref<jstring> s = facebook::jni::make_jstring(result);
     method(self(), s);
   }
