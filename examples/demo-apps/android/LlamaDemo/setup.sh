@@ -7,16 +7,15 @@
 
 set -eu
 
+BASEDIR=$(dirname "$0")
+source "$BASEDIR"/../../../../build/build_android_llm_demo.sh
+
 BUILD_AAR_DIR="$(mktemp -d)"
-mkdir -p "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}" "${BUILD_AAR_DIR}/libs"
-cp "${CMAKE_OUT}"/extension/android/libexecutorch_jni.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/libexecutorch.so"
-cp extension/android/build/libs/executorch.jar "${BUILD_AAR_DIR}/libs"
-echo \<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\" \
-  package=\"org.pytorch.executorch\"\> \
-  \<uses-sdk android:minSdkVersion=\"19\" /\> \
-  \</manifest\> > "${BUILD_AAR_DIR}/AndroidManifest.xml"
-pushd "${BUILD_AAR_DIR}"
-zip -r executorch-llama.aar libs jni/${ANDROID_ABI} AndroidManifest.xml
-popd
-mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
-mv "${BUILD_AAR_DIR}/executorch-llama.aar" examples/demo-apps/android/LlamaDemo/app/libs
+export BUILD_AAR_DIR
+
+build_jar
+build_android_native_library "arm64-v8a"
+build_android_native_library "x86_64"
+build_aar
+mkdir -p "$BASEDIR"/app/libs
+cp "$BUILD_AAR_DIR/executorch.aar" "$BASEDIR"/app/libs/executorch.aar
