@@ -80,7 +80,7 @@ Alternatively, if you would like to experiment with ExecuTorch quickly and easil
 
    ```bash
    # Clone the ExecuTorch repo from GitHub
-   git clone https://github.com/pytorch/executorch.git
+   git clone -b release/0.4 https://github.com/pytorch/executorch.git
    cd executorch
 
    # Update and pull submodules
