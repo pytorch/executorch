@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Backend and Delegate &mdash; ExecuTorch main documentation</title>
+  <title>ExecuTorch Runtime Python API Reference &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,11 +42,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Backend Dialect" href="compiler-backend-dialect.html" />
-    <link rel="prev" title="Definition of the Core ATen Operator Set" href="ir-ops-set-definition.html" />
-
-<link rel="stylesheet" href="../_static/css/progress-bar.css">
-<script src="../_static/js/progress-bar.js" defer></script>
+    <link rel="next" title="ExecuTorch API Life Cycle and Deprecation Policy" href="api-life-cycle.html" />
+    <link rel="prev" title="ExecuTorch Runtime API Reference" href="executorch-runtime-api-reference.html" />
 
 
   <!-- Google Tag Manager -->
@@ -344,10 +341,10 @@
 <li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in Executorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">ExecuTorch Runtime Python API Reference</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">ExecuTorch Runtime Python API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
@@ -356,8 +353,8 @@
 <li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
-<ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Backend and Delegate</a></li>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
@@ -444,13 +441,13 @@
       </li>
 
         
-      <li>Backend and Delegate</li>
+      <li>ExecuTorch Runtime Python API Reference</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/compiler-delegate-and-partitioner.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/runtime-python-api-reference.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -482,244 +479,141 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="backend-and-delegate">
-<h1>Backend and Delegate<a class="headerlink" href="#backend-and-delegate" title="Permalink to this heading">¶</a></h1>
-<p>Audience: Vendors, Backend Delegate developers, who are interested in integrating their own compilers and hardware as part of ExecuTorch</p>
-<p>Backend delegation is an entry point for backends to process and execute PyTorch
-programs to leverage performance and efficiency benefits of specialized
-backends and hardware, while still providing PyTorch users with an experience
-close to that of the PyTorch runtime.</p>
-<div class="section" id="backend-interfaces-overview">
-<h2>Backend Interfaces: Overview<a class="headerlink" href="#backend-interfaces-overview" title="Permalink to this heading">¶</a></h2>
-<p>At a high level, the entry point for backends is defined by 2 components:</p>
-<ul class="simple">
-<li><p>An IR to represent the program: <strong>Edge Dialect</strong> (which is produced through
-the <code class="docutils literal notranslate"><span class="pre">to_edge</span></code> API)</p></li>
-<li><p>A couple of interfaces for backends to implement:</p>
-<ul>
-<li><p>Ahead-of-Time (AOT)</p>
-<ul>
-<li><p>Program preprocessing (e.g. ahead of time compilation, transformation, optimization…).</p></li>
+  <div class="section" id="executorch-runtime-python-api-reference">
+<h1>ExecuTorch Runtime Python API Reference<a class="headerlink" href="#executorch-runtime-python-api-reference" title="Permalink to this heading">¶</a></h1>
+<p>The Python <code class="docutils literal notranslate"><span class="pre">executorch.runtime</span></code> module wraps the C++ ExecuTorch runtime. It can load and execute serialized <code class="docutils literal notranslate"><span class="pre">.pte</span></code> program files: see the <a class="reference external" href="tutorials/export-to-executorch-tutorial.html">Export to ExecuTorch Tutorial</a> for how to convert a PyTorch <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code> to an ExecuTorch <code class="docutils literal notranslate"><span class="pre">.pte</span></code> program file. Execution accepts and returns <code class="docutils literal notranslate"><span class="pre">torch.Tensor</span></code> values, making it a quick way to validate the correctness of the program.</p>
+<p>For detailed information on how APIs evolve and the deprecation process, please refer to the <a class="reference external" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a>.</p>
+<span class="target" id="module-executorch.runtime"></span><p>Example usage:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">pathlib</span> <span class="kn">import</span> <span class="n">Path</span>
+
+<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">from</span> <span class="nn">executorch.runtime</span> <span class="kn">import</span> <span class="n">Verification</span><span class="p">,</span> <span class="n">Runtime</span><span class="p">,</span> <span class="n">Program</span><span class="p">,</span> <span class="n">Method</span>
+
+<span class="n">et_runtime</span><span class="p">:</span> <span class="n">Runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+<span class="n">program</span><span class="p">:</span> <span class="n">Program</span> <span class="o">=</span> <span class="n">et_runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span>
+    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/tmp/program.pte&quot;</span><span class="p">),</span>
+    <span class="n">verification</span><span class="o">=</span><span class="n">Verification</span><span class="o">.</span><span class="n">Minimal</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Program methods:&quot;</span><span class="p">,</span> <span class="n">program</span><span class="o">.</span><span class="n">method_names</span><span class="p">)</span>
+<span class="n">forward</span><span class="p">:</span> <span class="n">Method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;forward&quot;</span><span class="p">)</span>
+
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+<span class="n">outputs</span> <span class="o">=</span> <span class="n">forward</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Ran forward(</span><span class="si">{</span><span class="n">inputs</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  outputs: </span><span class="si">{</span><span class="n">outputs</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Example output:</p>
+<div class="highlight-none notranslate highlight-text"><div class="highlight"><pre><span></span>Program methods: (&#39;forward&#39;, &#39;forward2&#39;)
+Ran forward((tensor([[1., 1.],
+        [1., 1.]]), tensor([[1., 1.],
+        [1., 1.]])))
+  outputs: [tensor([[1., 1.],
+        [1., 1.]])]
+</pre></div>
+</div>
+<dl class="py class">
+<dt class="sig sig-object py" id="executorch.runtime.Runtime">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">executorch.runtime.</span></span><span class="sig-name descname"><span class="pre">Runtime</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">legacy_module</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Runtime"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Runtime" title="Permalink to this definition">¶</a></dt>
+<dd><p>An instance of the ExecuTorch runtime environment.</p>
+<p>This can be used to concurrently load and execute any number of ExecuTorch
+programs and methods.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="executorch.runtime.Runtime.get">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Runtime.get"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Runtime.get" title="Permalink to this definition">¶</a></dt>
+<dd><p>Gets the Runtime singleton.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="executorch.runtime.Runtime.load_program">
+<span class="sig-name descname"><span class="pre">load_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verification=&lt;Verification.InternalConsistency:</span> <span class="pre">1&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Runtime.load_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Runtime.load_program" title="Permalink to this definition">¶</a></dt>
+<dd><p>Loads an ExecuTorch program from a PTE binary.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – The binary program data to load; typically PTE data.</p></li>
+<li><p><strong>verification</strong> – level of program verification to perform.</p></li>
 </ul>
-</li>
-<li><p>Runtime</p>
-<ul>
-<li><p>Program initialization (e.g. runtime compilation).</p></li>
-<li><p>Program execution.</p></li>
-<li><p>(optional) Program destroy (e.g. release backend owned resource).</p></li>
-</ul>
-</li>
-</ul>
-</li>
-</ul>
-<p>A delegate backend implementation is composed of:</p>
-<ol class="arabic simple">
-<li><p>An ahead-of-time preprocessing interface</p></li>
-<li><p>A runtime initialization and execution interface</p></li>
-</ol>
-<p>The diagram looks like following</p>
-<img src="./_static/img/backend_interface.png" alt="drawing" style="width:600px;"/>
-<p><strong>Figure 1.</strong> A high level of entry points for backend interfaces, including both ahead-of-time and runtime.</p>
-</div>
-<div class="section" id="backend-interfaces-ahead-of-time-preprocessing">
-<h2>Backend Interfaces: Ahead-of-Time Preprocessing<a class="headerlink" href="#backend-interfaces-ahead-of-time-preprocessing" title="Permalink to this heading">¶</a></h2>
-<p>There are mainly two Ahead-of-Time entry point for backend to implement: <code class="docutils literal notranslate"><span class="pre">partition</span></code> and <code class="docutils literal notranslate"><span class="pre">preprocess</span></code>.</p>
-<p><code class="docutils literal notranslate"><span class="pre">partitioner</span></code> is an algorithm implemented by the backend to tag the nodes to be lowered to the backend. <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> API will apply the partition algorithm and lower each subgraph, which consists of connected tagged nodes, to the targeted backend. Every subgraph
-will be sent to the <code class="docutils literal notranslate"><span class="pre">preprocess</span></code> part provided by the backend to compiled as a binary blob.</p>
-<p>During partition, the <code class="docutils literal notranslate"><span class="pre">exported_program</span></code> is not allowed to mutate the program, and it’s supposed to apply tag to each node. The
-<code class="docutils literal notranslate"><span class="pre">PartitionResult</span></code> includes both tagged exported program and the partition tags dictionary for <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> to look up the tag and
-link to the <code class="docutils literal notranslate"><span class="pre">backend_id</span></code> and <code class="docutils literal notranslate"><span class="pre">compile_spec</span></code></p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">partition</span><span class="p">(</span>
-    <span class="n">exported_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PartitionResult</span><span class="p">:</span>
-</pre></div>
-</div>
-<p>During preprocessing, backends are given an edge dialect program,
-a list of compile specs specifying the values needed for compilation, and are
-expected to return a compiled blob, or binary containing the desired program to be
-run in the backend. During serialization, the
-compiled blob will be serialized as part of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, and directly loaded to the device. The
-API for this process is:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">preprocess</span><span class="p">(</span>
-    <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
-    <span class="n">compile_specs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">],</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PreprocessResult</span><span class="p">:</span>
-</pre></div>
-</div>
-<p>A demo of the preprocess function is implemented
-<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/backend/test/backend_with_compiler_demo.py">here</a>.
-The demo loops through the nodes in the graph module of the <code class="docutils literal notranslate"><span class="pre">edge_program</span></code> and
-serializes the <code class="docutils literal notranslate"><span class="pre">add</span></code>, <code class="docutils literal notranslate"><span class="pre">mul</span></code>, and <code class="docutils literal notranslate"><span class="pre">sin</span></code> instructions into a string, which is later
-parsed and executed at runtime.</p>
-<p>The diagram looks like following</p>
-<img src="./_static/img/backend_interface_aot.png" alt="drawing" style="width:800px;"/>
-<p><strong>Figure 2.</strong> The graph goes through partition and each subgraph will be sent to the preprocess part.</p>
-</div>
-<div class="section" id="backend-interfaces-runtime-initialization-and-execution">
-<h2>Backend Interfaces: Runtime Initialization and Execution<a class="headerlink" href="#backend-interfaces-runtime-initialization-and-execution" title="Permalink to this heading">¶</a></h2>
-<p>During the runtime, the compiled blob from the <code class="docutils literal notranslate"><span class="pre">preprocess</span></code> function will be
-loaded and passed directly to the backend’s custom <code class="docutils literal notranslate"><span class="pre">init</span></code> function. This
-function is responsible for further processing the compiled unit, as well as
-perform any backend initialization. The backend’s custom <code class="docutils literal notranslate"><span class="pre">execute</span></code> function will
-then be called to execute the handle produced by <code class="docutils literal notranslate"><span class="pre">init</span></code>. And finally, if
-destroying is required for some backend, backends can implement a <code class="docutils literal notranslate"><span class="pre">destroy</span></code>
-function which will be called when the program is out of its lifespan.</p>
-<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// Runtime check</span>
-<span class="n">ET_NODISCARD</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="n">is_available</span><span class="p">();</span>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The loaded program.</p>
+</dd>
+</dl>
+</dd></dl>
 
-<span class="c1">// Runtime initialization</span>
-<span class="n">ET_NODISCARD</span><span class="w"> </span><span class="k">virtual</span><span class="w"> </span><span class="n">Result</span><span class="o">&lt;</span><span class="n">DelegateHandle</span><span class="o">*&gt;</span><span class="w"> </span><span class="n">init</span><span class="p">(</span>
-<span class="w">    </span><span class="n">BackendInitContext</span><span class="o">&amp;</span><span class="w"> </span><span class="n">context</span><span class="p">,</span>
-<span class="w">    </span><span class="n">FreeableBuffer</span><span class="o">*</span><span class="w"> </span><span class="n">processed</span><span class="p">,</span>
-<span class="w">    </span><span class="n">ArrayRef</span><span class="o">&lt;</span><span class="n">CompileSpec</span><span class="o">&gt;</span><span class="w"> </span><span class="n">compile_specs</span><span class="p">);</span>
+</dd></dl>
 
-<span class="c1">// Runtime execution</span>
-<span class="n">ET_NODISCARD</span><span class="w"> </span><span class="k">virtual</span><span class="w"> </span><span class="n">Error</span><span class="w"> </span><span class="n">execute</span><span class="p">(</span>
-<span class="w">    </span><span class="n">BackendExecutionContext</span><span class="o">&amp;</span><span class="w"> </span><span class="n">context</span><span class="p">,</span>
-<span class="w">    </span><span class="n">DelegateHandle</span><span class="o">*</span><span class="w"> </span><span class="n">handle</span><span class="p">,</span>
-<span class="w">    </span><span class="n">EValue</span><span class="o">**</span><span class="w"> </span><span class="n">args</span><span class="p">);</span>
+<dl class="py class">
+<dt class="sig sig-object py" id="executorch.runtime.OperatorRegistry">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">executorch.runtime.</span></span><span class="sig-name descname"><span class="pre">OperatorRegistry</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">legacy_module</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#OperatorRegistry"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.OperatorRegistry" title="Permalink to this definition">¶</a></dt>
+<dd><p>The registry of operators that are available to the runtime.</p>
+<dl class="py property">
+<dt class="sig sig-object py" id="executorch.runtime.OperatorRegistry.operator_names">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">operator_names</span></span><a class="headerlink" href="#executorch.runtime.OperatorRegistry.operator_names" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns the names of all registered operators as a set of strings.</p>
+</dd></dl>
 
-<span class="c1">// [optional] Runtime destroy. Destroy the resource held by the backend</span>
-<span class="k">virtual</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">destroy</span><span class="p">(</span><span class="n">ET_UNUSED</span><span class="w"> </span><span class="n">DelegateHandle</span><span class="o">*</span><span class="w"> </span><span class="n">handle</span><span class="p">);</span>
-</pre></div>
-</div>
-<p>The diagram looks like following</p>
-<img src="./_static/img/backend_interface_runtime.png" alt="drawing" style="width:600px;"/>
-<p><strong>Figure 3.</strong> The relationship between standard ExecuTorch Runtime and backend entry point.</p>
-<p>In order to make backend available to ExecuTorch runtime, it must be registered via the <code class="docutils literal notranslate"><span class="pre">register_backend</span></code> API:</p>
-<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">ET_NODISCARD</span><span class="w"> </span><span class="n">Error</span><span class="w"> </span><span class="n">register_backend</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">Backend</span><span class="o">&amp;</span><span class="w"> </span><span class="n">backend</span><span class="p">);</span>
-</pre></div>
-</div>
-<p>Static registeration, i.e., at libraray init or load time, of a backend can be achieved as follows:</p>
-<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">namespace</span><span class="w"> </span><span class="p">{</span>
-<span class="k">auto</span><span class="w"> </span><span class="n">cls</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BackendWithCompiler</span><span class="p">();</span>
-<span class="n">Backend</span><span class="w"> </span><span class="n">backend</span><span class="p">{</span><span class="s">&quot;BackendWithCompilerDemo&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">cls</span><span class="p">};</span>
-<span class="k">static</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">success_with_compiler</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">register_backend</span><span class="p">(</span><span class="n">backend</span><span class="p">);</span>
-<span class="p">}</span><span class="w"> </span><span class="c1">// namespace</span>
-</pre></div>
-</div>
-</div>
-<div class="section" id="developer-tools-integration-debuggability">
-<h2>Developer Tools Integration: Debuggability<a class="headerlink" href="#developer-tools-integration-debuggability" title="Permalink to this heading">¶</a></h2>
-<p>Providing consistent debugging experience, be it for runtime failures or performance profiling, is important. ExecuTorch employs native Developer Tools for this purpose, which enables correlating program instructions to original PyTorch code, via debug handles. You can read more about it <a class="reference internal" href="etrecord.html"><span class="doc std std-doc">here</span></a>.</p>
-<p>Delegated program or subgraphs are opaque to ExecuTorch runtime and appear as a special <code class="docutils literal notranslate"><span class="pre">call_delegate</span></code> instruction, which asks corresponding backend to handle the execution of the subgraph or program. Due to the opaque nature of backend delgates, native Developer Tools does not have visibility into delegated program. Thus the debugging, functional or performance, experiences of delegated execution suffers significantly as compared to it’s non-delegated counterpart.</p>
-<p>In order to provide consistent debugging experience to users, regardless of the use of delegation for a model, Developer Tools provide an interface to correlate delegated (sub)graph to original (sub)graph. The Developer Tools do so via debug handles map which allows delegates to generate internal handles that can be associated with the original (sub)graph consumed by the delegate. Then at runtime, backend developer can report error or profiling information using the internal handle, which will be mapped to original (sub)graph using the debug handle map. For more information, please refer to <a class="reference internal" href="delegate-debugging.html"><span class="doc std std-doc">Delegate Debugging</span></a>.</p>
-<p>By leveraging the debug identifier, backend developer can embed the debug as part of the delegated blob</p>
-<img src="./_static/img/backend_debug_handle.png" alt="drawing" style="width:600px;"/>
-<p>In this way, during execute stage, with the debug identifier, backend developer can associate the failed instruction inside the delegate
-back to the exact line of PyThon code.</p>
-<img src="./_static/img/backend_debug_handle_example.png" alt="drawing" style="width:700px;"/>
-</div>
-<div class="section" id="common-questions">
-<h2>Common Questions<a class="headerlink" href="#common-questions" title="Permalink to this heading">¶</a></h2>
-<p><strong>1. How can we get data in backend.preprocess?</strong></p>
-<p>The graph module being preprocessed is a lifted graph, this means that static
-data like weights and biases are supplied as inputs to the graph. However, we
-can access the weights and biases ahead-of-time through the exported program. To
-access these parameters from a given node, we can use the function <code class="docutils literal notranslate"><span class="pre">get_params</span></code>
-provided in  <code class="docutils literal notranslate"><span class="pre">torch/_export/utils.py</span></code></p>
-<p><strong>2. How can we embed the data (like weight/bias) to the backend?</strong></p>
-<p>It’s common that backends have some ways to optimize the const data. In this case,
-we’d need to tag the placeholder nodes which are also the state in the
-partitioner, and during backend.preprocess, we can follow the description in the
-first question to get the weight.</p>
-<p><strong>3. How can we run the lowered module in Python with the specific backend?</strong></p>
-<p>We haven’t added the support yet but that’s the plan!</p>
-<p><strong>4. Should we expect to see <code class="docutils literal notranslate"><span class="pre">get_attr</span></code> nodes in the edge dialect program?</strong></p>
-<p><code class="docutils literal notranslate"><span class="pre">get_attr</span></code> nodes will only show up for submodules used for control flow or
-delegation. It won’t hold any data.</p>
-<p><strong>5. Can we delegate to multiple backends?</strong></p>
-<p>Yes! There are two ways to do this:</p>
-<p><em>Option 1: Run to_backend multiple times for different backends</em></p>
-<p>If we have two backends, backend_1 and backend_2, and they have their own
-parititioners: backend_1_parititioner and backend_2_partitioner, we can run it
-like:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Will first lower nodes to backend_1 depending on the backend_1_parititioner depending on partitioner algorithm</span>
-<span class="n">exported_program_backend_1</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">exported_program</span><span class="p">,</span> <span class="n">backend_1_parititioner</span><span class="p">())</span>
-<span class="c1"># For the rest of nodes, they will be lowered to backend_2 depending on backend_2_parititioner</span>
-<span class="n">exported_program_backend_1_and_2</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">exported_program_backend_1</span><span class="p">,</span> <span class="n">backend_2_parititioner</span><span class="p">())</span>
-</pre></div>
-</div>
-<p>A more concrete example be found
-<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/backend/test/demos/test_xnnpack_qnnpack.py">here</a>.
-In this example,
-qnnpack is one backend and xnnpack is another backend. We haven’t open-sourced
-these two backends delegates yet, and this example won’t run out of box. It can
-be used as a reference to see how it can be done.</p>
-<p>This option is easy to try becuase usually all backends will implement their own
-parititioner. However this option may get different results if we change the
-order of to_backend call. If we want to have a better control on the nodes, like
-which backend they should go, option 2 is better.</p>
-<p><em>Option 2: Have a partitioner which partitions for different backends</em></p>
-<p>Another option is to create a customized partitioner, say partitioner
-<code class="docutils literal notranslate"><span class="pre">backend_1_2_partitioner</span></code>, and inside the partitioner logic,</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">Backend_1_2_Partitioner</span><span class="p">(</span><span class="n">Partitioner</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Partitions all add/mul nodes regardless of order for Backend2</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+</dd></dl>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">delegation_spec_1</span> <span class="o">=</span> <span class="n">DelegationSpec</span><span class="p">(</span><span class="s2">&quot;Backend1&quot;</span><span class="p">,</span> <span class="p">[])</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">delegation_spec_2</span> <span class="o">=</span> <span class="n">DelegationSpec</span><span class="p">(</span><span class="s2">&quot;Backend2&quot;</span><span class="p">,</span> <span class="p">[])</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">partition_tags</span> <span class="o">=</span> <span class="p">{}</span>
+<dl class="py class">
+<dt class="sig sig-object py" id="executorch.runtime.Program">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">executorch.runtime.</span></span><span class="sig-name descname"><span class="pre">Program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">module</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Program" title="Permalink to this definition">¶</a></dt>
+<dd><p>An ExecuTorch program, loaded from binary PTE data.</p>
+<p>This can be used to load the methods/models defined by the program.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="executorch.runtime.Program.load_method">
+<span class="sig-name descname"><span class="pre">load_method</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Program.load_method"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Program.load_method" title="Permalink to this definition">¶</a></dt>
+<dd><p>Loads a method from the program.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>name</strong> – The name of the method to load.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The loaded method.</p>
+</dd>
+</dl>
+</dd></dl>
 
-    <span class="k">def</span> <span class="nf">partition</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">exported_program</span><span class="p">:</span> <span class="n">ExportedProgram</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+<dl class="py property">
+<dt class="sig sig-object py" id="executorch.runtime.Program.method_names">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">method_names</span></span><a class="headerlink" href="#executorch.runtime.Program.method_names" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns method names of the <cite>Program</cite> as a set of strings.</p>
+</dd></dl>
 
-        <span class="c1"># Tag all nodes in the first partiton to backend 1</span>
-        <span class="n">node_to_backend_1</span> <span class="o">=</span> <span class="o">...</span> <span class="c1"># some logic to select the nodes from the graph</span>
-        <span class="n">delegation_tag</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;backend2_tag</span><span class="si">{</span><span class="n">partitioner_1</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">&quot;</span>
-        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegation_tag</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">partition_tags</span><span class="p">[</span><span class="n">delegation_tag</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">delegation_spec_1</span>
+</dd></dl>
 
-        <span class="c1"># Tag all nodes in the first partiton to backend 2</span>
-        <span class="n">node_to_backend_2</span> <span class="o">=</span> <span class="o">...</span> <span class="c1"># some logic to select the nodes from the graph</span>
-        <span class="n">delegation_tag</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;backend2_tag</span><span class="si">{</span><span class="n">partitioner_2</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">&quot;</span>
-        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegation_tag</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">partition_tags</span><span class="p">[</span><span class="n">delegation_tag</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">delegation_spec_2</span>
-        <span class="k">return</span> <span class="n">exported_program</span>
-</pre></div>
-</div>
-<p><strong>6. Is there an easy way to write a partitioner?</strong></p>
-<p>We provide some helper partitioners
-<a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="doc std std-doc">here</span></a> to make it easy to find
-nodes from decomposed operators.</p>
-<p><strong>7. How do we link the node back to the source code?</strong>
-We provide an helper function</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.print_program</span> <span class="kn">import</span> <span class="n">inspect_node</span>
+<dl class="py class">
+<dt class="sig sig-object py" id="executorch.runtime.Method">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">executorch.runtime.</span></span><span class="sig-name descname"><span class="pre">Method</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">method_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Method"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Method" title="Permalink to this definition">¶</a></dt>
+<dd><p>An ExecuTorch method, loaded from a Program.
+This can be used to execute the method with inputs.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="executorch.runtime.Method.execute">
+<span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">inputs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Method.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Method.execute" title="Permalink to this definition">¶</a></dt>
+<dd><p>Executes the method with the given inputs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>inputs</strong> – The inputs to the method.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The outputs of the method.</p>
+</dd>
+</dl>
+</dd></dl>
 
-<span class="nb">print</span><span class="p">(</span><span class="n">inspect_node</span><span class="p">(</span><span class="n">graph</span><span class="p">,</span> <span class="n">node</span><span class="p">))</span>
-</pre></div>
-</div>
-<p>And it will highlight the node in the graph as well as point to the source code, example output will be like following:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">_param_constant1</span> <span class="n">error_msg</span><span class="p">:</span>  <span class="n">Here</span> <span class="ow">is</span> <span class="n">the</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">the</span> <span class="n">graph</span> <span class="n">module</span><span class="p">:</span>
-<span class="n">graph</span><span class="p">():</span>
-    <span class="o">%</span><span class="n">arg0_1</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">placeholder</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">arg0_1</span><span class="p">]</span>
-    <span class="o">%</span><span class="n">_param_constant0</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_attr</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">_param_constant0</span><span class="p">]</span>
-<span class="o">--&gt;</span> <span class="o">%</span><span class="n">_param_constant1</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_attr</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">_param_constant1</span><span class="p">]</span>
-    <span class="o">%</span><span class="n">aten_convolution_default</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">convolution</span><span class="o">.</span><span class="n">default</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">arg0_1</span><span class="p">,</span> <span class="o">%</span><span class="n">_param_constant0</span><span class="p">,</span> <span class="o">%</span><span class="n">_param_constant1</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="kc">False</span><span class="p">,</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="mi">1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
-    <span class="o">%</span><span class="n">_param_constant2</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_attr</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">_param_constant2</span><span class="p">]</span>
-    <span class="o">%</span><span class="n">_param_constant3</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_attr</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">_param_constant3</span><span class="p">]</span>
-    <span class="o">%</span><span class="n">aten_convolution_default_1</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">convolution</span><span class="o">.</span><span class="n">default</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_convolution_default</span><span class="p">,</span> <span class="o">%</span><span class="n">_param_constant2</span><span class="p">,</span> <span class="o">%</span><span class="n">_param_constant3</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="kc">False</span><span class="p">,</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="mi">1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
-    <span class="o">%</span><span class="n">aten_add_tensor</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_convolution_default</span><span class="p">,</span> <span class="o">%</span><span class="n">aten_convolution_default_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
-    <span class="o">%</span><span class="n">_param_constant4</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_attr</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">_param_constant4</span><span class="p">]</span>
-    <span class="o">%</span><span class="n">_param_constant5</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_attr</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">_param_constant5</span><span class="p">]</span>
-    <span class="o">%</span><span class="n">aten_convolution_default_2</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">convolution</span><span class="o">.</span><span class="n">default</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_add_tensor</span><span class="p">,</span> <span class="o">%</span><span class="n">_param_constant4</span><span class="p">,</span> <span class="o">%</span><span class="n">_param_constant5</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="kc">False</span><span class="p">,</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="mi">1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
-    <span class="o">%</span><span class="n">aten_gelu_default</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">gelu</span><span class="o">.</span><span class="n">default</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_convolution_default_2</span><span class="p">,),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
-    <span class="k">return</span> <span class="p">[</span><span class="n">aten_gelu_default</span><span class="p">]</span>
-<span class="n">This</span> <span class="n">node</span> <span class="n">_param_constant1</span> <span class="n">has</span> <span class="n">metadata</span> <span class="n">of</span><span class="p">:</span>
-<span class="n">The</span> <span class="n">node</span> <span class="n">stacktrace</span><span class="p">:</span>
-<span class="n">Traceback</span> <span class="p">(</span><span class="n">most</span> <span class="n">recent</span> <span class="n">call</span> <span class="n">last</span><span class="p">):</span>
-    <span class="n">File</span> <span class="s2">&quot;/tmp/ipykernel_1204253/3382880687.py&quot;</span><span class="p">,</span> <span class="n">line</span> <span class="mi">7</span><span class="p">,</span> <span class="ow">in</span> <span class="n">forward</span>
-<span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">test_model</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-    <span class="n">File</span> <span class="s2">&quot;/mnt/xarfuse/uid-25337/7b86ad0c-seed-nspid4026532987_cgpid2707357-ns-4026532984/torch/nn/modules/module.py&quot;</span><span class="p">,</span> <span class="n">line</span> <span class="mi">1528</span><span class="p">,</span> <span class="ow">in</span> <span class="n">_call_impl</span>
-<span class="k">return</span> <span class="n">forward_call</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-    <span class="n">File</span> <span class="s2">&quot;/tmp/ipykernel_1204253/712280972.py&quot;</span><span class="p">,</span> <span class="n">line</span> <span class="mi">10</span><span class="p">,</span> <span class="ow">in</span> <span class="n">forward</span>
-<span class="n">a</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">conv1</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
+<dl class="py property">
+<dt class="sig sig-object py" id="executorch.runtime.Method.metadata">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">metadata</span></span><a class="headerlink" href="#executorch.runtime.Method.metadata" title="Permalink to this definition">¶</a></dt>
+<dd><p>Gets the metadata for the method.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>The metadata for the method.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
 </div>
 
 
@@ -730,10 +624,10 @@ We provide an helper function</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="compiler-backend-dialect.html" class="btn btn-neutral float-right" title="Backend Dialect" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="api-life-cycle.html" class="btn btn-neutral float-right" title="ExecuTorch API Life Cycle and Deprecation Policy" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="ir-ops-set-definition.html" class="btn btn-neutral" title="Definition of the Core ATen Operator Set" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="executorch-runtime-api-reference.html" class="btn btn-neutral" title="ExecuTorch Runtime API Reference" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -767,12 +661,26 @@ We provide an helper function</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Backend and Delegate</a><ul>
-<li><a class="reference internal" href="#backend-interfaces-overview">Backend Interfaces: Overview</a></li>
-<li><a class="reference internal" href="#backend-interfaces-ahead-of-time-preprocessing">Backend Interfaces: Ahead-of-Time Preprocessing</a></li>
-<li><a class="reference internal" href="#backend-interfaces-runtime-initialization-and-execution">Backend Interfaces: Runtime Initialization and Execution</a></li>
-<li><a class="reference internal" href="#developer-tools-integration-debuggability">Developer Tools Integration: Debuggability</a></li>
-<li><a class="reference internal" href="#common-questions">Common Questions</a></li>
+<li><a class="reference internal" href="#">ExecuTorch Runtime Python API Reference</a><ul>
+<li><a class="reference internal" href="#executorch.runtime.Runtime"><code class="docutils literal notranslate"><span class="pre">Runtime</span></code></a><ul>
+<li><a class="reference internal" href="#executorch.runtime.Runtime.get"><code class="docutils literal notranslate"><span class="pre">Runtime.get()</span></code></a></li>
+<li><a class="reference internal" href="#executorch.runtime.Runtime.load_program"><code class="docutils literal notranslate"><span class="pre">Runtime.load_program()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#executorch.runtime.OperatorRegistry"><code class="docutils literal notranslate"><span class="pre">OperatorRegistry</span></code></a><ul>
+<li><a class="reference internal" href="#executorch.runtime.OperatorRegistry.operator_names"><code class="docutils literal notranslate"><span class="pre">OperatorRegistry.operator_names</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#executorch.runtime.Program"><code class="docutils literal notranslate"><span class="pre">Program</span></code></a><ul>
+<li><a class="reference internal" href="#executorch.runtime.Program.load_method"><code class="docutils literal notranslate"><span class="pre">Program.load_method()</span></code></a></li>
+<li><a class="reference internal" href="#executorch.runtime.Program.method_names"><code class="docutils literal notranslate"><span class="pre">Program.method_names</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#executorch.runtime.Method"><code class="docutils literal notranslate"><span class="pre">Method</span></code></a><ul>
+<li><a class="reference internal" href="#executorch.runtime.Method.execute"><code class="docutils literal notranslate"><span class="pre">Method.execute()</span></code></a></li>
+<li><a class="reference internal" href="#executorch.runtime.Method.metadata"><code class="docutils literal notranslate"><span class="pre">Method.metadata</span></code></a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
