@@ -86,7 +86,7 @@ def insert_prepack_nodes(program: ExportedProgram) -> ExportedProgram:
             # Set the mem_obj_id to -1 to indicate that this node requires a dedicated
             # memory object. This pass must be executed AFTER the memory planning pass.
             prepack_node.meta["spec"].mem_obj_id = -1
-            node.replace_all_uses_with(prepack_node, lambda x: x != prepack_node)
+            node.replace_all_uses_with(prepack_node, lambda x, y=prepack_node: x != y)
 
     program.graph.eliminate_dead_code()
     return program

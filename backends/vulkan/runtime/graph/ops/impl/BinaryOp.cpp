@@ -51,9 +51,6 @@ void add_binary_op_node(
     const ValueRef alpha,
     const ValueRef out,
     const std::string& op_name) {
-  VK_CHECK_COND(graph.val_is_tensor(in1));
-  VK_CHECK_COND(graph.val_is_tensor(in2));
-
   vTensorPtr t_in1 = graph.get_tensor(in1);
   vTensorPtr t_in2 = graph.get_tensor(in2);
   vTensorPtr t_out = graph.get_tensor(out);
