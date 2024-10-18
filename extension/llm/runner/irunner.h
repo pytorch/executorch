@@ -21,9 +21,9 @@ namespace executorch {
 namespace extension {
 namespace llm {
 
-class ET_EXPERIMENTAL RunnerInterface {
+class ET_EXPERIMENTAL IRunner {
  public:
-  virtual ~RunnerInterface() = default;
+  virtual ~IRunner() = default;
 
   // Checks if the model is loaded.
   virtual bool is_loaded() const = 0;

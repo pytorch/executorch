@@ -17,7 +17,7 @@
 #include <string>
 #include <unordered_map>
 
-#include <executorch/extension/llm/runner/runner_interface.h>
+#include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
@@ -28,7 +28,7 @@
 namespace example {
 
 class ET_EXPERIMENTAL Runner
-    : public executorch::extension::llm::RunnerInterface {
+    : public executorch::extension::llm::IRunner {
  public:
   explicit Runner(
       const std::string& model_path,
