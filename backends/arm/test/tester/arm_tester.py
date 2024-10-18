@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-
 from collections import Counter
 from pprint import pformat
 from typing import Any, Iterable, List, Literal, Optional, Tuple, Union
@@ -35,6 +34,7 @@ from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
     RunnerUtil,
 )
+from executorch.backends.arm.test.visualize import visualize
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 
 from executorch.backends.xnnpack.test.tester import Tester
@@ -47,6 +47,8 @@ from executorch.exir.lowered_backend_module import LoweredBackendModule
 from tabulate import tabulate
 from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
 from torch.fx import Graph
+from typing_extensions import Self
+
 
 logger = logging.getLogger(__name__)
 
@@ -472,6 +474,22 @@ class ArmTester(Tester):
         to_print += _format_dict(dtype_dist, print_table) + "\n"
         _dump_str(to_print, path_to_dump)
         return self
+
+    def visualize(self) -> Self:
+        exported_program = self._get_exported_program()
+        visualize(exported_program)
+        return self
+
+    def _get_exported_program(self):
+        match self.cur:
+            case "Export":
+                return self.get_artifact()
+            case "ToEdge" | "Partition":
+                return self.get_artifact().exported_program()
+            case _:
+                raise RuntimeError(
+                    "Can only get the exported program for the Export, ToEdge, or Partition stage."
+                )
 
     @staticmethod
     def _calculate_reference_output(
