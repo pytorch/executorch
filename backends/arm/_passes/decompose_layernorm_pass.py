@@ -53,8 +53,8 @@ class DecomposeLayerNormPass(ExportPass):
     Source: https://pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html
     """
 
-    def call(self, gm: torch.fx.GraphModule):
-        for node in gm.graph.nodes:
+    def call(self, graph_module: torch.fx.GraphModule):
+        for node in graph_module.graph.nodes:
             if node.op != "call_function" or node.target not in (
                 exir_ops.edge.aten.native_layer_norm.default,
                 torch.ops.aten.layer_norm.default,
@@ -62,7 +62,7 @@ class DecomposeLayerNormPass(ExportPass):
                 continue
 
             # epsilon default value
-            epsilon = 1e-5
+            epsilon = torch.finfo().eps
             weights = None
             bias = None
             args = node.args
@@ -74,7 +74,7 @@ class DecomposeLayerNormPass(ExportPass):
                     x, normalized_shape, weights, bias = args
                 case 3:
                     x, normalized_shape, weights = args
-                case 2:
+                case _:
                     x, normalized_shape = args
 
             n_dims = len(normalized_shape)
@@ -99,48 +99,54 @@ class DecomposeLayerNormPass(ExportPass):
                 mul_op,
                 view_op,
             ) = get_layer_norm_decomposition(node.target)
-            with gm.graph.inserting_before(node):
+            with graph_module.graph.inserting_before(node):
                 keepdim = True
-                mean = create_node(gm.graph, mean_op, args=(x, dims, keepdim))
-                sub = create_node(gm.graph, sub_op, args=(x, mean))
+                mean = create_node(graph_module.graph, mean_op, args=(x, dims, keepdim))
+                sub = create_node(graph_module.graph, sub_op, args=(x, mean))
                 var = create_node(
-                    gm.graph,
+                    graph_module.graph,
                     var_op,
                     args=(x, dims),
                     kwargs={"correction": 0, "keepdim": keepdim},
                 )
                 full = create_node(
-                    gm.graph,
+                    graph_module.graph,
                     full_op,
                     args=(epsilon_reshaped_shape, epsilon),
                     kwargs={"dtype": dtype},
                 )
-                add0 = create_node(gm.graph, add_op, args=(var, full))
-                rsqrt = create_node(gm.graph, rsqrt_op, args=(add0,))
-                mul0 = create_node(gm.graph, mul_op, args=(sub, rsqrt))
+                add0 = create_node(graph_module.graph, add_op, args=(var, full))
+                rsqrt = create_node(graph_module.graph, rsqrt_op, args=(add0,))
+                mul0 = create_node(graph_module.graph, mul_op, args=(sub, rsqrt))
                 if weights is not None:
                     weights_reshaped = create_node(
-                        gm.graph, view_op, args=(weights, weights_reshaped_shape)
+                        graph_module.graph,
+                        view_op,
+                        args=(weights, weights_reshaped_shape),
                     )
-                    mul1 = create_node(gm.graph, mul_op, args=(mul0, weights_reshaped))
+                    mul1 = create_node(
+                        graph_module.graph, mul_op, args=(mul0, weights_reshaped)
+                    )
                 else:
                     mul1 = mul0
                 output = mul1
                 if bias is not None:
                     bias_reshaped_shape = weights_reshaped_shape
                     bias_reshaped = create_node(
-                        gm.graph, view_op, args=(bias, bias_reshaped_shape)
+                        graph_module.graph, view_op, args=(bias, bias_reshaped_shape)
                     )
-                    output = create_node(gm.graph, add_op, args=(mul1, bias_reshaped))
+                    output = create_node(
+                        graph_module.graph, add_op, args=(mul1, bias_reshaped)
+                    )
 
                 users = [user for user in node.users if node != user]
                 node.replace_all_uses_with(output)
                 for user in users:
                     if user.target == operator.getitem:
                         user.replace_all_uses_with(output)
-                gm.graph.erase_node(node)
-                gm.graph.eliminate_dead_code()
-        gm.recompile()
-        gm = super().call(gm).graph_module
+                graph_module.graph.erase_node(node)
+                graph_module.graph.eliminate_dead_code()
+        graph_module.recompile()
+        graph_module = super().call(graph_module).graph_module
 
-        return PassResult(gm, True)
+        return PassResult(graph_module, True)

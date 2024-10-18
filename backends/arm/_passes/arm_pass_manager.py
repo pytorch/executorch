@@ -39,7 +39,7 @@ from executorch.backends.arm._passes.size_adjust_conv2d_pass import SizeAdjustCo
 from executorch.backends.arm._passes.unsqueeze_scalar_placeholders_pass import (
     UnsqueezeScalarPlaceholdersPass,
 )
-transform_passesfrom executorch.exir import ExportedProgram
+from executorch.exir import ExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_manager import PassManager
 
@@ -78,6 +78,6 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
-        self.add_pass(DecomposeDivPass())
         self.add_pass(ScalarsToAttributePass())
+        self.add_pass(DecomposeDivPass())
         return self._transform(graph_module)

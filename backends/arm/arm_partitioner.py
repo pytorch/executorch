@@ -8,7 +8,7 @@
 import logging
 import operator
 import os
-from typing import final, List
+from typing import cast, final, List
 
 import torch
 from executorch.backends.arm.arm_backend import ArmBackend  # usort: skip
@@ -88,10 +88,10 @@ class TOSASupportedOperators(OperatorSupportBase):
     def is_node_supported_custom(self, node: torch.fx.Node) -> bool:
         if node.target == exir_ops.edge.aten.mean.dim:
             keep_dim = node.args[2] if len(node.args) > 2 else False
-            return keep_dim
+            return cast(bool, keep_dim)
         if node.target == exir_ops.edge.aten.var.correction:
             keep_dim = node.kwargs.get("keepdim", False)
-            return keep_dim
+            return cast(bool, keep_dim)
         return True
 
 

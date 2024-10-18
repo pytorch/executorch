@@ -24,7 +24,10 @@ def _annotate_add(
 ) -> Optional[List[List[Node]]]:
     annotated_partitions = []
     for node in gm.graph.nodes:
-        if node.target not in (torch.ops.aten.add.Tensor,):
+        if node.target not in (
+            torch.ops.aten.add.Tensor,
+            torch.ops.aten.add_.Tensor,
+        ):
             continue
         annotated_partitions.append(node)
         add_node = node
