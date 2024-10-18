@@ -27,8 +27,7 @@
 
 namespace example {
 
-class ET_EXPERIMENTAL Runner
-    : public executorch::extension::llm::IRunner {
+class ET_EXPERIMENTAL Runner : public executorch::extension::llm::IRunner {
  public:
   explicit Runner(
       const std::string& model_path,
