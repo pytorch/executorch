@@ -2610,8 +2610,6 @@ void test_binary_op(
 
   IOValueRef arg2{};
 
-  CREATE_WEIGHT_TENSOR(arg2_w, sizes_small, dtype, 2.5f);
-
   // Build graph
 
   IOValueRef arg1 = graph.add_input_tensor(sizes_big, dtype, memory_layout);

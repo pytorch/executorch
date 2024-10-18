@@ -39,7 +39,7 @@ void add_tensor_to_staging_node(
  * tensor shader. The created `Tensor` value is then returned.
  *
  * If `passthrough` is `true`, then `v` may be a `Tensor` as well. If `v` is a
- * `Tensor`, then it is returned as-is. If `passthrough` if `false` (default),
+ * `Tensor`, then it is returned as-is. If `passthrough` is `false` (default),
  * then an exception will be thrown.
  */
 
