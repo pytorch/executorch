@@ -39,7 +39,6 @@ bool utf8_check_validity(const char* str, size_t length) {
         uint8_t byte = static_cast<uint8_t>(str[i]);
         if (byte >= 0x80) { // Non-ASCII byte
             if (i + 1 >= length) { // Incomplete sequence
-              __android_log_print(ANDROID_LOG_ERROR, "ExecuTorchDBG", "Incomplete sequence");
                 return false;
             }
             uint8_t next_byte = static_cast<uint8_t>(str[i + 1]);
@@ -50,10 +49,6 @@ bool utf8_check_validity(const char* str, size_t length) {
             } else if ((byte & 0xF8) == 0xF0 && (next_byte & 0xC0) == 0x80 && (i + 2 < length) && (static_cast<uint8_t>(str[i + 2]) & 0xC0) == 0x80 && (i + 3 < length) && (static_cast<uint8_t>(str[i + 3]) & 0xC0) == 0x80) { // 4-byte sequence
                 i += 4;
             } else {
-              __android_log_print(ANDROID_LOG_ERROR, "ExecuTorchDBG", "Invalid sequence");
-                while(*str)
-    __android_log_print(ANDROID_LOG_ERROR, "ExecuTorchDBGS", "%02x", (unsigned int) *str++);
-
                 return false; // Invalid sequence
             }
         }
@@ -79,7 +74,7 @@ class ExecuTorchLlamaCallbackJni
     
     token_buffer += result;
     if (!utf8_check_validity(token_buffer.c_str(), token_buffer.size())) {
-      __android_log_print(ANDROID_LOG_ERROR, "ExecuTorchDBG", "CONTINUEEEA:%zu", token_buffer.size());
+      ET_LOG(Info, "Current token buffer is not valid UTF-8. Waiting for more.");
       return;
     }
     result = token_buffer;
