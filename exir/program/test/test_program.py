@@ -573,10 +573,10 @@ class TestProgramManagers(unittest.TestCase):
         # which pass the filter_ops fn given by the partitioner
         reference_ep = copy.deepcopy(ep)
         aten_ops_not_decomposed, filter_ops = partitioner.ops_to_not_decompose(ep)
-        reference_decomp_ep = reference_ep.run_decompositions(
-            decomp_table=_default_decomposition_table(),
-            _preserve_ops=tuple(aten_ops_not_decomposed),
-        )
+        table = _default_decomposition_table()
+        for op in aten_ops_not_decomposed:
+            table.pop(op, None)
+        reference_decomp_ep = reference_ep.run_decompositions(decomp_table=table)
         num_non_decomposed_aten_ops = 0
         for node in reference_decomp_ep.graph.nodes:
             if (
