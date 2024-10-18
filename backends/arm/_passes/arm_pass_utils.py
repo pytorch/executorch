@@ -7,9 +7,11 @@
 from typing import Optional
 
 import torch
+import torch.fx
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._ops import OpOverload
+from torch._subclasses.fake_tensor import FakeTensor
 
 
 def create_node(
@@ -64,3 +66,21 @@ def insert_q_dq_pair(
     # node's first use
     q.args = (anchor,) + q_params
     return dq
+
+
+def get_first_fake_tensor(node: torch.fx.Node) -> FakeTensor:
+    """
+    Returns a FakeTensor from the meta field of 'node'.
+    If the node contains many fake tensors, return the first one.
+    """
+    if isinstance(
+        node.meta["val"], (tuple, torch.fx.immutable_collections.immutable_list)
+    ):
+        fake_tensor = node.meta["val"][0]
+    else:
+        fake_tensor = node.meta["val"]
+
+    assert isinstance(
+        fake_tensor, FakeTensor
+    ), f'Found {fake_tensor} in meta["val"] of {node}, expected to find FakeTensor.'
+    return fake_tensor
