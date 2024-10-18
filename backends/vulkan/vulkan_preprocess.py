@@ -19,6 +19,7 @@ from executorch.backends.transforms.mean_to_sum_div import MeanToSumDiv
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 
 from executorch.backends.vulkan._passes import RemoveLocalScalarDenseOpsTransform
+from executorch.backends.vulkan._passes.insert_prepack_nodes import insert_prepack_nodes
 
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
@@ -85,6 +86,8 @@ class VulkanBackend(BackendDetails):
             new_gm = new_gm_res.graph_module
 
         _copy_module(program.graph_module, new_gm)
+
+        program = insert_prepack_nodes(program)
 
         graph_builder = VkGraphBuilder(
             program, DelegateMappingBuilder(generated_identifiers=True)

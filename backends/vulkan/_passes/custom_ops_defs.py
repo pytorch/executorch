@@ -9,6 +9,20 @@ import torch.library
 namespace = "et_vk"
 lib = torch.library.Library(namespace, "DEF")
 
+#############
+## prepack ##
+#############
+
+
+def prepack_impl(x: torch.Tensor):
+    return x
+
+
+name = "prepack"
+lib.define(f"{name}(Tensor x) -> Tensor")
+lib.impl(name, prepack_impl, "CompositeExplicitAutograd")
+prepack_op = getattr(getattr(torch.ops, namespace), name)
+
 #####################
 ## conv_with_clamp ##
 #####################

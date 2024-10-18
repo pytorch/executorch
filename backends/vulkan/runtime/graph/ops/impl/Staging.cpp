@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/DispatchNode.h>
@@ -203,6 +205,14 @@ ValueRef prepack_direct_copy_buffer(
       graph.add_tensor_like(tensor_data, utils::kBuffer, utils::kWidthPacked);
   add_prepack_direct_copy_buffer_node(graph, tensor_data, tensor);
   return tensor;
+}
+
+void prepack_op(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  return add_prepack_standard_node(graph, args[0], args[1]);
+}
+
+REGISTER_OPERATORS {
+  VK_REGISTER_OP(et_vk.prepack.default, prepack_op);
 }
 
 } // namespace vkcompute

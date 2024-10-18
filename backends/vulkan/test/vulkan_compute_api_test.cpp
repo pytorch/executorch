@@ -1520,11 +1520,18 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
   ValueRef c = graph.add_tensor(size_big, vkapi::kFloat);
   ValueRef e = graph.add_tensor(size_big, vkapi::kFloat);
 
+  ValueRef w1_packed = graph.add_tensor(size_small, vkapi::kFloat);
+  ValueRef w2_packed = graph.add_tensor(size_small, vkapi::kFloat);
+
+  auto prepackFn = VK_GET_OP_FN("et_vk.prepack.default");
+  prepackFn(graph, {w1, w1_packed});
+  prepackFn(graph, {w2, w2_packed});
+
   auto addFn = VK_GET_OP_FN("aten.add.Tensor");
-  addFn(graph, {a.value, w1, kDummyValueRef, c});
+  addFn(graph, {a.value, w1_packed, kDummyValueRef, c});
 
   auto mulFn = VK_GET_OP_FN("aten.mul.Tensor");
-  mulFn(graph, {c, w2, e});
+  mulFn(graph, {c, w2_packed, e});
 
   IOValueRef out = {};
   out.value = e;
@@ -2597,24 +2604,16 @@ void test_binary_op(
     std::vector<int64_t> sizes_big,
     std::vector<int64_t> sizes_small,
     vkapi::ScalarType dtype,
-    utils::GPUMemoryLayout memory_layout,
-    bool prepack = true) {
+    utils::GPUMemoryLayout memory_layout) {
   GraphConfig config;
   ComputeGraph graph(config);
 
   IOValueRef arg2{};
 
-  CREATE_WEIGHT_TENSOR(arg2_w, sizes_small, dtype, 2.5f);
-
   // Build graph
 
   IOValueRef arg1 = graph.add_input_tensor(sizes_big, dtype, memory_layout);
-
-  if (prepack) {
-    arg2.value = arg2_w;
-  } else {
-    arg2 = graph.add_input_tensor(sizes_small, dtype, memory_layout);
-  }
+  arg2 = graph.add_input_tensor(sizes_small, dtype, memory_layout);
 
   IOValueRef out;
   out.value = graph.add_tensor(sizes_big, dtype, memory_layout);
@@ -2635,7 +2634,7 @@ void test_binary_op(
 
   for (int i = 1; i < 4; i++) {
     float val_arg1 = i + 1.5;
-    float val_arg2 = prepack ? 2.5f : i - 3.5;
+    float val_arg2 = i - 3.5;
 
     float val_out = val_arg1 + val_arg2;
     if (op_name == "sub") {
@@ -2648,21 +2647,14 @@ void test_binary_op(
       val_out = val_arg1 / val_arg2;
     }
 
-    if (prepack) {
-      execute_graph_and_check_output(graph, {val_arg1}, {val_out});
-    } else {
-      execute_graph_and_check_output(graph, {val_arg1, val_arg2}, {val_out});
-    }
+    execute_graph_and_check_output(graph, {val_arg1, val_arg2}, {val_out});
   }
 }
 
-#define CALL_TEST_FN_FORALL_CONDITIONS(_)                            \
-  _(vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked, false)    \
-  _(vkapi::kFloat, utils::kTexture3D, utils::kHeightPacked, false)   \
-  _(vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked, false) \
-  _(vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked, true)     \
-  _(vkapi::kFloat, utils::kTexture3D, utils::kHeightPacked, true)    \
-  _(vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked, true)
+#define CALL_TEST_FN_FORALL_CONDITIONS(_)                   \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked)  \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kHeightPacked) \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked)
 
 #define CALL_TEST_FN_FOR_W_PACKED(_)                              \
   _(vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked, false) \
@@ -2677,15 +2669,15 @@ void test_binary_op(
   _(vkapi::kFloat, utils::kBuffer, utils::kChannelsPacked, true)
 
 TEST(VulkanComputeGraphOpsTest, add_smoke_test) {
-#define RUN_TESTS(dtype, storage, layout, prepack)                         \
-  test_binary_op("add", {17, 21}, {17, 21}, dtype, layout, prepack);       \
-  test_binary_op("add", {17, 21}, {1, 1}, dtype, layout, prepack);         \
-  test_binary_op("sub", {11, 22}, {11, 22}, dtype, layout, prepack);       \
-  test_binary_op("sub", {11, 22}, {11, 1}, dtype, layout, prepack);        \
-  test_binary_op("add", {7, 17, 17}, {7, 17, 17}, dtype, layout, prepack); \
-  test_binary_op("add", {7, 17, 17}, {7, 1, 17}, dtype, layout, prepack);  \
-  test_binary_op("sub", {9, 9, 7}, {9, 9, 7}, dtype, layout, prepack);     \
-  test_binary_op("sub", {9, 9, 7}, {9, 1, 1}, dtype, layout, prepack);
+#define RUN_TESTS(dtype, storage, layout)                         \
+  test_binary_op("add", {17, 21}, {17, 21}, dtype, layout);       \
+  test_binary_op("add", {17, 21}, {1, 1}, dtype, layout);         \
+  test_binary_op("sub", {11, 22}, {11, 22}, dtype, layout);       \
+  test_binary_op("sub", {11, 22}, {11, 1}, dtype, layout);        \
+  test_binary_op("add", {7, 17, 17}, {7, 17, 17}, dtype, layout); \
+  test_binary_op("add", {7, 17, 17}, {7, 1, 17}, dtype, layout);  \
+  test_binary_op("sub", {9, 9, 7}, {9, 9, 7}, dtype, layout);     \
+  test_binary_op("sub", {9, 9, 7}, {9, 1, 1}, dtype, layout);
 
   CALL_TEST_FN_FORALL_CONDITIONS(RUN_TESTS);
 
