@@ -66,6 +66,16 @@ jobs:
           # avoid permission issue
           sudo chown -R "${USER}" /opt/android
 
+      - name: Download Artifacts
+        shell: bash
+        run: |
+          set -eux
+          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/llm_demo/app-debug.apk
+          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/llm_demo/app-debug-androidTest.apk
+          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/fp32-xnnpack+custom/model.zip
+          unzip model.zip
+          mv *.pte model.pte
+
       - name: Gradle cache
         uses: gradle/actions/setup-gradle@v3
 
