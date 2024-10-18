@@ -950,11 +950,10 @@ class TestBackends(unittest.TestCase):
         class NativeLayerNormModule(torch.nn.Module):
             def __init__(self):
                 super().__init__()
+                self.layer_norm = torch.nn.LayerNorm(5)
 
             def forward(self, x):
-                return torch.native_layer_norm(
-                    x, [5], torch.ones(5), torch.zeros(5), 1e-5
-                )
+                return self.layer_norm(x)
 
         sample_inputs = (torch.randn(size=(3, 4, 5), dtype=torch.float32),)
 
