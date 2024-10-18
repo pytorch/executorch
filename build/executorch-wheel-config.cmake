@@ -21,9 +21,20 @@
 #
 cmake_minimum_required(VERSION 3.19)
 
-# Find prebuilt _portable_lib.so. This file should be installed under
+# Find prebuilt _portable_lib.<EXT_SUFFIX>.so. This file should be installed under
 # <site-packages>/executorch/share/cmake
-find_library(_portable_lib_LIBRARY _portable_lib.so PATHS "${CMAKE_CURRENT_LIST_DIR}/../../extension/pybindings/")
+
+# Get the Python version and platform information
+execute_process(
+    COMMAND python -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))"
+    OUTPUT_VARIABLE EXT_SUFFIX
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+find_library(
+  _portable_lib_LIBRARY
+  NAMES _portable_lib${EXT_SUFFIX}
+  PATHS "${CMAKE_CURRENT_LIST_DIR}/../../extension/pybindings/"
+)
 set(EXECUTORCH_LIBRARIES)
 set(EXECUTORCH_FOUND OFF)
 if(_portable_lib_LIBRARY)
