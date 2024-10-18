@@ -47,7 +47,7 @@ run_and_verify() {
     # Verify result.txt
     RESULT=$(cat result.txt)
     EXPECTED_RESULT="there was a little girl"
-    if [[ "${RESULT}" == "${EXPECTED_TASK}"*]]; then
+    if [[ "${RESULT}" == "${EXPECTED_TASK}"* ]]; then
         echo "Actual result: ${RESULT}"
         echo "Success"
         exit 0
