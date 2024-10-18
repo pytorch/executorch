@@ -6,15 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <chrono>
-#include <codecvt>
-#include <iostream>
-#include <locale>
 #include <memory>
-#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -89,9 +84,6 @@ class ExecuTorchLlamaCallbackJni
     }
     result = token_buffer;
     token_buffer = "";
-    static std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
-    std::u16string result_u16 = converter.from_bytes(result);
-    __android_log_print(ANDROID_LOG_ERROR, "ExecuTorchDBG", "U16:%s", result_u16.c_str());
     facebook::jni::local_ref<jstring> s = facebook::jni::make_jstring(result);
     method(self(), s);
   }
