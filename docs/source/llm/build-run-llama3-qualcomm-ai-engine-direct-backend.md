@@ -49,7 +49,6 @@ llama3/Meta-Llama-3-8B-Instruct/tokenizer.model -p <path_to_params.json> -c <pat
     cmake \
         -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake" \
         -DANDROID_ABI=arm64-v8a \
-        -DANDROID_PLATFORM=android-23 \
         -DCMAKE_INSTALL_PREFIX=cmake-android-out \
         -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
@@ -69,7 +68,6 @@ llama3/Meta-Llama-3-8B-Instruct/tokenizer.model -p <path_to_params.json> -c <pat
     cmake \
         -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}"/build/cmake/android.toolchain.cmake  \
         -DANDROID_ABI=arm64-v8a \
-        -DANDROID_PLATFORM=android-23 \
         -DCMAKE_INSTALL_PREFIX=cmake-android-out \
         -DCMAKE_BUILD_TYPE=Release -DPYTHON_EXECUTABLE=python \
         -DEXECUTORCH_BUILD_QNN=ON \

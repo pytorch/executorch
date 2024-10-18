@@ -11,7 +11,6 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
-
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
@@ -126,6 +125,94 @@ void add_q_8w_linear_node(
       resize_q_8w_linear_node));
   if (!graph.is_buffer_storage(out) &&
       graph.packed_dim_of(out) != WHCN::kWidthDim) {
+    viewFn(graph, {out_W_packed, graph.add_none(), out});
+  }
+}
+
+void add_q_8w_linear_optimized_node(
+    ComputeGraph& graph,
+    const ValueRef mat1,
+    const ValueRef q_mat2_data,
+    const ValueRef scales_data,
+    const ValueRef out) {
+  auto viewFn = VK_GET_OP_FN("aten.view_copy.default");
+  ValueRef mat1_W_packed = mat1;
+  ValueRef out_W_packed = out;
+  if (!graph.is_buffer_storage(out) &&
+      graph.packed_dim_of(mat1) != WHCN::kWidthDim) {
+    // Ensure mat1 is width packed
+    mat1_W_packed = graph.add_tensor_like(mat1, utils::kWidthPacked);
+    viewFn(graph, {mat1, graph.add_none(), mat1_W_packed});
+    // Ensure out is packed correctly
+    out_W_packed = graph.add_tensor_like(out, utils::kWidthPacked);
+  }
+  ValueRef q_mat2 =
+      prepack_if_tensor_ref(graph, q_mat2_data, utils::kWidthPacked);
+  ValueRef scales =
+      prepack_if_tensor_ref(graph, scales_data, utils::kWidthPacked);
+
+  std::string kernel_name = "q_8w_linear_optimized";
+  kernel_name.reserve(kShaderNameReserve);
+  add_packed_dim_suffix(kernel_name, graph.packed_dim_of(mat1_W_packed));
+  add_packed_dim_suffix(kernel_name, graph.packed_dim_of(q_mat2));
+  std::vector<int64_t> mat1_sizes = graph.sizes_of(mat1_W_packed);
+  const int mat1_dims = mat1_sizes.size();
+  if (mat1_dims == 3) {
+    kernel_name = "batch_" + kernel_name;
+  }
+  if (mat1_sizes.at(mat1_dims - 2) < 8) {
+    kernel_name += "_tile_row_2";
+  } else {
+    kernel_name += "_tile_row_4";
+  }
+
+  add_dtype_suffix(kernel_name, graph.dtype_of(out_W_packed));
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out_W_packed));
+
+  vkapi::ParamsBindList ubos({});
+
+  utils::uvec3 global_size;
+  utils::uvec3 local_size;
+  if (graph.is_buffer_storage(out)) {
+    ubos.append(
+        {graph.sizes_ubo(out_W_packed),
+         graph.strides_ubo(out_W_packed),
+         graph.numel_ubo(out_W_packed),
+         graph.sizes_ubo(mat1_W_packed),
+         graph.strides_ubo(mat1_W_packed),
+         graph.strides_ubo(q_mat2),
+         graph.strides_ubo(scales)});
+    global_size = graph.create_global_wg_size(out_W_packed);
+    local_size = graph.create_local_wg_size(out_W_packed);
+  } else {
+    global_size = graph.logical_limits_of(out_W_packed);
+    ubos.append(
+        {graph.logical_limits_ubo(out_W_packed),
+         graph.sizes_ubo(mat1_W_packed)});
+    if (mat1_sizes.at(mat1_dims - 2) < 8) {
+      global_size = global_size = utils::divup_vec(global_size, {1, 2, 1});
+    } else {
+      global_size = utils::divup_vec(global_size, {1, 4, 1});
+    }
+    local_size = {16, 3, 1};
+  }
+
+  graph.execute_nodes().emplace_back(new DispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      global_size,
+      local_size,
+      // Inputs and Outputs
+      {{out_W_packed, vkapi::MemoryAccessType::WRITE},
+       {{mat1_W_packed, q_mat2, scales}, vkapi::MemoryAccessType::READ}},
+      // Shader params buffers
+      ubos,
+      // Specialization Constants
+      {}, // spec_vars,
+      // Resizing Logic
+      resize_q_8w_linear_node));
+
+  if (!graph.is_buffer_storage(out)) {
     viewFn(graph, {out_W_packed, graph.add_none(), out});
   }
 }

@@ -87,7 +87,7 @@ my_relu_out(KernelRuntimeContext& context, const Tensor& input, Tensor& out) {
           InvalidArgument,
           out,
           "Unhandled dtype %hhd",
-          input.scalar_type());
+          static_cast<int8_t>(input.scalar_type()));
   }
 #undef RELU
 

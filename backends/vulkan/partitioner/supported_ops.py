@@ -84,6 +84,7 @@ SUPPORTS_DYNAMIC_SHAPE = [
     exir_ops.edge.aten.addmm.default,
     exir_ops.edge.aten.linear.default,
     exir_ops.edge.et_vk.linear_weight_int4.default,
+    exir_ops.edge.aten._weight_int8pack_mm.default,
     # Reduction
     exir_ops.edge.aten._log_softmax.default,
     exir_ops.edge.aten._softmax.default,

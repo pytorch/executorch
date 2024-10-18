@@ -37,7 +37,6 @@ build_android_native_library() {
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
-    -DANDROID_PLATFORM=android-26 \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DEXECUTORCH_LOG_LEVEL=Info \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
@@ -66,7 +65,6 @@ build_android_native_library() {
   cmake extension/android \
     -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="${ANDROID_ABI}" \
-    -DANDROID_PLATFORM=android-26 \
     -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DEXECUTORCH_LOG_LEVEL=Info \
