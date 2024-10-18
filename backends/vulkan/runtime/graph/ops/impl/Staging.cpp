@@ -170,7 +170,7 @@ ValueRef prepack_standard_like(
       passthrough);
 }
 
-void add_prepack_direct_buffer_copy_node(
+void add_prepack_direct_copy_buffer_node(
     ComputeGraph& graph,
     const ValueRef tensor_data,
     const ValueRef tensor) {
@@ -201,7 +201,7 @@ ValueRef prepack_direct_copy_buffer(
   VK_CHECK_COND(graph.val_is_tref(tensor_data));
   ValueRef tensor =
       graph.add_tensor_like(tensor_data, utils::kBuffer, utils::kWidthPacked);
-  add_prepack_direct_buffer_copy_node(graph, tensor_data, tensor);
+  add_prepack_direct_copy_buffer_node(graph, tensor_data, tensor);
   return tensor;
 }
 
