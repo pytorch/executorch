@@ -30,6 +30,7 @@ def define_common_targets():
             # qnn_executorch_backend can be added below //executorch/backends/qualcomm:qnn_executorch_backend
             exported_deps = [
                 "//executorch/backends/xnnpack:xnnpack_backend",
+                "//executorch/extension/llm/runner:irunner",
                 "//executorch/extension/llm/runner:stats",
                 "//executorch/extension/llm/runner:text_decoder_runner" + aten_suffix,
                 "//executorch/extension/llm/runner:text_prefiller" + aten_suffix,
