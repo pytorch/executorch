@@ -68,7 +68,10 @@ void quantized_relu_out(
         out_shift,
         output);
   } else {
-    ET_CHECK_MSG(false, "Unhandled input dtype %hhd", input.scalar_type());
+    ET_CHECK_MSG(
+        false,
+        "Unhandled input dtype %hhd",
+        static_cast<int8_t>(input.scalar_type()));
   }
 }
 
