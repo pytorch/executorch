@@ -41,6 +41,7 @@ def _annotate_one_to_one(
         torch.ops.aten.reciprocal.default,
         torch.ops.aten.rsqrt.default,
         torch.ops.aten.sigmoid.default,
+        torch.ops.aten.tanh.default,
     )
     for node in gm.graph.nodes:
         if node.op != "call_function" or node.target not in one_to_one_ops:
