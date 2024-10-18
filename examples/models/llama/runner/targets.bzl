@@ -39,6 +39,7 @@ def define_common_targets():
             ],
             exported_deps = [
                 "//executorch/backends/xnnpack:xnnpack_backend",
+                "//executorch/extension/llm/runner:irunner",
                 "//executorch/extension/llm/runner:stats",
                 "//executorch/extension/llm/runner:text_decoder_runner" + aten_suffix,
                 "//executorch/extension/llm/runner:text_prefiller" + aten_suffix,
