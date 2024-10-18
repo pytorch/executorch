@@ -30,6 +30,8 @@ public class SettingsFields {
     return modelType;
   }
 
+  public BackendType getBackendType(){ return backendType; }
+
   public String getUserPrompt() {
     return userPrompt;
   }
@@ -63,9 +65,11 @@ public class SettingsFields {
   private boolean isClearChatHistory;
   private boolean isLoadModel;
   private ModelType modelType;
+  private BackendType backendType;
 
   public SettingsFields() {
     ModelType DEFAULT_MODEL = ModelType.LLAMA_3;
+    BackendType DEFAULT_BACKEND= BackendType.XNNPACK;
 
     modelFilePath = "";
     tokenizerFilePath = "";
@@ -75,6 +79,7 @@ public class SettingsFields {
     isClearChatHistory = false;
     isLoadModel = false;
     modelType = DEFAULT_MODEL;
+    backendType = DEFAULT_BACKEND;
   }
 
   public SettingsFields(SettingsFields settingsFields) {
@@ -86,6 +91,7 @@ public class SettingsFields {
     this.isClearChatHistory = settingsFields.getIsClearChatHistory();
     this.isLoadModel = settingsFields.getIsLoadModel();
     this.modelType = settingsFields.modelType;
+    this.backendType = settingsFields.backendType;
   }
 
   public void saveModelPath(String modelFilePath) {
@@ -99,6 +105,8 @@ public class SettingsFields {
   public void saveModelType(ModelType modelType) {
     this.modelType = modelType;
   }
+
+  public void saveBackendType(BackendType backendType) { this.backendType = backendType;}
 
   public void saveParameters(Double temperature) {
     this.temperature = temperature;
@@ -126,6 +134,7 @@ public class SettingsFields {
         && userPrompt.equals(anotherSettingsFields.userPrompt)
         && isClearChatHistory == anotherSettingsFields.isClearChatHistory
         && isLoadModel == anotherSettingsFields.isLoadModel
-        && modelType == anotherSettingsFields.modelType;
+        && modelType == anotherSettingsFields.modelType
+        && backendType == anotherSettingsFields.backendType;
   }
 }
