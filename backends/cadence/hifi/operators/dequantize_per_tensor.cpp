@@ -44,7 +44,10 @@ void dequantize_per_tensor_out(
     impl::HiFi::kernels::dequantize<int32_t>(
         out_data, input_data, scale, zero_point, numel);
   } else {
-    ET_CHECK_MSG(false, "Unhandled input dtype %hhd", input.scalar_type());
+    ET_CHECK_MSG(
+      false,
+      "Unhandled input dtype %hhd",
+      static_cast<int8_t>(input.scalar_type()));
   }
 }
 

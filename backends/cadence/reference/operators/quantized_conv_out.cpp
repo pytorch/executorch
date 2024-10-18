@@ -248,6 +248,11 @@ void quantized_conv_out(
         output_scale,
         (int8_t)output_zero_point,
         per_tensor_quantized);
+  } else {
+    ET_CHECK_MSG(
+      false,
+      "Unhandled input dtype %hhd",
+      static_cast<int8_t>(input.scalar_type()));
   }
 }
 
