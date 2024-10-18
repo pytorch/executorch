@@ -8,7 +8,7 @@
 import logging
 import operator
 import os
-from typing import final, List
+from typing import Callable, final, List, Optional, Tuple
 
 import torch
 from executorch.backends.arm.arm_backend import ArmBackend  # usort: skip
@@ -64,6 +64,7 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.slice_copy.Tensor,
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.sum.dim_IntList,
+            exir_ops.edge.aten.upsample_nearest2d.vec,
             exir_ops.edge.aten.view_copy.default,
             exir_ops.edge.aten.clone.default,
             exir_ops.edge.aten.mean.dim,
@@ -130,3 +131,12 @@ class ArmPartitioner(Partitioner):
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )
+
+    def ops_to_not_decompose(
+        self,
+        ep: ExportedProgram,
+    ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        ops_to_not_decompose = [
+            torch.ops.aten.upsample_nearest2d.vec,
+        ]
+        return (ops_to_not_decompose, None)

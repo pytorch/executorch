@@ -61,4 +61,5 @@ from . import (  # noqa
     one_to_one_annotator,
     sub_annotator,
     sum_annotator,
+    upsample_nearest2d_annotator,
 )

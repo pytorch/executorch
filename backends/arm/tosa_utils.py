@@ -349,3 +349,48 @@ def expand_dims(
     build_reshape(tosa_graph, input_node.name, new_shape, intermediate.name)
 
     return intermediate
+
+
+def get_resize_parameters(
+    input_size: torch.Tensor,
+    output_size: torch.Tensor,
+    resize_mode: int,
+    align_corners: bool,
+):
+    """Get the tosa.resize parameters based on the input and output size.
+
+    Args:
+        input_size (torch.Tensor): Size of the input
+        output_size (torch.Tensor): Size of the output
+        resize_mode (tosa.ResizeMode): The TOSA resize mode
+        align_corners (bool): Align the corners pixels of the input and output
+
+    Returns:
+        scale_n (torch.Tensor), scale_d (torch.Tensor),
+        offset (torch.Tensor), border (torch.Tensor)
+    """
+    assert torch.all(input_size > 0)
+    assert torch.all(output_size > 0)
+
+    scale_n = torch.tensor(
+        [
+            so - 1 if align_corners and si > 1 and so > 1 else so
+            for si, so in zip(input_size, output_size)
+        ]
+    )
+    scale_d = torch.tensor(
+        [
+            si - 1 if align_corners and si > 1 and so > 1 else si
+            for si, so in zip(input_size, output_size)
+        ]
+    )
+
+    gcd = torch.gcd(scale_n, scale_d)
+    scale_n = scale_n // gcd
+    scale_d = scale_d // gcd
+
+    # No half-pixel centre support in PyTorch, no offset needed
+    offset = torch.zeros_like(input_size)
+    border = scale_d * (output_size - 1) - scale_n * (input_size - 1) + offset
+
+    return scale_n, scale_d, offset, border
