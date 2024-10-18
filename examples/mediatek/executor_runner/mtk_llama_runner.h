@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
+#include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #include <executorch/extension/llm/tokenizer/tiktoken.h>
