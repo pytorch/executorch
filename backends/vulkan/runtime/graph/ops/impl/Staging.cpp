@@ -110,7 +110,7 @@ void add_tensor_to_staging_node(
       {SV(graph.packed_dim_of(in_tensor))}));
 }
 
-void add_standard_prepack_node(
+void add_prepack_standard_node(
     ComputeGraph& graph,
     const ValueRef tensor_data,
     const ValueRef tensor) {
@@ -152,7 +152,7 @@ ValueRef prepack_standard(
   }
   VK_CHECK_COND(graph.val_is_tref(tensor_data));
   ValueRef tensor = graph.add_tensor_like(tensor_data, storage_type, layout);
-  add_standard_prepack_node(graph, tensor_data, tensor);
+  add_prepack_standard_node(graph, tensor_data, tensor);
   return tensor;
 }
 
@@ -170,7 +170,7 @@ ValueRef prepack_standard_like(
       passthrough);
 }
 
-void add_direct_buffer_copy_prepack_node(
+void add_prepack_direct_buffer_copy_node(
     ComputeGraph& graph,
     const ValueRef tensor_data,
     const ValueRef tensor) {
@@ -198,9 +198,10 @@ void add_direct_buffer_copy_prepack_node(
 ValueRef prepack_direct_copy_buffer(
     ComputeGraph& graph,
     const ValueRef tensor_data) {
+  VK_CHECK_COND(graph.val_is_tref(tensor_data));
   ValueRef tensor =
       graph.add_tensor_like(tensor_data, utils::kBuffer, utils::kWidthPacked);
-  add_direct_buffer_copy_prepack_node(graph, tensor_data, tensor);
+  add_prepack_direct_buffer_copy_node(graph, tensor_data, tensor);
   return tensor;
 }
 

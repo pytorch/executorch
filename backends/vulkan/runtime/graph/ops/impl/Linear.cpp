@@ -95,10 +95,10 @@ void add_addmm_naive_node(
     const Params& params,
     const ValueRef mat2_is_transposed) {
   utils::StorageType stype = graph.storage_type_of(out);
-  ValueRef self =
-      prepack_standard(graph, self_data, stype, utils::kWidthPacked, true);
-  ValueRef mat2 =
-      prepack_standard(graph, mat2_data, stype, utils::kHeightPacked, true);
+  ValueRef self = prepack_standard(
+      graph, self_data, stype, utils::kWidthPacked, /*passthrough = */ true);
+  ValueRef mat2 = prepack_standard(
+      graph, mat2_data, stype, utils::kHeightPacked, /*passthrough = */ true);
 
   std::string kernel_name =
       graph.get_bool(mat2_is_transposed) ? "linear_naive" : "addmm_naive";
@@ -149,10 +149,10 @@ void add_addmm_optimized_node(
     const Params& params,
     const ValueRef mat2_is_transposed) {
   utils::StorageType stype = graph.storage_type_of(out);
-  ValueRef self =
-      prepack_standard(graph, self_data, stype, utils::kChannelsPacked, true);
-  ValueRef mat2 =
-      prepack_standard(graph, mat2_data, stype, utils::kHeightPacked, true);
+  ValueRef self = prepack_standard(
+      graph, self_data, stype, utils::kChannelsPacked, /*passthrough=*/true);
+  ValueRef mat2 = prepack_standard(
+      graph, mat2_data, stype, utils::kHeightPacked, /*passthrough=*/true);
 
   // Ensure mat1 is width packed
   ValueRef mat1_W_packed = graph.add_tensor_like(mat1, utils::kWidthPacked);
