@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <cstddef>
 #include <cstdint>
 #include <chrono>
 #include <memory>
@@ -20,7 +19,6 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <android/log.h>
 
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
