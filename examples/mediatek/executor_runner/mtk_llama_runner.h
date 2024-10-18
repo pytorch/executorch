@@ -12,6 +12,7 @@
 #pragma once
 
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
+#include <executorch/extension/llm/runner/runner_interface.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #include <executorch/extension/llm/tokenizer/tiktoken.h>
@@ -31,7 +32,8 @@ using executorch::extension::llm::Tokenizer;
 using executorch::runtime::Error;
 using executorch::runtime::Result;
 
-class MTKLlamaRunner {
+class MTKLlamaRunner
+    : public executorch::extension::llm::RunnerInterface {
  public:
   explicit MTKLlamaRunner(
       const std::string& model_path,
@@ -44,7 +46,9 @@ class MTKLlamaRunner {
       const std::string& prompt,
       int32_t seq_len = 128,
       std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const Stats&)> stats_callback = {});
+      std::function<void(const Stats&)> stats_callback = {},
+      bool echo = true,
+      bool warming = false);
   void stop();
 
   LlamaModelOptions get_model_options();

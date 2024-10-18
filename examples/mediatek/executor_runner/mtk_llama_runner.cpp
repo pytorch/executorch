@@ -120,7 +120,9 @@ Error MTKLlamaRunner::generate(
     const std::string& prompt,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback) {
+    std::function<void(const Stats&)> stats_callback
+      bool,
+      bool) {
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
   }
