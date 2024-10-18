@@ -50,8 +50,10 @@ void quantize_per_tensor_out(
     cadence::impl::HiFi::kernels::quantize<int32_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
   } else {
-    ET_CHECK_MSG(false, "Unhandled input dtype %hhd", out.scalar_type());
-  }
+    ET_CHECK_MSG(
+      false,
+      "Unhandled output dtype %hhd",
+      static_cast<int8_t>(out.scalar_type()));  }
 }
 
 }; // namespace native
