@@ -63,7 +63,11 @@ void add_matmul_naive_buffer_node(
     const ValueRef out,
     const ValueRef mat2_is_transposed) {
   ValueRef mat2 = prepack_standard(
-      graph, mat2_data, graph.storage_type_of(out), utils::kHeightPacked, true);
+      graph,
+      mat2_data,
+      graph.storage_type_of(out),
+      utils::kHeightPacked,
+      /*passthrough = */ true);
 
   std::string kernel_name = "matmul_naive_buffer";
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
@@ -105,7 +109,11 @@ void add_matmul_naive_texture3d_node(
     const ValueRef out,
     const ValueRef mat2_is_transposed) {
   ValueRef mat2 = prepack_standard(
-      graph, mat2_data, graph.storage_type_of(out), utils::kHeightPacked, true);
+      graph,
+      mat2_data,
+      graph.storage_type_of(out),
+      utils::kHeightPacked,
+      /*passthrough = */ true);
 
   std::string kernel_name = graph.get_bool(mat2_is_transposed)
       ? "matmul_transposed_naive"
@@ -149,7 +157,11 @@ void add_matmul_optimized_node(
     const ValueRef out,
     const ValueRef mat2_is_transposed) {
   ValueRef mat2 = prepack_standard(
-      graph, mat2_data, graph.storage_type_of(out), utils::kHeightPacked, true);
+      graph,
+      mat2_data,
+      graph.storage_type_of(out),
+      utils::kHeightPacked,
+      /*passthrough = */ true);
 
   // Ensure mat1 is width packed
   ValueRef mat1_W_packed = graph.add_tensor_like(mat1, utils::kWidthPacked);
