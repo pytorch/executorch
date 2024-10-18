@@ -285,7 +285,8 @@ ValueRef ComputeGraph::add_tensor_like(
 ValueRef ComputeGraph::add_tensor_like(
     const ValueRef idx,
     const utils::GPUMemoryLayout memory_layout) {
-  return add_tensor(sizes_of(idx), dtype_of(idx), memory_layout);
+  return add_tensor(
+      sizes_of(idx), dtype_of(idx), storage_type_of(idx), memory_layout);
 }
 
 ValueRef ComputeGraph::add_tensor(
