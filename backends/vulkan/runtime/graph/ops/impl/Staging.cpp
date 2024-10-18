@@ -110,96 +110,98 @@ void add_tensor_to_staging_node(
       {SV(graph.packed_dim_of(in_tensor))}));
 }
 
-ValueRef add_standard_prepack_node(
+void add_standard_prepack_node(
     ComputeGraph& graph,
-    const ValueRef vref,
-    const utils::StorageType storage_type,
-    const utils::GPUMemoryLayout layout) {
-  ValueRef v = graph.add_tensor_like(vref, storage_type, layout);
-
+    const ValueRef tensor_data,
+    const ValueRef tensor) {
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
-      *graph.get_tensor(v), graph.int8_buffers_enabled());
+      *graph.get_tensor(tensor), graph.int8_buffers_enabled());
 
   vkapi::ParamsBindList ubos;
-  if (graph.is_buffer_storage(v)) {
-    ubos.append({graph.sizes_ubo(v), graph.strides_ubo(v), graph.numel_ubo(v)});
+  if (graph.is_buffer_storage(tensor)) {
+    ubos.append(
+        {graph.sizes_ubo(tensor),
+         graph.strides_ubo(tensor),
+         graph.numel_ubo(tensor)});
   } else {
-    ubos.append({graph.sizes_ubo(v), graph.axis_map_ubo(v)});
+    ubos.append({graph.sizes_ubo(tensor), graph.axis_map_ubo(tensor)});
   }
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
-      graph.create_global_wg_size(v),
-      graph.create_local_wg_size(v),
+      graph.create_global_wg_size(tensor),
+      graph.create_local_wg_size(tensor),
       // Input and Outputs
-      vref,
-      v,
+      tensor_data,
+      tensor,
       // Parameter Buffers
       ubos,
       // Specialization Constants
-      {SV(graph.packed_dim_of(v))}));
-
-  return v;
+      {SV(graph.packed_dim_of(tensor))}));
 }
 
 ValueRef prepack_standard(
     ComputeGraph& graph,
-    const ValueRef v,
+    const ValueRef tensor_data,
     const utils::StorageType storage_type,
     const utils::GPUMemoryLayout layout,
     const bool passthrough) {
-  if (passthrough && graph.val_is_tensor(v)) {
-    return v;
+  if (passthrough && graph.val_is_tensor(tensor_data)) {
+    return tensor_data;
   }
-  VK_CHECK_COND(graph.val_is_tref(v));
-  return add_standard_prepack_node(graph, v, storage_type, layout);
+  VK_CHECK_COND(graph.val_is_tref(tensor_data));
+  ValueRef tensor = graph.add_tensor_like(tensor_data, storage_type, layout);
+  add_standard_prepack_node(graph, tensor_data, tensor);
+  return tensor;
 }
 
 ValueRef prepack_standard_like(
     ComputeGraph& graph,
-    const ValueRef v,
+    const ValueRef tensor_data,
     const ValueRef to_copy,
     const bool passthrough) {
   VK_CHECK_COND(graph.val_is_tensor(to_copy));
   return prepack_standard(
       graph,
-      v,
+      tensor_data,
       graph.storage_type_of(to_copy),
       graph.estimate_memory_layout_of(to_copy),
       passthrough);
 }
 
-ValueRef add_direct_buffer_copy_prepack_node(
+void add_direct_buffer_copy_prepack_node(
     ComputeGraph& graph,
-    const ValueRef vref) {
-  ValueRef v = graph.add_tensor_like(vref, utils::kBuffer, utils::kWidthPacked);
-
+    const ValueRef tensor_data,
+    const ValueRef tensor) {
   std::string kernel_name = "buffer_to_buffer";
-  add_dtype_suffix(kernel_name, graph.dtype_of(vref));
+  add_dtype_suffix(kernel_name, graph.dtype_of(tensor_data));
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
   vkapi::ParamsBindList ubos;
-  ubos.append({graph.numel_ubo(v)});
+  ubos.append({graph.numel_ubo(tensor)});
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
-      graph.create_global_wg_size(v),
-      graph.create_local_wg_size(v),
+      graph.create_global_wg_size(tensor),
+      graph.create_local_wg_size(tensor),
       // Input and Outputs
-      vref,
-      v,
+      tensor_data,
+      tensor,
       // Parameter Buffers
       ubos,
       // Specialization Constants
       {}));
-
-  return v;
 }
 
-ValueRef prepack_direct_copy_buffer(ComputeGraph& graph, const ValueRef v) {
-  return add_direct_buffer_copy_prepack_node(graph, v);
+ValueRef prepack_direct_copy_buffer(
+    ComputeGraph& graph,
+    const ValueRef tensor_data) {
+  ValueRef tensor =
+      graph.add_tensor_like(tensor_data, utils::kBuffer, utils::kWidthPacked);
+  add_direct_buffer_copy_prepack_node(graph, tensor_data, tensor);
+  return tensor;
 }
 
 } // namespace vkcompute

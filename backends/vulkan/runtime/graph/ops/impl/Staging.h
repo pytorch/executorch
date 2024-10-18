@@ -45,7 +45,7 @@ void add_tensor_to_staging_node(
 
 ValueRef prepack_standard(
     ComputeGraph& graph,
-    const ValueRef v,
+    const ValueRef tensor_data,
     const utils::StorageType storage_type,
     const utils::GPUMemoryLayout layout,
     const bool passthrough = false);
@@ -56,7 +56,7 @@ ValueRef prepack_standard(
  */
 ValueRef prepack_standard_like(
     ComputeGraph& graph,
-    const ValueRef v,
+    const ValueRef tensor_data,
     const ValueRef to_copy,
     const bool passthrough = false);
 
@@ -70,6 +70,8 @@ ValueRef prepack_standard_like(
  * transfer the `TensorRef` data to the new `Tensor` object via a direct buffer
  * to buffer copy shader.
  */
-ValueRef prepack_direct_copy_buffer(ComputeGraph& graph, const ValueRef v);
+ValueRef prepack_direct_copy_buffer(
+    ComputeGraph& graph,
+    const ValueRef tensor_data);
 
 } // namespace vkcompute
