@@ -51,11 +51,11 @@ void add_binary_op_node(
     const ValueRef alpha,
     const ValueRef out,
     const std::string& op_name) {
-  ValueRef arg1 = prepack_standard_like(graph, in1, out, true);
-  ValueRef arg2 = prepack_standard_like(graph, in2, out, true);
+  VK_CHECK_COND(graph.val_is_tensor(in1));
+  VK_CHECK_COND(graph.val_is_tensor(in2));
 
-  vTensorPtr t_in1 = graph.get_tensor(arg1);
-  vTensorPtr t_in2 = graph.get_tensor(arg2);
+  vTensorPtr t_in1 = graph.get_tensor(in1);
+  vTensorPtr t_in2 = graph.get_tensor(in2);
   vTensorPtr t_out = graph.get_tensor(out);
 
   check_binary_op_args(*t_in1, *t_in2, *t_out);
@@ -81,7 +81,7 @@ void add_binary_op_node(
       graph.create_local_wg_size(out),
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
-       {{arg1, arg2}, vkapi::MemoryAccessType::READ}},
+       {{in1, in2}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {t_out->sizes_ubo(),
        t_out->axis_map_ubo(),
