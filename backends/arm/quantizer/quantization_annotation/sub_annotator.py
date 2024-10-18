@@ -24,7 +24,7 @@ def _annotate_sub(
 ) -> Optional[List[List[Node]]]:
     annotated_partitions = []
     for node in gm.graph.nodes:
-        if node.target not in (torch.ops.aten.sub.Tensor,):
+        if node.target not in (torch.ops.aten.sub.Tensor, torch.ops.aten.sub_.Tensor):
             continue
         annotated_partitions.append(node)
         sub_node = node

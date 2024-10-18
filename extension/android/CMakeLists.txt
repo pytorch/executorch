@@ -20,6 +20,9 @@ set(EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+if(NOT ANDROID_PLATFORM)
+  set(ANDROID_PLATFORM android-30)
+endif()
 
 # We need to download fbjni library from maven, and use its "prefab" library
 # and headers, and link executorch library against that fbjni library.
@@ -152,8 +155,8 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   )
 
   add_subdirectory(
-    ${EXECUTORCH_ROOT}/examples/models/llama2/runner
-    ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama2/runner
+    ${EXECUTORCH_ROOT}/examples/models/llama/runner
+    ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama/runner
   )
 endif()
 

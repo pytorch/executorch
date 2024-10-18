@@ -27,6 +27,7 @@ from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
 from executorch.backends.arm._passes.insert_squeeze_after_sum_pass import (
     InsertSqueezeAfterSumPass,
 )
+from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
 from executorch.backends.arm._passes.meandim_to_averagepool_pass import (
     ConvertMeanDimToAveragePool,
 )
@@ -35,7 +36,10 @@ from executorch.backends.arm._passes.scalars_to_attribute_pass import (
     ScalarsToAttributePass,
 )
 from executorch.backends.arm._passes.size_adjust_conv2d_pass import SizeAdjustConv2DPass
-from executorch.exir import ExportedProgram
+from executorch.backends.arm._passes.unsqueeze_scalar_placeholders_pass import (
+    UnsqueezeScalarPlaceholdersPass,
+)
+transform_passesfrom executorch.exir import ExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_manager import PassManager
 
@@ -50,6 +54,7 @@ class ArmPassManager(PassManager):
     ):
         """Apply passes before transforming program to backend"""
         self.add_pass(CastInt64ToInt32Pass(exported_program))
+        self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(RemoveClonePass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
@@ -57,6 +62,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeVarPass())
         self.add_pass(ConvertMeanDimToAveragePool())
         self.add_pass(DecomposeMeanDimPass())
+        self.add_pass(MatchArgRanksPass(exported_program))
         self.add_pass(DecomposeDivPass())
         self.add_pass(InsertSqueezeAfterSumPass())
         self.add_pass(ConvertSplitToSlicePass())
@@ -74,5 +80,4 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeMeanDimPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(ScalarsToAttributePass())
-        self.add_pass(DecomposeMeanDimPass())
         return self._transform(graph_module)

@@ -216,15 +216,15 @@ class LLMEdgeManager:
     ):
         logging.info("Run calibration...")
         try:
-            from executorch.examples.models.llama2.eval_llama_lib import (
+            from executorch.examples.models.llama.eval_llama_lib import (
                 GraphModuleEvalWrapper,
             )
-            from executorch.examples.models.llama2.evaluate import (  # pyre-ignore[21]
+            from executorch.examples.models.llama.evaluate import (  # pyre-ignore[21]
                 evaluate_model,
             )
         except ImportError:
             raise ImportError(
-                "Please install the llm eval dependency via examples/models/llama2/install_requirements.sh"
+                "Please install the llm eval dependency via examples/models/llama/install_requirements.sh"
             )
 
         tokenizer = get_tokenizer(tokenizer_path)

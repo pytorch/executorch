@@ -18,4 +18,4 @@ build_android_native_library "arm64-v8a"
 build_android_native_library "x86_64"
 build_aar
 mkdir -p "$BASEDIR"/app/libs
-cp "$BUILD_AAR_DIR/executorch.aar" "$BASEDIR"/app/libs/executorch-llama.aar
+cp "$BUILD_AAR_DIR/executorch.aar" "$BASEDIR"/app/libs/executorch.aar

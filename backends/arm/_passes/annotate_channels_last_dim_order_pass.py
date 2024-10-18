@@ -9,6 +9,7 @@
 from typing import cast
 
 import torch
+from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.tosa_quant_utils import dq_op
 from executorch.backends.arm.tosa_utils import is_consumer_node_depthwise_conv2d
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -52,12 +53,7 @@ class AnnotateChannelsLastDimOrder(ExportPass):
         NHWC_Order = (0, 2, 3, 1)
         HWCM_Order = (2, 3, 0, 1)
         for node in graph_module.graph.nodes:
-            if isinstance(
-                node.meta["val"], (tuple, torch.fx.immutable_collections.immutable_list)
-            ):
-                node_data = node.meta["val"][0].data
-            else:
-                node_data = node.meta["val"].data
+            node_data = get_first_fake_tensor(node).data
 
             if len(node_data.shape) == 4:
                 dim_order = NHWC_Order
