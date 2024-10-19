@@ -106,11 +106,18 @@ void add_native_layer_norm_node(
         vkapi::MemoryAccessType::WRITE},
        {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->logical_limits_ubo(),
-       t_out->sizes_ubo(),
-       graph.create_params_buffer(epsilon)},
+      {
+          t_out->logical_limits_ubo(),
+          t_out->sizes_ubo(),
+          graph.create_params_buffer(epsilon),
+      },
       // Specialization Constants
-      {},
+      {
+          hash_axis_map(t_input->axis_map()),
+          t_input->packed_dim(),
+          hash_axis_map(t_out->axis_map()),
+          t_out->packed_dim(),
+      },
       // Resizing Logic
       resize_native_layer_norm_node,
       {normalized_shape}));
