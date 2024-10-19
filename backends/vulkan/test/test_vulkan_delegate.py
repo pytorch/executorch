@@ -251,11 +251,11 @@ class TestBackends(unittest.TestCase):
                 self.weight = torch.rand(size=(2, 3), dtype=torch.float32)
 
             def forward(self, x, y):
-                z = torch.add(x, y, alpha=2)
-                z = torch.add(x, y, alpha=3.14)
-                z = z + x
-                z = z + self.weight
-                return z
+                inter1 = torch.add(x, y, alpha=2)
+                inter2 = torch.add(x, y, alpha=3.14)
+                inter3 = inter1 * self.weight
+                inter4 = inter2 * self.weight
+                return inter4 - inter3
 
         internal_data_module = InternalDataModule()
         sample_inputs = (
@@ -950,11 +950,10 @@ class TestBackends(unittest.TestCase):
         class NativeLayerNormModule(torch.nn.Module):
             def __init__(self):
                 super().__init__()
+                self.layer_norm = torch.nn.LayerNorm(5)
 
             def forward(self, x):
-                return torch.native_layer_norm(
-                    x, [5], torch.ones(5), torch.zeros(5), 1e-5
-                )
+                return self.layer_norm(x)
 
         sample_inputs = (torch.randn(size=(3, 4, 5), dtype=torch.float32),)
 

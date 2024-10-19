@@ -6,7 +6,7 @@ Here are supported models:
 - Llama 3.2 1B and 3B
 - Llama 3.1 8B
 - Llama 3 8B
-- Llama 2 7B
+- [Llama 2 7B](../llama2/README.md)
 
 Pretrained models are not included in this repo. Users are suggested to download them [here](https://ai.meta.com/resources/models-and-libraries/llama-downloads/).
 
@@ -22,7 +22,7 @@ Please note that the models are subject to the [Llama 2 Acceptable Use Policy](h
 
 # Results
 
-Since Llama 2 7B or Llama 3 8B model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized model.
+Since Llama 3 8B model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized model.
 
 For Llama 3.2 1B/3B, we validated the models by running them in their original bf16 datatype and unquantized on both Android and iOS phones. The 3B version required high-end phones with larger RAMs to fit the model.
 
@@ -53,7 +53,6 @@ Below are the results for two different groupsizes, with max_seq_length 2048, an
 
 |Model | Baseline (FP32) | Groupwise 4-bit (128) | Groupwise 4-bit (256)
 |--------|-----------------| ---------------------- | ---------------
-|Llama 2 7B | 9.2 | 10.2 | 10.7
 |Llama 3 8B | 7.9 | 9.4 | 9.7
 
 Note that groupsize less than 128 was not enabled, since such models were still too large. This is because our current efforts have focused on enabling FP32 and support for FP16 is under way. What this implies for model size is that 1) embedding table is in FP32 and 2) quantized weights scales are FP32.
@@ -80,8 +79,6 @@ SpinQuant can generate quantized weights that are [compatible with ExecuTorch](h
 
 For Llama 3 8B and Llama3.1 8B, we have verified so far on iPhone 15 Pro, iPhone 15 Pro Max, Samsung Galaxy S24+ and OnePlus 12 (with 16GB RAM).
 
-We have verified running Llama 2 7B [mobile applications](#step-6-build-mobile-apps) efficiently on select devices including the iPhone 15 Pro, iPhone 15 Pro Max, Samsung Galaxy S22 and S24, and OnePlus 12.
-
 ## Performance
 
 ### Llama 3.2 1B and 3B
@@ -97,7 +94,7 @@ Llama 3.2 1B and 3B performance was measured on the OnePlus 12 device. The perfo
 ### Llama3 8B and Llama3.1 8B
 Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 12 devices. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on).
 
-Note that since Llama3's vocabulary size is 4x that of Llama2, we had to quantize embedding lookup table as well. For these results embedding lookup table was groupwise quantized with 4-bits and group size of 32.
+Due to Llama3's vocabulary size, we had to quantize embedding lookup table as well. For these results embedding lookup table was groupwise quantized with 4-bits and group size of 32.
 
 |Device  | Groupwise 4-bit (128) | Groupwise 4-bit (256)
 |--------| ---------------------- | ---------------
@@ -105,21 +102,13 @@ Note that since Llama3's vocabulary size is 4x that of Llama2, we had to quantiz
 |Galaxy S24 | 10.91 tokens/second | 11.21 tokens/second |
 |OnePlus 12 | 10.85 tokens/second | 11.02 tokens/second |
 
-### Llama2 7B
-Llama 2 7B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 12 devices. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on).
-
-|Device  | Groupwise 4-bit (128) | Groupwise 4-bit (256)
-|--------| ---------------------- | ---------------
-|Galaxy S22  | 8.15 tokens/second | 8.3 tokens/second |
-|Galaxy S24 | 10.66 tokens/second | 11.26 tokens/second |
-|OnePlus 12 | 11.55 tokens/second | 11.6 tokens/second |
 
 # Instructions
 
 ## Tested on
 
 - MacOS M1/M2, Linux.
-- For Llama 2 7B, your device may require at least 32GB RAM. If this is a constraint for you, please try the smaller stories model.
+- For Llama 3 8B, your device may require at least 32GB RAM. If this is a constraint for you, please try the smaller stories model.
 
 ## Step 1: Setup
 > :warning: **double check your python environment**: make sure `conda activate <VENV>` is run before all the bash and python scripts.
@@ -208,24 +197,7 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     python -m examples.models.llama.export_llama -c stories110M.pt -p params.json -X -kv
     ```
 
-### Option D: Download and export Llama 2 7B model
-
-You can export and run the original Llama 2 7B model.
-
-1. Llama 2 pretrained parameters can be downloaded from [Meta's official website](https://ai.meta.com/resources/models-and-libraries/llama-downloads/) or from [Hugging Face](https://huggingface.co/meta-llama/Llama-2-7b).
-
-2. Edit `params.json` file. Replace `"vocab_size": -1` with `"vocab_size": 32000`. This is a short-term workaround.
-
-3. Export model and generate `.pte` file:
-    ```
-    python -m examples.models.llama.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w --group_size 128 -d fp32
-    ```
-4. Create tokenizer.bin.
-    ```
-    python -m extension.llm.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
-    ```
-
-### Option E: Download models from Hugging Face and convert from safetensor format to state dict
+### Option D: Download models from Hugging Face and convert from safetensor format to state dict
 
 
 You can also download above models from [Hugging Face](https://huggingface.co/). Since ExecuTorch starts from a PyTorch model, a script like below can be used to convert the Hugging Face safetensors format to PyTorch's state dict. It leverages the utils provided by [TorchTune](https://github.com/pytorch/torchtune).
@@ -348,8 +320,6 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
     cmake-out/examples/models/llama/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.model> --prompt=<prompt>
     ```
 
-For Llama2 models, pass the converted `tokenizer.bin` file instead of `tokenizer.model`.
-
 To build for CoreML backend and validate on Mac, replace `-DEXECUTORCH_BUILD_XNNPACK=ON` with `-DEXECUTORCH_BUILD_COREML=ON`
 
 ## Step 5: Run benchmark on Android phone
@@ -453,7 +423,7 @@ For CoreML, there are 2 additional optional arguments:
 - Enable support for mult-modal models like LlaVa.
 ## Performance
 - Performance improvement via techniques such as speculative decoding
-- Enabling LLama2 7b and other architectures via Vulkan
+- Enabling LLama and other architectures via Vulkan
 - Enabling performant execution of widely used quantization schemes.
 
 
