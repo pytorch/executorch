@@ -157,22 +157,17 @@ def build_args_parser() -> argparse.ArgumentParser:
     def _is_valid_torchao_qmode_type(value):
         if not value.startswith("torchao:"):
             return False
-
-        linear_pattern = r"lin.8da(\d+)b(\d+)gw"
-        linear_matches = re.findall(linear_pattern, value)
-        print("LINEAR MATCHES", linear_matches)
-
-        if len(linear_matches) > 1:
-            return False
-
-        embedding_pattern = r"emb.(\d+)b(\d+)gw"
-        embedding_matches = re.findall(embedding_pattern, value)
-        print("EMBEDDING MATCHES", embedding_matches)
-        if len(embedding_matches) > 1:
-            return False
-        if len(linear_matches) + len(embedding_matches) == 0:
-            return False
-        return True
+        
+        patterns = [
+            r"emb.(\d+),(\d+)&lin8da.(\d+),(\d+)",
+            r"emb.(\d+),(\d+)",
+            r"lin8da.(\d+),(\d+)",
+        ]
+        for pattern in patterns:
+            matches = re.findall(pattern, value)
+            if len(matches) == 1:
+                return True
+        return False
 
     def _qmode_type(value):
         choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w"]
