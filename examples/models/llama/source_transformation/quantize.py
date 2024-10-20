@@ -73,6 +73,13 @@ def quantize(  # noqa C901
         # Add quantization mode options here: group size, bit width, etc.
         return WeightOnlyInt8QuantHandler(model).quantized_model()
     elif qmode.startswith("torchao:"):
+        import os
+        import glob
+        libs = glob.glob(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../cmake-out/lib/libtorchao_ops_aten.*")))
+        assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
+        logging.info(f"Loading custom ops library: {libs[0]}")
+        torch.ops.load_library(libs[0])
+
         logging.warning(
             "When qmode is torchao, the groupsize is obtained from the qmode string with regex parse; blocksize is ignored."
         )
@@ -107,7 +114,7 @@ def quantize(  # noqa C901
         from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
         model = Int8DynActInt4WeightQuantizer(
-            precision=torch_dtype, groupsize=group_size, bitwidth=4
+            precision=torch_dtype, groupsize=group_size
         ).quantize(model)
 
         if verbose:
