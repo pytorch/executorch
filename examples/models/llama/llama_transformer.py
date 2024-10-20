@@ -116,6 +116,9 @@ class ModelArgs:
     bos_count: int = -1  # i.e., a single EOS is used as BOS
     eos_count: int = 2
 
+    quantization_args: Optional[dict] = None
+    lora_args: Optional[dict] = None
+
     def __post_init__(self):
         if self.n_kv_heads is None:
             self.n_kv_heads = self.n_heads
