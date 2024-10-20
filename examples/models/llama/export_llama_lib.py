@@ -157,7 +157,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     def _is_valid_torchao_qmode_type(value):
         if not value.startswith("torchao:"):
             return False
-        
+
         patterns = [
             r"emb.(\d+),(\d+)&lin8da.(\d+),(\d+)",
             r"emb.(\d+),(\d+)",

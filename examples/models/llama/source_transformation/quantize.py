@@ -19,7 +19,6 @@ from executorch.backends.vulkan._passes import VkInt4WeightOnlyQuantizer
 from executorch.extension.llm.export.builder import DType
 
 from sentencepiece import SentencePieceProcessor
-from torch.nn.modules import linear
 
 try:
     from fairseq2.nn.embedding import (
@@ -74,9 +73,17 @@ def quantize(  # noqa C901
         # Add quantization mode options here: group size, bit width, etc.
         return WeightOnlyInt8QuantHandler(model).quantized_model()
     elif qmode.startswith("torchao:"):
-        import os
         import glob
-        libs = glob.glob(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../cmake-out/third-party/ao/torchao/experimental/libtorchao_ops_aten.*")))
+        import os
+
+        libs = glob.glob(
+            os.path.abspath(
+                os.path.join(
+                    os.path.dirname(__file__),
+                    "../../../../cmake-out/third-party/ao/torchao/experimental/libtorchao_ops_aten.*",
+                )
+            )
+        )
         assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
         logging.info(f"Loading custom ops library: {libs[0]}")
         torch.ops.load_library(libs[0])
@@ -89,10 +96,15 @@ def quantize(  # noqa C901
 
         linear_matches = re.findall(linear_pattern, qmode)
         if linear_matches:
-            assert len(linear_matches) == 1, f"Expected 1 match but got {len(linear_matches)}"
+            assert (
+                len(linear_matches) == 1
+            ), f"Expected 1 match but got {len(linear_matches)}"
             bitwidth = int(linear_matches[0][0])
             groupsize = int(linear_matches[0][1])
-            from torchao.experimental.quant_api import Int8DynActIntxWeightLinearQuantizer
+            from torchao.experimental.quant_api import (
+                Int8DynActIntxWeightLinearQuantizer,
+            )
+
             model = Int8DynActIntxWeightLinearQuantizer(
                 device="cpu",
                 precision=torch_dtype,
@@ -100,13 +112,16 @@ def quantize(  # noqa C901
                 bitwidth=bitwidth,
                 has_weight_zeros=False,
             ).quantize(model)
-        
+
         embedding_matches = re.findall(embedding_pattern, qmode)
         if embedding_matches:
-            assert len(embedding_matches) == 1, f"Expected 1 match but got {len(embedding_matches)}"
+            assert (
+                len(embedding_matches) == 1
+            ), f"Expected 1 match but got {len(embedding_matches)}"
             bitwidth = int(embedding_matches[0][0])
             groupsize = int(embedding_matches[0][1])
             from torchao.experimental.quant_api import IntxWeightEmbeddingQuantizer
+
             model = IntxWeightEmbeddingQuantizer(
                 device="cpu",
                 precision=torch_dtype,
