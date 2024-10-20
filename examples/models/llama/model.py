@@ -165,7 +165,7 @@ the checkpoint format to avoid generating faulty models.
             )
         elif hasattr(self.args, "use_spin_quant") and self.args.use_spin_quant:
             print("Using SPIN quantization.")
-            self._transform_for_pre_quantization(checkpoint)
+            self._transform_for_pre_quantization(checkpoint, model_args)
 
             from .source_transformation.pre_quantization import (
                 sanitize_checkpoint_from_pre_quantization,
@@ -174,8 +174,9 @@ the checkpoint format to avoid generating faulty models.
             sanitize_checkpoint_from_pre_quantization(checkpoint)
         elif hasattr(self.args, "use_qat") and self.args.use_qat:
             print("Using QAT quantization.")
-            self._transform_for_pre_quantization(checkpoint)
+            self._transform_for_pre_quantization(checkpoint, model_args)
             if hasattr(self.args, "use_lora") and self.args.use_lora:
+                assert model_args.lora_args["rank"] == self.args.use_lora
                 from .source_transformation.lora import (
                     transform_linear_for_lora_after_quantization,
                 )
@@ -251,7 +252,7 @@ the checkpoint format to avoid generating faulty models.
                 ),  # start_pos, what token of output are we on.
             )
 
-    def _transform_for_pre_quantization(self, checkpoint):
+    def _transform_for_pre_quantization(self, checkpoint, model_args):
         assert hasattr(self.args, "preq_mode"), "preq_mode must be specified"
         assert self.args.preq_mode in [
             "8da4w",
@@ -264,6 +265,8 @@ the checkpoint format to avoid generating faulty models.
         from .source_transformation.pre_quantization import (
             transform_linear_for_pre_quantization,
         )
+
+        assert self.args.preq_group_size == model_args.quantization_args["group_size"]
 
         mapping = {
             "fp32": torch.float32,
