@@ -17,8 +17,8 @@ using executorch::aten::Tensor;
 using executorch::runtime::getLeadingDims;
 using executorch::runtime::KernelRuntimeContext;
 
-void quantized_linear_out(
-    KernelRuntimeContext& ctx,
+template <typename T>
+void inline _typed_quantized_linear(
     const Tensor& src,
     const Tensor& weight,
     const Tensor& bias,
@@ -27,14 +27,11 @@ void quantized_linear_out(
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
-    const executorch::aten::optional<Tensor>& offset,
     Tensor& out) {
-  // Assuming uint8_t for now, but needs to be updated for other quantization
-  // types
-  const uint8_t* __restrict__ src_data = src.const_data_ptr<uint8_t>();
-  const uint8_t* __restrict__ weight_data = weight.const_data_ptr<uint8_t>();
+  const T* __restrict__ src_data = src.const_data_ptr<T>();
+  const T* __restrict__ weight_data = weight.const_data_ptr<T>();
   const int32_t* __restrict__ bias_data = bias.const_data_ptr<int32_t>();
-  uint8_t* __restrict__ out_data = out.mutable_data_ptr<uint8_t>();
+  T* __restrict__ out_data = out.mutable_data_ptr<T>();
 
   int32_t weight_zero_point = weight_zero_point_t.const_data_ptr<int32_t>()[0];
 
@@ -71,8 +68,50 @@ void quantized_linear_out(
             (weight_data[j * N + k] - weight_zero_point);
       }
       out_data[i * M + j] =
-          kernels::quantize<uint8_t>(sum, out_scale, out_zero_point);
+          kernels::quantize<T>(sum, out_scale, out_zero_point);
     }
+  }
+}
+
+void quantized_linear_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& src,
+    const Tensor& weight,
+    const Tensor& bias,
+    int64_t src_zero_point,
+    const Tensor& weight_zero_point_t,
+    const Tensor& out_multiplier,
+    const Tensor& out_shift,
+    int64_t out_zero_point,
+    const executorch::aten::optional<Tensor>& offset,
+    Tensor& out) {
+  if (out.scalar_type() == executorch::aten::ScalarType::Byte) {
+    _typed_quantized_linear<uint8_t>(
+      src,
+      weight,
+      bias,
+      src_zero_point,
+      weight_zero_point_t,
+      out_multiplier,
+      out_shift,
+      out_zero_point,
+      out);
+  } else if (out.scalar_type() == executorch::aten::ScalarType::Char) {
+    _typed_quantized_linear<int8_t>(
+      src,
+      weight,
+      bias,
+      src_zero_point,
+      weight_zero_point_t,
+      out_multiplier,
+      out_shift,
+      out_zero_point,
+      out);
+  } else {
+    ET_CHECK_MSG(
+      false,
+      "Unhandled input dtype %hhd",
+      static_cast<int8_t>(src.scalar_type()));
   }
 }
 
