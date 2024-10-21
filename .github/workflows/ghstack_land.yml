@@ -1,7 +1,6 @@
 name: Propose to merge ghstack orig PRs to main
 on:
   pull_request:
-    types: [open, synchronize, closed]
     branches:
       - 'gh/cccclai/[0-9]+/base'
       - 'gh/dbort/[0-9]+/base'
