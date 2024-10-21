@@ -154,7 +154,7 @@ class KVCache(nn.Module):
     ):
         super().__init__()
         self.max_seq_length = max_seq_length
-        self.is_tranposed = transpose_cache
+        self.is_transposed = transpose_cache
         if transpose_cache:
             cache_shape = (max_batch_size, n_heads, max_seq_length, head_dim)
         else:
