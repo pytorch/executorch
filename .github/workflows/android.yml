@@ -12,6 +12,7 @@ on:
       - .ci/docker/**
       - .github/workflows/android.yml
       - build/*android*.sh
+      - backends/xnnpack/**
       - install_requirements.sh
       - examples/demo-apps/android/**
       - extension/android/**
