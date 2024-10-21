@@ -92,6 +92,21 @@ def apply_rotary_emb(
     return xq_out.type_as(xq), xk_out.type_as(xk)
 
 
+class RotaryEmbedding(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(
+        self,
+        xq: torch.Tensor,
+        xk: torch.Tensor,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
+    ):
+        xq_out, xk_out = apply_rotary_emb(xq, xk, freqs_cos, freqs_sin)
+        return xq_out, xk_out
+
+
 # ======================= HuggingFace Implementation ========================
 
 
