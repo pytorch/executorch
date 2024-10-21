@@ -88,7 +88,7 @@ def create_prs_for_orig_branch(pr_stack: List[int], repo: Repository):
         pr = repo.get_pull(pr_stack[i])
         if not pr.is_merged():
             print("The PR (and stack above) is not merged yet, skipping")
-            return
+            # return
         # Check for invariant: For the current PR, it must be gh/user/x/base <- gh/user/x/head
         assert pr.base.ref.replace("base", "head") == pr.head.ref
         # The PR we want to create is then "branch_to_merge" <- gh/user/x/orig
@@ -100,7 +100,8 @@ ghstack PR number: https://github.com/pytorch/executorch/pull/{pr.number}
 ghstack PR base: https://github.com/pytorch/executorch/tree/{pr.base.ref}
 ghstack PR head: https://github.com/pytorch/executorch/tree/{pr.head.ref}
 Merge bot PR base: https://github.com/pytorch/executorch/tree/{orig_branch_merge_base}
-Merge bot PR head: https://github.com/pytorch/executorch/tree/{orig_branch_merge_head}"""
+Merge bot PR head: https://github.com/pytorch/executorch/tree/{orig_branch_merge_head}
+@diff-train-skip-merge"""
 
         existing_orig_pr = repo.get_pulls(
             head="pytorch:" + orig_branch_merge_head,
