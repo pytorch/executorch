@@ -644,6 +644,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
         from executorch.backends.qualcomm.utils.utils import _transform, tag_quant_io
+
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`, Optional type has no attribute `exported_program`
         _transform(builder_exported_to_edge.edge_manager.exported_program())
 

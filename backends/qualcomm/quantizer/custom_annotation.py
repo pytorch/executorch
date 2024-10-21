@@ -13,7 +13,6 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
 )
 from executorch.backends.qualcomm.quantizer.utils import QUANT_ANNOTATION_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.extension.llm.export.builder import LLMEdgeManager
 from torch.ao.quantization.quantizer import (
     QuantizationAnnotation,
     SharedQuantizationSpec,
