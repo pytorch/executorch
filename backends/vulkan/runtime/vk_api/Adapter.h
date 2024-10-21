@@ -182,7 +182,7 @@ class Adapter final {
   }
 
   inline bool has_full_int8_buffers_support() {
-    return supports_16bit_storage_buffers() && supports_int8_shader_types();
+    return supports_8bit_storage_buffers() && supports_int8_shader_types();
   }
 
   // Command Buffer Submission
