@@ -68,7 +68,7 @@ def extract_stack_from_body(pr_body: str) -> List[int]:
     return list(reversed(prs))
 
 
-def get_pr_stack_from_number(ref: string, repo: Repository) -> List[int]:
+def get_pr_stack_from_number(ref: str, repo: Repository) -> List[int]:
     if ref.isnumeric():
         pr_number = int(ref)
     else:
