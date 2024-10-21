@@ -29,6 +29,7 @@ from . import (  # noqa
     op_relu,
     op_repeat,
     op_rsqrt,
+    op_select,
     op_sigmoid,
     op_slice,
     op_softmax,
