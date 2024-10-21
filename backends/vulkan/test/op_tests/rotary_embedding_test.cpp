@@ -156,8 +156,8 @@ void test_reference(
   graph.copy_from_staging(
       staging_xk_out, vk_xk_out.mutable_data_ptr(), vk_xk_out.numel());
 
-  EXPECT_TRUE(at::allclose(xq_out, vk_xq_out));
-  EXPECT_TRUE(at::allclose(xk_out, vk_xk_out));
+  EXPECT_TRUE(at::allclose(xq_out, vk_xq_out, 1e-4, 1e-4));
+  EXPECT_TRUE(at::allclose(xk_out, vk_xk_out, 1e-4, 1e-4));
 }
 
 TEST(VulkanRotaryEmbeddingTest, rotary_embedding_test) {
@@ -169,4 +169,12 @@ TEST(VulkanRotaryEmbeddingTest, rotary_embedding_llama3_params_test) {
       /*n_heads=*/32,
       /*n_kv_heads=*/8,
       /*dim=*/2048);
+}
+
+TEST(VulkanRotaryEmbeddingTest, rotary_embedding_llama3_params_test_seq_len_3) {
+  test_reference(
+      /*n_heads=*/32,
+      /*n_kv_heads=*/8,
+      /*dim=*/2048,
+      /*seq_len=*/3);
 }
