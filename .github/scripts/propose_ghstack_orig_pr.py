@@ -87,8 +87,7 @@ def create_prs_for_orig_branch(pr_stack: List[int], repo: Repository):
     for i in range(len(pr_stack)):
         pr = repo.get_pull(pr_stack[i])
         if not pr.is_merged():
-            print("The PR (and stack above) is not merged yet, skipping")
-            return
+            pass
         # Check for invariant: For the current PR, it must be gh/user/x/base <- gh/user/x/head
         assert pr.base.ref.replace("base", "head") == pr.head.ref
         # The PR we want to create is then "branch_to_merge" <- gh/user/x/orig
