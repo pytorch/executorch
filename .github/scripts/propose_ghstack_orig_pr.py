@@ -100,7 +100,8 @@ ghstack PR number: https://github.com/pytorch/executorch/pull/{pr.number}
 ghstack PR base: https://github.com/pytorch/executorch/tree/{pr.base.ref}
 ghstack PR head: https://github.com/pytorch/executorch/tree/{pr.head.ref}
 Merge bot PR base: https://github.com/pytorch/executorch/tree/{orig_branch_merge_base}
-Merge bot PR head: https://github.com/pytorch/executorch/tree/{orig_branch_merge_head}"""
+Merge bot PR head: https://github.com/pytorch/executorch/tree/{orig_branch_merge_head}
+@diff-train-skip-merge"""
 
         existing_orig_pr = repo.get_pulls(
             head="pytorch:" + orig_branch_merge_head,
