@@ -46,7 +46,7 @@ layout(constant_id = 3) const int packed_dim = 0;
  *
  * The computation of rotary positional embeddings can be summarized with the
  * following equations:
-
+ *
  * xq_out[2i] = xq[2i] * freqs_cos[i] - xq[2i + 1] * freqs_sin[i]
  * xq_out[2i + 1] = xq[2i] * freqs_sin[i] + xq[2i + 1] * freqs_cos[i]
  *
@@ -55,9 +55,9 @@ layout(constant_id = 3) const int packed_dim = 0;
  * The even components of the output multiply the even components of the inputs
  * with the freqs_cos tensor, and the odd components of the inputs with the
  * freqs_sin tensor. The odd components of the output swap this. Throughout the
- * implements the even components have the _r suffix and the odd components have
- * the _i suffix; this is likely a reference to complex numbers which can be
- * used to represent rotations.
+ * implementation the even components have the _r suffix and the odd components
+ * have the _i suffix; this is a reference to complex numbers which can be used
+ * to represent rotations.
  *
  * Note that this implementation assumes that all input tensors have the width
  * dim as the packed dim.
@@ -97,6 +97,9 @@ void main() {
   write_texel(xqout, x_pos_1, xout_tex_1);
   write_texel(xqout, x_pos_2, xout_tex_2);
 
+  // n_heads will be greater than or equal to n_kv_heads, therefore xq and xqout
+  // may have a larger height dim than xk and xkout. Only compute xkout if this
+  // invocation is still within bounds.
   if (any(greaterThanEqual(x_pos_2, xkout_limits))) {
     return;
   }

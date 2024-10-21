@@ -189,6 +189,8 @@ linear_weight_int4_op = getattr(getattr(torch.ops, namespace), name)
 ######################
 
 
+# Note that this implementation is copied from executorch.examples.models.llama.rope
+# but it is copied here to avoid introducing a dependency on the llama code.
 def apply_rotary_emb_impl(
     xq: torch.Tensor, xk: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
 ):
