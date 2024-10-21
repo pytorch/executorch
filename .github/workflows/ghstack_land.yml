@@ -15,6 +15,7 @@ on:
       - 'gh/mcr229/[0-9]+/base'
       - 'gh/swolchok/[0-9]+/base'
       - 'gh/SS-JIA/[0-9]+/base'
+      - 'gh/*/[0-9]+/base'
 
 jobs:
   ghstack_merge_to_main:
