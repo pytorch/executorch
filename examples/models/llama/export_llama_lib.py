@@ -69,6 +69,7 @@ from .source_transformation.sdpa import (
     replace_sdpa_with_flex_sdpa,
     replace_sdpa_with_simple_sdpa,
 )
+from .source_transformation.vulkan_rope import replace_with_vulkan_rotary_emb
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -942,5 +943,8 @@ def _get_source_transforms(  # noqa
             else:
                 transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_kv_cache_with_coreml_kv_cache)
+
+    if args.vulkan:
+        transforms.append(replace_with_vulkan_rotary_emb)
 
     return transforms

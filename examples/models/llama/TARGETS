@@ -91,6 +91,7 @@ runtime.python_library(
         "source_transformation/rope.py",
         "source_transformation/sdpa.py",
         "source_transformation/spin_quant.py",
+        "source_transformation/vulkan_rope.py",
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama",
