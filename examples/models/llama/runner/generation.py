@@ -101,7 +101,8 @@ class LlamaRunner(ABC):
                 )
             current_token = next_token(logits, temperature, top_p)
             if current_token == self.tokenizer.eos_id or (
-                hasattr(self, "stop_tokens") and current_token in self.stop_tokens
+                hasattr(self.tokenizer, "stop_tokens")
+                and current_token in self.tokenizer.stop_tokens
             ):
                 break
             tokens.append(current_token)
