@@ -34,9 +34,9 @@ from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.devtools.backend_debug import get_delegation_info
-from executorch.exir import EdgeCompileConfig
+from executorch.exir import EdgeCompileConfig, ExecutorchProgramManager
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-
+from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from tabulate import tabulate
 from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
@@ -45,50 +45,61 @@ from torch.fx import Graph
 logger = logging.getLogger(__name__)
 
 
+def _dump_lowered_modules_artifact(
+    path_to_dump: Optional[str],
+    artifact: ExecutorchProgramManager,
+    graph_module: torch.fx.GraphModule,
+):
+    output = "Formated Graph Signature:\n"
+    output += _format_export_graph_signature(
+        artifact.exported_program().graph_signature
+    )
+
+    def get_output_format(lowered_module) -> str | None:
+        for spec in lowered_module.compile_specs:
+            if spec.key == "output_format":
+                return spec.value.decode()
+        return None
+
+    for node in graph_module.graph.nodes:
+        if node.op == "get_attr" and node.name.startswith("lowered_module_"):
+            lowered_module = getattr(graph_module, node.name)
+            assert isinstance(
+                lowered_module, LoweredBackendModule
+            ), f"Attribute {node.name} must be of type LoweredBackendModule."
+
+            output_format = get_output_format(lowered_module)
+            if output_format == "tosa":
+                tosa_fb = lowered_module.processed_bytes
+                to_print = dbg_tosa_fb_to_json(tosa_fb)
+                to_print = pformat(to_print, compact=True, indent=1)
+                output += f"\nTOSA deserialized {node.name}: \n{to_print}\n"
+            elif output_format == "vela":
+                vela_cmd_stream = lowered_module.processed_bytes
+                output += f"\nVela command stream {node.name}: \n{vela_cmd_stream}\n"
+            else:
+                logger.warning(
+                    f"No TOSA nor Vela compile spec found in compile specs of {node.name}."
+                )
+                continue
+
+    if not output:
+        logger.warning("No output to print generated from artifact.")
+        return
+
+    _dump_str(output, path_to_dump)
+
+
 class Partition(tester.Partition):
     def dump_artifact(self, path_to_dump: Optional[str]):
         super().dump_artifact(path_to_dump)
+        _dump_lowered_modules_artifact(path_to_dump, self.artifact, self.graph_module)
 
-        output = "Formated Graph Signature:\n"
-        output += _format_export_graph_signature(
-            self.artifact.exported_program().graph_signature
-        )
 
-        def get_output_format(lowered_module) -> str | None:
-            for spec in lowered_module.compile_specs:
-                if spec.key == "output_format":
-                    return spec.value.decode()
-            return None
-
-        for node in self.graph_module.graph.nodes:
-            if node.op == "get_attr" and node.name.startswith("lowered_module_"):
-                lowered_module = getattr(self.graph_module, node.name)
-                assert isinstance(
-                    lowered_module, LoweredBackendModule
-                ), f"Attribute {node.name} must be of type LoweredBackendModule."
-
-                output_format = get_output_format(lowered_module)
-                if output_format == "tosa":
-                    tosa_fb = lowered_module.processed_bytes
-                    to_print = dbg_tosa_fb_to_json(tosa_fb)
-                    to_print = pformat(to_print, compact=True, indent=1)
-                    output += f"\nTOSA deserialized {node.name}: \n{to_print}\n"
-                elif output_format == "vela":
-                    vela_cmd_stream = lowered_module.processed_bytes
-                    output += (
-                        f"\nVela command stream {node.name}: \n{vela_cmd_stream}\n"
-                    )
-                else:
-                    logger.warning(
-                        f"No TOSA nor Vela compile spec found in compile specs of {node.name}."
-                    )
-                    continue
-
-        if not output:
-            logger.warning("No output to print generated from artifact.")
-            return
-
-        _dump_str(output, path_to_dump)
+class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
+    def dump_artifact(self, path_to_dump: Optional[str]):
+        super().dump_artifact(path_to_dump)
+        _dump_lowered_modules_artifact(path_to_dump, self.artifact, self.graph_module)
 
 
 class Serialize(tester.Serialize):
@@ -206,6 +217,28 @@ class ArmTester(Tester):
             partition_stage = Partition(arm_partitioner)
         return super().partition(partition_stage)
 
+    def to_edge_transform_and_lower(
+        self,
+        to_edge_and_lower_stage: Optional[ToEdgeTransformAndLower] = None,
+        partitioners: Optional[List[Partitioner]] = None,
+        edge_compile_config: Optional[EdgeCompileConfig] = None,
+    ):
+        if to_edge_and_lower_stage is None:
+            if partitioners is None:
+                partitioners = [ArmPartitioner(compile_spec=self.compile_spec)]
+            to_edge_and_lower_stage = ToEdgeTransformAndLower(
+                partitioners, edge_compile_config
+            )
+        else:
+            if partitioners is not None:
+                to_edge_and_lower_stage.partitioners = partitioners
+
+            if edge_compile_config is not None:
+                to_edge_and_lower_stage.edge_compile_conf = edge_compile_config
+
+        to_edge_and_lower_stage.edge_compile_conf._skip_dim_order = True
+        return super().to_edge_transform_and_lower(to_edge_and_lower_stage)
+
     def to_executorch(self, to_executorch_stage: Optional[ToExecutorch] | None = None):
         if to_executorch_stage is None:
             to_executorch_stage = ToExecutorch(self.runner_util)
@@ -250,21 +283,23 @@ class ArmTester(Tester):
             inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom input data.
                 The default is random data.
         """
+        edge_stage = self.stages[self.stage_name(tester.ToEdge)]
+        if edge_stage is None:
+            edge_stage = self.stages[self.stage_name(tester.ToEdgeTransformAndLower)]
+
         assert (
             self.runner_util is not None
         ), "self.tosa_test_util is not initialized, cannot use run_method()"
         assert (
-            self.stages[self.stage_name(tester.ToEdge)] is not None
-        ), "To compare outputs, at least the ToEdge stage needs to be run."
+            edge_stage is not None
+        ), "To compare outputs, at least the ToEdge or ToEdgeTransformAndLower stage needs to be run."
 
         stage = stage or self.cur
         test_stage = self.stages[stage]
         is_quantized = self.stages[self.stage_name(tester.Quantize)] is not None
 
         exported_program = self.stages[self.stage_name(tester.Export)].artifact
-        edge_program = self.stages[
-            self.stage_name(tester.ToEdge)
-        ].artifact.exported_program()
+        edge_program = edge_stage.artifact.exported_program()
         self.runner_util.init_run(
             exported_program,
             edge_program,
