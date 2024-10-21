@@ -83,7 +83,7 @@ Tensor& add_out(
     Tensor& out) {
   ET_KERNEL_CHECK(
       ctx,
-      resize_to_broadcast_target_size(a, b, out) == Error::Ok,
+      torch::executor::resize_to_broadcast_target_size(a, b, out) == Error::Ok,
       InvalidArgument,
       out);
 
@@ -93,25 +93,36 @@ Tensor& add_out(
       InvalidArgument,
       out);
   ET_KERNEL_CHECK(
-      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
+      ctx,
+      executorch::runtime::tensors_have_same_dim_order(a, b, out),
+      InvalidArgument,
+      out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
-  ScalarType alpha_type = 
-    torch::executor::native::utils::get_scalar_dtype(alpha);
-  ScalarType common_type = promoteTypes(a_type, b_type, /*half_to_float*/ true);
+  ScalarType alpha_type =
+      torch::executor::native::utils::get_scalar_dtype(alpha);
+  ScalarType common_type =
+      executorch::runtime::promoteTypes(a_type, b_type, /*half_to_float*/ true);
   ScalarType out_type = out.scalar_type();
 
-  ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
   ET_KERNEL_CHECK(
-      ctx, check_alpha_type(alpha_type, common_type), InvalidArgument, out);
-    
+      ctx,
+      executorch::runtime::canCast(common_type, out_type),
+      InvalidArgument,
+      out);
+  ET_KERNEL_CHECK(
+      ctx,
+      torch::executor::check_alpha_type(alpha_type, common_type),
+      InvalidArgument,
+      out);
+
   float alpha_val;
   torch::executor::native::utils::extract_scalar(alpha, &alpha_val);
 
   constexpr auto name = "add.out";
   constexpr int kNnlibMaxDim = 4; /*fallback if broadcast and dim > 4 */
-  
+
   int a_dim = a.dim(), b_dim = b.dim(), out_dim = out.dim();
   bool optimized = 1;
   /*find broadcast*/
@@ -124,51 +135,48 @@ Tensor& add_out(
   if ((out_type != ScalarType::Float) || (alpha_val != 1.0))
     optimized = 0;
 
-  if ((a_dim == 0) || (b_dim == 0) )
+  if ((a_dim == 0) || (b_dim == 0))
     optimized = 0;
 
   if ((broadcast == 1) && (max_dim > kNnlibMaxDim))
     optimized = 0;
 
-
   if (optimized) {
-      const float* const a_data = a.const_data_ptr<float>();
-      const float* const b_data = b.const_data_ptr<float>();
-      float* const out_data = out.mutable_data_ptr<float>();
+    const float* const a_data = a.const_data_ptr<float>();
+    const float* const b_data = b.const_data_ptr<float>();
+    float* const out_data = out.mutable_data_ptr<float>();
 
-      if(broadcast == 1) {
-         int out_shape[kNnlibMaxDim];
-         int inp1_shape[kNnlibMaxDim];
-         int inp2_shape[kNnlibMaxDim];
-         
-         for (int i = 0; i < kNnlibMaxDim; i++) {
-            out_shape[i] = 1;
-            inp1_shape[i] = 1;
-            inp2_shape[i] = 1;
-         }
-                  
-         int off_o = kNnlibMaxDim - out.dim();
-         int off_a = kNnlibMaxDim - a.dim();
-         int off_b = kNnlibMaxDim - b.dim();
-         
-         for (int i = 0; i < out.dim(); i++)
-             out_shape[i+off_o] = out.size(i);
-         for (int i = 0; i < a.dim(); i++)
-             inp1_shape[i+off_a] = a.size(i);
-         for (int i = 0; i < b.dim(); i++)
-             inp2_shape[i+off_b] = b.size(i);
-         
-         xa_nn_elm_add_broadcast_4D_f32xf32_f32(
-           out_data, out_shape, a_data, inp1_shape, b_data, inp2_shape);
-      }                      
-      else
-      {
-        xa_nn_elm_add_f32xf32_f32(out_data, a_data, b_data, out.numel());
+    if (broadcast == 1) {
+      int out_shape[kNnlibMaxDim];
+      int inp1_shape[kNnlibMaxDim];
+      int inp2_shape[kNnlibMaxDim];
+
+      for (int i = 0; i < kNnlibMaxDim; i++) {
+        out_shape[i] = 1;
+        inp1_shape[i] = 1;
+        inp2_shape[i] = 1;
       }
 
-      return out;
+      int off_o = kNnlibMaxDim - out.dim();
+      int off_a = kNnlibMaxDim - a.dim();
+      int off_b = kNnlibMaxDim - b.dim();
+
+      for (int i = 0; i < out.dim(); i++)
+        out_shape[i + off_o] = out.size(i);
+      for (int i = 0; i < a.dim(); i++)
+        inp1_shape[i + off_a] = a.size(i);
+      for (int i = 0; i < b.dim(); i++)
+        inp2_shape[i + off_b] = b.size(i);
+
+      xa_nn_elm_add_broadcast_4D_f32xf32_f32(
+          out_data, out_shape, a_data, inp1_shape, b_data, inp2_shape);
+    } else {
+      xa_nn_elm_add_f32xf32_f32(out_data, a_data, b_data, out.numel());
+    }
+
+    return out;
   }
-  
+
   ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
     ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
       using CTYPE_IN = typename torch::executor::
@@ -190,7 +198,6 @@ Tensor& add_out(
 
   return out;
 }
-
 
 } // namespace native
 } // namespace HiFi

@@ -17,6 +17,7 @@ using exec_aten::Tensor;
 using executorch::aten::RuntimeContext;
 using torch::executor::Error;
 
+namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -28,7 +29,11 @@ Tensor& sigmoid_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   ET_KERNEL_CHECK(
       ctx, in.scalar_type() != ScalarType::Bool, InvalidArgument, out);
-  ET_KERNEL_CHECK(ctx, tensor_is_floating_type(out), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      executorch::runtime::tensor_is_floating_type(out),
+      InvalidArgument,
+      out);
 
   // Resize for dynamic shape
   ET_KERNEL_CHECK_MSG(
@@ -43,13 +48,13 @@ Tensor& sigmoid_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   bool optimized = 1;
   if ((in_type != ScalarType::Float) || (out_type != ScalarType::Float))
-      optimized = 0;
-  
+    optimized = 0;
+
   if (optimized) {
     float* data_in = in.mutable_data_ptr<float>();
     float* data_out = out.mutable_data_ptr<float>();
     xa_nn_vec_sigmoid_f32_f32(data_out, data_in, in.numel());
-    
+
     return out;
   }
 
@@ -66,11 +71,12 @@ Tensor& sigmoid_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
           out.mutable_data_ptr<CTYPE_OUT>(),
           in.numel());
     });
-  }); 
+  });
 
   return out;
 }
 
-} // namespace impl
-} // namespace HiFi
 } // namespace native
+} // namespace HiFi
+} // namespace impl
+} // namespace cadence

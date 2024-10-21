@@ -16,18 +16,17 @@ using exec_aten::Tensor;
 using executorch::aten::RuntimeContext;
 using torch::executor::Error;
 
+namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
 
-
 Tensor& tanh_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
-
   bool optimized = 1;
-  if ((in.scalar_type() != ScalarType::Float) || 
+  if ((in.scalar_type() != ScalarType::Float) ||
       (out.scalar_type() != ScalarType::Float))
     optimized = 0;
-  
+
   if (optimized) {
     float* data_in = in.mutable_data_ptr<float>();
     float* data_out = out.mutable_data_ptr<float>();
@@ -35,11 +34,11 @@ Tensor& tanh_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
     return out;
   }
 
-  return torch::executor::native::internal::unary_ufunc_realhb_to_floath(
-    std::tanh, ctx, in, out);
-
+  return torch::executor::native::internal::
+      unary_ufunc_realhbbf16_to_floathbf16(std::tanh, ctx, in, out);
 }
 
 } // namespace native
 } // namespace HiFi
 } // namespace impl
+} // namespace cadence
