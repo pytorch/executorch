@@ -26,9 +26,9 @@ def parse_args():
         required=True,
     )
     parser.add_argument(
-        "--pr",
-        type=int,
-        help="Number of the PR in the stack to check and create corresponding PR",
+        "--ref",
+        type=str,
+        help="Ref fo PR in the stack to check and create corresponding PR",
         required=True,
     )
     return parser.parse_args()
@@ -68,12 +68,18 @@ def extract_stack_from_body(pr_body: str) -> List[int]:
     return list(reversed(prs))
 
 
-def get_pr_stack_from_number(pr_number: int, repo: Repository) -> List[int]:
+def get_pr_stack_from_number(ref: string, repo: Repository) -> List[int]:
+    if ref.isnumeric():
+        pr_number = int(ref)
+    else:
+        branch_name = ref.replace("refs/heads/", "")
+        pr_number = repo.get_branch(branch_name).commit.get_pulls()[0].number
+    
     pr_stack = extract_stack_from_body(repo.get_pull(pr_number).body)
 
     if not pr_stack:
         raise Exception(
-            f"Could not find PR stack in body of #{pr_number}. "
+            f"Could not find PR stack in body of ref. "
             + "Please make sure that the PR was created with ghstack."
         )
 
@@ -128,7 +134,7 @@ def main():
 
     with Github(auth=Auth.Token(os.environ["GITHUB_TOKEN"])) as gh:
         repo = gh.get_repo(args.repo)
-        create_prs_for_orig_branch(get_pr_stack_from_number(args.pr, repo), repo)
+        create_prs_for_orig_branch(get_pr_stack_from_number(args.ref, repo), repo)
 
 
 if __name__ == "__main__":
