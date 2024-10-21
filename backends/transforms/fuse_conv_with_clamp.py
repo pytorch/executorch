@@ -65,7 +65,7 @@ class FuseClampPass(ExportPass):
                         with graph_module.graph.inserting_before(preceding_op):
                             conv_activation_node = graph_module.graph.create_node(
                                 "call_function",
-                                torch.ops.et_vk.conv_with_clamp.default,
+                                exir_ops.edge.et_vk.conv_with_clamp.default,
                                 new_args,
                             )
 

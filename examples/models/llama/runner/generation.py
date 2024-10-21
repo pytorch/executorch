@@ -74,9 +74,9 @@ class LlamaRunner(ABC):
     ) -> List[int]:
         # prefill
         logits = self.forward(
-            tokens=torch.tensor([prompt_tokens], dtype=torch.long).to(self.device),
+            tokens=torch.tensor([prompt_tokens], dtype=torch.long, device=self.device),
             input_pos=(
-                torch.tensor([0], dtype=torch.long).to(self.device)
+                torch.tensor([0], dtype=torch.long, device=self.device)
                 if self.params.use_kv_cache
                 else None
             ),
@@ -88,16 +88,16 @@ class LlamaRunner(ABC):
         while len(tokens) < self.params.max_seq_len:
             if self.params.use_kv_cache:
                 logits = self.forward(
-                    tokens=torch.tensor([[current_token]], dtype=torch.long).to(
-                        self.device
+                    tokens=torch.tensor(
+                        [[current_token]], dtype=torch.long, device=self.device
                     ),
-                    input_pos=torch.tensor([len(tokens) - 1], dtype=torch.long).to(
-                        self.device
+                    input_pos=torch.tensor(
+                        [len(tokens) - 1], dtype=torch.long, device=self.device
                     ),
                 )
             else:
                 logits = self.forward(
-                    tokens=torch.tensor([tokens], dtype=torch.long).to(self.device)
+                    tokens=torch.tensor([tokens], dtype=torch.long, device=self.device),
                 )
             current_token = next_token(logits, temperature, top_p)
             if current_token == self.tokenizer.eos_id or (

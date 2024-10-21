@@ -9,10 +9,20 @@ def _get_operator_lib(aten = False):
     else:
         return ["//executorch/configurations:optimized_native_cpu_ops", "//executorch/extension/llm/custom_ops:custom_ops"]
 
+def get_qnn_dependency():
+    # buck build -c executorch.enable_qnn=true //executorch/examples/models/llama/runner:runner
+    # Check if QNN is enabled before including the dependency
+    if native.read_config("executorch", "enable_qnn", "false") == "true":
+        # //executorch/backends/qualcomm:qnn_executorch_backend doesn't work, 
+        #  likely due to it's an empty library with dependency only
+        return [
+            "//executorch/backends/qualcomm/runtime:runtime",
+        ]
+    return []
+
 def define_common_targets():
     for aten in (True, False):
         aten_suffix = "_aten" if aten else ""
-
         runtime.cxx_library(
             name = "runner" + aten_suffix,
             srcs = [
@@ -27,9 +37,9 @@ def define_common_targets():
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
-            # qnn_executorch_backend can be added below //executorch/backends/qualcomm:qnn_executorch_backend
             exported_deps = [
                 "//executorch/backends/xnnpack:xnnpack_backend",
+                "//executorch/extension/llm/runner:irunner",
                 "//executorch/extension/llm/runner:stats",
                 "//executorch/extension/llm/runner:text_decoder_runner" + aten_suffix,
                 "//executorch/extension/llm/runner:text_prefiller" + aten_suffix,
@@ -46,7 +56,7 @@ def define_common_targets():
                 # Vulkan API currently cannot build on some platforms (e.g. Apple, FBCODE)
                 # Therefore enable it explicitly for now to avoid failing tests
                 "//executorch/backends/vulkan:vulkan_backend_lib",
-            ] if native.read_config("llama", "use_vulkan", "0") == "1" else []),
+            ] if native.read_config("llama", "use_vulkan", "0") == "1" else []) + get_qnn_dependency(),
             external_deps = [
                 "libtorch",
             ] if aten else [],
