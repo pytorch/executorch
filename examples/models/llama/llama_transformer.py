@@ -15,10 +15,10 @@ import torch
 import torch.nn.functional as F
 
 from executorch.examples.models.llama.rope import (
-    apply_rotary_emb,
     hf_apply_rotary_emb,
     hf_precompute_freqs_cis,
     precompute_freqs_cis,
+    RotaryEmbedding,
 )
 
 from torch import nn
@@ -311,7 +311,7 @@ class Attention(nn.Module):
         if args.use_hf_rope:
             self.apply_rotary_emb = hf_apply_rotary_emb
         else:
-            self.apply_rotary_emb = apply_rotary_emb
+            self.apply_rotary_emb = RotaryEmbedding()
 
     def forward(
         self,
