@@ -20,7 +20,6 @@ import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.compose.foundation.BackgroundKt;
 import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
@@ -312,14 +311,14 @@ public class SettingsActivity extends AppCompatActivity {
     AlertDialog.Builder backendTypeBuilder = new AlertDialog.Builder(this);
     backendTypeBuilder.setTitle("Select backend type");
     backendTypeBuilder.setSingleChoiceItems(
-            backendTypes,
-            -1,
-            (dialog, item) -> {
-              mBackendTextView.setText(backendTypes[item]);
-              mBackendType = BackendType.valueOf(backendTypes[item]);
-              setBackendSettingMode();
-              dialog.dismiss();
-            });
+        backendTypes,
+        -1,
+        (dialog, item) -> {
+          mBackendTextView.setText(backendTypes[item]);
+          mBackendType = BackendType.valueOf(backendTypes[item]);
+          setBackendSettingMode();
+          dialog.dismiss();
+        });
 
     backendTypeBuilder.create().show();
   }
@@ -410,9 +409,9 @@ public class SettingsActivity extends AppCompatActivity {
   }
 
   private void setBackendSettingMode() {
-    if(mBackendType.equals(BackendType.XNNPACK)) {
+    if (mBackendType.equals(BackendType.XNNPACK)) {
       setXNNPACKSettingMode();
-    } else if(mBackendType.equals(BackendType.MEDIATEK)) {
+    } else if (mBackendType.equals(BackendType.MEDIATEK)) {
       setMediaTekSettingMode();
     }
   }
@@ -422,8 +421,8 @@ public class SettingsActivity extends AppCompatActivity {
     requireViewById(R.id.tokenizerLayout).setVisibility(View.VISIBLE);
     requireViewById(R.id.parametersView).setVisibility(View.VISIBLE);
     requireViewById(R.id.temperatureLayout).setVisibility(View.VISIBLE);
-    mModelFilePath="";
-    mTokenizerFilePath="";
+    mModelFilePath = "";
+    mTokenizerFilePath = "";
   }
 
   private void setMediaTekSettingMode() {
@@ -431,8 +430,8 @@ public class SettingsActivity extends AppCompatActivity {
     requireViewById(R.id.tokenizerLayout).setVisibility(View.GONE);
     requireViewById(R.id.parametersView).setVisibility(View.GONE);
     requireViewById(R.id.temperatureLayout).setVisibility(View.GONE);
-    mModelFilePath="/in/mtk/llama/runner";
-    mTokenizerFilePath="/in/mtk/llama/runner";
+    mModelFilePath = "/in/mtk/llama/runner";
+    mTokenizerFilePath = "/in/mtk/llama/runner";
   }
 
   private void loadSettings() {

@@ -125,7 +125,8 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     long runStartTime = System.currentTimeMillis();
     mModule =
         new LlamaModule(
-            ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType()),
+            ModelUtils.getModelCategory(
+                mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType()),
             modelPath,
             tokenizerPath,
             temperature);
@@ -177,7 +178,8 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
             + "\nBackend: "
             + mCurrentSettingsFields.getBackendType().toString()
             + "\nModelType: "
-            + ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType())
+            + ModelUtils.getModelCategory(
+                mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType())
             + "\nTemperature: "
             + temperature
             + "\nModel loaded time: "
@@ -310,9 +312,9 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
   }
 
   private void setBackendMode(BackendType backendType) {
-    if(backendType.equals(BackendType.XNNPACK)) {
+    if (backendType.equals(BackendType.XNNPACK)) {
       setXNNPACKMode();
-    } else if(backendType.equals(BackendType.MEDIATEK)) {
+    } else if (backendType.equals(BackendType.MEDIATEK)) {
       setMediaTekMode();
     }
   }
@@ -695,7 +697,8 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
           addSelectedImagesToChatThread(mSelectedImageUri);
           String finalPrompt;
           String rawPrompt = mEditTextMessage.getText().toString();
-          if (ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType())
+          if (ModelUtils.getModelCategory(
+                  mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType())
               == ModelUtils.VISION_MODEL) {
             finalPrompt = mCurrentSettingsFields.getFormattedSystemAndUserPrompt(rawPrompt);
           } else {
@@ -728,7 +731,9 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
                         }
                       });
                   long generateStartTime = System.currentTimeMillis();
-                  if (ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType())
+                  if (ModelUtils.getModelCategory(
+                          mCurrentSettingsFields.getModelType(),
+                          mCurrentSettingsFields.getBackendType())
                       == ModelUtils.VISION_MODEL) {
                     mModule.generateFromPos(
                         finalPrompt,

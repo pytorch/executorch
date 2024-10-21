@@ -30,7 +30,9 @@ public class SettingsFields {
     return modelType;
   }
 
-  public BackendType getBackendType(){ return backendType; }
+  public BackendType getBackendType() {
+    return backendType;
+  }
 
   public String getUserPrompt() {
     return userPrompt;
@@ -69,7 +71,7 @@ public class SettingsFields {
 
   public SettingsFields() {
     ModelType DEFAULT_MODEL = ModelType.LLAMA_3;
-    BackendType DEFAULT_BACKEND= BackendType.XNNPACK;
+    BackendType DEFAULT_BACKEND = BackendType.XNNPACK;
 
     modelFilePath = "";
     tokenizerFilePath = "";
@@ -106,7 +108,9 @@ public class SettingsFields {
     this.modelType = modelType;
   }
 
-  public void saveBackendType(BackendType backendType) { this.backendType = backendType;}
+  public void saveBackendType(BackendType backendType) {
+    this.backendType = backendType;
+  }
 
   public void saveParameters(Double temperature) {
     this.temperature = temperature;
