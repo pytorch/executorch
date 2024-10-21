@@ -61,7 +61,12 @@ class I64toI32(ExportPass):
                         to_dst_node.meta["val"] = node_val.to(torch.int32)
 
                         # Replace usage of the src dtype result with the dst dtype result.
-                        n.replace_all_uses_with(to_dst_node)
+                        if n.name != "tokens":
+                            n.replace_all_uses_with(to_dst_node)
+                        else:
+                            for user in n.users.copy():
+                                if user.name != "quantized_decomposed_embedding_4bit_dtype":
+                                    user.replace_input_with(n, to_dst_node)
                         to_dst_node.args = (n,)
 
     def call(self, graph_module: torch.fx.GraphModule):
