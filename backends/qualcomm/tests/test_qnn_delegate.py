@@ -1042,6 +1042,26 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_linear_qat(self):
+        """
+        Prototype to test qat model
+        """
+        module = Linear()  # noqa: F405
+        sample_input = (torch.randn([3, 4]),)
+
+        module = self.get_prepared_qat_module(module, sample_input)
+
+        optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+        criterion = torch.nn.CrossEntropyLoss()
+        output = module(*sample_input)
+        loss = criterion(output, module(*sample_input))
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        module = torch.ao.quantization.quantize_pt2e.convert_pt2e(module)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_log_softmax(self):
         module = LogSoftmax()  # noqa: F405
         sample_input = (torch.randn([1, 4, 8, 8]),)
