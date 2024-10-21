@@ -1051,7 +1051,7 @@ class TestQNNQuantizedOperator(TestQNN):
 
         module = self.get_prepared_qat_module(module, sample_input)
 
-        optimizer = torch.optim.SGD(module.parameters(), lr = 0.1)
+        optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
         criterion = torch.nn.CrossEntropyLoss()
         output = module(*sample_input)
         loss = criterion(output, module(*sample_input))

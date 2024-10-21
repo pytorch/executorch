@@ -45,7 +45,11 @@ from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.program import ExecutorchProgram, ExecutorchProgramManager
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e, prepare_qat_pt2e
+from torch.ao.quantization.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 
 
 def generate_context_binary(

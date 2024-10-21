@@ -17,7 +17,6 @@ from torch._subclasses import FakeTensor
 
 from torch.ao.quantization.fake_quantize import (
     default_fake_quant,
-    default_per_channel_weight_fake_quant,
     FusedMovingAvgObsFakeQuantize,
 )
 
@@ -27,7 +26,6 @@ from torch.ao.quantization.observer import (
     MovingAverageMinMaxObserver,
     PerChannelMinMaxObserver,
     UniformQuantizationObserverBase,
-    MovingAveragePerChannelMinMaxObserver,
 )
 
 from torch.ao.quantization.quantizer import (
@@ -203,7 +201,9 @@ def get_default_8bit_qat_proto(act_symmetric: bool = False) -> QuantizationConfi
         quant_max=torch.iinfo(torch.int8).max,
         qscheme=torch.per_tensor_symmetric,
         ch_axis=0,
-        observer_or_fake_quant_ctr=FusedMovingAvgObsFakeQuantize.with_args(observer=MovingAverageMinMaxObserver),
+        observer_or_fake_quant_ctr=FusedMovingAvgObsFakeQuantize.with_args(
+            observer=MovingAverageMinMaxObserver
+        ),
     )
 
     bias_quantization_spec = QuantizationSpec(
