@@ -83,7 +83,7 @@ def get_quant_node_dtype(node: torch.fx.Node):
 
         # Try to move on to the next node
         if len(consumer_node.users) == 0:
-            raise RuntimeError("No quantized node found in graph")
+            raise RuntimeError(f"No quantized node found in graph for node {node}")
         consumer_node = list(consumer_node.users)[0]
 
 
