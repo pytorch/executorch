@@ -63,8 +63,6 @@ void add_upsample_nearest2d_node(
         "Invalid input, must provide ONLY one of output_sizes or scale_factors");
   }
 
-  ValueRef arg_in = prepack_if_tensor_ref(graph, in);
-
   vTensorPtr t_in = graph.get_tensor(in);
   utils::uvec3 input_sizes = t_in->logical_limits();
 
@@ -103,7 +101,7 @@ void add_upsample_nearest2d_node(
       graph.create_local_wg_size(out),
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
-       {arg_in, vkapi::MemoryAccessType::READ}},
+       {in, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {t_out->logical_limits_ubo(),
        graph.create_params_buffer(input_size),

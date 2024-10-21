@@ -21,9 +21,41 @@
 #
 cmake_minimum_required(VERSION 3.19)
 
-# Find prebuilt _portable_lib.so. This file should be installed under
+# Find prebuilt _portable_lib.<EXT_SUFFIX>.so. This file should be installed under
 # <site-packages>/executorch/share/cmake
-find_library(_portable_lib_LIBRARY _portable_lib.so PATHS "${CMAKE_CURRENT_LIST_DIR}/../../extension/pybindings/")
+
+# Find python
+if(DEFINED ENV{CONDA_DEFAULT_ENV} AND NOT $ENV{CONDA_DEFAULT_ENV} STREQUAL "base")
+  set(PYTHON_EXECUTABLE
+      python
+  )
+else()
+  set(PYTHON_EXECUTABLE
+      python3
+  )
+endif()
+
+# Get the Python version and platform information
+execute_process(
+    COMMAND ${PYTHON_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))"
+    OUTPUT_VARIABLE EXT_SUFFIX
+    RESULT_VARIABLE SYSCONFIG_RESULT
+    ERROR_VARIABLE SYSCONFIG_ERROR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+if(RESULT_VARIABLE EQUAL 0)
+  message(STATUS "Sysconfig extension suffix: ${EXT_SUFFIX}")
+else()
+  message(FATAL_ERROR "Failed to retrieve sysconfig config var EXT_SUFFIX: ${SYSCONFIG_ERROR}")
+endif()
+
+find_library(
+  _portable_lib_LIBRARY
+  NAMES _portable_lib${EXT_SUFFIX}
+  PATHS "${CMAKE_CURRENT_LIST_DIR}/../../extension/pybindings/"
+)
+
 set(EXECUTORCH_LIBRARIES)
 set(EXECUTORCH_FOUND OFF)
 if(_portable_lib_LIBRARY)
