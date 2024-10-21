@@ -32,8 +32,7 @@ using executorch::extension::llm::Tokenizer;
 using executorch::runtime::Error;
 using executorch::runtime::Result;
 
-class MTKLlamaRunner
-    : public executorch::extension::llm::IRunner {
+class MTKLlamaRunner : public executorch::extension::llm::IRunner {
  public:
   explicit MTKLlamaRunner(
       const std::string& model_path,
