@@ -12,7 +12,7 @@
 #pragma once
 
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
-#include <executorch/extension/llm/runner/runner_interface.h>
+#include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #include <executorch/extension/llm/tokenizer/tiktoken.h>
@@ -33,7 +33,7 @@ using executorch::runtime::Error;
 using executorch::runtime::Result;
 
 class MTKLlamaRunner
-    : public executorch::extension::llm::RunnerInterface {
+    : public executorch::extension::llm::IRunner {
  public:
   explicit MTKLlamaRunner(
       const std::string& model_path,

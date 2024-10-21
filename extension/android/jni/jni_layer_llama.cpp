@@ -16,7 +16,7 @@
 #include <executorch/examples/models/llama/runner/runner.h>
 #include <executorch/examples/models/llava/runner/llava_runner.h>
 #include <executorch/extension/llm/runner/image.h>
-#include <executorch/extension/llm/runner/runner_interface.h>
+#include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -116,7 +116,7 @@ class ExecuTorchLlamaJni
  private:
   friend HybridBase;
   int model_type_category_;
-  std::unique_ptr<llm::RunnerInterface> runner_;
+  std::unique_ptr<llm::IRunner> runner_;
   std::unique_ptr<llm::MultimodalRunner> multi_modal_runner_;
 
  public:
