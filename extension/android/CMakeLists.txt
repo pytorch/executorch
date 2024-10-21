@@ -176,8 +176,8 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
       ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/
       ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner
     )
-    ADD_LIBRARY(libneuron_buffer_allocator SHARED IMPORTED)
-    SET_PROPERTY(TARGET libneuron_buffer_allocator PROPERTY IMPORTED_LOCATION ${NEURON_BUFFER_ALLOCATOR_LIB})
+    add_library(libneuron_buffer_allocator SHARED IMPORTED)
+    set_property(TARGET libneuron_buffer_allocator PROPERTY IMPORTED_LOCATION ${NEURON_BUFFER_ALLOCATOR_LIB})
     list(APPEND link_libraries neuron_backend libneuron_buffer_allocator)
     target_compile_definitions(executorch_jni PRIVATE EXECUTORCH_BUILD_MEDIATEK=1)
   endif()
