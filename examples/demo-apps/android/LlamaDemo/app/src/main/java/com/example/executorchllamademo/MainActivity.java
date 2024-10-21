@@ -125,8 +125,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     long runStartTime = System.currentTimeMillis();
     mModule =
         new LlamaModule(
-            //ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType()),
-                3, //TODO: Modify this based on JNI change for how to select MTK backend
+            ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType()),
             modelPath,
             tokenizerPath,
             temperature);
@@ -175,6 +174,10 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
             + modelPath
             + "\nTokenizer path: "
             + tokenizerPath
+            + "\nBackend: "
+            + mCurrentSettingsFields.getBackendType().toString()
+            + "\nModelType: "
+            + ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType())
             + "\nTemperature: "
             + temperature
             + "\nModel loaded time: "
@@ -692,7 +695,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
           addSelectedImagesToChatThread(mSelectedImageUri);
           String finalPrompt;
           String rawPrompt = mEditTextMessage.getText().toString();
-          if (ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType())
+          if (ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType())
               == ModelUtils.VISION_MODEL) {
             finalPrompt = mCurrentSettingsFields.getFormattedSystemAndUserPrompt(rawPrompt);
           } else {
@@ -725,7 +728,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
                         }
                       });
                   long generateStartTime = System.currentTimeMillis();
-                  if (ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType())
+                  if (ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType())
                       == ModelUtils.VISION_MODEL) {
                     mModule.generateFromPos(
                         finalPrompt,
