@@ -437,6 +437,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=None,
         help="path to the output pruning token mapping file (token_map.json)",
     )
+
+    parser.add_argument(
+        "--input_prune_map",
+        default=None,
+        help="path to the input pruning token mapping file (token_map.json)",
+    )
     return parser
 
 
@@ -525,6 +531,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             tokenizer_path=args.tokenizer_path,
             verbose=args.verbose,
             max_seq_len=args.max_seq_length,
+            input_prune_map_path=args.input_prune_map,
             output_prune_map_path=args.output_prune_map,
             metadata_str=args.metadata,
             dtype_override=dtype_override,
@@ -766,6 +773,7 @@ def _load_llama_model(
     tokenizer_path: Optional[str] = None,
     verbose: bool = False,
     max_seq_len: int = 128,
+    input_prune_map_path: Optional[str] = None,
     output_prune_map_path: Optional[str] = None,
     metadata_str: Optional[str] = None,
     dtype_override: Optional[DType] = None,
@@ -795,6 +803,7 @@ def _load_llama_model(
         fairseq2=weight_type == WeightType.FAIRSEQ2,
         max_seq_len=max_seq_len,
         enable_dynamic_shape=enable_dynamic_shape,
+        input_prune_map_path=input_prune_map_path,
         output_prune_map_path=output_prune_map_path,
         args=args,
     )
