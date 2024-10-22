@@ -84,7 +84,7 @@ runtime.python_library(
         "source_transformation/apply_spin_quant_r1_r2.py",
         "source_transformation/lora.py",
         "source_transformation/pre_quantization.py",
-        "source_transformation/prune_output.py",
+        "source_transformation/prune_vocab.py",
         "source_transformation/quantize.py",
         "source_transformation/quantized_kv_cache.py",
         "source_transformation/rms_norm.py",
