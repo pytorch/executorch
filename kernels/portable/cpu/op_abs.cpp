@@ -31,7 +31,7 @@ Tensor& abs_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "abs.out", CTYPE, [&] {
+  ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "abs.out", CTYPE, [&] {
     apply_unary_map_fn(
         [](const CTYPE val_in) {
           if (val_in < 0) {

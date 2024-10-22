@@ -122,3 +122,26 @@ TEST_F(OpFullOutTest, ZeroDim) {
   op_full_out(sizes, true, out);
   EXPECT_TENSOR_EQ(out, tf.ones(sizes_in32_t_vec));
 }
+
+TEST_F(OpFullOutTest, BFloat16Support) {
+  TensorFactory<ScalarType::BFloat16> tf;
+
+  std::vector<int64_t> sizes_int64_t_vec = {2, 3};
+  std::vector<int32_t> sizes_in32_t_vec = {2, 3};
+  auto sizes = IntArrayRef(sizes_int64_t_vec.data(), sizes_int64_t_vec.size());
+
+  // Boolean Scalar
+  Tensor out = tf.zeros(sizes_in32_t_vec);
+  op_full_out(sizes, true, out);
+  EXPECT_TENSOR_EQ(out, tf.ones(sizes_in32_t_vec));
+
+  // Integral Scalar
+  out = tf.zeros(sizes_in32_t_vec);
+  op_full_out(sizes, 1, out);
+  EXPECT_TENSOR_EQ(out, tf.ones(sizes_in32_t_vec));
+
+  // Floating Point Scalar
+  out = tf.zeros(sizes_in32_t_vec);
+  op_full_out(sizes, 3.1415926535, out);
+  EXPECT_TENSOR_EQ(out, tf.full(sizes_in32_t_vec, 3.1415926535));
+}
