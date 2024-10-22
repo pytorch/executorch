@@ -11,13 +11,17 @@ import torch
 from torch import nn
 from torchtune.modules.attention_utils import _MaskType, _sdpa_or_flex_attention
 from torchtune.modules.kv_cache import KVCache
-from executorch.examples.models.llama2.source_transformation.torchtune.modules.sdpa import SDPA
 
 logger = logging.getLogger(__name__)
 
 
 class MultiHeadAttention(nn.Module):
-    """Multi-headed attention layer with support for grouped query
+    """
+    NOTE: copied from Torchtune's mha.py. Should be mostly 1:1 except
+    that SDPA is factored out so that it can be swapped for more
+    efficient ExecuTorch-defined SDPA ops.
+
+    Multi-headed attention layer with support for grouped query
     attention (GQA) introduced in https://arxiv.org/abs/2305.13245v1.
 
     GQA is a version of multiheaded attention (MHA) which uses fewer
@@ -71,7 +75,7 @@ class MultiHeadAttention(nn.Module):
             This is needed to compute the RoPE Cache. Default: 4096.
         is_causal (bool): sets the default mask to causal when no mask is provided
         attn_dropout (float): dropout value passed onto the scaled_dot_product_attention function.
-            This argument is ignored if self.training is False. Default value is 0.0.
+            Default value is 0.0.
 
     Raises:
         ValueError: If ``num_heads % num_kv_heads != 0``
@@ -150,6 +154,11 @@ class MultiHeadAttention(nn.Module):
             kv_cache=self.kv_cache,
         )
 
+        # this flag indicates whether to update the kv-cache during forward
+        # passes. when disabled, we can have the cache setup but still
+        # perform normal forward passes
+        self.cache_enabled = False
+
     def setup_cache(
         self, batch_size: int, dtype: torch.dtype, max_seq_len: int
     ) -> None:
@@ -174,6 +183,7 @@ class MultiHeadAttention(nn.Module):
                 head_dim=self.head_dim,
                 dtype=dtype,
             )
+            self.cache_enabled = True
 
     def reset_cache(self):
         """Reset the key value caches."""
@@ -277,8 +287,78 @@ class MultiHeadAttention(nn.Module):
                 k = self.k_norm(k)
 
             # Update key-value cache
-            if self.kv_cache is not None:
-                self._sdpa.kv_cache_update(input_pos, k, v)
+            if self.kv_cache is not None and self.cache_enabled:
+                k, v = self._sdpa.kv_cache.update(input_pos, k, v)
 
         output = self._sdpa(q, k, v, b, s_x)
         return self.output_proj(output)
+
+
+class SDPA(nn.Module):
+    """
+    TorchTune's SDPA which can be optimized and can be swapped
+    out for a more efficient implementations.
+    """
+
+    def __init__(
+        self,
+        num_kv_heads: int,
+        num_heads: int,
+        head_dim: int,
+        q_per_kv: int,
+        attn_dropout: float,
+        is_causal: bool,
+        attention_fn,
+        kv_cache,
+    ) -> None:
+        super().__init__()
+        self.num_kv_heads = num_kv_heads
+        self.num_heads = num_heads
+        self.head_dim = head_dim
+        self.q_per_kv = q_per_kv
+        self.attn_dropout = attn_dropout
+        self.is_causal = is_causal
+        self._attention_fn = attention_fn
+        self.kv_cache = kv_cache
+
+    def forward(
+        self,
+        q: torch.Tensor,  # [b, s, n_h, h_d]
+        k: torch.Tensor,  # [b, s, n_kv, h_d]
+        v: torch.Tensor,  # [b, s, n_kv, h_d]
+        bsz: int,
+        seq_len: int,
+        mask: torch.Tensor = None,
+    ) -> torch.Tensor:
+        # View + expand + reshape bring num_kv_heads to num_heads for k and v
+        # to match q.
+
+        # k: [bsz, seq_len, n_kv, 1, h_d]
+        # v: [bsz, seq_len, n_kv, 1, h_d]
+        k = k.view(bsz, seq_len, self.num_kv_heads, 1, self.head_dim)
+        v = v.view(bsz, seq_len, self.num_kv_heads, 1, self.head_dim)
+
+        # Expand the key and value tensors to have the same shape
+        # as the query tensor by copying values across the relevant dim
+        if self.num_heads != self.num_kv_heads:
+            k = k.expand(bsz, seq_len, self.num_kv_heads, self.q_per_kv, self.head_dim)
+            v = v.expand(bsz, seq_len, self.num_kv_heads, self.q_per_kv, self.head_dim)
+
+        # [bsz, s, n_h, h_d]
+        k = k.reshape(bsz, seq_len, -1, self.head_dim)
+        v = v.reshape(bsz, seq_len, -1, self.head_dim)
+
+        # [bsz, n_h, s, h_d]
+        q = q.transpose(1, 2)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+        output = self._attention_fn(
+            q,
+            k,
+            v,
+            mask=mask,
+            dropout_p=self.attn_dropout,
+            is_causal=self.kv_cache is None and mask is None and self.is_causal,
+        )
+        # Reshape the output to be the same shape as the input
+        return output.transpose(1, 2).contiguous().view(bsz, seq_len, -1)
