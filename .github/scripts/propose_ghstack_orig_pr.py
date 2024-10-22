@@ -112,7 +112,7 @@ Merge bot PR head: https://github.com/pytorch/executorch/tree/{orig_branch_merge
         existing_orig_pr = repo.get_pulls(
             head="pytorch:" + orig_branch_merge_head,
             base=orig_branch_merge_base,
-            state="open",
+            state="all",
         )
         if existing_orig_pr.totalCount > 0:
             print(
