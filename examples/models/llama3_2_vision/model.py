@@ -10,14 +10,14 @@ import json
 from typing import Any, Dict
 
 import torch
+from executorch.examples.models.checkpoint import (
+    get_checkpoint_dtype,
+    get_default_model_resource_dir,
+)
 
 from executorch.examples.models.model_base import EagerModelBase
-from torchtune.models.llama3_2_vision._convert_weights import llama3_vision_meta_to_tune
 from torchtune.models.llama3_2_vision._component_builders import llama3_2_vision_decoder
-from executorch.examples.models.checkpoint import (
-    get_default_model_resource_dir,
-    get_checkpoint_dtype,
-)
+from torchtune.models.llama3_2_vision._convert_weights import llama3_vision_meta_to_tune
 
 
 def to_decoder_checkpoint(checkpoint: Dict[str, Any]) -> Dict[str, Any]:
@@ -26,7 +26,12 @@ def to_decoder_checkpoint(checkpoint: Dict[str, Any]) -> Dict[str, Any]:
     weight names prefixed with "encoder"/"decoder", such as "encoder.layer.etc" or "decoder.norm.scale".
     To load the text decoder on its own, the "decoder" prefix needs to be removed.
     """
-    return {".".join(weight.split(".")[1:]): value for weight, value in checkpoint.items() if weight.startswith("decoder")}
+    return {
+        ".".join(weight.split(".")[1:]): value
+        for weight, value in checkpoint.items()
+        if weight.startswith("decoder")
+    }
+
 
 class Llama3_2Decoder(EagerModelBase):
     """
@@ -36,7 +41,9 @@ class Llama3_2Decoder(EagerModelBase):
     def __init__(self, **kwargs):
         # Set member vars from kwargs.
         self.max_seq_len = kwargs.get("max_seq_len", 8192)
-        self.encoder_max_seq_len = kwargs.get("encoder_max_seq_len", int(4 * (448 / 14) ** 2 + 1))
+        self.encoder_max_seq_len = kwargs.get(
+            "encoder_max_seq_len", int(4 * (448 / 14) ** 2 + 1)
+        )
         self.generate_full_logits = kwargs.get("generate_full_logits", False)
         self.enable_dynamic_shape = kwargs.get("enable_dynamic_shape", False)
         self.output_prune_map_path = kwargs.get("output_prune_map_path", None)
@@ -45,7 +52,6 @@ class Llama3_2Decoder(EagerModelBase):
         self.use_sdpa_with_kv_cache = kwargs.get("use_sdpa_with_kv_cache", False)
         self.verbose = kwargs.get("verbose", False)
         self.args = kwargs.get("args", None)
-
 
         ckpt_dir = get_default_model_resource_dir(__file__)
         # Single checkpoint file.
@@ -57,7 +63,9 @@ class Llama3_2Decoder(EagerModelBase):
         # Load checkpoint and params.
         device = "cpu"
         if checkpoint_dir is not None:
-            raise NotImplementedError("Sharded checkpoint not yet supported for Llama3_2Decoder.")
+            raise NotImplementedError(
+                "Sharded checkpoint not yet supported for Llama3_2Decoder."
+            )
         else:
             checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
         checkpoint = llama3_vision_meta_to_tune(checkpoint)
@@ -107,7 +115,9 @@ class Llama3_2Decoder(EagerModelBase):
         # Prune the output layer if output_prune_map is provided.
         output_prune_map = None
         if self.output_prune_map_path is not None:
-            from executorch.examples.models.llama2.source_transformation.prune_output import prune_output_vocab
+            from executorch.examples.models.llama2.source_transformation.prune_output import (
+                prune_output_vocab,
+            )
 
             with open(self.output_prune_map_path, "r") as f:
                 output_prune_map = json.load(f)
@@ -123,9 +133,7 @@ class Llama3_2Decoder(EagerModelBase):
             return self.model_.to(torch.float16)
 
     def get_example_inputs(self):
-        return (
-            torch.ones(1, 64, dtype=torch.long), # positional inputs
-        )
+        return (torch.ones(1, 64, dtype=torch.long),)  # positional inputs
 
     def get_example_kwarg_inputs(self):
         # TODO: add input_pos and mask when after making cache work.
@@ -137,7 +145,7 @@ class Llama3_2Decoder(EagerModelBase):
         }
 
     def get_dynamic_shapes(self):
-        dim = torch.export.Dim("token_dim", min=1,max=self.max_seq_len)
+        dim = torch.export.Dim("token_dim", min=1, max=self.max_seq_len)
         dynamic_shapes = {
             "tokens": {0: 1, 1: dim},
             # "encoder_input": {0:1, 1:dim_enc, 2:4096},
@@ -146,4 +154,3 @@ class Llama3_2Decoder(EagerModelBase):
             # "input_pos" : {0: dim},
         }
         return dynamic_shapes
-        

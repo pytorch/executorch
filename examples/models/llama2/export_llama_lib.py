@@ -817,7 +817,7 @@ def _load_llama_model(
             generate_full_logits=generate_full_logits,
             fairseq2=weight_type == WeightType.FAIRSEQ2,
             max_seq_len=max_seq_len,
-            enable_dynamic_shape=enable_dynamic_shape ,
+            enable_dynamic_shape=enable_dynamic_shape,
             output_prune_map_path=output_prune_map_path,
             args=args,
         )
