@@ -14,7 +14,7 @@ MI:
         a to_copy placeholder. In ArmTester, the placeholder is then interpreted as an input.
         Potential fix: partition int -> float to_copy-ops in ArmBackend.
         # MLETORCH-407
-    Op(scalar, tensor): 
+    Op(scalar, tensor):
         One issue is that lift_constant_tensor_pass looks for a fake_tensor in the meta of the first
         node which does not work the first node is a scalar.
         Fixing that, the lowering fails since edge_program.graph_signatures.inputs_to_buffers is changed from
@@ -23,7 +23,7 @@ MI:
         data in tag_constant_data.
         # MLETORCH-408
 
-BI: 
+BI:
     sub(Scalar, Tensor) becomes rsub, which either fails since the scalar does not become an attribute
         in scalars_to_attribute_pass, or, if added to targeted_ops in that pass, fails since rsub expects a
         Scalar.
