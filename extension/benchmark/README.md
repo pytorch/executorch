@@ -61,7 +61,7 @@ Users can schedule a benchmarking workflow on a pull request through GitHub Acti
 
 ## Retrieving Benchmark Results
 
-Currently, retrieving benchmark results involves manually extracting the `benchmark_results.json` from the `Customer_Artifacts.zip` stored on AWS S3 from the benchmarking job. This process is not yet streamlined. We are working on simplifying this process and linking the results directly to the dashboard, which will be available soon.
+The easiest way to view benchmark results is on the [dashboard](./README.md#dashboard), while raw results for individual configurations can be manually accessed by downloading the `Customer_Artifacts.zip` from the CI.
 
 
 ## Feedback and Issue Reporting

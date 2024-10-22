@@ -159,10 +159,10 @@ at::Tensor sdpa_reference_impl(
     at::Tensor& value_cache,
     const int64_t start_pos,
     const int64_t seq_len,
-    const c10::optional<at::Tensor> __attn_mask_ignored,
+    const std::optional<at::Tensor> __attn_mask_ignored,
     const double dropout_p,
     const bool is_causal,
-    const c10::optional<double> scale) {
+    const std::optional<double> scale) {
   at::Tensor attn_mask =
       construct_attention_mask(q_projected, key_cache, start_pos);
 

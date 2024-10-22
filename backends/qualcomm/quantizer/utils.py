@@ -15,6 +15,11 @@ from torch import Tensor
 from torch._ops import OpOverload
 from torch._subclasses import FakeTensor
 
+from torch.ao.quantization.fake_quantize import (
+    default_fake_quant,
+    FusedMovingAvgObsFakeQuantize,
+)
+
 from torch.ao.quantization.observer import (
     FixedQParamsObserver,
     MinMaxObserver,
@@ -177,6 +182,46 @@ def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
         ch_axis=0,
         qscheme=torch.per_channel_symmetric,
     )
+
+
+def get_default_8bit_qat_proto(act_symmetric: bool = False) -> QuantizationConfig:
+
+    act_quantization_spec = QuantizationSpec(
+        dtype=torch.uint8,
+        qscheme=(
+            torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
+        ),
+        ch_axis=0,
+        observer_or_fake_quant_ctr=default_fake_quant,
+    )
+
+    weight_quantization_spec = QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=torch.iinfo(torch.int8).min + 1,
+        quant_max=torch.iinfo(torch.int8).max,
+        qscheme=torch.per_tensor_symmetric,
+        ch_axis=0,
+        observer_or_fake_quant_ctr=FusedMovingAvgObsFakeQuantize.with_args(
+            observer=MovingAverageMinMaxObserver
+        ),
+    )
+
+    bias_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
+        qscheme=torch.per_tensor_symmetric,
+        observer_or_fake_quant_ctr=default_fake_quant,
+    )
+
+    quantization_config = QuantizationConfig(
+        input_activation=act_quantization_spec,
+        output_activation=act_quantization_spec,
+        weight=weight_quantization_spec,
+        bias=bias_quantization_spec,
+    )
+
+    return quantization_config
 
 
 def get_default_8bit_qnn_ptq_config(
@@ -364,7 +409,7 @@ def get_ptq_per_channel_quant_config(
         quant_min=torch.iinfo(act_dtype).min,
         quant_max=torch.iinfo(act_dtype).max,
         qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(**extra_args),
     )
 
     weight_quantization_spec = QuantizationSpec(

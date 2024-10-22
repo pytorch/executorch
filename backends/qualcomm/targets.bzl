@@ -3,6 +3,7 @@ load(
     "ANDROID",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_verision")
 
 # Construct the input and output file names. All input and output files rely on scalar_type file.
 SCHEMA_NAME = "schema"
@@ -83,7 +84,7 @@ def define_common_targets():
         define_static_target = True,
         visibility = ["@EXECUTORCH_CLIENTS"],
         deps = [
-            "fbsource//third-party/qualcomm/qnn:api",
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
             "//executorch/backends/qualcomm/runtime:runtime",
@@ -92,6 +93,3 @@ def define_common_targets():
             ":schema",
         ],
     )
-
-def get_qnn_library_verision():
-    return "2.26"

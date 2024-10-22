@@ -35,6 +35,7 @@ struct PhysicalDevice final {
 
   // Metadata
   uint32_t num_compute_queues;
+  bool supports_int16_shader_types;
   bool has_unified_memory;
   bool has_timestamps;
   float timestamp_period;

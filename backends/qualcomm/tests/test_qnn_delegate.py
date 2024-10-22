@@ -37,10 +37,7 @@ from executorch.backends.qualcomm.utils.utils import (
     skip_annotation,
 )
 
-from executorch.examples.models.llama2.llama_transformer import (
-    ModelArgs,
-    MOEFeedForward,
-)
+from executorch.examples.models.llama.llama_transformer import ModelArgs, MOEFeedForward
 
 from executorch.examples.qualcomm.utils import setup_common_args_and_variables
 
@@ -51,7 +48,7 @@ from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.models.inception_v3 import InceptionV3Model
 from executorch.examples.models.inception_v4 import InceptionV4Model
 
-# from executorch.examples.models.llama2 import Llama2Model
+# from executorch.examples.models.llama import Llama2Model
 from executorch.examples.models.mobilebert import MobileBertModelExample
 from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.examples.models.mobilenet_v3 import MV3Model
@@ -1043,6 +1040,26 @@ class TestQNNQuantizedOperator(TestQNN):
         module = Linear()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
         module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_linear_qat(self):
+        """
+        Prototype to test qat model
+        """
+        module = Linear()  # noqa: F405
+        sample_input = (torch.randn([3, 4]),)
+
+        module = self.get_prepared_qat_module(module, sample_input)
+
+        optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+        criterion = torch.nn.CrossEntropyLoss()
+        output = module(*sample_input)
+        loss = criterion(output, module(*sample_input))
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        module = torch.ao.quantization.quantize_pt2e.convert_pt2e(module)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_log_softmax(self):

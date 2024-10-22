@@ -1520,11 +1520,18 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
   ValueRef c = graph.add_tensor(size_big, vkapi::kFloat);
   ValueRef e = graph.add_tensor(size_big, vkapi::kFloat);
 
+  ValueRef w1_packed = graph.add_tensor(size_small, vkapi::kFloat);
+  ValueRef w2_packed = graph.add_tensor(size_small, vkapi::kFloat);
+
+  auto prepackFn = VK_GET_OP_FN("et_vk.prepack.default");
+  prepackFn(graph, {w1, w1_packed});
+  prepackFn(graph, {w2, w2_packed});
+
   auto addFn = VK_GET_OP_FN("aten.add.Tensor");
-  addFn(graph, {a.value, w1, kDummyValueRef, c});
+  addFn(graph, {a.value, w1_packed, kDummyValueRef, c});
 
   auto mulFn = VK_GET_OP_FN("aten.mul.Tensor");
-  mulFn(graph, {c, w2, e});
+  mulFn(graph, {c, w2_packed, e});
 
   IOValueRef out = {};
   out.value = e;
@@ -2379,7 +2386,8 @@ void run_from_gpu_test(
         utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
     vkapi::ScalarType dtype = vkapi::kFloat,
     utils::StorageType storage_type = utils::StorageType::TEXTURE_3D) {
-  if (dtype == vkapi::kHalf && !context()->adapter_ptr()->has_16bit_storage()) {
+  if (dtype == vkapi::kHalf &&
+      !context()->adapter_ptr()->supports_16bit_storage_buffers()) {
     return;
   }
   vTensor vten = vTensor(context(), sizes, dtype, storage_type, memory_layout);
@@ -2433,7 +2441,8 @@ void round_trip_test(
         utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
     vkapi::ScalarType dtype = vkapi::kFloat,
     utils::StorageType storage_type = utils::StorageType::TEXTURE_3D) {
-  if (dtype == vkapi::kHalf && !context()->adapter_ptr()->has_16bit_storage()) {
+  if (dtype == vkapi::kHalf &&
+      !context()->adapter_ptr()->supports_16bit_storage_buffers()) {
     return;
   }
 
@@ -2484,7 +2493,8 @@ void compute_graph_round_trip_test(
         utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
     vkapi::ScalarType dtype = vkapi::kFloat,
     utils::StorageType storage_type = utils::StorageType::TEXTURE_3D) {
-  if (dtype == vkapi::kHalf && !context()->adapter_ptr()->has_16bit_storage()) {
+  if (dtype == vkapi::kHalf &&
+      !context()->adapter_ptr()->supports_16bit_storage_buffers()) {
     return;
   }
 
@@ -2594,24 +2604,16 @@ void test_binary_op(
     std::vector<int64_t> sizes_big,
     std::vector<int64_t> sizes_small,
     vkapi::ScalarType dtype,
-    utils::GPUMemoryLayout memory_layout,
-    bool prepack = true) {
+    utils::GPUMemoryLayout memory_layout) {
   GraphConfig config;
   ComputeGraph graph(config);
 
   IOValueRef arg2{};
 
-  CREATE_WEIGHT_TENSOR(arg2_w, sizes_small, dtype, 2.5f);
-
   // Build graph
 
   IOValueRef arg1 = graph.add_input_tensor(sizes_big, dtype, memory_layout);
-
-  if (prepack) {
-    arg2.value = arg2_w;
-  } else {
-    arg2 = graph.add_input_tensor(sizes_small, dtype, memory_layout);
-  }
+  arg2 = graph.add_input_tensor(sizes_small, dtype, memory_layout);
 
   IOValueRef out;
   out.value = graph.add_tensor(sizes_big, dtype, memory_layout);
@@ -2632,7 +2634,7 @@ void test_binary_op(
 
   for (int i = 1; i < 4; i++) {
     float val_arg1 = i + 1.5;
-    float val_arg2 = prepack ? 2.5f : i - 3.5;
+    float val_arg2 = i - 3.5;
 
     float val_out = val_arg1 + val_arg2;
     if (op_name == "sub") {
@@ -2645,21 +2647,14 @@ void test_binary_op(
       val_out = val_arg1 / val_arg2;
     }
 
-    if (prepack) {
-      execute_graph_and_check_output(graph, {val_arg1}, {val_out});
-    } else {
-      execute_graph_and_check_output(graph, {val_arg1, val_arg2}, {val_out});
-    }
+    execute_graph_and_check_output(graph, {val_arg1, val_arg2}, {val_out});
   }
 }
 
-#define CALL_TEST_FN_FORALL_CONDITIONS(_)                            \
-  _(vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked, false)    \
-  _(vkapi::kFloat, utils::kTexture3D, utils::kHeightPacked, false)   \
-  _(vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked, false) \
-  _(vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked, true)     \
-  _(vkapi::kFloat, utils::kTexture3D, utils::kHeightPacked, true)    \
-  _(vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked, true)
+#define CALL_TEST_FN_FORALL_CONDITIONS(_)                   \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked)  \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kHeightPacked) \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked)
 
 #define CALL_TEST_FN_FOR_W_PACKED(_)                              \
   _(vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked, false) \
@@ -2674,15 +2669,15 @@ void test_binary_op(
   _(vkapi::kFloat, utils::kBuffer, utils::kChannelsPacked, true)
 
 TEST(VulkanComputeGraphOpsTest, add_smoke_test) {
-#define RUN_TESTS(dtype, storage, layout, prepack)                         \
-  test_binary_op("add", {17, 21}, {17, 21}, dtype, layout, prepack);       \
-  test_binary_op("add", {17, 21}, {1, 1}, dtype, layout, prepack);         \
-  test_binary_op("sub", {11, 22}, {11, 22}, dtype, layout, prepack);       \
-  test_binary_op("sub", {11, 22}, {11, 1}, dtype, layout, prepack);        \
-  test_binary_op("add", {7, 17, 17}, {7, 17, 17}, dtype, layout, prepack); \
-  test_binary_op("add", {7, 17, 17}, {7, 1, 17}, dtype, layout, prepack);  \
-  test_binary_op("sub", {9, 9, 7}, {9, 9, 7}, dtype, layout, prepack);     \
-  test_binary_op("sub", {9, 9, 7}, {9, 1, 1}, dtype, layout, prepack);
+#define RUN_TESTS(dtype, storage, layout)                         \
+  test_binary_op("add", {17, 21}, {17, 21}, dtype, layout);       \
+  test_binary_op("add", {17, 21}, {1, 1}, dtype, layout);         \
+  test_binary_op("sub", {11, 22}, {11, 22}, dtype, layout);       \
+  test_binary_op("sub", {11, 22}, {11, 1}, dtype, layout);        \
+  test_binary_op("add", {7, 17, 17}, {7, 17, 17}, dtype, layout); \
+  test_binary_op("add", {7, 17, 17}, {7, 1, 17}, dtype, layout);  \
+  test_binary_op("sub", {9, 9, 7}, {9, 9, 7}, dtype, layout);     \
+  test_binary_op("sub", {9, 9, 7}, {9, 1, 1}, dtype, layout);
 
   CALL_TEST_FN_FORALL_CONDITIONS(RUN_TESTS);
 
@@ -3026,142 +3021,6 @@ TEST(VulkanComputeGraphOpsTest, grid_priors_test) {
       /*data_out_expected = */ {4, 4, 12, 4, 20, 4, 4, 12, 12, 12, 20, 12});
 }
 
-void test_int4pack_mm(
-    std::vector<uint32_t> MKN,
-    uint32_t group_size,
-    utils::StorageType storage_type) {
-  GraphConfig config;
-  ComputeGraph graph(config);
-
-  const uint32_t M = MKN[0];
-  const uint32_t K = MKN[1];
-  const uint32_t N = MKN[2];
-
-  const std::vector<int64_t> mat1_size = {M, K};
-  const std::vector<int64_t> mat2_size = {K, N};
-  const std::vector<int64_t> mat2_q_size = {N, K / 2}; // Transposed and packed
-  const std::vector<int64_t> out_size = {M, N};
-
-  std::vector<float> A_data = create_random_float_buffer(M * K);
-  IOValueRef A = graph.add_input_tensor(mat1_size, vkapi::kFloat, storage_type);
-  graph.copy_into_staging(A.staging, A_data.data(), A_data.size());
-
-  // Quantized but un-packed weights
-  std::vector<uint8_t> B_quant_data = create_random_uint8_buffer(K * N, 0, 16);
-
-  // Pack and transpose weights to correspond to int4 weight format
-  std::vector<uint8_t> B_int4_data =
-      int4mm_pack_weights(mat2_size, B_quant_data.data());
-
-  IOValueRef B_int4 =
-      graph.add_input_tensor(mat2_q_size, vkapi::kQInt8, utils::kBuffer);
-  graph.copy_into_staging(
-      B_int4.staging, B_int4_data.data(), B_int4_data.size());
-
-  const int k_groups = K / group_size;
-
-  // Random scales and zeroes. Keep scales small to avoid overflow and zeroes in
-  // int4 range
-  IOValueRef scales_and_zeros;
-
-  if (storage_type == utils::kBuffer) {
-    scales_and_zeros.value = graph.add_tensor(
-        {2, N, k_groups}, vkapi::kFloat, storage_type, utils::kWidthPacked);
-  } else {
-    scales_and_zeros.value = graph.add_tensor(
-        {2, N, k_groups}, vkapi::kFloat, storage_type, utils::kChannelsPacked);
-  }
-
-  scales_and_zeros.staging = graph.set_input_tensor(scales_and_zeros.value);
-
-  std::vector<float> s_data(graph.numel_of(scales_and_zeros.value));
-  const int zeros_stride = s_data.size() / 2;
-  for (size_t i = 0; i < zeros_stride; i++) {
-    s_data[i] = rand() % 100;
-    s_data[i + zeros_stride] = rand() % 16;
-  }
-
-  graph.copy_into_staging(
-      scales_and_zeros.staging, s_data.data(), s_data.size());
-
-  IOValueRef out_int4;
-
-  if (storage_type == utils::kBuffer) {
-    out_int4.value = graph.add_tensor(out_size, vkapi::kFloat, utils::kBuffer);
-  } else {
-    out_int4.value =
-        graph.add_tensor(out_size, vkapi::kFloat, utils::kChannelsPacked);
-  }
-
-  VK_GET_OP_FN("aten._weight_int4pack_mm.default")
-  (graph,
-   {A.value,
-    B_int4.value,
-    graph.add_scalar<int64_t>(group_size),
-    scales_and_zeros.value,
-    out_int4.value});
-
-  out_int4.staging = graph.set_output_tensor(out_int4.value);
-
-  // Dequantized matmul for comparison
-  IOValueRef B_deq =
-      graph.add_input_tensor(mat2_size, vkapi::kFloat, storage_type);
-  std::vector<float> B_deq_data = int4mm_dequantize_weights(
-      mat2_size, B_quant_data.data(), group_size, s_data.data());
-  graph.copy_into_staging(B_deq.staging, B_deq_data.data(), B_deq_data.size());
-
-  IOValueRef out_deq;
-  out_deq.value = graph.add_tensor(out_size, vkapi::kFloat, storage_type);
-
-  VK_GET_OP_FN("aten.mm.default")
-  (graph, {A.value, B_deq.value, out_deq.value});
-
-  out_deq.staging = graph.set_output_tensor(out_deq.value);
-
-  graph.prepare();
-  graph.encode_prepack();
-  graph.prepack();
-  graph.encode_execute();
-  graph.propagate_resize();
-  graph.execute();
-
-  // Compare outputs
-  std::vector<float> out_int4_data(graph.numel_of(out_int4.value));
-  graph.copy_from_staging(
-      out_int4.staging, out_int4_data.data(), out_int4_data.size());
-
-  std::vector<float> out_deq_data(graph.numel_of(out_deq.value));
-  graph.copy_from_staging(
-      out_deq.staging, out_deq_data.data(), out_deq_data.size());
-
-  for (int i = 0; i < out_int4_data.size(); i++) {
-    EXPECT_TRUE(check_close(out_int4_data[i], out_deq_data[i]));
-  }
-}
-
-TEST(VulkanComputeGraphOpsTest, int4pack_mm_test) {
-  if (!context()->adapter_ptr()->has_full_int8_buffers_support()) {
-    GTEST_SKIP();
-  }
-
-  for (auto storage_type : {utils::kBuffer, utils::kTexture3D}) {
-    // Vector multiplication, single group per row
-    test_int4pack_mm({1, 32, 1}, 32, storage_type);
-
-    // Vector multiplication, multiple groups per row
-    test_int4pack_mm({1, 256, 1}, 64, storage_type);
-
-    // Square matrices, single group per row
-    test_int4pack_mm({32, 32, 32}, 32, storage_type);
-
-    // Irregular matrices, single group per row
-    test_int4pack_mm({37, 32, 19}, 32, storage_type);
-
-    // Irregular matrices, multiple groups per row
-    test_int4pack_mm({37, 256, 19}, 64, storage_type);
-  }
-}
-
 void test_transpose_view_mm(
     const int B,
     const int M,
@@ -3355,7 +3214,7 @@ void test_to_copy() {
 }
 
 TEST(VulkanComputeGraphOpsTest, test_to_copy) {
-  if (context()->adapter_ptr()->has_16bit_storage()) {
+  if (context()->adapter_ptr()->supports_16bit_storage_buffers()) {
     test_to_copy();
   }
 }

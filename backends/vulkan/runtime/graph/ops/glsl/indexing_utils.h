@@ -232,6 +232,13 @@ ivec3 lpos_to_pos(const ivec3 lpos, const ivec4 axis_map) {
   imageStore(im, lpos_to_pos(lpos, axis_map), texel)
 #endif
 
+// Converts hashed axis mapping and packed dim to a ivec4
+// e.g. 0x000102, 2 -> ivec4(0, 1, 2, 2)
+// e.g. 0x010200, 1 -> ivec4(1, 2, 0, 1)
+#define UNHASH_AXIS_MAP(hash, packed_dim) \
+  ivec4(hash >> 16, (hash >> 8) & 0xFF, hash & 0xFF, packed_dim)
+#define DEFAULT_AXIS_MAP_HASH 0x000102
+
 /************************
  * Deprecated Functions *
  ************************/
