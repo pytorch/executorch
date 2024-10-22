@@ -33,13 +33,13 @@ class EagerLlamaRunner(LlamaRunner):
             use_kv_cache=args.use_kv_cache,
             **params,
         )
-        super().__init__(tokenizer_path=args.tokenizer_path, model_args=model_args)
-        manager: LLMEdgeManager = _prepare_for_llama_export("llama", args)
-        self.model = (
-            manager.model.eval().to(device="cuda")
-            if torch.cuda.is_available()
-            else manager.model.eval().to(device="cpu")
+        super().__init__(
+            tokenizer_path=args.tokenizer_path,
+            model_args=model_args,
+            device="cuda" if torch.cuda.is_available() else "cpu",
         )
+        manager: LLMEdgeManager = _prepare_for_llama_export("llama", args)
+        self.model = manager.model.eval().to(device=self.device)
 
     def forward(
         self,

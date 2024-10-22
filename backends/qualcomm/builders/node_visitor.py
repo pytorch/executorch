@@ -228,9 +228,11 @@ class NodeVisitor:
 
         if is_parameter(node, self.edge_program):
             return PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
-
-        # dump all tensor, set to app read
-        if self.enable_tensor_dump:
+        # dump all tensor, set to app read, and we only dump native tensors
+        if (
+            self.enable_tensor_dump
+            and tensor_type == PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
+        ):
             return PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_READ
         return tensor_type
 

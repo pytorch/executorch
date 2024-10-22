@@ -60,7 +60,7 @@ using string_view = c10::string_view;
 template <typename T>
 using ArrayRef = c10::ArrayRef<T>;
 template <typename T>
-using optional = c10::optional<T>;
+using optional = std::optional<T>;
 using nullopt_t = c10::nullopt_t;
 using c10::nullopt;
 using ScalarType = at::ScalarType;
