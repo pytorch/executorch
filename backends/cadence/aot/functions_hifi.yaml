@@ -26,7 +26,6 @@
   kernels:
     - arg_meta: null
       kernel_name: cadence::impl::HiFi::add_out
-      kernel_name: impl::HiFi::add_out
 
 - op: bmm.out
   kernels:
