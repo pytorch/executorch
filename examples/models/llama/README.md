@@ -1,5 +1,5 @@
 # Summary
-This example demonstrates how to run a [llama models](https://www.llama.com/) on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on a phone.
+This example demonstrates how to run a [Llama models](https://www.llama.com/) on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on a phone.
 
 Here are supported models:
 
@@ -9,6 +9,8 @@ Here are supported models:
 - [Llama 2 7B](../llama2/README.md)
 
 Pretrained models are not included in this repo. Users are suggested to download them [here](https://ai.meta.com/resources/models-and-libraries/llama-downloads/).
+
+This page contains the basic recipe for running Llama. See [Llama utils page](./UTILS.md) page for more advanced use-cases such as fine-tuning and running smaller models for educational purposes.
 
 # What is Llama?
 Llama is a collection of large language models that use publicly available data for training. These models are based on the transformer architecture, which allows it to process input sequences of arbitrary length and generate output sequences of variable length. One of the key features of Llama models is its ability to generate coherent and contextually relevant text. This is achieved through the use of attention mechanisms, which allow the model to focus on different parts of the input sequence as it generates output. Additionally, Llama models use a technique called “masked language modeling” to pre-train the model on a large corpus of text, which helps it learn to predict missing words in a sentence.
@@ -108,7 +110,7 @@ Due to Llama3's vocabulary size, we had to quantize embedding lookup table as we
 ## Tested on
 
 - MacOS M1/M2, Linux.
-- For Llama 3 8B, your device may require at least 32GB RAM. If this is a constraint for you, please try the smaller stories model.
+- For Llama 3 8B, your device may require at least 32GB RAM. If this is a constraint for you, please try the [smaller stories model](./UTILS.md).
 
 ## Step 1: Setup
 > :warning: **double check your python environment**: make sure `conda activate <VENV>` is run before all the bash and python scripts.
@@ -178,106 +180,6 @@ You can export and run the original Llama 3 8B instruct model.
     ```
 
     Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `--embedding-quantize 4,32` as shown above to further reduce the model size.
-
-### Option C: Download and export stories110M model
-
-If you want to deploy and run a smaller model for educational purposes. From `executorch` root:
-
-1. Download `stories110M.pt` and `tokenizer.model` from Github.
-    ```
-    wget "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt"
-    wget "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model"
-    ```
-2. Create params file.
-    ```
-    echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
-    ```
-3. Export model and generate `.pte` file.
-    ```
-    python -m examples.models.llama.export_llama -c stories110M.pt -p params.json -X -kv
-    ```
-
-### Option D: Download models from Hugging Face and convert from safetensor format to state dict
-
-
-You can also download above models from [Hugging Face](https://huggingface.co/). Since ExecuTorch starts from a PyTorch model, a script like below can be used to convert the Hugging Face safetensors format to PyTorch's state dict. It leverages the utils provided by [TorchTune](https://github.com/pytorch/torchtune).
-
-
-```Python
-from torchtune.utils import FullModelHFCheckpointer
-from torchtune.models import convert_weights
-import torch
-
-# Convert from safetensors to TorchTune. Suppose the model has been downloaded from Hugging Face
-checkpointer = FullModelHFCheckpointer(
-    checkpoint_dir='/home/.cache/huggingface/hub/models/snapshots/hash-number',
-    checkpoint_files=['model-00001-of-00002.safetensors', 'model-00002-of-00002.safetensors'],
-    output_dir='/the/destination/dir' ,
-    model_type='LLAMA3' # or other types that TorchTune supports
-)
-
-print("loading checkpoint")
-sd = checkpointer.load_checkpoint()
-
-# Convert from TorchTune to Meta (PyTorch native)
-sd = convert_weights.tune_to_meta(sd['model'])
-
-print("saving checkpoint")
-torch.save(sd, "/the/destination/dir/checkpoint.pth")
-```
-
-## (Optional) Finetuning
-
-If you want to finetune your model based on a specific dataset, PyTorch provides [TorchTune](https://github.com/pytorch/torchtune) - a native-Pytorch library for easily authoring, fine-tuning and experimenting with LLMs.
-
-Once you have [TorchTune installed](https://github.com/pytorch/torchtune?tab=readme-ov-file#get-started) you can finetune Llama2 7B model using LoRA on a single GPU, using the following command. This will produce a checkpoint where the LoRA weights are merged with the base model and so the output checkpoint will be in the same format as the original Llama2 model.
-
-```
-tune run lora_finetune_single_device \
---config llama2/7B_lora_single_device \
-checkpointer.checkpoint_dir=<path_to_checkpoint_folder>  \
-tokenizer.path=<path_to_checkpoint_folder>/tokenizer.model
-```
-
-To run full finetuning with Llama2 7B on a single device, you can use the following command.
-
-```
-tune run full_finetune_single_device \
---config llama2/7B_full_single_device \
-checkpointer.checkpoint_dir=<path_to_checkpoint_folder> \
-tokenizer.path=<path_to_checkpoint_folder>/tokenizer.model
-```
-
-## Step 3: Evaluate model accuracy
-
-> Forewarning: Model evaluation without a GPU may take a long time, especially on larger models.
-
-We use [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness) to evaluate model accuracy.
-
-For base models, use the following example command to calculate its perplexity based on WikiText.
-```
-python -m examples.models.llama.eval_llama \
-	-c <checkpoint.pth> \
-	-p <params.json> \
-	-t <tokenizer.model/bin> \
-	-kv \
-	-d <checkpoint dtype> \
-	--max_seq_len <max sequence length> \
-	--limit <number of samples>
-```
-
-For instruct models, use the following example command to calculate its MMLU score.
-```
-python -m examples.models.llama.eval_llama \
-	-c <checkpoint.pth> \
-	-p <params.json> \
-	-t <tokenizer.model/bin> \
-	-kv \
-	-d <checkpoint dtype> \
-	--tasks mmlu \
-	--num_fewshot 5 \
-	--max_seq_len <max sequence length>
-```
 
 ## Step 4: Run on your computer to validate
 
@@ -398,19 +300,41 @@ Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-de
 ### Android
 Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android.html) to for full instructions on building the Android LLAMA Demo App.
 
-## Optional: Smaller models delegated to other backends
-Currently we supported lowering the stories model to other backends, including, CoreML, MPS and QNN. Please refer to the instruction
-for each backend ([CoreML](https://pytorch.org/executorch/main/build-run-coreml.html), [MPS](https://pytorch.org/executorch/main/build-run-mps.html), [QNN](https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html)) before trying to lower them. After the backend library is installed, the script to export a lowered model is
 
-- Lower to CoreML: `python -m examples.models.llama.export_llama -kv --disable_dynamic_shape --coreml -c stories110M.pt -p params.json `
-- MPS: `python -m examples.models.llama.export_llama -kv --disable_dynamic_shape --mps -c stories110M.pt -p params.json `
-- QNN: `python -m examples.models.llama.export_llama -kv --disable_dynamic_shape --qnn -c stories110M.pt -p params.json `
+## Utility tools for Llama enablement
 
-The iOS LLAMA app supports the CoreML and MPS model and the Android LLAMA app supports the QNN model. On Android, it also allow to cross compiler the llama runner binary, push to the device and run.
+### Evaluate model accuracy
 
-For CoreML, there are 2 additional optional arguments:
-* `--coreml-ios`: Specify the minimum iOS version to deploy (and turn on available optimizations). E.g. `--coreml-ios 18` will turn on [in-place KV cache](https://developer.apple.com/documentation/coreml/mlstate?language=objc) and [fused scaled dot product attention kernel](https://apple.github.io/coremltools/source/coremltools.converters.mil.mil.ops.defs.html#coremltools.converters.mil.mil.ops.defs.iOS18.transformers.scaled_dot_product_attention) (the resulting model will then need at least iOS 18 to run, though)
-* `--coreml-quantize`: Use [quantization tailored for CoreML](https://apple.github.io/coremltools/docs-guides/source/opt-quantization-overview.html). E.g. `--coreml-quantize b4w` will perform per-block 4-bit weight-only quantization in a way tailored for CoreML
+> Forewarning: Model evaluation without a GPU may take a long time, especially on larger models.
+
+We use [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness) to evaluate model accuracy.
+
+For base models, use the following example command to calculate its perplexity based on WikiText.
+```
+python -m examples.models.llama.eval_llama \
+	-c <checkpoint.pth> \
+	-p <params.json> \
+	-t <tokenizer.model/bin> \
+	-kv \
+	-d <checkpoint dtype> \
+	--max_seq_len <max sequence length> \
+	--limit <number of samples>
+```
+
+For instruct models, use the following example command to calculate its MMLU score.
+```
+python -m examples.models.llama.eval_llama \
+	-c <checkpoint.pth> \
+	-p <params.json> \
+	-t <tokenizer.model/bin> \
+	-kv \
+	-d <checkpoint dtype> \
+	--tasks mmlu \
+	--num_fewshot 5 \
+	--max_seq_len <max sequence length>
+```
+
+See [Llama utils page](./UTILS.md) page for more advanced use-cases such as fine-tuning and running smaller models for educational purposes, and quick iteration and verification.
 
 # What is coming next?
 ## Quantization
@@ -420,12 +344,10 @@ For CoreML, there are 2 additional optional arguments:
 - Lower bit quantization
 ## Models
 - Enabling more generative AI models and architectures.
-- Enable support for mult-modal models like LlaVa.
 ## Performance
 - Performance improvement via techniques such as speculative decoding
 - Enabling LLama and other architectures via Vulkan
 - Enabling performant execution of widely used quantization schemes.
-
 
 # Notes
 This example tries to reuse the Python code, with minimal modifications to make it compatible with current ExecuTorch:
