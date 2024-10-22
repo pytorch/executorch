@@ -1,5 +1,5 @@
 # Summary
-This example demonstrates how to run a [Llama models](https://www.llama.com/) on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on a phone.
+This example demonstrates how to run [Llama models](https://www.llama.com/) on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise quantization to fit the model on a phone.
 
 Here are supported models:
 
@@ -24,79 +24,83 @@ Please note that the models are subject to the [Llama 2 Acceptable Use Policy](h
 
 # Results
 
-Since Llama 3 8B model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized model.
+## Llama 3.2 1B/3B
 
-For Llama 3.2 1B/3B, we validated the models by running them in their original bf16 datatype and unquantized on both Android and iOS phones. The 3B version required high-end phones with larger RAMs to fit the model.
+For Llama 3.2 1B/3B models, we have enabled the original bf16 format and quantization to 4-bit, using SpinQuant, for enhanced performance.
 
-Additionally, 1B/3B models are sensitive to accuracy loss when regular PTQ quantization is applied, so we employed 4bit quantization using [SpinQuant](https://github.com/facebookresearch/SpinQuant/tree/main) to achieve a good balance between accuracy, performance and memory.
+### 1. Enablement
+
+We have successfully verified performance on the following devices: iPhone 15 Pro, iPhone 15 Pro Max, Samsung Galaxy S24+, S22 and OnePlus 12 (featuring 16GB RAM).
+
+Note, the Llama 3.2 3B unquantized bf16 model was only tested on the OnePlus 12, which has sufficient memory (16GB RAM) to support its size requirements.
+
+### 2. Quantization
+
+#### 2.1 SpinQuant
+
+The 1B/3B models are sensitive to accuracy loss when regular post-training quantization (PTQ) is applied. To achieve a balance between accuracy, performance and memory, we utilized 4-bit quantization with [SpinQuant](https://github.com/facebookresearch/SpinQuant/tree/main). With SpinQuant, we currently quantize 4-bit groupwise (with groupsize 32) weight, 8bit dynamic activation of all the linear layers of the model, except embedding and output layers. The embedding and output layers are quantized as 8-bit per-channel weight and 8-bit dynamic activation.
+
+The SpinQuant method takes the original weights and produces optimized quantized weights with minimal outliers, resulting in higher accuracy. This can be achieved without any finetuning of the weights and only requires 100 iterations on a single A100 node.
+
+SpinQuant can generate quantized weights that are [compatible with ExecuTorch](https://github.com/facebookresearch/SpinQuant/tree/main?tab=readme-ov-file#3-export-to-executorch), specifically, it can be integrated with the existing optimized XNNPACK kernels (e.g., group-wise 4bit weight and 8bit dynamic activation). This allows developers to benefit from the higher accuracy of SpinQuant while also taking advantage of the strong performance of ExecuTorch acceleration.
+
+### 3. Accuracy
+
+Please see the [Llama 3.2 model card](https://github.com/meta-llama/llama-models/blob/main/models/llama3_2/MODEL_CARD.md) for accuracy evalations.
+
+### 4. Performance:
+
+Llama 3.2 1B and 3B performance was measured on Android OnePlus 12 device. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on) with prompt length of 64.
+
+|Model  | decode (tokens/s) | prefill (tokens/s) | Memory size (RSS in MiB) |
+|-------|------------------------ |------------------ | ------------------  |
+|1B bf16 | 19.2 | 60.3  | 3,185 |
+|1B SpinQuant | 50.2 | 260.5  | 1,921 |
+|3B bf16 | 7.6  | 21.2 | 7,419 |
+|3B SpinQuant | 19.7 | 89.7 | 3,726 |
+
 
 <table>
   <tr>
     <td>
-      <img src="./llama_via_xnnpack.gif" width="300">
+        <img src="./Android3_2_1B_bf16.gif" width="300">
+        <br>
+        <em> Llama3.2 1B, unquantized, bf16 on Android phone. </em>
+    </td>
+    <td>
+      <img src="./Android3_2_3B_SpinQuant.gif" width="300">
       <br>
       <em>
-      Llama3.1 8B, 4bit quantized on Android phone
+      Llama3.2 3B, 4bit quantized (SpinQuant) on Android phone
       </em>
-    </td>
-    <td><img src="./Android3_2_1B_bf16.gif" width="300">
-    <br>
-    <em> Llama3.2 1B, unquantized, bf16 on Android phone. </em>
     </td>
   </tr>
 </table>
 
-## Quantization:
-We employed 4-bit groupwise per token dynamic quantization of all the linear layers of the model. Dynamic quantization refers to quantizating activations dynamically, such that quantization parameters for activations are calculated, from min/max range, at runtime. Here we quantized activations with 8bits (signed integer). Furthermore, weights are statically quantized. In our case weights were per-channel groupwise quantized with 4bit signed integer. For more information refer to this [page](https://github.com/pytorch/ao).
+## Llama 3/3.1 8B
+Since Llama 3 8B model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized (PTQ) model.
 
-We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness). Please note that LM Eval reports perplexity normalized by word count instead of token count. You may see different perplexity for WikiText from other sources if they implement it differntly. More details could be found [here](https://github.com/EleutherAI/lm-evaluation-harness/issues/2301).
+### 1. Enablement
 
-Below are the results for two different groupsizes, with max_seq_length 2048, and limit 1000.
+For Llama 3 8B and Llama3.1 8B, we have verified so far on iPhone 15 Pro, iPhone 15 Pro Max, Samsung Galaxy S24+ and OnePlus 12 (with 16GB RAM) by quantizing to 4bit.
+
+### 2. Quantization
+
+We employed PTQ 4-bit groupwise per token dynamic quantization of all the linear layers of the model. Dynamic quantization refers to quantizating activations dynamically, such that quantization parameters for activations are calculated, from min/max range, at runtime. Here we quantized activations with 8bits (signed integer). Furthermore, weights are statically quantized. In our case weights were per-channel groupwise quantized with 4bit signed integer. Due to Llama3's vocabulary size, we had to quantize embedding lookup table as well. For these results embedding lookup table was groupwise quantized with 4-bits and group size of 32.
+
+### 3. Accuracy
+
+We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness). Below are the results for two different groupsizes, with max_seq_length 2048, and limit 1000.
 
 |Model | Baseline (FP32) | Groupwise 4-bit (128) | Groupwise 4-bit (256)
 |--------|-----------------| ---------------------- | ---------------
 |Llama 3 8B | 7.9 | 9.4 | 9.7
 
-Note that groupsize less than 128 was not enabled, since such models were still too large. This is because our current efforts have focused on enabling FP32 and support for FP16 is under way. What this implies for model size is that 1) embedding table is in FP32 and 2) quantized weights scales are FP32.
+Please note that LM Eval reports perplexity normalized by word count instead of token count. You may see different perplexity for WikiText from other sources if they implement it differently. More details could be found [here](https://github.com/EleutherAI/lm-evaluation-harness/issues/2301).
 
-### SpinQuant for Llama 3.2 1B/3B models (Optional)
+### 4. Performance
 
-To improve accuracy, we can use [SpinQuant](https://github.com/facebookresearch/SpinQuant/tree/main), a post-training quantization (PTQ) technique that generates new quantized weights. In the standard PTQ process, quantization may lead to a decrease in accuracy when there are outliers. The SpinQuant method takes the original weights and produces optimized quantized weights with minimal outliers, resulting in higher accuracy. This can be achieved without any finetuning of the weights and only requires 100 iterations on a single A100 node.
-
-SpinQuant can generate quantized weights that are [compatible with ExecuTorch](https://github.com/facebookresearch/SpinQuant/tree/main?tab=readme-ov-file#3-export-to-executorch), specifically, it can be integrated with the existing optimized XNNPACK kernels (e.g., group-wise 4bit weight and 8bit dynamic activation). This allows developers to benefit from the higher accuracy of SpinQuant while also taking advantage of the strong performance of ExecuTorch acceleration. We enabled SpinQuant for Llama3.2 1B/3B models on ExecuTorch.
-
-<p align="center">
-      <img src="./Android3_2_3B_SpinQuant.gif" width=300>
-      <br>
-      <em>
-      Running Llama3.2 3B on Android phone.
-      </em>
-      <br>
-      <em>
-      4bit quantization using SpinQuant
-      </em>
-</p>
-
-## Enablement
-
-For Llama 3 8B and Llama3.1 8B, we have verified so far on iPhone 15 Pro, iPhone 15 Pro Max, Samsung Galaxy S24+ and OnePlus 12 (with 16GB RAM).
-
-## Performance
-
-### Llama 3.2 1B and 3B
-Llama 3.2 1B and 3B performance was measured on the OnePlus 12 device. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on) for generating 128 tokens.
-
-|Model  | bf16 | 4bit(*) via SpinQuant
-|--------| ---------------------- | ---------------
-|1B  | 19.4 tokens/second | 53.41 tokens/second |
-|3B | 7.76 tokens/second | 22.98 tokens/second |
-
-(*) With SpinQuant, we currently quantize 4-bit groupwise (with groupsize 32) weight, 8bit dynamic activation of all the linear layers of the model, except embedding and output layers. The embedding and output layers are quantized as 8-bit per-channel weight and 8-bit dynamic activation.
-
-### Llama3 8B and Llama3.1 8B
 Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 12 devices. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on).
-
-Due to Llama3's vocabulary size, we had to quantize embedding lookup table as well. For these results embedding lookup table was groupwise quantized with 4-bits and group size of 32.
 
 |Device  | Groupwise 4-bit (128) | Groupwise 4-bit (256)
 |--------| ---------------------- | ---------------
@@ -104,6 +108,14 @@ Due to Llama3's vocabulary size, we had to quantize embedding lookup table as we
 |Galaxy S24 | 10.91 tokens/second | 11.21 tokens/second |
 |OnePlus 12 | 10.85 tokens/second | 11.02 tokens/second |
 
+<p align="center">
+      <br>
+      <img src="./llama_via_xnnpack.gif" width=300>
+      <br>
+      <em>
+      Llama3.1 8B, 4bit quantized on Android phone
+      </em>
+</p>
 
 # Instructions
 
