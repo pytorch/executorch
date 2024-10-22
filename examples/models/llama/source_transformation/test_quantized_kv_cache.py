@@ -48,8 +48,8 @@ class QuantizedKVCacheTest(unittest.TestCase):
         self.transpose_kv_cache = False
         self.dtype = torch.float32
 
-    def _test_simple_update_fetch(self, is_tranposed=False, is_dynamic_shape=False):
-        self.transpose_kv_cache = is_tranposed
+    def _test_simple_update_fetch(self, is_transposed=False, is_dynamic_shape=False):
+        self.transpose_kv_cache = is_transposed
         self.enable_dynamic_shape = is_dynamic_shape
         input_pos = torch.tensor([0, 1, 2])
         self.seq_len = input_pos.size(0)
@@ -122,7 +122,7 @@ class QuantizedKVCacheTest(unittest.TestCase):
         self._test_simple_update_fetch(is_dynamic_shape=True)
 
     def test_simple_update_fetch_transposed(self):
-        self._test_simple_update_fetch(is_tranposed=True)
+        self._test_simple_update_fetch(is_transposed=True)
 
     def test_simple_update_fetch_transposed_dynamic_shape(self):
-        self._test_simple_update_fetch(is_tranposed=True, is_dynamic_shape=True)
+        self._test_simple_update_fetch(is_transposed=True, is_dynamic_shape=True)
