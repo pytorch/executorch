@@ -166,8 +166,8 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
             super().__init__()
             use_bias = bias is not None
             self.conv = torch.nn.Conv2d(
-                in_channels=weight.shape[0],
-                out_channels=weight.shape[1],
+                in_channels=weight.shape[1],
+                out_channels=weight.shape[0],
                 kernel_size=1,
                 padding=0,
                 bias=use_bias,

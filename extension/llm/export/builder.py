@@ -237,7 +237,7 @@ class LLMEdgeManager:
             with torch.no_grad():
                 while token_list[-1] != tokenizer.eos_id and pos < max_len:
                     logits = module(
-                        torch.full((1, 1), token_list[pos]),
+                        torch.full((1, 1), token_list[pos], dtype=torch.int32),
                         torch.tensor((pos,)),
                     )
                     pos += 1

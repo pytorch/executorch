@@ -245,7 +245,7 @@ the checkpoint format to avoid generating faulty models.
         else:
             return (
                 torch.tensor(
-                    [[1]], dtype=torch.long
+                    [[1]], dtype=torch.int32
                 ),  # tokens, with kv cache our input token length is always just 1 token.
                 torch.tensor(
                     [0], dtype=torch.long

@@ -12,8 +12,9 @@ import math
 from typing import Tuple, Union
 
 import torch
+import torch.nn.functional as F
 
-from executorch.examples.models.llama.llama_transformer import KVCache, SDPA
+from executorch.examples.models.llama.llama_transformer import KVCache, SDPA, FeedForward
 from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
     QuantizedKVCache,
 )
@@ -171,12 +172,14 @@ class SDPAFlex(torch.nn.Module):
         self,
         kv_cache: KVCache,
         dim: int,
+        head_dim: int,
         n_rep: int,
     ):
         super().__init__()
         self.kv_cache = kv_cache
         self.dim = dim
         self.n_rep = n_rep
+        self.scale_factor = math.sqrt(head_dim)
 
     def forward(
         self,
@@ -195,8 +198,7 @@ class SDPAFlex(torch.nn.Module):
         v = repeat_kv(v, self.n_rep)
         attn_mask = mask[input_pos]
 
-        scale_factor = 1 / math.sqrt(q.size(-1))
-        attn_weight = q @ k.transpose(-2, -1) * scale_factor
+        attn_weight = q @ k.transpose(-2, -1) / self.scale_factor
         attn_weight += attn_mask
         attn_weight = torch.softmax(attn_weight, dim=-1)
         y = attn_weight @ v
@@ -223,7 +225,7 @@ def replace_sdpa_with_flex_sdpa(module: torch.nn.Module):
             setattr(
                 module,
                 name,
-                SDPAFlex(child.kv_cache, child.dim, child.n_rep),
+                SDPAFlex(child.kv_cache, child.dim, child.head_dim, child.n_rep),
             )
         else:
             replace_sdpa_with_flex_sdpa(child)
@@ -427,4 +429,51 @@ def replace_causal_mask(module: torch.nn.Module):
             module.register_buffer(buffer_name, mask)
     for _, child in module.named_children():
         replace_causal_mask(child)
+    return module
+
+class FeedForwardConv2D(torch.nn.Module):
+    def __init__(self, w1: torch.nn.Linear, w2: torch.nn.Linear, w3: torch.nn.Linear):
+        super().__init__()
+        self.w1_conv = torch.nn.Conv2d(
+            in_channels=w1.weight.shape[1],
+            out_channels=w1.weight.shape[0],
+            kernel_size=1,
+            padding=0,
+            bias=False,
+        )
+        self.w2_conv = torch.nn.Conv2d(
+            in_channels=w2.weight.shape[1],
+            out_channels=w2.weight.shape[0],
+            kernel_size=1,
+            padding=0,
+            bias=False,
+        )
+        self.w3_conv = torch.nn.Conv2d(
+            in_channels=w3.weight.shape[1],
+            out_channels=w3.weight.shape[0],
+            kernel_size=1,
+            padding=0,
+            bias=False,
+        )
+        
+        self.w1_conv.weight = torch.nn.Parameter(w1.weight.reshape(*w1.weight.shape, 1, 1))
+        self.w2_conv.weight = torch.nn.Parameter(w2.weight.reshape(*w2.weight.shape, 1, 1))
+        self.w3_conv.weight = torch.nn.Parameter(w3.weight.reshape(*w3.weight.shape, 1, 1))
+
+
+    def forward(self, x):
+        rank = x.dim()
+        x = x.unsqueeze(-1) if rank == 3 else x.reshape(1, *x.shape, 1)
+        x = torch.transpose(x, 1, 2)
+        res = self.w2_conv(F.silu(self.w1_conv(x)) * self.w3_conv(x))
+        res = torch.transpose(res, 1, 2)
+        res = res.squeeze(-1) if rank == 3 else res.reshape(*res.shape[1:3])
+        return res
+
+def replace_feedforward_to_conv2d(module: torch.nn.Module):
+    for name, child in module.named_children():
+        if isinstance(child, FeedForward):
+            setattr(module, name, FeedForwardConv2D(child.w1, child.w2, child.w3))
+        else:
+            replace_feedforward_to_conv2d(child)
     return module

@@ -66,6 +66,7 @@ from .source_transformation.sdpa import (
     replace_causal_mask,
     replace_kv_cache_with_coreml_kv_cache,
     replace_kv_cache_with_simple_kv_cache,
+    replace_feedforward_to_conv2d,
     replace_sdpa_with_coreml_sdpa,
     replace_sdpa_with_custom_op,
     replace_sdpa_with_flex_sdpa,
@@ -961,6 +962,7 @@ def _get_source_transforms(  # noqa
                 transforms.append(replace_attention_to_attention_sha)
                 transforms.append(replace_causal_mask)
                 transforms.append(replace_rms_norm_with_native_rms_norm)
+                transforms.append(replace_feedforward_to_conv2d)
                 transforms.append(convert_linear_to_conv2d)
             else:
                 transforms.append(replace_kv_cache_with_simple_kv_cache)
@@ -972,6 +974,7 @@ def _get_source_transforms(  # noqa
                     transforms.append(
                         get_model_with_r1_r2(args.optimized_rotation_path)
                     )
+                transforms.append(replace_feedforward_to_conv2d)
                 transforms.append(convert_linear_to_conv2d)
 
         elif args.mps:
