@@ -163,6 +163,8 @@ This is running the shell script which configures the required core ExecuTorch, 
 
 **Note**: If you are building the Android app mentioned in the next section on a separate machine (i.e. MacOS but building and exporting on Linux), make sure you copy the aar file generated from setup script to “examples/demo-apps/android/LlamaDemo/app/libs” before building the Android app.
 
+**Note**: By default, this generates native libraries with "Release" build. If you want to get debugging information, use "Debug" build by `export EXECUTORCH_CMAKE_BUILD_TYPE=Debug` before running `setup.sh`.
+
 ### Alternative: Use prebuilt AAR library
 1. Open a terminal window and navigate to the root directory of the executorch.
 2. Run the following command to download the prebuilt library
