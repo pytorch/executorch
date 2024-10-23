@@ -141,6 +141,8 @@ bool check_close(at::Tensor& t1, at::Tensor& t2, float rtol=1e-5, float atol=1e-
     std::cout << "vulkan: " << std::endl;
     print(t2, 150);
     std::cout << std::endl;
+    print(at::abs(t2 - t1), 150);
+    std::cout << std::endl;
   }
   return is_close;
 }

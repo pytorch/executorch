@@ -89,6 +89,10 @@ SUPPORTS_DYNAMIC_SHAPE = [
     # Reduction
     exir_ops.edge.aten._log_softmax.default,
     exir_ops.edge.aten._softmax.default,
+    exir_ops.edge.aten.mean.dim,
+    exir_ops.edge.aten.sum.dim_IntList,
+    exir_ops.edge.aten.amax.default,
+    exir_ops.edge.aten.amin.default,
     # 2D Pooling
     exir_ops.edge.aten.avg_pool2d.default,
     exir_ops.edge.aten.max_pool2d_with_indices.default,
