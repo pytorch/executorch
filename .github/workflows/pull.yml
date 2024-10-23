@@ -347,6 +347,9 @@ jobs:
           exit 1
         fi
 
+  android:
+    uses: ./.github/workflows/_android.yml
+
   unittest:
     uses: ./.github/workflows/_unittest.yml
     with:
