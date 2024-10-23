@@ -148,8 +148,8 @@ class TestLayerNorm(unittest.TestCase):
             self.LayerNorm(*model_params), (test_data,)
         )
 
-    # Skip last test since it requires transpose.
-    @parameterized.expand(test_data_suite[:-1])
+    # Skip tests that require transposes.
+    @parameterized.expand(test_data_suite[:-2])
     def test_layer_norm_u55_BI(
         self,
         test_name: str,
