@@ -25,8 +25,11 @@ void resize_reduce_node(
   vTensorPtr out = graph->get_tensor(args[0].refs[0]);
   vTensorPtr in = graph->get_tensor(args[1].refs[0]);
 
-  std::vector<int64_t> in_sizes = in->sizes();
-  // out->virtual_resize(in_sizes);
+  int dim = extra_args[0];
+
+  std::vector<int64_t> new_sizes = in->sizes();
+  new_sizes[normalize(dim, new_sizes.size())] = 1;
+  out->virtual_resize(new_sizes);
 }
 
 void add_reduce_node(
@@ -48,12 +51,8 @@ void add_reduce_node(
   // Check that the concat dim is not the reduction dim, if the tensor has a
   // batch dim greater than 1.
   if (graph.dim_of(in) == 4 && graph.size_at<int>(0, in) > 1) {
-    VK_CHECK_COND(
-        graph.concat_dim_of(in) != reduce_dim,
-        "Reduce shader currently does not support concat dim == reduce dim");
-    VK_CHECK_COND(
-        graph.concat_dim_of(out) != reduce_dim,
-        "Reduce shader currently does not support concat dim == reduce dim");
+    VK_CHECK_COND(graph.concat_dim_of(in) != reduce_dim);
+    VK_CHECK_COND(graph.concat_dim_of(out) != reduce_dim);
   }
 
   vkapi::ShaderInfo shader_descriptor;
@@ -97,7 +96,8 @@ void add_reduce_node(
       // Specialization Constants
       {graph.packed_dim_of(out), reduce_dim, group_dim},
       // Resizing Logic
-      resize_reduce_node));
+      resize_reduce_node,
+      {dim}));
 }
 
 #define DEFINE_REDUCE_FN(op_name, out_arg_idx)                           \

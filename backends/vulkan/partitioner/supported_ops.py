@@ -105,9 +105,6 @@ SUPPORTS_DYNAMIC_SHAPE = [
 ]
 
 NO_DYNAMIC_SHAPE = [
-    # Reduction
-    exir_ops.edge.aten.mean.dim,
-    exir_ops.edge.aten.sum.dim_IntList,
     # Normalization
     exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
     exir_ops.edge.aten.native_layer_norm.default,

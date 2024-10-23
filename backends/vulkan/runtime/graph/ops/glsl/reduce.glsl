@@ -109,7 +109,7 @@ void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
     // Iterate over the partial outputs to obtain the overall output
     int group_i = tid.y * NWORKERS;
     accum = shared_vecs[group_i++];
-    for (int i = 1; i < NWORKERS; ++i, group_i++) {
+    for (int i = 1; i < NWORKERS; i++, group_i++) {
       accum = UPDATE_ACCUM(accum, shared_vecs[group_i]);
     }
 
@@ -123,7 +123,7 @@ void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
 
     // Explicitly set padding elements to 0
     if (is_last_texel && nspill > 0) {
-      [[unroll]] for (int i = nspill; i < 4; ++i) {
+      [[unroll]] for (int i = nspill; i < 4; i++) {
         accum[i] = 0;
       }
     }
@@ -165,7 +165,7 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   // padding elements are ignored
   if (scan_pos[reduce_dim] == tin_limits[reduce_dim] - 1 && nspill > 0) {
     const vec4 intex = load_texel(tin, scan_pos);
-    for (int i = 0; i < nspill; ++i) {
+    for (int i = 0; i < nspill; i++) {
       accum.x = UPDATE_ACCUM(accum.x, intex[i]);
     }
   }
@@ -179,13 +179,13 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
     // Iterate over the partial maximums to obtain the overall maximum
     int group_i = tid.y * NWORKERS;
     accum = shared_vecs[group_i++];
-    for (int i = 1; i < NWORKERS; ++i, group_i++) {
+    for (int i = 1; i < NWORKERS; i++, group_i++) {
       accum = UPDATE_ACCUM(accum, shared_vecs[group_i]);
     }
     // Each element of the texel is itself a partial maximum; iterate over the
     // texel to find the actual maximum
     float accum_final = accum.x;
-    [[unroll]] for (int i = 1; i < 4; ++i) {
+    [[unroll]] for (int i = 1; i < 4; i++) {
       accum_final = UPDATE_ACCUM(accum[i], accum_final);
     }
 
