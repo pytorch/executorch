@@ -155,7 +155,8 @@ def get_weight_int8pack_mm_inputs():
     test_suite.dtypes = ["at::kFloat", "at::kHalf"]
     test_suite.layouts = ["utils::kWidthPacked"]
     test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
-    test_suite.prepacked_args = ["mat2"]
+    test_suite.prepacked_args = ["mat2", "scales"]
+    test_suite.requires_prepack = True
 
     test_suite.arg_dtype["mat2"] = "at::kChar"
     test_suite.arg_data_range["mat2"] = (0, 100)
@@ -1084,6 +1085,8 @@ def get_native_batch_norm_inputs():
     ]
 
     test_suite = VkTestSuite(test_cases)
+    test_suite.requires_prepack = True
+    test_suite.prepacked_args = ["weight", "bias", "mean", "var"]
 
     return test_suite
 

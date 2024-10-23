@@ -51,10 +51,11 @@ def next_token(logits: torch.Tensor, temperature: float, top_p: float) -> int:
 
 
 class LlamaRunner(ABC):
-    def __init__(self, tokenizer_path: str, model_args: ModelArgs):
+    def __init__(self, tokenizer_path: str, model_args: ModelArgs, device: str = "cpu"):
         self.params = model_args
         self.tokenizer = get_tokenizer(tokenizer_path)
         assert model_args.vocab_size == self.tokenizer.n_words
+        self.device = device
 
     @abstractmethod
     def forward(
@@ -73,9 +74,9 @@ class LlamaRunner(ABC):
     ) -> List[int]:
         # prefill
         logits = self.forward(
-            tokens=torch.tensor([prompt_tokens], dtype=torch.long),
+            tokens=torch.tensor([prompt_tokens], dtype=torch.long, device=self.device),
             input_pos=(
-                torch.tensor([0], dtype=torch.long)
+                torch.tensor([0], dtype=torch.long, device=self.device)
                 if self.params.use_kv_cache
                 else None
             ),
@@ -87,14 +88,21 @@ class LlamaRunner(ABC):
         while len(tokens) < self.params.max_seq_len:
             if self.params.use_kv_cache:
                 logits = self.forward(
-                    tokens=torch.tensor([[current_token]], dtype=torch.long),
-                    input_pos=torch.tensor([len(tokens) - 1], dtype=torch.long),
+                    tokens=torch.tensor(
+                        [[current_token]], dtype=torch.long, device=self.device
+                    ),
+                    input_pos=torch.tensor(
+                        [len(tokens) - 1], dtype=torch.long, device=self.device
+                    ),
                 )
             else:
-                logits = self.forward(tokens=torch.tensor([tokens], dtype=torch.long))
+                logits = self.forward(
+                    tokens=torch.tensor([tokens], dtype=torch.long, device=self.device),
+                )
             current_token = next_token(logits, temperature, top_p)
             if current_token == self.tokenizer.eos_id or (
-                hasattr(self, "stop_tokens") and current_token in self.stop_tokens
+                hasattr(self.tokenizer, "stop_tokens")
+                and current_token in self.tokenizer.stop_tokens
             ):
                 break
             tokens.append(current_token)

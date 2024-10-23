@@ -687,10 +687,6 @@ def get_ext_modules() -> List[Extension]:
     return ext_modules
 
 
-# Override extension suffix to be ".so", skipping package info such as
-# "cpython-311-darwin"
-os.environ["SETUPTOOLS_EXT_SUFFIX"] = ".so"
-
 setup(
     version=Version.string(),
     # TODO(dbort): Could use py_modules to restrict the set of modules we
