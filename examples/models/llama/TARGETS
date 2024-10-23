@@ -216,3 +216,30 @@ runtime.python_test(
         "//executorch/examples/models/llama:llama_transformer",
     ],
 )
+
+runtime.python_library(
+    name = "test_8da4w_library",
+    srcs = [
+        "test_8da4w.py"
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.llama",
+    visibility = [
+        "//bento/...",
+        "//bento_kernels/...",
+        "//executorch/examples/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//pytorch/ao:torchao",
+    ]
+)
+
+runtime.python_binary(
+    name = "test_8da4w",
+    main_function = "executorch.examples.models.llama.test_8da4w.main",
+    deps = [
+        ":test_8da4w_library",
+        "//caffe2:torch",
+    ]
+)
