@@ -10,8 +10,6 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <xa_nnlib_kernels_api.h>
 
-#include <executorch/runtime/platform/log.h>
-
 namespace cadence {
 namespace impl {
 namespace HiFi {
@@ -34,9 +32,6 @@ void quantize_per_tensor_out(
     Tensor& out) {
   const float* input_data = input.const_data_ptr<float>();
   const size_t numel = out.numel();
-  ET_LOG(
-        Info,
-        "HERE!!");
   if (out.scalar_type() == ScalarType::Byte) {
     uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
     cadence::impl::HiFi::kernels::quantize<uint8_t>(
