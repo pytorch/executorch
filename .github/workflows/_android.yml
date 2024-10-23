@@ -1,22 +1,7 @@
 name: Android
 
 on:
-  push:
-    branches:
-      - main
-      - release/*
-    tags:
-      - ciflow/android/*
-  pull_request:
-    paths:
-      - .ci/docker/**
-      - .github/workflows/android.yml
-      - build/*android*.sh
-      - install_requirements.sh
-      - examples/demo-apps/android/**
-      - extension/android/**
-      - extension/benchmark/android/**
-      - extension/module/**
+  workflow_call:
   workflow_dispatch:
 
 concurrency:
