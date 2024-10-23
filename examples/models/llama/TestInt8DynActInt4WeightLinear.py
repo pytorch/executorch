@@ -4,13 +4,13 @@ from torchao.quantization.GPTQ import _check_linear_int4_k, Int8DynActInt4Weight
 from torch import nn
 class Attention(nn.Module):
 
-    def __init__(self):
+    def __init__(self, device):
         super().__init__()
         self.wq = Int8DynActInt4WeightLinear(
             in_features=2048,
             out_features=2048,
             bias=False,
-            device="cuda" if torch.cuda.is_available() else "cpu",
+            device=device,
             groupsize=32,
             precision=torch.float32,
             scales_precision=torch.float32
@@ -21,13 +21,15 @@ class Attention(nn.Module):
 
 
 def main() -> None:
-    input = torch.load("file/to/input/tensor")
-    checkpoint = torch.load("/Users/lunwenh/models/1B_spin_new_format/consolidated.00.pth", map_location="cpu",
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    input = torch.load("file/to/input/tensor", map_location=device)
+    checkpoint = torch.load("/Users/lunwenh/models/1B_spin_new_format/consolidated.00.pth", map_location=device,
                             mmap=True)
-    model = Attention()
-    model.load_state_dict(checkpoint, strict=False, assign=True)
+    for i in range(5):
+        model = Attention(device)
+        model.load_state_dict(checkpoint, strict=False, assign=True)
 
-    print(model.forward(input))
+        print(model.forward(input))
 
 if __name__ == "__main__":
     main()
