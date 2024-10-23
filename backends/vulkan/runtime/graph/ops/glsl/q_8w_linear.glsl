@@ -102,21 +102,19 @@ VEC4_T q_8w_linear(const ivec3 out_pos, const int K) {
 
   for (int i = 0; i < K; i += 4) {
     const VEC4_T mat1_tex = load_texel(t_mat1, mat1_pos);
-
     const VEC4_T sums = VEC4_T(
-        dot(mat1_tex, load_texel(t_qmat2, qmat2_pos) * scales.x),
-        dot(mat1_tex,
-            load_texel(t_qmat2, qmat2_pos + u16vec3(0, 1, 0)) * scales.y),
-        dot(mat1_tex,
-            load_texel(t_qmat2, qmat2_pos + u16vec3(0, 2, 0)) * scales.z),
-        dot(mat1_tex,
-            load_texel(t_qmat2, qmat2_pos + u16vec3(0, 3, 0)) * scales.w));
+        dot(mat1_tex, load_texel(t_qmat2, qmat2_pos)),
+        dot(mat1_tex, load_texel(t_qmat2, qmat2_pos + u16vec3(0, 1, 0))),
+        dot(mat1_tex, load_texel(t_qmat2, qmat2_pos + u16vec3(0, 2, 0))),
+        dot(mat1_tex, load_texel(t_qmat2, qmat2_pos + u16vec3(0, 3, 0))));
 
     outtex += sums;
 
     mat1_pos.x++;
     qmat2_pos.x++;
   }
+
+  outtex *= scales;
 
   return outtex;
 }
