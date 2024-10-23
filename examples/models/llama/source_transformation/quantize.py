@@ -94,40 +94,42 @@ def quantize(  # noqa C901
         embedding_pattern = r"emb.(\d+),(\d+)"
         linear_pattern = r"lin8da.(\d+),(\d+)"
 
-        linear_matches = re.findall(linear_pattern, qmode)
-        if linear_matches:
+        matches = re.findall(linear_pattern, qmode)
+        if matches:
             assert (
-                len(linear_matches) == 1
-            ), f"Expected 1 match but got {len(linear_matches)}"
-            bitwidth = int(linear_matches[0][0])
-            groupsize = int(linear_matches[0][1])
+                len(matches) == 1
+            ), f"Expected 1 match for linear_pattern but got {len(matches)}"
+            bitwidth = int(matches[0][0])
+            groupsize = int(matches[0][1])
             from torchao.experimental.quant_api import (
                 Int8DynActIntxWeightLinearQuantizer,
             )
 
-            model = Int8DynActIntxWeightLinearQuantizer(
-                device="cpu",
-                precision=torch_dtype,
-                groupsize=groupsize,
-                bitwidth=bitwidth,
-                has_weight_zeros=False,
-            ).quantize(model)
+            with torch.no_grad():
+                model = Int8DynActIntxWeightLinearQuantizer(
+                    device="cpu",
+                    precision=torch_dtype,
+                    groupsize=groupsize,
+                    bitwidth=bitwidth,
+                    has_weight_zeros=False,
+                ).quantize(model)
 
-        embedding_matches = re.findall(embedding_pattern, qmode)
-        if embedding_matches:
+        matches = re.findall(embedding_pattern, qmode)
+        if matches:
             assert (
-                len(embedding_matches) == 1
-            ), f"Expected 1 match but got {len(embedding_matches)}"
-            bitwidth = int(embedding_matches[0][0])
-            groupsize = int(embedding_matches[0][1])
+                len(matches) == 1
+            ), f"Expected 1 match for embedding_pattern but got {len(matches)}"
+            bitwidth = int(matches[0][0])
+            groupsize = int(matches[0][1])
             from torchao.experimental.quant_api import IntxWeightEmbeddingQuantizer
 
-            model = IntxWeightEmbeddingQuantizer(
-                device="cpu",
-                precision=torch_dtype,
-                bitwidth=bitwidth,
-                groupsize=groupsize,
-            ).quantize(model)
+            with torch.no_grad():
+                model = IntxWeightEmbeddingQuantizer(
+                    device="cpu",
+                    precision=torch_dtype,
+                    bitwidth=bitwidth,
+                    groupsize=groupsize,
+                ).quantize(model)
 
         if verbose:
             print("quantized model:", model)
