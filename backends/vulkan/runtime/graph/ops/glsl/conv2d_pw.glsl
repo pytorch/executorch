@@ -77,15 +77,16 @@ void main() {
     sum[i] = sum[0];
   }
 
+  int z4 = 0;
   // Since the kernel is 1x1, we only have to loop over the depth dimension.
-  for (int z = 0, z4 = 0; z < in_group_size; z += 4, ++z4) {
+  for (uint16_t z = uint16_t(0); z < uint16_t(in_group_size); z += uint16_t(4), ++z4) {
     // During prepacking, the weight tensor has been permuted so that the
     // channel (IC) dim is along the x-axis, and the batch (OC) dim is along
     // the z-axis.
-    const vec4 ktex_0 = texelFetch(t_kernel, u16vec2(z + 0, gpos.z), 0);
-    const vec4 ktex_1 = texelFetch(t_kernel, u16vec2(z + 1, gpos.z), 0);
-    const vec4 ktex_2 = texelFetch(t_kernel, u16vec2(z + 2, gpos.z), 0);
-    const vec4 ktex_3 = texelFetch(t_kernel, u16vec2(z + 3, gpos.z), 0);
+    const vec4 ktex_0 = texelFetchOffset(t_kernel, u16vec2(z, gpos.z), 0, u16vec2(0, 0));
+    const vec4 ktex_1 = texelFetchOffset(t_kernel, u16vec2(z, gpos.z), 0, u16vec2(1, 0));
+    const vec4 ktex_2 = texelFetchOffset(t_kernel, u16vec2(z, gpos.z), 0, u16vec2(2, 0));
+    const vec4 ktex_3 = texelFetchOffset(t_kernel, u16vec2(z, gpos.z), 0, u16vec2(3, 0));
 
 
 #pragma unroll
