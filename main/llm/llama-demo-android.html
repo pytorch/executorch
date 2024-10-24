@@ -488,6 +488,7 @@
               
   <div class="section" id="executorch-llama-android-demo-app">
 <h1>ExecuTorch Llama Android Demo App<a class="headerlink" href="#executorch-llama-android-demo-app" title="Permalink to this heading">¶</a></h1>
+<p><strong>[UPDATE - 10/24]</strong> We have added support for running quantized Llama 3.2 1B/3B models in demo apps on the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/xnnpack_README.md">XNNPACK backend</a>. We currently support inference with SpinQuant and QAT+LoRA quantization methods.</p>
 <p>We’re excited to share that the newly revamped Android demo app is live and includes many new updates to provide a more intuitive and smoother user experience with a chat use case! The primary goal of this app is to showcase how easily ExecuTorch can be integrated into an Android demo app and how to exercise the many features ExecuTorch and Llama models have to offer.</p>
 <p>This app serves as a valuable resource to inspire your creativity and provide foundational code that you can customize and adapt for your particular use case.</p>
 <p>Please dive in and start exploring our demo app today! We look forward to any feedback and are excited to see your innovative ideas.</p>
@@ -505,7 +506,8 @@
 <h2>Supporting Models<a class="headerlink" href="#supporting-models" title="Permalink to this heading">¶</a></h2>
 <p>As a whole, the models that this app supports are (varies by delegate):</p>
 <ul class="simple">
-<li><p>Llama 3.2 1B/3B</p></li>
+<li><p>Llama 3.2 Quantized 1B/3B</p></li>
+<li><p>Llama 3.2 1B/3B in BF16</p></li>
 <li><p>Llama Guard 3 1B</p></li>
 <li><p>Llama 3.1 8B</p></li>
 <li><p>Llama 3 8B</p></li>
@@ -534,11 +536,6 @@
 </tr>
 </tbody>
 </table>
-<p><strong>WARNING</strong> NDK r27 will cause issues like:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">java</span><span class="o">.</span><span class="n">lang</span><span class="o">.</span><span class="n">UnsatisfiedLinkError</span><span class="p">:</span> <span class="n">dlopen</span> <span class="n">failed</span><span class="p">:</span> <span class="n">cannot</span> <span class="n">locate</span> <span class="n">symbol</span> <span class="s2">&quot;_ZTVNSt6__ndk114basic_ifstreamIcNS_11char_traitsIcEEEE&quot;</span> <span class="n">referenced</span> <span class="n">by</span> <span class="s2">&quot;/data/app/~~F5IwquaXUZPdLpSEYA-JGA==/com.example.executorchllamademo-FSyx80gEhsQCsxz7hvS2Ew==/lib/arm64/libexecutorch.so&quot;</span><span class="o">...</span>
-</pre></div>
-</div>
-<p>Please use NDK version 26.3.11579264.</p>
 </div>
 <div class="section" id="how-to-use-the-app">
 <h2>How to Use the App<a class="headerlink" href="#how-to-use-the-app" title="Permalink to this heading">¶</a></h2>

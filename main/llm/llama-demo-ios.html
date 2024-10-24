@@ -490,6 +490,7 @@
               
   <div class="section" id="executorch-llama-ios-demo-app">
 <h1>ExecuTorch Llama iOS Demo App<a class="headerlink" href="#executorch-llama-ios-demo-app" title="Permalink to this heading">¶</a></h1>
+<p><strong>[UPDATE - 10/24]</strong> We have added support for running quantized Llama 3.2 1B/3B models in demo apps on the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/apple_ios/LLaMA/docs/delegates/xnnpack_README.md">XNNPACK backend</a>. We currently support inference with SpinQuant and QAT+LoRA quantization methods.</p>
 <p>We’re excited to share that the newly revamped iOS demo app is live and includes many new updates to provide a more intuitive and smoother user experience with a chat use case! The primary goal of this app is to showcase how easily ExecuTorch can be integrated into an iOS demo app and how to exercise the many features ExecuTorch and Llama models have to offer.</p>
 <p>This app serves as a valuable resource to inspire your creativity and provide foundational code that you can customize and adapt for your particular use case.</p>
 <p>Please dive in and start exploring our demo app today! We look forward to any feedback and are excited to see your innovative ideas.</p>
@@ -507,7 +508,8 @@
 <h2>Supported Models<a class="headerlink" href="#supported-models" title="Permalink to this heading">¶</a></h2>
 <p>As a whole, the models that this app supports are (varies by delegate):</p>
 <ul class="simple">
-<li><p>Llama 3.2 1B/3B</p></li>
+<li><p>Llama 3.2 Quantized 1B/3B</p></li>
+<li><p>Llama 3.2 1B/3B in BF16</p></li>
 <li><p>Llama 3.1 8B</p></li>
 <li><p>Llama 3 8B</p></li>
 <li><p>Llama 2 7B</p></li>
