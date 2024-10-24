@@ -6,7 +6,7 @@
 
 import unittest
 
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import torch
 from executorch.backends.arm.test import common
@@ -18,13 +18,13 @@ from parameterized import parameterized
 
 class Conv2d(torch.nn.Module):
     """
-    Creates one or many chained convolutions. For multiple convolutions, the
+    Creates one or many chained 2D-convolutions. For multiple convolutions, the
     respective parameteres are provided as lists.
     """
 
     def __init__(
         self,
-        inputs: torch.Tensor = None,
+        inputs: Optional[torch.Tensor] = None,
         height=8,
         width=8,
         nbr_conv=1,  # Number of chained convs

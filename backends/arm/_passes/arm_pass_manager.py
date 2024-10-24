@@ -12,6 +12,7 @@ from executorch.backends.arm._passes.annotate_channels_last_dim_order_pass impor
     AnnotateChannelsLastDimOrder,
 )
 from executorch.backends.arm._passes.cast_int64_pass import CastInt64ToInt32Pass
+from executorch.backends.arm._passes.conv1d_unsqueeze_pass import Conv1dUnsqueezePass
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
 )
@@ -66,6 +67,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeDivPass())
         self.add_pass(InsertSqueezeAfterSumPass())
         self.add_pass(ConvertSplitToSlicePass())
+        self.add_pass(Conv1dUnsqueezePass(exported_program))
         for spec in compile_spec:
             if spec.key == "permute_memory_format":
                 memory_format = spec.value.decode()
