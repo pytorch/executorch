@@ -236,3 +236,63 @@ def define_common_targets(is_fbcode = False):
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
     )
+
+    ##
+    ## AOT targets
+    ##
+
+    runtime.python_library(
+        name = "custom_ops_lib",
+        srcs = [
+            "custom_ops_lib.py"
+        ],
+        visibility = [
+            "//executorch/...",
+            "//executorch/vulkan/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        deps = [
+            "//caffe2:torch",
+        ]
+    )
+
+    runtime.python_library(
+        name = "op_registry",
+        srcs = [
+            "op_registry.py",
+        ],
+        visibility = [
+            "//executorch/...",
+            "//executorch/vulkan/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        deps = [
+            ":custom_ops_lib",
+            "//caffe2:torch",
+            "//executorch/exir/dialects:lib",
+            "//executorch/backends/vulkan/serialization:lib",
+        ]
+    )
+
+    runtime.python_library(
+        name = "vulkan_preprocess",
+        srcs = [
+            "vulkan_preprocess.py",
+        ],
+        visibility = [
+            "//executorch/...",
+            "//executorch/vulkan/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        deps = [
+            "//executorch/backends/transforms:addmm_mm_to_linear",
+            "//executorch/backends/transforms:fuse_batch_norm_with_conv",
+            "//executorch/backends/transforms:fuse_conv_with_clamp",
+            "//executorch/backends/transforms:fuse_dequant_linear",
+            "//executorch/backends/transforms:fuse_view_copy",
+            "//executorch/backends/transforms:remove_clone_ops",
+            "//executorch/backends/vulkan/_passes:vulkan_passes",
+            "//executorch/backends/vulkan/serialization:lib",
+            "//executorch/exir/backend:backend_details",
+        ],
+    )
