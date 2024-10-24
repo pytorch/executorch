@@ -43,7 +43,7 @@ public class BenchmarkActivity extends Activity {
             .findFirst()
             .get();
 
-    int numIter = intent.getIntExtra("num_iter", 50);
+    int numIter = intent.getIntExtra("num_iter", 2000);
 
     // TODO: Format the string with a parsable format
     Stats stats = new Stats();
