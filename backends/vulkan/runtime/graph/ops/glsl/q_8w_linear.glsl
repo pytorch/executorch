@@ -89,32 +89,32 @@ void main() {
 
 #else // USING_TEXTURE
 
+#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+
 VEC4_T q_8w_linear(const ivec3 out_pos, const int K) {
-  ivec3 mat1_pos = ivec3(0, out_pos.yz);
-  ivec3 qmat2_pos = ivec3(0, out_pos.x * 4, 0);
+  u16vec3 mat1_pos = u16vec3(0, out_pos.yz);
+  u16vec3 qmat2_pos = u16vec3(0, out_pos.x * 4, 0);
 
   VEC4_T outtex = VEC4_T(0);
 
-  const ivec3 scales_pos = ivec3(out_pos.x, 0, 0);
+  const u16vec3 scales_pos = u16vec3(out_pos.x, 0, 0);
   const VEC4_T scales = load_texel(t_scales, scales_pos);
 
   for (int i = 0; i < K; i += 4) {
     const VEC4_T mat1_tex = load_texel(t_mat1, mat1_pos);
-
     const VEC4_T sums = VEC4_T(
-        dot(mat1_tex, load_texel(t_qmat2, qmat2_pos) * scales.x),
-        dot(mat1_tex,
-            load_texel(t_qmat2, qmat2_pos + ivec3(0, 1, 0)) * scales.y),
-        dot(mat1_tex,
-            load_texel(t_qmat2, qmat2_pos + ivec3(0, 2, 0)) * scales.z),
-        dot(mat1_tex,
-            load_texel(t_qmat2, qmat2_pos + ivec3(0, 3, 0)) * scales.w));
+        dot(mat1_tex, load_texel(t_qmat2, qmat2_pos)),
+        dot(mat1_tex, load_texel(t_qmat2, qmat2_pos + u16vec3(0, 1, 0))),
+        dot(mat1_tex, load_texel(t_qmat2, qmat2_pos + u16vec3(0, 2, 0))),
+        dot(mat1_tex, load_texel(t_qmat2, qmat2_pos + u16vec3(0, 3, 0))));
 
     outtex += sums;
 
     mat1_pos.x++;
     qmat2_pos.x++;
   }
+
+  outtex *= scales;
 
   return outtex;
 }

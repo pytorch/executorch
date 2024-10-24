@@ -76,6 +76,7 @@ SUPPORTS_DYNAMIC_SHAPE = [
     exir_ops.edge.aten.sigmoid.default,
     exir_ops.edge.aten.sin.default,
     exir_ops.edge.aten.sqrt.default,
+    exir_ops.edge.aten.rsqrt.default,
     exir_ops.edge.aten.tanh.default,
     exir_ops.edge.aten._to_copy.default,
     # Matrix Multiplication
@@ -88,20 +89,22 @@ SUPPORTS_DYNAMIC_SHAPE = [
     # Reduction
     exir_ops.edge.aten._log_softmax.default,
     exir_ops.edge.aten._softmax.default,
+    exir_ops.edge.aten.mean.dim,
+    exir_ops.edge.aten.sum.dim_IntList,
+    exir_ops.edge.aten.amax.default,
+    exir_ops.edge.aten.amin.default,
     # 2D Pooling
     exir_ops.edge.aten.avg_pool2d.default,
     exir_ops.edge.aten.max_pool2d_with_indices.default,
     # Convolution
     exir_ops.edge.aten.convolution.default,
     exir_ops.edge.et_vk.conv_with_clamp.default,
-    # Custom ops
+    # Llama ops
     "llama::sdpa_with_kv_cache",
+    exir_ops.edge.et_vk.apply_rotary_emb.default,
 ]
 
 NO_DYNAMIC_SHAPE = [
-    # Reduction
-    exir_ops.edge.aten.mean.dim,
-    exir_ops.edge.aten.sum.dim_IntList,
     # Normalization
     exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
     exir_ops.edge.aten.native_layer_norm.default,

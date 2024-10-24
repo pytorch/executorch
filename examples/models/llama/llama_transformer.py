@@ -15,10 +15,10 @@ import torch
 import torch.nn.functional as F
 
 from executorch.examples.models.llama.rope import (
-    apply_rotary_emb,
     hf_apply_rotary_emb,
     hf_precompute_freqs_cis,
     precompute_freqs_cis,
+    RotaryEmbedding,
 )
 
 from torch import nn
@@ -103,6 +103,8 @@ class ModelArgs:
     generate_full_logits: bool = False
     enable_dynamic_shape: bool = False  # export model with dynamic shape support
     # A dictionary mapping from pruned token-id to original token-id
+    input_prune_map: Optional[Dict[int, int]] = None
+    # A dictionary mapping from pruned token-id to original token-id
     output_prune_map: Optional[Dict[int, int]] = None
     use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
     rope_theta: Optional[float] = (
@@ -154,7 +156,7 @@ class KVCache(nn.Module):
     ):
         super().__init__()
         self.max_seq_length = max_seq_length
-        self.is_tranposed = transpose_cache
+        self.is_transposed = transpose_cache
         if transpose_cache:
             cache_shape = (max_batch_size, n_heads, max_seq_length, head_dim)
         else:
@@ -311,7 +313,7 @@ class Attention(nn.Module):
         if args.use_hf_rope:
             self.apply_rotary_emb = hf_apply_rotary_emb
         else:
-            self.apply_rotary_emb = apply_rotary_emb
+            self.apply_rotary_emb = RotaryEmbedding()
 
     def forward(
         self,
@@ -461,6 +463,7 @@ class Transformer(nn.Module):
         self.use_kv_cache = params.use_kv_cache
         self.generate_full_logits = params.generate_full_logits
         self.max_seq_len = params.max_seq_len
+        self.input_prune_map = params.input_prune_map
         self.output_prune_map = params.output_prune_map
         if params.use_hf_rope:
             self.precompute_freqs_cis = hf_precompute_freqs_cis

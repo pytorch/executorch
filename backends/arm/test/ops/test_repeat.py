@@ -107,14 +107,12 @@ class TestSimpleRepeat(unittest.TestCase):
         self._test_repeat_tosa_BI_pipeline(self.Repeat(), (test_input, multiples))
 
     @parameterized.expand(Repeat.test_parameters)
-    @unittest.expectedFailure  # TODO: MLBEDSW-9386
     def test_repeat_u55_BI(self, test_input, multiples):
         self._test_repeat_ethosu_pipeline(
             common.get_u55_compile_spec(), self.Repeat(), (test_input, multiples)
         )
 
     @parameterized.expand(Repeat.test_parameters)
-    @unittest.expectedFailure  # TODO: MLBEDSW-9386
     def test_repeat_u85_BI(self, test_input, multiples):
         self._test_repeat_ethosu_pipeline(
             common.get_u85_compile_spec(), self.Repeat(), (test_input, multiples)

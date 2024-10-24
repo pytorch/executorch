@@ -15,6 +15,7 @@ on:
       - 'gh/mcr229/[0-9]+/base'
       - 'gh/swolchok/[0-9]+/base'
       - 'gh/SS-JIA/[0-9]+/base'
+      - 'gh/trivedivivek/[0-9]+/base'
 
 jobs:
   ghstack_merge_to_main:
@@ -32,9 +33,7 @@ jobs:
       run: |
         pip install pygithub
 
-        PR_NUMBER=$(echo "$GITHUB_REF" | grep -oE '[0-9]+')
-
-        python .github/scripts/propose_ghstack_orig_pr.py --pr $PR_NUMBER --repo pytorch/executorch
+        python .github/scripts/propose_ghstack_orig_pr.py --ref $GITHUB_REF --repo pytorch/executorch
       env:
         GITHUB_TOKEN: ${{ secrets.GH_PYTORCHBOT_CHERRY_PICK_TOKEN }}
         GITHUB_REF: ${{ github.ref }}
