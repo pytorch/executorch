@@ -33,11 +33,20 @@ class ExecuTorchModule:
     """
 
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
-    def __call__(self, inputs: Any) -> List[Any]: ...
+    def __call__(self, inputs: Any, clone_outputs: bool = True) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
-    def run_method(self, method_name: str, inputs: Sequence[Any]) -> List[Any]: ...
+    def run_method(
+        self,
+        method_name: str,
+        inputs: Sequence[Any],  # pyre-ignore[2]: "Any" in parameter type annotations.
+        clone_outputs: bool = True,
+    ) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
-    def forward(self, inputs: Sequence[Any]) -> List[Any]: ...
+    def forward(
+        self,
+        inputs: Sequence[Any],  # pyre-ignore[2]: "Any" in parameter type annotations.
+        clone_outputs: bool = True,
+    ) -> List[Any]: ...
     # pyre-ignore[3]: "Any" in return type annotations.
     def plan_execute(self) -> List[Any]: ...
     # Bundled program methods.
