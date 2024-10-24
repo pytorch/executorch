@@ -650,7 +650,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
             )
         )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
-        from executorch.backends.qualcomm.utils.utils import _transform
+        from executorch.backends.qualcomm.utils.utils import _transform, tag_quant_io
 
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`, Optional type has no attribute `exported_program`
         _transform(builder_exported_to_edge.edge_manager.exported_program())
@@ -662,6 +662,22 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
                 builder_exported_to_edge.metadata["get_n_layers"],
                 shares=args.num_sharding,
             )
+
+        from functools import partial
+
+        from executorch.backends.qualcomm.quantizer.custom_annotation import (
+            get_custom_quant_ios_dtype,
+        )
+
+        tag_quant_io(
+            builder_exported_to_edge.edge_manager.exported_program().graph_module,
+            partial(
+                get_custom_quant_ios_dtype,
+                builder_exported_to_edge.model.layers[
+                    0
+                ].attention.kv_cache.past_k_caches.shape,
+            ),
+        )
 
     logging.info("Lowering model using following partitioner(s): ")
     for partitioner in partitioners:
