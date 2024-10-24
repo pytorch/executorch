@@ -17,9 +17,10 @@ from executorch.backends.arm.tosa_mapping import TosaArg
 
 from executorch.backends.arm.tosa_quant_utils import (
     dequantize_value,
-    get_quant_node_args,
     QuantArgs,
     quantize_value,
+    search_quant_arg_downstream,
+    search_quant_arg_upstream,
 )
 from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
@@ -49,9 +50,9 @@ class ExpVisitor(NodeVisitor):
 
             # Create attribute for 8 bit table lookup.
             input_node = node.all_input_nodes[0]
-            in_quantargs = get_quant_node_args(input_node)
+            in_quantargs = search_quant_arg_upstream(input_node)
             output_node = list(node.users)[0]
-            out_quantargs = get_quant_node_args(output_node)
+            out_quantargs = search_quant_arg_downstream(output_node)
 
             table = exp_table_8bit(in_quantargs, out_quantargs)
             table_attr = ts.TosaSerializerAttribute()

@@ -37,10 +37,10 @@ class MulVisitor(NodeVisitor):
         if is_quant_node:
             input_A = inputs[0]
             input_B = inputs[1]
-            input_A_qargs = tqutils.get_quant_node_args(
+            input_A_qargs = tqutils.search_quant_arg_upstream(
                 cast(torch.fx.Node, node.args[0])
             )
-            input_B_qargs = tqutils.get_quant_node_args(
+            input_B_qargs = tqutils.search_quant_arg_upstream(
                 cast(torch.fx.Node, node.args[1])
             )
 

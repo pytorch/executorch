@@ -151,7 +151,7 @@ class TestLinear(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data, qtol=True)
+            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
     def _test_linear_tosa_ethosu_BI_pipeline(

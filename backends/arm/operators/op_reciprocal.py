@@ -15,9 +15,10 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import (
     dequantize_value,
-    get_quant_node_args,
     QuantArgs,
     quantize_value,
+    search_quant_arg_downstream,
+    search_quant_arg_upstream,
 )
 from serializer.tosa_serializer import TosaOp
 
@@ -41,8 +42,8 @@ class DivVisitor(NodeVisitor):
 
         if is_quant_node:
             input = inputs[0]
-            input_qargs = get_quant_node_args(node.all_input_nodes[0])
-            output_qargs = get_quant_node_args(list(node.users)[0])
+            input_qargs = search_quant_arg_upstream(node.all_input_nodes[0])
+            output_qargs = search_quant_arg_downstream(list(node.users)[0])
 
             div_table = div_table_8bit(input_qargs, output_qargs)
 
