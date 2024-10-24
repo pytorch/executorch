@@ -272,6 +272,7 @@ class ArmQuantizer(Quantizer):
         "one_to_one",
         "generic",
         "sum",
+        "upsample_nearest2d",
     ]
 
     def __init__(self) -> None:

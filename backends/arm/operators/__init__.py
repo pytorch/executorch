@@ -36,5 +36,6 @@ from . import (  # noqa
     op_tanh,
     op_transpose,
     op_unsqueeze,
+    op_upsample_nearest2d,
     op_view,
 )
