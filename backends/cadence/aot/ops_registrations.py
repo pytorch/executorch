@@ -175,7 +175,7 @@ def quantized_relu_meta(
     out_multiplier: torch.Tensor,
     out_shift: torch.Tensor,
 ) -> torch.Tensor:
-    return X.new_empty(X.size(), dtype=torch.uint8)
+    return X.new_empty(X.size(), dtype=X.dtype)
 
 
 @register_fake("cadence::quantized_matmul")

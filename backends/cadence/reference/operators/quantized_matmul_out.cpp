@@ -144,6 +144,11 @@ void quantized_matmul_out(
         out_zero_point,
         transposed,
         out);
+  } else {
+    ET_CHECK_MSG(
+      false,
+      "Unhandled input dtype %hhd",
+      static_cast<int8_t>(X.scalar_type()));
   }
 }
 
