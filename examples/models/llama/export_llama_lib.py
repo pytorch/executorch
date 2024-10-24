@@ -12,6 +12,7 @@ import argparse
 import copy
 import json
 import logging
+import re
 import shlex
 from enum import Enum
 from json import JSONDecodeError
@@ -19,7 +20,6 @@ from pathlib import Path
 from typing import Callable, List, Optional, Union
 
 import pkg_resources
-
 import torch
 
 from executorch.devtools.etrecord import generate_etrecord
@@ -153,12 +153,35 @@ def build_args_parser() -> argparse.ArgumentParser:
         ],
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
+
+    def _is_valid_torchao_qmode_type(value):
+        if not value.startswith("torchao:"):
+            return False
+
+        patterns = [
+            r"emb.(\d+),(\d+)&lin8da.(\d+),(\d+)",
+            r"emb.(\d+),(\d+)",
+            r"lin8da.(\d+),(\d+)",
+        ]
+        for pattern in patterns:
+            matches = re.findall(pattern, value)
+            if len(matches) == 1:
+                return True
+        return False
+
+    def _qmode_type(value):
+        choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w"]
+        if not (value in choices or _is_valid_torchao_qmode_type(value)):
+            raise argparse.ArgumentTypeError(
+                f"Value must be one of: {choices} or a valid torchao regex"
+            )
+        return value
+
     parser.add_argument(
         "-qmode",
         "--quantization_mode",
-        type=str,
+        type=_qmode_type,
         default=None,
-        choices=["int8", "8da4w", "8da4w-gptq", "vulkan_4w"],
         help="type of quantization",
     )
 
