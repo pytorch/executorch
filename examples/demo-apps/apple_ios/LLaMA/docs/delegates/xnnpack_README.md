@@ -1,7 +1,5 @@
 # Building Llama iOS Demo for XNNPACK Backend
 
-**[UPDATE - 09/25]** We have added support for running [Llama 3.2 models](#for-llama-32-1b-and-3b-models) on the XNNPACK backend. We currently support inference on their original data type (BFloat16).
-
 This tutorial covers the end to end workflow for building an iOS demo app using XNNPACK backend on device.
 More specifically, it covers:
 1. Export and quantization of Llama models against the XNNPACK backend.
@@ -38,24 +36,35 @@ Install dependencies
 ```
 
 ## Prepare Models
-In this demo app, we support text-only inference with up-to-date Llama models.
-
-Install the required packages to export the model
+In this demo app, we support text-only inference with up-to-date Llama models and image reasoning inference with LLaVA 1.5.
+* You can request and download model weights for Llama through Meta official [website](https://llama.meta.com/).
+* For chat use-cases, download the instruct models instead of pretrained.
+* Install the required packages to export the model:
 
 ```
 sh examples/models/llama/install_requirements.sh
 ```
+### For Llama 3.2 1B and 3B SpinQuant models
+Meta has released prequantized INT4 SpinQuant Llama 3.2 models that ExecuTorch supports on the XNNPACK backend.
+* Export Llama model and generate .pte file as below:
+```
+python -m examples.models.llama.export_llama --checkpoint <path-to-your-checkpoint.pth> --params <path-to-your-params.json> -kv --use_sdpa_with_kv_cache -X -d fp32 --xnnpack-extended-ops --preq_mode 8da4w_output_8da8w --preq_group_size 32 --max_seq_length 2048 --preq_embedding_quantize 8,0 --use_spin_quant native --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name "llama3_2_spinquant.pte"
+```
 
-### For Llama 3.2 1B and 3B models
-We have supported BFloat16 as a data type on the XNNPACK backend for Llama 3.2 1B/3B models.
-* You can download original model weights for Llama through Meta official [website](https://llama.meta.com/).
-* For chat use-cases, download the instruct models instead of pretrained.
-* Run “examples/models/llama/install_requirements.sh” to install dependencies.
-* The 1B model in BFloat16 format can run on mobile devices with 8GB RAM (iPhone 15 Pro and later). The 3B model will require 12GB+ RAM and hence will not fit on 8GB RAM phones.
+### For Llama 3.2 1B and 3B QAT+LoRA models
+Meta has released prequantized INT4 QAT+LoRA Llama 3.2 models that ExecuTorch supports on the XNNPACK backend.
+* Export Llama model and generate .pte file as below:
+```
+python -m examples.models.llama.export_llama --checkpoint <path-to-your-checkpoint.pth> --params <path-to-your-params.json> -qat -lora 16 -kv --use_sdpa_with_kv_cache -X -d fp32 --xnnpack-extended-ops --preq_mode 8da4w_output_8da8w --preq_group_size 32 --max_seq_length 2048 --preq_embedding_quantize 8,0 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name "llama3_2_qat_lora.pte"
+```
+
+### For Llama 3.2 1B and 3B BF16 models
+We have supported BF16 as a data type on the XNNPACK backend for Llama 3.2 1B/3B models.
+* The 1B model in BF16 format can run on mobile devices with 8GB RAM (iPhone 15 Pro and later). The 3B model will require 12GB+ RAM and hence will not fit on 8GB RAM phones.
 * Export Llama model and generate .pte file as below:
 
 ```
-python -m examples.models.llama.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -d bf16 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="llama3_2.pte"
+python -m examples.models.llama.export_llama --checkpoint <path-to-your-checkpoint.pth> --params <path-to-your-params.json> -kv --use_sdpa_with_kv_cache -X -d bf16 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="llama3_2_bf16.pte"
 ```
 
 For more detail using Llama 3.2 lightweight models including prompt template, please go to our official [website](https://www.llama.com/docs/model-cards-and-prompt-formats/llama3_2#-llama-3.2-lightweight-models-(1b/3b)-).
@@ -64,7 +73,7 @@ For more detail using Llama 3.2 lightweight models including prompt template, pl
 
 Export the model
 ```
-python -m examples.models.llama.export_llama --checkpoint <consolidated.00.pth> -p <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w  --group_size 128 -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --embedding-quantize 4,32 --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
+python -m examples.models.llama.export_llama --checkpoint <path-to-your-checkpoint.pth> -p <path-to-your-params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w  --group_size 128 -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --embedding-quantize 4,32 --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
 ```
 
 ### For LLaVA model
