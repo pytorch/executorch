@@ -8,9 +8,11 @@
 
 from typing import List
 
-import executorch.backends.vulkan._passes.custom_ops_defs  # noqa
+import executorch.backends.vulkan.custom_ops_lib  # noqa
 
 import torch
+
+from executorch.backends.vulkan.op_registry import handles_own_prepacking
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -63,10 +65,9 @@ def insert_prepack_nodes(program: ExportedProgram) -> ExportedProgram:
             return False
 
         for user in node.users:
-            if user.op == "call_function" and (
-                # pyre-ignore [16]
-                user.target in USES_WEIGHTS
-                or user.target.name() in USES_WEIGHTS
+            if user.op == "call_function" and handles_own_prepacking(
+                # noqa
+                user.target
             ):
                 return False
 
