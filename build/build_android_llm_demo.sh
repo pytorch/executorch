@@ -19,6 +19,7 @@ build_android_native_library() {
   ANDROID_ABI="$1"
   ANDROID_NDK="${ANDROID_NDK:-/opt/ndk}"
   CMAKE_OUT="cmake-out-android-${ANDROID_ABI}"
+  EXECUTORCH_CMAKE_BUILD_TYPE="${EXECUTORCH_CMAKE_BUILD_TYPE:-Release}"
   QNN_SDK_ROOT="${QNN_SDK_ROOT:-}"
   if [ -n "$QNN_SDK_ROOT" ]; then
     EXECUTORCH_BUILD_QNN=ON
@@ -52,7 +53,7 @@ build_android_native_library() {
     -DNEURON_BUFFER_ALLOCATOR_LIB="${NEURON_BUFFER_ALLOCATOR_LIB}" \
     -DEXECUTORCH_BUILD_QNN="${EXECUTORCH_BUILD_QNN}" \
     -DQNN_SDK_ROOT="${QNN_SDK_ROOT}" \
-    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_BUILD_TYPE="${EXECUTORCH_CMAKE_BUILD_TYPE}" \
     -B"${CMAKE_OUT}"
 
   if [ "$(uname)" == "Darwin" ]; then
@@ -60,7 +61,7 @@ build_android_native_library() {
   else
     CMAKE_JOBS=$(( $(nproc) - 1 ))
   fi
-  cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config Release
+  cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config "${EXECUTORCH_CMAKE_BUILD_TYPE}"
 
   cmake extension/android \
     -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
@@ -72,10 +73,10 @@ build_android_native_library() {
     -DNEURON_BUFFER_ALLOCATOR_LIB="$NEURON_BUFFER_ALLOCATOR_LIB" \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
-    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_BUILD_TYPE="${EXECUTORCH_CMAKE_BUILD_TYPE}" \
     -B"${CMAKE_OUT}"/extension/android
 
-  cmake --build "${CMAKE_OUT}"/extension/android -j "${CMAKE_JOBS}" --config Release
+  cmake --build "${CMAKE_OUT}"/extension/android -j "${CMAKE_JOBS}" --config "${EXECUTORCH_CMAKE_BUILD_TYPE}"
 
   # Copy artifacts to ABI specific directory
   mkdir -p "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}"
@@ -111,6 +112,9 @@ build_aar() {
   # Rename libexecutorch_jni.so to libexecutorch.so for soname consistency
   # between Java and JNI
   find jni -type f -name "libexecutorch_jni.so" -exec bash -c 'mv "$1" "${1/_jni/}"' bash {} \;
+  if [ "$EXECUTORCH_CMAKE_BUILD_TYPE" == "Release" ]; then
+    find jni -type f -name "*.so" -exec "$ANDROID_NDK"/toolchains/llvm/prebuilt/*/bin/llvm-strip {} \;
+  fi
   # Zip all necessary files into the AAR file
   zip -r executorch.aar libs jni/*/libexecutorch.so jni/*/libqnn*.so jni/*/libQnn*.so jni/*/libneuron_backend.so jni/*/libneuron_buffer_allocator.so jni/*/libneuronusdk_adapter.mtk.so AndroidManifest.xml
   popd
