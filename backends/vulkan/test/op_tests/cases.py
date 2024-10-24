@@ -988,6 +988,7 @@ def get_softmax_inputs():
 @register_test_suite(
     [
         "aten.sqrt.default",
+        "aten.rsqrt.default",
         "aten.exp.default",
         "aten.hardshrink.default",
         "aten.sin.default",
