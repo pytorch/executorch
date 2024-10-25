@@ -134,9 +134,9 @@ def build_args_parser() -> argparse.ArgumentParser:
     # )
     parser.add_argument(
         "--model",
-        default="llama2",
+        default="llama3",
         choices=EXECUTORCH_DEFINED_MODELS + TORCHTUNE_DEFINED_MODELS,
-        help="The Lllama model to export. llama2, llama3, llama3_1, llama3_2 share the same architecture, so they are technically interchangeable, given you provide the checkpoint file for the desired version.",
+        help="The Lllama model to export. llama2, llama3, llama3_1, llama3_2 share the same architecture, so they are technically interchangeable given you provide the checkpoint file for the desired version.",
     )
     parser.add_argument(
         "-E",
