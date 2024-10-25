@@ -409,8 +409,6 @@ jobs:
         pip install -U "huggingface_hub[cli]"
         huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         pip install accelerate sentencepiece
-        # TODO(guangyang): Switch to use released transformers library after all required patches are included
-        pip install "git+https://github.com/huggingface/transformers.git@6cc4dfe3f1e8d421c6d6351388e06e9b123cbfe1"
         pip list
         echo "::endgroup::"
 

@@ -17,6 +17,8 @@ prepare_model_artifacts() {
     wget -O stories110M.pt "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt"
     wget -O tokenizer.model "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model"
     echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
+    # TODO: lm_eval==0.4.2 is too old to be compatible with transformers >= 4.45
+    pip install "transformers<4.45"
 }
 
 run_and_verify() {

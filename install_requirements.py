@@ -135,7 +135,7 @@ EXAMPLES_REQUIREMENTS = [
     "timm==1.0.7",
     f"torchaudio==2.5.0.{NIGHTLY_VERSION}",
     "torchsr==1.0.4",
-    "transformers==4.42.4",
+    "transformers==4.46.0",
 ]
 
 # Assemble the list of requirements to actually install.

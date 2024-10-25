@@ -17,6 +17,8 @@ pip install --no-use-pep517 "git+https://github.com/pytorch/ao.git@${TORCHAO_VER
 # Install tiktoken for tokenizer
 pip install lm_eval==0.4.2
 pip install tiktoken blobfile
+# Restore numpy if >= 2.0
+pip install "numpy<2.0"
 
 # Call the install helper for further setup
 python examples/models/llama/install_requirement_helper.py
