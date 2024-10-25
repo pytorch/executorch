@@ -113,10 +113,12 @@ class QuantParams:
             ), f"Not expecting per channel group quantization, got q dtype: {self.dtype}, tensor.dtype {tensor.dtype}"
             assert (
                 tensor.shape[self.axis] == cast(torch.Tensor, self.scale).shape[0]
+            # pyre-fixme[16]: Item `float` of `float | Tensor` has no attribute `shape`.
             ), f"Invalid size of per channel quantization scales, axis: {self.axis}, scale size: {self.scale.shape}, tensor shape: {tensor.shape}"
 
             assert (
                 tensor.shape[self.axis] == cast(torch.Tensor, self.zp).shape[0]
+            # pyre-fixme[16]: Item `float` of `float | Tensor` has no attribute `shape`.
             ), f"Invalid size of per channel quantization zero-points, axis: {self.axis}, zp size: {self.zp.shape}, tensor shape: {tensor.shape}"
 
             # Assuming folded quant weights

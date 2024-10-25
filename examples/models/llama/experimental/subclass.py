@@ -90,12 +90,10 @@ def from_float(
     """
     group_size = 32
     zero_point = 8.5
-    # pyre-fixme[16]: Callable input has no attribute dtype.
     assert input.dtype == torch.float16, f"Expecting float16 input, got {input.dtype}"
     assert (
         input.numel() % group_size
         == 0
-        # pyre-fixme[16]: Callable input has no attribute numel.
     ), f"The number of input values has to be a multiple of {group_size} but got {input.numel()}"
     input = input.reshape(-1, group_size)
     abs_max_id = torch.argmax(torch.abs(input), dim=1)

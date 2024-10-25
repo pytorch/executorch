@@ -208,6 +208,7 @@ class Export(Stage):
 
 @register_stage
 class ToEdge(Stage):
+    # pyre-fixme[11]: Annotation `EdgeCompileConfig` is not defined as a type.
     def __init__(self, edge_compile_config: Optional[EdgeCompileConfig] = None):
         self.edge_compile_conf = (
             edge_compile_config or get_xnnpack_edge_compile_config()
@@ -262,6 +263,7 @@ class RunPasses(Stage):
             if self.pass_list:
                 assert isinstance(self.pass_list, list)
                 for pass_ in self.pass_list:
+                    # pyre-fixme[45]: `Callable` cannot be instantiated.
                     transformed_ep = _transform(transformed_ep, pass_())
 
             if self.pass_functions:
@@ -337,6 +339,7 @@ class Partition(Stage):
 class ToExecutorch(Stage):
     def __init__(
         self,
+        # pyre-fixme[11]: Annotation `ExecutorchBackendConfig` is not defined as a type.
         config: Optional[ExecutorchBackendConfig] = None,
     ):
         self.config = config or ExecutorchBackendConfig(

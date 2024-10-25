@@ -50,11 +50,13 @@ from torch.utils import _pytree as pytree
 Val = Any
 
 
+# pyre-fixme[35]: Target cannot be annotated.
 CompileSpec = namedtuple(
     "CompileSpec", ["method_name", "callable", "args", "dynamic_shapes"]
 )
 
 
+# pyre-fixme[35]: Target cannot be annotated.
 CallSpec = namedtuple("CallSpec", ["in_spec", "out_spec"])
 
 
@@ -161,6 +163,7 @@ class WrapperModule(torch.nn.Module):
 def capture(  # noqa: C901
     f: Callable[..., Any],
     args: Tuple[Value, ...],
+    # pyre-fixme[11]: Annotation `CaptureConfig` is not defined as a type.
     config: Optional[CaptureConfig] = None,
     dynamic_shapes: Optional[List[Any]] = None,
 ) -> ExirExportedProgram:

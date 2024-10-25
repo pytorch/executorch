@@ -41,4 +41,6 @@ class experimental(deprecated):
         category: Optional[Type[Warning]] = ExperimentalWarning,
         stacklevel: int = 1,
     ) -> None:
+        # pyre-fixme[62]: For 1st argument expected `LiteralString` but got `str`.
+        #  Ensure only a string literal or a `LiteralString` is used.
         super().__init__(message, category=category, stacklevel=stacklevel)

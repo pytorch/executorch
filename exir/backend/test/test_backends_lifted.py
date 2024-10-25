@@ -278,7 +278,6 @@ class TestBackends(unittest.TestCase):
 
         executorch_module = _load_for_executorch_from_buffer(buff)
 
-        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(model_inputs)
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
         ref_output = add_mul_module(*model_inputs)
@@ -863,7 +862,6 @@ class TestBackends(unittest.TestCase):
         self.assertEqual(counter, 2)
 
         executorch_module = _load_for_executorch_from_buffer(executorch_prog.buffer)
-        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(inputs)
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
         ref_output = m(*inputs)

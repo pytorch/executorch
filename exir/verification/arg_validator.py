@@ -25,7 +25,6 @@ class RunHigherOrderOperatorError(Exception):
         super().__init__(message)
 
 
-# pyre-ignore[13]: Attribute `node` is never initialized.
 class EdgeOpArgValidator(torch.fx.Interpreter):
     """
     Validate whether all the Tensor arguments passed to an operator are valid in terms of allowed dtype.
@@ -33,6 +32,7 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
     Violating operators are being kept in self.violating_ops
     """
 
+    # pyre-fixme[13]: Attribute `node` is never initialized.
     node: torch.fx.Node
 
     def __init__(self, graph_module: torch.fx.GraphModule) -> None:

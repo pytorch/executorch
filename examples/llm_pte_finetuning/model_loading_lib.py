@@ -68,6 +68,7 @@ def export_model_lora_training(
     print("Exporting model with LoRA for training")
     # 1. torch.export: Defines the program with the ATen operator set.
 
+    # pyre-fixme[16]: Module `attention` has no attribute `SDPBackend`.
     with sdpa_kernel([SDPBackend.MATH]):
         exported_graph: ExportedProgram = export(model, example_args, strict=False)
         print("Creating a joint forward-backwards graph for training")

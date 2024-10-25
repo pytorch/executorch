@@ -194,11 +194,11 @@ _DelegateDebugIdentifierMap: TypeAlias = Union[
 ]
 
 
-# pyre-ignore[13]: Attribute `node` is never initialized.
 class _Emitter(torch.fx.Interpreter):
     """An abstract interpreter (https://wiki.mozilla.org/Abstract_Interpretation) used to emit the
     given traced torch.fx.GraphModule to the flatbuffer schema."""
 
+    # pyre-fixme[13]: Attribute `node` is never initialized.
     node: torch.fx.Node
 
     def __init__(
@@ -1222,8 +1222,8 @@ class _Emitter(torch.fx.Interpreter):
         plans = []
         # flatten any structures
         for method, vals in prim_getters.items():
-            # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
             flattened_output, spec = ex_pytree.tree_flatten(vals)
+            # pyre-fixme[16]: `TreeSpec` has no attribute `to_str`.
             spec = spec.to_str()
             chain = Chain(
                 inputs=[],
@@ -1482,8 +1482,8 @@ class _TopLevelEmitter(_Emitter):
             assert isinstance(spec, pytree.TreeSpec), type(spec)
             dummy_leaves = [0] * spec.num_leaves
             tree = torch.utils._pytree.tree_unflatten(dummy_leaves, spec)
-            # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
             _, tree = ex_pytree.tree_flatten(tree)
+            # pyre-fixme[16]: `TreeSpec` has no attribute `to_str`.
             return tree.to_str()
 
         inp_container_str = create_container_str(exported_program.call_spec.in_spec)

@@ -116,7 +116,6 @@ class TestConfig(unittest.TestCase):
                     eager_model, method_names[method_test_suite_idx]
                 )(*ri)
                 if isinstance(model_outputs, get_args(DataContainer)):
-                    # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
                     flatten_eager_model_outputs = tree_flatten(model_outputs)
                 else:
                     flatten_eager_model_outputs = [
@@ -124,6 +123,9 @@ class TestConfig(unittest.TestCase):
                     ]
 
                 self.assertIOListEqual(
+                    # pyre-fixme[6]: For 1st argument expected `List[Union[bool,
+                    #  float, int, Tensor]]` but got `Union[List[Any],
+                    #  tuple[Union[List[Any], TreeSpec]]]`.
                     flatten_eager_model_outputs,
                     method_test_suites[method_test_suite_idx]
                     .test_cases[testset_idx]

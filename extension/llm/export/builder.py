@@ -168,6 +168,7 @@ class LLMEdgeManager:
             self.dynamic_shapes = None
         return self.dynamic_shapes
 
+    # pyre-fixme[11]: Annotation `EdgeCompileConfig` is not defined as a type.
     def _get_edge_config(self) -> EdgeCompileConfig:
         edge_config = EdgeCompileConfig(
             _check_ir_validity=False,
@@ -180,6 +181,7 @@ class LLMEdgeManager:
         dynamic_shape = self._get_dynamic_shape()
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
+        # pyre-fixme[16]: Module `attention` has no attribute `SDPBackend`.
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             if hasattr(self.args, "qnn") and self.args.qnn:
                 # TODO: this is temporary and export_for_training doesn't work with qnn either. We need a
@@ -290,6 +292,7 @@ class LLMEdgeManager:
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         if quantizers:
+            # pyre-fixme[16]: Module `attention` has no attribute `SDPBackend`.
             with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
                 if self.verbose:
                     logging.info(f"Applied quantizers: {quantizers}")
@@ -342,6 +345,7 @@ class LLMEdgeManager:
 
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
+        # pyre-fixme[16]: Module `attention` has no attribute `SDPBackend`.
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             if self.pre_autograd_graph_module is None:
                 # Run export() if it didn't run

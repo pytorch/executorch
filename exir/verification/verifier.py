@@ -75,6 +75,7 @@ class EXIRATenDialectVerifierBase(Verifier):
 
 
 def EXIRATenDialectVerifier(  # noqa: C901
+    # pyre-fixme[11]: Annotation `EdgeCompileConfig` is not defined as a type.
     edge_compile_config: Optional[EdgeCompileConfig] = None,
     class_only: bool = False,
     exception_list: Optional[List[torch._ops.OpOverload]] = None,

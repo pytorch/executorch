@@ -323,6 +323,8 @@ class BundledProgram:
                         ), "The input tensor {} dtype shall be {}, but now is {}".format(
                             cur_plan_test_inputs[j],
                             self._get_input_dtype(program, program_plan_id, j),
+                            # pyre-fixme[16]: Item `bool` of `bool | float | int |
+                            #  Tensor` has no attribute `dtype`.
                             cur_plan_test_inputs[j].dtype,
                         )
                     elif type(cur_plan_test_inputs[j]) in (
@@ -354,6 +356,8 @@ class BundledProgram:
                     ), "The label tensor {} dtype shall be {}, but now is {}".format(
                         cur_plan_test_expected_outputs[j],
                         self._get_output_dtype(program, program_plan_id, j),
+                        # pyre-fixme[16]: Item `bool` of `bool | float | int |
+                        #  Tensor` has no attribute `dtype`.
                         cur_plan_test_expected_outputs[j].dtype,
                     )
 

@@ -56,7 +56,6 @@ class TestCustomOps(unittest.TestCase):
 
         cls.module = _load_for_executorch_from_buffer(cls.__buffer)
 
-        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         cls.inputs_flattened, _ = tree_flatten(inputs)
         cls.module.run_method("forward", tuple(cls.inputs_flattened))
         prof_dump = _dump_profile_results()
