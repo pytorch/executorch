@@ -92,8 +92,9 @@ vulkan_supported_ops: Dict[OpKey, OpFeatures] = {}
 def update_features(aten_op):
     def features_decorator(fn: Callable):
         def update_features_impl(op: OpKey):
-            if op not in vulkan_supported_ops:
-                vulkan_supported_ops[op] = OpFeatures()
+            if op in vulkan_supported_ops:
+                raise RuntimeError(f"[Vulkan delegate] duplicate registration of {op}!")
+            vulkan_supported_ops[op] = OpFeatures()
             vulkan_supported_ops[op] = fn(vulkan_supported_ops[op])
 
         if isinstance(aten_op, list):
@@ -165,7 +166,6 @@ def register_binary_op(features: OpFeatures):
         exir_ops.edge.aten.sqrt.default,
         exir_ops.edge.aten.rsqrt.default,
         exir_ops.edge.aten.tanh.default,
-        exir_ops.edge.aten._to_copy.default,
     ]
 )
 def register_unary_op(features: OpFeatures):
@@ -216,8 +216,6 @@ def register_to_copy_op(features: OpFeatures):
         exir_ops.edge.aten.mm.default,
         exir_ops.edge.aten.addmm.default,
         exir_ops.edge.aten.linear.default,
-        exir_ops.edge.et_vk.linear_weight_int4.default,
-        exir_ops.edge.aten._weight_int8pack_mm.default,
     ]
 )
 def register_mm_op(features: OpFeatures):
@@ -276,8 +274,6 @@ def register_softmax_op(features: OpFeatures):
 
 @update_features(
     [
-        exir_ops.edge.aten._log_softmax.default,
-        exir_ops.edge.aten._softmax.default,
         exir_ops.edge.aten.mean.dim,
         exir_ops.edge.aten.sum.dim_IntList,
         exir_ops.edge.aten.amax.default,
@@ -366,9 +362,6 @@ def register_view_op(features: OpFeatures):
 # packed tensors only and do not have a resize function.
 @update_features(
     [
-        # Normalization
-        exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-        exir_ops.edge.aten.native_layer_norm.default,
         # Shape Manipulation
         exir_ops.edge.aten.squeeze_copy.dims,
         exir_ops.edge.aten.unsqueeze_copy.default,

@@ -139,12 +139,16 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         return False
 
+    def log_skip(self, node: torch.fx.Node, reason: str) -> None:
+        if node.op == "call_function":
+            logger.info(
+                f"[Vulkan Partitioner] Due to [{reason}], skipping {node.format_node()}"
+            )
+
     def is_node_supported(
         self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
     ) -> bool:
         r = self._is_node_supported(submodules, node)
-        if not r and node.op == "call_function":
-            logger.info(f"Skipping node in Vulkan partitioning: {node.format_node()}")
         return r
 
     def _is_node_supported(
@@ -163,14 +167,17 @@ class VulkanSupportedOperators(OperatorSupportBase):
             return True
 
         if target not in vulkan_supported_ops:
+            self.log_skip(node, "not in vulkan_supported_ops")
             return False
 
         features = vulkan_supported_ops[target]
 
         if not features.check_node_fn(node):
+            self.log_skip(node, "op args not supported")
             return False
 
         if self.require_dynamic_shapes and not features.resize_fn:
+            self.log_skip(node, "no dynamic shape support")
             return False
 
         return self.all_args_compatible(node)
