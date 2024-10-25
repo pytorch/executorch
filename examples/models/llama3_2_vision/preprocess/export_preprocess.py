@@ -13,17 +13,17 @@ from executorch.examples.models.llama3_2_vision.preprocess.export_preprocess_lib
 
 
 def main():
-    # Export
-    ep = export_preprocess()
 
     # ExecuTorch
-    et = lower_to_executorch_preprocess(ep)
+    ep_et = export_preprocess()
+    et = lower_to_executorch_preprocess(ep_et)
     with open("preprocess_et.pte", "wb") as file:
         et.write_to_file(file)
 
     # AOTInductor
+    ep_aoti = export_preprocess()
     torch._inductor.aot_compile(
-        ep.module(),
+        ep_aoti.module(),
         get_example_inputs(),
         options={"aot_inductor.output_path": "preprocess_aoti.so"},
     )
