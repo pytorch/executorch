@@ -167,9 +167,8 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         features = vulkan_supported_ops[target]
 
-        if features.check_node_fn is not None:
-            if not features.check_node_fn(node):
-                return False
+        if not features.check_node_fn(node):
+            return False
 
         if self.require_dynamic_shapes and not features.resize_fn:
             return False

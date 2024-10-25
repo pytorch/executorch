@@ -21,15 +21,19 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from torch._subclasses.fake_tensor import FakeTensor
 
 
+def allow_node(node: torch.fx.Node) -> bool:
+    return True
+
+
 class TextureImplFeatures:
     __slots__ = [
-        # If the shader accounts for the packed dimension of the tensor, then
-        # all memory layouts are supported.
+        # Indicates if the compute shader is agnostic to the packed dimension
         "uses_packed_dim",
-        # If the shader accounts for the axis map, then non standard memory
-        # layouts are supported.
+        # Indicates if the compute shader is agnostic to the texture axis mapping
         "uses_axis_map",
-        # Specifies a specific set of memory layouts that the shader supports.
+        # Specifies a specific set of memory layouts that the shader supports. If it is
+        # and empty list, then the supported memory layouts can be inferred from the
+        # `uses_packed_dim` and `uses_axis_map` flags.
         "supported_layouts",
     ]
 
@@ -75,7 +79,9 @@ class OpFeatures:
         self.buffer_impl: bool = buffer_impl
         self.resize_fn: bool = resize_fn
         self.handles_own_prepacking: bool = handles_own_prepacking
-        self.check_node_fn: Optional[Callable] = check_node_fn
+        self.check_node_fn: Callable = allow_node
+        if check_node_fn is not None:
+            self.check_node_fn = check_node_fn
 
 
 OpKey = Union[str, torch._ops.OpOverload, EdgeOpOverload]
@@ -286,13 +292,11 @@ def register_reduce_op(features: OpFeatures):
 
     def check_reduce_node(node: torch.fx.Node) -> bool:
         dim_list = node.args[1]
-        assert isinstance(dim_list, list)
-        if len(dim_list) != 1:
+        if isinstance(dim_list, list) and len(dim_list) != 1:
             return False
 
         keepdim = node.args[2]
-        assert isinstance(keepdim, bool)
-        if not keepdim:
+        if isinstance(keepdim, bool) and not keepdim:
             return False
 
         return True
@@ -425,8 +429,8 @@ def register_ported_ops_with_prepacking(features: OpFeatures):
 def get_op_features(target: OpKey) -> OpFeatures:
     if not isinstance(target, str):
         if target not in vulkan_supported_ops:
-            # Check if the name of the op is in the dict
-            return vulkan_supported_ops.get(target.name(), OpFeatures())
+            # Try the op's name
+            return vulkan_supported_ops[target.name()]
 
         return vulkan_supported_ops[target]
     else:

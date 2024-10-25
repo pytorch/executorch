@@ -1381,7 +1381,7 @@ class TestBackends(unittest.TestCase):
                 super().__init__()
 
             def forward(self, x):
-                # torch.t is actually exported as aten::permut.
+                # torch.t is actually exported as aten::permute.
                 return torch.t(x)
 
         sample_inputs = (torch.randn(size=(3, 14), dtype=torch.float32),)
