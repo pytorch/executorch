@@ -24,6 +24,9 @@ from executorch.backends.arm._passes.decompose_layernorm_pass import (
     DecomposeLayerNormPass,
 )
 from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
+from executorch.backends.arm._passes.decompose_softmaxes_pass import (
+    DecomposeSoftmaxesPass,
+)
 from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
 from executorch.backends.arm._passes.insert_squeeze_after_sum_pass import (
     InsertSqueezeAfterSumPass,
@@ -68,6 +71,7 @@ class ArmPassManager(PassManager):
         self.add_pass(InsertSqueezeAfterSumPass())
         self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
+        self.add_pass(DecomposeSoftmaxesPass())
         for spec in compile_spec:
             if spec.key == "permute_memory_format":
                 memory_format = spec.value.decode()
@@ -77,9 +81,10 @@ class ArmPassManager(PassManager):
         return self._transform(exported_program.graph_module)
 
     def transform_for_annotation_pipeline(self, graph_module: torch.fx.GraphModule):
+        self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
-        self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeDivPass())
+        self.add_pass(DecomposeSoftmaxesPass())
         return self._transform(graph_module)
