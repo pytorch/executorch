@@ -883,7 +883,11 @@ def _load_llama_model(
 def _get_source_transforms(  # noqa
     modelname: str, dtype_override: Optional[DType], args
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
+    is_torchtune_model = modelname in TORCHTUNE_DEFINED_MODELS
     transforms = []
+
+    if is_torchtune_model:
+        transforms.append(replace_fusion_embeddings_with_nn_embedding)
 
     if args.use_spin_quant:
         if args.use_spin_quant == "cuda":
@@ -970,5 +974,7 @@ def _get_source_transforms(  # noqa
             else:
                 transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_kv_cache_with_coreml_kv_cache)
+
+    print(f"Performing the following transforms: {[transform.__name__ for transform in transforms]}")
 
     return transforms
