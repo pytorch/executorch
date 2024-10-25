@@ -127,7 +127,7 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
       # values, run `otool -l libquantized_ops_lib.dylib`.
       if(APPLE)
         set_target_properties(
-          quantized_ops_lib
+          quantized_ops_aot_lib
           PROPERTIES # Assume this library will be installed in
                      # <site-packages>/executorch/kernels/quantized/, and the
                      # _portable_lib.so is installed in
