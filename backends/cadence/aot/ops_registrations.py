@@ -132,7 +132,11 @@ def quantized_conv_meta(
     out_shift: torch.Tensor,
     channel_last: bool = False,
 ) -> torch.Tensor:
-    out_channels, _in_channels, *kernel_size = weight.shape
+    if channel_last:
+        out_channels, *kernel_size, _ = weight.shape
+    else:
+        out_channels, _, *kernel_size = weight.shape
+
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
@@ -141,7 +145,13 @@ def quantized_conv_meta(
     # Compute the output tensor size
     output_size = (
         get_conv1d_output_size(
-            in_size, out_channels, stride[1], padding[1], dilation[1], kernel_size[0]
+            in_size,
+            out_channels,
+            stride[1],
+            padding[1],
+            dilation[1],
+            kernel_size[0],
+            channel_last,
         )
         if len(in_size) == 3
         else get_conv2d_output_size(
