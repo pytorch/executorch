@@ -35,6 +35,7 @@ run_and_verify() {
         exit 1
     fi
     $PYTHON_EXECUTABLE -m examples.models.llama.runner.eager \
+	--model llama2
 	-c stories110M.pt \
 	-p params.json \
 	-t tokenizer.model \

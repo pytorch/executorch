@@ -206,7 +206,7 @@ if [[ "${QNN}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} -kv -v --qnn --disable_dynamic_shape"
 fi
 # Add dynamically linked library location
-$PYTHON_EXECUTABLE -m examples.models.llama.export_llama ${EXPORT_ARGS}
+$PYTHON_EXECUTABLE -m examples.models.llama.export_llama --model llama3 ${EXPORT_ARGS}
 
 # Create tokenizer.bin.
 echo "Creating tokenizer.bin"
