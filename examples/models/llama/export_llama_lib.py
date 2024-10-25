@@ -122,6 +122,9 @@ def build_model(
 
 
 def _is_valid_torchao_qmode_type(value):
+    if not isinstance(value, str):
+        return False
+
     if not value.startswith("torchao:"):
         return False
 
