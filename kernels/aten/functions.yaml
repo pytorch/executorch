@@ -249,11 +249,15 @@
 
 - op: max.unary_out
 
+- op: max.unary_out
+
 - op: maximum.out
 
 - op: mean.out
 
 - op: min.dim_min
+
+- op: min.unary_out
 
 - op: minimum.out
 
