@@ -58,6 +58,7 @@ partially lower the Llama model to Vulkan.
 ```shell
 # The files will usually be downloaded to ~/.llama
 python -m examples.models.llama.export_llama \
+  --model llama3_2
   --disable_dynamic_shape --vulkan -kv --use_sdpa_with_kv_cache -d fp32 \
   -c ~/.llama/checkpoints/Llama3.2-1B/consolidated.00.pth \
   -p ~/.llama/checkpoints/Llama3.2-1B/params.json \
