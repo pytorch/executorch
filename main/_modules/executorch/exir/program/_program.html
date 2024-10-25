@@ -1403,9 +1403,12 @@
                 <span class="n">curr_ops_no_decomp</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">curr_partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
                 <span class="n">all_ops_no_decomp</span> <span class="o">|=</span> <span class="nb">set</span><span class="p">(</span><span class="n">curr_ops_no_decomp</span><span class="p">)</span>
 
-            <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span>
-                <span class="n">_default_decomposition_table</span><span class="p">(),</span> <span class="n">_preserve_ops</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">all_ops_no_decomp</span><span class="p">)</span>
-            <span class="p">)</span>
+            <span class="n">table</span> <span class="o">=</span> <span class="n">_default_decomposition_table</span><span class="p">()</span>
+
+            <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">all_ops_no_decomp</span><span class="p">:</span>
+                <span class="n">table</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+            <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span><span class="n">table</span><span class="p">)</span>
             <span class="c1"># Among all the preserved aten ops, use the check_op_fn to do an additional</span>
             <span class="c1"># check on which ops need to be preserved and which ops need to be decomposed</span>
             <span class="c1"># Those which are truly preserved will be replaced with transformed ops</span>
@@ -1575,9 +1578,10 @@
 
     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">aten_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="c1"># Decompose to Core ATen</span>
-        <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span>
-            <span class="n">_default_decomposition_table</span><span class="p">(),</span> <span class="n">_preserve_ops</span><span class="o">=</span><span class="n">preserve_ops</span>
-        <span class="p">)</span>
+        <span class="n">table</span> <span class="o">=</span> <span class="n">_default_decomposition_table</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">preserve_ops</span><span class="p">:</span>
+            <span class="n">table</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span><span class="n">table</span><span class="p">)</span>
         <span class="n">edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">_generate_edge_program</span><span class="p">(</span>
             <span class="n">name</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">program</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">preserve_ops</span><span class="p">)</span>
         <span class="p">)</span>
