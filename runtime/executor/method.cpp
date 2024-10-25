@@ -1191,8 +1191,9 @@ Error Method::step() {
           static_cast<int32_t>(step_state_.chain_idx),
           static_cast<uint32_t>(step_state_.instr_idx));
   EXECUTORCH_SCOPE_PROF("Method::step");
-  internal::EventTracerProfileMethodScope event_tracer_profile_scope =
-      internal::EventTracerProfileMethodScope(event_tracer_, "Method::step");
+  EventTracerEntry event_tracer_entry =
+      internal::event_tracer_begin_profiling_event(
+          event_tracer_, "Method::step");
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
       InvalidState,
@@ -1218,6 +1219,7 @@ Error Method::step() {
     return status;
   }
 
+  internal::event_tracer_end_profiling_event(event_tracer_, event_tracer_entry);
   // end of the current chain, advance to the next chain
   if (step_state_.instr_idx == num_instructions) {
     step_state_.instr_idx = 0;
@@ -1233,8 +1235,9 @@ Error Method::experimental_step() {
 
 Error Method::execute() {
   internal::event_tracer_create_event_block(event_tracer_, "Execute");
-  internal::EventTracerProfileMethodScope event_tracer_profile_scope =
-      internal::EventTracerProfileMethodScope(event_tracer_, "Method::execute");
+  EventTracerEntry event_tracer_entry =
+      internal::event_tracer_begin_profiling_event(
+          event_tracer_, "Method::execute");
   EXECUTORCH_SCOPE_PROF("Method::execute");
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
@@ -1270,7 +1273,7 @@ Error Method::execute() {
       }
     }
   }
-
+  internal::event_tracer_end_profiling_event(event_tracer_, event_tracer_entry);
   log_outputs();
 
   // TODO(jakeszwe, dbort): Decide on calling execute back to back without

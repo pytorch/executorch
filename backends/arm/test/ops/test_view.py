@@ -25,16 +25,33 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
 
-class TestSimpleView(unittest.TestCase):
+class TestView(unittest.TestCase):
     """Tests the view operation."""
 
     class View(torch.nn.Module):
 
-        sizes = [10, 15, 50, 100]
-        test_parameters = [(torch.ones(n),) for n in sizes]
+        needs_transpose_tests = [
+            (torch.rand(100), (1, -1, 5, 2)),
+            (torch.rand(10, 2, 1, 5), (1, -1, 5, 2)),
+            (torch.rand(1, 2, 1, 9), (3, 1, 3, 2)),
+            (torch.rand(2, 1, 1, 9), (3, 2, 3, 1)),
+            (torch.rand(2, 50, 2, 1), (1, 200)),
+            (torch.rand(2, 5, 2, 3), (1, 15, 4)),
+        ]
 
-        def forward(self, x: torch.Tensor):
-            return x.view(-1, 5)
+        no_transpose_tests = [
+            (torch.rand(2, 1, 1, 9), (3, 1, 3, 2)),
+            (torch.rand(5, 10, 1, 1), (25, 2, 1, 1)),
+            (torch.rand(10, 2), (1, 1, 5, 4)),
+            (torch.rand(10, 10), (5, 1, 5, 4)),
+            (torch.rand(1, 1, 1, 10), (1, 1, 10, 1)),
+            (torch.rand(1, 1, 5, 10), (1, 1, 50, 1)),
+            (torch.rand(5, 10, 1, 1), (1, 25, 2)),
+            (torch.rand(2, 50, 1, 1), (1, 100)),
+        ]
+
+        def forward(self, x: torch.Tensor, new_shape):
+            return x.view(new_shape)
 
     def _test_view_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: torch.Tensor
@@ -82,11 +99,7 @@ class TestSimpleView(unittest.TestCase):
     ):
         quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(),
-            )
+            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
             .check_count({"torch.ops.aten.view.default": 1})
@@ -110,18 +123,23 @@ class TestSimpleView(unittest.TestCase):
             common.get_u85_compile_spec(), module, test_data
         )
 
-    @parameterized.expand(View.test_parameters)
-    def test_view_tosa_MI(self, test_tensor: torch.Tensor):
-        self._test_view_tosa_MI_pipeline(self.View(), (test_tensor,))
+    @parameterized.expand(View.needs_transpose_tests + View.no_transpose_tests)
+    def test_view_tosa_MI(self, test_tensor: torch.Tensor, new_shape):
+        self._test_view_tosa_MI_pipeline(self.View(), (test_tensor, new_shape))
 
-    @parameterized.expand(View.test_parameters)
-    def test_view_tosa_BI(self, test_tensor: torch.Tensor):
-        self._test_view_tosa_BI_pipeline(self.View(), (test_tensor,))
+    @parameterized.expand(View.needs_transpose_tests + View.no_transpose_tests)
+    def test_view_tosa_BI(self, test_tensor: torch.Tensor, new_shape):
+        self._test_view_tosa_BI_pipeline(self.View(), (test_tensor, new_shape))
 
-    @parameterized.expand(View.test_parameters)
-    def test_view_u55_BI(self, test_tensor: torch.Tensor):
-        self._test_view_u55_BI_pipeline(self.View(), (test_tensor,))
+    @parameterized.expand(View.no_transpose_tests)
+    def test_view_u55_BI(self, test_tensor: torch.Tensor, new_shape):
+        self._test_view_u55_BI_pipeline(self.View(), (test_tensor, new_shape))
 
-    @parameterized.expand(View.test_parameters)
-    def test_view_u85_BI(self, test_tensor: torch.Tensor):
-        self._test_view_u85_BI_pipeline(self.View(), (test_tensor,))
+    @parameterized.expand(View.needs_transpose_tests)
+    @unittest.expectedFailure
+    def test_view_transpose_u55_BI(self, test_tensor: torch.Tensor, new_shape):
+        self._test_view_u55_BI_pipeline(self.View(), (test_tensor, new_shape))
+
+    @parameterized.expand(View.needs_transpose_tests + View.no_transpose_tests)
+    def test_view_u85_BI(self, test_tensor: torch.Tensor, new_shape):
+        self._test_view_u85_BI_pipeline(self.View(), (test_tensor, new_shape))

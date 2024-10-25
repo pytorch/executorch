@@ -147,6 +147,12 @@ class OpGelu:
     op_name: str = "Gelu"
 
 
+class OpGroupNorm:
+    op_name: str = "GroupNorm"
+    param_epsilon = "epsilon"
+    param_group = "group"
+
+
 @dataclass(init=False, frozen=True)
 class OpHardSwish:
     op_name: str = "HardSwish"

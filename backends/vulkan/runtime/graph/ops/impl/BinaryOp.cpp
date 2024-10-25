@@ -51,9 +51,8 @@ void add_binary_op_node(
     const ValueRef alpha,
     const ValueRef out,
     const std::string& op_name) {
-  ValueRef arg1 = prepack_if_tensor_ref(graph, in1);
-  ValueRef arg2 =
-      prepack_if_tensor_ref(graph, in2, graph.estimate_memory_layout_of(arg1));
+  ValueRef arg1 = prepack_standard_like(graph, in1, out, true);
+  ValueRef arg2 = prepack_standard_like(graph, in2, out, true);
 
   vTensorPtr t_in1 = graph.get_tensor(arg1);
   vTensorPtr t_in2 = graph.get_tensor(arg2);

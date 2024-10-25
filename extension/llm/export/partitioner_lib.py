@@ -37,9 +37,6 @@ def get_vulkan_partitioner(
     assert (
         dtype_override == "fp32" or dtype_override is None
     ), "Vulkan backend does not support non fp32 dtypes at the moment"
-    assert (
-        quantization_mode is None
-    ), "Vulkan backend does not support quantization at the moment"
     from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
         VulkanPartitioner,
     )
