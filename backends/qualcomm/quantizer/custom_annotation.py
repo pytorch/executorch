@@ -161,7 +161,7 @@ def get_custom_quant_ios_dtype(
 
     # Tag index put node before copy node, because copy is a skipped node in qnn
     if (
-        exir_ops.edge.aten.index_put.default == node.target
+        exir_ops.edge.aten.copy.default == node.target
         and node.meta["val"].shape == cache_shape
     ):
         return kv_dtype
