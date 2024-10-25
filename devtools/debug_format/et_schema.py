@@ -184,6 +184,10 @@ class FXOperatorGraph(OperatorGraph):
                     inputs.append(nodes[val])
             else:
                 inputs.append(nodes[arg_name])
+        # pyre-fixme[9]: node has type `Node`; used as `Union[None, Dict[str, Any],
+        #  List[Any], bool, complex, float, int, range, slice, str, SymBool, SymFloat,
+        #  SymInt, device, dtype, layout, memory_format, OpOverload, Tensor, Node,
+        #  tuple[Any, ...]]`.
         for _, node in kwargs.items():
             # We can ignore the out kwarg as that's mostly used to pass in the output tensor
             # which has been memory planned. The same value is also returned by the operator

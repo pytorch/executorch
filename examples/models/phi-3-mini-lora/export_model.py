@@ -54,6 +54,7 @@ def export_phi3_mini_lora(model) -> None:
     seq_len = 10
     tokens = randint(0, vocab_size, (batch_size, seq_len), dtype=long)
     example_args = (tokens,)
+    # pyre-fixme[16]: Module `attention` has no attribute `SDPBackend`.
     with sdpa_kernel([SDPBackend.MATH]):
         aten_dialect: ExportedProgram = export(model, example_args)
 
@@ -92,6 +93,7 @@ def export_phi3_mini_lora_training(model) -> None:
     tokens = randint(0, vocab_size, (batch_size, seq_len), dtype=long)
     labels = tokens
     example_args = (tokens, labels)
+    # pyre-fixme[16]: Module `attention` has no attribute `SDPBackend`.
     with sdpa_kernel([SDPBackend.MATH]):
         exported_graph: ExportedProgram = export(model, example_args)
         print("Creating a joint forward-backwards graph for training")

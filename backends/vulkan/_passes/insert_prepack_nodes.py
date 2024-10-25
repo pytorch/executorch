@@ -64,8 +64,9 @@ def insert_prepack_nodes(program: ExportedProgram) -> ExportedProgram:
 
         for user in node.users:
             if user.op == "call_function" and (
-                # pyre-ignore [16]
                 user.target in USES_WEIGHTS
+                # pyre-fixme[16]: Item `Callable` of `(...) -> Any | str` has no
+                #  attribute `name`.
                 or user.target.name() in USES_WEIGHTS
             ):
                 return False

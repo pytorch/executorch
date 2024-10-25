@@ -28,5 +28,7 @@ def update_with_proxy(t: torch.Tensor, proxy: torch.fx.Proxy) -> torch.Tensor:
     assert isinstance(unwrapped, PythonTensor)
     unwrapped.update_proxy(proxy)
     if is_functionaltensor(t):  # type: ignore
+        # pyre-fixme[16]: Module `eager_transforms` has no attribute
+        #  `_assert_wrapped_functional`.
         _assert_wrapped_functional(unwrapped, t)
     return t

@@ -399,6 +399,7 @@ class ExirExportedProgram:
 
     # TODO(ycao): Change this to a composable function.
     def to_edge(
+        # pyre-fixme[11]: Annotation `EdgeCompileConfig` is not defined as a type.
         self, config: Optional[EdgeCompileConfig] = None
     ) -> "ExirExportedProgram":
         config = config or EdgeCompileConfig()
@@ -413,6 +414,7 @@ class ExirExportedProgram:
 
     def to_executorch(
         self,
+        # pyre-fixme[11]: Annotation `ExecutorchBackendConfig` is not defined as a type.
         config: Optional[ExecutorchBackendConfig] = None,
     ) -> "ExecutorchProgram":
         if not self.after_to_edge_passes:
@@ -429,7 +431,7 @@ class ExirExportedProgram:
         # Existing user passes dont use run so Im just cheating here because they dont need to work on mutable buffers yet.
         # After exir.capture is gone I will clean up the memory planning infra to be consistent.
         # Frankly all of exir has big code quality issues because of the migrations that need to be addressed.
-        new_gm_res = config.memory_planning_pass(new_gm)  # pyre-ignore[29]
+        new_gm_res = config.memory_planning_pass(new_gm)
         assert new_gm_res is not None
         new_gm = new_gm_res.graph_module
         new_prog = ExirExportedProgram(
@@ -657,7 +659,6 @@ def pre_memory_planning_passes(
         default_pass = ExecutorchBackendConfig().sym_shape_eval_pass
         if not name:
             sym_shape_eval_pass = default_pass
-        # pyre-ignore: Undefined attribute [16]
         sym_shape_eval_pass = config.sym_shape_eval_pass.get(name, default_pass)
     elif isinstance(config.sym_shape_eval_pass, PassBase):
         sym_shape_eval_pass = config.sym_shape_eval_pass
@@ -1347,11 +1348,11 @@ class EdgeProgramManager:
                 memory_planning_pass = config.memory_planning_pass
             # TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work
             if hasattr(memory_planning_pass, "run"):
-                new_gm_res = memory_planning_pass.run(  # pyre-ignore[16]
+                new_gm_res = memory_planning_pass.run(
                     new_gm, new_signature
                 )
             else:
-                new_gm_res = memory_planning_pass(new_gm)  # pyre-ignore[29]
+                new_gm_res = memory_planning_pass(new_gm)
             assert new_gm_res is not None
             new_gm = new_gm_res.graph_module
 

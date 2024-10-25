@@ -466,7 +466,6 @@ class TestMisc(unittest.TestCase):
         )
         return quantized_model
 
-    # pyre-ignore
     @parameterized.expand(
         [
             (

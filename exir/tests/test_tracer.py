@@ -206,7 +206,6 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
             ExirDynamoConfig(),
         )
 
-    # pyre-ignore
     @parameterized.expand([("stock_tensor",)])
     def test_embedding_dynamic_shape(self, input_type: str) -> None:
         class Module(torch.nn.Module):

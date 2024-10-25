@@ -520,6 +520,7 @@ def preprocess(
         last_indent = input_indent
 
     while blank_lines != 0:
+        # pyre-fixme[61]: `python_indent` is undefined, or not always defined.
         python_lines.append(python_indent + "print(file=OUT_STREAM)")
         blank_lines -= 1
 

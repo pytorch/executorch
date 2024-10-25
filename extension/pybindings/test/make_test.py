@@ -86,6 +86,7 @@ class ModuleAddConstReturn(torch.nn.Module):
 
 def create_program(
     eager_module: torch.nn.Module,
+    # pyre-fixme[11]: Annotation `ExecutorchBackendConfig` is not defined as a type.
     et_config: Optional[ExecutorchBackendConfig] = None,
 ) -> Tuple[ExecutorchProgramManager, Tuple[Any, ...]]:
     """Returns an executorch program based on ModuleAdd, along with inputs."""

@@ -16,7 +16,6 @@ from parameterized import parameterized
 
 
 class TestCapture(unittest.TestCase):
-    # pyre-ignore
     @parameterized.expand(models.MODELS)
     def test_module_call(self, model_name: str, model: torch.nn.Module) -> None:
         inputs = model.get_random_inputs()

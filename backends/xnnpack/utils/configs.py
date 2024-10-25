@@ -14,6 +14,7 @@ from executorch.exir.pass_manager import PassType
 ### XNNPACK Configs ###
 def get_xnnpack_edge_compile_config(
     skip_dim_order: bool = False,
+# pyre-fixme[11]: Annotation `EdgeCompileConfig` is not defined as a type.
 ) -> exir.EdgeCompileConfig:
     return exir.EdgeCompileConfig(
         _check_ir_validity=False, _skip_dim_order=skip_dim_order
@@ -27,6 +28,7 @@ def get_transform_passes(additional_passes=None) -> List[PassType]:
 
 def get_xnnpack_executorch_backend_config(
     additional_passes=None,
+# pyre-fixme[11]: Annotation `ExecutorchBackendConfig` is not defined as a type.
 ) -> exir.ExecutorchBackendConfig:
     additional_passes = additional_passes if additional_passes else []
     return exir.ExecutorchBackendConfig(

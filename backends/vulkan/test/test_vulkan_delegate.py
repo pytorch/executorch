@@ -33,6 +33,7 @@ from executorch.extension.pytree import tree_flatten
 
 
 class TestBackends(unittest.TestCase):
+    # pyre-fixme[11]: Annotation `EdgeCompileConfig` is not defined as a type.
     _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
         _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
     )

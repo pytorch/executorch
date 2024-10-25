@@ -368,9 +368,9 @@ class Interpreter:
         Outputs after completing all computations
         """
 
-        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         args, pytree = ex_pytree.tree_flatten((raw_args, {}))
 
+        # pyre-fixme[16]: `TreeSpec` has no attribute `to_str`.
         if pytree.to_str() != self.container_metatype.encoded_inp_str:
             raise TypeError(
                 f"Arguments provided do not match required type. \nRequired: {self.container_metatype.encoded_inp_str} \nProvided: {pytree.to_str()}"
@@ -421,5 +421,4 @@ class Interpreter:
         ret = [self._value_list[i] for i in self.execution_plan.outputs]
         # pyre-fixme[16]: Module `pytree` has no attribute `from_str`.
         treespec = ex_pytree.from_str(self.container_metatype.encoded_out_str)
-        # pyre-fixme[16]: Module `pytree` has no attribute `tree_unflatten`.
         return ex_pytree.tree_unflatten(ret, treespec)

@@ -324,9 +324,7 @@ class PythonTensor(torch.Tensor):
                         )
                     )
 
-        # pyre-fixme[16]: Module `pytree` has no attribute `tree_map`.
         proxy_args = ex_pytree.tree_map(unwrap_proxy, args)
-        # pyre-fixme[16]: Module `pytree` has no attribute `tree_map`.
         proxy_kwargs = ex_pytree.tree_map(unwrap_proxy, kwargs)
 
         # Get the output of the function
@@ -475,6 +473,7 @@ class DispatchTracer(fx.Tracer):
 
     @staticmethod
     def get() -> "DispatchTracer":
+        # pyre-fixme[7]: Expected `DispatchTracer` but got `Optional[DispatchTracer]`.
         return TRACER
 
     def trace(  # pyre-fixme[14,15]

@@ -331,6 +331,7 @@ class QuantFusion(ExportPass):
         # pyre-ignore[4]: Parameter `patterns` of class `QuantFusion` has no type specified
         self.patterns = patterns
 
+    # pyre-fixme[7]: Expected `PassResult` but got implicit return value of `None`.
     def call(self, graph_module: fx.GraphModule) -> PassResult:  # noqa: C901
         for pattern in self.patterns:
             fused_partitions = find_sequential_partitions_aten(
@@ -453,7 +454,6 @@ class QuantFusion(ExportPass):
 
             legalize_graph(graph_module)
             graph_module.graph.eliminate_dead_code()
-            # pyre-fixme[7]: Incompatible return type
             graph_module.recompile()
 
     @classmethod
@@ -463,7 +463,7 @@ class QuantFusion(ExportPass):
 
     @classmethod
     # pyre-ignore[2]: Parameter `nodes` has no type specified
+    # pyre-fixme[7]: Expected `bool` but got implicit return value of `None`.
     def mark_fused(cls, nodes) -> bool:
         for n in nodes:
-            # pyre-fixme[7]: Incompatible return type
             n.meta["QuantFusion"] = True
