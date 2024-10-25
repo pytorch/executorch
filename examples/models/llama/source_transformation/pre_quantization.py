@@ -46,6 +46,8 @@ def _replace_linear_with_linear_8da4w_for_pre_quantization(
             precision=precision,
             scales_precision=scales_precision,
         )
+        # TODO(lunwenh): Remove this once TorchAO's commit pin in ExecuTorch is updated to include this PR
+        new_linear.zeros = torch.zeros_like(new_linear.zeros)
         return new_linear
 
     _replace_with_custom_fn_if_matches_filter(module, replacement_fn, filter_fn)
