@@ -71,6 +71,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_EXPAND_BROADCAST_SHAPE,
     QCOM_PASS_SKIP_ADVANCED_REQUANT,
     QCOM_QNN_COMPILE_SPEC,
+    QCOM_QUANTIZED_IO,
 )
 
 from executorch.exir import ExirExportedProgram
@@ -165,8 +166,8 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
             super().__init__()
             use_bias = bias is not None
             self.conv = torch.nn.Conv2d(
-                in_channels=weight.shape[0],
-                out_channels=weight.shape[1],
+                in_channels=weight.shape[1],
+                out_channels=weight.shape[0],
                 kernel_size=1,
                 padding=0,
                 bias=use_bias,
@@ -876,3 +877,12 @@ def get_soc_to_chipset_map():
         "SM8475": QcomChipset.SM8475,
         "SM8450": QcomChipset.SM8450,
     }
+
+
+def tag_quant_io(gm: torch.fx.GraphModule, get_quant_io_dtype_fn: Callable):
+    """
+    Tag io nodes which get/output quantized tensor. No need to insert q/dq in qnn_preprocess
+    """
+    for node in gm.graph.nodes:
+        if dtype := get_quant_io_dtype_fn(node):
+            node.meta[QCOM_QUANTIZED_IO] = dtype

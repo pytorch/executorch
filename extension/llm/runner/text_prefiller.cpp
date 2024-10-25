@@ -41,7 +41,7 @@ TextPrefiller::TextPrefiller(
     auto tokens = from_blob(
         prompt_tokens.data(),
         {1, num_prompt_tokens},
-        exec_aten::ScalarType::Long);
+        exec_aten::ScalarType::Int);
 
     auto start_pos_tensor =
         from_blob(&start_pos, {1}, exec_aten::ScalarType::Long);
@@ -60,7 +60,7 @@ TextPrefiller::TextPrefiller(
     cur_token = prompt_tokens[0];
 
     // initialize tensor wrappers
-    auto tokens = from_blob(&cur_token, {1, 1}, exec_aten::ScalarType::Long);
+    auto tokens = from_blob(&cur_token, {1, 1}, exec_aten::ScalarType::Int);
 
     auto start_pos_tensor =
         from_blob(&start_pos, {1}, exec_aten::ScalarType::Long);

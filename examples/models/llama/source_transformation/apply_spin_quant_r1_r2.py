@@ -98,7 +98,7 @@ def get_model_with_r1_r2(optimized_rotation_path: str):
 
 
 def apply_spin_quant_r1_r2(model: torch.nn.Module, optimized_rotation_path: str):
-    optimized_rotation = torch.load(optimized_rotation_path, weights_only=True)
+    optimized_rotation = torch.load(optimized_rotation_path, weights_only=True, map_location=torch.device('cpu'))
     R1 = optimized_rotation["R1"].to(torch.float32)
     config = model.params
     num_heads = config.n_heads

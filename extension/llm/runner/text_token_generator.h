@@ -71,7 +71,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
 
     // initialize tensor wrappers
     auto tokens_managed = from_blob(
-        token_data.data(), token_shape, executorch::aten::ScalarType::Long);
+        token_data.data(), token_shape, executorch::aten::ScalarType::Int);
     auto start_pos_managed =
         from_blob(&pos, {1}, executorch::aten::ScalarType::Long);
 
