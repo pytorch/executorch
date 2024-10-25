@@ -121,6 +121,22 @@ def build_model(
     return export_llama(modelname, args)
 
 
+def _is_valid_torchao_qmode_type(value):
+    if not value.startswith("torchao:"):
+        return False
+
+    patterns = [
+        r"emb.(\d+),(\d+)&lin8da.(\d+),(\d+)",
+        r"emb.(\d+),(\d+)",
+        r"lin8da.(\d+),(\d+)",
+    ]
+    for pattern in patterns:
+        matches = re.findall(pattern, value)
+        if len(matches) == 1:
+            return True
+    return False
+
+
 def build_args_parser() -> argparse.ArgumentParser:
     ckpt_dir = f"{Path(__file__).absolute().parent.as_posix()}"
     parser = argparse.ArgumentParser()
@@ -154,26 +170,17 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
 
-    def _is_valid_torchao_qmode_type(value):
-        if not value.startswith("torchao:"):
-            return False
-
-        patterns = [
-            r"emb.(\d+),(\d+)&lin8da.(\d+),(\d+)",
-            r"emb.(\d+),(\d+)",
-            r"lin8da.(\d+),(\d+)",
-        ]
-        for pattern in patterns:
-            matches = re.findall(pattern, value)
-            if len(matches) == 1:
-                return True
-        return False
-
     def _qmode_type(value):
         choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w"]
         if not (value in choices or _is_valid_torchao_qmode_type(value)):
             raise argparse.ArgumentTypeError(
-                f"Value must be one of: {choices} or a valid torchao regex"
+                f"Got qmode {value}, but expected one of: {choices} or a valid torchao quantization pattern such as:"
+                + "\n\t* torchao:emb.{embed_bitwidth},{embed_groupsize}"
+                + "\n\t\t (e.g., torchao:emb.4,32)"
+                + "\n\t* torchao:emb.{embed_bitwidth},{embed_groupsize}&lin8da.{linear_bitwidth},{linear_groupsize}"
+                + "\n\t\t (e.g., torchao:emb.4,32&lin8da.4,128)"
+                + "\n\t* torchao:lin8da.{linear_bitwidth},{linear_groupsize}"
+                + "\nt\t\t (e.g., torchao:lin8da.4,128)"
             )
         return value
 
@@ -603,6 +610,12 @@ def _validate_args(args):
 
     if args.num_sharding > 0 and not args.qnn:
         raise ValueError("Model shard is only supported with qnn backend now.")
+
+    if _is_valid_torchao_qmode_type(args.quantization_mode):
+        if args.enable_dynamic_shape:
+            raise ValueError(
+                "Dynamic shape is not currently supported with torchao qmode. Please use --disable_dynamic_shape."
+            )
 
 
 def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
