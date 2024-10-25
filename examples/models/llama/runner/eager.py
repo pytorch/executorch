@@ -38,7 +38,7 @@ class EagerLlamaRunner(LlamaRunner):
             model_args=model_args,
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
-        manager: LLMEdgeManager = _prepare_for_llama_export("llama", args)
+        manager: LLMEdgeManager = _prepare_for_llama_export(args)
         self.model = manager.model.eval().to(device=self.device)
 
     def forward(
