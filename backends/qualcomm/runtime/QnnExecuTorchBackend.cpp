@@ -11,6 +11,9 @@
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/schema_generated.h>
+#include <chrono>
+
+// #include <fstream>
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -26,6 +29,7 @@ using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
 // ========== Public method implementations =========================
 constexpr const char* QNN_COMPILE_SPEC = "qnn_compile_spec";
+// static int hi = 0;
 Result<DelegateHandle*> QnnExecuTorchBackend::init(
     BackendInitContext& context,
     FreeableBuffer* processed,
@@ -36,6 +40,11 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
 
   qnn_context_blob.buffer = const_cast<void*>(processed->data());
   qnn_context_blob.nbytes = processed->size();
+  // std::string path_ = "model_"+std::to_string(hi)+".bin";
+  // std::ofstream fout(path_, std::ios::binary);
+  // fout.write(static_cast<const char*>(processed->data()), static_cast<int64_t>(processed->size()));
+  // fout.flush();
+  // hi++;
 
   // convert CompileSpec to qnn ExecuTorch option
   for (auto& compile_spec : compile_specs) {
@@ -180,11 +189,12 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
   }
   return qnn_manager;
 }
-
+// static int qq = 0;
 Error QnnExecuTorchBackend::execute(
     BackendExecutionContext& context,
     DelegateHandle* handle,
     EValue** args) const {
+          auto begin = std::chrono::high_resolution_clock::now();
   QnnManager* qnn_manager = static_cast<QnnManager*>(handle);
 
   std::vector<std::shared_ptr<TensorWrapper>> input_tensors =
@@ -202,6 +212,14 @@ Error QnnExecuTorchBackend::execute(
       // update data ptr only should be fine
       input_tensors[i]->FillDataBuffer(
           args[i]->toTensor().const_data_ptr(), false /* copy_data */);
+        // if(qq < input_tensors.size()){
+        //   std::string path_ = "qinput_"+std::to_string(qq)+".raw";
+        //   std::ofstream fout(path_, std::ios::binary);
+        //   fout.write(static_cast<const char*>(args[i]->toTensor().const_data_ptr()), input_tensors[i]->GetBytes());
+        //   fout.flush();
+        //   qq++;
+        // }
+
     }
     input_tensor_structs.push_back(input_tensors[i]->CloneTensorStruct());
   }
@@ -232,7 +250,12 @@ Error QnnExecuTorchBackend::execute(
       qnn_manager->ProfileExecuteData(context.event_tracer()) == Error::Ok,
       Internal,
       "Fail to profile graph");
+    auto end = std::chrono::high_resolution_clock::now();
 
+    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end -
+                                                                          begin);
+    QNN_EXECUTORCH_LOG_INFO(
+        "QNN Graph Execute Time in QnnExecuTorchBackend: %ld us", elapsed.count());
   return Error::Ok;
 }
 

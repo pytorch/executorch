@@ -26,7 +26,8 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/program_generated.h>
-
+#include <chrono>
+#include <iostream>
 namespace executorch {
 namespace runtime {
 
@@ -1004,6 +1005,7 @@ ET_NODISCARD Error Method::get_inputs(EValue* input_evalues, size_t length) {
 }
 
 Error Method::execute_instruction() {
+        auto begin = std::chrono::high_resolution_clock::now();
   auto& chain = chains_[step_state_.chain_idx];
   auto instructions = chain.s_chain_->instructions();
 
@@ -1030,6 +1032,9 @@ Error Method::execute_instruction() {
       chain.kernels_[step_state_.instr_idx](context, args.data());
       // We reset the temp_allocator after the switch statement
       err = context.failure_state();
+      auto op_index = instruction->instr_args_as_KernelCall()->op_index();
+        auto op = serialization_plan_->operators()->Get(op_index);
+      std::cout <<"run op"<<op->name()->c_str()<<std::endl;
       if (err != Error::Ok) {
         // We know that instr_args_as_KernelCall is non-null because it was
         // checked at init time.
@@ -1151,6 +1156,12 @@ Error Method::execute_instruction() {
   if (err == Error::Ok) {
     step_state_.instr_idx = next_instr_idx;
   }
+        auto end = std::chrono::high_resolution_clock::now();
+
+    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end -
+                                                                          begin);
+  std::cout << "instruction->instr_args_type()" << static_cast<int>(instruction->instr_args_type()) << std::endl;
+  std::cout<< "delegates_[delegate_idx].Execute Time:" <<elapsed.count() << std::endl;
   return err;
 }
 
