@@ -47,6 +47,8 @@ Our quantization scheme involves three parts, applicable to both methods:
 - The classification layer is quantized to 8-bit per-channel for weight and 8-bit per token dynamic quantization for activation.
 - We employ an 8-bit per channel quantization for embedding.
 
+We use [torchao](https://github.com/pytorch/ao) library APIs to define these schemes.
+
 #### SpinQuant
 
 The SpinQuant method takes the original weights and produces optimized quantized weights with minimal outliers, resulting in higher accuracy. This can be achieved without any finetuning of the weights and only requires 100 iterations on a single A100 node.
@@ -102,6 +104,8 @@ For Llama 3 8B and Llama3.1 8B, we have verified so far on iPhone 15 Pro, iPhone
 ### Quantization
 
 We employed PTQ 4-bit groupwise per token dynamic quantization of all the linear layers of the model. Dynamic quantization refers to quantizating activations dynamically, such that quantization parameters for activations are calculated, from min/max range, at runtime. Here we quantized activations with 8bits (signed integer). Furthermore, weights are statically quantized. In our case weights were per-channel groupwise quantized with 4bit signed integer. Due to Llama3's vocabulary size, we had to quantize embedding lookup table as well. For these results embedding lookup table was groupwise quantized with 4-bits and group size of 32.
+
+We use [torchao](https://github.com/pytorch/ao) library APIs to define these schemes.
 
 ### Accuracy
 
