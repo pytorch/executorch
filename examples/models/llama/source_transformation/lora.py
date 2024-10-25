@@ -70,6 +70,8 @@ class Int8DynActInt4WeightLinearLoRA(Int8DynActInt4WeightLinear):
             precision=precision,
             scales_precision=scales_precision,
         )
+        # TODO(lunwenh): Remove this once TorchAO's commit pin in ExecuTorch is updated to include this PR
+        self.zeros = torch.zeros_like(self.zeros)
         self.adaptor = LoRAAdaptorLinear(
             in_features,
             out_features,
