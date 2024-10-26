@@ -453,7 +453,6 @@ class ExirExportedProgram:
     def __deepcopy__(
         self, memo: Optional[Dict[int, Any]] = None
     ) -> "ExirExportedProgram":
-
         new_eep = ExirExportedProgram(
             copy.deepcopy(self.exported_program, memo),
             self.after_to_edge_passes,
@@ -764,7 +763,6 @@ def _replace_aten_ops_with_transformed_ops(
     program: ExportedProgram,
     partitioner,
 ):
-
     ops_to_not_decompose = set()
     partitioners = partitioner.get(name)
     if partitioners is None:
@@ -1020,9 +1018,9 @@ def to_edge_transform_and_lower(
         aten_programs = programs
 
     if not isinstance(partitioner, dict) and partitioner is not None:
-        partitioner = {"forward": partitioner}
+        partitioner = {name: partitioner for name in aten_programs.keys()}
     elif partitioner is None:
-        partitioner = {"forward": []}
+        partitioner = {name: [] for name in aten_programs.keys()}
 
     edge_manager = _gen_edge_manager_for_partitioners(
         partitioner, aten_programs, config, constant_methods
@@ -1037,7 +1035,6 @@ def to_edge_transform_and_lower(
                 edge_manager = edge_manager.to_backend({name: curr_partitioner})
 
     for name, program in edge_manager._edge_programs.items():
-
         ops_set_to_not_decompose: Set[torch._ops.OpOverload] = set()
         partitioners = partitioner.get(name, [])
         for curr_partitioner in partitioners:
