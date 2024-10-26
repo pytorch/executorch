@@ -931,7 +931,6 @@
     <span class="k">def</span> <span class="nf">__deepcopy__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">memo</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExirExportedProgram&quot;</span><span class="p">:</span>
-
         <span class="n">new_eep</span> <span class="o">=</span> <span class="n">ExirExportedProgram</span><span class="p">(</span>
             <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span> <span class="n">memo</span><span class="p">),</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">after_to_edge_passes</span><span class="p">,</span>
@@ -1242,7 +1241,6 @@
     <span class="n">program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">partitioner</span><span class="p">,</span>
 <span class="p">):</span>
-
     <span class="n">ops_to_not_decompose</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
     <span class="n">partitioners</span> <span class="o">=</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">partitioners</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -1498,9 +1496,9 @@
         <span class="n">aten_programs</span> <span class="o">=</span> <span class="n">programs</span>
 
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">partitioner</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">partitioner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">partitioner</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">partitioner</span><span class="p">}</span>
+        <span class="n">partitioner</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">partitioner</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">aten_programs</span><span class="o">.</span><span class="n">keys</span><span class="p">()}</span>
     <span class="k">elif</span> <span class="n">partitioner</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">partitioner</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="p">[]}</span>
+        <span class="n">partitioner</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">aten_programs</span><span class="o">.</span><span class="n">keys</span><span class="p">()}</span>
 
     <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">_gen_edge_manager_for_partitioners</span><span class="p">(</span>
         <span class="n">partitioner</span><span class="p">,</span> <span class="n">aten_programs</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">constant_methods</span>
@@ -1515,7 +1513,6 @@
                 <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_backend</span><span class="p">({</span><span class="n">name</span><span class="p">:</span> <span class="n">curr_partitioner</span><span class="p">})</span>
 
     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-
         <span class="n">ops_set_to_not_decompose</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
         <span class="n">partitioners</span> <span class="o">=</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">[])</span>
         <span class="k">for</span> <span class="n">curr_partitioner</span> <span class="ow">in</span> <span class="n">partitioners</span><span class="p">:</span>
