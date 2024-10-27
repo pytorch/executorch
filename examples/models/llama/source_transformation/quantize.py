@@ -79,12 +79,14 @@ def quantize(  # noqa C901
         libs = glob.glob(
             os.path.abspath(
                 os.path.join(
-                    os.path.dirname(__file__),
-                    "../../../../cmake-out/third-party/ao/torchao/experimental/libtorchao_ops_aten.*",
+                    os.environ.get("CMAKE_INSTALL_PREFIX", ""),
+                    "lib/libtorchao_ops_aten.*",
                 )
             )
         )
-        assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
+        assert (
+            len(libs) == 1
+        ), f"Expected 1 library but got {len(libs)}.  If you installed the torchao ops in a non-standard location, please set CMAKE_INSTALL_PREFIX correctly."
         logging.info(f"Loading custom ops library: {libs[0]}")
         torch.ops.load_library(libs[0])
 
