@@ -169,10 +169,16 @@ class Rope(torch.nn.Module):
         else:
             self.apply_rotary_emb = RotaryEmbedding()
 
-    def forward(self, q: torch.Tensor, k: torch.Tensor, seq_len: int, input_pos: Optional[torch.LongTensor] = None):
+    def forward(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        seq_len: int,
+        input_pos: Optional[torch.LongTensor] = None,
+    ):
         if self.params.use_kv_cache:
             assert (
-                    input_pos is not None
+                input_pos is not None
             ), "input_pos must be provided when use_kv_cache is True"
 
             if self.params.enable_dynamic_shape:
@@ -202,14 +208,14 @@ class Rope(torch.nn.Module):
 
 class KVCache(nn.Module):
     def __init__(
-            self,
-            max_batch_size: int,
-            max_seq_length: int,
-            n_heads: int,
-            head_dim: int,
-            transpose_cache: bool,
-            enable_dynamic_shape: bool,
-            dtype=torch.float32,
+        self,
+        max_batch_size: int,
+        max_seq_length: int,
+        n_heads: int,
+        head_dim: int,
+        transpose_cache: bool,
+        enable_dynamic_shape: bool,
+        dtype=torch.float32,
     ):
         super().__init__()
         self.max_seq_length = max_seq_length
@@ -232,7 +238,7 @@ class KVCache(nn.Module):
         )
 
     def update(
-            self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # input_pos: [S], k_val: [B, H, S, D] or [B, S, H, D] depending on transpose_cache
         if self.enable_dynamic_shape:
@@ -270,13 +276,13 @@ class KVCache(nn.Module):
 
 class SDPA(nn.Module):
     def __init__(
-            self,
-            kv_cache: KVCache,
-            dim: int,
-            head_dim: int,
-            n_rep: int,
-            max_seq_len: int,
-            enable_dynamic_shape: bool,
+        self,
+        kv_cache: KVCache,
+        dim: int,
+        head_dim: int,
+        n_rep: int,
+        max_seq_len: int,
+        enable_dynamic_shape: bool,
     ):
         super().__init__()
         self.kv_cache = kv_cache
@@ -287,14 +293,14 @@ class SDPA(nn.Module):
         self.enable_dynamic_shape = enable_dynamic_shape
 
     def forward(
-            self,
-            input_pos: torch.Tensor,
-            q: torch.Tensor,  # Already have rotary embeddings. (bs, seqlen, n_local_heads, head_dim)
-            k: torch.Tensor,  # Already have rotary embeddings. (bs, seqlen, n_local_kv_heads, head_dim)
-            v: torch.Tensor,  # (bs, seqlen, n_local_kv_heads, head_dim)
-            bsz,
-            seqlen,
-            mask: torch.Tensor,
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,  # Already have rotary embeddings. (bs, seqlen, n_local_heads, head_dim)
+        k: torch.Tensor,  # Already have rotary embeddings. (bs, seqlen, n_local_kv_heads, head_dim)
+        v: torch.Tensor,  # (bs, seqlen, n_local_kv_heads, head_dim)
+        bsz,
+        seqlen,
+        mask: torch.Tensor,
     ) -> torch.Tensor:
         q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
         k = k.transpose(1, 2)
@@ -373,9 +379,9 @@ class Attention(nn.Module):
             )
 
     def forward(
-            self,
-            x: torch.Tensor,
-            input_pos: Optional[torch.Tensor] = None,
+        self,
+        x: torch.Tensor,
+        input_pos: Optional[torch.Tensor] = None,
     ):
         bsz, seqlen, _ = x.shape
 
@@ -523,12 +529,12 @@ class Transformer(nn.Module):
         self.output_prune_map = params.output_prune_map
 
     def forward(
-            self,
-            tokens: Optional[torch.LongTensor] = None,  # tokens
-            input_pos: Optional[
-                torch.LongTensor
-            ] = None,  # Scalar tensor indicating size of window of the caches
-            h: Optional[torch.FloatTensor] = None,  # embeddings
+        self,
+        tokens: Optional[torch.LongTensor] = None,  # tokens
+        input_pos: Optional[
+            torch.LongTensor
+        ] = None,  # Scalar tensor indicating size of window of the caches
+        h: Optional[torch.FloatTensor] = None,  # embeddings
     ) -> torch.Tensor:
         if (tokens is None) ^ (h is not None):
             raise ValueError(
