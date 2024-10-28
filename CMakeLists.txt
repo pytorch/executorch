@@ -820,6 +820,11 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     list(APPEND _executor_runner_libs quantized_ops_lib)
   endif()
 
+  if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+    list(APPEND _executor_runner_libs custom_ops)
+    target_link_options_shared_lib(custom_ops)
+  endif()
+
   add_executable(executor_runner ${_executor_runner__srcs})
   if(CMAKE_BUILD_TYPE STREQUAL "Release")
     if(APPLE)

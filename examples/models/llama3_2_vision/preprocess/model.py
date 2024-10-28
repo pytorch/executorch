@@ -31,7 +31,7 @@ class PreprocessConfig:
 class CLIPImageTransformModel(EagerModelBase):
     def __init__(
         self,
-        config: PreprocessConfig,
+        config: PreprocessConfig = PreprocessConfig(),
     ):
         super().__init__()
 

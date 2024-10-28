@@ -30,6 +30,7 @@ MODEL_NAME_TO_MODEL = {
     "resnet18": ("resnet", "ResNet18Model"),
     "resnet50": ("resnet", "ResNet50Model"),
     "llava": ("llava", "LlavaModel"),
+    "clip": ("llama3_2_vision.preprocess", "CLIPImageTransformModel"),
 }
 
 __all__ = [

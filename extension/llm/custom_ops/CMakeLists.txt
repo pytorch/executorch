@@ -53,12 +53,16 @@ else()
   list(APPEND custom_ops_libs extension_threadpool xnnpack_backend)
 endif()
 
+message(INFO, "LUCY custom ops srcs: ${_custom_ops__srcs}")
 add_library(custom_ops ${_custom_ops__srcs})
 
+message(INFO, "LUCY common include dirs ${_common_include_directories}")
 target_include_directories(custom_ops PUBLIC "${_common_include_directories}")
 target_include_directories(
   custom_ops PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
 )
+
+message(INFO, "LUCY custom ops include dirs: ${CMAKE_CURRENT_BINARY_DIR}/../../../include")
 target_link_libraries(
   custom_ops PUBLIC ${custom_ops_libs} executorch_core
 )
