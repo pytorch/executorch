@@ -32,7 +32,6 @@ void quantize_per_tensor_out(
     Tensor& out) {
   const float* input_data = input.const_data_ptr<float>();
   const size_t numel = out.numel();
-
   if (out.scalar_type() == ScalarType::Byte) {
     uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
     cadence::impl::HiFi::kernels::quantize<uint8_t>(
