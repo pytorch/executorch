@@ -400,7 +400,6 @@ inline void broadcasting_map_broadcast_last_dim(
     int64_t broadcast_size) {
   using Vec = vec::Vectorized<scalar_t>;
   int64_t outer_stride_lhs = broadcast_size;
-  int64_t outer_stride_rhs = 1;
   for (int64_t outer_idx = 0; outer_idx < outer_size; ++outer_idx) {
     const scalar_t* lhs_outer = lhs + outer_idx * outer_stride_lhs;
     scalar_t* output_data_row = output_data + outer_idx * outer_stride_lhs;
