@@ -7,7 +7,7 @@
 # pyre-strict
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
 from executorch.exir.scalar_type import ScalarType
 
@@ -20,6 +20,8 @@ class TensorMetadata:
     scalar_type: ScalarType
     dim_sizes: List[int]
     dim_order: List[bytes]
+    storage_offset: int
+    layout: int
 
     offset: int
     size: int
