@@ -1,0 +1,62 @@
+include "scalar_type.fbs";
+namespace executorch_flatbuffer;
+
+// Update after BC breaking changes.
+file_identifier "DT01";
+file_extension "data";
+
+table TensorMetadata {
+  // The unique id used to connect the data and program.
+  fully_qualified_name:string;
+  scalar_type:ScalarType;
+  dim_sizes:[int];
+  dim_order:[ubyte];
+
+  // Tensor offsets are relative to each TensorSegment.
+  // To retrieve a given tensor:
+  // 1. segment_base_offset: from the file header.
+  // 2. segment offset: segments[tensor_segments[i].segment_index].offset
+  //    This is likely to be 0 (all the tensors in one segment).
+  // 3. tensor offset: tensor_segments[i].tensor_metadata[j].offset
+  //    May need to binary search over tensor_metadata to find the matching
+  //    tensor using fqn.
+  offset: uint64;
+  size: uint64;
+}
+
+table TensorSegment {
+  // Index of the segment in Data.segments.
+  segment_index: uint;
+
+  // Tensor information, including the offset and size.
+  tensor_metadata:[TensorMetadata];
+}
+
+table DataSegment {
+  // Segment offsets are relative to the segment base offset provided in
+  // the extended file header. Segments will typically be aligned in a
+  // way to make it possible to use mmap() to load them.
+  offset: uint64;
+
+  // The size in bytes of valid data starting at the offset. The segment
+  // data may be followed by padding before the segment that follows it,
+  // to make it easier to use mmap().
+  size: uint64;
+}
+
+table Data {
+  // Schema version.
+  version:uint;
+
+  // Alignment for each tensor.
+  tensor_alignment: uint32;
+
+  // Tensor information.
+  tensor_segments:[TensorSegment];
+
+  // Data segments.
+  segments:[DataSegment];
+
+}
+
+root_type Data;
