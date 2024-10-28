@@ -15,7 +15,7 @@ from executorch.extension.llm.tokenizer.utils import get_tokenizer
 
 class CompletionPrediction(TypedDict, total=False):
     generation: str
-    tokens: List[str]  # not required
+    tokens: List[int]  # not required
 
 
 def sample_top_p(probs, p):
@@ -47,6 +47,7 @@ def next_token(logits: torch.Tensor, temperature: float, top_p: float) -> int:
     if temperature > 0:
         probs = torch.softmax(logits / temperature, dim=-1)
         return sample_top_p(probs, top_p).item()
+    # Pyre-ignore[7]: Incompatible return type [7]: Expected `int` but got `Union[bool, float, int]`
     return torch.argmax(logits, dim=-1).item()
 
 
@@ -60,8 +61,8 @@ class LlamaRunner(ABC):
     @abstractmethod
     def forward(
         self,
-        tokens: Optional[torch.LongTensor] = None,
-        input_pos: Optional[torch.LongTensor] = None,
+        tokens: torch.Tensor,
+        input_pos: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         pass
 
