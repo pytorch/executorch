@@ -27,7 +27,6 @@ runtime.python_library(
         "//executorch/backends/transforms:fuse_conv_with_clamp",
         "//executorch/backends/transforms:fuse_dequant_linear",
         "//executorch/backends/transforms:fuse_view_copy",
-        "//executorch/backends/transforms:mean_to_sum_div",
         "//executorch/backends/transforms:remove_clone_ops",
         "//executorch/backends/vulkan/_passes:vulkan_passes",
         "//executorch/exir:graph_module",

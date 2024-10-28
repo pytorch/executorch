@@ -6,8 +6,6 @@
 
 # pyre-unsafe
 
-import itertools
-import operator
 from typing import Callable, List, Optional
 
 import torch
@@ -16,7 +14,6 @@ from executorch.backends.arm.quantizer.quantization_annotation import register_a
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from torch.ao.quantization.quantizer import QuantizationAnnotation
 from torch.fx import Node
-from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
 @register_annotator("add")
@@ -25,14 +22,15 @@ def _annotate_add(
     quantization_config: QuantizationConfig,
     filter_fn: Optional[Callable[[Node], bool]] = None,
 ) -> Optional[List[List[Node]]]:
-    add_partitions = get_source_partitions(
-        gm.graph, [operator.add, torch.add, operator.iadd], filter_fn
-    )
-    add_partitions = list(itertools.chain.from_iterable(add_partitions.values()))
     annotated_partitions = []
-    for add_partition in add_partitions:
-        annotated_partitions.append(add_partition.nodes)
-        add_node = add_partition.output_nodes[0]
+    for node in gm.graph.nodes:
+        if node.target not in (
+            torch.ops.aten.add.Tensor,
+            torch.ops.aten.add_.Tensor,
+        ):
+            continue
+        annotated_partitions.append(node)
+        add_node = node
         if arm_quantizer_utils.is_annotated(add_node):
             continue
 

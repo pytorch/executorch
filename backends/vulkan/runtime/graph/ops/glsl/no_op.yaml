@@ -14,6 +14,7 @@ no_op:
       - VALUE: float
       - VALUE: int
       - VALUE: int8
+      - VALUE: uint8
     STORAGE:
       - VALUE: texture3d
       - VALUE: texture2d

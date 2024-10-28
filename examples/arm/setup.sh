@@ -88,7 +88,7 @@ ethos_u_base_rev="24.08"
 
 # tosa reference model
 tosa_reference_model_url="https://review.mlplatform.org/tosa/reference_model"
-tosa_reference_model_rev="444eb365d92774430006e56a8c20161be2f2674f"
+tosa_reference_model_rev="f9ea4ab7da19318fe36b1c34d68a3e40fd6e56c5"
  
 ########
 ### Mandatory user args
@@ -261,7 +261,7 @@ function setup_vela() {
     if [[ ! -e ethos-u-vela ]]; then
         git clone https://review.mlplatform.org/ml/ethos-u/ethos-u-vela
         repo_dir="${root_dir}/ethos-u-vela"
-        base_rev=fe0eaa55c5ed319f78c01978f3b40eb11a9bcb38
+        base_rev=57ce18c89ccc6f6309333dccb24ed30dc68b571f
         patch_repo
     fi
     cd "${root_dir}/ethos-u-vela"

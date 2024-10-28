@@ -37,10 +37,7 @@ from executorch.backends.qualcomm.utils.utils import (
     skip_annotation,
 )
 
-from executorch.examples.models.llama2.llama_transformer import (
-    ModelArgs,
-    MOEFeedForward,
-)
+from executorch.examples.models.llama.llama_transformer import ModelArgs, MOEFeedForward
 
 from executorch.examples.qualcomm.utils import setup_common_args_and_variables
 
@@ -51,7 +48,7 @@ from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.models.inception_v3 import InceptionV3Model
 from executorch.examples.models.inception_v4 import InceptionV4Model
 
-# from executorch.examples.models.llama2 import Llama2Model
+# from executorch.examples.models.llama import Llama2Model
 from executorch.examples.models.mobilebert import MobileBertModelExample
 from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.examples.models.mobilenet_v3 import MV3Model
@@ -68,7 +65,7 @@ class TestQNNFloatingPointOperator(TestQNN):
         TestQNN.rtol = 1e-1
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             debug=False,
             saver=False,
@@ -291,6 +288,13 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = Gelu()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_group_norm(self):
+        modules = [GroupNorm(), GroupNorm(bias=False)]  # noqa: F405
+        sample_input = (torch.randn(3, 32, 56, 56),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_hardsigmoid(self):
         module = HardSigmoid()  # noqa: F405
@@ -522,7 +526,7 @@ class TestQNNFloatingPointModel(TestQNN):
         TestQNN.rtol = 1e-1
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             debug=False,
             saver=False,
@@ -674,7 +678,7 @@ class TestQNNQuantizedOperator(TestQNN):
         TestQNN.rtol = 1
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             debug=False,
             saver=False,
@@ -967,6 +971,14 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_group_norm(self):
+        modules = [GroupNorm(), GroupNorm(bias=False)]  # noqa: F405
+        sample_input = (torch.randn(3, 32, 56, 56),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_hardsigmoid(self):
         module = HardSigmoid()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
@@ -1043,6 +1055,26 @@ class TestQNNQuantizedOperator(TestQNN):
         module = Linear()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
         module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_linear_qat(self):
+        """
+        Prototype to test qat model
+        """
+        module = Linear()  # noqa: F405
+        sample_input = (torch.randn([3, 4]),)
+
+        module = self.get_prepared_qat_module(module, sample_input)
+
+        optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+        criterion = torch.nn.CrossEntropyLoss()
+        output = module(*sample_input)
+        loss = criterion(output, module(*sample_input))
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        module = torch.ao.quantization.quantize_pt2e.convert_pt2e(module)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_log_softmax(self):
@@ -1236,7 +1268,7 @@ class TestQNNQuantizedModel(TestQNN):
         TestQNN.rtol = 1
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             debug=False,
             saver=False,
@@ -1444,7 +1476,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         TestQNN.rtol = 1e-1
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             debug=False,
             saver=False,
@@ -1453,7 +1485,7 @@ class TestQNNFloatingPointUtils(TestQNN):
     def test_qnn_backend_dump_intermediate_outputs(self):
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             dump_intermediate_outputs=True,
         )
@@ -1498,7 +1530,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             use_multi_contexts=True,
         )
         compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
         )
         partitioner = QnnPartitioner(compiler_specs)
@@ -1514,7 +1546,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             use_multi_contexts=True,
         )
         compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
         )
         module = CompositeDelegateModule(  # noqa: F405
@@ -1535,7 +1567,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         TestQNN.enable_profile = True
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             profile=True,
         )
@@ -1554,7 +1586,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             use_fp16=True,
         )
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             shared_buffer=True,
         )
@@ -1569,7 +1601,7 @@ class TestQNNFloatingPointUtils(TestQNN):
     def test_qnn_backend_online_prepare(self):
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             online_prepare=True,
         )
@@ -1590,7 +1622,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             bundle_program = from_context_binary(ctx_path, "ctx_loader")
             backend_options = generate_htp_compiler_spec(use_fp16=True)
             compiler_specs = generate_qnn_executorch_compiler_spec(
-                soc_model=self.arch_table[TestQNN.model],
+                soc_model=self.chipset_table[TestQNN.model],
                 backend_options=backend_options,
                 is_from_context_binary=True,
             )
@@ -1614,7 +1646,7 @@ class TestQNNQuantizedUtils(TestQNN):
         TestQNN.rtol = 1
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             debug=False,
             saver=False,
@@ -1623,7 +1655,7 @@ class TestQNNQuantizedUtils(TestQNN):
     def test_qnn_backend_dump_intermediate_outputs(self):
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             dump_intermediate_outputs=True,
         )
@@ -1657,7 +1689,7 @@ class TestQNNQuantizedUtils(TestQNN):
             use_fp16=False,
         )
         compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
         )
         partitioner = QnnPartitioner(compiler_specs)
@@ -1704,7 +1736,7 @@ class TestQNNQuantizedUtils(TestQNN):
             use_fp16=False,
         )
         compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
         )
         partitioner = QnnPartitioner(compiler_specs)
@@ -1740,7 +1772,7 @@ class TestQNNQuantizedUtils(TestQNN):
             use_fp16=False,
         )
         compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
         )
         partitioner = QnnPartitioner(compiler_specs)
@@ -1781,7 +1813,7 @@ class TestQNNQuantizedUtils(TestQNN):
             use_multi_contexts=True,
         )
         compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
         )
         partitioner = QnnPartitioner(compiler_specs)
@@ -1797,7 +1829,7 @@ class TestQNNQuantizedUtils(TestQNN):
             use_multi_contexts=True,
         )
         compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
         )
         module = CompositeDelegateModule(  # noqa: F405
@@ -1819,7 +1851,7 @@ class TestQNNQuantizedUtils(TestQNN):
         TestQNN.enable_profile = True
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             profile=True,
         )
@@ -1839,7 +1871,7 @@ class TestQNNQuantizedUtils(TestQNN):
             use_fp16=False,
         )
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             shared_buffer=True,
         )
@@ -1855,7 +1887,7 @@ class TestQNNQuantizedUtils(TestQNN):
     def test_qnn_backend_online_prepare(self):
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             online_prepare=True,
         )
@@ -1877,7 +1909,7 @@ class TestQNNQuantizedUtils(TestQNN):
             bundle_program = from_context_binary(ctx_path, "ctx_loader")
             backend_options = generate_htp_compiler_spec(use_fp16=False)
             compiler_specs = generate_qnn_executorch_compiler_spec(
-                soc_model=self.arch_table[TestQNN.model],
+                soc_model=self.chipset_table[TestQNN.model],
                 backend_options=backend_options,
                 is_from_context_binary=True,
             )
@@ -2129,6 +2161,41 @@ class TestExampleOssScript(TestQNN):
                 else:
                     self.assertGreaterEqual(msg["top_1"], 60)
                     self.assertGreaterEqual(msg["top_5"], 85)
+
+    def test_retinanet(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/retinanet.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--dataset",
+            self.image_dataset,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["mAP"], 0.6)
 
     def test_squeezenet(self):
         if not self.required_envs([self.image_dataset]):

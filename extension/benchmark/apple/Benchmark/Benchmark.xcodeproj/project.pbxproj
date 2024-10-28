@@ -67,10 +67,10 @@
 		032A73FD2CAFBB7800932D36 /* tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tiktoken.h; sourceTree = "<group>"; };
 		032A73FE2CAFBB7800932D36 /* tiktoken.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = tiktoken.cpp; sourceTree = "<group>"; };
 		032A73FF2CAFBB7800932D36 /* tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tokenizer.h; sourceTree = "<group>"; };
-		032A74212CAFC1B300932D36 /* runner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = runner.h; path = ../../../../examples/models/llama2/runner/runner.h; sourceTree = SOURCE_ROOT; };
-		032A74222CAFC1B300932D36 /* runner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = runner.cpp; path = ../../../../examples/models/llama2/runner/runner.cpp; sourceTree = SOURCE_ROOT; };
-		032A74242CAFC34800932D36 /* llama_tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = llama_tiktoken.h; path = ../../../../examples/models/llama2/tokenizer/llama_tiktoken.h; sourceTree = SOURCE_ROOT; };
-		032A74252CAFC34800932D36 /* llama_tiktoken.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = llama_tiktoken.cpp; path = ../../../../examples/models/llama2/tokenizer/llama_tiktoken.cpp; sourceTree = SOURCE_ROOT; };
+		032A74212CAFC1B300932D36 /* runner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = runner.h; path = ../../../../examples/models/llama/runner/runner.h; sourceTree = SOURCE_ROOT; };
+		032A74222CAFC1B300932D36 /* runner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = runner.cpp; path = ../../../../examples/models/llama/runner/runner.cpp; sourceTree = SOURCE_ROOT; };
+		032A74242CAFC34800932D36 /* llama_tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = llama_tiktoken.h; path = ../../../../examples/models/llama/tokenizer/llama_tiktoken.h; sourceTree = SOURCE_ROOT; };
+		032A74252CAFC34800932D36 /* llama_tiktoken.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = llama_tiktoken.cpp; path = ../../../../examples/models/llama/tokenizer/llama_tiktoken.cpp; sourceTree = SOURCE_ROOT; };
 		037C96A02C8A570B00B3DF38 /* Tests.xctestplan */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = Tests.xctestplan; sourceTree = "<group>"; };
 		03B0118B2CAC567900054791 /* DynamicTestCase.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = DynamicTestCase.h; sourceTree = "<group>"; };
 		03B0118C2CAC567900054791 /* DynamicTestCase.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DynamicTestCase.m; sourceTree = "<group>"; };
