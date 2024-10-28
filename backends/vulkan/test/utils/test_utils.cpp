@@ -70,7 +70,7 @@ void record_nchw_to_image_op(
     vkapi::VulkanBuffer& src_buffer,
     api::vTensor& v_dst) {
   vkapi::PipelineBarrier pipeline_barrier{};
-  vkapi::SpecVarList specialization_constants = {SV(v_dst.packed_dim())};
+  vkapi::SpecVarList specialization_constants = {v_dst.hashed_layout()};
 
   context->submit_compute_job(
       get_nchw_to_tensor_shader(
@@ -86,8 +86,7 @@ void record_nchw_to_image_op(
           vkapi::PipelineStage::COMPUTE,
           vkapi::MemoryAccessType::WRITE),
       src_buffer,
-      v_dst.sizes_ubo(),
-      v_dst.axis_map_ubo());
+      v_dst.sizes_ubo());
 }
 
 void record_image_to_nchw_op(
@@ -95,7 +94,7 @@ void record_image_to_nchw_op(
     api::vTensor& v_src,
     vkapi::VulkanBuffer& dst_buffer) {
   vkapi::PipelineBarrier pipeline_barrier{};
-  vkapi::SpecVarList specialization_constants = {SV(v_src.packed_dim())};
+  vkapi::SpecVarList specialization_constants = {v_src.hashed_layout()};
 
   context->submit_compute_job(
       get_tensor_to_nchw_shader(v_src),
@@ -107,8 +106,7 @@ void record_image_to_nchw_op(
       0,
       dst_buffer,
       v_src.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
-      v_src.sizes_ubo(),
-      v_src.axis_map_ubo());
+      v_src.sizes_ubo());
 }
 
 void record_bitw8_image_to_nchw_nobitw8buffer_op(
