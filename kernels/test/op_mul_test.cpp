@@ -237,8 +237,7 @@ class OpMulOutTest : public OperatorTest {
     EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
     EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
 
-    a =
-        tf_a.make({2, 2, 3}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    a = tf_a.make({2, 2, 3}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
     b = tf_a.make({2, 2, 1}, /*data=*/{2, 3, 4, 5});
 
     // Destination for output of mul.
