@@ -87,7 +87,7 @@ def define_op_library(name, deps):
         ],
         # kernels often have helpers with no prototypes just disabling the warning here as the headers
         # are codegend and linked in later
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = ["-Wno-missing-prototypes", "-O2"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ] + augmented_deps,

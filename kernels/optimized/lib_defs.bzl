@@ -121,6 +121,7 @@ def define_libs():
             exported_headers = native.glob([
                 "blas/**/*.h",
             ]),
+            compiler_flags = ["-O2"],
             header_namespace = "executorch/kernels/optimized",
             visibility = [
                 "//executorch/...",
