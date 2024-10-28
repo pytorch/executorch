@@ -4,11 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import executorch.backends.vulkan.custom_ops_lib  # noqa
 import torch
-
-from executorch.backends.vulkan._passes.custom_ops_defs import (  # noqa
-    apply_rotary_emb_op,
-)
 
 from executorch.examples.models.llama.rope import RotaryEmbedding
 
