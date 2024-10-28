@@ -564,6 +564,7 @@ if __name__ == "__main__":
         exit(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
 
     if args.compile_only:
+        compile(args)
         exit(f"Finish compile_only and save to {args.artifact}")
 
     try:

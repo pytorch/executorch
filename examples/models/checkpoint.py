@@ -15,15 +15,15 @@ def get_default_model_resource_dir(model_file_path: str) -> Path:
     Get the default path to resouce files (which contain files such as the
     checkpoint and param files), either:
     1. Uses the path from pkg_resources, only works with buck2
-    2. Uses default path located in examples/models/llama2/params
+    2. Uses default path located in examples/models/llama/params
 
     Expected to be called from with a `model.py` file located in a
     `executorch/examples/models/<model_name>` directory.
 
     Args:
         model_file_path: The file path to the eager model definition.
-            For example, `executorch/examples/models/llama2/model.py`,
-            where `executorch/examples/models/llama2` contains all
+            For example, `executorch/examples/models/llama/model.py`,
+            where `executorch/examples/models/llama` contains all
             the llama2-related files.
 
     Returns:
@@ -35,7 +35,7 @@ def get_default_model_resource_dir(model_file_path: str) -> Path:
 
         # 1st way: If we can import this path, we are running with buck2 and all resources can be accessed with pkg_resources.
         # pyre-ignore
-        from executorch.examples.models.llama2 import params  # noqa
+        from executorch.examples.models.llama import params  # noqa
 
         # Get the model name from the cwd, assuming that this module is called from a path such as
         # examples/models/<model_name>/model.py.

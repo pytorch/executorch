@@ -42,7 +42,6 @@ class ExpVisitor(NodeVisitor):
     ) -> None:
 
         assert len(node.all_input_nodes) == 1
-        assert len(node.users) == 1
 
         if is_quant_node:
             # Assume quantized input is 8 bit.

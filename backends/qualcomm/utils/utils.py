@@ -7,7 +7,7 @@
 import operator
 import warnings
 from collections import OrderedDict
-from typing import Callable, Dict, List, Set, Tuple
+from typing import Callable, Dict, FrozenSet, List, Set, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 
@@ -69,6 +69,7 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_serialize impor
 )
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_EXPAND_BROADCAST_SHAPE,
+    QCOM_PASS_SKIP_ADVANCED_REQUANT,
     QCOM_QNN_COMPILE_SPEC,
 )
 
@@ -290,9 +291,8 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
 
 
 def _transform(
-    edge_program: ExportedProgram, custom_pass_config: Set[str] = None
-) -> None:
-    custom_pass_config = custom_pass_config or {}
+    edge_program: ExportedProgram, custom_pass_config: FrozenSet[str] = frozenset()
+) -> ExportedProgram:
     # currently ExirExportedProgram.transform does not accept
     # changes of input number which was caused by FoldQDQ
     # apply passes one by one here to avoid IR capture failure
@@ -305,7 +305,9 @@ def _transform(
     ConvertBmmToMatmul()(graph_module)
     ConvertInterpolateWithUpsample2D()(graph_module)
     I64toI32(edge_program)(graph_module)
-    AnnotateQuantAttrs(edge_program)(graph_module)
+    AnnotateQuantAttrs(
+        edge_program, QCOM_PASS_SKIP_ADVANCED_REQUANT in custom_pass_config
+    )(graph_module)
     AnnotateAndQuantScalar(edge_program)(graph_module)
     AnnotateDecomposed(edge_program)(graph_module)
     FoldQDQ()(graph_module)
@@ -322,6 +324,7 @@ def _transform(
         edge_program.graph_module,
     )
     edge_program._validate()
+    return edge_program
 
 
 def capture_program(
