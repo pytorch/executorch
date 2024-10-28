@@ -68,6 +68,8 @@ from .source_transformation.sdpa import (
     replace_sdpa_with_simple_sdpa,
 )
 
+from .source_transformation.torchtune.embeddings import replace_fusion_embeddings_with_nn_embedding
+
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
