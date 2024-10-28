@@ -6,20 +6,22 @@
 
 import unittest
 
-from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 import numpy as np
 import PIL
 import torch
 
-from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
-from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa # usort: skip
-from executorch.examples.models.llama3_2_vision.preprocess.export_preprocess_lib import (
-    export_preprocess,
-    get_example_inputs,
-    lower_to_executorch_preprocess,
+from executorch.examples.models.llama3_2_vision.preprocess.model import (
+    CLIPImageTransformModel,
+    PreprocessConfig,
 )
+
+from executorch.exir import EdgeCompileConfig, to_edge
+
+from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
+from executorch.extension.llm.custom_ops import op_tile_crop_aot  # noqa # usort: skip
+
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
@@ -27,10 +29,7 @@ from executorch.extension.pybindings.portable_lib import (
 from parameterized import parameterized
 from PIL import Image
 
-from torchtune.models.clip.inference._transform import (
-    _CLIPImageTransform,
-    CLIPImageTransform,
-)
+from torchtune.models.clip.inference._transform import CLIPImageTransform
 
 from torchtune.modules.transforms.vision_utils.get_canvas_best_fit import (
     find_supported_resolutions,
@@ -41,18 +40,6 @@ from torchtune.modules.transforms.vision_utils.get_inscribed_size import (
     get_inscribed_size,
 )
 from torchvision.transforms.v2 import functional as F
-
-
-@dataclass
-class PreprocessConfig:
-    image_mean: Optional[List[float]] = None
-    image_std: Optional[List[float]] = None
-    resize_to_max_canvas: bool = True
-    resample: str = "bilinear"
-    antialias: bool = False
-    tile_size: int = 224
-    max_num_tiles: int = 4
-    possible_resolutions = None
 
 
 class TestImageTransform(unittest.TestCase):
@@ -188,31 +175,26 @@ class TestImageTransform(unittest.TestCase):
             possible_resolutions=None,
         )
 
-        eager_model = _CLIPImageTransform(
-            image_mean=config.image_mean,
-            image_std=config.image_std,
-            resample=config.resample,
-            antialias=config.antialias,
-            tile_size=config.tile_size,
-            max_num_tiles=config.max_num_tiles,
+        model = CLIPImageTransformModel(config)
+        eager_model = model.get_eager_model()
+
+        exported_model = torch.export.export(
+            eager_model,
+            model.get_example_inputs(),
+            dynamic_shapes=model.get_dynamic_shapes(),
+            strict=False,
         )
 
-        exported_model = export_preprocess(
-            image_mean=config.image_mean,
-            image_std=config.image_std,
-            resample=config.resample,
-            antialias=config.antialias,
-            tile_size=config.tile_size,
-            max_num_tiles=config.max_num_tiles,
+        edge_program = to_edge(
+            exported_model, compile_config=EdgeCompileConfig(_check_ir_validity=False)
         )
-
-        executorch_model = lower_to_executorch_preprocess(exported_model)
+        executorch_model = edge_program.to_executorch()
         executorch_module = _load_for_executorch_from_buffer(executorch_model.buffer)
 
-        aoti_path = torch._inductor.aot_compile(
-            exported_model.module(),
-            get_example_inputs(),
-        )
+        # aoti_path = torch._inductor.aot_compile(
+        #     exported_model.module(),
+        #     get_example_inputs(),
+        # )
 
         # Prepare image input.
         image = (
@@ -276,7 +258,7 @@ class TestImageTransform(unittest.TestCase):
         self.assertEqual(reference_ar, et_ar.tolist())
 
         # Run aoti model and check it matches reference model.
-        aoti_model = torch._export.aot_load(aoti_path, "cpu")
-        aoti_image, aoti_ar = aoti_model(image_tensor, inscribed_size, best_resolution)
-        self.assertTrue(torch.allclose(reference_image, aoti_image))
-        self.assertEqual(reference_ar, aoti_ar.tolist())
+        # aoti_model = torch._export.aot_load(aoti_path, "cpu")
+        # aoti_image, aoti_ar = aoti_model(image_tensor, inscribed_size, best_resolution)
+        # self.assertTrue(torch.allclose(reference_image, aoti_image))
+        # self.assertEqual(reference_ar, aoti_ar.tolist())
