@@ -126,13 +126,12 @@ void record_bitw8_image_to_nchw_nobitw8buffer_op(
       pipeline_barrier,
       global_wg_size,
       adaptive_work_group_size(global_wg_size),
-      {v_src.packed_dim()},
+      {v_src.hashed_layout()},
       VK_NULL_HANDLE,
       0,
       dst_buffer.buffer(),
       v_src.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
       v_src.sizes_ubo(),
-      v_src.axis_map_ubo(),
       v_src.numel_ubo());
 }
 
@@ -335,7 +334,7 @@ void record_matmul_texture3d(
       pipeline_barrier,
       global_wg_size,
       {8, 8, 1},
-      {out.packed_dim(), mat1.packed_dim(), mat2.packed_dim()},
+      {out.hashed_layout(), mat1.hashed_layout(), mat2.hashed_layout()},
       VK_NULL_HANDLE,
       0,
       out.image(
@@ -346,11 +345,8 @@ void record_matmul_texture3d(
       mat2.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
       out.sizes_ubo(),
       out.logical_limits_ubo(),
-      out.axis_map_ubo(),
       mat1.sizes_ubo(),
-      mat1.axis_map_ubo(),
-      mat2.sizes_ubo(),
-      mat2.axis_map_ubo());
+      mat2.sizes_ubo());
 }
 
 //
