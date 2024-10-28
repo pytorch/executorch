@@ -61,7 +61,7 @@ Quantization-Aware Training (QAT) is employed to simulate the effects of quantiz
 
 ### Accuracy
 
-Please see the [Llama 3.2 model card](https://github.com/meta-llama/llama-models/blob/main/models/llama3_2/MODEL_CARD.md) for accuracy evalations.
+Please see the [Llama 3.2 model card](https://github.com/meta-llama/llama-models/blob/main/models/llama3_2/MODEL_CARD.md) for accuracy evaluations.
 
 ### Performance
 
