@@ -34,7 +34,7 @@ def define_common_targets():
                 "//executorch/kernels/portable/cpu/util:reduce_util",
                 "//executorch/extension/llm/custom_ops/spinquant:fast_hadamard_transform",
             ],
-            compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"],
+            compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors", "-O2"],
             visibility = [
                 "//executorch/...",
                 "//executorch/extension/llm/custom_ops/...",
