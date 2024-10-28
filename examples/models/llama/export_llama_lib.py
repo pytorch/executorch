@@ -806,7 +806,7 @@ def _load_llama_model(
     if modelname in EXECUTORCH_DEFINED_MODELS:
         # Set to llama2 because all models in EXECUTORCH_DEFINED_MODELS share the same archteciture as
         # defined in example/models/llama2.
-        modelname = "llama2"
+        modelname = "llama"
         model_class_name = "Llama2Model"
     elif modelname in TORCHTUNE_DEFINED_MODELS:
         if modelname == "llama3_2_vision":
