@@ -365,8 +365,7 @@ class Attention(nn.Module):
                 args.max_seq_len,
                 self.n_kv_heads,
                 self.head_dim,
-                not args.use_sdpa_with_kv_cache_op,
-                # if we are using the custom op don't transpose the cache. Expect untransposed q k v
+                not args.use_sdpa_with_kv_cache_op,  # if we are using the custom op don't transpose the cache. Expect untransposed q k v
                 args.enable_dynamic_shape,
             )
             self.SDPA = SDPA(
@@ -495,10 +494,8 @@ class TransformerBlock(nn.Module):
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-    def forward(self, x, freqs_cos, freqs_sin, input_pos=None):  # x: 1xN
-        h = self.attention.forward(
-            self.attention_norm(x), freqs_cos, freqs_sin, input_pos
-        )
+    def forward(self, x, input_pos=None):  # x: 1xN
+        h = self.attention.forward(self.attention_norm(x), input_pos)
 
         h = x + h
         if hasattr(self, "block_sparse_moe"):
