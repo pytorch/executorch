@@ -53,6 +53,7 @@ build_cmake_executor_runner() {
   rm -rf ${CMAKE_OUTPUT_DIR}
   cmake -DCMAKE_BUILD_TYPE=Debug \
       -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+      -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
       -B${CMAKE_OUTPUT_DIR} .
 
@@ -82,6 +83,9 @@ test_model() {
     rm "./${MODEL_NAME}.pte"
   fi
   STRICT="--strict"
+  if [[ "${MODEL_NAME}" == "clip" ]]; then
+    STRICT="--no-strict"
+  fi
   if [[ "${MODEL_NAME}" == "llava" ]]; then
     # Install requirements for llava
     bash examples/models/llava/install_requirements.sh
