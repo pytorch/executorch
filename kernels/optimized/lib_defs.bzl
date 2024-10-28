@@ -131,6 +131,18 @@ def define_libs():
                 ":linux-x86_64": [
                     "-DET_BUILD_WITH_BLAS",
                 ] if not runtime.is_oss else [],
+                "ovr_config//os:iphoneos": [
+                    "-DET_BUILD_WITH_BLAS",
+                    "-DET_BUILD_FOR_APPLE",
+                ] if not runtime.is_oss else [],
+                "ovr_config//os:macos-arm64": [
+                    "-DET_BUILD_WITH_BLAS",
+                    "-DET_BUILD_FOR_APPLE",
+                ] if not runtime.is_oss else [],
+                "ovr_config//os:macos-x86_64": [
+                    "-DET_BUILD_WITH_BLAS",
+                    "-DET_BUILD_FOR_APPLE",
+                ] if not runtime.is_oss else [],
                 "DEFAULT": [],
             }),
             fbandroid_platform_preprocessor_flags = [
