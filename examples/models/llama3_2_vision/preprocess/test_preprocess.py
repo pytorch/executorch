@@ -86,6 +86,14 @@ class TestImageTransform(unittest.TestCase):
         )
         executorch_model = edge_program.to_executorch()
 
+        # Re-export, as lowering to executorch changes the graph.
+        exported_model = torch.export.export(
+            model.get_eager_model(),
+            model.get_example_inputs(),
+            dynamic_shapes=model.get_dynamic_shapes(),
+            strict=False,
+        )
+
         return {
             "config": config,
             "reference_model": reference_model,
