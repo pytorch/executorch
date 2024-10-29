@@ -231,6 +231,31 @@ jobs:
         # run e2e (export, tokenizer and runner)
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llava.sh
 
+  test-preprocess-linux:
+    name: test-preprocess-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.24xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
+
+        # install pybind
+        bash install_requirements.sh --pybind xnnpack
+
+        # run python unittest
+        python -m unittest examples.models.llama3_2_vision.preprocess.test_preprocess
+
+
   test-quantized-aot-lib-linux:
     name: test-quantized-aot-lib-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
