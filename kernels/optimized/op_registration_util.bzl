@@ -87,7 +87,21 @@ def define_op_library(name, deps):
         ],
         # kernels often have helpers with no prototypes just disabling the warning here as the headers
         # are codegend and linked in later
-        compiler_flags = ["-Wno-missing-prototypes", "-O2"],
+        compiler_flags = ["-Wno-missing-prototypes"] + select({
+          "DEFAULT": [],
+          "ovr_config//os:android": [
+                "-O2",
+          ] if not runtime.is_oss else [],
+          "ovr_config//os:iphoneos": [
+              "-O2",
+          ] if not runtime.is_oss else [],
+          "ovr_config//os:macos-arm64": [
+              "-O2",
+          ] if not runtime.is_oss else [],
+          "ovr_config//os:macos-x86_64": [
+              "-O2",
+          ] if not runtime.is_oss else [],
+        }),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ] + augmented_deps,

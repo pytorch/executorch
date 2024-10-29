@@ -1,5 +1,3 @@
-lobd("@fbsource//tools/build_defs/apple/build_mode_defs.bzl", "is_local_build")
-lobd("@fbsource//tools/build_defs/android/build_mode_defs.bzl", "is_production_build")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(
     "@fbsource//xplat/executorch/kernels/optimized:lib_defs.bzl",
@@ -42,9 +40,21 @@ def define_common_targets():
                 "//executorch/kernels/portable/cpu/util:reduce_util",
                 "//executorch/extension/llm/custom_ops/spinquant:fast_hadamard_transform",
             ] + get_vec_deps(),
-            compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"],
-            fbobjc_compiler_flags = [] if is_local_build() else ["-O2"],
-            fbandroid_compiler_flags = ["-O2"] if is_production_build() else [],
+            compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"] + select({
+              "DEFAULT": [],
+              "ovr_config//os:android-arm64": [
+                    "-O2",
+              ] if not runtime.is_oss else [],
+              "ovr_config//os:iphoneos": [
+                  "-O2",
+              ] if not runtime.is_oss else [],
+              "ovr_config//os:macos-arm64": [
+                  "-O2",
+              ] if not runtime.is_oss else [],
+              "ovr_config//os:macos-x86_64": [
+                  "-O2",
+              ] if not runtime.is_oss else [],
+            }),
             visibility = [
                 "//executorch/...",
                 "//executorch/extension/llm/custom_ops/...",
