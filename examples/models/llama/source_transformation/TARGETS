@@ -1,0 +1,33 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "lib",
+    srcs = [
+        "__init__.py",
+    ],
+    deps = [
+        ":source_transformation",
+    ],
+)
+
+python_library(
+    name = "source_transformation",
+    srcs = [
+        "apply_spin_quant_r1_r2.py",
+        "lora.py",
+        "pre_quantization.py",
+        "prune_vocab.py",
+        "quantized_kv_cache.py",
+        "quantize.py",
+        "rms_norm.py",
+        "rope.py",
+        "sdpa.py",
+        "spin_quant.py",
+        "vulkan_rope.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
