@@ -1,4 +1,6 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+lobd("@fbsource//tools/build_defs/apple/build_mode_defs.bzl", "is_local_build")
+lobd("@fbsource//tools/build_defs/android/build_mode_defs.bzl", "is_production_build")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -34,7 +36,9 @@ def define_common_targets():
                 "//executorch/kernels/portable/cpu/util:reduce_util",
                 "//executorch/extension/llm/custom_ops/spinquant:fast_hadamard_transform",
             ],
-            compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors", "-O2"],
+            compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"],
+            fbobjc_compiler_flags = [] if is_local_build() else ["-O2"],
+            fbandroid_compiler_flags = ["-O2"] if is_production_build() else [],
             visibility = [
                 "//executorch/...",
                 "//executorch/extension/llm/custom_ops/...",
