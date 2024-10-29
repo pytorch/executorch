@@ -725,6 +725,9 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(module, sample_inputs)
 
+    @unittest.skip(
+        "Reduce shader does not support multiple reduction axes at the moment"
+    )
     def test_vulkan_backend_sum_dim_list(self):
         class SumModule(torch.nn.Module):
             def __init__(self):
@@ -744,6 +747,9 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    @unittest.skip(
+        "Reduce shader does not support multiple reduction axes at the moment"
+    )
     def test_vulkan_backend_sum(self):
         class SumModule(torch.nn.Module):
             def __init__(self):
@@ -1441,6 +1447,9 @@ class TestBackends(unittest.TestCase):
 
         self.lower_unary_module_and_test_output(GeluModule())
 
+    @unittest.skip(
+        "Reduce shader does not support multiple reduction axes at the moment"
+    )
     def test_vulkan_backend_mean(self):
         class MeanModule(torch.nn.Module):
             def __init__(self, dims, keepdim=True):

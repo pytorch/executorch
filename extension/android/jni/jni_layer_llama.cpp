@@ -16,6 +16,7 @@
 #include <executorch/examples/models/llama/runner/runner.h>
 #include <executorch/examples/models/llava/runner/llava_runner.h>
 #include <executorch/extension/llm/runner/image.h>
+#include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -27,6 +28,10 @@
 
 #include <fbjni/ByteBuffer.h>
 #include <fbjni/fbjni.h>
+
+#if defined(EXECUTORCH_BUILD_MEDIATEK)
+#include <executorch/examples/mediatek/executor_runner/mtk_llama_runner.h>
+#endif
 
 namespace llm = ::executorch::extension::llm;
 using ::executorch::runtime::Error;
@@ -42,13 +47,13 @@ bool utf8_check_validity(const char* str, size_t length) {
       uint8_t next_byte = static_cast<uint8_t>(str[i + 1]);
       if ((byte & 0xE0) == 0xC0 &&
           (next_byte & 0xC0) == 0x80) { // 2-byte sequence
-        i += 2;
+        i += 1;
       } else if (
           (byte & 0xF0) == 0xE0 && (next_byte & 0xC0) == 0x80 &&
           (i + 2 < length) &&
           (static_cast<uint8_t>(str[i + 2]) & 0xC0) ==
               0x80) { // 3-byte sequence
-        i += 3;
+        i += 2;
       } else if (
           (byte & 0xF8) == 0xF0 && (next_byte & 0xC0) == 0x80 &&
           (i + 2 < length) &&
@@ -56,7 +61,7 @@ bool utf8_check_validity(const char* str, size_t length) {
           (i + 3 < length) &&
           (static_cast<uint8_t>(str[i + 3]) & 0xC0) ==
               0x80) { // 4-byte sequence
-        i += 4;
+        i += 3;
       } else {
         return false; // Invalid sequence
       }
@@ -111,7 +116,7 @@ class ExecuTorchLlamaJni
  private:
   friend HybridBase;
   int model_type_category_;
-  std::unique_ptr<example::Runner> runner_;
+  std::unique_ptr<llm::IRunner> runner_;
   std::unique_ptr<llm::MultimodalRunner> multi_modal_runner_;
 
  public:
@@ -120,6 +125,7 @@ class ExecuTorchLlamaJni
 
   constexpr static int MODEL_TYPE_CATEGORY_LLM = 1;
   constexpr static int MODEL_TYPE_CATEGORY_MULTIMODAL = 2;
+  constexpr static int MODEL_TYPE_MEDIATEK_LLAMA = 3;
 
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
@@ -158,6 +164,15 @@ class ExecuTorchLlamaJni
           model_path->toStdString().c_str(),
           tokenizer_path->toStdString().c_str(),
           temperature);
+#if defined(EXECUTORCH_BUILD_MEDIATEK)
+    } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
+      runner_ = std::make_unique<MTKLlamaRunner>(
+          model_path->toStdString().c_str(),
+          tokenizer_path->toStdString().c_str(),
+          temperature);
+      // Interpret the model type as LLM
+      model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
+#endif
     }
   }
 

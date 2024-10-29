@@ -7,7 +7,7 @@
  */
 
 #include <executorch/backends/vulkan/runtime/VulkanDelegateHeader.h>
-#include <executorch/backends/vulkan/schema_generated.h>
+#include <executorch/backends/vulkan/serialization/schema_generated.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 

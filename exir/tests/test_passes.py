@@ -1735,7 +1735,7 @@ class TestPasses(unittest.TestCase):
         ep = export(
             m,
             (input,),
-        )
+        ).run_decompositions({})
         _do_checks(
             ep.graph_module.code,
             aten_op_str,

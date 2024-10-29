@@ -42,8 +42,8 @@ class NativeLlamaRunner(LlamaRunner):
 
     def forward(
         self,
-        tokens: Optional[torch.LongTensor] = None,
-        input_pos: Optional[torch.LongTensor] = None,
+        tokens: torch.Tensor,
+        input_pos: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         return (
             self.model.forward((tokens, input_pos))

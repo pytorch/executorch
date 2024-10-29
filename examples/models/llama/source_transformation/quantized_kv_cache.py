@@ -193,7 +193,7 @@ class QuantizedKVCache(nn.Module):
     @classmethod
     def from_float(cls, kv_cache, cache_type: QuantizedCacheType):
         cache_shape = kv_cache.k_cache.shape
-        if kv_cache.is_tranposed:
+        if kv_cache.is_transposed:
             max_batch_size, n_heads, max_seq_length, head_dim = cache_shape
         else:
             max_batch_size, max_seq_length, n_heads, head_dim = cache_shape
@@ -203,7 +203,7 @@ class QuantizedKVCache(nn.Module):
             n_heads,
             head_dim,
             cache_type,
-            kv_cache.is_tranposed,
+            kv_cache.is_transposed,
             kv_cache.enable_dynamic_shape,
         )
 

@@ -107,9 +107,8 @@ class TestNumericalDiffPrints(unittest.TestCase):
             ArmTester(
                 model,
                 example_inputs=model.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=False),
             )
-            .quantize()
             .export()
             .to_edge()
             .partition()

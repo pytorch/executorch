@@ -1,0 +1,29 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+reduce:
+  parameter_names_with_default_values:
+    DTYPE: float
+    STORAGE: texture3d
+    INIT_ACCUM: VEC4_T(0)
+    UPDATE_ACCUM: accum + new_val
+    POSTPROCESS: accum
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+  shader_variants:
+    - NAME: sum
+    - NAME: mean
+      POSTPROCESS: (accum / tin_sizes[reduce_dim])
+    - NAME: amax
+      INIT_ACCUM: first_val
+      UPDATE_ACCUM: max(accum, new_val)
+      POSTPROCESS: accum
+    - NAME: amin
+      INIT_ACCUM: first_val
+      UPDATE_ACCUM: min(accum, new_val)
+      POSTPROCESS: accum

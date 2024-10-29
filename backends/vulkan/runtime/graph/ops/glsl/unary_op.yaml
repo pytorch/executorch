@@ -32,6 +32,8 @@ unary_op:
       OPERATOR: sin(X)
     - NAME: sqrt
       OPERATOR: sqrt(X)
+    - NAME: rsqrt
+      OPERATOR: (1 / sqrt(X))
     - NAME: tanh
       OPERATOR: tanh(clamp(X, -15.0, 15.0))
     - NAME: hardshrink

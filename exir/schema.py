@@ -35,12 +35,22 @@ class OptionalTensorList:
 
 class TensorShapeDynamism(IntEnum):
     """
-    Check schema.fbs for explanations of this enum.
+    Check program.fbs for explanations of this enum.
     """
 
     STATIC = 0
     DYNAMIC_BOUND = 1
     DYNAMIC_UNBOUND = 2
+
+
+@dataclass
+class ExtraTensorInfo:
+    """
+    Check program.fbs for explanations of this enum.
+    """
+
+    mutable_data_segments_idx: Optional[int] = None
+    fully_qualified_name: Optional[str] = None
 
 
 @dataclass
@@ -54,8 +64,9 @@ class Tensor:
     data_buffer_idx: int
     allocation_info: Optional[AllocationDetails]
 
-    # check schema.fbs for explanations
+    # check program.fbs for explanations.
     shape_dynamism: TensorShapeDynamism
+    extra_tensor_info: Optional[ExtraTensorInfo] = None
 
 
 @dataclass

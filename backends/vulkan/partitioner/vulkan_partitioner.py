@@ -13,10 +13,7 @@ import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_
 
 import torch
 
-from executorch.backends.vulkan.partitioner.supported_ops import (
-    enumerate_supported_ops,
-    OpList,
-)
+from executorch.backends.vulkan.op_registry import vulkan_supported_ops
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
@@ -43,8 +40,6 @@ logger.setLevel(logging.INFO)
 
 
 class VulkanSupportedOperators(OperatorSupportBase):
-    _ops: OpList = enumerate_supported_ops()
-
     def __init__(self, require_dynamic_shape: bool = False) -> None:
         super().__init__()
         self.require_dynamic_shapes = require_dynamic_shape
@@ -144,31 +139,16 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         return False
 
-    def is_valid_to_copy(self, node: torch.fx.Node) -> bool:
-        float_dtypes = [torch.float16, torch.float32]
-
-        if len(node.args) != 1:
-            return False
-
-        in_arg = node.args[0]
-        if not isinstance(in_arg, torch.fx.Node):
-            return False
-
-        in_tensor = in_arg.meta.get("val", None)
-        out_tensor = node.meta.get("val", None)
-
-        if isinstance(in_tensor, FakeTensor) and isinstance(out_tensor, FakeTensor):
-            if out_tensor.dtype in float_dtypes and in_tensor.dtype in float_dtypes:
-                return True
-
-        return False
+    def log_skip(self, node: torch.fx.Node, reason: str) -> None:
+        if node.op == "call_function":
+            logger.info(
+                f"[Vulkan Partitioner] Due to [{reason}], skipping {node.format_node()}"
+            )
 
     def is_node_supported(
         self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
     ) -> bool:
         r = self._is_node_supported(submodules, node)
-        if not r and node.op == "call_function":
-            logger.info(f"Skipping node in Vulkan partitioning: {node.format_node()}")
         return r
 
     def _is_node_supported(
@@ -186,17 +166,18 @@ class VulkanSupportedOperators(OperatorSupportBase):
         if self.is_in_local_scalar_dense_chain(node):
             return True
 
-        if target not in VulkanSupportedOperators._ops:
+        if target not in vulkan_supported_ops:
+            self.log_skip(node, "not in vulkan_supported_ops")
             return False
 
-        if target == exir_ops.edge.aten._to_copy.default and not self.is_valid_to_copy(
-            node
-        ):
+        features = vulkan_supported_ops[target]
+
+        if not features.check_node_fn(node):
+            self.log_skip(node, "op args not supported")
             return False
 
-        features = VulkanSupportedOperators._ops[target]
-
-        if self.require_dynamic_shapes and not features.supports_dynamic_shape:
+        if self.require_dynamic_shapes and not features.resize_fn:
+            self.log_skip(node, "no dynamic shape support")
             return False
 
         return self.all_args_compatible(node)

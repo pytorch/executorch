@@ -448,7 +448,7 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
         if isinstance(ref, list):
             ret_str = ""
             for r in ref[:-1]:
-                ret_str += self.set_output(r)
+                ret_str += self.set_output(r, include_declarations)
             return ret_str
         elif ref.src_cpp_type == TENSOR_VECTOR:
             assert ref.is_out
