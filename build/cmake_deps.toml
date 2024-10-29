@@ -353,7 +353,7 @@ filters = [
 # ---------------------------------- Vulkan start ---------------------------------
 [targets.vulkan_schema]
 buck_targets = [
-  "//backends/vulkan:vk_delegate_schema",
+  "//backends/vulkan/serialization:vk_delegate_schema",
 ]
 filters = [
   ".fbs$",
