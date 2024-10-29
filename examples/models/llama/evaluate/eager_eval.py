@@ -48,6 +48,10 @@ class EagerEvalWrapper(eval_wrapper):
         return self._tokenizer.eos_id
 
     @property
+    def prefix_token_id(self):
+        return self.eot_token_id
+
+    @property
     def max_length(self):
         return self._max_seq_length
 
