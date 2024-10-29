@@ -252,6 +252,9 @@ jobs:
         # install pybind
         bash install_requirements.sh --pybind xnnpack
 
+        # install preprocess requirements
+        bash examples/models/llama3_2_vision/install_requirements.sh
+
         # run python unittest
         python -m unittest examples.models.llama3_2_vision.preprocess.test_preprocess
 
