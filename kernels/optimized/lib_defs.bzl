@@ -39,6 +39,23 @@ def get_vec_fbcode_preprocessor_flags():
     ]
     return preprocessor_flags
 
+def get_compiler_optimization_flags():
+    if not runtime.is_oss:
+      compiler_flags = select({
+        "DEFAULT": [],
+        "ovr_config//os:android-arm64": [
+              "-O2",
+        ],
+        "ovr_config//os:iphoneos": [
+            "-O2",
+        ],
+        "ovr_config//os:macos-arm64": [
+            "-O2",
+        ],
+      })
+      return compiler_flags
+    return []
+
 # Currently, having a dependency on fbsource//third-party/sleef:sleef may cause
 # duplicate symbol errors when linking fbcode targets in opt mode that also
 # depend on ATen. This is because ATen accesses sleef via the third-party folder
@@ -121,21 +138,7 @@ def define_libs():
             exported_headers = native.glob([
                 "blas/**/*.h",
             ]),
-            compiler_flags = select({
-              "DEFAULT": [],
-              "ovr_config//os:android-arm64": [
-                    "-O2",
-              ] if not runtime.is_oss else [],
-              "ovr_config//os:iphoneos": [
-                  "-O2",
-              ] if not runtime.is_oss else [],
-              "ovr_config//os:macos-arm64": [
-                  "-O2",
-              ] if not runtime.is_oss else [],
-              "ovr_config//os:macos-x86_64": [
-                  "-O2",
-              ] if not runtime.is_oss else [],
-            }),
+            compiler_flags = get_compiler_optimization_flags(),
             header_namespace = "executorch/kernels/optimized",
             visibility = [
                 "//executorch/...",
