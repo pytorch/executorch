@@ -12,6 +12,7 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
 
 
@@ -148,8 +149,8 @@ conv1d_1_1x2x128_st1 = Conv1d(
     batches=1,
 )
 
-conv1d_2_1x1x14_st2 = Conv1d(
-    in_channels=1,
+conv1d_2_1x2x14_st2 = Conv1d(
+    in_channels=2,
     out_channels=1,
     kernel_size=2,
     stride=2,
@@ -209,19 +210,12 @@ testsuite = [
     ("3_1x3x256_st1", conv1d_3_1x3x256_st1),
     ("3_1x3x12_st2_pd1", conv1d_3_1x3x12_st2_pd1),
     ("1_1x2x128_st1", conv1d_1_1x2x128_st1),
-    ("2_1x1x14_st2", conv1d_2_1x1x14_st2),
+    ("2_1x2x14_st2", conv1d_2_1x2x14_st2),
     ("5_3x2x128_st1", conv1d_5_3x2x128_st1),
     ("3_1x3x224_st2_pd1", conv1d_3_1x3x224_st2_pd1),
     ("two_conv1d_nobias", two_conv1d_nobias),
     ("two_conv1d", two_conv1d),
 ]
-
-# Expected fails on Ethos-U55/U65. This is a known limitation.
-# Check: https://review.mlplatform.org/plugins/gitiles/ml/ethos-u/ethos-u-vela/+/refs/heads/main/SUPPORTED_OPS.md
-#     IFM Tensor batch size must be 1 - [FULLY_CONNECTED, RESHAPE, SHAPE, SLICE, SOFTMAX, SPLIT, SPLIT_V, SQUEEZE, STRIDED_SLICE, UNPACK]
-testsuite_u55 = testsuite.copy()
-testsuite_u55.remove(("2_3x2x40_nobias", conv1d_2_3x2x40_nobias))
-testsuite_u55.remove(("5_3x2x128_st1", conv1d_5_3x2x128_st1))
 
 
 class TestConv1D(unittest.TestCase):
@@ -264,15 +258,14 @@ class TestConv1D(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
-    def _test_conv1d_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
+    def _test_conv1d_ethosu_BI_pipeline(
+        self,
+        module: torch.nn.Module,
+        compile_spec: CompileSpec,
+        test_data: Tuple[torch.Tensor],
     ):
         (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
-            )
+            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize()
             .export()
             .to_edge()
@@ -291,7 +284,15 @@ class TestConv1D(unittest.TestCase):
         self._test_conv1d_tosa_BI_pipeline(model, model.get_inputs())
 
     # Expeted to fail as Conv1D requires transpoes which isn't supported on u55
-    @parameterized.expand(testsuite_u55)
+    @parameterized.expand(testsuite)
     @unittest.expectedFailure
     def test_conv1d_u55_BI(self, test_name, model):
-        self._test_conv1d_u55_BI_pipeline(model, model.get_inputs())
+        self._test_conv1d_ethosu_BI_pipeline(
+            model, common.get_u55_compile_spec(), model.get_inputs()
+        )
+
+    @parameterized.expand(testsuite)
+    def test_conv1d_u85_BI(self, test_name, model):
+        self._test_conv1d_ethosu_BI_pipeline(
+            model, common.get_u85_compile_spec(), model.get_inputs()
+        )
