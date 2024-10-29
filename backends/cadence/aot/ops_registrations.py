@@ -43,6 +43,9 @@ lib.define(
 lib.define(
     "quantized_linear.out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, Tensor weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) ->  Tensor(a!)"
 )
+lib.define(
+    "cadence::quantized_linear.per_tensor_out(Tensor src, Tensor weight, Tensor bias, SymInt src_zero_point, SymInt weight_zero_point, SymInt out_multiplier, SymInt out_shift, SymInt out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
+)
 
 lib.define(
     "quantized_relu(Tensor X, Tensor X_zero_point, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Y)"
@@ -111,7 +114,7 @@ def quantized_linear_meta(
     weight_size = list(weight.size())
     assert len(weight_size) == 2
     out_size[-1] = weight_size[0]
-    return src.new_empty(out_size, dtype=torch.uint8)
+    return src.new_empty(out_size, dtype=src.dtype)
 
 
 @register_fake("cadence::quantized_conv")
@@ -132,7 +135,11 @@ def quantized_conv_meta(
     out_shift: torch.Tensor,
     channel_last: bool = False,
 ) -> torch.Tensor:
-    out_channels, _in_channels, *kernel_size = weight.shape
+    if channel_last:
+        out_channels, *kernel_size, _ = weight.shape
+    else:
+        out_channels, _, *kernel_size = weight.shape
+
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
@@ -141,7 +148,13 @@ def quantized_conv_meta(
     # Compute the output tensor size
     output_size = (
         get_conv1d_output_size(
-            in_size, out_channels, stride[1], padding[1], dilation[1], kernel_size[0]
+            in_size,
+            out_channels,
+            stride[1],
+            padding[1],
+            dilation[1],
+            kernel_size[0],
+            channel_last,
         )
         if len(in_size) == 3
         else get_conv2d_output_size(
@@ -164,7 +177,7 @@ def quantized_layer_norm_meta(
     output_scale: float,
     output_zero_point: int,
 ) -> torch.Tensor:
-    return input.new_empty(input.size(), dtype=torch.uint8)
+    return input.new_empty(input.size(), dtype=input.dtype)
 
 
 @register_fake("cadence::quantized_relu")
@@ -175,7 +188,7 @@ def quantized_relu_meta(
     out_multiplier: torch.Tensor,
     out_shift: torch.Tensor,
 ) -> torch.Tensor:
-    return X.new_empty(X.size(), dtype=torch.uint8)
+    return X.new_empty(X.size(), dtype=X.dtype)
 
 
 @register_fake("cadence::quantized_matmul")

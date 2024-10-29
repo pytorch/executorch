@@ -8,19 +8,30 @@
 # Example script for exporting simple models to flatbuffer
 
 import argparse
+import json
 import logging
 import os
 
-import torch
+from pathlib import Path
+from typing import Optional, Tuple
 
+import torch
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
-from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
-from executorch.extension.export_util.utils import export_to_edge, save_pte_program
+from executorch.backends.arm.util.arm_model_evaluator import GenericModelEvaluator
+
+from executorch.devtools.backend_debug import get_delegation_info
+from executorch.exir import (
+    EdgeCompileConfig,
+    ExecutorchBackendConfig,
+    to_edge_transform_and_lower,
+)
+from executorch.extension.export_util.utils import save_pte_program
+from tabulate import tabulate
 
 # Quantize model if required using the standard export quantizaion flow.
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
@@ -46,7 +57,7 @@ def get_model_and_inputs_from_name(model_name: str):
         logging.warning(
             "Using a model from examples/models not all of these are currently supported"
         )
-        model, example_inputs, _ = EagerModelFactory.create_model(
+        model, example_inputs, _, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL[model_name]
         )
     # Case 3: Model is in an external python file loaded as a module.
@@ -147,6 +158,8 @@ models = {
     "softmax": SoftmaxModule,
 }
 
+evaluators = {}
+
 targets = [
     "ethos-u55-32",
     "ethos-u55-64",
@@ -161,7 +174,9 @@ targets = [
 ]
 
 
-def get_compile_spec(target: str, intermediates: bool) -> ArmCompileSpecBuilder:
+def get_compile_spec(
+    target: str, intermediates: Optional[str] = None
+) -> ArmCompileSpecBuilder:
     spec_builder = None
     if target == "TOSA":
         spec_builder = (
@@ -176,7 +191,7 @@ def get_compile_spec(target: str, intermediates: bool) -> ArmCompileSpecBuilder:
                 memory_mode="Shared_Sram",
                 extra_flags="--debug-force-regor --output-format=raw",
             )
-            .set_permute_memory_format(args.model_name in MODEL_NAME_TO_MODEL.keys())
+            .set_permute_memory_format(True)
             .set_quantize_io(True)
         )
     elif "ethos-u85" in target:
@@ -193,9 +208,55 @@ def get_compile_spec(target: str, intermediates: bool) -> ArmCompileSpecBuilder:
         )
 
     if intermediates is not None:
-        spec_builder.dump_intermediate_artifacts_to(args.intermediates)
+        spec_builder.dump_intermediate_artifacts_to(intermediates)
 
     return spec_builder.build()
+
+
+def get_evaluator(model_name: str) -> GenericModelEvaluator:
+    if model_name not in evaluators:
+        return GenericModelEvaluator
+    else:
+        return evaluators[model_name]
+
+
+def evaluate_model(
+    model_name: str,
+    intermediates: str,
+    model_fp32: torch.nn.Module,
+    model_int8: torch.nn.Module,
+    example_inputs: Tuple[torch.Tensor],
+):
+    evaluator = get_evaluator(model_name)
+
+    # Get the path of the TOSA flatbuffer that is dumped
+    intermediates_path = Path(intermediates)
+    tosa_paths = list(intermediates_path.glob("*.tosa"))
+
+    init_evaluator = evaluator(
+        model_name, model_fp32, model_int8, example_inputs, str(tosa_paths[0])
+    )
+
+    quant_metrics = init_evaluator.evaluate()
+    output_json_path = intermediates_path / "quant_metrics.json"
+
+    with output_json_path.open("w") as json_file:
+        json.dump(quant_metrics, json_file)
+
+
+def dump_delegation_info(edge, intermediate_files_folder: Optional[str] = None):
+    graph_module = edge.exported_program().graph_module
+    delegation_info = get_delegation_info(graph_module)
+    df = delegation_info.get_operator_delegation_dataframe()
+    table = tabulate(df, headers="keys", tablefmt="fancy_grid")
+    delegation_info_string = f"Delegation info:\n{delegation_info.get_summary()}\nDelegation table:\n{table}\n"
+    logging.info(delegation_info_string)
+    if intermediate_files_folder is not None:
+        delegation_file_path = os.path.join(
+            intermediate_files_folder, "delegation_info.txt"
+        )
+        with open(delegation_file_path, "w") as file:
+            file.write(delegation_info_string)
 
 
 def get_args():
@@ -222,6 +283,14 @@ def get_args():
         default="ethos-u55-128",
         choices=targets,
         help=f"For ArmBackend delegated models, pick the target, and therefore the instruction set generated. valid targets are {targets}",
+    )
+    parser.add_argument(
+        "-e",
+        "--evaluate",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Flag for running evaluation of the model.",
     )
     parser.add_argument(
         "-q",
@@ -256,11 +325,11 @@ def get_args():
         help="Location for outputs, if not the default of cwd.",
     )
     args = parser.parse_args()
-    return args
 
-
-if __name__ == "__main__":
-    args = get_args()
+    if args.evaluate and (args.quantize is None or args.intermediates is None):
+        raise RuntimeError(
+            "--evaluate requires --quantize and --intermediates to be enabled."
+        )
 
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
@@ -283,37 +352,52 @@ if __name__ == "__main__":
     ):
         raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
 
+    return args
+
+
+if __name__ == "__main__":
+    args = get_args()
+
     # Pick model from one of the supported lists
     model, example_inputs = get_model_and_inputs_from_name(args.model_name)
     model = model.eval()
 
-    # pre-autograd export. eventually this will become torch.export
-    model = torch.export.export_for_training(model, example_inputs).module()
+    # export_for_training under the assumption we quantize, the exported form also works
+    # in to_edge if we don't quantize
+    exported_program = torch.export.export_for_training(model, example_inputs)
+    model = exported_program.module()
+    model_fp32 = model
 
     # Quantize if required
+    model_int8 = None
     if args.quantize:
         model = quantize(model, example_inputs)
+        model_int8 = model
+        # Wrap quantized model back into an exported_program
+        exported_program = torch.export.export_for_training(model, example_inputs)
 
-    edge = export_to_edge(
-        model,
-        example_inputs,
-        edge_compile_config=EdgeCompileConfig(
-            _check_ir_validity=False,
-        ),
-    )
+    if args.delegate:
+        # As we can target multiple output encodings from ArmBackend, one must
+        # be specified.
+        compile_spec = get_compile_spec(args.target, args.intermediates)
+        edge = to_edge_transform_and_lower(
+            exported_program,
+            partitioner=[ArmPartitioner(compile_spec)],
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+                _skip_dim_order=True,
+            ),
+        )
+    else:
+        edge = to_edge_transform_and_lower(
+            exported_program,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+                _skip_dim_order=True,
+            ),
+        )
 
-    # As we can target multiple output encodings from ArmBackend, one must
-    # be specified.
-    compile_spec = (
-        get_compile_spec(args.target, args.intermediates)
-        if args.delegate is True
-        else None
-    )
-
-    logging.debug(f"Exported graph:\n{edge.exported_program().graph}")
-    if args.delegate is True:
-        edge = edge.to_backend(ArmPartitioner(compile_spec))
-        logging.debug(f"Lowered graph:\n{edge.exported_program().graph}")
+    dump_delegation_info(edge, args.intermediates)
 
     try:
         exec_prog = edge.to_executorch(
@@ -339,3 +423,8 @@ if __name__ == "__main__":
         output_name = os.path.join(args.output, output_name)
 
     save_pte_program(exec_prog, output_name)
+
+    if args.evaluate:
+        evaluate_model(
+            args.model_name, args.intermediates, model_fp32, model_int8, example_inputs
+        )

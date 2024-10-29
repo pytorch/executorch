@@ -150,6 +150,7 @@ class ArmTester(Tester):
         model: torch.nn.Module,
         example_inputs: Tuple[torch.Tensor],
         compile_spec: List[CompileSpec] = None,
+        tosa_ref_model_path: str | None = None,
     ):
         """
         Args:
@@ -160,7 +161,10 @@ class ArmTester(Tester):
 
         # Initiate runner_util
         intermediate_path = get_intermediate_path(compile_spec)
-        self.runner_util = RunnerUtil(intermediate_path=intermediate_path)
+        self.runner_util = RunnerUtil(
+            intermediate_path=intermediate_path,
+            tosa_ref_model_path=tosa_ref_model_path,
+        )
 
         self.compile_spec = compile_spec
         super().__init__(model, example_inputs)
@@ -289,9 +293,9 @@ class ArmTester(Tester):
             test_input: list[torch.Tensor] = []
             for arg in reference_input:
                 if isinstance(arg, torch.Tensor):
-                    test_input.append(arg)
+                    test_input.append(arg.clone())
                 if isinstance(arg, tuple) and isinstance(arg[0], torch.Tensor):
-                    test_input.extend(list(arg))
+                    test_input.extend([tensor.clone() for tensor in arg])
 
             if (
                 is_nhwc

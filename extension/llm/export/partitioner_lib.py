@@ -37,9 +37,6 @@ def get_vulkan_partitioner(
     assert (
         dtype_override == "fp32" or dtype_override is None
     ), "Vulkan backend does not support non fp32 dtypes at the moment"
-    assert (
-        quantization_mode is None
-    ), "Vulkan backend does not support quantization at the moment"
     from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
         VulkanPartitioner,
     )
@@ -179,7 +176,7 @@ def get_qnn_partitioner(
         )
 
     use_fp16 = True
-    skip_node_op_set = {"llama.fallback.default", "aten.embedding.default"}
+    skip_node_op_set = {"llama.fallback.default"}
     if pt2e_quantize is not None:
         use_fp16 = False
 

@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2024 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -15,7 +16,9 @@ MODEL_NAME_TO_MODEL = {
     "emformer_transcribe": ("emformer_rnnt", "EmformerRnntTranscriberModel"),
     "emformer_predict": ("emformer_rnnt", "EmformerRnntPredictorModel"),
     "emformer_join": ("emformer_rnnt", "EmformerRnntJoinerModel"),
-    "llama2": ("llama2", "Llama2Model"),
+    "llama2": ("llama", "Llama2Model"),
+    "llama": ("llama", "Llama2Model"),
+    "lstm": ("lstm", "LSTMModel"),
     "mobilebert": ("mobilebert", "MobileBertModelExample"),
     "mv2": ("mobilenet_v2", "MV2Model"),
     "mv2_untrained": ("mobilenet_v2", "MV2UntrainedModel"),

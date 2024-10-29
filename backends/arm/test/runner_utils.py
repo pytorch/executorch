@@ -439,6 +439,9 @@ class RunnerUtil:
 
             if self.is_quantized:
                 # Need to dequant back to FP32 for comparison with torch output
+                # Convert to int32 prior to dequantize the output
+                if tosa_ref_output.dtype == np.int8:
+                    tosa_ref_output = tosa_ref_output.astype(np.int32)
                 quant_param = self.qp_output
                 assert (
                     quant_param is not None
@@ -457,9 +460,10 @@ def prep_data_for_save(
     data_np = np.array(data.detach(), order="C").astype(np.float32)
 
     if is_quantized:
-        assert (
-            quant_param.node_name in input_name
-        ), "These quantization params do not match the input tensor name"
+        assert quant_param.node_name in input_name, (
+            f"The quantization params name '{quant_param.node_name}' does not "
+            f"match the input tensor name '{input_name}'."
+        )
         data_np = (
             ((data_np / np.float32(quant_param.scale)) + quant_param.zp)
             .round()

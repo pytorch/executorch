@@ -13,9 +13,9 @@ namespace impl {
 namespace reference {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
-using ScalarType = exec_aten::ScalarType;
 
 // Quantize the input tensor (PT2 version). Note that quant_<min,max> are not
 // used in any computation.
@@ -44,7 +44,10 @@ void quantize_per_tensor_out(
     impl::reference::kernels::quantize<int32_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
   } else {
-    ET_CHECK_MSG(false, "Unhandled input dtype %hhd", out.scalar_type());
+    ET_CHECK_MSG(
+        false,
+        "Unhandled input dtype %hhd",
+        static_cast<int8_t>(out.scalar_type()));
   }
 }
 

@@ -18,8 +18,8 @@
     return (qnn_interface_->QNN_INTERFACE_VER_NAME.pointer_name)( \
         std::forward<Args>(args)...);                             \
   }
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 using QnnInterfaceGetProvidersFn = decltype(QnnInterface_getProviders);
 using QnnSaverInitializeFn = decltype(QnnSaver_initialize);
@@ -106,5 +106,5 @@ class QnnInterface {
   const QnnInterface_t* qnn_interface_{nullptr};
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

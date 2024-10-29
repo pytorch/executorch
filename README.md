@@ -22,10 +22,10 @@ please visit our documentation website [for the latest release](https://pytorch.
 
 Check out the [Getting Started](https://pytorch.org/executorch/stable/getting-started-setup.html#quick-setup-colab-jupyter-notebook-prototype) page for a quick spin.
 
-Check out the examples of [Llama](./examples/models/llama2/README.md), [Llava](./examples/models/llava/README.md) and [other models](./examples/README.md) running on edge devices using ExecuTorch.
+Check out the examples of [Llama](./examples/models/llama/README.md), [Llava](./examples/models/llava/README.md) and [other models](./examples/README.md) running on edge devices using ExecuTorch.
 
 
-**[UPDATE - 09/25]** We have added support for running [Llama 3.2 1B/3B](./examples/models/llama2/README.md) models via ExecuTorch.
+**[UPDATE - 10/24]** We have added support for running [Llama 3.2 Quantized 1B/3B](./examples/models/llama/README.md) models via ExecuTorch.
 
 ## Feedback
 
@@ -92,7 +92,7 @@ tools.
 ├── runtime                         #  Core C++ runtime.
 |   ├── backend                     #  Backend delegate runtime APIs.
 |   ├── core                        #  Core structures used across all levels of the runtime.
-|   ├── executor                    #  Model loading, initalization, and execution.
+|   ├── executor                    #  Model loading, initialization, and execution.
 |   ├── kernel                      #  Kernel registration and management.
 |   ├── platform                    #  Layer between architecture specific code and portable C++.
 ├── schema                          #  ExecuTorch PTE file format flatbuffer

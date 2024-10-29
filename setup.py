@@ -423,10 +423,10 @@ class CustomBuildPy(build_py):
                 "devtools/bundled_program/schema/scalar_type.fbs",
                 "devtools/bundled_program/serialize/scalar_type.fbs",
             ),
-            # Install executorch-config.cmake to the root of the package.
+            # Install executorch-wheel-config.cmake to pip package.
             (
-                "build/executorch-config.cmake",
-                "executorch-config.cmake",
+                "build/executorch-wheel-config.cmake",
+                "share/cmake/executorch-config.cmake",
             ),
         ]
         # Copy all the necessary headers into include/executorch/ so that they can
@@ -704,6 +704,7 @@ setup(
         "executorch/schema": "schema",
         "executorch/devtools": "devtools",
         "executorch/devtools/bundled_program": "devtools/bundled_program",
+        "executorch/runtime": "runtime",
         "executorch/util": "util",
         # Note: This will install a top-level module called "serializer",
         # which seems too generic and might conflict with other pip packages.

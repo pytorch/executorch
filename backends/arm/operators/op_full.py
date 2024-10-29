@@ -52,5 +52,7 @@ class FullVisitor(NodeVisitor):
             dtype = ts.DType.FP32
             data = np.full(shape, value, dtype=np.float32)
 
-        tosa_graph.addConst(shape, dtype, data, "full-const")
-        tosa_graph.addOperator(ts.TosaOp.Op.IDENTITY, ["full-const"], [output.name])
+        tosa_graph.addConst(shape, dtype, data, node.name + "full-const")
+        tosa_graph.addOperator(
+            ts.TosaOp.Op.IDENTITY, [node.name + "full-const"], [output.name]
+        )

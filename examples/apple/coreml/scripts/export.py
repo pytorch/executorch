@@ -14,8 +14,10 @@ import executorch.exir as exir
 
 import torch
 
+# pyre-fixme[21]: Could not find module `executorch.backends.apple.coreml.compiler`.
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 
+# pyre-fixme[21]: Could not find module `executorch.backends.apple.coreml.partition`.
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.devtools.etrecord import generate_etrecord
 from executorch.exir import to_edge
@@ -76,6 +78,7 @@ def parse_args() -> argparse.ArgumentParser:
     parser.add_argument("--save_processed_bytes", action=argparse.BooleanOptionalAction)
 
     args = parser.parse_args()
+    # pyre-fixme[7]: Expected `ArgumentParser` but got `Namespace`.
     return args
 
 
@@ -158,7 +161,7 @@ def main():
             f"Valid compute units are {valid_compute_units}."
         )
 
-    model, example_inputs, _ = EagerModelFactory.create_model(
+    model, example_inputs, _, _ = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 

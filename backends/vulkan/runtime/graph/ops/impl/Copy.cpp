@@ -31,6 +31,7 @@ void add_copy_offset_node(
   std::string kernel_name = "copy_offset";
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
+  add_storage_type_suffix(kernel_name, *t_out);
 
   const struct Block final {
     alignas(16) ivec3 range;
@@ -44,7 +45,7 @@ void add_copy_offset_node(
 
   auto shader = VK_KERNEL_FROM_STR(kernel_name);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
@@ -154,7 +155,7 @@ void add_copy_channel_offset_node(
 
     auto shader = VK_KERNEL_FROM_STR(kernel_name);
 
-    graph.execute_nodes().emplace_back(new ExecuteNode(
+    graph.execute_nodes().emplace_back(new DispatchNode(
         graph,
         VK_KERNEL_FROM_STR(kernel_name),
         global_size,

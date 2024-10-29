@@ -13,10 +13,7 @@ import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_
 
 import torch
 
-from executorch.backends.vulkan.partitioner.supported_ops import (
-    enumerate_supported_ops,
-    OpList,
-)
+from executorch.backends.vulkan.op_registry import vulkan_supported_ops
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
@@ -43,11 +40,13 @@ logger.setLevel(logging.INFO)
 
 
 class VulkanSupportedOperators(OperatorSupportBase):
-    _ops: OpList = enumerate_supported_ops()
-
     def __init__(self, require_dynamic_shape: bool = False) -> None:
         super().__init__()
         self.require_dynamic_shapes = require_dynamic_shape
+        # The tensor dim limit is to guard against tensors with one or more
+        # large dimensions, which cannot be represented by an image texture due
+        # to the texture axis limits.
+        self.tensor_dim_limit = 16384
 
     # pyre-ignore
     def node_val_is_compatible(self, node_val: Any) -> bool:
@@ -67,6 +66,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
             # bool dtype not currently supported
             if node_val.dtype == torch.bool:
                 return False
+
+            for dim in node_val.shape:
+                if dim > self.tensor_dim_limit:
+                    return False
 
         if isinstance(node_val, (list, tuple)):
             for item in node_val:
@@ -100,11 +103,14 @@ class VulkanSupportedOperators(OperatorSupportBase):
         if len(node.users) != 1:
             return False
 
-        if list(node.users.keys())[0].target in [
+        first_user = list(node.users.keys())[0]
+        if first_user.target in [
             exir_ops.edge.aten.mm.default,
             exir_ops.edge.aten.addmm.default,
         ]:
-            return True
+            # Only mark this node if the overall linear op is valid
+            if self.all_args_compatible(first_user):
+                return True
 
         return False
 
@@ -133,12 +139,16 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         return False
 
+    def log_skip(self, node: torch.fx.Node, reason: str) -> None:
+        if node.op == "call_function":
+            logger.info(
+                f"[Vulkan Partitioner] Due to [{reason}], skipping {node.format_node()}"
+            )
+
     def is_node_supported(
         self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
     ) -> bool:
         r = self._is_node_supported(submodules, node)
-        if not r and node.op == "call_function":
-            logger.info(f"Skipping node in Vulkan partitioning: {node.format_node()}")
         return r
 
     def _is_node_supported(
@@ -156,12 +166,18 @@ class VulkanSupportedOperators(OperatorSupportBase):
         if self.is_in_local_scalar_dense_chain(node):
             return True
 
-        if target not in VulkanSupportedOperators._ops:
+        if target not in vulkan_supported_ops:
+            self.log_skip(node, "not in vulkan_supported_ops")
             return False
 
-        features = VulkanSupportedOperators._ops[target]
+        features = vulkan_supported_ops[target]
 
-        if self.require_dynamic_shapes and not features.supports_dynamic_shape:
+        if not features.check_node_fn(node):
+            self.log_skip(node, "op args not supported")
+            return False
+
+        if self.require_dynamic_shapes and not features.resize_fn:
+            self.log_skip(node, "no dynamic shape support")
             return False
 
         return self.all_args_compatible(node)

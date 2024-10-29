@@ -46,7 +46,7 @@ def main(args):
             image_shape=(256, 256),
             crop_size=224,
         )
-    pte_filename = "mv2_qnn"
+    pte_filename = "mv2_qnn_q8"
     instance = MV2Model()
     build_executorch_binary(
         instance.get_eager_model().eval(),

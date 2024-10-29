@@ -1,5 +1,4 @@
 <!---- DO NOT MODIFY Progress Bar Start --->
-
 <div class="progress-bar-wrapper">
    <div class="progress-bar-item">
      <div class="step-number" id="step-1">1</div>
@@ -18,11 +17,7 @@
      <span class="step-caption" id="caption-4"></span>
    </div>
 </div>
-
 <!---- DO NOT MODIFY Progress Bar End--->
-```{note}
-  Before diving in, make sure you understand the concepts in the [ExecuTorch Overview](intro-overview.md)
-```
 
 # Setting Up ExecuTorch
 In this section, we'll learn how to
@@ -37,22 +32,16 @@ We've tested these instructions on the following systems, although they should
 also work in similar environments.
 
 
-::::{grid} 3
-:::{grid-item-card}  Linux (x86_64)
-:class-card: card-prerequisites
+Linux (x86_64)
 - CentOS 8+
 - Ubuntu 20.04.6 LTS+
 - RHEL 8+
-:::
-:::{grid-item-card} macOS (x86_64/M1/M2)
-:class-card: card-prerequisites
+
+macOS (x86_64/M1/M2)
 - Big Sur (11.0)+
-:::
-:::{grid-item-card} Windows (x86_64)
-:class-card: card-prerequisites
+
+Windows (x86_64)
 - Windows Subsystem for Linux (WSL) with any of the Linux options
-:::
-::::
 
 ### Software
 * `conda` or another virtual environment manager
@@ -91,7 +80,9 @@ Alternatively, if you would like to experiment with ExecuTorch quickly and easil
 
    ```bash
    # Clone the ExecuTorch repo from GitHub
-   git clone https://github.com/pytorch/executorch.git
+   # 'main' branch is the primary development branch where you see the latest changes.
+   # 'viable/strict' contains all of the commits on main that pass all of the necessary CI checks.
+   git clone --branch viable/strict https://github.com/pytorch/executorch.git
    cd executorch
 
    # Update and pull submodules
@@ -140,7 +131,19 @@ ExecuTorch provides APIs to compile a PyTorch [`nn.Module`](https://pytorch.org/
 1. Save the result as a [`.pte` binary](pte-file-format.md) to be consumed by the ExecuTorch runtime.
 
 
-Let's try this using with a simple PyTorch model that adds its inputs. Create a file called `export_add.py` with the following code:
+Let's try this using with a simple PyTorch model that adds its inputs.
+
+Create `export_add.py` in a new directory outside of the ExecuTorch repo.
+
+**Note: It's important that this file does does not live in the directory that's a parent of the `executorch` directory. We need python to import from site-packages, not from the repo itself.**
+
+```
+mkdir -p ../example_files
+cd ../example_files
+touch export_add.py
+```
+
+Add the following code to `export_add.py`:
 ```python
 import torch
 from torch.export import export
@@ -174,12 +177,17 @@ Then, execute it from your terminal.
 python3 export_add.py
 ```
 
+If it worked you'll see `add.pte` in that directory
+
 See the [ExecuTorch export tutorial](tutorials_source/export-to-executorch-tutorial.py) to learn more about the export process.
 
 
 ## Build & Run
 
-After creating a program, we can use the ExecuTorch runtime to execute it.
+After creating a program go back to the executorch directory to execute it using the ExecuTorch runtime.
+```
+cd ../executorch
+```
 
 For now, let's use [`executor_runner`](https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp), an example that runs the `forward` method on your program using the ExecuTorch runtime.
 
@@ -215,7 +223,7 @@ The ExecuTorch repo uses CMake to build its C++ code. Here, we'll configure it t
 Now that we've exported a program and built the runtime, let's execute it!
 
   ```bash
-  ./cmake-out/executor_runner --model_path add.pte
+  ./cmake-out/executor_runner --model_path ../example_files/add.pte
   ```
 Our output is a `torch.Tensor` with a size of 1. The `executor_runner` sets all input values to a [`torch.ones`](https://pytorch.org/docs/stable/generated/torch.ones.html) tensor, so when `x=[1]` and `y=[1]`, we get `[1]+[1]=[2]`
   :::{dropdown} Sample Output

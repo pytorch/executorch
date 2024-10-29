@@ -75,9 +75,9 @@ run_portable_executor_runner() {
 test_model() {
   if [[ "${MODEL_NAME}" == "llama2" ]]; then
     # Install requirements for export_llama
-    bash examples/models/llama2/install_requirements.sh
-    # Test export_llama script: python3 -m examples.models.llama2.export_llama
-    "${PYTHON_EXECUTABLE}" -m examples.models.llama2.export_llama -c examples/models/llama2/params/demo_rand_params.pth -p examples/models/llama2/params/demo_config.json
+    bash examples/models/llama/install_requirements.sh
+    # Test export_llama script: python3 -m examples.models.llama.export_llama
+    "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama -c examples/models/llama/params/demo_rand_params.pth -p examples/models/llama/params/demo_config.json
     run_portable_executor_runner
     rm "./${MODEL_NAME}.pte"
   fi
@@ -155,22 +155,16 @@ test_model_with_qnn() {
 
   if [[ "${MODEL_NAME}" == "dl3" ]]; then
     EXPORT_SCRIPT=deeplab_v3
-    EXPORTED_MODEL_NAME=dlv3_qnn.pte
   elif [[ "${MODEL_NAME}" == "mv3" ]]; then
     EXPORT_SCRIPT=mobilenet_v3
-    EXPORTED_MODEL_NAME=mv3_qnn.pte
   elif [[ "${MODEL_NAME}" == "mv2" ]]; then
     EXPORT_SCRIPT=mobilenet_v2
-    EXPORTED_MODEL_NAME=mv2_qnn.pte
   elif [[ "${MODEL_NAME}" == "ic4" ]]; then
     EXPORT_SCRIPT=inception_v4
-    EXPORTED_MODEL_NAME=ic4_qnn.pte
   elif [[ "${MODEL_NAME}" == "ic3" ]]; then
     EXPORT_SCRIPT=inception_v3
-    EXPORTED_MODEL_NAME=ic3_qnn.pte
   elif [[ "${MODEL_NAME}" == "vit" ]]; then
     EXPORT_SCRIPT=torchvision_vit
-    EXPORTED_MODEL_NAME=vit_qnn.pte
   fi
 
   # Use SM8450 for S22, SM8550 for S23, and SM8560 for S24
@@ -178,7 +172,7 @@ test_model_with_qnn() {
   QNN_CHIPSET=SM8450
 
   "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --compile_only
-  EXPORTED_MODEL=./${EXPORT_SCRIPT}/${EXPORTED_MODEL_NAME}
+  EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
 test_model_with_coreml() {
@@ -187,7 +181,24 @@ test_model_with_coreml() {
     exit 1
   fi
 
-  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}"
+  DTYPE=float16
+
+  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}" --compute_precision "${DTYPE}"
+  EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
+  # TODO:
+  if [ -n "$EXPORTED_MODEL" ]; then
+    EXPORTED_MODEL_WITH_DTYPE="${EXPORTED_MODEL%.pte}_${DTYPE}.pte"
+    mv "$EXPORTED_MODEL" "$EXPORTED_MODEL_WITH_DTYPE"
+    EXPORTED_MODEL="$EXPORTED_MODEL_WITH_DTYPE"
+    echo "Renamed file path: $EXPORTED_MODEL"
+  else
+    echo "No .pte file found"
+    exit 1
+  fi
+}
+
+test_model_with_mps() {
+  "${PYTHON_EXECUTABLE}" -m examples.apple.mps.scripts.mps_example --model_name="${MODEL_NAME}" --use_fp16
   EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
@@ -203,6 +214,12 @@ elif [[ "${BACKEND}" == "qnn" ]]; then
 elif [[ "${BACKEND}" == "coreml" ]]; then
   echo "Testing ${MODEL_NAME} with coreml..."
   test_model_with_coreml
+  if [[ $? -eq 0 ]]; then
+    prepare_artifacts_upload
+  fi
+elif [[ "${BACKEND}" == "mps" ]]; then
+  echo "Testing ${MODEL_NAME} with mps..."
+  test_model_with_mps
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi

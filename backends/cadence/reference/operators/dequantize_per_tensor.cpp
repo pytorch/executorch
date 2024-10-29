@@ -13,9 +13,9 @@ namespace impl {
 namespace reference {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
-using ScalarType = exec_aten::ScalarType;
 
 void dequantize_per_tensor_out(
     KernelRuntimeContext& context,
@@ -42,7 +42,10 @@ void dequantize_per_tensor_out(
     impl::reference::kernels::dequantize<int32_t>(
         out_data, input_data, scale, zero_point, numel);
   } else {
-    ET_CHECK_MSG(false, "Unhandled input dtype %hhd", input.scalar_type());
+    ET_CHECK_MSG(
+        false,
+        "Unhandled input dtype %hhd",
+        static_cast<int8_t>(input.scalar_type()));
   }
 }
 

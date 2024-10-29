@@ -214,7 +214,8 @@ ATEN_OPS = (
         name = "op_add",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             ":scalar_utils",
         ],
@@ -223,6 +224,8 @@ ATEN_OPS = (
         name = "op_addmm",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:matmul_ops_util",
             ":scalar_utils",
             ":vec_ops",
@@ -304,7 +307,8 @@ ATEN_OPS = (
         name = "op_atan2",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -322,12 +326,11 @@ ATEN_OPS = (
     op_target(
         name = "op_bitwise_and",
         deps = [
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
+            ":scalar_utils",
             "//executorch/kernels/portable/cpu/pattern:bitwise_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
-            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -341,23 +344,21 @@ ATEN_OPS = (
     op_target(
         name = "op_bitwise_or",
         deps = [
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
+            ":scalar_utils",
             "//executorch/kernels/portable/cpu/pattern:bitwise_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
-            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
         name = "op_bitwise_xor",
         deps = [
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
+            ":scalar_utils",
             "//executorch/kernels/portable/cpu/pattern:bitwise_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
-            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -391,7 +392,8 @@ ATEN_OPS = (
         deps = [
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
@@ -408,6 +410,7 @@ ATEN_OPS = (
     op_target(
         name = "op_convolution",
         deps = [
+            "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             ":vec_ops",
         ],
@@ -422,6 +425,8 @@ ATEN_OPS = (
         name = "op_copy",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             ":scalar_utils",
@@ -442,6 +447,7 @@ ATEN_OPS = (
     op_target(
         name = "op_cumsum",
         deps = [
+            "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
@@ -463,7 +469,8 @@ ATEN_OPS = (
         name = "op_div",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:math_util",
             ":scalar_utils",
         ],
@@ -478,8 +485,10 @@ ATEN_OPS = (
         name = "op_eq",
         deps = [
             ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:comparison_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -538,6 +547,8 @@ ATEN_OPS = (
         name = "op_floor_divide",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
@@ -546,7 +557,8 @@ ATEN_OPS = (
         deps = [
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -575,8 +587,10 @@ ATEN_OPS = (
         name = "op_ge",
         deps = [
             ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:comparison_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -599,8 +613,10 @@ ATEN_OPS = (
         name = "op_gt",
         deps = [
             ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:comparison_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -647,8 +663,10 @@ ATEN_OPS = (
         name = "op_le",
         deps = [
             ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:comparison_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -700,7 +718,11 @@ ATEN_OPS = (
     op_target(
         name = "op_logical_and",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:logical_op",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -713,13 +735,21 @@ ATEN_OPS = (
     op_target(
         name = "op_logical_or",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:logical_op",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
         name = "op_logical_xor",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:logical_op",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -732,8 +762,10 @@ ATEN_OPS = (
         name = "op_lt",
         deps = [
             ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:comparison_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -745,11 +777,14 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_masked_scatter",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+        ],
+    ),
+    op_target(
         name = "op_max",
         deps = [
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
-            "//executorch/kernels/portable/cpu/util:index_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -757,6 +792,8 @@ ATEN_OPS = (
         name = "op_maximum",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:math_util",
             ":scalar_utils",
         ],
@@ -779,9 +816,6 @@ ATEN_OPS = (
     op_target(
         name = "op_min",
         deps = [
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
-            "//executorch/kernels/portable/cpu/util:index_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -789,6 +823,8 @@ ATEN_OPS = (
         name = "op_minimum",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:math_util",
             ":scalar_utils",
         ],
@@ -804,7 +840,8 @@ ATEN_OPS = (
         name = "op_mul",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             ":scalar_utils",
         ],
     ),
@@ -838,8 +875,10 @@ ATEN_OPS = (
         name = "op_ne",
         deps = [
             ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:comparison_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -890,7 +929,8 @@ ATEN_OPS = (
         deps = [
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -936,7 +976,8 @@ ATEN_OPS = (
         deps = [
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
@@ -983,8 +1024,9 @@ ATEN_OPS = (
         name = "op_rsub",
         deps = [
             ":scalar_utils",
-            "//executorch/kernels/portable/cpu/util:functional_util",
-            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -1102,8 +1144,8 @@ ATEN_OPS = (
         deps = [
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
-            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -1186,8 +1228,8 @@ ATEN_OPS = (
         name = "op_where",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
-            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(

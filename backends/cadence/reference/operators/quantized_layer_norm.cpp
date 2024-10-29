@@ -115,14 +115,14 @@ void quantized_layer_norm_out(
     const Tensor& input,
     const Tensor& in_scale,
     const Tensor& in_zero_point,
-    const exec_aten::IntArrayRef normalized_shape,
+    const executorch::aten::IntArrayRef normalized_shape,
     const Tensor& weight,
     const Tensor& bias,
     double eps,
     double output_scale,
     int64_t output_zero_point,
     Tensor& out) {
-  if (input.scalar_type() == exec_aten::ScalarType::Byte) {
+  if (input.scalar_type() == executorch::aten::ScalarType::Byte) {
     quantized_layer_norm_<uint8_t>(
         input,
         in_scale,
@@ -133,7 +133,7 @@ void quantized_layer_norm_out(
         output_scale,
         output_zero_point,
         out);
-  } else if (input.scalar_type() == exec_aten::ScalarType::Char) {
+  } else if (input.scalar_type() == executorch::aten::ScalarType::Char) {
     quantized_layer_norm_<int8_t>(
         input,
         in_scale,
@@ -145,7 +145,10 @@ void quantized_layer_norm_out(
         output_zero_point,
         out);
   } else {
-    ET_CHECK_MSG(false, "Unhandled input dtype %hhd", input.scalar_type());
+    ET_CHECK_MSG(
+        false,
+        "Unhandled input dtype %hhd",
+        static_cast<int8_t>(input.scalar_type()));
   }
 }
 

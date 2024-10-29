@@ -50,7 +50,7 @@ void add_kv_cache_update_node(
   }
   const utils::uvec3 local_size = graph.create_local_wg_size(global_size);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
@@ -104,7 +104,7 @@ void add_attn_weight_scale_and_mask_node(
 
   local_size = graph.create_local_wg_size(global_size);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
@@ -223,9 +223,9 @@ void sdpa_with_kv_cache_impl(
   VK_CHECK_COND(graph.val_is_none(attn_mask));
 
   const ValueRef k_cache =
-      prepack_if_tensor_ref(graph, k_cache_data, utils::kWidthPacked);
+      prepack_standard_like(graph, k_cache_data, q_projected);
   const ValueRef v_cache =
-      prepack_if_tensor_ref(graph, v_cache_data, utils::kWidthPacked);
+      prepack_standard_like(graph, v_cache_data, q_projected);
 
   const int32_t max_seq_len = graph.size_at<int32_t>(1, k_cache);
 

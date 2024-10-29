@@ -41,9 +41,10 @@ class SliceVisitor(NodeVisitor):
         # Translate and check parameters in Pytorch dim order.
         shape = input_node.shape
         dim = dim.number
-        end = (shape[dim] + end.number) % shape[dim]
-        if end == 0:
-            end = shape[dim]
+        if end.number < 0:
+            end = end.number % shape[dim]
+        else:
+            end = min(end.number, shape[dim])
         size = end - start.number
         assert size > 0
         assert size <= shape[dim]

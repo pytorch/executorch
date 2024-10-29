@@ -24,6 +24,8 @@
 #define GET_NEURON_ALLOCATOR \
   ::torch::executor::neuron::BufferAllocator::GetInstance()
 
+// TODO: Move this code to the executorch::backends::neuron namespace.
+// The torch:: namespace is deprecated for ExecuTorch code.
 namespace torch {
 namespace executor {
 namespace neuron {
@@ -82,7 +84,9 @@ class MemoryUnit {
     NeuronMemory* memory = nullptr;
     NeuronMemory_createFromAHardwareBuffer(Abuffer, &memory);
     CHECK_VALID_PTR(memory);
-    mNeuronMemory = std::unique_ptr<NeuronMemory, NeuronDeleter>(memory);
+    mNeuronMemory = std::
+        unique_ptr<NeuronMemory, executorch::backends::neuron::NeuronDeleter>(
+            memory);
 
     AHardwareBuffer_lock(Abuffer, mAhwbType, -1, nullptr, &mAddress);
     CHECK_VALID_PTR(mAddress);
@@ -90,7 +94,8 @@ class MemoryUnit {
   }
 
  private:
-  std::unique_ptr<NeuronMemory, NeuronDeleter> mNeuronMemory;
+  std::unique_ptr<NeuronMemory, executorch::backends::neuron::NeuronDeleter>
+      mNeuronMemory;
 
   std::unique_ptr<AHardwareBuffer, BufferDeleter> mAhwb;
 
@@ -102,7 +107,7 @@ class MemoryUnit {
   size_t mSize = 0;
 };
 
-class BufferAllocator : public MemoryAllocator {
+class BufferAllocator : public executorch::runtime::MemoryAllocator {
  public:
   static BufferAllocator& GetInstance();
 
@@ -119,7 +124,7 @@ class BufferAllocator : public MemoryAllocator {
   void Clear();
 
  private:
-  BufferAllocator() : MemoryAllocator(0, nullptr) {}
+  BufferAllocator() : executorch::runtime::MemoryAllocator(0, nullptr) {}
 
   BufferAllocator(const BufferAllocator&) = delete;
 
