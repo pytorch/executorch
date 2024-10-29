@@ -446,7 +446,7 @@ class CoreMLBackend(BackendDetails):
             config = cto.coreml.OptimizationConfig(
                 global_config=op_linear_quantizer_config,
                 # skip embedding
-                op_type_configs={"gather": None},
+                # op_type_configs={"gather": None},
             )
             mlmodel = cto.coreml.linear_quantize_weights(mlmodel, config=config)
 

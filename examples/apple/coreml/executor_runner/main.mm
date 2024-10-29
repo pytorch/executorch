@@ -18,6 +18,9 @@
 #import <numeric>
 #import <string>
 
+// #import <iostream>
+// #import <executorch/extension/evalue_util/print_evalue.h>
+
 static inline id check_class(id obj, Class cls) {
     return [obj isKindOfClass:cls] ? obj : nil;
 }
@@ -393,6 +396,17 @@ int main(int argc, char * argv[]) {
 
         dump_etdump_gen(etdump_gen.get(), debug_buffer, args);
 
+        for (size_t i = 0; i < method->outputs_size(); i++) {
+            auto tensor = outputs[i].toTensor();
+            NSLog(@"tensor[%zu] sizes=", i);
+            for (size_t j = 0; j < tensor.sizes().size(); j++) {
+                NSLog(@" %d,", tensor.sizes()[j]);
+            }
+        }
+        // std::cout << executorch::extension::evalue_edge_items(100);
+        // for (int i = 0; i < method->outputs_size(); i++) {
+        //     std::cout << "Output " << i << ": " << outputs[i] << std::endl;
+        // }
         return EXIT_SUCCESS;
     }
 }

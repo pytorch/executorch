@@ -711,6 +711,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
             logging.info("Generated etrecord.bin")
     else:
         builder = builder_exported_to_edge.to_backend(partitioners)
+        breakpoint()
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
@@ -825,6 +826,8 @@ def _load_llama_model(
         output_prune_map_path=output_prune_map_path,
         args=args,
     )
+    model(*example_inputs)
+    breakpoint()
     if dtype_override:
         assert isinstance(
             dtype_override, DType
@@ -970,6 +973,7 @@ def _get_source_transforms(  # noqa
             else:
                 transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_kv_cache_with_coreml_kv_cache)
+            transforms.append(replace_causal_mask)
 
     if args.vulkan:
         transforms.append(replace_with_vulkan_rotary_emb)
