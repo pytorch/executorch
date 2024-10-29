@@ -1,12 +1,10 @@
 import logging
 from typing import Any, Callable, Dict, Optional, Type
 
+import executorch.backends.vulkan.custom_ops_lib  # noqa
+
 import torch
 import torch.nn.functional as F
-
-from executorch.backends.vulkan._passes.custom_ops_defs import (  # noqa
-    linear_weight_int4_op,
-)
 
 from torchao.quantization.GPTQ import _check_linear_int4_k
 from torchao.quantization.unified import Quantizer

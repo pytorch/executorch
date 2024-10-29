@@ -222,6 +222,64 @@ void OpMaxOutTest::test_max_out_dtype<ScalarType::Bool>() {
   // clang-format on
 }
 
+class OpMaxUnaryOutTest : public OperatorTest {
+ protected:
+  Tensor& op_max_unary_out(const Tensor& self, Tensor& out) {
+    return torch::executor::aten::max_outf(context_, self, out);
+  }
+
+  template <ScalarType IN_DTYPE>
+  void test_max_unary_out_dtype() {
+    TensorFactory<IN_DTYPE> tf_in;
+    TensorFactory<ScalarType::Float> tf_out;
+    Tensor input = tf_in.make({2, 3}, {0, 1, 2, 4, 4, 2});
+    Tensor out = tf_out.zeros({});
+    Tensor expected = tf_out.make({}, {4});
+    op_max_unary_out(input, out);
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
+
+  template <typename CTYPE, ScalarType IN_DTYPE>
+  void test_max_unary_out_empty_integer() {
+    TensorFactory<IN_DTYPE> tf_in;
+    Tensor input = tf_in.make({2, 0}, {});
+    Tensor out = tf_in.zeros({});
+    Tensor expected = tf_in.make({}, {std::numeric_limits<CTYPE>::lowest()});
+    op_max_unary_out(input, out);
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
+
+  template <typename CTYPE, ScalarType IN_DTYPE>
+  void test_max_unary_out_empty_floating() {
+    TensorFactory<IN_DTYPE> tf_in;
+    Tensor input = tf_in.make({2, 0}, {});
+    Tensor out = tf_in.zeros({});
+    Tensor expected = tf_in.make({}, {-INFINITY});
+    op_max_unary_out(input, out);
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
+};
+
+TEST_F(OpMaxUnaryOutTest, AllRealHBF16InputFloatOutputPasses) {
+#define TEST_ENTRY(ctype, dtype) test_max_unary_out_dtype<ScalarType::dtype>();
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
+TEST_F(OpMaxUnaryOutTest, EmptyIntegerInput) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_max_unary_out_empty_integer<ctype, ScalarType::dtype>();
+  ET_FORALL_INT_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
+TEST_F(OpMaxUnaryOutTest, EmptyFloatingInput) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_max_unary_out_empty_floating<ctype, ScalarType::dtype>();
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
 TEST_F(OpMaxOutTest, MismatchedDimensionsDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel test fails";
