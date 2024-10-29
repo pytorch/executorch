@@ -109,7 +109,7 @@ jobs:
         MODE=${{ matrix.mode }}
 
         # Setup executorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
         # Test llama2
@@ -384,7 +384,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 
         # Setup executorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
         # Test llama2
