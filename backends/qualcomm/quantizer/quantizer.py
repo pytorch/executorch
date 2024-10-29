@@ -22,6 +22,8 @@ from torch._ops import OpOverload
 from torch.ao.quantization.quantizer import Quantizer
 from torch.fx import GraphModule
 
+from .annotators import OP_ANNOTATOR
+
 from .qconfig import (
     get_16a16w_qnn_ptq_config,
     get_16a4w_qnn_ptq_config,
@@ -33,8 +35,6 @@ from .qconfig import (
     get_qat_per_channel_quant_config,
     QuantizationConfig,
 )
-
-from .annotators import OP_ANNOTATOR
 
 __all__ = [
     "QnnQuantizer",

@@ -2,7 +2,7 @@ import torch
 from torch.ao.quantization.observer import UniformQuantizationObserverBase
 
 
-class ParamObserver(UniformQuantizationObserverBase):
+class PerChannelParamObserver(UniformQuantizationObserverBase):
     def __init__(
         self,
         ch_axis=0,
