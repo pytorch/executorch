@@ -319,7 +319,7 @@ def process_call_function(
             is_quant_node(node),
         )
     else:
-        raise RuntimeError(f"Unknown operator {node.target.__name__}")
+        raise RuntimeError(f"Unknown operator {node.target}")
 
 
 def expand_dims(
