@@ -9,14 +9,13 @@ import json
 from typing import Optional
 
 import torch
-
-from examples.models.llama.llama_transformer import ModelArgs
 from executorch.examples.models.llama.export_llama_lib import (
     _prepare_for_llama_export,
     build_args_parser as _build_args_parser,
 )
+from executorch.examples.models.llama.llama_transformer import ModelArgs
 from executorch.examples.models.llama.runner.generation import LlamaRunner
-from executorch.extension.llm.export import LLMEdgeManager
+from executorch.extension.llm.export.builder import LLMEdgeManager
 
 
 class EagerLlamaRunner(LlamaRunner):
@@ -33,18 +32,18 @@ class EagerLlamaRunner(LlamaRunner):
             use_kv_cache=args.use_kv_cache,
             **params,
         )
-        super().__init__(tokenizer_path=args.tokenizer_path, model_args=model_args)
-        manager: LLMEdgeManager = _prepare_for_llama_export("llama", args)
-        self.model = (
-            manager.model.eval().to(device="cuda")
-            if torch.cuda.is_available()
-            else manager.model.eval().to(device="cpu")
+        super().__init__(
+            tokenizer_path=args.tokenizer_path,
+            model_args=model_args,
+            device="cuda" if torch.cuda.is_available() else "cpu",
         )
+        manager: LLMEdgeManager = _prepare_for_llama_export("llama", args)
+        self.model = manager.model.eval().to(device=self.device)
 
     def forward(
         self,
-        tokens: Optional[torch.LongTensor] = None,
-        input_pos: Optional[torch.LongTensor] = None,
+        tokens: torch.Tensor,
+        input_pos: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         return self.model.forward(tokens=tokens, input_pos=input_pos)
 

@@ -49,6 +49,7 @@ class Llama2Model(EagerModelBase):
         self.use_sdpa_with_kv_cache_op = kwargs.get("use_sdpa_with_kv_cache", False)
         self.generate_full_logits = kwargs.get("generate_full_logits", False)
         self.enable_dynamic_shape = kwargs.get("enable_dynamic_shape", False)
+        self.input_prune_map_path = kwargs.get("input_prune_map_path", None)
         self.output_prune_map_path = kwargs.get("output_prune_map_path", None)
         self.max_seq_len = kwargs.get("max_seq_len", 128)
         self.args = kwargs.get("args", None)
@@ -126,6 +127,12 @@ the checkpoint format to avoid generating faulty models.
                 output_prune_map = json.load(f)
             # Change keys from string to int (json only supports string keys).
             output_prune_map = {int(k): v for (k, v) in output_prune_map.items()}
+        input_prune_map = None
+        if self.input_prune_map_path is not None:
+            with open(self.input_prune_map_path, "r") as f:
+                input_prune_map = json.load(f)
+            # Change keys from string to int (json only supports string keys).
+            input_prune_map = {int(k): v for (k, v) in input_prune_map.items()}
 
         model_args: ModelArgs = ModelArgs(
             max_seq_len=self.max_seq_len,
@@ -133,6 +140,7 @@ the checkpoint format to avoid generating faulty models.
             use_kv_cache=self.use_kv_cache,
             use_sdpa_with_kv_cache_op=self.use_sdpa_with_kv_cache_op,
             generate_full_logits=self.generate_full_logits,
+            input_prune_map=input_prune_map,
             output_prune_map=output_prune_map,
             enable_dynamic_shape=self.enable_dynamic_shape,
             **params,
@@ -165,7 +173,7 @@ the checkpoint format to avoid generating faulty models.
             )
         elif hasattr(self.args, "use_spin_quant") and self.args.use_spin_quant:
             print("Using SPIN quantization.")
-            self._transform_for_pre_quantization(checkpoint)
+            self._transform_for_pre_quantization(checkpoint, model_args)
 
             from .source_transformation.pre_quantization import (
                 sanitize_checkpoint_from_pre_quantization,
@@ -174,8 +182,9 @@ the checkpoint format to avoid generating faulty models.
             sanitize_checkpoint_from_pre_quantization(checkpoint)
         elif hasattr(self.args, "use_qat") and self.args.use_qat:
             print("Using QAT quantization.")
-            self._transform_for_pre_quantization(checkpoint)
+            self._transform_for_pre_quantization(checkpoint, model_args)
             if hasattr(self.args, "use_lora") and self.args.use_lora:
+                assert model_args.lora_args["rank"] == self.args.use_lora
                 from .source_transformation.lora import (
                     transform_linear_for_lora_after_quantization,
                 )
@@ -208,9 +217,15 @@ the checkpoint format to avoid generating faulty models.
             print(unexpected)
             print("============= /unexpected ================")
 
+        # Prune the input layer if input_prune_map is provided
+        if input_prune_map is not None:
+            from .source_transformation.prune_vocab import prune_input_vocab
+
+            self.model_ = prune_input_vocab(self.model_, input_prune_map)
+
         # Prune the output layer if output_prune_map is provided
         if output_prune_map is not None:
-            from .source_transformation.prune_output import prune_output_vocab
+            from .source_transformation.prune_vocab import prune_output_vocab
 
             self.model_ = prune_output_vocab(self.model_, output_prune_map)
 
@@ -251,7 +266,7 @@ the checkpoint format to avoid generating faulty models.
                 ),  # start_pos, what token of output are we on.
             )
 
-    def _transform_for_pre_quantization(self, checkpoint):
+    def _transform_for_pre_quantization(self, checkpoint, model_args):
         assert hasattr(self.args, "preq_mode"), "preq_mode must be specified"
         assert self.args.preq_mode in [
             "8da4w",
@@ -264,6 +279,8 @@ the checkpoint format to avoid generating faulty models.
         from .source_transformation.pre_quantization import (
             transform_linear_for_pre_quantization,
         )
+
+        assert self.args.preq_group_size == model_args.quantization_args["group_size"]
 
         mapping = {
             "fp32": torch.float32,

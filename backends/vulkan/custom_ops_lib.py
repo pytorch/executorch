@@ -183,3 +183,53 @@ lib.define(
 )
 lib.impl(name, linear_weight_int4_impl, "CompositeExplicitAutograd")
 linear_weight_int4_op = getattr(getattr(torch.ops, namespace), name)
+
+######################
+## apply_rotary_emb ##
+######################
+
+
+# Note that this implementation is copied from executorch.examples.models.llama.rope
+# but it is copied here to avoid introducing a dependency on the llama code.
+def apply_rotary_emb_impl(
+    xq: torch.Tensor, xk: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
+):
+    def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
+        ndim = x.ndim
+        freqs_cis_ndim = freqs_cis.ndim
+        if freqs_cis_ndim == 3:
+            # freqs_cis: (seq_len, n_heads, head_dim // 2)
+            assert freqs_cis.shape == (x.shape[-3], x.shape[-2], x.shape[-1])
+            shape = [
+                d if (i == ndim - 3 or i == ndim - 2 or i == ndim - 1) else 1
+                for i, d in enumerate(x.shape)
+            ]
+        else:
+            # freqs_cis: (seq_len, head_dim // 2)
+            assert freqs_cis.shape == (x.shape[1], x.shape[-1])
+            shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
+        return freqs_cis.view(shape)
+
+    xq_r, xq_i = xq.float().reshape(xq.shape[:-1] + (-1, 2)).unbind(-1)
+    xk_r, xk_i = xk.float().reshape(xk.shape[:-1] + (-1, 2)).unbind(-1)
+
+    freqs_cos = reshape_for_broadcast(freqs_cos, xq_r)
+    freqs_sin = reshape_for_broadcast(freqs_sin, xq_r)
+
+    xq_out_r = xq_r * freqs_cos - xq_i * freqs_sin
+    xq_out_i = xq_r * freqs_sin + xq_i * freqs_cos
+    xk_out_r = xk_r * freqs_cos - xk_i * freqs_sin
+    xk_out_i = xk_r * freqs_sin + xk_i * freqs_cos
+
+    xq_out = torch.stack([xq_out_r, xq_out_i], dim=-1).flatten(3)
+    xk_out = torch.stack([xk_out_r, xk_out_i], dim=-1).flatten(3)
+
+    return xq_out.type_as(xq), xk_out.type_as(xk)
+
+
+name = "apply_rotary_emb"
+lib.define(
+    f"{name}(Tensor xq, Tensor xk, Tensor freqs_cos, Tensor freqs_sin) -> (Tensor, Tensor)"
+)
+lib.impl(name, apply_rotary_emb_impl, "CompositeExplicitAutograd")
+apply_rotary_emb_op = getattr(getattr(torch.ops, namespace), name)

@@ -12,6 +12,7 @@ from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_AXIS_ORDER,
     QCOM_INSERTED_PERMUTE,
+    QCOM_LAYOUT_CHANGE,
     QCOM_QUANT_ATTRS,
     QCOM_REQUANTIZE,
 )
@@ -34,6 +35,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.convolution.default,
         exir_ops.edge.aten.max_pool2d_with_indices.default,
         exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
+        exir_ops.edge.aten.native_group_norm.default,
         exir_ops.edge.aten.pixel_shuffle.default,
         exir_ops.edge.aten.pixel_unshuffle.default,
         exir_ops.edge.aten.upsample_bilinear2d.default,
@@ -95,6 +97,7 @@ class LayoutTransform(ExportPass):
         self.edge_program = edge_program
         self.insert_permute = insert_permute
         self.qdq_opset = {*q_ops, *dq_ops}
+        self.transformed_tag = QCOM_AXIS_ORDER
 
     def mark_as_transformed(self, node: torch.fx.Node) -> None:
         if isinstance(node.meta["val"], (tuple, list)):
@@ -105,18 +108,18 @@ class LayoutTransform(ExportPass):
                     f"got {getitem_node.target.__name__}"
                 )
             index = getitem_node.args[1]
-            node.meta[QCOM_AXIS_ORDER] = self.get_axis_order(
+            node.meta[self.transformed_tag] = self.get_axis_order(
                 eval_shape(node.meta["val"][index].shape)
             )
         else:
-            node.meta[QCOM_AXIS_ORDER] = self.get_axis_order(
+            node.meta[self.transformed_tag] = self.get_axis_order(
                 eval_shape(node.meta["val"].shape)
             )
 
     def is_transformed_node(self, node: torch.fx.Node) -> bool:
         if not hasattr(node, "meta"):
             return False
-        return QCOM_AXIS_ORDER in node.meta
+        return self.transformed_tag in node.meta
 
     def is_layout_sensitive(self, node: torch.fx.Node) -> bool:
         return node.target in self.layout_sensitive_ops
@@ -186,8 +189,23 @@ class LayoutTransform(ExportPass):
             # we need this to check the annotation boundary
             permute.meta[QCOM_INSERTED_PERMUTE] = True
 
+            # this is the case when residual connection happened:
+            # e.g. consider following graph
+            # x --> permute --> layer_norm --> permute --> conv2d --> add
+            #               └-------------------------------------┙
+            # we should have premute node to be correctly inserted as:
+            # x --> permute --> layer_norm --> permute --> qnn_permute --> conv2d --> add
+            #               └--------------------------------------> qnn_premute -┙
+            # i.e. insert permute by condition between user and current node
+            #      if there are multiple users included
+            is_node_transformed = self.is_transformed_node(node)
             for user in users:
-                user.replace_input_with(node, permute)
+                is_user_transformed = (
+                    self.is_transformed_node(user) or QCOM_LAYOUT_CHANGE in user.meta
+                )
+                # insert permute only in exclusive condition
+                if is_node_transformed != is_user_transformed:
+                    user.replace_input_with(node, permute)
 
     def create_call_function_node(
         self,
@@ -243,6 +261,15 @@ class LayoutTransform(ExportPass):
         sensitive_nodes = [
             node for node in graph.nodes if self.is_layout_sensitive(node)
         ]
+        # perform first run traversal for identifying nodes subjected to layout changes
+        if self.insert_permute:
+            self.insert_permute, self.transformed_tag = False, QCOM_LAYOUT_CHANGE
+            for node in sensitive_nodes:
+                if not self.is_transformed_node(node):
+                    self.mark_as_transformed(node)
+                    self.traverse(node, graph_module)
+            self.insert_permute, self.transformed_tag = True, QCOM_AXIS_ORDER
+
         for node in sensitive_nodes:
             if not self.is_transformed_node(node):
                 self.mark_as_transformed(node)

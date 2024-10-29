@@ -35,9 +35,6 @@ jobs:
     name: test-setup-linux-gcc
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
-      matrix:
-        include:
-          - build-tool: cmake
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -50,7 +47,7 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        BUILD_TOOL=${{ matrix.build-tool }}
+        BUILD_TOOL="cmake"
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Build and test ExecuTorch with the add model on portable backend.
@@ -89,20 +86,11 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        build-tool: [buck2, cmake]
         mode: [portable, xnnpack+custom, xnnpack+custom+qe]
         include:
           - dtype: bf16
-            build-tool: cmake
             mode: portable
           - dtype: bf16
-            build-tool: buck2
-            mode: portable
-          - dtype: bf16
-            build-tool: cmake
-            mode: custom
-          - dtype: bf16
-            build-tool: buck2
             mode: custom
       fail-fast: false
     with:
@@ -117,11 +105,11 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         DTYPE=${{ matrix.dtype }}
-        BUILD_TOOL=${{ matrix.build-tool }}
+        BUILD_TOOL="cmake"
         MODE=${{ matrix.mode }}
 
         # Setup executorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh buck2
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
         # Test llama2
@@ -131,9 +119,6 @@ jobs:
     name: test-llama-runner-linux-android
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
-      matrix:
-        include:
-          - build-tool: cmake
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -146,7 +131,7 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        BUILD_TOOL=${{ matrix.build-tool }}
+        BUILD_TOOL="cmake"
         PYTHON_EXECUTABLE=python \
         bash .ci/scripts/build_llama_android.sh  "${BUILD_TOOL}"
 
@@ -154,10 +139,6 @@ jobs:
     name: test-custom-ops-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
-      matrix:
-        include:
-          - build-tool: buck2
-          - build-tool: cmake
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -170,7 +151,7 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        BUILD_TOOL=${{ matrix.build-tool }}
+        BUILD_TOOL="cmake"
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Test custom ops
         PYTHON_EXECUTABLE=python bash examples/portable/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
@@ -179,10 +160,6 @@ jobs:
     name: test-selective-build-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
-      matrix:
-        include:
-          - build-tool: buck2
-          - build-tool: cmake
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -195,7 +172,7 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        BUILD_TOOL=${{ matrix.build-tool }}
+        BUILD_TOOL="cmake"
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
@@ -235,9 +212,6 @@ jobs:
     name: test-quantized-aot-lib-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
-      matrix:
-        include:
-          - build-tool: cmake
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -250,7 +224,7 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        BUILD_TOOL=${{ matrix.build-tool }}
+        BUILD_TOOL="cmake"
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         PYTHON_EXECUTABLE=python bash examples/xnnpack/quantization/test_quantize.sh "${BUILD_TOOL}" mv2
 
@@ -258,9 +232,6 @@ jobs:
     name: test-pybind-build-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
-      matrix:
-        include:
-          - build-tool: cmake
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -274,7 +245,7 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         # build module for executorch.extension.pybindings.portable_lib
-        BUILD_TOOL=${{ matrix.build-tool }}
+        BUILD_TOOL="cmake"
         PYTHON_EXECUTABLE=python \
         EXECUTORCH_BUILD_XNNPACK=ON \
         EXECUTORCH_BUILD_PYBIND=ON \
@@ -347,6 +318,9 @@ jobs:
           exit 1
         fi
 
+  android:
+    uses: ./.github/workflows/_android.yml
+
   unittest:
     uses: ./.github/workflows/_unittest.yml
     with:
@@ -354,10 +328,6 @@ jobs:
 
   unittest-arm:
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-    strategy:
-      matrix:
-        include:
-          - build-tool: buck2
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-arm-sdk
@@ -371,7 +341,7 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        BUILD_TOOL=${{ matrix.build-tool }}
+        BUILD_TOOL="cmake"
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python \
@@ -393,7 +363,6 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        build-tool: [cmake]
         mode: [qnn]
       fail-fast: false
     with:
@@ -408,14 +377,14 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         DTYPE=${{ matrix.dtype }}
-        BUILD_TOOL=${{ matrix.build-tool }}
+        BUILD_TOOL="cmake"
         MODE=${{ matrix.mode }}
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 
         # Setup executorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh buck2
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
         # Test llama2

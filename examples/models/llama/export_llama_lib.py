@@ -69,6 +69,7 @@ from .source_transformation.sdpa import (
     replace_sdpa_with_flex_sdpa,
     replace_sdpa_with_simple_sdpa,
 )
+from .source_transformation.vulkan_rope import replace_with_vulkan_rotary_emb
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -436,6 +437,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=None,
         help="path to the output pruning token mapping file (token_map.json)",
     )
+
+    parser.add_argument(
+        "--input_prune_map",
+        default=None,
+        help="path to the input pruning token mapping file (token_map.json)",
+    )
     return parser
 
 
@@ -524,6 +531,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             tokenizer_path=args.tokenizer_path,
             verbose=args.verbose,
             max_seq_len=args.max_seq_length,
+            input_prune_map_path=args.input_prune_map,
             output_prune_map_path=args.output_prune_map,
             metadata_str=args.metadata,
             dtype_override=dtype_override,
@@ -642,7 +650,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
             )
         )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
-        from executorch.backends.qualcomm.utils.utils import _transform
+        from executorch.backends.qualcomm.utils.utils import _transform, tag_quant_io
 
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`, Optional type has no attribute `exported_program`
         _transform(builder_exported_to_edge.edge_manager.exported_program())
@@ -654,6 +662,24 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
                 builder_exported_to_edge.metadata["get_n_layers"],
                 shares=args.num_sharding,
             )
+
+        from functools import partial
+
+        # pyre-ignore
+        from executorch.backends.qualcomm.quantizer.custom_annotation import (
+            get_custom_quant_ios_dtype,
+        )
+
+        # pyre-ignore
+        tag_quant_io(
+            builder_exported_to_edge.edge_manager.exported_program().graph_module,
+            partial(
+                get_custom_quant_ios_dtype,  # pyre-ignore
+                builder_exported_to_edge.model.layers[
+                    0
+                ].attention.kv_cache.past_k_caches.shape,
+            ),
+        )
 
     logging.info("Lowering model using following partitioner(s): ")
     for partitioner in partitioners:
@@ -765,6 +791,7 @@ def _load_llama_model(
     tokenizer_path: Optional[str] = None,
     verbose: bool = False,
     max_seq_len: int = 128,
+    input_prune_map_path: Optional[str] = None,
     output_prune_map_path: Optional[str] = None,
     metadata_str: Optional[str] = None,
     dtype_override: Optional[DType] = None,
@@ -794,6 +821,7 @@ def _load_llama_model(
         fairseq2=weight_type == WeightType.FAIRSEQ2,
         max_seq_len=max_seq_len,
         enable_dynamic_shape=enable_dynamic_shape,
+        input_prune_map_path=input_prune_map_path,
         output_prune_map_path=output_prune_map_path,
         args=args,
     )
@@ -942,5 +970,8 @@ def _get_source_transforms(  # noqa
             else:
                 transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_kv_cache_with_coreml_kv_cache)
+
+    if args.vulkan:
+        transforms.append(replace_with_vulkan_rotary_emb)
 
     return transforms

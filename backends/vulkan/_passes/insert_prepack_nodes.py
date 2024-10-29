@@ -6,28 +6,16 @@
 
 # pyre-strict
 
-from typing import List
-
-import executorch.backends.vulkan._passes.custom_ops_defs  # noqa
+import executorch.backends.vulkan.custom_ops_lib  # noqa
 
 import torch
+
+from executorch.backends.vulkan.op_registry import handles_own_prepacking
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch._export.utils import is_buffer, is_param
 from torch.export import ExportedProgram
-
-USES_WEIGHTS: List[torch._ops.OpOverload] = [
-    exir_ops.edge.aten.embedding.default,
-    exir_ops.edge.aten.convolution.default,
-    exir_ops.edge.et_vk.conv_with_clamp.default,
-    exir_ops.edge.aten.linear.default,
-    exir_ops.edge.aten._weight_int8pack_mm.default,
-    exir_ops.edge.et_vk.linear_weight_int4.default,
-    exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-    exir_ops.edge.aten.native_layer_norm.default,
-    "llama::sdpa_with_kv_cache",
-]
 
 
 def insert_prepack_nodes(program: ExportedProgram) -> ExportedProgram:
@@ -36,9 +24,9 @@ def insert_prepack_nodes(program: ExportedProgram) -> ExportedProgram:
     is responsible for transferring the tensor data, which is serialized with the model,
     to a GPU tensor object during the prepacking stage of model execution.
 
-    Some operators, listed in `USES_WEIGHTS` above, are performance sensitive and will
-    prefer to handle prepacking within the operator. For these ops, the constant tensor
-    data will be passed directly as an argument into the operator implementation.
+    Some operators are performance sensitive and will prefer to handle prepacking within
+    the operator. For these ops, the constant tensor data will be passed directly as an
+    argument into the operator implementation.
     """
 
     def is_get_attr_node(node: torch.fx.Node) -> bool:
@@ -58,22 +46,21 @@ def insert_prepack_nodes(program: ExportedProgram) -> ExportedProgram:
             or is_constant(node)
         )
 
-    def is_non_weight_param_tensor(node: torch.fx.Node) -> bool:
+    def prepack_not_required(node: torch.fx.Node) -> bool:
         if not is_param_node(node):
-            return False
+            return True
 
         for user in node.users:
-            if user.op == "call_function" and (
-                # pyre-ignore [16]
-                user.target in USES_WEIGHTS
-                or user.target.name() in USES_WEIGHTS
+            if user.op == "call_function" and handles_own_prepacking(
+                # pyre-ignore
+                user.target
             ):
-                return False
+                return True
 
-        return True
+        return False
 
     for node in program.graph_module.graph.nodes:
-        if not is_non_weight_param_tensor(node):
+        if prepack_not_required(node):
             continue
 
         with program.graph_module.graph.inserting_after(node):
