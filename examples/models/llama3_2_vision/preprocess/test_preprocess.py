@@ -59,11 +59,11 @@ class TestImageTransform(unittest.TestCase):
         reference_model = CLIPImageTransform(
             image_mean=config.image_mean,
             image_std=config.image_std,
-            resize_to_max_canvas=config.resize_to_max_canvas,
             resample=config.resample,
             antialias=config.antialias,
             tile_size=config.tile_size,
             max_num_tiles=config.max_num_tiles,
+            resize_to_max_canvas=config.resize_to_max_canvas,
             possible_resolutions=None,
         )
 

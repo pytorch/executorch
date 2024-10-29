@@ -26,6 +26,9 @@ class PreprocessConfig:
     max_num_tiles: int = 4
     tile_size: int = 224
     antialias: bool = False
+    # Used for reference eager model from torchtune.
+    resize_to_max_canvas: bool = False
+    possible_resolutions: Optional[List[Tuple[int, int]]] = None
 
 
 class CLIPImageTransformModel(EagerModelBase):
