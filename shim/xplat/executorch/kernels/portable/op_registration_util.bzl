@@ -1,7 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
 load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
-lobd("@fbsource//tools/build_defs/apple/build_mode_defs.bzl", "is_local_build")
-lobd("@fbsource//tools/build_defs/android/build_mode_defs.bzl", "is_production_build")
 
 def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = False, _aten_mode_deps = []):
     """Registers an implementation of an operator overload group.
@@ -134,9 +132,21 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
             # library, and it blocks users like unit tests to use kernel
             # implementation directly. So we enable this for xplat only.
             ["-fvisibility=hidden"] if is_xplat() else []
-        ),
-        fbobjc_compiler_flags = [] if is_local_build() else ["-O2"],
-        fbandroid_compiler_flags = ["-O2"] if is_production_build() else [],
+        ) + select({
+            "DEFAULT": [],
+            "ovr_config//os:android-arm64": [
+                  "-O2",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:iphoneos": [
+                "-O2",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:macos-arm64": [
+                "-O2",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:macos-x86_64": [
+                "-O2",
+            ] if not runtime.is_oss else [],
+          }),
         deps = [
             "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
         ] + deps,
