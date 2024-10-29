@@ -52,7 +52,8 @@ class TestImageTransform(unittest.TestCase):
         https://github.com/pytorch/torchtune/blob/main/torchtune/models/clip/inference/_transforms.py#L26
     """
 
-    def initialize_models(self, resize_to_max_canvas: bool) -> Dict[str, Any]:
+    @staticmethod
+    def initialize_models(resize_to_max_canvas: bool) -> Dict[str, Any]:
         config = PreprocessConfig(resize_to_max_canvas=resize_to_max_canvas)
 
         reference_model = CLIPImageTransform(
@@ -96,8 +97,12 @@ class TestImageTransform(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.models_no_resize = cls.initialize_models(resize_to_max_canvas=False)
-        cls.models_resize = cls.initialize_models(resize_to_max_canvas=True)
+        cls.models_no_resize = TestImageTransform.initialize_models(
+            resize_to_max_canvas=False
+        )
+        cls.models_resize = TestImageTransform.initialize_models(
+            resize_to_max_canvas=True
+        )
 
     def setUp(self):
         np.random.seed(0)
