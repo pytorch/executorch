@@ -3,7 +3,7 @@ This tutorial covers the end to end workflow for running Llama 3-8B-instruct inf
 More specifically, it covers:
 1. Export and quantization of Llama models against the MediaTek backend.
 2. Building and linking libraries that are required to inference on-device for Android platform using MediaTek AI accelerators.
-3. Loading the needed files on the device and running inference.
+3. Loading the needed model files on the device and using the Android demo app to run inference.
 
 Verified on MacOS, Linux CentOS (model export), Python 3.10, Android NDK 26.3.11579264
 Phone verified: MediaTek Dimensity 9300 (D9300) chip.
@@ -51,18 +51,9 @@ zstd -cdq "<downloaded_buck2_file>.zst" > "<path_to_store_buck2>/buck2" && chmod
 export BUCK2=path_to_buck/buck2 # Download BUCK2 and create BUCK2 executable
 export ANDROID_NDK=path_to_android_ndk
 export NEURON_BUFFER_ALLOCATOR_LIB=path_to_buffer_allocator/libneuron_buffer_allocator.so
+export NEURON_USDK_ADAPTER_LIB=path_to_usdk_adapter/libneuronusdk_adapter.mtk.so
+export ANDROID_ABIS=arm64-v8a
 ```
-
-## Build Backend and MTK Llama Runner
-Next we need to build and compile the MTK backend and MTK Llama runner.
-```
-cd examples/mediatek
-./mtk_build_examples.sh
-```
-
-This will generate a cmake-android-out folder that will contain a runner executable for inferring with Llama models and another library file:
-* `cmake-android-out/examples/mediatek/mtk_llama_executor_runner`
-* `cmake-android-out/backends/mediatek/libneuron_backend.so`
 
 ## Export Llama Model
 MTK currently supports Llama 3 exporting.
@@ -104,24 +95,27 @@ Note: Exporting model flow can take 2.5 hours (114GB RAM for num_chunks=4) to co
 
 Before continuing forward, make sure to modify the tokenizer, token embedding, and model paths in the  examples/mediatek/executor_runner/run_llama3_sample.sh.
 
-## Deploy Files on Device
+## Populate Model Paths in Runner
 
-### Prepare to Deploy
-Prior to deploying the files on device, make sure to modify the tokenizer, token embedding, and model file names in  examples/mediatek/executor_runner/run_llama3_sample.sh reflect what was generated during the Export Llama Model step.
+### Populate Model Paths in Runner
+The Mediatek runner (`examples/mediatek/executor_runner/mtk_llama_runner.cpp`)) contains the logic for implementing the function calls that come from the Android app.
 
-<p align="center">
-<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/mtk_changes_to_shell_file.png" style="width:600px">
-</p>
+**Important**: Currently the model paths are set in the runner-level. Modify the values in `examples/mediatek/executor_runner/llama_runner/llm_helper/include/llama_runner_values.h` to set the model paths, tokenizer path, embedding file path, and other metadata.
 
-In addition, create a sample_prompt.txt file with a prompt. This will be deployed to the device in the next step.
-* Example content of a sample_prompt.txt file:
+
+## Build AAR Library
+
+Next we need to build and compile the MediaTek backend and MediaTek Llama runner.
 ```
-<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-
-You are a helpful AI assistant for travel tips and recommendations<|eot_id|><|start_header_id|>user<|end_header_id|>
-
-What can you help me with?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+sh build/build_android_llm_demo.sh
 ```
+
+**Output**: This will generate a .aar file is already imported into the expected directory for the Android app. It lives in `examples/demo-apps/android/Llamademo/app/libs`.
+
+If you were to unzip the .aar file or open it in Android Studio, you can see that it contains the following related to MediaTek backend:
+* libneuron_buffer_allocator.so
+* libneuronusdk_adapter.mtk.so
+* libneuron_backend.so (generated during build)
 
 ### Deploy
 First, make sure your Android phone’s chipset version is compatible with this demo (MediaTek Dimensity 9300 (D9300)) chip. Once you have the model, tokenizer, and runner generated ready, you can push them and the .so files to the device before we start running using the runner via shell.
@@ -139,17 +133,29 @@ adb push tokenizer.model /data/local/tmp/llama
 ```
 
 ## Run Demo
-At this point we have pushed all the required files on the device and we are ready to run the demo!
-```
-adb shell
 
-<android_device>:/ $ cd data/local/tmp/llama
-<android_device>:/data/local/tmp/llama $ sh run_llama3_sample.sh
+### Alternative 1: Android Studio (Recommended)
+1. Open Android Studio and select “Open an existing Android Studio project” to open examples/demo-apps/android/LlamaDemo.
+2. Run the app (^R). This builds and launches the app on the phone.
+
+### Alternative 2: Command line
+Without Android Studio UI, we can run gradle directly to build the app. We need to set up the Android SDK path and invoke gradle.
 ```
+export ANDROID_HOME=<path_to_android_sdk_home>
+pushd examples/demo-apps/android/LlamaDemo
+./gradlew :app:installDebug
+popd
+```
+If the app successfully run on your device, you should see something like below:
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/mtk_output.png" style="width:800px">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/opening_the_app_details.png" style="width:800px">
 </p>
+
+Once you've loaded the app on the device:
+1. Click on the Settings in the app
+2. Select MediaTek from the Backend dropdown
+3. Click the "Load Model" button. This will load the models from the Runner
 
 ## Reporting Issues
 If you encountered any bugs or issues following this tutorial please file a bug/issue here on [Github](https://github.com/pytorch/executorch/issues/new).
