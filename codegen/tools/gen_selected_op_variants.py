@@ -5,6 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import argparse
 import os
 import sys
@@ -72,7 +74,7 @@ def write_selected_op_variants(yaml_file_path: str, output_dir: str) -> None:
         for operator_name, kernel_metadata_str in et_kernel_metadata.items():
             tensor_meta = []
             for kernel_metadata in kernel_metadata_str:
-                if kernel_metadata == "default":
+                if kernel_metadata == "default" or "/" not in kernel_metadata:
                     break
                 else:
                     x = kernel_metadata.split("/")[1]
