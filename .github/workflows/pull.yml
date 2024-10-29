@@ -256,7 +256,7 @@ jobs:
         bash examples/models/llama3_2_vision/install_requirements.sh
 
         # run python unittest
-        python -m unittest examples.models.llama3_2_vision.preprocess.test_preprocess
+        pytest -c /dev/null -v -n auto examples/models/llama3_2_vision/preprocess/
 
 
   test-quantized-aot-lib-linux:
