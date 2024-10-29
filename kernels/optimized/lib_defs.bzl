@@ -2,6 +2,8 @@ load("@fbsource//tools/build_defs:default_platform_defs.bzl", "DEVSERVER_PLATFOR
 load("@fbsource//tools/build_defs:fb_native_wrapper.bzl", "fb_native")
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+lobd("@fbsource//tools/build_defs/apple/build_mode_defs.bzl", "is_local_build")
+lobd("@fbsource//tools/build_defs/android/build_mode_defs.bzl", "is_production_build")
 
 # Because vec exists as a collection of header files, compile and preprocessor
 # flags applied to the vec target do not have any effect, since no compilation
@@ -121,7 +123,8 @@ def define_libs():
             exported_headers = native.glob([
                 "blas/**/*.h",
             ]),
-            compiler_flags = ["-O2"],
+            fbobjc_compiler_flags = [] if is_local_build() else ["-O2"],
+            fbandroid_compiler_flags = ["-O2"] if is_production_build() else [],
             header_namespace = "executorch/kernels/optimized",
             visibility = [
                 "//executorch/...",
