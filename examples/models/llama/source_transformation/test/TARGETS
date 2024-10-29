@@ -1,0 +1,19 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "source_transformation",
+    srcs = [
+        "test_quantized_kv_cache.py",
+        "test_sdpa_with_quantized_kv_cache.py",
+    ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/pytest:pytest",
+        "//executorch/examples/models/llama/source_transformation:lib",
+        "//executorch/examples/models/llama:llama_transformer",
+    ],
+)
