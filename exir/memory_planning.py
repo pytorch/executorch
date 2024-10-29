@@ -421,6 +421,7 @@ def collect_specs_from_nodes(  # noqa: C901
                 if spec in unique_spec:
                     continue
                 else:
+                    spec.node_name = node.name
                     unique_spec.add(spec)
             yield spec
 
@@ -501,6 +502,7 @@ def pick_shared_obj(
     """
     # TODO: do better than linear scan
     picked = None
+    # This function goes over all of tensors and figure out which of them can share memory with no conflict.
     for sobj in shared_objects:
         if spec.lifetime[0] > sobj.last_used_index:
             if picked is None or _size_abs_dif(sobj, spec) < _size_abs_dif(
