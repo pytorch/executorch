@@ -312,7 +312,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
   }
 
   private void setBackendMode(BackendType backendType) {
-    if (backendType.equals(BackendType.XNNPACK)) {
+    if (backendType.equals(BackendType.XNNPACK) || backendType.equals(BackendType.QUALCOMM)) {
       setXNNPACKMode();
     } else if (backendType.equals(BackendType.MEDIATEK)) {
       setMediaTekMode();

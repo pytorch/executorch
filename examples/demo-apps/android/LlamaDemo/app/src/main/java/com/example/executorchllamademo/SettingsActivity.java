@@ -409,7 +409,7 @@ public class SettingsActivity extends AppCompatActivity {
   }
 
   private void setBackendSettingMode() {
-    if (mBackendType.equals(BackendType.XNNPACK)) {
+    if (mBackendType.equals(BackendType.XNNPACK) || mBackendType.equals(BackendType.QUALCOMM)) {
       setXNNPACKSettingMode();
     } else if (mBackendType.equals(BackendType.MEDIATEK)) {
       setMediaTekSettingMode();
