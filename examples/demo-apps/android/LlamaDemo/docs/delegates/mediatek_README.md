@@ -116,7 +116,7 @@ adb push <exported_gen_model_n>.pte /data/local/tmp/et-mtk
 
 The Mediatek runner (`examples/mediatek/executor_runner/mtk_llama_runner.cpp`) contains the logic for implementing the function calls that come from the Android app.
 
-**Important**: Currently the model paths are set in the runner-level. Modify the values in `examples/mediatek/executor_runner/llama_runner/llm_helper/include/llama_runner_values.h` to set the model paths, tokenizer path, embedding file path, and other metadata.
+**Important!** Currently the model paths are set in the runner-level. Modify the values in `examples/mediatek/executor_runner/llama_runner/llm_helper/include/llama_runner_values.h` to set the model paths, tokenizer path, embedding file path, and other metadata.
 
 
 ## Build AAR Library
