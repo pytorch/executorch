@@ -14,8 +14,8 @@ from executorch.backends.qualcomm.quantizer.annotators import (
     QuantizationConfig,
     QuantizationSpec,
 )
-from executorch.backends.qualcomm.quantizer.observers.param_observer import (
-    ParamObserver,
+from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
+    PerChannelParamObserver,
 )
 from executorch.backends.qualcomm.quantizer.qconfig import (
     _derived_bias_quant_spec,

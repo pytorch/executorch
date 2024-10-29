@@ -270,6 +270,7 @@ def get_ptq_per_channel_quant_config(
     return quantization_config
 
 
+# TODO merge qat and ptq to a fucntion, and use a bool flag to control it
 def get_8a8w_qnn_qat_config(
     act_symmetric: bool = False, act_observer=MovingAverageMinMaxObserver
 ) -> QuantizationConfig:
