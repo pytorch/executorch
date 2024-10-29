@@ -95,42 +95,43 @@ Note: Exporting model flow can take 2.5 hours (114GB RAM for num_chunks=4) to co
 
 Before continuing forward, make sure to modify the tokenizer, token embedding, and model paths in the  examples/mediatek/executor_runner/run_llama3_sample.sh.
 
+### Deploy
+First, make sure your Android phone’s chipset version is compatible with this demo (MediaTek Dimensity 9300 (D9300)) chip. Once you have the model, tokenizer, and runner generated ready, you can push them and the .so files to the device before we start running using the runner via shell.
+
+```
+adb shell mkdir -p /data/local/tmp/et-mtk/ (or any other directory name)
+adb push embedding_<model_name>_fp32.bin /data/local/tmp/et-mtk
+adb push tokenizer.model /data/local/tmp/et-mtk
+adb push <exported_prompt_model_0>.pte /data/local/tmp/et-mtk
+adb push <exported_prompt_model_1>.pte /data/local/tmp/et-mtk
+...
+adb push <exported_prompt_model_n>.pte /data/local/tmp/et-mtk
+adb push <exported_gen_model_0>.pte /data/local/tmp/et-mtk
+adb push <exported_gen_model_1>.pte /data/local/tmp/et-mtk
+...
+adb push <exported_gen_model_n>.pte /data/local/tmp/et-mtk
+```
+
 ## Populate Model Paths in Runner
 
-### Populate Model Paths in Runner
-The Mediatek runner (`examples/mediatek/executor_runner/mtk_llama_runner.cpp`)) contains the logic for implementing the function calls that come from the Android app.
+The Mediatek runner (`examples/mediatek/executor_runner/mtk_llama_runner.cpp`) contains the logic for implementing the function calls that come from the Android app.
 
 **Important**: Currently the model paths are set in the runner-level. Modify the values in `examples/mediatek/executor_runner/llama_runner/llm_helper/include/llama_runner_values.h` to set the model paths, tokenizer path, embedding file path, and other metadata.
 
 
 ## Build AAR Library
 
-Next we need to build and compile the MediaTek backend and MediaTek Llama runner.
+Next we need to build and compile the MediaTek backend and MediaTek Llama runner. By setting  `NEURON_BUFFER_ALLOCATOR_LIB`, the script will build the MediaTek backend.
 ```
 sh build/build_android_llm_demo.sh
 ```
 
-**Output**: This will generate a .aar file is already imported into the expected directory for the Android app. It lives in `examples/demo-apps/android/Llamademo/app/libs`.
+**Output**: This will generate an .aar file that is already imported into the expected directory for the Android app. It will live in `examples/demo-apps/android/Llamademo/app/libs`.
 
 If you were to unzip the .aar file or open it in Android Studio, you can see that it contains the following related to MediaTek backend:
 * libneuron_buffer_allocator.so
 * libneuronusdk_adapter.mtk.so
 * libneuron_backend.so (generated during build)
-
-### Deploy
-First, make sure your Android phone’s chipset version is compatible with this demo (MediaTek Dimensity 9300 (D9300)) chip. Once you have the model, tokenizer, and runner generated ready, you can push them and the .so files to the device before we start running using the runner via shell.
-
-```
-adb shell mkdir -p /data/local/tmp/llama
-adb push examples/mediatek/executor_runner/run_llama3_sample.sh /data/local/tmp/llama
-adb push sample_prompt.txt /data/local/tmp/llama
-adb push cmake-android-out/examples/mediatek/mtk_llama_executor_runner /data/local/tmp/llama
-adb push cmake-android-out/backends/mediatek/libneuron_backend.so /data/local/tmp/llama
-adb push libneuron_buffer_allocator.so /data/local/tmp/llama
-adb push libneuronusdk_adapter.mtk.so /data/local/tmp/llama
-adb push embedding_<model_name>_fp32.bin /data/local/tmp/llama
-adb push tokenizer.model /data/local/tmp/llama
-```
 
 ## Run Demo
 
