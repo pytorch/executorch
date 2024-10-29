@@ -252,9 +252,17 @@ for basics.
    - If your PR contains or is representative of a feature/bug fix that should be
      called out in the release notes, please add a label for "Release notes: \<area\>",
 	 where \<area\> describes which part of ExecuTorch the change pertains to, e.g.
-	 "Release notes: runtime". A few of these areas include  "runtime", "backends",
-	 and "build". If you aren't sure whether to add a release label, you should
-	 probably still add one since it immensely facilitates release management.
+	 "Release notes: runtime". Here are all of the categories:
+     - `Release notes: runtime`: changes related to the core runtime which loads the program methods, initializes delegates, and runs the lowered graph.
+     - `Release notes: exir`: changes to any internal representations, such as any edge-related dialects. Also any changes to passes that may modify the exir, such as memory planning.
+     - `Release notes: quantization`: changes to quantization.
+     - `Release notes: ops & kernels`: changes to the opset and any new / changed kernel implementations.
+     - `Release notes: api`: changes to public facing apis (any interfaces, pybinded runtime methods, etc.).
+     - `Release notes: backends`: changes to any of the backend delegates.
+     - `Release notes: build`: changes related to the build system, including major dependency upgrades, notable build flags, optimizations, etc.
+     - `Release notes: SDK`: changes to any of ExecuTorch's SDKs, for example the debugger & profiler.
+     - `Release notes: examples`: changes to any of our example LLMs integrations, such as Llama3 and Llava.
+     - `Release notes: misc`: anything notable that doesn't belong in the above categories.
    - See https://github.com/pytorch/executorch/pull/3612 for an example PR that
      follows this advice.
 1. Before asking for a review, ensure that all [CI (continuous integration)
