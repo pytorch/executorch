@@ -128,7 +128,7 @@ sh build/build_android_llm_demo.sh
 
 **Output**: This will generate an .aar file that is already imported into the expected directory for the Android app. It will live in `examples/demo-apps/android/Llamademo/app/libs`.
 
-If you were to unzip the .aar file or open it in Android Studio, you can see that it contains the following related to MediaTek backend:
+If you were to unzip the .aar file or open it in Android Studio, verify it contains the following related to MediaTek backend:
 * libneuron_buffer_allocator.so
 * libneuronusdk_adapter.mtk.so
 * libneuron_backend.so (generated during build)
