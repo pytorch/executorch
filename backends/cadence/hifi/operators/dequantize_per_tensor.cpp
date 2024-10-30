@@ -45,7 +45,10 @@ void dequantize_per_tensor_out(
     const int32_t* input_data = input.const_data_ptr<int32_t>();
     dequantize<int32_t>(out_data, input_data, scale, zero_point, numel);
   } else {
-    ET_CHECK_MSG(false, "Unhandled input dtype %hhd", input.scalar_type());
+    ET_CHECK_MSG(
+        false,
+        "Unhandled input dtype %hhd",
+        static_cast<int8_t>(input.scalar_type()));
   }
 }
 
