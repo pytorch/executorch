@@ -219,7 +219,7 @@ class LLMEdgeManager:
             from executorch.examples.models.llama.eval_llama_lib import (
                 GraphModuleEvalWrapper,
             )
-            from lm_eval.evaluator import simple_evaluate  # pyre-ignore[21]
+            from lm_eval.evaluator import simple_evaluate
         except ImportError:
             raise ImportError(
                 "Please install the llm eval dependency via examples/models/llama/install_requirements.sh"

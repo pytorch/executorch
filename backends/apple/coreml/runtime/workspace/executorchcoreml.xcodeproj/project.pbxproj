@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		8307EB8A2C9262060011AE6D /* state_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 8307EB892C9262060011AE6D /* state_coreml_all.pte */; };
+		838CA6872CD1965700462190 /* add_mul_compiled_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 838CA6862CD1965700462190 /* add_mul_compiled_coreml_all.pte */; };
 		83BB78A02C65DA7300274ED7 /* ETCoreMLModelDebugInfo.mm in Sources */ = {isa = PBXBuildFile; fileRef = 83BB789F2C65DA7300274ED7 /* ETCoreMLModelDebugInfo.mm */; };
 		83BB78BF2C66AAAE00274ED7 /* add_mul_coreml_all.bin in Resources */ = {isa = PBXBuildFile; fileRef = 83BB78BD2C66AAAE00274ED7 /* add_mul_coreml_all.bin */; };
 		83BB78C02C66AAAE00274ED7 /* add_mul_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 83BB78BE2C66AAAE00274ED7 /* add_mul_coreml_all.pte */; };
@@ -122,6 +123,7 @@
 
 /* Begin PBXFileReference section */
 		8307EB892C9262060011AE6D /* state_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = state_coreml_all.pte; path = ../test/models/state_coreml_all.pte; sourceTree = "<group>"; };
+		838CA6862CD1965700462190 /* add_mul_compiled_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = add_mul_compiled_coreml_all.pte; path = ../test/models/add_mul_compiled_coreml_all.pte; sourceTree = "<group>"; };
 		83BB789E2C65DA7300274ED7 /* ETCoreMLModelDebugInfo.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelDebugInfo.h; path = ../sdk/ETCoreMLModelDebugInfo.h; sourceTree = "<group>"; };
 		83BB789F2C65DA7300274ED7 /* ETCoreMLModelDebugInfo.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelDebugInfo.mm; path = ../sdk/ETCoreMLModelDebugInfo.mm; sourceTree = "<group>"; };
 		83BB78BD2C66AAAE00274ED7 /* add_mul_coreml_all.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = add_mul_coreml_all.bin; path = ../test/models/add_mul_coreml_all.bin; sourceTree = "<group>"; };
@@ -606,6 +608,7 @@
 				C98551992AD2542D009143F9 /* mul_coreml_all.bin */,
 				C985519C2AD2542D009143F9 /* mul_coreml_all.pte */,
 				C985519B2AD2542D009143F9 /* mv3_coreml_all.bin */,
+				838CA6862CD1965700462190 /* add_mul_compiled_coreml_all.pte */,
 				C98551982AD2542D009143F9 /* mv3_coreml_all.pte */,
 				83BB78BD2C66AAAE00274ED7 /* add_mul_coreml_all.bin */,
 				83BB78BE2C66AAAE00274ED7 /* add_mul_coreml_all.pte */,
@@ -680,6 +683,7 @@
 				C985519E2AD2542D009143F9 /* mv3_coreml_all.pte in Resources */,
 				C98551A02AD2542D009143F9 /* add_coreml_all.bin in Resources */,
 				C98551A22AD2542D009143F9 /* mul_coreml_all.pte in Resources */,
+				838CA6872CD1965700462190 /* add_mul_compiled_coreml_all.pte in Resources */,
 				8307EB8A2C9262060011AE6D /* state_coreml_all.pte in Resources */,
 				C98551A32AD2542D009143F9 /* add_coreml_all.pte in Resources */,
 			);

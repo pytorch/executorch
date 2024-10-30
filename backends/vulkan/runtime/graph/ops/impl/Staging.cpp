@@ -35,7 +35,7 @@ void add_staging_to_tensor_node(
          graph.strides_ubo(out_tensor),
          graph.numel_ubo(out_tensor)});
   } else {
-    ubos.append({graph.sizes_ubo(out_tensor), graph.axis_map_ubo(out_tensor)});
+    ubos.append({graph.sizes_ubo(out_tensor)});
   }
 
   graph.execute_nodes().emplace_back(new DispatchNode(
@@ -44,12 +44,11 @@ void add_staging_to_tensor_node(
       graph.create_global_wg_size(out_tensor),
       graph.create_local_wg_size(out_tensor),
       // Input and Outputs
-      {{out_tensor, vkapi::MemoryAccessType::WRITE},
-       {in_staging, vkapi::MemoryAccessType::READ}},
+      {{out_tensor, vkapi::kWrite}, {in_staging, vkapi::kRead}},
       // Parameter Buffers
       ubos,
       // Specialization Constants
-      {SV(graph.packed_dim_of(out_tensor))},
+      {graph.hashed_layout_of(out_tensor)},
       // Resizing Logic
       nullptr,
       {}));
@@ -81,7 +80,7 @@ void add_tensor_to_staging_node(
          graph.strides_ubo(in_tensor),
          graph.numel_ubo(in_tensor)});
   } else {
-    ubos.append({graph.sizes_ubo(in_tensor), graph.axis_map_ubo(in_tensor)});
+    ubos.append({graph.sizes_ubo(in_tensor)});
   }
 
   // Normally, the image_to_nchw shader is structured so that each thread reads
@@ -104,12 +103,11 @@ void add_tensor_to_staging_node(
       global_wg_size,
       graph.create_local_wg_size(global_wg_size),
       // Input and Outputs
-      {{out_staging, vkapi::MemoryAccessType::WRITE},
-       {in_tensor, vkapi::MemoryAccessType::READ}},
+      {{out_staging, vkapi::kWrite}, {in_tensor, vkapi::kRead}},
       // Parameter Buffers
       ubos,
       // Specialization Constants
-      {SV(graph.packed_dim_of(in_tensor))}));
+      {graph.hashed_layout_of(in_tensor)}));
 }
 
 void add_prepack_standard_node(
@@ -126,7 +124,7 @@ void add_prepack_standard_node(
          graph.strides_ubo(tensor),
          graph.numel_ubo(tensor)});
   } else {
-    ubos.append({graph.sizes_ubo(tensor), graph.axis_map_ubo(tensor)});
+    ubos.append({graph.sizes_ubo(tensor)});
   }
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
@@ -140,7 +138,7 @@ void add_prepack_standard_node(
       // Parameter Buffers
       ubos,
       // Specialization Constants
-      {SV(graph.packed_dim_of(tensor))}));
+      {graph.hashed_layout_of(tensor)}));
 }
 
 ValueRef prepack_standard(
