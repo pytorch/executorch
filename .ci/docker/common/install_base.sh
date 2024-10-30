@@ -24,7 +24,8 @@ install_ubuntu() {
     gdb \
     rsync \
     libssl-dev \
-    zip
+    zip \
+    libomp5
 
   # Cleanup package manager
   apt-get autoclean && apt-get clean
