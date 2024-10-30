@@ -79,18 +79,4 @@ T nchw_dim_to_whcn_dim(const T& nchw_dim, const int64_t ndim) {
   return ndim - 1 - nchw_dim;
 }
 
-//
-// Tensor axis map utilities
-//
-
-// Converts ivec4 axis map to a single int32_t, to be able to pass it as a
-// specialization constant instead of a ubo. This allows for the spir-v to
-// bytecode compilation to perform compile-time folding on the axis map.
-// Only converts the first 3 indices, as the last index is the packed dim,
-// which is passed separately.
-// Example: ivec4(0, 1, 2, 2) -> 0x000102
-inline int32_t hash_axis_map(const std::vector<int64_t>& axis_map) {
-  return (axis_map.at(0) << 16) + (axis_map.at(1) << 8) + axis_map.at(2);
-}
-
 } // namespace vkcompute

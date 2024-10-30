@@ -15,20 +15,21 @@
 
 ${define_active_storage_type(STORAGE)}
 
-#include "indexing_utils.h"
-
 ${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
-${layout_declare_buffer(B, "r", "nchw_in", DTYPE)}
+${layout_declare_buffer(B, "r", "buf_in", DTYPE)}
 ${layout_declare_ubo(B, "ivec4", "sizes")}
-${layout_declare_ubo(B, "ivec4", "axis_map")}
+
+#include "indexing_utils.h"
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int packed_dim = C_DIM;
+${layout_declare_spec_const(C, "int", "t_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 axis_map = unhash_axis_map(t_layout);
+const lowp int packed_dim = unhash_packed_dim(t_layout);
 
 VEC4_T read_texel(ivec4 tidx) {
   const ivec4 buf_indices = tidx_to_nchwi(
@@ -38,16 +39,16 @@ VEC4_T read_texel(ivec4 tidx) {
 
   VEC4_T texel = VEC4_T(0);
   if (tidx[packed_dim] < sizes[packed_dim]) {
-    texel.x = SCALAR_T(nchw_in[buf_indices.x]);
+    texel.x = SCALAR_T(buf_in[buf_indices.x]);
   }
   if (tidx[packed_dim] + 1 < sizes[packed_dim]) {
-    texel.y = SCALAR_T(nchw_in[buf_indices.y]);
+    texel.y = SCALAR_T(buf_in[buf_indices.y]);
   }
   if (tidx[packed_dim] + 2 < sizes[packed_dim]) {
-    texel.z = SCALAR_T(nchw_in[buf_indices.z]);
+    texel.z = SCALAR_T(buf_in[buf_indices.z]);
   }
   if (tidx[packed_dim] + 3 < sizes[packed_dim]) {
-    texel.w = SCALAR_T(nchw_in[buf_indices.w]);
+    texel.w = SCALAR_T(buf_in[buf_indices.w]);
   }
   return texel;
 }
