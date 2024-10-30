@@ -15,15 +15,37 @@ load(
 # functions in order to declare the required compiler flags needed in order to
 # access CPU vector intrinsics.
 
-def get_vec_android_preprocessor_flags():
-    preprocessor_flags = [
-        (
-            "^android-arm64.*$",
-            [
-                "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
-            ],
-        ),
-    ]
+def get_vec_preprocessor_flags():
+    preprocessor_flags = select({
+        "ovr_config//os:iphoneos": [
+            "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
+        ] if not runtime.is_oss else [],
+        "ovr_config//os:macos-arm64": [
+            "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
+        ] if not runtime.is_oss else [],
+        "ovr_config//os:android-arm64": [
+            "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
+        ] if not runtime.is_oss else [],
+        "DEFAULT": [],
+    })
+    return preprocessor_flags
+
+def get_vec_deps():
+    preprocessor_flags = select({
+        "ovr_config//os:linux-x86_64": [
+            "fbsource//third-party/sleef:sleef",
+        ] if not runtime.is_oss else [],
+        "ovr_config//os:iphoneos": [
+            "fbsource//third-party/sleef:sleef_arm",
+        ] if not runtime.is_oss else [],
+        "ovr_config//os:macos-arm64": [
+            "fbsource//third-party/sleef:sleef_arm",
+        ] if not runtime.is_oss else [],
+        "ovr_config//os:android-arm64": [
+            "fbsource//third-party/sleef:sleef_arm",
+        ] if not runtime.is_oss else [],
+        "DEFAULT": [],
+    })
     return preprocessor_flags
 
 def get_vec_cxx_preprocessor_flags():
@@ -60,32 +82,7 @@ def define_libs():
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
-        cxx_platform_deps = select({
-            "DEFAULT": [
-                (
-                    DEVSERVER_PLATFORM_REGEX,
-                    [
-                        "fbsource//third-party/sleef:sleef",
-                    ],
-                ),
-            ],
-            "ovr_config//cpu:arm64": [
-                (
-                    DEVSERVER_PLATFORM_REGEX,
-                    [
-                        "fbsource//third-party/sleef:sleef_arm",
-                    ],
-                ),
-            ],
-        }),
-        fbandroid_platform_deps = [
-            (
-                "^android-arm64.*$",
-                [
-                    "fbsource//third-party/sleef:sleef_arm",
-                ],
-            ),
-        ],
+        deps = get_vec_deps(),
     )
 
     runtime.cxx_library(
@@ -134,6 +131,18 @@ def define_libs():
             preprocessor_flags = select({
                 ":linux-x86_64": [
                     "-DET_BUILD_WITH_BLAS",
+                ] if not runtime.is_oss else [],
+                "ovr_config//os:iphoneos": [
+                    "-DET_BUILD_WITH_BLAS",
+                    "-DET_BUILD_FOR_APPLE",
+                ] if not runtime.is_oss else [],
+                "ovr_config//os:macos-arm64": [
+                    "-DET_BUILD_WITH_BLAS",
+                    "-DET_BUILD_FOR_APPLE",
+                ] if not runtime.is_oss else [],
+                "ovr_config//os:macos-x86_64": [
+                    "-DET_BUILD_WITH_BLAS",
+                    "-DET_BUILD_FOR_APPLE",
                 ] if not runtime.is_oss else [],
                 "DEFAULT": [],
             }),
