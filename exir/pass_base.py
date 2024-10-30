@@ -453,7 +453,7 @@ class _ExportPassBase(PassBase):
     def placeholder(self, name: str, arg: Argument, meta: NodeMetadata) -> ProxyValue:
         arg_proxy = self.tracer.create_proxy("placeholder", name, (), {})
         arg_proxy.node.meta = meta.data
-        self.tracer.set_metadata(arg_proxy.node, arg)
+        arg_proxy.node.meta["val"] = arg
         return ProxyValue(arg, arg_proxy)
 
     def call_operator(
