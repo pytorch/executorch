@@ -106,9 +106,9 @@ ValueRef prepack_biases(
       graph.create_local_wg_size(v),
       vref,
       v,
-      {t->sizes_ubo(), t->axis_map_ubo()},
+      {t->sizes_ubo()},
       // Specialization constants
-      {SV(t->packed_dim())}));
+      {t->hashed_layout()}));
 
   return v;
 }
@@ -479,15 +479,14 @@ void add_conv1d_node(
       {
           t_out->logical_limits_ubo(),
           t_in->sizes_ubo(),
-          t_out->axis_map_ubo(),
-          t_in->axis_map_ubo(),
-          t_weight->axis_map_ubo(),
-          t_bias->axis_map_ubo(),
           graph.create_params_buffer(kernel_params),
           graph.create_params_buffer(out_params),
       },
       // Specialization Constants
-      {},
+      {t_out->hashed_layout(),
+       t_in->hashed_layout(),
+       t_weight->hashed_layout(),
+       t_bias->hashed_layout()},
       // Resizing Logic
       resize_conv1d_node,
       {weight, stride, padding, dilation}));
