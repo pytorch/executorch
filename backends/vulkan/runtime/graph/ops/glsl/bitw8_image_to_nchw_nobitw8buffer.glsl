@@ -21,12 +21,13 @@ layout(std430) buffer;
 ${layout_declare_buffer(B, "w", "nchw_out", "int")}
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 ${layout_declare_ubo(B, "ivec4", "tensor_sizes")}
-${layout_declare_ubo(B, "ivec4", "axis_map")}
 ${layout_declare_ubo(B, "int", "out_numel")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int packed_dim = C_DIM;
+${layout_declare_spec_const(C, "int", "t_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 axis_map = unhash_axis_map(t_layout);
+const lowp int packed_dim = unhash_packed_dim(t_layout);
 
 void main() {
   const int out_buf_idx = int(gl_GlobalInvocationID.x);
