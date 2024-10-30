@@ -1588,9 +1588,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       /*shared_object_idx = */ 4);
 
   // +2: t.sizes_ubo() for each staging shader
-  // +2: t.axis_map_ubo() for each staging shader
   // +2: staging buffer for each input tensor
-  expected_vma_allocation_count += 6;
+  expected_vma_allocation_count += 4;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   ValueRef c = graph.add_tensor(
@@ -1603,8 +1602,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
 
   // +2: alpha UBO, broadcast UBO for arithmetic shader
   // +1: t.sizes_ubo() for arithmetic shader output c
-  // +1: t.axis_map_ubo() for arithmetic shader output c
-  expected_vma_allocation_count += 4;
+  expected_vma_allocation_count += 3;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   IOValueRef d = graph.add_input_tensor(
@@ -1613,9 +1611,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       /*shared_object_idx = */ 2);
 
   // +1: t.sizes_ubo() uniform buffer for staging shader
-  // +1: t.axis_map_ubo() uniform buffer for staging shader
   // +1: staging buffer for the input tensor
-  expected_vma_allocation_count += 3;
+  expected_vma_allocation_count += 2;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   ValueRef e = graph.add_tensor(
@@ -1628,8 +1625,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
 
   // +2: alpha UBO, broadcast UBO for arithmetic shader
   // +1: t.sizes_ubo() for arithmetic shader output e
-  // +1: t.axis_map_ubo() for arithmetic shader output e
-  expected_vma_allocation_count += 4;
+  expected_vma_allocation_count += 3;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   IOValueRef out = {};
