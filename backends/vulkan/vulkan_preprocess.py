@@ -90,7 +90,8 @@ class VulkanBackend(BackendDetails):
         program = unsafe_remove_auto_functionalized_pass(program)
 
         # First, apply passes that fuse/remove operators to consolidate the graph
-        # structure but still preserve an "ATen-compliant" graph structure.
+        # structure but still preserve an "ATen-compliant" graph structure (i.e. all
+        # arguments to aten operators must match the ATen function schema).
         program = apply_passes(
             program,
             [
@@ -104,8 +105,9 @@ class VulkanBackend(BackendDetails):
         )
 
         # Next annotate tensor nodes with TensorSpec structs which is needed for dynamic
-        # shapes and memory planning. Until this point, the graph must be "ATen compliant"
-        # (e.g. all arguments to aten operators must match the ATen function schema).
+        # shapes and memory planning. Until this point, the graph must be ATen compliant
+        # because SpecPropPass will be calling the underlying ATen operators during its
+        # execution.
         program = apply_passes(program, [SpecPropPass()])
 
         # Apply graph transforms which either require `TensorSpec`s to have been created

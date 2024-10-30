@@ -71,10 +71,10 @@ def insert_prepack_nodes(program: ExportedProgram) -> ExportedProgram:
                 exir_ops.edge.et_vk.prepack.default,
                 (node,),
             )
-            # This pass assumes that the SpecPropPass() has already been applied, and
-            # validate that the original node is marked as a constant. Constant tensors
-            # do not participate in memory planning.
+            # This pass assumes that the SpecPropPass() has already been applied
             assert "spec" in node.meta
+            # Validate that the original node is marked as a constant. Constant tensors
+            # do not participate in memory planning.
             assert node.meta["spec"].const
             prepack_node.meta["spec"] = deepcopy(node.meta["spec"])
             # Set the mem_obj_id to -1 to indicate that this node requires a dedicated
