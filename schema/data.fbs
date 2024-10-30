@@ -3,15 +3,15 @@ namespace executorch_flatbuffer;
 
 // Update after BC breaking changes.
 file_identifier "DT01";
-file_extension "data";
+file_extension "ptd";
 
 table TensorMetadata {
   // The unique id used to connect the data and program.
-  fully_qualified_name:string;
-  scalar_type:ScalarType;
+  fully_qualified_name: string;
+  scalar_type: ScalarType;
 
   // Size of each dimension.
-  dim_sizes:[int];
+  dim_sizes: [int32];
 
   // Specifies in what order the dimensions are laid out in memory (from outer
   // to inner).
@@ -24,34 +24,19 @@ table TensorMetadata {
   // - (0, 2, 1) represents a [row, batch, column] ordering where "column" is
   //   the innermost dimension, then comes "batch", and the outermost dimension
   //   is "row".
-  dim_order:[ubyte];
+  dim_order: [uint8];
 
-  // Offset in scalar_type elements (e.g., multiples of 4 bytes for an int
-  // scalar type) from the beginning of the tensor buffer to the beginning of
-  // the actual data. Currently, the runtime only supports a value of zero.
-  storage_offset:int;
-
-  // May not be needed.
-  layout:byte;
+  // Segment index that the tensor data is stored in.
+  segment_index: uint32;
 
   // Tensor offsets are relative to each TensorSegment.
   // To retrieve a given tensor:
   // 1. segment_base_offset: from the file header.
-  // 2. segment offset: segments[tensor_segments[i].segment_index].offset
+  // 2. segment offset: segments[segment_index].offset
   //    This is likely to be 0 (all the tensors in one segment).
   // 3. tensor offset: tensor_segments[i].tensor_metadata[j].offset
-  //    May need to binary search over tensor_metadata to find the matching
-  //    tensor using fqn.
+  //    Find the relevant index j by matching on tensor fqn.
   offset: uint64;
-  size: uint64;
-}
-
-table TensorSegment {
-  // Index of the segment in Data.segments.
-  segment_index: uint;
-
-  // Tensor information, including the offset and size.
-  tensor_metadata:[TensorMetadata];
 }
 
 table DataSegment {
@@ -66,18 +51,19 @@ table DataSegment {
   size: uint64;
 }
 
-table Data {
+table DataFile {
   // Schema version.
-  version:uint;
+  version: uint32;
 
-  // Alignment for each tensor.
+  // Alignment for each tensor in bytes. Offsets of the tensor provided
+  // in TensorMetadata.offset are aligned to tensor_alignment.
   tensor_alignment: uint32;
 
   // Tensor information.
-  tensor_segments:[TensorSegment];
+  tensor_segments: [TensorMetadata];
 
   // Data segments.
-  segments:[DataSegment];
+  segments: [DataSegment];
 }
 
 root_type Data;
