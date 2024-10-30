@@ -52,17 +52,15 @@ void add_copy_offset_node(
       graph.create_local_wg_size(out),
       // Inputs and Outputs
       {
-          {out, vkapi::MemoryAccessType::WRITE},
-          {in, vkapi::MemoryAccessType::READ},
+          {out, vkapi::kWrite},
+          {in, vkapi::kRead},
       },
       // Parameter buffers
       {
           graph.create_params_buffer(offset_params),
-          t_out->axis_map_ubo(),
-          t_in->axis_map_ubo(),
       },
       // Specialization Constants
-      {}));
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)}));
 }
 
 void add_copy_channel_offset_node(
@@ -169,13 +167,11 @@ void add_copy_channel_offset_node(
         // Parameter buffers
         {
             t_out->sizes_ubo(),
-            t_out->axis_map_ubo(),
             t_in->sizes_ubo(),
-            t_in->axis_map_ubo(),
             graph.create_params_buffer(channel_offset_params),
         },
         // Specialization Constants
-        {}));
+        {graph.hashed_layout_of(out), graph.hashed_layout_of(in)}));
   }
 }
 
