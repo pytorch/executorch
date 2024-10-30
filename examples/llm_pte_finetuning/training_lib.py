@@ -7,15 +7,17 @@
 # pyre-strict
 
 from functools import partial
-from typing import Any, Dict, Mapping, Optional
+from typing import Any
 
 import torch
 from executorch.extension.pybindings.aten_lib import ExecuTorchModule  # @manual
 
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
-from torchtune.data import InstructTemplate
+from torchtune.data import AlpacaToMessages
 from torchtune.data._collate import padded_collate_sft
+from torchtune.datasets import PackedDataset, SFTDataset
+from torchtune.modules.tokenizers import ModelTokenizer
 from tqdm import tqdm
 
 
@@ -44,49 +46,25 @@ class TrainingModule(torch.nn.Module):
         return self.loss(logits, labels)
 
 
-class DatabricksDolly(InstructTemplate):
+def python_code_instructions_alpaca(tokenizer: ModelTokenizer) -> PackedDataset:
     """
-    Used for the Dolly dataset from Databricks.
-
-    https://huggingface.co/datasets/databricks/databricks-dolly-15k
+    Python code instruction-input-output pairs from iamtarun/python_code_instructions_18k_alpaca templated with Alpaca.
     """
-
-    template = "Instruction:\n{instruction}\n\nContext:\n{input}\n\nResponse: "
-
-    @classmethod
-    def format(
-        cls,
-        sample: Mapping[str, Any],
-        column_map: Optional[Dict[str, str]],
-    ) -> str:
-        assert column_map is not None
-        instruction = sample[column_map["instruction"]]
-        input = sample[column_map["input"]]
-        return cls.template.format(instruction=instruction, input=input)
-
-
-class PythonCodeInstructions(InstructTemplate):
-    """
-    https://huggingface.co/datasets/iamtarun/python_code_instructions_18k_alpaca
-    """
-
-    template = (
-        "{prompt}\n\n"
-        "Instruction:\n{instruction}"
-        "\n\nContext:\n{input}\n\nResponse: "
+    ds = SFTDataset(
+        # pyre-ignore[6]: Incompatible parameter type
+        model_transform=tokenizer,
+        source="iamtarun/python_code_instructions_18k_alpaca",
+        message_transform=AlpacaToMessages(
+            train_on_input=False,
+        ),
+        # pyre-ignore[6]: Incompatible parameter type
+        split="train",
     )
-
-    @classmethod
-    def format(
-        cls,
-        sample: Mapping[str, Any],
-        column_map: Optional[Dict[str, str]],
-    ) -> str:
-        assert column_map is not None
-        instruction = sample[column_map["instruction"]]
-        input = sample[column_map["input"]]
-        prompt = sample[column_map["prompt"]]
-        return cls.template.format(instruction=instruction, input=input, prompt=prompt)
+    if tokenizer.max_seq_len is None:
+        raise ValueError(
+            "PackedDataset requires a max_seq_len to be set on the tokenizer."
+        )
+    return PackedDataset(ds, max_seq_len=tokenizer.max_seq_len, split_across_pack=False)
 
 
 def update_function(

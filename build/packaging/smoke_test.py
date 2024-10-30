@@ -85,8 +85,8 @@ def main():
 
     # Make sure custom ops are registered.
     assert (
-        "llama::sdpa_with_kv_cache" in ops
-    ), f"sdpa_with_kv_cache not registered, Got ops: {ops}"
+        "llama::sdpa_with_kv_cache.out" in ops
+    ), f"llama::sdpa_with_kv_cache.out not registered, Got ops: {ops}"
 
     # Make sure quantized ops are registered.
     assert (

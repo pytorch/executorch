@@ -209,6 +209,12 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
 }
 #endif
 
+- (void)testAddMulCompiledProgramExecute {
+    NSURL *modelURL = [[self class] bundledResourceWithName:@"add_mul_compiled_coreml_all" extension:@"pte"];
+    XCTAssertNotNil(modelURL);
+    [self executeModelAtURL:modelURL nLoads:1 nExecutions:2];
+}
+
 - (void)executeMultipleModelsConcurrently:(NSArray<NSURL *> *)modelURLs
                                    nLoads:(NSUInteger)nLoads
                               nExecutions:(NSUInteger)nExecutions

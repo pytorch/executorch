@@ -66,4 +66,4 @@ table DataFile {
   segments: [DataSegment];
 }
 
-root_type Data;
+root_type DataFile;

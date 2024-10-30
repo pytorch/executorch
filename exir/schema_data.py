@@ -19,17 +19,9 @@ class TensorMetadata:
     scalar_type: ScalarType
     dim_sizes: List[int]
     dim_order: List[bytes]
-    storage_offset: int
-    layout: int
 
-    offset: int
-    size: int
-
-
-@dataclass
-class TensorSegment:
     segment_index: int
-    tensor_metadata: List[TensorMetadata]
+    offset: int
 
 
 @dataclass
@@ -42,5 +34,5 @@ class DataSegment:
 class Data:
     version: int
     tensor_alignment: int
-    tensor_segments: List[TensorSegment]
+    tensor_segments: List[TensorMetadata]
     data_segments: List[DataSegment]
