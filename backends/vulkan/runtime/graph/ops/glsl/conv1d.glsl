@@ -14,8 +14,6 @@
 
 #define op(X, A, B) ${OPERATOR}
 
-#include "indexing_utils.h"
-
 layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
@@ -26,16 +24,25 @@ ${layout_declare_tensor(B, "r", "bias_in", DTYPE, STORAGE)}
 ${layout_declare_ubo(B, "ivec3", "out_limits")}
 ${layout_declare_ubo(B, "ivec4", "in_sizes")}
 
-${layout_declare_ubo(B, "ivec4", "out_axis_map")}
-${layout_declare_ubo(B, "ivec4", "in_axis_map")}
-${layout_declare_ubo(B, "ivec4", "kernel_axis_map")}
-${layout_declare_ubo(B, "ivec4", "bias_axis_map")}
-
 ${layout_declare_ubo(B,"int", "kernel_size", "int", "stride", "int", "padding", "int", "dilation", "int", "in_group_size", "int", "out_group_size")}
 
 ${layout_declare_ubo(B, "float", "out_min", "float", "out_max")}
 
+#include "indexing_utils.h"
+
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 out_axis_map = unhash_axis_map(out_layout);
+
+${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 in_axis_map = unhash_axis_map(in_layout);
+
+${layout_declare_spec_const(C, "int", "kernel_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 kernel_axis_map = unhash_axis_map(kernel_layout);
+
+${layout_declare_spec_const(C, "int", "bias_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 bias_axis_map = unhash_axis_map(bias_layout);
 
 // Let us define
 //

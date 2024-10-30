@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from enum import IntEnum
 
 
@@ -26,4 +28,4 @@ class ScalarType(IntEnum):
     BFLOAT16 = 15
     QUINT4x2 = 16
     QUINT2x4 = 17
-    Bits16 = 22
+    BITS16 = 22
