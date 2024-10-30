@@ -503,7 +503,7 @@ Tutorials we recommend you complete before this:</div>
 <div class="sd-card-body docutils">
 <div class="sd-card-title sd-font-weight-bold docutils">
 What you will learn in this tutorial:</div>
-<p class="sd-card-text">In this tutorial you will learn how to export a simple PyTorch model for ExecuTorch Arm Ethos-u backend delegate and run it on a Corstone-300 FVP Simulator.</p>
+<p class="sd-card-text">In this tutorial you will learn how to export a simple PyTorch model for ExecuTorch Arm Ethos-u backend delegate and run it on a Corstone FVP Simulators.</p>
 </div>
 </div>
 </div>
@@ -523,8 +523,8 @@ What you will learn in this tutorial:</div>
 <div class="section" id="hardware">
 <h3>Hardware<a class="headerlink" href="#hardware" title="Permalink to this heading">¶</a></h3>
 <p>To successfully complete this tutorial, you will need a Linux-based host machine with Arm aarch64 or x86_64 processor architecture.</p>
-<p>The target device will be an embedded platform with an Arm Cortex-M55 CPU and Ethos-U55 NPU (ML processor). This tutorial will show you how to run PyTorch models on both.</p>
-<p>We will be using a <a class="reference external" href="https://www.arm.com/products/development-tools/simulation/fixed-virtual-platforms">Fixed Virtual Platform (FVP)</a>, simulating a <a class="reference external" href="https://developer.arm.com/Processors/Corstone-300">Corstone-300</a>(cs300) system. Since we will be using the FVP (think of it as virtual hardware), we won’t be requiring any real embedded hardware for this tutorial.</p>
+<p>The target device will be an embedded platform with an Arm Cortex-M CPUs and Ethos-U NPUs (ML processor). This tutorial will show you how to run PyTorch models on both.</p>
+<p>We will be using a <a class="reference external" href="https://www.arm.com/products/development-tools/simulation/fixed-virtual-platforms">Fixed Virtual Platform (FVP)</a>, simulating <a class="reference external" href="https://developer.arm.com/Processors/Corstone-300">Corstone-300</a>(cs300) and <a class="reference external" href="https://developer.arm.com/Processors/Corstone-320">Corstone-320</a>(cs320)systems. Since we will be using the FVP (think of it as virtual hardware), we won’t be requiring any real embedded hardware for this tutorial.</p>
 </div>
 <div class="section" id="software">
 <h3>Software<a class="headerlink" href="#software" title="Permalink to this heading">¶</a></h3>
@@ -546,18 +546,18 @@ uname<span class="w"> </span>-m
 </pre></div>
 </div>
 <p>Next we will walk through the steps performed by the <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script to better understand the development setup.</p>
-<div class="section" id="download-and-set-up-the-corstone-300-fvp">
-<h3>Download and Set Up the Corstone-300 FVP<a class="headerlink" href="#download-and-set-up-the-corstone-300-fvp" title="Permalink to this heading">¶</a></h3>
-<p>Fixed Virtual Platforms (FVPs) are pre-configured, functionally accurate simulations of popular system configurations. Here in this tutorial, we are interested in the Corstone-300 system. We can download this from the Arm website.</p>
+<div class="section" id="download-and-set-up-the-corstone-300-and-corstone-320-fvp">
+<h3>Download and Set Up the Corstone-300 and Corstone-320 FVP<a class="headerlink" href="#download-and-set-up-the-corstone-300-and-corstone-320-fvp" title="Permalink to this heading">¶</a></h3>
+<p>Fixed Virtual Platforms (FVPs) are pre-configured, functionally accurate simulations of popular system configurations. Here in this tutorial, we are interested in Corstone-300 and Corstone-320 systems. We can download this from the Arm website.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>By downloading and running the FVP software, you will be agreeing to the FVP <a class="reference external" href="https://developer.arm.com/downloads/-/arm-ecosystem-fvps/eula">End-user license agreement (EULA)</a>.</p>
 </div>
-<p>To download, we can either download <code class="docutils literal notranslate"><span class="pre">Corstone-300</span> <span class="pre">Ecosystem</span> <span class="pre">FVP</span></code> from <a class="reference external" href="https://developer.arm.com/downloads/-/arm-ecosystem-fvps">here</a>. or <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script will does that for you under <code class="docutils literal notranslate"><span class="pre">setup_fvp</span></code> function.</p>
+<p>To download, we can either download <code class="docutils literal notranslate"><span class="pre">Corstone-300</span> <span class="pre">Ecosystem</span> <span class="pre">FVP</span></code> and <code class="docutils literal notranslate"><span class="pre">Corstone-320</span> <span class="pre">Ecosystem</span> <span class="pre">FVP</span></code>from <a class="reference external" href="https://developer.arm.com/downloads/-/arm-ecosystem-fvps">here</a>. or <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script does that for you under <code class="docutils literal notranslate"><span class="pre">setup_fvp</span></code> function.</p>
 </div>
 <div class="section" id="download-and-install-the-arm-gnu-aarch32-bare-metal-toolchain">
 <h3>Download and Install the Arm GNU AArch32 Bare-Metal Toolchain<a class="headerlink" href="#download-and-install-the-arm-gnu-aarch32-bare-metal-toolchain" title="Permalink to this heading">¶</a></h3>
-<p>Similar to the FVP, we would also need a tool-chain to cross-compile ExecuTorch runtime, executor-runner bare-metal application, as well as the rest of the bare-metal stack for Cortex-M55 CPU available on the Corstone-300 platform.</p>
+<p>Similar to the FVP, we would also need a tool-chain to cross-compile ExecuTorch runtime, executor-runner bare-metal application, as well as the rest of the bare-metal stack for Cortex-M55/M85 CPU available on the Corstone-300/Corstone-320 platform.</p>
 <p>These toolchains are available <a class="reference external" href="https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads">here</a>. We will be using GCC 12.3 targeting <code class="docutils literal notranslate"><span class="pre">arm-none-eabi</span></code> here for our tutorial. Just like FVP, <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script will down the toolchain for you. See <code class="docutils literal notranslate"><span class="pre">setup_toolchain</span></code> function.</p>
 </div>
 <div class="section" id="setup-the-arm-ethos-u-software-development">
@@ -581,10 +581,14 @@ uname<span class="w"> </span>-m
 │<span class="w">   </span>├──<span class="w"> </span>fetch_externals.py
 │<span class="w">   </span>└──<span class="w"> </span><span class="o">[</span>...<span class="o">]</span>
 ├──<span class="w"> </span>ethos-u-vela
-├──<span class="w"> </span>FVP
+├──<span class="w"> </span>FVP-corstone300
 │<span class="w">   </span>├──<span class="w"> </span>FVP_Corstone_SSE-300.sh
 │<span class="w">   </span>└──<span class="w"> </span><span class="o">[</span>...<span class="o">]</span>
+├──<span class="w"> </span>FVP-corstone320
+│<span class="w">   </span>├──<span class="w"> </span>FVP_Corstone_SSE-320.sh
+│<span class="w">   </span>└──<span class="w"> </span><span class="o">[</span>...<span class="o">]</span>
 ├──<span class="w"> </span>FVP_cs300.tgz
+├──<span class="w"> </span>FVP_cs320.tgz
 ├──<span class="w"> </span>gcc.tar.xz
 └──<span class="w"> </span>reference_model
 </pre></div>
@@ -707,8 +711,7 @@ cmake<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<s
 -Bcmake-out-aot-lib<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">et_root_dir</span><span class="si">}</span><span class="s2">&quot;</span>
 
-<span class="nv">n</span><span class="o">=</span><span class="k">$(</span>nproc<span class="k">)</span>
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-aot-lib<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((</span><span class="nv">n</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="m">5</span><span class="k">))</span><span class="s2">&quot;</span><span class="w"> </span>--<span class="w"> </span>quantized_ops_aot_lib
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-aot-lib<span class="w"> </span>--parallel<span class="w"> </span>--<span class="w"> </span>quantized_ops_aot_lib
 </pre></div>
 </div>
 <p>After the <code class="docutils literal notranslate"><span class="pre">quantized_ops_aot_lib</span></code> build, we can run the following script to generate the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file</p>
@@ -723,7 +726,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-aot-lib<sp
 <li><p>The second one contains the <a class="reference internal" href="#addmodule"><span class="std std-doc">AddModule</span></a>, with Arm Ethos-U backend delegate enabled.</p></li>
 <li><p>The third one contains the <span class="xref myst">quantized MV2Model</span>, with the Arm Ethos-U backend delegate enabled as well.</p></li>
 </ul>
-<p>Now let’s try to run these <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files on a Corstone-300 platform in a bare-metal environment.</p>
+<p>Now let’s try to run these <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files on a Corstone-300 and Corstone-320 platforms in a bare-metal environment.</p>
 </div>
 </div>
 <div class="section" id="getting-a-bare-metal-executable">
@@ -732,9 +735,13 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-aot-lib<sp
 <p>Also before we get started, make sure that you have completed ExecuTorch cmake build setup, and the instructions to setup the development environment described <a class="reference internal" href="#set-up-the-developer-environment"><span class="std std-doc">earlier</span></a>.</p>
 <p>The block diagram below demonstrates, at the high level, how the various build artifacts are generated and are linked together to generate the final bare-metal executable.</p>
 <p><img alt="" src="_images/arm-delegate-runtime-build.svg" /></p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">generate_pte_file</span></code> function in <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script produces the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files based on the models provided through <code class="docutils literal notranslate"><span class="pre">--model_name</span></code> input argument</p>
+</div>
 <div class="section" id="generating-executorch-libraries">
 <h3>Generating ExecuTorch Libraries<a class="headerlink" href="#generating-executorch-libraries" title="Permalink to this heading">¶</a></h3>
-<p>ExecuTorch’s CMake build system produces a set of build pieces which are critical for us to include and run the ExecuTorch runtime with-in the bare-metal environment we have for Corstone-300 from Ethos-U SDK.</p>
+<p>ExecuTorch’s CMake build system produces a set of build pieces which are critical for us to include and run the ExecuTorch runtime with-in the bare-metal environment we have for Corstone FVPs from Ethos-U SDK.</p>
 <p><a class="reference internal" href="runtime-build-and-cross-compilation.html"><span class="doc std std-doc">This</span></a> document provides a detailed overview of each individual build piece. For running either variant of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, we will need a core set of libraries. Here is a list,</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">libexecutorch.a</span></code></p></li>
@@ -745,119 +752,98 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-aot-lib<sp
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">libexecutorch_delegate_ethos_u.a</span></code></p></li>
 </ul>
-<p>These libraries are generated in <code class="docutils literal notranslate"><span class="pre">build_executorch</span></code> function of the <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script.</p>
+<p>These libraries are generated in <code class="docutils literal notranslate"><span class="pre">build_executorch</span></code> and <code class="docutils literal notranslate"><span class="pre">build_quantization_aot_lib</span></code> function of the <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script.</p>
 <p>In this function, <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_LIST</span></code> will decide the number of portable operators included in the build and are available at runtime. It must match with <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file’s requirements, otherwise you will get <code class="docutils literal notranslate"><span class="pre">Missing</span> <span class="pre">Operator</span></code> error at runtime.</p>
 <p>For example, there  in the command line above, to run SoftmaxModule, we only included the softmax CPU operator. Similarly, to run AddModule in a non-delegated manner you will need add op and so on. As you might have already realized, for the delegated operators, which will be executed by the Arm backend delegate, we do not need to include those operators in this list. This is only for <em>non-delegated</em> operators.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script takes in <code class="docutils literal notranslate"><span class="pre">--portable_kernels</span></code> option, which provides a way to supply a comma seperated list of portable kernels to be included.</p>
+</div>
 </div>
 <div class="section" id="building-the-executor-runner-bare-metal-application">
 <h3>Building the executor_runner Bare-Metal Application<a class="headerlink" href="#building-the-executor-runner-bare-metal-application" title="Permalink to this heading">¶</a></h3>
 <p>The SDK dir is the same one prepared <a class="reference internal" href="#setup-the-arm-ethos-u-software-development"><span class="std std-doc">earlier</span></a>. And, we will be passing the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file (any one of them) generated above.</p>
-<p>Note, you have to generate a new <code class="docutils literal notranslate"><span class="pre">executor-runner</span></code> binary if you want to change the model or the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. This constraint is from the constrained bare-metal runtime environment we have for Corstone-300 platform.</p>
+<p>Note, you have to generate a new <code class="docutils literal notranslate"><span class="pre">executor-runner</span></code> binary if you want to change the model or the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. This constraint is from the constrained bare-metal runtime environment we have for Corstone-300/Corstone-320 platforms.</p>
 <p>This is performed by the <code class="docutils literal notranslate"><span class="pre">build_executorch_runner</span></code> function in <code class="docutils literal notranslate"><span class="pre">run.sh</span></code>.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script takes in <code class="docutils literal notranslate"><span class="pre">--target</span></code> option, which provides a way to provide a specific target, Corstone-300(ethos-u55-128) or Corstone-320(ethos-u85-128)</p>
 </div>
 </div>
-<div class="section" id="running-on-corstone-300-fvp-platform">
-<h2>Running on Corstone-300 FVP Platform<a class="headerlink" href="#running-on-corstone-300-fvp-platform" title="Permalink to this heading">¶</a></h2>
-<p>Once the elf is prepared, regardless of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file variant is used to generate the bare metal elf, you can run in with following command,</p>
+</div>
+<div class="section" id="running-on-corstone-fvp-platforms">
+<h2>Running on Corstone FVP Platforms<a class="headerlink" href="#running-on-corstone-fvp-platforms" title="Permalink to this heading">¶</a></h2>
+<p>Once the elf is prepared, regardless of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file variant is used to generate the bare metal elf. The below command is used to run the <span class="xref myst">MV2Model</span> on Corstone-320 FVP</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">ethos_u_build_dir</span><span class="o">=</span>examples/arm/executor_runner/
 
 <span class="nv">elf</span><span class="o">=</span><span class="k">$(</span>find<span class="w"> </span><span class="si">${</span><span class="nv">ethos_u_build_dir</span><span class="si">}</span><span class="w"> </span>-name<span class="w"> </span><span class="s2">&quot;arm_executor_runner&quot;</span><span class="k">)</span>
 
-FVP_Corstone_SSE-300_Ethos-U55<span class="w">                          </span><span class="se">\</span>
-<span class="w">    </span>-C<span class="w"> </span>ethosu.num_macs<span class="o">=</span><span class="m">128</span><span class="w">                              </span><span class="se">\</span>
-<span class="w">    </span>-C<span class="w"> </span>mps3_board.visualisation.disable-visualisation<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-C<span class="w"> </span>mps3_board.telnetterminal0.start_telnet<span class="o">=</span><span class="m">0</span><span class="w">        </span><span class="se">\</span>
-<span class="w">    </span>-C<span class="w"> </span>mps3_board.uart0.out_file<span class="o">=</span><span class="s1">&#39;-&#39;</span><span class="w">                    </span><span class="se">\</span>
+FVP_Corstone_SSE-320_Ethos-U85<span class="w">                          </span><span class="se">\</span>
+<span class="w">    </span>-C<span class="w"> </span>mps4_board.subsystem.cpu0.CFGITCMSZ<span class="o">=</span><span class="m">11</span><span class="w">           </span><span class="se">\</span>
+<span class="w">    </span>-C<span class="w"> </span>mps4_board.subsystem.ethosu.num_macs<span class="o">=</span><span class="si">${</span><span class="nv">num_macs</span><span class="si">}</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-C<span class="w"> </span>mps4_board.visualisation.disable-visualisation<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-C<span class="w"> </span>vis_hdlcd.disable_visualisation<span class="o">=</span><span class="m">1</span><span class="w">                </span><span class="se">\</span>
+<span class="w">    </span>-C<span class="w"> </span>mps4_board.telnetterminal0.start_telnet<span class="o">=</span><span class="m">0</span><span class="w">        </span><span class="se">\</span>
+<span class="w">    </span>-C<span class="w"> </span>mps4_board.uart0.out_file<span class="o">=</span><span class="s1">&#39;-&#39;</span><span class="w">                    </span><span class="se">\</span>
+<span class="w">    </span>-C<span class="w"> </span>mps4_board.uart0.shutdown_on_eot<span class="o">=</span><span class="m">1</span><span class="w">               </span><span class="se">\</span>
 <span class="w">    </span>-a<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">elf</span><span class="si">}</span><span class="s2">&quot;</span><span class="w">                                         </span><span class="se">\</span>
-<span class="w">    </span>--timelimit<span class="w"> </span><span class="m">10</span><span class="w"> </span><span class="c1"># seconds - after which sim will kill itself</span>
+<span class="w">    </span>--timelimit<span class="w"> </span><span class="m">120</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">true</span><span class="w"> </span><span class="c1"># seconds- after which sim will kill itself</span>
 </pre></div>
 </div>
 <p>If successful, the simulator should produce something like the following on the shell,</p>
-<div class="highlight-none notranslate highlight-console"><div class="highlight"><pre><span></span><span class="go">    Ethos-U rev 136b7d75 --- Apr 12 2023 13:44:01</span>
-<span class="go">    (C) COPYRIGHT 2019-2023 Arm Limited</span>
-<span class="go">    ALL RIGHTS RESERVED</span>
-
-<span class="go">I executorch:runner.cpp:64] Model PTE file loaded. Size: 960 bytes.</span>
-<span class="go">I executorch:runner.cpp:70] Model buffer loaded, has 1 methods</span>
-<span class="go">I executorch:runner.cpp:78] Running method forward</span>
-<span class="go">I executorch:runner.cpp:95] Setting up planned buffer 0, size 32.</span>
-<span class="go">I executorch:runner.cpp:110] Method loaded.</span>
-<span class="go">I executorch:runner.cpp:112] Preparing inputs...</span>
-<span class="go">I executorch:runner.cpp:114] Input prepared.</span>
-<span class="go">I executorch:runner.cpp:116] Starting the model execution...</span>
-<span class="go">I executorch:runner.cpp:121] Model executed successfully.</span>
-<span class="go">I executorch:runner.cpp:125] 1 outputs:</span>
-<span class="go">Output[0][0]: 0.500000</span>
-<span class="go">Output[0][1]: 0.500000</span>
-<span class="go">Output[0][2]: 0.500000</span>
-<span class="go">Output[0][3]: 0.500000</span>
-<span class="go">Application exit code: 0.</span>
-
-<span class="go">EXITTHESIM</span>
-
-<span class="go">Info: Simulation is stopping. Reason: CPU time has been exceeded.</span>
+<div class="highlight-none notranslate highlight-console"><div class="highlight"><pre><span></span><span class="go">I [executorch:arm_executor_runner.cpp:364] Model in 0x70000000 $</span>
+<span class="go">I [executorch:arm_executor_runner.cpp:366] Model PTE file loaded. Size: 4425968 bytes.</span>
+<span class="go">I [executorch:arm_executor_runner.cpp:376] Model buffer loaded, has 1 methods</span>
+<span class="go">I [executorch:arm_executor_runner.cpp:384] Running method forward</span>
+<span class="go">I [executorch:arm_executor_runner.cpp:395] Setup Method allocator pool. Size: 62914560 bytes.</span>
+<span class="go">I [executorch:arm_executor_runner.cpp:412] Setting up planned buffer 0, size 752640.</span>
+<span class="go">I [executorch:ArmBackendEthosU.cpp:79] ArmBackend::init 0x70000070</span>
+<span class="go">I [executorch:arm_executor_runner.cpp:445] Method loaded.</span>
+<span class="go">I [executorch:arm_executor_runner.cpp:447] Preparing inputs...</span>
+<span class="go">I [executorch:arm_executor_runner.cpp:461] Input prepared.</span>
+<span class="go">I [executorch:arm_executor_runner.cpp:463] Starting the model execution...</span>
+<span class="go">I [executorch:ArmBackendEthosU.cpp:118] ArmBackend::execute 0x70000070</span>
+<span class="go">I [executorch:ArmBackendEthosU.cpp:298] Tensor input/output 0 will be permuted</span>
+<span class="go">I [executorch:arm_perf_monitor.cpp:120] NPU Inferences : 1</span>
+<span class="go">I [executorch:arm_perf_monitor.cpp:121] Profiler report, CPU cycles per operator:</span>
+<span class="go">I [executorch:arm_perf_monitor.cpp:125] ethos-u : cycle_cnt : 1498202 cycles</span>
+<span class="go">I [executorch:arm_perf_monitor.cpp:132] Operator(s) total: 1498202 CPU cycles</span>
+<span class="go">I [executorch:arm_perf_monitor.cpp:138] Inference runtime: 6925114 CPU cycles total</span>
+<span class="go">I [executorch:arm_perf_monitor.cpp:140] NOTE: CPU cycle values and ratio calculations require FPGA and identical CPU/NPU frequency</span>
+<span class="go">I [executorch:arm_perf_monitor.cpp:149] Inference CPU ratio: 99.99 %</span>
+<span class="go">I [executorch:arm_perf_monitor.cpp:153] Inference NPU ratio: 0.01 %</span>
+<span class="go">I [executorch:arm_perf_monitor.cpp:162] cpu_wait_for_npu_cntr : 729 CPU cycles</span>
+<span class="go">I [executorch:arm_perf_monitor.cpp:167] Ethos-U PMU report:</span>
+<span class="go">I [executorch:arm_perf_monitor.cpp:168] ethosu_pmu_cycle_cntr : 5920305</span>
+<span class="go">I [executorch:arm_perf_monitor.cpp:171] ethosu_pmu_cntr0 : 359921</span>
+<span class="go">I [executorch:arm_perf_monitor.cpp:171] ethosu_pmu_cntr1 : 0</span>
+<span class="go">I [executorch:arm_perf_monitor.cpp:171] ethosu_pmu_cntr2 : 0</span>
+<span class="go">I [executorch:arm_perf_monitor.cpp:171] ethosu_pmu_cntr3 : 503</span>
+<span class="go">I [executorch:arm_perf_monitor.cpp:178] Ethos-U PMU Events:[ETHOSU_PMU_EXT0_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_EXT1_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_EXT0_WR_DATA_BEAT_WRITTEN, ETHOSU_PMU_NPU_IDLE]</span>
+<span class="go">I [executorch:arm_executor_runner.cpp:470] model_pte_loaded_size:     4425968 bytes.</span>
+<span class="go">I [executorch:arm_executor_runner.cpp:484] method_allocator_used:     1355722 / 62914560  free: 61558838 ( used: 2 % ) </span>
+<span class="go">I [executorch:arm_executor_runner.cpp:491] method_allocator_planned:  752640 bytes</span>
+<span class="go">I [executorch:arm_executor_runner.cpp:493] method_allocator_loaded:   966 bytes</span>
+<span class="go">I [executorch:arm_executor_runner.cpp:494] method_allocator_input:    602116 bytes</span>
+<span class="go">I [executorch:arm_executor_runner.cpp:495] method_allocator_executor: 0 bytes</span>
+<span class="go">I [executorch:arm_executor_runner.cpp:498] temp_allocator_used:       0 / 1048576 free: 1048576 ( used: 0 % ) </span>
+<span class="go">I executorch:arm_executor_runner.cpp:152] Model executed successfully.</span>
+<span class="go">I executorch:arm_executor_runner.cpp:156] 1 outputs:</span>
+<span class="go">Output[0][0]: -0.749744</span>
+<span class="go">Output[0][1]: -0.019224</span>
+<span class="go">Output[0][2]: 0.134570</span>
+<span class="go">...(Skipped)</span>
+<span class="go">Output[0][996]: -0.230691</span>
+<span class="go">Output[0][997]: -0.634399</span>
+<span class="go">Output[0][998]: -0.115345</span>
+<span class="go">Output[0][999]: 1.576386</span>
+<span class="go">I executorch:arm_executor_runner.cpp:177] Program complete, exiting.</span>
+<span class="go">I executorch:arm_executor_runner.cpp:179]</span>
 </pre></div>
 </div>
-<p>Here in this example, we ran the <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> binary with the <code class="docutils literal notranslate"><span class="pre">softmax.pte</span></code> file generated for the <a class="reference internal" href="#softmaxmodule"><span class="std std-doc">SoftmaxModule</span></a>, we do see the expected results generated from the baremetal binary running on the Corstone-300 virtual hardware on FVP simulator.</p>
-<p>If you rerun the same FVP command with the delegated <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file for the <a class="reference internal" href="#addmodule"><span class="std std-doc">AddModule</span></a>, i.e. <code class="docutils literal notranslate"><span class="pre">add_arm_delegate.pte</span></code> - you may get something like following, again the expected results. Pay attention to the messages printed with prefix <code class="docutils literal notranslate"><span class="pre">ArmBackend::</span></code>, they indicate that the backend was sucecssfully initialized and the <code class="docutils literal notranslate"><span class="pre">add</span></code> operator from our AddModule in the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> was exexuted on the Ethos-U55 NPU.</p>
-<div class="highlight-none notranslate highlight-console"><div class="highlight"><pre><span></span><span class="go">    Ethos-U rev 136b7d75 --- Apr 12 2023 13:44:01</span>
-<span class="go">    (C) COPYRIGHT 2019-2023 Arm Limited</span>
-<span class="go">    ALL RIGHTS RESERVED</span>
-
-<span class="go">I executorch:runner.cpp:64] Model PTE file loaded. Size: 2208 bytes.</span>
-<span class="go">I executorch:runner.cpp:70] Model buffer loaded, has 1 methods</span>
-<span class="go">I executorch:runner.cpp:78] Running method forward</span>
-<span class="go">I executorch:runner.cpp:95] Setting up planned buffer 0, size 64.</span>
-<span class="go">I executorch:ArmBackendEthosU.cpp:51] ArmBackend::init 0x11000050</span>
-<span class="go">I executorch:runner.cpp:110] Method loaded.</span>
-<span class="go">I executorch:runner.cpp:112] Preparing inputs...</span>
-<span class="go">I executorch:runner.cpp:114] Input prepared.</span>
-<span class="go">I executorch:runner.cpp:116] Starting the model execution...</span>
-<span class="go">I executorch:ArmBackendEthosU.cpp:103] ArmBackend::execute 0x11000050</span>
-<span class="go">I executorch:runner.cpp:121] Model executed successfully.</span>
-<span class="go">I executorch:runner.cpp:125] 1 outputs:</span>
-<span class="go">Output[0][0]: 2</span>
-<span class="go">Output[0][1]: 2</span>
-<span class="go">Output[0][2]: 2</span>
-<span class="go">Output[0][3]: 2</span>
-<span class="go">Output[0][4]: 2</span>
-<span class="go">Application exit code: 0.</span>
-
-<span class="go">EXITTHESIM</span>
-
-<span class="go">Info: Simulation is stopping. Reason: CPU time has been exceeded.</span>
-</pre></div>
-</div>
-<p>Similarily we can get the following output for running the <span class="xref myst">MV2Model</span></p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>    Ethos-U rev 136b7d75 --- Apr 12 2023 13:44:01
-    (C) COPYRIGHT 2019-2023 Arm Limited
-    ALL RIGHTS RESERVED
-
-I executorch:arm_executor_runner.cpp:60] Model in 0x70000000 $
-I executorch:arm_executor_runner.cpp:66] Model PTE file loaded. Size: 4556832 bytes.
-I executorch:arm_executor_runner.cpp:77] Model buffer loaded, has 1 methods
-I executorch:arm_executor_runner.cpp:85] Running method forward
-I executorch:arm_executor_runner.cpp:109] Setting up planned buffer 0, size 752640.
-I executorch:ArmBackendEthosU.cpp:49] ArmBackend::init 0x70000060
-I executorch:arm_executor_runner.cpp:130] Method loaded.
-I executorch:arm_executor_runner.cpp:132] Preparing inputs...
-I executorch:arm_executor_runner.cpp:141] Input prepared.
-I executorch:arm_executor_runner.cpp:143] Starting the model execution...
-I executorch:ArmBackendEthosU.cpp:87] ArmBackend::execute 0x70000060
-I executorch:ArmBackendEthosU.cpp:234] Tensor input 0 will be permuted
-I executorch:arm_executor_runner.cpp:152] Model executed successfully.
-I executorch:arm_executor_runner.cpp:156] 1 outputs:
-Output[0][0]: -0.639322
-Output[0][1]: 0.169232
-Output[0][2]: -0.451286
-...(Skipped)
-Output[0][996]: 0.150429
-Output[0][997]: -0.488894
-Output[0][998]: 0.037607
-Output[0][999]: 1.203430
-I executorch:arm_executor_runner.cpp:177] Program complete, exiting.
-I executorch:arm_executor_runner.cpp:179]
-</pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script provides various options to select a particular FVP target, use desired models, select portable kernels and can be explored using the <code class="docutils literal notranslate"><span class="pre">--help</span></code> argument</p>
 </div>
 </div>
 <div class="section" id="takeaways">
@@ -935,7 +921,7 @@ Describe what common errors users may see and how to resolve them.
 </ul>
 </li>
 <li><a class="reference internal" href="#set-up-the-developer-environment">Set Up the Developer Environment</a><ul>
-<li><a class="reference internal" href="#download-and-set-up-the-corstone-300-fvp">Download and Set Up the Corstone-300 FVP</a></li>
+<li><a class="reference internal" href="#download-and-set-up-the-corstone-300-and-corstone-320-fvp">Download and Set Up the Corstone-300 and Corstone-320 FVP</a></li>
 <li><a class="reference internal" href="#download-and-install-the-arm-gnu-aarch32-bare-metal-toolchain">Download and Install the Arm GNU AArch32 Bare-Metal Toolchain</a></li>
 <li><a class="reference internal" href="#setup-the-arm-ethos-u-software-development">Setup the Arm Ethos-U Software Development</a></li>
 <li><a class="reference internal" href="#install-the-vela-compiler">Install the Vela Compiler</a></li>
@@ -959,7 +945,7 @@ Describe what common errors users may see and how to resolve them.
 <li><a class="reference internal" href="#building-the-executor-runner-bare-metal-application">Building the executor_runner Bare-Metal Application</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#running-on-corstone-300-fvp-platform">Running on Corstone-300 FVP Platform</a></li>
+<li><a class="reference internal" href="#running-on-corstone-fvp-platforms">Running on Corstone FVP Platforms</a></li>
 <li><a class="reference internal" href="#takeaways">Takeaways</a></li>
 <li><a class="reference internal" href="#faqs">FAQs</a></li>
 </ul>
