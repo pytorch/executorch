@@ -16,37 +16,43 @@ load(
 # access CPU vector intrinsics.
 
 def get_vec_preprocessor_flags():
-    preprocessor_flags = select({
-        "ovr_config//os:iphoneos": [
-            "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
-        ] if not runtime.is_oss else [],
-        "ovr_config//os:macos-arm64": [
-            "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
-        ] if not runtime.is_oss else [],
-        "ovr_config//os:android-arm64": [
-            "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
-        ] if not runtime.is_oss else [],
-        "DEFAULT": [],
-    })
-    return preprocessor_flags
+    if not runtime.is_oss:
+        # various ovr_configs are not available in oss
+        preprocessor_flags = select({
+            "ovr_config//os:iphoneos": [
+                "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:macos-arm64": [
+                "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:android-arm64": [
+                "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
+            ] if not runtime.is_oss else [],
+            "DEFAULT": [],
+        })
+        return preprocessor_flags
+    return []
 
 def get_vec_deps():
-    preprocessor_flags = select({
-        "ovr_config//os:linux-x86_64": [
-            "fbsource//third-party/sleef:sleef",
-        ] if not runtime.is_oss else [],
-        "ovr_config//os:iphoneos": [
-            "fbsource//third-party/sleef:sleef_arm",
-        ] if not runtime.is_oss else [],
-        "ovr_config//os:macos-arm64": [
-            "fbsource//third-party/sleef:sleef_arm",
-        ] if not runtime.is_oss else [],
-        "ovr_config//os:android-arm64": [
-            "fbsource//third-party/sleef:sleef_arm",
-        ] if not runtime.is_oss else [],
-        "DEFAULT": [],
-    })
-    return preprocessor_flags
+    if not runtime.is_oss:
+        # various ovr_configs are not available in oss
+        deps = select({
+            "ovr_config//os:linux-x86_64": [
+                "fbsource//third-party/sleef:sleef",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:iphoneos": [
+                "fbsource//third-party/sleef:sleef_arm",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:macos-arm64": [
+                "fbsource//third-party/sleef:sleef_arm",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:android-arm64": [
+                "fbsource//third-party/sleef:sleef_arm",
+            ] if not runtime.is_oss else [],
+            "DEFAULT": [],
+        })
+        return deps
+    return []
 
 def get_vec_cxx_preprocessor_flags():
     preprocessor_flags = [
@@ -64,6 +70,36 @@ def get_vec_fbcode_preprocessor_flags():
         "-DCPU_CAPABILITY_AVX2",
     ]
     return preprocessor_flags
+
+def get_preprocessor_flags():
+    # various ovr_configs are not available in oss
+    preprocessor_flags = select({
+      ":linux-x86_64": [
+          "-DET_BUILD_WITH_BLAS",
+      ] if not runtime.is_oss else [],
+      "DEFAULT": [],
+    })
+
+    if not runtime.is_oss:
+        # various ovr_configs are not available in oss
+        additional_preprocessor_flags = select({
+            "ovr_config//os:iphoneos": [
+                "-DET_BUILD_WITH_BLAS",
+                "-DET_BUILD_FOR_APPLE",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:macos-arm64": [
+                "-DET_BUILD_WITH_BLAS",
+                "-DET_BUILD_FOR_APPLE",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:macos-x86_64": [
+                "-DET_BUILD_WITH_BLAS",
+                "-DET_BUILD_FOR_APPLE",
+            ] if not runtime.is_oss else [],
+            "DEFAULT": [],
+        })
+        preprocessor_flags = preprocessor_flags + additional_preprocessor_flags
+    return preprocessor_flags
+
 
 # Currently, having a dependency on fbsource//third-party/sleef:sleef may cause
 # duplicate symbol errors when linking fbcode targets in opt mode that also
@@ -128,24 +164,7 @@ def define_libs():
                 "//executorch/...",
                 "@EXECUTORCH_CLIENTS",
             ],
-            preprocessor_flags = select({
-                ":linux-x86_64": [
-                    "-DET_BUILD_WITH_BLAS",
-                ] if not runtime.is_oss else [],
-                "ovr_config//os:iphoneos": [
-                    "-DET_BUILD_WITH_BLAS",
-                    "-DET_BUILD_FOR_APPLE",
-                ] if not runtime.is_oss else [],
-                "ovr_config//os:macos-arm64": [
-                    "-DET_BUILD_WITH_BLAS",
-                    "-DET_BUILD_FOR_APPLE",
-                ] if not runtime.is_oss else [],
-                "ovr_config//os:macos-x86_64": [
-                    "-DET_BUILD_WITH_BLAS",
-                    "-DET_BUILD_FOR_APPLE",
-                ] if not runtime.is_oss else [],
-                "DEFAULT": [],
-            }),
+            preprocessor_flags = get_preprocessor_flags(),
             fbandroid_platform_preprocessor_flags = [
                 (
                     "^android-arm64.*$",
