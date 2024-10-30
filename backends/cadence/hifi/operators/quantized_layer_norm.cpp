@@ -7,14 +7,17 @@
  */
 
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
+#include <executorch/backends/cadence/hifi/operators/operators.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <algorithm>
 #include <cmath>
 #include <tuple>
 
-using executorch::aten::Tensor;
-using executorch::runtime::getLeadingDims;
-using executorch::runtime::KernelRuntimeContext;
+using ::executorch::aten::IntArrayRef;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::getLeadingDims;
+using ::executorch::runtime::KernelRuntimeContext;
 
 namespace cadence {
 namespace impl {
@@ -77,10 +80,10 @@ void quantized_layer_norm_(
     for (size_t j = 0; j < last_dim; ++j) {
       // Since X is quantized, we dequantize it, compute fp32 result, and
       // quantize the result to an int8/uint8 value.
-      float val = cadence::impl::HiFi::kernels::dequantize<T>(
+      float val = ::cadence::impl::HiFi::kernels::dequantize<T>(
           x[j], input_scale, input_zero_point);
       val = (val - mean) * inv_std * weight_data[j] + bias_data[j];
-      y[j] = cadence::impl::HiFi::kernels::quantize<T>(
+      y[j] = ::cadence::impl::HiFi::kernels::quantize<T>(
           val, output_inv_scale, output_zero_point);
     }
   }
@@ -121,38 +124,37 @@ void quantized_layer_norm_out(
     const Tensor& input,
     const Tensor& in_scale,
     const Tensor& in_zero_point,
-    const executorch::aten::IntArrayRef normalized_shape,
+    __ET_UNUSED const IntArrayRef normalized_shape,
     const Tensor& weight,
     const Tensor& bias,
     double eps,
     double output_scale,
     int64_t output_zero_point,
     Tensor& out) {
-  if (input.scalar_type() == executorch::aten::ScalarType::Byte) {
-    quantized_layer_norm_<uint8_t>(
-        input,
-        in_scale,
-        in_zero_point,
-        weight,
-        bias,
-        eps,
-        output_scale,
-        output_zero_point,
-        out);
-  } else if (input.scalar_type() == executorch::aten::ScalarType::Char) {
-    quantized_layer_norm_<int8_t>(
-        input,
-        in_scale,
-        in_zero_point,
-        weight,
-        bias,
-        eps,
-        output_scale,
-        output_zero_point,
-        out);
-  } else {
-    ET_CHECK_MSG(false, "Unhandled input dtype %hhd", input.scalar_type());
+#define typed_quantized_layer_norm(ctype, dtype) \
+  case ScalarType::dtype: {                      \
+    quantized_layer_norm_<ctype>(                \
+        input,                                   \
+        in_scale,                                \
+        in_zero_point,                           \
+        weight,                                  \
+        bias,                                    \
+        eps,                                     \
+        output_scale,                            \
+        output_zero_point,                       \
+        out);                                    \
+    break;                                       \
   }
+
+  ScalarType dtype = input.scalar_type();
+  switch (dtype) {
+    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_layer_norm)
+    default:
+      ET_DCHECK_MSG(
+          false, "Unhandled dtype %s", torch::executor::toString(dtype));
+  }
+
+#undef typed_quantized_layer_norm
 }
 
 }; // namespace native
