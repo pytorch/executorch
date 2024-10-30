@@ -212,7 +212,7 @@ class TestMaxPool2d(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite_mult_batches)
-    @unittest.expectedFailure  # TODO: MLETORCH-433
+    @common.expectedFailureOnFVP  # TODO: MLETORCH-433
     def test_maxpool2d_tosa_u55_BI_mult_batches(
         self,
         test_name: str,
@@ -230,7 +230,7 @@ class TestMaxPool2d(unittest.TestCase):
             )
 
     @parameterized.expand(test_data_suite_mult_batches)
-    @unittest.expectedFailure  # TODO: MLETORCH-433
+    @common.expectedFailureOnFVP  # TODO: MLETORCH-433
     def test_maxpool2d_tosa_u85_BI_mult_batches(
         self,
         test_name: str,
