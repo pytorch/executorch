@@ -101,7 +101,7 @@ def _get_input_quantization_params(
             ):  # break early if we have all the inputs quantized parameters
                 break
     if len(quant_params) == 0:
-        raise RuntimeError("No Quantization parameters not found in exported model.")
+        raise RuntimeError("No Quantization parameters found in exported model.")
     return quant_params
 
 
