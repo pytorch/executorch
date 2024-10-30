@@ -2,7 +2,7 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 load(
     "@fbsource//xplat/executorch/kernels/optimized:lib_defs.bzl",
-    "get_vec_android_preprocessor_flags",
+    "get_vec_preprocessor_flags",
 )
 load(
     "@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl",
@@ -95,7 +95,7 @@ def define_op_library(name, deps):
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ] + augmented_deps,
-        fbandroid_platform_preprocessor_flags = get_vec_android_preprocessor_flags(),
+        preprocessor_flags = get_vec_preprocessor_flags(),
         # sleef needs to be added as a direct dependency of the operator target when building for Android,
         # or a linker error may occur. Not sure why this happens; it seems that fbandroid_platform_deps of
         # dependencies are not transitive
