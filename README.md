@@ -92,7 +92,7 @@ tools.
 ├── runtime                         #  Core C++ runtime.
 |   ├── backend                     #  Backend delegate runtime APIs.
 |   ├── core                        #  Core structures used across all levels of the runtime.
-|   ├── executor                    #  Model loading, initalization, and execution.
+|   ├── executor                    #  Model loading, initialization, and execution.
 |   ├── kernel                      #  Kernel registration and management.
 |   ├── platform                    #  Layer between architecture specific code and portable C++.
 ├── schema                          #  ExecuTorch PTE file format flatbuffer

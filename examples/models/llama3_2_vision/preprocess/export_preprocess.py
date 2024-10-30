@@ -5,28 +5,47 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.examples.models.llama3_2_vision.preprocess.export_preprocess_lib import (
-    export_preprocess,
-    get_example_inputs,
-    lower_to_executorch_preprocess,
+from executorch.examples.models.llama3_2_vision.preprocess.model import (
+    CLIPImageTransformModel,
+    PreprocessConfig,
 )
+from executorch.exir import EdgeCompileConfig, to_edge
 
 
 def main():
+    # Eager model.
+    model = CLIPImageTransformModel(PreprocessConfig())
 
-    # ExecuTorch
-    ep_et = export_preprocess()
-    et = lower_to_executorch_preprocess(ep_et)
-    with open("preprocess_et.pte", "wb") as file:
-        et.write_to_file(file)
-
-    # AOTInductor
-    ep_aoti = export_preprocess()
-    torch._inductor.aot_compile(
-        ep_aoti.module(),
-        get_example_inputs(),
-        options={"aot_inductor.output_path": "preprocess_aoti.so"},
+    # Export.
+    ep = torch.export.export(
+        model.get_eager_model(),
+        model.get_example_inputs(),
+        dynamic_shapes=model.get_dynamic_shapes(),
+        strict=False,
     )
+
+    # Executorch
+    edge_program = to_edge(
+        ep, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+    )
+    et_program = edge_program.to_executorch()
+    with open("preprocess_et.pte", "wb") as file:
+        et_program.write_to_file(file)
+
+    # Export.
+    # ep = torch.export.export(
+    #     model.get_eager_model(),
+    #     model.get_example_inputs(),
+    #     dynamic_shapes=model.get_dynamic_shapes(),
+    #     strict=False,
+    # )
+    #
+    # # AOTInductor
+    # torch._inductor.aot_compile(
+    #     ep.module(),
+    #     model.get_example_inputs(),
+    #     options={"aot_inductor.output_path": "preprocess_aoti.so"},
+    # )
 
 
 if __name__ == "__main__":
