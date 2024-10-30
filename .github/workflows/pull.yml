@@ -324,6 +324,7 @@ jobs:
 
   android:
     uses: ./.github/workflows/_android.yml
+    needs: test-llama-runner-linux
 
   unittest:
     uses: ./.github/workflows/_unittest.yml
