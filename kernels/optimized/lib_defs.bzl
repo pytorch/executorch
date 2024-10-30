@@ -2,6 +2,10 @@ load("@fbsource//tools/build_defs:default_platform_defs.bzl", "DEVSERVER_PLATFOR
 load("@fbsource//tools/build_defs:fb_native_wrapper.bzl", "fb_native")
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(
+    "@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl",
+    "get_compiler_optimization_flags",
+)
 
 # Because vec exists as a collection of header files, compile and preprocessor
 # flags applied to the vec target do not have any effect, since no compilation
@@ -38,23 +42,6 @@ def get_vec_fbcode_preprocessor_flags():
         "-DCPU_CAPABILITY_AVX2",
     ]
     return preprocessor_flags
-
-def get_compiler_optimization_flags():
-    if not runtime.is_oss:
-      compiler_flags = select({
-        "DEFAULT": [],
-        "ovr_config//os:android-arm64": [
-              "-O2",
-        ],
-        "ovr_config//os:iphoneos": [
-            "-O2",
-        ],
-        "ovr_config//os:macos-arm64": [
-            "-O2",
-        ],
-      })
-      return compiler_flags
-    return []
 
 # Currently, having a dependency on fbsource//third-party/sleef:sleef may cause
 # duplicate symbol errors when linking fbcode targets in opt mode that also

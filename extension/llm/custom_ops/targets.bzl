@@ -1,6 +1,6 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(
-    "@fbsource//xplat/executorch/kernels/optimized:lib_defs.bzl",
+    "@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl",
     "get_compiler_optimization_flags",
 )
 
