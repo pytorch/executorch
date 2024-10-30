@@ -43,6 +43,36 @@ def get_vec_fbcode_preprocessor_flags():
     ]
     return preprocessor_flags
 
+def get_preprocessor_flags():
+    # various ovr_configs are not available in oss
+    preprocessor_flags = select({
+      ":linux-x86_64": [
+          "-DET_BUILD_WITH_BLAS",
+      ] if not runtime.is_oss else [],
+      "DEFAULT": [],
+    })
+
+    if not runtime.is_oss:
+        # various ovr_configs are not available in oss
+        additional_preprocessor_flags = select({
+            "ovr_config//os:iphoneos": [
+                "-DET_BUILD_WITH_BLAS",
+                "-DET_BUILD_FOR_APPLE",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:macos-arm64": [
+                "-DET_BUILD_WITH_BLAS",
+                "-DET_BUILD_FOR_APPLE",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:macos-x86_64": [
+                "-DET_BUILD_WITH_BLAS",
+                "-DET_BUILD_FOR_APPLE",
+            ] if not runtime.is_oss else [],
+            "DEFAULT": [],
+        })
+        preprocessor_flags = preprocessor_flags + additional_preprocessor_flags
+    return preprocessor_flags
+
+
 # Currently, having a dependency on fbsource//third-party/sleef:sleef may cause
 # duplicate symbol errors when linking fbcode targets in opt mode that also
 # depend on ATen. This is because ATen accesses sleef via the third-party folder
@@ -131,24 +161,7 @@ def define_libs():
                 "//executorch/...",
                 "@EXECUTORCH_CLIENTS",
             ],
-            preprocessor_flags = select({
-                ":linux-x86_64": [
-                    "-DET_BUILD_WITH_BLAS",
-                ] if not runtime.is_oss else [],
-                "ovr_config//os:iphoneos": [
-                    "-DET_BUILD_WITH_BLAS",
-                    "-DET_BUILD_FOR_APPLE",
-                ] if not runtime.is_oss else [],
-                "ovr_config//os:macos-arm64": [
-                    "-DET_BUILD_WITH_BLAS",
-                    "-DET_BUILD_FOR_APPLE",
-                ] if not runtime.is_oss else [],
-                "ovr_config//os:macos-x86_64": [
-                    "-DET_BUILD_WITH_BLAS",
-                    "-DET_BUILD_FOR_APPLE",
-                ] if not runtime.is_oss else [],
-                "DEFAULT": [],
-            }),
+            preprocessor_flags = get_preprocessor_flags(),
             fbandroid_platform_preprocessor_flags = [
                 (
                     "^android-arm64.*$",
