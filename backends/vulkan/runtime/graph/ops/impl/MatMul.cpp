@@ -135,16 +135,13 @@ void add_matmul_naive_texture3d_node(
       {
           graph.sizes_ubo(out),
           graph.logical_limits_ubo(out),
-          graph.axis_map_ubo(out),
           graph.sizes_ubo(mat1),
-          graph.axis_map_ubo(mat1),
           graph.sizes_ubo(mat2),
-          graph.axis_map_ubo(mat2),
       },
       // Specialization Constants
-      {graph.packed_dim_of(out),
-       graph.packed_dim_of(mat1),
-       graph.packed_dim_of(mat2)},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(mat1),
+       graph.hashed_layout_of(mat2)},
       // Resizing Logic
       resize_matmul_node,
       {mat2_is_transposed}));
@@ -224,14 +221,13 @@ void add_matmul_optimized_node(
       // Shader params buffers
       {
           graph.sizes_ubo(out),
-          graph.axis_map_ubo(out),
           graph.sizes_ubo(mat1_W_packed),
-          graph.axis_map_ubo(mat1_W_packed),
           graph.sizes_ubo(mat2_packed),
-          graph.axis_map_ubo(mat2_packed),
       },
       // Specialization Constants
-      {graph.packed_dim_of(out)},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(mat1_W_packed),
+       graph.hashed_layout_of(mat2_packed)},
       // Resizing Logic
       resize_matmul_node,
       {mat2_is_transposed}));

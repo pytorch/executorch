@@ -70,4 +70,5 @@ class ConvertSplitToSlicePass(ExportPass):
                     output_node.replace_all_uses_with(slice_node)
         graph.eliminate_dead_code()
         graph_module.recompile()
+        graph_module = super().call(graph_module).graph_module
         return PassResult(graph_module, True)
