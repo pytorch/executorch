@@ -24,10 +24,10 @@ ${layout_declare_ubo(B, "ivec3", "tin_limits")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-${layout_declare_spec_const(C, "int", "tout_layout", "0x2210")}
+${layout_declare_spec_const(C, "int", "tout_layout", "DEFAULT_LAYOUT")}
 const lowp ivec4 tout_axis_map = unhash_axis_map(tout_layout);
 
-${layout_declare_spec_const(C, "int", "tin_layout", "0x2210")}
+${layout_declare_spec_const(C, "int", "tin_layout", "DEFAULT_LAYOUT")}
 const lowp ivec4 tin_axis_map = unhash_axis_map(tin_layout);
 
 ${layout_declare_spec_const(C, "int", "nrepeats", "1")}

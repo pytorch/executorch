@@ -437,7 +437,6 @@ class vTensor final {
    * Each element of the axis map and the value of the packed dimension take up
    * 4 bits in the packed int32_t.
    */
-
   inline int32_t hashed_layout() const {
     return axis_map_.at(0) + (axis_map_.at(1) << 4) + (axis_map_.at(2) << 8) +
         (axis_map_.at(3) << 12) + (packed_dim_ << 16);
