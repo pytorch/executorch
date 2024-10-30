@@ -3,6 +3,9 @@ load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 load(
     "@fbsource//xplat/executorch/kernels/optimized:lib_defs.bzl",
     "get_vec_android_preprocessor_flags",
+)
+load(
+    "@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl",
     "get_compiler_optimization_flags",
 )
 
