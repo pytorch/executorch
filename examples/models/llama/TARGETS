@@ -92,6 +92,7 @@ runtime.python_library(
         "source_transformation/sdpa.py",
         "source_transformation/spin_quant.py",
         "source_transformation/vulkan_rope.py",
+        "source_transformation/attention_sink.py",
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama",
@@ -210,5 +211,16 @@ runtime.python_test(
         ":sdpa",
         "//caffe2:torch",
         "//executorch/examples/models/llama:llama_transformer",
+    ],
+)
+
+runtime.python_test(
+    name = "attention_sink_test",
+    srcs = [
+        "source_transformation/test_attention_sink.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        ":export_library",
     ],
 )
