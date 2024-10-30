@@ -31,7 +31,7 @@ class EagerEvalWrapper(eval_wrapper):
         use_kv_cache: bool = False,
     ):
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        super().__init__(device=device)
+        super().__init__(device=device, pretrained="gpt2")
         self._model = model
         self._tokenizer = tokenizer
         self._device = torch.device(device)
@@ -46,6 +46,10 @@ class EagerEvalWrapper(eval_wrapper):
         if hasattr(self._tokenizer, "eot_id"):
             return self._tokenizer.eot_id
         return self._tokenizer.eos_id
+
+    @property
+    def prefix_token_id(self):
+        return self.eot_token_id
 
     @property
     def max_length(self):
