@@ -77,11 +77,10 @@ void add_matmul_naive_buffer_node(
       graph.size_at<uint32_t>(-2, out),
       graph.size_at<uint32_t>(-3, out) * graph.size_at<uint32_t>(-4, out)};
 
-  int mat2_is_transposed_val = 0;
-  if (mat2_is_transposed != kDummyValueRef &&
-      graph.get_bool(mat2_is_transposed)) {
-    mat2_is_transposed_val = 1;
-  }
+  int mat2_is_transposed_val = (mat2_is_transposed != kDummyValueRef &&
+                                graph.get_bool(mat2_is_transposed))
+      ? 1
+      : 0;
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,

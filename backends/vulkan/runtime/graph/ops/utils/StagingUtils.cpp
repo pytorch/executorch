@@ -56,8 +56,8 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
   if (is_bitw8(v_src.dtype()) && v_src.storage_type() != utils::kBuffer &&
       !int8_buffer_enabled) {
     kernel_name = "bitw8_image_to_nchw_nobitw8buffer";
-    add_dtype_suffix(kernel_name, v_src);
     add_storage_type_suffix(kernel_name, v_src);
+    add_dtype_suffix(kernel_name, v_src);
     return VK_KERNEL_FROM_STR(kernel_name);
   }
 
