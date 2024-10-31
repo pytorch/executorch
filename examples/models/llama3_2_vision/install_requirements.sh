@@ -6,8 +6,11 @@
 # LICENSE file in the root directory of this source tree.
 
 # Install torchtune nightly for model definitions.
+echo "lfq check pip"
+pip list # debugging
 pip install --pre torchtune --extra-index-url https://download.pytorch.org/whl/nightly/cpu --no-cache-dir
 
 # Install torchao.
+pip list # debugging
 TORCHAO_VERSION=$(cat "$(dirname "$0")"/../../../.ci/docker/ci_commit_pins/torchao.txt)
-pip install "git+https://github.com/pytorch/ao.git@${TORCHAO_VERSION}"
+pip install --no-use-pep517 "git+https://github.com/pytorch/ao.git@${TORCHAO_VERSION}"
