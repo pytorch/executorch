@@ -130,15 +130,19 @@ Tensor& opt_mul_out(
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
     const Tensor* lhs;
     const Tensor* rhs;
-    if (selected_optimized_path ==
-        ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments) {
+    if ((selected_optimized_path ==
+         ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments) ||
+        (selected_optimized_path ==
+         ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments)) {
       lhs = &b;
       rhs = &a;
     } else {
       // Catch failure to update logic when adding new broadcasting possibility.
       ET_DCHECK(
-          selected_optimized_path ==
-          ElementwiseOptimizedPath::kBroadcast2dBy1d);
+          (selected_optimized_path ==
+           ElementwiseOptimizedPath::kBroadcast2dBy1d) ||
+          (selected_optimized_path ==
+           ElementwiseOptimizedPath::kBroadcastNdByNd));
       lhs = &a;
       rhs = &b;
     }
@@ -149,15 +153,34 @@ Tensor& opt_mul_out(
         InvalidArgument,
         out,
         "Failed to resize output tensor.");
+    int64_t outer_size = 1;
+    int64_t broadcast_size;
+    int64_t inner_size;
+    if ((selected_optimized_path ==
+         ElementwiseOptimizedPath::kBroadcastNdByNd) ||
+        (selected_optimized_path ==
+         ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments)) {
+      int32_t broadcast_dim = internal::get_broadcast_dim(*lhs, *rhs);
+      int32_t broadcast_dim_lhs = lhs->dim() + broadcast_dim;
+      auto normalized_tensor_size_lhs =
+          get_normalized_tensor_size(*lhs, broadcast_dim_lhs);
+      outer_size = normalized_tensor_size_lhs[0];
+      broadcast_size = normalized_tensor_size_lhs[1];
+      inner_size = normalized_tensor_size_lhs[2];
+    } else {
+      broadcast_size = lhs->sizes()[lhs->dim() - 2];
+      inner_size = lhs->sizes()[lhs->dim() - 1];
+    }
     ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
       using Vec = executorch::vec::Vectorized<CTYPE>;
-      executorch::vec::broadcasting_map_2d_by_1d<CTYPE>(
+      executorch::vec::broadcasting_map_3d_and_unsqueezed_3d<CTYPE>(
           [](Vec x, Vec y) { return x * y; },
           out.mutable_data_ptr<CTYPE>(),
           lhs->const_data_ptr<CTYPE>(),
           rhs->const_data_ptr<CTYPE>(),
-          lhs->sizes()[lhs->dim() - 2],
-          lhs->sizes()[lhs->dim() - 1]);
+          outer_size,
+          broadcast_size,
+          inner_size);
     });
   } else {
     ScalarType common_type =
