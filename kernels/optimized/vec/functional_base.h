@@ -326,10 +326,49 @@ inline void map4(
 }
 
 
-// Map vec_fun across input_data and input_data2, where input_data is
-// a two-dimensional array of size (size, size2), input_data2 is a
-// one-dimensional array of size size2, and input_data2 is broadcast
-// to be of size (size, size2).
+// This function implements broadcasting binary operation on two tensors
+// where lhs tensor is treated to be of shape [outer_size, broadcast_size, inner_size]
+// and rhs tensor is treated to be of shape [outer_size, 1, inner_size]
+// And this 1st dimension is considered broadcasting dimension
+// This formula can map broadcasting on any dim=broadcast_dim
+// for any two N dimensional tensors, where 0 < braodcast_dim < N-1
+template <typename scalar_t, typename Op>
+inline void broadcasting_map_3d_and_unsqueezed_3d(
+    const Op& vec_fun,
+    scalar_t* output_data,
+    const scalar_t* lhs,
+    const scalar_t* rhs,
+    int64_t outer_size,
+    int64_t broadcast_size,
+    int64_t inner_size) {
+  using Vec = vec::Vectorized<scalar_t>;
+  int64_t outer_stride_lhs = inner_size * broadcast_size;
+  int64_t outer_stride_rhs = inner_size;
+  int64_t broadcast_stride_lhs = inner_size;
+  for (int64_t outer_idx = 0; outer_idx < outer_size; ++outer_idx) {
+    const scalar_t* lhs_outer = lhs + outer_idx * outer_stride_lhs;
+    scalar_t* output_data_row = output_data + outer_idx * outer_stride_lhs;
+    const scalar_t* rhs_outer = rhs + outer_idx * outer_stride_rhs;
+    for (int64_t broadcast_idx = 0; broadcast_idx < broadcast_size; ++broadcast_idx) {
+      const scalar_t* lhs_outer_2 = lhs_outer + broadcast_idx * broadcast_stride_lhs;
+      scalar_t* output_data_row_2 = output_data_row + broadcast_idx * broadcast_stride_lhs;
+      int64_t inner_idx = 0;
+      for (; inner_idx < inner_size - (inner_size % Vec::size()); inner_idx += Vec::size()) {
+        Vec data_vec = Vec::loadu(lhs_outer_2 + inner_idx);
+        Vec data_vec2 = Vec::loadu(rhs_outer + inner_idx);
+        Vec output_vec = vec_fun(data_vec, data_vec2);
+        output_vec.store(output_data_row_2 + inner_idx);
+      }
+      if (inner_size - inner_idx > 0) {
+        Vec data_vec = Vec::loadu(lhs_outer_2 + inner_idx, inner_size - inner_idx);
+        Vec data_vec2 = Vec::loadu(rhs_outer + inner_idx, inner_size - inner_idx);
+        Vec output_vec = vec_fun(data_vec, data_vec2);
+        output_vec.store(output_data_row_2 + inner_idx, inner_size - inner_idx);
+      }
+    }
+  }
+}
+
 template <typename scalar_t, typename Op>
 inline void broadcasting_map_2d_by_1d(
     const Op& vec_fun,
@@ -338,27 +377,8 @@ inline void broadcasting_map_2d_by_1d(
     const scalar_t* input_data2,
     int64_t size,
     int64_t size2) {
-  using Vec = vec::Vectorized<scalar_t>;
-  for (int64_t outer_idx = 0; outer_idx < size; ++outer_idx) {
-    const scalar_t* input_data_row = input_data + outer_idx * size2;
-    scalar_t* output_data_row = output_data + outer_idx * size2;
-    int64_t inner_idx = 0;
-    for (; inner_idx < size2 - (size2 % Vec::size()); inner_idx += Vec::size()) {
-      Vec data_vec = Vec::loadu(input_data_row + inner_idx);
-      Vec data_vec2 = Vec::loadu(input_data2 + inner_idx);
-      Vec output_vec = vec_fun(data_vec, data_vec2);
-      output_vec.store(output_data_row + inner_idx);
-    }
-    if (size2 - inner_idx > 0) {
-      Vec data_vec = Vec::loadu(input_data_row + inner_idx, size2 - inner_idx);
-      Vec data_vec2 = Vec::loadu(input_data2 + inner_idx, size2 - inner_idx);
-      Vec output_vec = vec_fun(data_vec, data_vec2);
-      output_vec.store(output_data_row + inner_idx, size2 - inner_idx);
-    }
-  }
+  broadcasting_map_3d_and_unsqueezed_3d(vec_fun, output_data, input_data, input_data2, 1, size, size2);
 }
-
-
 
 } // namespace vec
 } // namespace executorch
