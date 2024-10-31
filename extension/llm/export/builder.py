@@ -194,13 +194,13 @@ class LLMEdgeManager:
                     strict=True,
                 ).module()
             else:
-                # pyre-fixme[8]: Attribute has type `Optional[GraphModule]`; used as
-                #  `Module`.
                 print("Exporting with:")
                 print(f"inputs: {self.example_inputs}")
                 print(f"kwargs: {self.example_kwarg_inputs}")
                 print(f"dynamic shapes: {dynamic_shape}")
 
+                # pyre-fixme[8]: Attribute has type `Optional[GraphModule]`; used as
+                #  `Module`.
                 self.pre_autograd_graph_module = export_for_training(
                     self.model,
                     self.example_inputs,

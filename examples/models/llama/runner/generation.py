@@ -127,15 +127,18 @@ class LlamaRunner(ABC):
                     tokens=torch.tensor([tokens], dtype=torch.long, device=self.device),
                 )
 
-        if self.has_full_logits:
-            current_token = next_token(logits[:, -1, :], temperature, top_p)
-        else:
-            current_token = next_token(logits, temperature, top_p)
+            # If the logits aren't already clipped to only contain the last logit, clip them.
+            if self.has_full_logits:
+                current_token = next_token(logits[:, -1, :], temperature, top_p)
+            else:
+                current_token = next_token(logits, temperature, top_p)
+
             if current_token == self.tokenizer.eos_id or (
                 hasattr(self.tokenizer, "stop_tokens")
                 and current_token in self.tokenizer.stop_tokens
             ):
                 break
+
             tokens.append(current_token)
             i += 1
 
