@@ -1,4 +1,9 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(
+    "@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl",
+    "get_compiler_optimization_flags",
+)
+
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -35,7 +40,7 @@ def define_common_targets():
                 "//executorch/extension/llm/custom_ops/spinquant:fast_hadamard_transform",
                 ":op_tile_crop",
             ],
-            compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"],
+            compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"] + get_compiler_optimization_flags(),
             visibility = [
                 "//executorch/...",
                 "//executorch/extension/llm/custom_ops/...",

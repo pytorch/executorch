@@ -665,14 +665,16 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
         from functools import partial
 
+        # pyre-ignore
         from executorch.backends.qualcomm.quantizer.custom_annotation import (
             get_custom_quant_ios_dtype,
         )
 
+        # pyre-ignore
         tag_quant_io(
             builder_exported_to_edge.edge_manager.exported_program().graph_module,
             partial(
-                get_custom_quant_ios_dtype,
+                get_custom_quant_ios_dtype,  # pyre-ignore
                 builder_exported_to_edge.model.layers[
                     0
                 ].attention.kv_cache.past_k_caches.shape,
