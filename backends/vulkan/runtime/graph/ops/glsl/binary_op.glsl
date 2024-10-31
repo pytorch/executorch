@@ -14,26 +14,31 @@
 
 #define op(X, Y, A) ${OPERATOR}
 
-#include "broadcasting_utils.h"
-#include "indexing_utils.h"
-
 layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "t_other", DTYPE, STORAGE)}
 ${layout_declare_ubo(B, "ivec4", "out_sizes")}
-${layout_declare_ubo(B, "ivec4", "out_axis_map")}
 ${layout_declare_ubo(B, "ivec4", "in_sizes")}
-${layout_declare_ubo(B, "ivec4", "in_axis_map")}
 ${layout_declare_ubo(B, "ivec4", "other_sizes")}
-${layout_declare_ubo(B, "ivec4", "other_axis_map")}
 ${layout_declare_ubo(B, "ivec2", "broadcast_params")}
 ${layout_declare_ubo(B, "float", "alpha")}
 
+#include "broadcasting_utils.h"
+#include "indexing_utils.h"
+
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int packed_dim = C_DIM;
+${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 out_axis_map = unhash_axis_map(out_layout);
+const lowp int packed_dim = unhash_packed_dim(out_layout);
+
+${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 in_axis_map = unhash_axis_map(in_layout);
+
+${layout_declare_spec_const(C, "int", "other_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 other_axis_map = unhash_axis_map(other_layout);
 
 void main() {
   const ivec3 lpos = ivec3(gl_GlobalInvocationID);
