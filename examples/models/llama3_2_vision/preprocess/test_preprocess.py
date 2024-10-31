@@ -3,12 +3,11 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-import unittest
-
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import PIL
+import pytest
 import torch
 
 # Import these first. Otherwise, the custom ops are not registered.
@@ -38,12 +37,74 @@ from torchtune.modules.transforms.vision_utils.get_canvas_best_fit import (
 from torchtune.modules.transforms.vision_utils.get_inscribed_size import (
     get_inscribed_size,
 )
+
 from torchvision.transforms.v2 import functional as F
 
 
-class TestImageTransform(unittest.TestCase):
+def initialize_models(resize_to_max_canvas: bool) -> Dict[str, Any]:
+    config = PreprocessConfig(resize_to_max_canvas=resize_to_max_canvas)
+
+    reference_model = CLIPImageTransform(
+        image_mean=config.image_mean,
+        image_std=config.image_std,
+        resample=config.resample,
+        antialias=config.antialias,
+        tile_size=config.tile_size,
+        max_num_tiles=config.max_num_tiles,
+        resize_to_max_canvas=config.resize_to_max_canvas,
+        possible_resolutions=None,
+    )
+
+    model = CLIPImageTransformModel(config)
+
+    exported_model = torch.export.export(
+        model.get_eager_model(),
+        model.get_example_inputs(),
+        dynamic_shapes=model.get_dynamic_shapes(),
+        strict=False,
+    )
+
+    # aoti_path = torch._inductor.aot_compile(
+    #     exported_model.module(),
+    #     model.get_example_inputs(),
+    # )
+
+    edge_program = to_edge(
+        exported_model, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+    )
+    executorch_model = edge_program.to_executorch()
+
+    return {
+        "config": config,
+        "reference_model": reference_model,
+        "model": model,
+        "exported_model": exported_model,
+        # "aoti_path": aoti_path,
+        "executorch_model": executorch_model,
+    }
+
+
+# From https://github.com/pytorch/torchtune/blob/main/tests/test_utils.py#L231
+def assert_expected(
+    actual: Any,
+    expected: Any,
+    rtol: float = 1e-5,
+    atol: float = 1e-8,
+    check_device: bool = True,
+):
+    torch.testing.assert_close(
+        actual,
+        expected,
+        rtol=rtol,
+        atol=atol,
+        check_device=check_device,
+        msg=f"actual: {actual}, expected: {expected}",
+    )
+
+
+class TestImageTransform:
     """
-    This unittest checks that the exported image transform model produces the
+    This test checks that the exported image transform model produces the
     same output as the reference model.
 
     Reference model: CLIPImageTransform
@@ -52,59 +113,11 @@ class TestImageTransform(unittest.TestCase):
         https://github.com/pytorch/torchtune/blob/main/torchtune/models/clip/inference/_transforms.py#L26
     """
 
-    @staticmethod
-    def initialize_models(resize_to_max_canvas: bool) -> Dict[str, Any]:
-        config = PreprocessConfig(resize_to_max_canvas=resize_to_max_canvas)
+    models_no_resize = initialize_models(resize_to_max_canvas=False)
+    models_resize = initialize_models(resize_to_max_canvas=True)
 
-        reference_model = CLIPImageTransform(
-            image_mean=config.image_mean,
-            image_std=config.image_std,
-            resample=config.resample,
-            antialias=config.antialias,
-            tile_size=config.tile_size,
-            max_num_tiles=config.max_num_tiles,
-            resize_to_max_canvas=config.resize_to_max_canvas,
-            possible_resolutions=None,
-        )
-
-        model = CLIPImageTransformModel(config)
-
-        exported_model = torch.export.export(
-            model.get_eager_model(),
-            model.get_example_inputs(),
-            dynamic_shapes=model.get_dynamic_shapes(),
-            strict=False,
-        )
-
-        # aoti_path = torch._inductor.aot_compile(
-        #     exported_model.module(),
-        #     model.get_example_inputs(),
-        # )
-
-        edge_program = to_edge(
-            exported_model, compile_config=EdgeCompileConfig(_check_ir_validity=False)
-        )
-        executorch_model = edge_program.to_executorch()
-
-        return {
-            "config": config,
-            "reference_model": reference_model,
-            "model": model,
-            "exported_model": exported_model,
-            # "aoti_path": aoti_path,
-            "executorch_model": executorch_model,
-        }
-
-    @classmethod
-    def setUpClass(cls):
-        cls.models_no_resize = TestImageTransform.initialize_models(
-            resize_to_max_canvas=False
-        )
-        cls.models_resize = TestImageTransform.initialize_models(
-            resize_to_max_canvas=True
-        )
-
-    def setUp(self):
+    @pytest.fixture(autouse=True)
+    def setup_function(self):
         np.random.seed(0)
 
     def prepare_inputs(
@@ -185,23 +198,32 @@ class TestImageTransform(unittest.TestCase):
         reference_ar = reference_output["aspect_ratio"].tolist()
 
         # Check output shape and aspect ratio matches expected values.
-        self.assertEqual(reference_image.shape, expected_shape)
-        self.assertEqual(reference_ar, expected_ar)
+        assert (
+            reference_image.shape == expected_shape
+        ), f"Expected shape {expected_shape} but got {reference_image.shape}"
+
+        assert (
+            reference_ar == expected_ar
+        ), f"Expected ar {reference_ar} but got {expected_ar}"
 
         # Check pixel values within expected range [0, 1]
-        self.assertTrue(0 <= reference_image.min() <= reference_image.max() <= 1)
+        assert (
+            0 <= reference_image.min() <= reference_image.max() <= 1
+        ), f"Expected pixel values in range [0, 1] but got {reference_image.min()} to {reference_image.max()}"
 
         # Check mean, max, and min values of the tiles match expected values.
         for i, tile in enumerate(reference_image):
-            self.assertAlmostEqual(
-                tile.mean().item(), expected_tile_means[i], delta=1e-4
+            assert_expected(
+                tile.mean().item(), expected_tile_means[i], rtol=0, atol=1e-4
             )
-            self.assertAlmostEqual(tile.max().item(), expected_tile_max[i], delta=1e-4)
-            self.assertAlmostEqual(tile.min().item(), expected_tile_min[i], delta=1e-4)
+            assert_expected(tile.max().item(), expected_tile_max[i], rtol=0, atol=1e-4)
+            assert_expected(tile.min().item(), expected_tile_min[i], rtol=0, atol=1e-4)
 
         # Check num tiles matches the product of the aspect ratio.
         expected_num_tiles = reference_ar[0] * reference_ar[1]
-        self.assertEqual(expected_num_tiles, reference_image.shape[0])
+        assert (
+            expected_num_tiles == reference_image.shape[0]
+        ), f"Expected {expected_num_tiles} tiles but got {reference_image.shape[0]}"
 
         # Pre-work for eager and exported models. The reference model performs these
         # calculations and passes the result to _CLIPImageTransform, the exportable model.
@@ -215,8 +237,10 @@ class TestImageTransform(unittest.TestCase):
             image_tensor, inscribed_size, best_resolution
         )
         eager_ar = eager_ar.tolist()
-        self.assertTrue(torch.allclose(reference_image, eager_image))
-        self.assertEqual(reference_ar, eager_ar)
+        assert torch.allclose(reference_image, eager_image)
+        assert (
+            reference_ar == eager_ar
+        ), f"Eager model: expected {reference_ar} but got {eager_ar}"
 
         # Run exported model and check it matches reference model.
         exported_model = models["exported_model"]
@@ -224,8 +248,10 @@ class TestImageTransform(unittest.TestCase):
             image_tensor, inscribed_size, best_resolution
         )
         exported_ar = exported_ar.tolist()
-        self.assertTrue(torch.allclose(reference_image, exported_image))
-        self.assertEqual(reference_ar, exported_ar)
+        assert torch.allclose(reference_image, exported_image)
+        assert (
+            reference_ar == exported_ar
+        ), f"Exported model: expected {reference_ar} but got {exported_ar}"
 
         # Run executorch model and check it matches reference model.
         executorch_model = models["executorch_model"]
@@ -233,8 +259,10 @@ class TestImageTransform(unittest.TestCase):
         et_image, et_ar = executorch_module.forward(
             (image_tensor, inscribed_size, best_resolution)
         )
-        self.assertTrue(torch.allclose(reference_image, et_image))
-        self.assertEqual(reference_ar, et_ar.tolist())
+        assert torch.allclose(reference_image, et_image)
+        assert (
+            reference_ar == et_ar.tolist()
+        ), f"Executorch model: expected {reference_ar} but got {et_ar.tolist()}"
 
         # Run aoti model and check it matches reference model.
         # aoti_path = models["aoti_path"]
