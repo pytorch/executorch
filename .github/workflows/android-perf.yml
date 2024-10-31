@@ -306,7 +306,7 @@ jobs:
           done
 
       - name: Upload the benchmark results
-        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@main
+        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@upload-benchmark-results-s3
         with:
           benchmark-results-dir: 'benchmark-results'
           dry-run: false
