@@ -380,5 +380,43 @@ inline void broadcasting_map_2d_by_1d(
   broadcasting_map_3d_and_unsqueezed_3d(vec_fun, output_data, input_data, input_data2, 1, size, size2);
 }
 
+/*
+Following function is used to implement broadcasting binary operation on two tensors
+where lhs tensor is treated to be of shape [outer_size, broadcast_size] and
+rhs tensor is treated to be of shape [outer_size, 1]
+Any two N dimensional tensors can be mapped to this formula
+when lhs size = [lhs0, lhs1, ..., lhsN-1] and rhs size = [rhs0, rhs1, ..., 1]
+by viewing the two tensors as
+lhs size = [lsh0 * lsh1 * ... * lshN-2, lhsN-1]
+rhs size = [rsh0 * rsh1 * ... * rshN-2, 1]
+*/
+template <typename scalar_t, typename Op>
+inline void broadcasting_map_broadcast_last_dim(
+    const Op& vec_fun,
+    scalar_t* output_data,
+    const scalar_t* lhs,
+    const scalar_t* rhs,
+    int64_t outer_size,
+    int64_t broadcast_size) {
+  using Vec = vec::Vectorized<scalar_t>;
+  int64_t outer_stride_lhs = broadcast_size;
+  for (int64_t outer_idx = 0; outer_idx < outer_size; ++outer_idx) {
+    const scalar_t* lhs_outer = lhs + outer_idx * outer_stride_lhs;
+    scalar_t* output_data_row = output_data + outer_idx * outer_stride_lhs;
+    int64_t inner_idx = 0;
+    Vec data_vec2 = Vec(rhs[outer_idx]);
+    for (; inner_idx < broadcast_size - (broadcast_size % Vec::size()); inner_idx += Vec::size()) {
+      Vec data_vec = Vec::loadu(lhs_outer + inner_idx);
+      Vec output_vec = vec_fun(data_vec, data_vec2);
+      output_vec.store(output_data_row + inner_idx);
+    }
+    if (broadcast_size - inner_idx > 0) {
+      Vec data_vec = Vec::loadu(lhs_outer + inner_idx, broadcast_size - inner_idx);
+      Vec output_vec = vec_fun(data_vec, data_vec2);
+      output_vec.store(output_data_row + inner_idx, broadcast_size - inner_idx);
+    }
+  }
+}
+
 } // namespace vec
 } // namespace executorch
