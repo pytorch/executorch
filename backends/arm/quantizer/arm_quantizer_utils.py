@@ -147,6 +147,7 @@ def is_share_obs_or_fq_op(op: Callable) -> bool:
         # TODO: remove?
         torch.ops.aten.adaptive_avg_pool2d.default,
         torch.ops.aten.avg_pool2d.default,
+        torch.ops.aten.full.default,
         torch.ops.aten.flatten.using_ints,
         torch.ops.aten.dropout.default,
         operator.getitem,

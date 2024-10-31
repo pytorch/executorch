@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
-from typing import Callable, cast, List, Optional
+from typing import Callable, List, Optional
 
 import torch
 import torch.fx
@@ -70,7 +70,7 @@ def _annotate_generic(
         if arm_quantizer_utils.is_annotated(node):
             continue
 
-        input_acts = cast(list[torch.fx.Node], node.args[0])
+        input_acts = node.args[0]
 
         # Check to see if there are multiple inputs.
         # this allows for stack/cat ops to be annotated
