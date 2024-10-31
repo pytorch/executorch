@@ -110,14 +110,12 @@ void clone(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
   const utils::StorageType src_storage = graph.storage_type_of(src);
   const utils::StorageType dst_storage = graph.storage_type_of(dst);
-  if (src_storage == dst_storage) {
+  if (src_storage == utils::kTexture3D && dst_storage == utils::kTexture3D) {
     if (graph.hashed_layout_of(src) == graph.hashed_layout_of(dst)) {
       return add_clone_node(graph, src, dst);
-    } else if (src_storage == utils::kTexture3D) {
+    } else {
       return add_view_node(graph, src, kDummyValueRef, dst);
     }
-    // TODO: Implement memory layout transition for buffer backed tensors
-    VK_THROW("Cannot transition memory layout for buffer backed tensors yet");
   }
   if (src_storage == utils::kTexture3D && dst_storage == utils::kBuffer) {
     return add_image_to_buffer_node(graph, src, dst);
@@ -125,7 +123,7 @@ void clone(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   if (src_storage == utils::kBuffer && dst_storage == utils::kTexture3D) {
     return add_buffer_to_image_node(graph, src, dst);
   }
-  VK_THROW("Invalid storage type transition from src to dst");
+  VK_THROW("Buffer to buffer memory layout transition not supported yet!");
 }
 
 // Clone node is not the most efficient implementation for the aten.clone
