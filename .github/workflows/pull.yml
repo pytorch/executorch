@@ -99,6 +99,8 @@ jobs:
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
+      upload-artifact: android-models
+      upload-artifact-to-s3: true
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -107,13 +109,15 @@ jobs:
         DTYPE=${{ matrix.dtype }}
         BUILD_TOOL="cmake"
         MODE=${{ matrix.mode }}
+        ARTIFACTS_DIR_NAME="artifacts-to-be-uploaded/${DTYPE}-${MODE}"
+        ARTIFACTS_DIR_NAME="${ARTIFACTS_DIR_NAME/+/-}"
 
         # Setup executorch
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
         # Test llama2
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh stories110M "${BUILD_TOOL}" "${DTYPE}" "${MODE}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh stories110M "${BUILD_TOOL}" "${DTYPE}" "${MODE}" "${ARTIFACTS_DIR_NAME}"
 
   test-llama-runner-linux-android:
     name: test-llama-runner-linux-android
@@ -320,6 +324,7 @@ jobs:
 
   android:
     uses: ./.github/workflows/_android.yml
+    needs: test-llama-runner-linux
 
   unittest:
     uses: ./.github/workflows/_unittest.yml

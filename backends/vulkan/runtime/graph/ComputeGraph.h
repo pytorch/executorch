@@ -318,6 +318,10 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().estimate_memory_layout();
   }
 
+  inline int32_t hashed_layout_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().hashed_layout();
+  }
+
   inline int32_t packed_dim_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().packed_dim();
   }
@@ -336,10 +340,6 @@ class ComputeGraph final {
 
   inline vkapi::BufferBindInfo numel_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().numel_ubo();
-  }
-
-  inline vkapi::BufferBindInfo axis_map_ubo(const ValueRef idx) {
-    return values_.at(idx).toTensor().axis_map_ubo();
   }
 
   inline bool has_standard_axis_map(const ValueRef idx) {
