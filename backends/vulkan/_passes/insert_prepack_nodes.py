@@ -75,8 +75,9 @@ def insert_prepack_nodes(program: ExportedProgram) -> ExportedProgram:
             assert "spec" in node.meta
             # Validate that the original node is marked as a constant. Constant tensors
             # do not participate in memory planning.
-            assert node.meta["spec"].const
+            prepack_node.meta["val"] = node.meta["val"]
             prepack_node.meta["spec"] = deepcopy(node.meta["spec"])
+            # prepack_node.meta = deepcopy(node.meta)
             # Set the mem_obj_id to -1 to indicate that this node requires a dedicated
             # memory object.
             prepack_node.meta["spec"].mem_obj_id = -1

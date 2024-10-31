@@ -51,29 +51,29 @@ DEFAULT_DEBUG_HANDLE = 65535
 
 # pyre-ignore
 def apply_passes(program: ExportedProgram, passes) -> ExportedProgram:
-    for pass_ in passes:
+    for p in passes:
 
-        if issubclass(type(pass_), ExportPass) or issubclass(type(pass_), PassBase):
+        if issubclass(type(p), ExportPass) or issubclass(type(p), PassBase):
             new_gm = program.graph_module
             # This is a workaround to allow the memory planning pass to work without
             # having to first apply ToOutVarPass(). See the `greedy()` function in
             # `exir.memory_planning`; if this attribute isn't set, assertions in
             # `collect_spec_from_nodes()` will fail.
-            if isinstance(pass_, MemoryPlanningPass):
+            if isinstance(p, MemoryPlanningPass):
                 new_gm.encounter_to_out_var_failure = True
 
-            new_gm_res = pass_(new_gm)
+            new_gm_res = p(new_gm)
             assert new_gm_res is not None
             new_gm = new_gm_res.graph_module
 
             # See the application of this function in exir/program/_program.py for more
             # details on why this step is necessary.
-            if isinstance(pass_, SpecPropPass):
-                pass_.update_placeholder_tensor_specs(program, new_gm)
+            if isinstance(p, SpecPropPass):
+                p.update_placeholder_tensor_specs(program, new_gm)
 
             _copy_module(program.graph_module, new_gm)
         else:
-            program = pass_(program)
+            program = p(program)
 
     return program
 
@@ -91,7 +91,7 @@ class VulkanBackend(BackendDetails):
 
         # First, apply passes that fuse/remove operators to consolidate the graph
         # structure but still preserve an "ATen-compliant" graph structure (i.e. all
-        # arguments to aten operators must match the ATen function schema).
+        # arguments to ATen operators must match the ATen function schema).
         program = apply_passes(
             program,
             [
