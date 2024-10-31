@@ -77,6 +77,11 @@ void add_matmul_naive_buffer_node(
       graph.size_at<uint32_t>(-2, out),
       graph.size_at<uint32_t>(-3, out) * graph.size_at<uint32_t>(-4, out)};
 
+  int mat2_is_transposed_val = (mat2_is_transposed != kDummyValueRef &&
+                                graph.get_bool(mat2_is_transposed))
+      ? 1
+      : 0;
+
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
@@ -96,7 +101,7 @@ void add_matmul_naive_buffer_node(
           graph.numel_ubo(out),
       },
       // Specialization Constants
-      {},
+      {mat2_is_transposed_val},
       // Resizing Logic
       resize_matmul_node,
       {mat2_is_transposed}));
