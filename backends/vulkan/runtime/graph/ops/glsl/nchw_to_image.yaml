@@ -19,5 +19,5 @@ nchw_to_image:
     - NAME: nchw_to_image_texture3d
     - NAME: nchw_to_image_texture2d
       STORAGE: texture2d
-    - NAME: buffer_to_image
+    - NAME: clone_buffer_to_image
       FROM_STAGING: False
