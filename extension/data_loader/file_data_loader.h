@@ -27,6 +27,24 @@ namespace extension {
 class FileDataLoader final : public executorch::runtime::DataLoader {
  public:
   /**
+   * Creates a new FileDataLoader that wraps the named file descriptor.
+   *
+   * @param[in] file_descriptor_uri File descriptor with the prefix "fd:///",
+   *     followed by the file descriptor number.
+   * @param[in] alignment Alignment in bytes of pointers returned by this
+   *     instance. Must be a power of two.
+   *
+   * @returns A new FileDataLoader on success.
+   * @retval Error::InvalidArgument `alignment` is not a power of two.
+   * @retval Error::AccessFailed `file_name` could not be opened, or its size
+   *     could not be found.
+   * @retval Error::MemoryAllocationFailed Internal memory allocation failure.
+   */
+  static executorch::runtime::Result<FileDataLoader> fromFileDescriptorUri(
+      const char* file_descriptor_uri,
+      size_t alignment = alignof(std::max_align_t));
+
+  /**
    * Creates a new FileDataLoader that wraps the named file.
    *
    * @param[in] file_name Path to the file to read from.

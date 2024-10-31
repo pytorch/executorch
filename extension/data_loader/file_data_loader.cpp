@@ -43,6 +43,8 @@ namespace extension {
 
 namespace {
 
+static constexpr char kFdFilesystemPrefix[] = "fd:///";
+
 /**
  * Returns true if the value is an integer power of 2.
  */
@@ -72,6 +74,74 @@ FileDataLoader::~FileDataLoader() {
   // fd_ can be -1 if this instance was moved from, but closing a negative fd is
   // safe (though it will return an error).
   ::close(fd_);
+}
+
+Result<int> getFDFromUri(const char* file_descriptor_uri) {
+  // check if the uri starts with the prefix "fd://"
+  ET_CHECK_OR_RETURN_ERROR(
+      strncmp(
+          file_descriptor_uri,
+          kFdFilesystemPrefix,
+          strlen(kFdFilesystemPrefix)) == 0,
+      InvalidArgument,
+      "File descriptor uri (%s) does not start with %s",
+      file_descriptor_uri,
+      kFdFilesystemPrefix);
+
+  // strip "fd:///" from the uri
+  int fd_len = strlen(file_descriptor_uri) - strlen(kFdFilesystemPrefix);
+  char fd_without_prefix[fd_len + 1];
+  memcpy(
+      fd_without_prefix,
+      &file_descriptor_uri[strlen(kFdFilesystemPrefix)],
+      fd_len);
+  fd_without_prefix[fd_len] = '\0';
+
+  // check if remaining fd string is a valid integer
+  int fd = ::atoi(fd_without_prefix);
+  return fd;
+}
+
+Result<FileDataLoader> FileDataLoader::fromFileDescriptorUri(
+    const char* file_descriptor_uri,
+    size_t alignment) {
+  ET_CHECK_OR_RETURN_ERROR(
+      is_power_of_2(alignment),
+      InvalidArgument,
+      "Alignment %zu is not a power of 2",
+      alignment);
+
+  auto parsed_fd = getFDFromUri(file_descriptor_uri);
+  if (!parsed_fd.ok()) {
+    return parsed_fd.error();
+  }
+
+  int fd = parsed_fd.get();
+
+  // Cache the file size.
+  struct stat st;
+  int err = ::fstat(fd, &st);
+  if (err < 0) {
+    ET_LOG(
+        Error,
+        "Could not get length of %s: %s (%d)",
+        file_descriptor_uri,
+        ::strerror(errno),
+        errno);
+    ::close(fd);
+    return Error::AccessFailed;
+  }
+  size_t file_size = st.st_size;
+
+  // Copy the filename so we can print better debug messages if reads fail.
+  const char* file_name_copy = ::strdup(file_descriptor_uri);
+  if (file_name_copy == nullptr) {
+    ET_LOG(Error, "strdup(%s) failed", file_descriptor_uri);
+    ::close(fd);
+    return Error::MemoryAllocationFailed;
+  }
+
+  return FileDataLoader(fd, file_size, alignment, file_name_copy);
 }
 
 Result<FileDataLoader> FileDataLoader::from(
