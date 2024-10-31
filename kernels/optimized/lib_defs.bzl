@@ -71,6 +71,18 @@ def get_vec_fbcode_preprocessor_flags():
     ]
     return preprocessor_flags
 
+def get_apple_framework_deps():
+    # various ovr_configs are not available in oss
+    if not runtime.is_oss:
+      frameworks = select({
+          "DEFAULT": [],
+          "ovr_config//os:iphoneos": ["$SDKROOT/System/Library/Frameworks/Accelerate.framework"],
+          "ovr_config//os:macos-arm64": ["$SDKROOT/System/Library/Frameworks/Accelerate.framework"],
+          "ovr_config//os:macos-x86_64": ["$SDKROOT/System/Library/Frameworks/Accelerate.framework"],
+      })
+      return frameworks
+    return ["Accelerate"]
+
 def get_preprocessor_flags():
     # various ovr_configs are not available in oss
     preprocessor_flags = select({
@@ -185,9 +197,7 @@ def define_libs():
                 "-DET_BUILD_WITH_BLAS",
                 "-DET_BUILD_FOR_APPLE",
             ],
-            fbobjc_frameworks = [
-                "Accelerate",
-            ],
+            frameworks = get_apple_framework_deps(),
             deps = select({
                 ":linux-x86_64": [mkl_dep] if not runtime.is_oss else [],
                 "DEFAULT": [],
