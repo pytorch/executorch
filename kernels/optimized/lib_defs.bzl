@@ -43,17 +43,19 @@ def get_vec_fbcode_preprocessor_flags():
     ]
     return preprocessor_flags
 
-def get_apple_framework_deps():
+def get_apple_framework_deps_kwargs(is_fbcode):
     # various ovr_configs are not available in oss
-    if not runtime.is_oss:
-      frameworks = select({
-          "DEFAULT": [],
-          "ovr_config//os:iphoneos": ["$SDKROOT/System/Library/Frameworks/Accelerate.framework"],
-          "ovr_config//os:macos-arm64": ["$SDKROOT/System/Library/Frameworks/Accelerate.framework"],
-          "ovr_config//os:macos-x86_64": ["$SDKROOT/System/Library/Frameworks/Accelerate.framework"],
-      })
-      return frameworks
-    return ["Accelerate"]
+    if not runtime.is_oss and not is_fbcode:
+        # Jump through few hoops since 'frameworks' is not a valid kwarg
+        # for some buck rules
+        frameworks = {'frameworks': select({
+            "DEFAULT": [],
+            "ovr_config//os:iphoneos": ["$SDKROOT/System/Library/Frameworks/Accelerate.framework"],
+            "ovr_config//os:macos-arm64": ["$SDKROOT/System/Library/Frameworks/Accelerate.framework"],
+            "ovr_config//os:macos-x86_64": ["$SDKROOT/System/Library/Frameworks/Accelerate.framework"],
+        })}
+        return frameworks
+    return {'fbobjc_frameworks': ["Accelerate"]}
 
 def get_preprocessor_flags():
     # various ovr_configs are not available in oss
@@ -90,7 +92,7 @@ def get_preprocessor_flags():
 # depend on ATen. This is because ATen accesses sleef via the third-party folder
 # in caffe2 (caffe2/third-party//sleef:sleef).
 # TODO(ssjia): Enable -DCPU_CAPABILITY_AVX2 in fbcode, which requires sleef.
-def define_libs():
+def define_libs(is_fbcode=False):
     runtime.cxx_library(
         name = "libvec",
         srcs = [],
@@ -194,7 +196,6 @@ def define_libs():
                 "-DET_BUILD_WITH_BLAS",
                 "-DET_BUILD_FOR_APPLE",
             ],
-            frameworks = get_apple_framework_deps(),
             deps = select({
                 ":linux-x86_64": [mkl_dep] if not runtime.is_oss else [],
                 "DEFAULT": [],
@@ -204,4 +205,5 @@ def define_libs():
                 "//executorch/kernels/optimized:libutils",
                 "//executorch/runtime/core/exec_aten:lib",
             ],
+            **get_apple_framework_deps_kwargs(is_fbcode),
         )
