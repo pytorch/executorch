@@ -191,4 +191,5 @@ def get_qnn_partitioner(
         ),
         skip_node_id_set={},
         skip_node_op_set=skip_node_op_set,
+        skip_mutable_buffer=False,
     )
