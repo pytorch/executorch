@@ -70,10 +70,9 @@ jobs:
         ${CONDA_RUN} --no-capture-output \
         .ci/scripts/setup-macos.sh cmake
 
-        ${PYTHON_EXECUTABLE} pip list
-
         # Install llama3_2_vision dependencies.
-        bash examples/models/llama3_2_vision/install_requirements.sh
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+        ./examples/models/llama3_2_vision/install_requirements.sh
 
         # Run pytest with coverage
         ${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml
