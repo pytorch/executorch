@@ -8,6 +8,7 @@
 # Install torchtune nightly for model definitions.
 echo "lfq check pip"
 pip list # debugging
+echo "lfq end pip"
 pip install --pre torchtune --extra-index-url https://download.pytorch.org/whl/nightly/cpu --no-cache-dir
 
 # Install torchao.
