@@ -13,10 +13,10 @@ import executorch.backends.vulkan.custom_ops_lib  # noqa
 import torch
 
 from executorch.backends.vulkan.op_registry import handles_own_prepacking
+from executorch.backends.vulkan.utils import is_param_node
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
-from torch._export.utils import is_buffer, is_param
 from torch.export import ExportedProgram
 
 
@@ -31,25 +31,8 @@ def insert_prepack_nodes(program: ExportedProgram) -> ExportedProgram:
     argument into the operator implementation.
     """
 
-    def is_get_attr_node(node: torch.fx.Node) -> bool:
-        return isinstance(node, torch.fx.Node) and node.op == "get_attr"
-
-    def is_constant(node: torch.fx.Node) -> bool:
-        return node.name in program.graph_signature.inputs_to_lifted_tensor_constants
-
-    def is_param_node(node: torch.fx.Node) -> bool:
-        """
-        Check if the given node is a parameter within the exported program
-        """
-        return (
-            is_get_attr_node(node)
-            or is_param(program, node)
-            or is_buffer(program, node)
-            or is_constant(node)
-        )
-
     def prepack_not_required(node: torch.fx.Node) -> bool:
-        if not is_param_node(node):
+        if not is_param_node(program, node):
             return True
 
         for user in node.users:
