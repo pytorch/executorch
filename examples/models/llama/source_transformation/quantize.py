@@ -375,7 +375,7 @@ class WeightOnlyInt8Linear(torch.nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         self.register_buffer(
-            "weight", torch.empty((out_features, in_features), dtype=torch.int8)
+            "weight", torch.zeros((out_features, in_features), dtype=torch.int8)
         )
         self.register_buffer("scales", torch.ones(out_features, dtype=torch.bfloat16))
 
@@ -448,18 +448,18 @@ class Int8DynActInt8WeightLinear(torch.nn.Module):
         # currently storing unpacked int8 weights
         self.register_buffer(
             "weight",
-            torch.empty((out_features, in_features), dtype=torch.int8),
+            torch.zeros((out_features, in_features), dtype=torch.int8),
         )
         self.register_buffer(
             "scales",
-            torch.empty(
+            torch.zeros(
                 (out_features),
                 dtype=torch.float32,
             ),
         )
         self.register_buffer(
             "zeros",
-            torch.empty(
+            torch.zeros(
                 (out_features),
                 dtype=torch.float32,
             ),
@@ -632,7 +632,7 @@ class QuantizedGroupEmbedding(torch.nn.Module):
         if not packed:
             self.register_buffer(
                 "weight",
-                torch.empty(
+                torch.zeros(
                     (vocab_size, embedding_dim), dtype=torch.int8, device=device
                 ),
             )
@@ -640,7 +640,7 @@ class QuantizedGroupEmbedding(torch.nn.Module):
             if bitwidth == 2:
                 self.register_buffer(
                     "weight",
-                    torch.empty(
+                    torch.zeros(
                         (vocab_size, embedding_dim // 4),
                         dtype=torch.uint8,
                         device=device,
@@ -649,7 +649,7 @@ class QuantizedGroupEmbedding(torch.nn.Module):
             elif bitwidth == 4:
                 self.register_buffer(
                     "weight",
-                    torch.empty(
+                    torch.zeros(
                         (vocab_size, embedding_dim // 2),
                         dtype=torch.uint8,
                         device=device,

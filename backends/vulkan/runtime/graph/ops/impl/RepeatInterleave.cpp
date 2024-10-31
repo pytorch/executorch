@@ -63,11 +63,12 @@ void add_repeat_interleave_node(
       {{out, vkapi::MemoryAccessType::WRITE},
        {in, vkapi::MemoryAccessType::READ}},
       // Parameter buffers
-      {graph.logical_limits_ubo(in),
-       graph.axis_map_ubo(in),
-       graph.axis_map_ubo(out)},
+      {graph.logical_limits_ubo(in)},
       // Specialization Constants
-      {nrepeats, repeat_dim},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(in),
+       nrepeats,
+       repeat_dim},
       // Resizing Logic
       resize_repeat_interleave_node,
       {num_repeats, dim}));

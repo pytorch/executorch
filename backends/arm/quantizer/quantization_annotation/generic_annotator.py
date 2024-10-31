@@ -37,6 +37,8 @@ _SUPPORTED_OPS = [
     # torch.ops.aten.view_as_real_copy.default,
     torch.ops.aten.view.default,
     torch.ops.aten.view_copy.default,
+    torch.ops.aten.select.int,
+    torch.ops.aten.select_copy.int,
     torch.ops.aten.slice.Tensor,
     torch.ops.aten.slice_copy.Tensor,
     torch.ops.aten.split.Tensor,
