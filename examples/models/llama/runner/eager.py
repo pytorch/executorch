@@ -34,7 +34,7 @@ class EagerLlamaRunner(LlamaRunner):
             max_batch_size=1,
             use_kv_cache=args.use_kv_cache,
             vocab_size=params["vocab_size"],
-            has_full_logits=args.model in TORCHTUNE_DEFINED_MODELS
+            has_full_logits=args.model in TORCHTUNE_DEFINED_MODELS,
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
         manager: LLMEdgeManager = _prepare_for_llama_export(args)

@@ -73,7 +73,6 @@ class LlamaRunner(ABC):
         has_full_logits: whether the model returns the full logits or only returns the last logit.
         device: device to run the runner on.
         """
-        self.model_name = model
         self.max_seq_len = max_seq_len
         self.max_batch_size = max_batch_size
         self.use_kv_cache = use_kv_cache
