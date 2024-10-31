@@ -144,10 +144,12 @@ class BackendDelegate final {
       CompileSpec** out_spec) {
     auto number_of_compile_specs = compile_specs_in_program->size();
 
-    CompileSpec* compile_specs_list = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        backend_init_context.get_runtime_allocator(),
-        CompileSpec,
-        number_of_compile_specs);
+    CompileSpec* compile_specs_list =
+        backend_init_context.get_runtime_allocator()->allocateList<CompileSpec>(
+            number_of_compile_specs);
+    if (compile_specs_list == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
 
     // Initialize the spec list for each method spec
     for (size_t j = 0; j < number_of_compile_specs; j++) {
@@ -226,8 +228,10 @@ Result<InstructionArgs> gen_instruction_arguments(
     EValue* values,
     size_t num_args,
     const int32_t* arg_idxs) {
-  EValue** arg_list =
-      ET_ALLOCATE_LIST_OR_RETURN_ERROR(method_allocator, EValue*, num_args);
+  EValue** arg_list = method_allocator->allocateList<EValue*>(num_args);
+  if (arg_list == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
   for (size_t i = 0; i < num_args; ++i) {
     int32_t arg_idx = arg_idxs[i];
     ET_CHECK_OR_RETURN_ERROR(
@@ -287,8 +291,10 @@ Error Method::parse_values() {
   ET_CHECK_OR_RETURN_ERROR(
       flatbuffer_values != nullptr, InvalidProgram, "Missing values");
   size_t n_value = flatbuffer_values->size();
-  values_ = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-      memory_manager_->method_allocator(), EValue, n_value);
+  values_ = memory_manager_->method_allocator()->allocateList<EValue>(n_value);
+  if (values_ == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
 
   // n_value_ counts the number of successfully-initialized values for ~Method()
   // to clean up, and is incremented at the bottom of the loop. This makes it
@@ -510,8 +516,11 @@ Error Method::resolve_operator(
 
   // resolve tensor meta
   auto method_allocator = memory_manager_->method_allocator();
-  TensorMeta* meta =
-      ET_ALLOCATE_LIST_OR_RETURN_ERROR(method_allocator, TensorMeta, n_args);
+  TensorMeta* meta = method_allocator->allocateList<TensorMeta>(n_args);
+  if (meta == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
+
   size_t count = 0;
   for (size_t i = 0; i < n_args; i++) {
     EValue* eval = args[i];
@@ -519,8 +528,11 @@ Error Method::resolve_operator(
     if (eval->isTensor()) {
       auto tensor = eval->toTensor();
       meta[count].dtype_ = tensor.scalar_type();
-      exec_aten::DimOrderType* dim_order_ptr = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-          method_allocator, exec_aten::DimOrderType, tensor.dim());
+      exec_aten::DimOrderType* dim_order_ptr =
+          method_allocator->allocateList<exec_aten::DimOrderType>(tensor.dim());
+      if (dim_order_ptr == nullptr) {
+        return Error::MemoryAllocationFailed;
+      }
       size_t size = tensor.dim();
       err = get_dim_order(tensor, dim_order_ptr, size);
       ET_CHECK_OR_RETURN_ERROR(
@@ -554,8 +566,11 @@ Result<Method> Method::load(
   MemoryAllocator* temp_allocator = memory_manager->temp_allocator();
   if (temp_allocator == nullptr) {
     PlatformMemoryAllocator* platform_allocator =
-        ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-            memory_manager->method_allocator(), PlatformMemoryAllocator);
+        memory_manager->method_allocator()
+            ->allocateInstance<PlatformMemoryAllocator>();
+    if (platform_allocator == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
     new (platform_allocator) PlatformMemoryAllocator();
     temp_allocator = platform_allocator;
   }
@@ -599,8 +614,10 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
     ET_CHECK_OR_RETURN_ERROR(
         delegates != nullptr, InvalidProgram, "Missing delegates field");
     size_t n_delegate = delegates->size();
-    delegates_ = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        method_allocator, BackendDelegate, n_delegate);
+    delegates_ = method_allocator->allocateList<BackendDelegate>(n_delegate);
+    if (delegates_ == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
 
     // n_delegate_ counts the number of successfully-initialized delegates for
     // ~Method() to clean up, and is incremented at the bottom of the loop. This
@@ -628,8 +645,10 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
     ET_CHECK_OR_RETURN_ERROR(
         chains != nullptr && chains->size() > 0, InvalidProgram, "No chains");
     n_chains_ = chains->size();
-    chains_ =
-        ET_ALLOCATE_LIST_OR_RETURN_ERROR(method_allocator, Chain, n_chains_);
+    chains_ = method_allocator->allocateList<Chain>(n_chains_);
+    if (chains_ == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
 
     // Try resolving all operators before failing, to make it easier to debug
     // multiple problems at once.
@@ -644,10 +663,16 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
           "Missing instructions in chain %zu",
           i);
       auto num_instructions = s_instructions->size();
-      auto chain_instruction_kernels = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-          method_allocator, OpFunction, num_instructions);
-      auto chain_instruction_arg_lists = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-          method_allocator, InstructionArgs, num_instructions);
+      auto chain_instruction_kernels =
+          method_allocator->allocateList<OpFunction>(num_instructions);
+      if (chain_instruction_kernels == nullptr) {
+        return Error::MemoryAllocationFailed;
+      }
+      auto chain_instruction_arg_lists =
+          method_allocator->allocateList<InstructionArgs>(num_instructions);
+      if (chain_instruction_arg_lists == nullptr) {
+        return Error::MemoryAllocationFailed;
+      }
 
       // Set up the argument lists ahead of time and store pointers to them to
       // use when the instructions are called

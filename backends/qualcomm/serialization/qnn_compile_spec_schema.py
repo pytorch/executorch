@@ -115,6 +115,7 @@ class QnnExecuTorchProfileLevel(IntEnum):
     kProfileOff = 0
     kProfileBasic = 1
     kProfileDetailed = 2
+    kProfileOptrace = 3
 
 
 @dataclass

@@ -135,6 +135,7 @@ enum QnnExecuTorchProfileLevel: int {
   kProfileOff = 0,
   kProfileBasic,
   kProfileDetailed,
+  kProfileOptrace,
 }
 
 /// QNN backends currently supported
