@@ -64,22 +64,30 @@ def initialize_models(resize_to_max_canvas: bool) -> Dict[str, Any]:
         strict=False,
     )
 
-    # aoti_path = torch._inductor.aot_compile(
-    #     exported_model.module(),
-    #     model.get_example_inputs(),
-    # )
+    aoti_path = torch._inductor.aot_compile(
+        exported_model.module(),
+        model.get_example_inputs(),
+    )
 
     edge_program = to_edge(
         exported_model, compile_config=EdgeCompileConfig(_check_ir_validity=False)
     )
     executorch_model = edge_program.to_executorch()
 
+    # Re-export as ExecuTorch edits the ExportedProgram.
+    exported_model = torch.export.export(
+        model.get_eager_model(),
+        model.get_example_inputs(),
+        dynamic_shapes=model.get_dynamic_shapes(),
+        strict=False,
+    )
+
     return {
         "config": config,
         "reference_model": reference_model,
         "model": model,
         "exported_model": exported_model,
-        # "aoti_path": aoti_path,
+        "aoti_path": aoti_path,
         "executorch_model": executorch_model,
     }
 
@@ -268,8 +276,10 @@ class TestImageTransform:
         aoti_path = models["aoti_path"]
         aoti_model = torch._export.aot_load(aoti_path, "cpu")
         aoti_image, aoti_ar = aoti_model(image_tensor, inscribed_size, best_resolution)
-        self.assertTrue(torch.allclose(reference_image, aoti_image))
-        self.assertEqual(reference_ar, aoti_ar.tolist())
+        assert torch.allclose(reference_image, aoti_image)
+        assert (
+            reference_ar == aoti_ar.tolist()
+        ), f"AOTI model: expected {reference_ar} but got {aoti_ar.tolist()}"
 
     # This test setup mirrors the one in torchtune:
     # https://github.com/pytorch/torchtune/blob/main/tests/torchtune/models/clip/test_clip_image_transform.py
