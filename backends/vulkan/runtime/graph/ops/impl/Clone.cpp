@@ -25,7 +25,11 @@ void resize_clone_node(
   (void)extra_args;
   vTensorPtr out = graph->get_tensor(args[0].refs[0]);
   vTensorPtr in = graph->get_tensor(args[1].refs[0]);
-  out->virtual_resize(in->sizes());
+  // TODO: support for when dimensionality doesn't match, i.e. clone is used to
+  // implement squeeze.
+  if (out->dim() == in->dim()) {
+    out->virtual_resize(in->sizes());
+  }
 }
 
 void add_clone_node(
@@ -56,7 +60,7 @@ void add_image_to_buffer_node(
     ComputeGraph& graph,
     const ValueRef image,
     const ValueRef buffer) {
-  std::string kernel_name = "image_to_buffer";
+  std::string kernel_name = "clone_image_to_buffer";
   add_dtype_suffix(kernel_name, graph.dtype_of(image));
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
@@ -80,7 +84,7 @@ void add_buffer_to_image_node(
     ComputeGraph& graph,
     const ValueRef buffer,
     const ValueRef image) {
-  std::string kernel_name = "buffer_to_image";
+  std::string kernel_name = "clone_buffer_to_image";
   add_dtype_suffix(kernel_name, graph.dtype_of(image));
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
