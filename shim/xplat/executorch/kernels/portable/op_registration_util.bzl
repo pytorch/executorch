@@ -1,6 +1,24 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
 load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 
+def get_compiler_optimization_flags():
+    # various ovr_configs are not available in oss
+    if not runtime.is_oss:
+      compiler_flags = select({
+        "DEFAULT": [],
+        "ovr_config//os:android-arm64": [
+              "-O2",
+        ],
+        "ovr_config//os:iphoneos": [
+            "-O2",
+        ],
+        "ovr_config//os:macos-arm64": [
+            "-O2",
+        ],
+      })
+      return compiler_flags
+    return []
+
 def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = False, _aten_mode_deps = []):
     """Registers an implementation of an operator overload group.
 
@@ -132,7 +150,7 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
             # library, and it blocks users like unit tests to use kernel
             # implementation directly. So we enable this for xplat only.
             ["-fvisibility=hidden"] if is_xplat() else []
-        ),
+        ) + get_compiler_optimization_flags(),
         deps = [
             "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
         ] + deps,

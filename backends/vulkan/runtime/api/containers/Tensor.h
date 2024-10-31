@@ -308,7 +308,6 @@ class vTensor final {
   ParamsBuffer sizes_uniform_;
   ParamsBuffer strides_uniform_;
   ParamsBuffer numel_uniform_;
-  ParamsBuffer axis_map_uniform_;
   ParamsBuffer logical_limits_uniform_;
 
   vTensorStorage storage_;
@@ -431,6 +430,19 @@ class vTensor final {
   }
 
   /*
+   * Returns a single int32_t that contains the values of the axis map and the
+   * packed dimension packed into a single int32_t, such that it can be used as
+   * a specialization constant in a compute shader. This allows for the SPIR-V
+   * to bytecode compilation to perform compile-time unfolding on the axis map.
+   * Each element of the axis map and the value of the packed dimension take up
+   * 4 bits in the packed int32_t.
+   */
+  inline int32_t hashed_layout() const {
+    return axis_map_.at(0) + (axis_map_.at(1) << 4) + (axis_map_.at(2) << 8) +
+        (axis_map_.at(3) << 12) + (packed_dim_ << 16);
+  }
+
+  /*
    * Return true if the tensor's axis map is {0, 1, 2, concat_dim}. This means
    * that the width dim is mapped to the width axis of the texture, the height
    * dim is mapped to the height axis of the texture, the channels dim is mapped
@@ -462,12 +474,6 @@ class vTensor final {
    * have a stride equal to the stride of the "slowest moving" dimension.
    */
   const vkapi::BufferBindInfo strides_ubo();
-
-  /*
-   * Returns a GPU buffer containing the texture axis mapping for each dimension
-   * of the tensor, in WHCN dimension order.
-   */
-  const vkapi::BufferBindInfo axis_map_ubo();
 
   /*
    * Returns a GPU buffer containing the logical limits of the tensor. See the
