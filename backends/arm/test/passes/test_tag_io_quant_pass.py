@@ -12,13 +12,13 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 
-class Add(torch.nn.Module):
+class TwoInputsTwoOutputs(torch.nn.Module):
 
     def get_inputs(self):
-        return (torch.rand(1, 10, 10, 10),)
+        return (torch.rand(1, 10, 10, 10), (torch.rand(1, 10, 10, 10)))
 
-    def forward(self, x):
-        return x + x
+    def forward(self, x, y):
+        return (x + y, x * y)
 
 
 class TestTagIOQuantPass(unittest.TestCase):
@@ -36,29 +36,29 @@ class TestTagIOQuantPass(unittest.TestCase):
             .to_edge()
             .check_count(
                 {
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 4
                 }
             )
             .check_count(
                 {
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 6
                 }
             )
             .partition()
             .check_count(
                 {
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 1
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2
                 }
             )
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_count(
                 {
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 1
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2
                 }
             )
             # .to_executorch() requires additional steps
         )
 
     def test_BI_u55_artifact(self):
-        model = Add()
+        model = TwoInputsTwoOutputs()
         self._tosa_BI_u55_pipeline(model)
