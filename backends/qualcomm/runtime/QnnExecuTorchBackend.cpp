@@ -13,7 +13,6 @@
 #include <executorch/backends/qualcomm/schema_generated.h>
 #include <chrono>
 
-// #include <fstream>
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -29,7 +28,6 @@ using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
 // ========== Public method implementations =========================
 constexpr const char* QNN_COMPILE_SPEC = "qnn_compile_spec";
-// static int hi = 0;
 Result<DelegateHandle*> QnnExecuTorchBackend::init(
     BackendInitContext& context,
     FreeableBuffer* processed,
@@ -40,11 +38,6 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
 
   qnn_context_blob.buffer = const_cast<void*>(processed->data());
   qnn_context_blob.nbytes = processed->size();
-  // std::string path_ = "model_"+std::to_string(hi)+".bin";
-  // std::ofstream fout(path_, std::ios::binary);
-  // fout.write(static_cast<const char*>(processed->data()), static_cast<int64_t>(processed->size()));
-  // fout.flush();
-  // hi++;
 
   // convert CompileSpec to qnn ExecuTorch option
   for (auto& compile_spec : compile_specs) {
@@ -189,7 +182,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
   }
   return qnn_manager;
 }
-// static int qq = 0;
+
 Error QnnExecuTorchBackend::execute(
     BackendExecutionContext& context,
     DelegateHandle* handle,
@@ -204,37 +197,34 @@ Error QnnExecuTorchBackend::execute(
   std::vector<Qnn_Tensor_t> input_tensor_structs;
   std::vector<Qnn_Tensor_t> output_tensor_structs;
 
+  int args_index = 0;
   input_tensor_structs.reserve(input_tensors.size());
-  for (int i = 0; i < input_tensors.size(); ++i) {
-    if (qnn_manager->RegisterMem(
-            args[i]->toTensor().mutable_data_ptr(), input_tensors[i]) !=
-        Error::Ok) {
-      // update data ptr only should be fine
-      input_tensors[i]->FillDataBuffer(
-          args[i]->toTensor().const_data_ptr(), false /* copy_data */);
-        // if(qq < input_tensors.size()){
-        //   std::string path_ = "qinput_"+std::to_string(qq)+".raw";
-        //   std::ofstream fout(path_, std::ios::binary);
-        //   fout.write(static_cast<const char*>(args[i]->toTensor().const_data_ptr()), input_tensors[i]->GetBytes());
-        //   fout.flush();
-        //   qq++;
-        // }
-
+  for (const auto& input_tensor : input_tensors){
+    if (input_tensor->GetName().find("mutbuf_") == std::string::npos){
+      if (qnn_manager->RegisterMem(
+                args[args_index]->toTensor().mutable_data_ptr(), input_tensor) !=
+            Error::Ok) {
+          // update data ptr only should be fine
+          input_tensor->FillDataBuffer(
+              args[args_index]->toTensor().const_data_ptr(), false /* copy_data */);
+      }
+      args_index++;
     }
-    input_tensor_structs.push_back(input_tensors[i]->CloneTensorStruct());
+
+    input_tensor_structs.push_back(input_tensor->CloneTensorStruct());
   }
 
-  int output_index = input_tensors.size();
+
   for (const auto& output_tensor : output_tensors) {
     // pos=0 limits the search to the prefix
-    if (output_tensor->GetName().rfind("output_", 0) == 0) {
+    if (output_tensor->GetName().rfind("output_", 0) == 0 && output_tensor->GetName().find("mutbuf_") == std::string::npos) {
       void* mutable_data_ptr =
-          args[output_index]->toTensor().mutable_data_ptr();
+          args[args_index]->toTensor().mutable_data_ptr();
       if (qnn_manager->RegisterMem(mutable_data_ptr, output_tensor) !=
           Error::Ok) {
         output_tensor->FillDataBuffer(mutable_data_ptr, false /* copy_data */);
       }
-      output_index++;
+      args_index++;
     }
     output_tensor_structs.push_back(output_tensor->CloneTensorStruct());
   }

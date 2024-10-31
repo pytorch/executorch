@@ -23,7 +23,7 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-from executorch.exir.backend.utils import tag_constant_data
+from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
 
@@ -136,27 +136,13 @@ class QnnPartitioner(Partitioner):
                 node.meta["delegation_tag"] = delegation_tag
                 self.partition_tags[delegation_tag] = self.delegation_spec
 
-        # need to take care of consumed constants
-        consumed_constants = (
-            *edge_program.graph_signature.inputs_to_buffers,
-            *edge_program.graph_signature.inputs_to_parameters,
-        )
-        for node in edge_program.graph_module.graph.nodes:
-            # find placeholders as lifted_constants
-            if node.op != "placeholder" or len(node.users) != 0:
-                continue
-
-            if node.name in consumed_constants:
-                # does no harm to merge them into last partition,
-                # since they will all be removed in following stage
-                node.meta["delegation_tag"] = delegation_tag
-
     # override
     def partition(self, edge_program: torch.export.ExportedProgram) -> PartitionResult:
         partitions = self.generate_partitions(edge_program)
         if len(partitions) != 0:
             self.tag_nodes(partitions, edge_program)
             tag_constant_data(edge_program)
+            tag_mutated_buffer(edge_program)
         for node in edge_program.graph_module.graph.nodes:
             if hasattr(node, "meta"):
                 # pop certain keys in meta for not affecting the passes in compilation

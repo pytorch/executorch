@@ -16,7 +16,7 @@ from executorch.backends.qualcomm.utils.constants import (
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from .node_visitor import NodeVisitor, register_node_visitor
-from .qnn_constants import OpElementWiseAdd, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .qnn_constants import OpReshape, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
@@ -31,7 +31,7 @@ class Copy(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node = node.args[0]
+        input_node = node.args[1]
         input_tensor = self.get_tensor(input_node, node)
         copy_inp_tensor_wrapper = self.define_tensor(
             input_node,
@@ -40,31 +40,8 @@ class Copy(NodeVisitor):
             nodes_to_wrappers,
             is_input_tensor=True,
         )
-        # 'graph', 'name', 'op', 'target', 'args', and 'kwargs'
-        zero_input_node = torch.fx.Node(
-            node.graph,
-            node.name + "_runtime_scalar",
-            "call_function",
-            exir_ops.edge.aten.scalar_tensor.default,
-            (),  # args
-            {},  # kwargs
-        )
-        zero_input_tensor = torch.tensor(0, dtype=input_tensor.dtype)
-        if quant_attrs := input_node.meta.get(QCOM_QUANT_ATTRS):
-            quant_attrs = quant_attrs.copy()
-            quant_attrs[QCOM_ZERO_POINT] = 0
-            quant_attrs[QCOM_SCALE] = 1
-            zero_input_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
-
         
-        zero_tensor_wrapper = self.define_tensor(
-                zero_input_node,
-                zero_input_tensor,
-                PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
-                nodes_to_wrappers,
-                is_input_tensor=True,
-            )
-        copy_input_tensors = [copy_inp_tensor_wrapper, zero_tensor_wrapper]
+        copy_input_tensors = [copy_inp_tensor_wrapper]
 
         if quant_attrs := input_node.meta.get(QCOM_QUANT_ATTRS):
             quant_attrs = quant_attrs.copy()
@@ -83,7 +60,7 @@ class Copy(NodeVisitor):
         copy_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpElementWiseAdd.op_name,
+            OpReshape.op_name,
         )
         copy_op.AddInputTensors(copy_input_tensors)
         copy_op.AddOutputTensors(copy_output_tensors)
