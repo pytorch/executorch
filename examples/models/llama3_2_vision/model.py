@@ -107,7 +107,7 @@ class Llama3_2Decoder(EagerModelBase):
         # Load checkpoint.
         missing, unexpected = self.model_.load_state_dict(
             checkpoint,
-            strict=False,
+            strict=True,
             assign=True,
         )
         if kwargs.get("verbose", False):
@@ -154,17 +154,17 @@ class Llama3_2Decoder(EagerModelBase):
             # "mask": self.causal_mask[None, 64, None, :],
             # "encoder_input": None,
             # "encoder_mask": None,
-            # "input_pos": torch.ones(64, dtype=torch.long),
-            # input_pos: self.input_pos[None, 64]
+            # "input_pos": self.input_pos[None, 64]
         }
 
     def get_dynamic_shapes(self):
-        dim = torch.export.Dim("token_dim", min=1, max=self.max_seq_len)
+        batch_size = 1
+        dim_seq_len = torch.export.Dim("token_dim", min=1, max=self.max_seq_len)
         dynamic_shapes = {
-            "tokens": {0: 1, 1: dim},
-            # "encoder_input": {0:1, 1:dim_enc, 2:4096},
-            # "encoder_mask": {0:1, 1:dim, 2:dim_enc},
-            # "mask": None,
-            # "input_pos" : {0: dim},
+            "tokens": {0: batch_size, 1: dim_seq_len},
+            # "encoder_input": {0: 1, 1: dim_enc, 2: 4096},
+            # "encoder_mask": {0: 1, 1: dim, 2: dim_enc},
+            # "mask": {0: batch_size, 1: dim_seq_len, 2: self.max_seq_len},
+            # "input_pos" : {0: batch_size, 1: dim_seq_len},
         }
         return dynamic_shapes
