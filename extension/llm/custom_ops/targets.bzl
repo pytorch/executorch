@@ -38,6 +38,7 @@ def define_common_targets():
             deps = [
                 "//executorch/kernels/portable/cpu/util:reduce_util",
                 "//executorch/extension/llm/custom_ops/spinquant:fast_hadamard_transform",
+                ":op_tile_crop",
             ],
             compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"] + get_compiler_optimization_flags(),
             visibility = [
@@ -55,10 +56,8 @@ def define_common_targets():
             srcs = [
                 "op_fast_hadamard_transform_aten.cpp",
                 "op_sdpa_aot.cpp",
-                "op_tile_crop.cpp",
                 "op_tile_crop_aot.cpp",
             ],
-            headers = ["op_tile_crop.h"],
             compiler_flags = ["-Wno-global-constructors"],
             visibility = [
                 "//executorch/...",
@@ -69,6 +68,7 @@ def define_common_targets():
             ],
             deps = [
                 ":custom_ops" + mkl_dep,
+                ":op_tile_crop",
                 "//executorch/extension/aten_util:aten_bridge",
             ],
         )
