@@ -70,6 +70,7 @@ class QnnInterface {
   DEFINE_SHIM_FUNCTION_INTERFACE(log_set_log_level, logSetLogLevel);
   // --------- QnnProfile ---------
   DEFINE_SHIM_FUNCTION_INTERFACE(profile_create, profileCreate);
+  DEFINE_SHIM_FUNCTION_INTERFACE(profile_set_config, profileSetConfig);
   DEFINE_SHIM_FUNCTION_INTERFACE(profile_get_events, profileGetEvents);
   DEFINE_SHIM_FUNCTION_INTERFACE(profile_get_sub_events, profileGetSubEvents);
   DEFINE_SHIM_FUNCTION_INTERFACE(profile_get_event_data, profileGetEventData);
