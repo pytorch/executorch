@@ -6,6 +6,8 @@
 
 # pyre-strict
 
+from copy import deepcopy
+
 import executorch.backends.vulkan.custom_ops_lib  # noqa
 
 import torch
@@ -69,9 +71,15 @@ def insert_prepack_nodes(program: ExportedProgram) -> ExportedProgram:
                 exir_ops.edge.et_vk.prepack.default,
                 (node,),
             )
-            prepack_node.meta["spec"] = node.meta["spec"]
+            # This pass assumes that the SpecPropPass() has already been applied
+            assert "spec" in node.meta
+            # Validate that the original node is marked as a constant. Constant tensors
+            # do not participate in memory planning.
+            assert node.meta["spec"].const
+            prepack_node.meta["val"] = node.meta["val"]
+            prepack_node.meta["spec"] = deepcopy(node.meta["spec"])
             # Set the mem_obj_id to -1 to indicate that this node requires a dedicated
-            # memory object. This pass must be executed AFTER the memory planning pass.
+            # memory object.
             prepack_node.meta["spec"].mem_obj_id = -1
             node.replace_all_uses_with(prepack_node, lambda x, y=prepack_node: x != y)
 
