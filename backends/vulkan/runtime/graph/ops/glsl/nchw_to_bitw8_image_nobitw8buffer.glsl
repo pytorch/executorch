@@ -23,11 +23,12 @@ layout(std430) buffer;
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
 ${layout_declare_buffer(B, "r", "nchw_in", "int")}
 ${layout_declare_ubo(B, "ivec4", "sizes")}
-${layout_declare_ubo(B, "ivec4", "axis_map")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int packed_dim = C_DIM;
+${layout_declare_spec_const(C, "int", "t_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 axis_map = unhash_axis_map(t_layout);
+const lowp int packed_dim = unhash_packed_dim(t_layout);
 
 /*
  * Extends sign of int8
