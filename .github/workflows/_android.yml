@@ -1,27 +1,8 @@
 name: Android
 
 on:
-  push:
-    branches:
-      - main
-      - release/*
-    tags:
-      - ciflow/android/*
-  pull_request:
-    paths:
-      - .ci/docker/**
-      - .github/workflows/android.yml
-      - build/*android*.sh
-      - install_requirements.sh
-      - examples/demo-apps/android/**
-      - extension/android/**
-      - extension/benchmark/android/**
-      - extension/module/**
+  workflow_call:
   workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
-  cancel-in-progress: true
 
 jobs:
   build-llm-demo:
@@ -84,6 +65,16 @@ jobs:
           # it seems that we need to chown the Android setup to the current user instead of root to
           # avoid permission issue
           sudo chown -R "${USER}" /opt/android
+
+      - name: Download Artifacts
+        shell: bash
+        run: |
+          set -eux
+          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/llm_demo/app-debug.apk
+          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/llm_demo/app-debug-androidTest.apk
+          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/fp32-xnnpack-custom/model.zip
+          unzip model.zip
+          mv *.pte model.pte
 
       - name: Gradle cache
         uses: gradle/actions/setup-gradle@v3

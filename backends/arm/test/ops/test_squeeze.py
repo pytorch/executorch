@@ -95,7 +95,6 @@ class TestSqueeze(unittest.TestCase):
             .check_count({export_target: 1})
             .to_edge()
             .partition()
-            .dump_artifact()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .run_method_and_compare_outputs(inputs=test_data, qtol=1)
@@ -156,7 +155,7 @@ class TestSqueeze(unittest.TestCase):
         test_tensor: torch.Tensor,
     ):
         self._test_squeeze_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(permute_memory_to_nhwc=False),
+            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
             self.Squeeze(),
             (test_tensor,),
             "torch.ops.aten.squeeze.default",

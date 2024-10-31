@@ -81,6 +81,24 @@ WORD32 matmul_asym8uxasym8u_asym8u(
     WORD32 out_zero_bias,
     bool per_channel_quantized = false); // per-channel quantized weight
 
+WORD32 xa_nn_matmul_asym8uxasym8u_asym8u(
+    UWORD8* __restrict__ p_out,
+    const UWORD8* __restrict__ p_mat1,
+    const UWORD8* __restrict__ p_mat2,
+    const WORD32* __restrict__ p_bias,
+    WORD32 rows,
+    WORD32 cols,
+    WORD32 row_stride,
+    WORD32 vec_count,
+    WORD32 vec_offset,
+    WORD32 out_offset,
+    WORD32 out_stride,
+    WORD32 mat1_zero_bias,
+    WORD32 vec1_zero_bias,
+    WORD32 out_multiplier,
+    WORD32 out_shift,
+    WORD32 out_zero_bias);
+
 template <typename T>
 T quantize(const float x, float scale, int32_t zero_point);
 

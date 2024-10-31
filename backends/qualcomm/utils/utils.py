@@ -71,6 +71,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_EXPAND_BROADCAST_SHAPE,
     QCOM_PASS_SKIP_ADVANCED_REQUANT,
     QCOM_QNN_COMPILE_SPEC,
+    QCOM_QUANTIZED_IO,
 )
 
 from executorch.exir import ExirExportedProgram
@@ -769,6 +770,7 @@ def generate_qnn_executorch_compiler_spec(
     online_prepare: bool = False,
     dump_intermediate_outputs: bool = False,
     profile: bool = False,
+    optrace: bool = False,
     shared_buffer: bool = False,
     is_from_context_binary: bool = False,
 ) -> List[CompileSpec]:
@@ -830,7 +832,11 @@ def generate_qnn_executorch_compiler_spec(
     if saver:
         qnn_executorch_options.library_path = "libQnnSaver.so"
 
-    if profile:
+    if optrace:
+        qnn_executorch_options.profile_level = (
+            QnnExecuTorchProfileLevel.kProfileOptrace
+        )
+    elif profile:
         qnn_executorch_options.profile_level = (
             QnnExecuTorchProfileLevel.kProfileDetailed
         )
@@ -876,3 +882,12 @@ def get_soc_to_chipset_map():
         "SM8475": QcomChipset.SM8475,
         "SM8450": QcomChipset.SM8450,
     }
+
+
+def tag_quant_io(gm: torch.fx.GraphModule, get_quant_io_dtype_fn: Callable):
+    """
+    Tag io nodes which get/output quantized tensor. No need to insert q/dq in qnn_preprocess
+    """
+    for node in gm.graph.nodes:
+        if dtype := get_quant_io_dtype_fn(node):
+            node.meta[QCOM_QUANTIZED_IO] = dtype
