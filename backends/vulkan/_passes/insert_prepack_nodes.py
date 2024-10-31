@@ -56,9 +56,9 @@ def insert_prepack_nodes(program: ExportedProgram) -> ExportedProgram:
             )
             # This pass assumes that the SpecPropPass() has already been applied
             assert "spec" in node.meta
-            assert node.meta["spec"].const
             # Validate that the original node is marked as a constant. Constant tensors
             # do not participate in memory planning.
+            assert node.meta["spec"].const
             prepack_node.meta["val"] = node.meta["val"]
             prepack_node.meta["spec"] = deepcopy(node.meta["spec"])
             # Set the mem_obj_id to -1 to indicate that this node requires a dedicated
