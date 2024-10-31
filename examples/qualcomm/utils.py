@@ -30,7 +30,7 @@ from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
-    get_soc_to_chipset_map,
+    get_soc_to_arch_map,
 )
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 from executorch.exir.backend.backend_api import to_backend
@@ -83,7 +83,7 @@ class SimpleADB:
         self.dump_intermediate_outputs = dump_intermediate_outputs
         self.debug_output_path = f"{self.workspace}/debug_output.bin"
         self.output_folder = f"{self.workspace}/outputs"
-        self.soc_model = get_soc_to_chipset_map()[soc_model]
+        self.htp_arch = get_soc_to_arch_map()[soc_model]
         self.error_only = error_only
         self.shared_buffer = shared_buffer
         self.runner = runner
@@ -108,12 +108,12 @@ class SimpleADB:
             *self.pte_path,
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtp.so",
             (
-                f"{self.qnn_sdk}/lib/hexagon-v{self.soc_model}/"
-                f"unsigned/libQnnHtpV{self.soc_model}Skel.so"
+                f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
+                f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
             ),
             (
                 f"{self.qnn_sdk}/lib/aarch64-android/"
-                f"libQnnHtpV{self.soc_model}Stub.so"
+                f"libQnnHtpV{self.htp_arch}Stub.so"
             ),
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpPrepare.so",
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
@@ -234,7 +234,7 @@ def build_executorch_binary(
     shared_buffer=False,
     metadata=None,
     dump_intermediate_outputs=False,
-    custom_pass_config=None,
+    custom_pass_config=frozenset(),
 ):
     if quant_dtype is not None:
         quantizer = custom_quantizer or make_quantizer(quant_dtype=quant_dtype)

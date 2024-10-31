@@ -456,6 +456,10 @@ inline bool isRealHBType(::executorch::aten::ScalarType t) {
   return (isRealHType(t) || t == ::executorch::aten::ScalarType::Bool);
 }
 
+inline bool isRealHBF16Type(::executorch::aten::ScalarType t) {
+  return (isRealHType(t) || t == ::executorch::aten::ScalarType::BFloat16);
+}
+
 inline bool isRealHBBF16Type(::executorch::aten::ScalarType t) {
   return (isRealHBType(t) || t == ::executorch::aten::ScalarType::BFloat16);
 }
@@ -1274,6 +1278,10 @@ inline ::executorch::aten::ScalarType promoteTypes(
 
 #define ET_SWITCH_REALH_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_SWITCH_REAL_TYPES_AND(Half, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
+
+#define ET_SWITCH_REALHBF16_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_SWITCH_REAL_TYPES_AND2(                                             \
+      Half, BFloat16, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
 
 #define ET_SWITCH_REALB_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_SWITCH_REAL_TYPES_AND(Bool, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)

@@ -41,7 +41,7 @@ void add_index_select_channel_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
@@ -90,7 +90,7 @@ void add_index_select_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
@@ -108,9 +108,9 @@ int64_t get_dim_idx(ComputeGraph& graph, ValueRef in, ValueRef dim_ref) {
 }
 
 void index_select(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  ValueRef in = prepack_if_tensor_ref(graph, args[0]);
+  ValueRef in = args[0];
   ValueRef dim_ref = args[1];
-  ValueRef idx = prepack_if_tensor_ref(graph, args[2]);
+  ValueRef idx = args[2];
   ValueRef out = args[3];
 
   const int64_t dim_idx = get_dim_idx(graph, in, dim_ref);

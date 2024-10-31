@@ -9,25 +9,51 @@
 import logging
 import tempfile
 
+import torch
+
 from executorch.backends.cadence.aot.ops_registrations import *  # noqa
 from typing import Any, Tuple
 
 from executorch.backends.cadence.aot.compiler import (
     convert_pt2,
-    export_to_cadence,
+    export_to_cadence_edge_executorch,
     fuse_pt2,
 )
+
 from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
 from executorch.backends.cadence.runtime import runtime
 from executorch.backends.cadence.runtime.executor import BundledProgramManager
 from executorch.exir import ExecutorchProgramManager
 from torch import nn
+from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
+from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import (
+    QuantizationConfig,
+    QuantizationSpec,
+)
 
 from .utils import save_bpte_program, save_pte_program
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
+
+act_qspec = QuantizationSpec(
+    dtype=torch.int8,
+    quant_min=-128,
+    quant_max=127,
+    qscheme=torch.per_tensor_affine,
+    is_dynamic=False,
+    observer_or_fake_quant_ctr=HistogramObserver.with_args(eps=2**-12),
+)
+
+wgt_qspec = QuantizationSpec(
+    dtype=torch.int8,
+    quant_min=-128,
+    quant_max=127,
+    qscheme=torch.per_tensor_affine,
+    is_dynamic=False,
+    observer_or_fake_quant_ctr=MinMaxObserver,
+)
 
 
 def export_model(
@@ -39,8 +65,15 @@ def export_model(
     working_dir = tempfile.mkdtemp(dir="/tmp")
     logging.debug(f"Created work directory {working_dir}")
 
+    qconfig = QuantizationConfig(
+        act_qspec,
+        act_qspec,
+        wgt_qspec,
+        None,
+    )
+
     # Instantiate the quantizer
-    quantizer = CadenceQuantizer()
+    quantizer = CadenceQuantizer(qconfig)
 
     # Convert the model
     converted_model = convert_pt2(model, example_inputs, quantizer)
@@ -53,10 +86,9 @@ def export_model(
     quantized_model = fuse_pt2(converted_model, quantizer)
 
     # Get edge program after Cadence specific passes
-    cadence_prog_manager = export_to_cadence(quantized_model, example_inputs)
-
-    # Get executorch program after Cadence specific passes
-    exec_prog: ExecutorchProgramManager = cadence_prog_manager.to_executorch()
+    exec_prog: ExecutorchProgramManager = export_to_cadence_edge_executorch(
+        quantized_model, example_inputs, working_dir
+    )
 
     logging.info("Final exported graph:\n")
     exec_prog.exported_program().graph_module.graph.print_tabular()

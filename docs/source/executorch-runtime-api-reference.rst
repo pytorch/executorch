@@ -11,6 +11,15 @@ For detailed information on how APIs evolve and the deprecation process, please 
 Model Loading and Execution
 ---------------------------
 
+.. doxygenclass:: executorch::runtime::Program
+  :members:
+
+.. doxygenclass:: executorch::runtime::Method
+  :members:
+
+.. doxygenclass:: executorch::runtime::MethodMeta
+  :members:
+
 .. doxygenclass:: executorch::runtime::DataLoader
   :members:
 
@@ -23,20 +32,11 @@ Model Loading and Execution
 .. doxygenclass:: executorch::runtime::MemoryManager
   :members:
 
-.. doxygenclass:: executorch::runtime::Program
-  :members:
-
-.. doxygenclass:: executorch::runtime::Method
-  :members:
-
-.. doxygenclass:: executorch::runtime::MethodMeta
-  :members:
-
 Values
 ------
 
 .. doxygenstruct:: executorch::runtime::EValue
   :members:
 
-.. doxygenclass:: executorch::aten::Tensor
+.. doxygenclass:: executorch::runtime::etensor::Tensor
   :members:

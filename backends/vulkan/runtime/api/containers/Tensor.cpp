@@ -8,10 +8,18 @@
 
 #include <executorch/backends/vulkan/runtime/api/containers/Tensor.h>
 
-#include <executorch/backends/vulkan/runtime/vk_api/VkUtils.h>
-
 namespace vkcompute {
 namespace api {
+
+std::vector<int64_t> calculate_sizes(
+    const vkapi::VulkanImage& image,
+    const utils::GPUMemoryLayout memory_layout) {
+  auto sizes = std::vector<int64_t>{
+      image.extents().width, image.extents().height, image.extents().depth};
+  const auto packed_dim = utils::to_packed_dim<int32_t>(memory_layout);
+  sizes.at(packed_dim) *= 4;
+  return sizes;
+}
 
 std::vector<int64_t> calculate_dim_order(
     const size_t ndim,
@@ -186,6 +194,18 @@ utils::uvec3 calculate_image_extents(
 // vTensorStorage
 //
 
+utils::StorageType storage_type(const vkapi::VulkanImage& image) {
+  const auto type = image.type();
+  switch (type) {
+    case VK_IMAGE_TYPE_3D:
+      return utils::kTexture3D;
+    case VK_IMAGE_TYPE_2D:
+      return utils::kTexture2D;
+    default:
+      VK_THROW("Unsupported image type", type);
+  }
+}
+
 vkapi::VulkanImage allocate_image(
     Context* const context_ptr,
     utils::uvec3& image_extents,
@@ -221,6 +241,7 @@ vkapi::VulkanImage allocate_image(
   VkSampler sampler = adapter_ptr->sampler_cache().retrieve(sampler_props);
 
   return adapter_ptr->vma().create_image(
+      context_ptr->device(),
       vkapi::create_extent3d(image_extents),
       image_format,
       image_type,
@@ -279,6 +300,21 @@ vTensorStorage::vTensorStorage(
           allocate_memory)),
       last_access_{},
       has_copies_{false} {}
+
+vTensorStorage::vTensorStorage(
+    Context* const context,
+    const vkapi::VulkanImage& image)
+    : context_(context),
+      storage_type_{storage_type(image)},
+      image_extents_(
+          {image.extents().width,
+           image.extents().height,
+           image.extents().depth}),
+      buffer_length_{0},
+      buffer_offset_{0},
+      image_(image),
+      buffer_(vkapi::VulkanBuffer()),
+      last_access_{} {}
 
 vTensorStorage::vTensorStorage(
     vTensorStorage& other,
@@ -438,13 +474,40 @@ vTensor::vTensor(
 
   if (dtype == vkapi::kHalf) {
     VK_CHECK_COND(
-        api::context()->adapter_ptr()->has_16bit_storage(),
+        api::context()->adapter_ptr()->supports_16bit_storage_buffers(),
         "Half dtype is only available if the physical device supports float16 "
         "storage buffers!");
   }
 }
 
 // NOLINTNEXTLINE
+vTensor::vTensor(
+    Context* context,
+    const vkapi::VulkanImage& image,
+    const utils::GPUMemoryLayout memory_layout)
+    : dtype_(vkapi::element_scalartype(image.format())),
+      // Calculate tensor metadata
+      sizes_(calculate_sizes(image, memory_layout)),
+      packed_dim_(utils::to_packed_dim<int32_t>(memory_layout)),
+      dim_order_(),
+      axis_map_(default_axis_map()),
+      strides_(),
+      numel_(utils::multiply_integers(sizes_)),
+      padded_sizes_(calculate_padded_sizes(sizes_, packed_dim_)),
+      unsqueezed_strides_(),
+      padded_numel_(utils::multiply_integers(padded_sizes_)),
+      logical_limits_(),
+      // Utility Uniform Buffers that can be passed to shaders as arguments
+      sizes_uniform_(),
+      strides_uniform_(),
+      numel_uniform_(),
+      axis_map_uniform_(),
+      logical_limits_uniform_(),
+      // Construct Tensor storage
+      storage_(context, image) {
+  set_logical_limits(storage_.image_extents_);
+}
+
 vTensor::vTensor(vTensor& other)
     : dtype_(other.dtype_),
       // Copy tensor size metadata

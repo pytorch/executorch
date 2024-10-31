@@ -75,9 +75,9 @@ run_portable_executor_runner() {
 test_model() {
   if [[ "${MODEL_NAME}" == "llama2" ]]; then
     # Install requirements for export_llama
-    bash examples/models/llama2/install_requirements.sh
-    # Test export_llama script: python3 -m examples.models.llama2.export_llama
-    "${PYTHON_EXECUTABLE}" -m examples.models.llama2.export_llama -c examples/models/llama2/params/demo_rand_params.pth -p examples/models/llama2/params/demo_config.json
+    bash examples/models/llama/install_requirements.sh
+    # Test export_llama script: python3 -m examples.models.llama.export_llama
+    "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model llama2 -c examples/models/llama/params/demo_rand_params.pth -p examples/models/llama/params/demo_config.json
     run_portable_executor_runner
     rm "./${MODEL_NAME}.pte"
   fi
@@ -197,6 +197,11 @@ test_model_with_coreml() {
   fi
 }
 
+test_model_with_mps() {
+  "${PYTHON_EXECUTABLE}" -m examples.apple.mps.scripts.mps_example --model_name="${MODEL_NAME}" --use_fp16
+  EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
+}
+
 if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
   test_model
@@ -209,6 +214,12 @@ elif [[ "${BACKEND}" == "qnn" ]]; then
 elif [[ "${BACKEND}" == "coreml" ]]; then
   echo "Testing ${MODEL_NAME} with coreml..."
   test_model_with_coreml
+  if [[ $? -eq 0 ]]; then
+    prepare_artifacts_upload
+  fi
+elif [[ "${BACKEND}" == "mps" ]]; then
+  echo "Testing ${MODEL_NAME} with mps..."
+  test_model_with_mps
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi

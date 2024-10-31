@@ -155,7 +155,8 @@ def get_weight_int8pack_mm_inputs():
     test_suite.dtypes = ["at::kFloat", "at::kHalf"]
     test_suite.layouts = ["utils::kWidthPacked"]
     test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
-    test_suite.prepacked_args = ["mat2"]
+    test_suite.prepacked_args = ["mat2", "scales"]
+    test_suite.requires_prepack = True
 
     test_suite.arg_dtype["mat2"] = "at::kChar"
     test_suite.arg_data_range["mat2"] = (0, 100)
@@ -951,32 +952,35 @@ def get_split_tensor_inputs():
     return test_suite
 
 
+def get_reduce_inputs(is_softmax: bool = False):
+    bool_arg = False if is_softmax else True
+    return [
+        ((L), 0, bool_arg),
+        ((L), -1, bool_arg),
+        ((M, L), 0, bool_arg),
+        ((M, L), 1, bool_arg),
+        ((L, M), -1, bool_arg),
+        ((M, L), -2, bool_arg),
+        ((S, S1, S2), 0, bool_arg),
+        ((S, S1, S2), 1, bool_arg),
+        ((S, S1, S2), 2, bool_arg),
+        ((S, S1, S2), -1, bool_arg),
+        ((S, S1, S2), -2, bool_arg),
+        ((S, S1, S2), -3, bool_arg),
+        ((1, S, S1, S2), 1, bool_arg),
+        ((1, S, S1, S2), 2, bool_arg),
+        ((1, S, S1, S2), 3, bool_arg),
+        ((1, S, S1, S2), -1, bool_arg),
+        ((1, S, S1, S2), -2, bool_arg),
+        ((1, S, S1, S2), -3, bool_arg),
+        # Test batches > 1 where the reduction dim is not the concat dim
+        ((S, S2, S1, 128), -1, bool_arg),
+    ]
+
+
 @register_test_suite(["aten._softmax.default", "aten._log_softmax.default"])
 def get_softmax_inputs():
-    test_suite = VkTestSuite(
-        [
-            ((L), 0, False),
-            ((L), -1, False),
-            ((M, L), 0, False),
-            ((M, L), 1, False),
-            ((L, M), -1, False),
-            ((M, L), -2, False),
-            ((S, S1, S2), 0, False),
-            ((S, S1, S2), 1, False),
-            ((S, S1, S2), 2, False),
-            ((S, S1, S2), -1, False),
-            ((S, S1, S2), -2, False),
-            ((S, S1, S2), -3, False),
-            ((1, S, S1, S2), 1, False),
-            ((1, S, S1, S2), 2, False),
-            ((1, S, S1, S2), 3, False),
-            ((1, S, S1, S2), -1, False),
-            ((1, S, S1, S2), -2, False),
-            ((1, S, S1, S2), -3, False),
-            # Test batches > 1 where the reduction dim is not the concat dim
-            ((S, S2, S1, 128), -1, False),
-        ]
-    )
+    test_suite = VkTestSuite(get_reduce_inputs(is_softmax=True))
     test_suite.layouts = [
         "utils::kWidthPacked",
         "utils::kChannelsPacked",
@@ -985,8 +989,21 @@ def get_softmax_inputs():
 
 
 @register_test_suite(
+    ["aten.amax.default", "aten.amin.default", "aten.sum.dim_IntList", "aten.mean.dim"]
+)
+def get_reduce_op_inputs():
+    test_suite = VkTestSuite(get_reduce_inputs())
+    test_suite.layouts = [
+        "utils::kChannelsPacked",
+        "utils::kWidthPacked",
+    ]
+    return test_suite
+
+
+@register_test_suite(
     [
         "aten.sqrt.default",
+        "aten.rsqrt.default",
         "aten.exp.default",
         "aten.hardshrink.default",
         "aten.sin.default",
@@ -1084,6 +1101,8 @@ def get_native_batch_norm_inputs():
     ]
 
     test_suite = VkTestSuite(test_cases)
+    test_suite.requires_prepack = True
+    test_suite.prepacked_args = ["weight", "bias", "mean", "var"]
 
     return test_suite
 

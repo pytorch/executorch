@@ -55,6 +55,7 @@ class Allocator final {
       const VmaAllocationCreateInfo& create_info);
 
   VulkanImage create_image(
+      const VkDevice,
       const VkExtent3D&,
       const VkFormat,
       const VkImageType,

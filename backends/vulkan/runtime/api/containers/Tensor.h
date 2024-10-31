@@ -95,6 +95,8 @@ class vTensorStorage final {
       const vkapi::ScalarType dtype,
       const bool allocate_memory = true);
 
+  vTensorStorage(Context* const context, const vkapi::VulkanImage& image);
+
  protected:
   /*
    * This allows for creation of tensors that use the same underlying storage
@@ -184,6 +186,11 @@ class vTensor final {
       const bool allocate_memory = true);
 
   vTensor(const vTensor& other) = delete;
+
+  explicit vTensor(
+      Context* context,
+      const vkapi::VulkanImage& image,
+      const utils::GPUMemoryLayout memory_layout = utils::kChannelsPacked);
 
   /*
    * This constructor allows for the creation of a vTensor that references the
@@ -421,6 +428,16 @@ class vTensor final {
 
   inline const std::vector<int64_t>& axis_map() const {
     return axis_map_;
+  }
+
+  /*
+   * Return true if the tensor's axis map is {0, 1, 2, concat_dim}. This means
+   * that the width dim is mapped to the width axis of the texture, the height
+   * dim is mapped to the height axis of the texture, the channels dim is mapped
+   * to the depth axis of the texture.
+   */
+  inline bool has_standard_axis_map() const {
+    return axis_map_.at(0) == 0 && axis_map_.at(1) == 1 && axis_map_.at(2) == 2;
   }
 
   inline const std::vector<int64_t>& strides() const {

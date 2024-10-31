@@ -11,11 +11,13 @@
 #include <algorithm>
 #include <cmath>
 
+namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
 
 using executorch::aten::Tensor;
+using executorch::runtime::getLeadingDims;
 using executorch::runtime::KernelRuntimeContext;
 
 void quantized_linear_out(
@@ -44,7 +46,7 @@ void quantized_linear_out(
   uint8_t* __restrict__ out_data = out.mutable_data_ptr<uint8_t>();
 
   // The nnlib kernel to compute quantized linear via matmul.
-  int32_t ret = impl::HiFi::kernels::matmul_asym8uxasym8u_asym8u(
+  int32_t ret = cadence::impl::HiFi::kernels::matmul_asym8uxasym8u_asym8u(
       out_data, // p_out
       weight_data, // p_mat1,
       in_data, // p_mat2,
@@ -68,3 +70,4 @@ void quantized_linear_out(
 }; // namespace native
 }; // namespace HiFi
 }; // namespace impl
+}; // namespace cadence

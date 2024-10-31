@@ -5,6 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import argparse
 import array
 import codecs
@@ -42,6 +44,10 @@ DEFAULT_ENV: Dict[str, Any] = {
     # layout binding index when declaring layout bindings. Note that a container
     # type is used because integers are immutable in Python.
     "B": [0],
+    # C is shorthand for "constant_id". This is used to automatically increment the
+    # constant_id index for specialization constants.
+    # Note that it starts at 3, as 0-2 are reserved for local workgroup size ids.
+    "C": [3],
 }
 
 # Establishes relationships between different tensor types and different GLSL types
@@ -300,8 +306,26 @@ def layout_declare_ubo(
 layout(set = 0, binding = {get_slot_val(slot)}) uniform {precision} restrict readonly {ubo_name}UBO {{
 """
     for type_name, var_name in var_list:
-        out_str += f"{type_name} {var_name};\n"
+        out_str += f"  {type_name} {var_name};\n"
     out_str += "};"
+
+    if isinstance(slot, list):
+        slot[0] = slot[0] + 1
+    return out_str
+
+
+def layout_declare_spec_const(
+    slot: Union[int, List[int]],
+    type_name: str,
+    var_name: str,
+    initial_val: Optional[str] = None,
+) -> str:
+    assert type_name in ["int", "uint", "float", "bool"]
+
+    out_str = f"layout(constant_id = {get_slot_val(slot)}) const {type_name} {var_name}"
+    if initial_val is not None:
+        out_str += f" = {initial_val}"
+    out_str += ";"
 
     if isinstance(slot, list):
         slot[0] = slot[0] + 1
@@ -319,21 +343,26 @@ def define_active_storage_type(storage_type: str):
         raise AssertionError(f"Invalid storage type: {storage_type}")
 
 
-def define_required_extensions(dtype: str):
+def define_required_extensions(dtypes: Union[str, List[str]]):
     out_str = "\n"
-    nbit = None
-    glsl_type = None
+    dtype_list = dtypes if isinstance(dtypes, list) else [dtypes]
 
-    if dtype == "half":
-        nbit = "16bit"
-        glsl_type = "float16"
-    if dtype == "int8":
-        nbit = "8bit"
-        glsl_type = "int8"
+    for dtype in dtype_list:
+        nbit = None
+        glsl_type = None
+        if dtype == "half":
+            nbit = "16bit"
+            glsl_type = "float16"
+        elif dtype == "int16" or dtype == "uint16":
+            nbit = "16bit"
+            glsl_type = "int16"
+        elif dtype == "int8" or dtype == "uint8":
+            nbit = "8bit"
+            glsl_type = "int8"
 
-    if nbit is not None and glsl_type is not None:
-        out_str += f"#extension GL_EXT_shader_{nbit}_storage : require\n"
-        out_str += f"#extension GL_EXT_shader_explicit_arithmetic_types_{glsl_type} : require\n"
+        if nbit is not None and glsl_type is not None:
+            out_str += f"#extension GL_EXT_shader_{nbit}_storage : require\n"
+            out_str += f"#extension GL_EXT_shader_explicit_arithmetic_types_{glsl_type} : require\n"
 
     return out_str
 
@@ -356,6 +385,7 @@ UTILITY_FNS: Dict[str, Any] = {
     "layout_declare_sampler": layout_declare_sampler,
     "layout_declare_tensor": layout_declare_tensor,
     "layout_declare_ubo": layout_declare_ubo,
+    "layout_declare_spec_const": layout_declare_spec_const,
     "define_active_storage_type": define_active_storage_type,
     "define_required_extensions": define_required_extensions,
 }

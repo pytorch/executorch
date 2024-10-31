@@ -7,6 +7,7 @@ from enum import IntEnum, unique
 from typing import Callable, Dict, Optional, Sequence, Set
 
 import torch
+from executorch.backends.qualcomm._passes.decompose_einsum import DecomposeEinsum
 from executorch.backends.qualcomm._passes.decompose_silu import DecomposeSilu
 from executorch.backends.qualcomm._passes.recompose_pixel_unshuffle import (
     RecomposePixelUnshuffle,
@@ -25,6 +26,7 @@ from .utils import (
     get_16a4w_qnn_ptq_config,
     get_16a8w_qnn_ptq_config,
     get_default_16bit_qnn_ptq_config,
+    get_default_8bit_qat_proto,
     get_default_8bit_qnn_ptq_config,
     get_ptq_per_channel_quant_config,
     OP_ANNOTATOR,
@@ -38,6 +40,7 @@ __all__ = [
     "get_16a8w_qnn_ptq_config",
     "get_default_16bit_qnn_ptq_config",
     "get_default_8bit_qnn_ptq_config",
+    "get_default_8bit_qat_proto",
 ]
 
 
@@ -190,6 +193,7 @@ class QnnQuantizer(Quantizer):
         model = RecomposePixelUnshuffle(quantization_capture=True)(model).graph_module
         model = DecomposeScaledDotProductAttention()(model).graph_module
         model = DecomposeSilu()(model).graph_module
+        model = DecomposeEinsum()(model).graph_module
         model = ReplaceInfBuffer()(model).graph_module
         return model
 

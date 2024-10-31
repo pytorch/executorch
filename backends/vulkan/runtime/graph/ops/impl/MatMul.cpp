@@ -62,7 +62,12 @@ void add_matmul_naive_buffer_node(
     const ValueRef mat2_data,
     const ValueRef out,
     const ValueRef mat2_is_transposed) {
-  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kHeightPacked);
+  ValueRef mat2 = prepack_standard(
+      graph,
+      mat2_data,
+      graph.storage_type_of(out),
+      utils::kHeightPacked,
+      /*passthrough = */ true);
 
   std::string kernel_name = "matmul_naive_buffer";
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
@@ -72,7 +77,7 @@ void add_matmul_naive_buffer_node(
       graph.size_at<uint32_t>(-2, out),
       graph.size_at<uint32_t>(-3, out) * graph.size_at<uint32_t>(-4, out)};
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
@@ -103,7 +108,12 @@ void add_matmul_naive_texture3d_node(
     const ValueRef mat2_data,
     const ValueRef out,
     const ValueRef mat2_is_transposed) {
-  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kHeightPacked);
+  ValueRef mat2 = prepack_standard(
+      graph,
+      mat2_data,
+      graph.storage_type_of(out),
+      utils::kHeightPacked,
+      /*passthrough = */ true);
 
   std::string kernel_name = graph.get_bool(mat2_is_transposed)
       ? "matmul_transposed_naive"
@@ -113,7 +123,7 @@ void add_matmul_naive_texture3d_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   utils::uvec3 global_wg_size = graph.logical_limits_of(out);
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_wg_size,
@@ -146,7 +156,12 @@ void add_matmul_optimized_node(
     const ValueRef mat2_data,
     const ValueRef out,
     const ValueRef mat2_is_transposed) {
-  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kHeightPacked);
+  ValueRef mat2 = prepack_standard(
+      graph,
+      mat2_data,
+      graph.storage_type_of(out),
+      utils::kHeightPacked,
+      /*passthrough = */ true);
 
   // Ensure mat1 is width packed
   ValueRef mat1_W_packed = graph.add_tensor_like(mat1, utils::kWidthPacked);
@@ -198,7 +213,7 @@ void add_matmul_optimized_node(
 
   utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,

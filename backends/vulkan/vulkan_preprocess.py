@@ -13,13 +13,12 @@ from executorch.backends.transforms.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
 from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
+from executorch.backends.transforms.fuse_dequant_linear import FuseDequantLinearPass
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
-from executorch.backends.transforms.mean_to_sum_div import MeanToSumDiv
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 
-from executorch.backends.vulkan._passes.remove_local_scalar_dense_ops import (
-    RemoveLocalScalarDenseOpsTransform,
-)
+from executorch.backends.vulkan._passes import RemoveLocalScalarDenseOpsTransform
+from executorch.backends.vulkan._passes.insert_prepack_nodes import insert_prepack_nodes
 
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
@@ -61,10 +60,10 @@ class VulkanBackend(BackendDetails):
         passes = [
             RemoveCloneOpsTransform(),
             AddmmToLinearTransform(),
+            FuseDequantLinearPass(),
             FuseViewCopyTransform(),
             FuseBatchNormWithConvPass(program),
             FuseClampPass(),
-            MeanToSumDiv(),
             SpecPropPass(),
             ConstraintBasedSymShapeEvalPass(),
             RemoveLocalScalarDenseOpsTransform(),
@@ -85,6 +84,8 @@ class VulkanBackend(BackendDetails):
             new_gm = new_gm_res.graph_module
 
         _copy_module(program.graph_module, new_gm)
+
+        program = insert_prepack_nodes(program)
 
         graph_builder = VkGraphBuilder(
             program, DelegateMappingBuilder(generated_identifiers=True)
