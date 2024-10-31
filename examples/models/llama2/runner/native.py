@@ -10,17 +10,16 @@ from typing import Optional
 
 import torch
 
-from executorch.examples.models.llama2.llama_transformer import ModelArgs
 from executorch.extension.pybindings.portable_lib import _load_for_executorch
 
 # Load custom ops and quantized ops.
 from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
 
+from executorch.examples.models.llama2.runner.generation import LlamaRunner
+
 # Note: import this after portable_lib
 # from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa # usort: skip
 from executorch.kernels import quantized  # noqa
-
-from executorch.examples.models.llama2.runner.generation import LlamaRunner
 
 
 class NativeLlamaRunner(LlamaRunner):
@@ -31,13 +30,13 @@ class NativeLlamaRunner(LlamaRunner):
     def __init__(self, args):
         with open(args.params, "r") as f:
             params = json.loads(f.read())
-        model_args: ModelArgs = ModelArgs(
+        super().__init__(
+            tokenizer_path=args.tokenizer,
             max_seq_len=args.max_len,
             max_batch_size=1,
             use_kv_cache=args.kv_cache,
             vocab_size=params["vocab_size"],
         )
-        super().__init__(tokenizer_path=args.tokenizer, model_args=model_args)
         self.model = _load_for_executorch(args.pte)
 
     def forward(

@@ -10,7 +10,6 @@ from typing import Optional
 
 import torch
 
-from examples.models.llama2.llama_transformer import ModelArgs
 from executorch.examples.models.model_factory import EagerModelFactory
 
 from .generation import LlamaRunner
@@ -24,13 +23,13 @@ class EagerLlamaRunner(LlamaRunner):
     def __init__(self, args):
         with open(args.params, "r") as f:
             params = json.loads(f.read())
-        model_args: ModelArgs = ModelArgs(
-            max_seq_len=args.max_len,
+        super().__init__(
+            tokenizer_path=args.tokenizer,
+            max_seq_len=args.max_seq_len,
             max_batch_size=1,
             use_kv_cache=True,
-            **params,
+            vocab_size=params["vocab_size"],
         )
-        super().__init__(tokenizer_path=args.tokenizer, model_args=model_args)
         self.model, _, _, _ = EagerModelFactory.create_model(
             "llama2",
             "Llama2Model",

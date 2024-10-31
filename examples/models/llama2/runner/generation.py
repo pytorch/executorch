@@ -51,10 +51,19 @@ def next_token(logits: torch.Tensor, temperature: float, top_p: float) -> int:
 
 
 class LlamaRunner(ABC):
-    def __init__(self, tokenizer_path: str, model_args: ModelArgs):
-        self.params = model_args
+    def __init__(
+        self,
+        tokenizer_path: str,
+        max_seq_len: int,
+        max_batch_size: int,
+        use_kv_cache: bool,
+        vocab_size: int,
+    ):
+        self.max_seq_len = max_seq_len
+        self.max_batch_size = max_batch_size
+        self.use_kv_cache = use_kv_cache
         self.tokenizer = Tokenizer(tokenizer_path)
-        assert model_args.vocab_size == self.tokenizer.n_words
+        assert vocab_size == self.tokenizer.n_words
 
     @abstractmethod
     def forward(
@@ -75,27 +84,35 @@ class LlamaRunner(ABC):
         logits = self.forward(
             tokens=torch.tensor([prompt_tokens], dtype=torch.long),
             input_pos=(
-                torch.tensor([0], dtype=torch.long)
-                if self.params.use_kv_cache
-                else None
+                torch.tensor([0], dtype=torch.long) if self.use_kv_cache else None
             ),
         )
 
-        current_token = next_token(logits, temperature, top_p)
+        # TODO: accomodate TorchTune model, which doesn't
+        # make an optimization of dropping all logits but the last.
+        current_token = next_token(logits[:, -1, :], temperature, top_p)
         tokens = prompt_tokens + [current_token]
 
-        while len(tokens) < self.params.max_seq_len:
-            if self.params.use_kv_cache:
+        i = 0
+        while len(tokens) < self.max_seq_len:
+            print(f"{i} out of {self.max_seq_len} max tokens generated")
+            if self.use_kv_cache:
                 logits = self.forward(
                     tokens=torch.tensor([[current_token]], dtype=torch.long),
                     input_pos=torch.tensor([len(tokens) - 1], dtype=torch.long),
                 )
             else:
-                logits = self.forward(tokens=torch.tensor([tokens], dtype=torch.long))
-            current_token = next_token(logits, temperature, top_p)
-            if current_token in self.tokenizer.stop_tokens:
+                logits = self.forward(
+                    tokens=torch.tensor([tokens], dtype=torch.long, device=self.device),
+                )
+            current_token = next_token(logits[:, -1, :], temperature, top_p)
+            if current_token == self.tokenizer.eos_id or (
+                hasattr(self.tokenizer, "stop_tokens")
+                and current_token in self.tokenizer.stop_tokens
+            ):
                 break
             tokens.append(current_token)
+            i += 1
 
         return tokens if echo else tokens[len(prompt_tokens) :]
 
