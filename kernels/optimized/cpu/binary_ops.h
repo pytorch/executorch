@@ -43,17 +43,27 @@ enum class ElementwiseOptimizedPath {
   kBroadcast2dBy1dReverseArguments,
   kBroadcastNdByNd,
   kBroadcastNdByNdReverseArguments,
+  kBroadcastLastDim,
+  kBroadcastLastDimReverseArguments,
 };
 
 namespace internal {
 
-// Find the single broadcast dimension if it exists.
-// This path aims to handle broadcast of the following form
-// A = [a1, a2,., 1, .., an]
-// B = [b1, b2,., bm, .., bn]
-// OR
-// A = [a1, a2,., am, .., an]
-// B = [b1, b2,., 1, .., bn]
+/*
+  Given two tensors, this function returns the broadcast dim if it exists.
+  Returns 0 if no broadcast dim is found.
+  Else negative index is used to indicate broadcast dim
+  e.g. if size = [a, b, c, 1, e, f] then broadcast dim is -3
+
+  This path aims to handle broadcast of the following form
+  A = [a1, a2,., 1, .., an]
+  B = [b1, b2,., bm, .., bn]
+  OR
+  A = [a1, a2,., am, .., an]
+  B = [b1, b2,., 1, .., bn]
+  Note that this way of determining broadcast dim also works
+  when broadcast dim is the last dim.
+*/
 int32_t inline get_broadcast_dim(const Tensor& lhs, const Tensor& rhs) {
   auto lhs_begin = arrayref_begin_ignoring_leading_1s(lhs.sizes());
   auto lhs_end = lhs.sizes().end();
@@ -124,6 +134,14 @@ inline ElementwiseOptimizedPath select_broadcast_optimized_path(
       return ElementwiseOptimizedPath::kBroadcastNdByNd;
     } else {
       return ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments;
+    }
+  } else if (broadcast_dim == -1) {
+    if (std::count_if(lhs_begin, lhs_end, [](Tensor::SizesType x) {
+          return x == 1;
+        }) == 1) {
+      return ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments;
+    } else {
+      return ElementwiseOptimizedPath::kBroadcastLastDim;
     }
   }
   return ElementwiseOptimizedPath::kNone;

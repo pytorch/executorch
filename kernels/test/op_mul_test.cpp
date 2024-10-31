@@ -221,6 +221,60 @@ class OpMulOutTest : public OperatorTest {
   }
 
   template <ScalarType DTYPE>
+  void test_broadcast_last_dim() {
+    TensorFactory<DTYPE> tf_a;
+
+    Tensor a =
+        tf_a.make({4, 3}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    Tensor b = tf_a.make({4, 1}, /*data=*/{2, 3, 4, 5});
+
+    // Destination for output of mul.
+    Tensor out = tf_a.zeros({4, 3});
+    Tensor expected = tf_a.make(
+        {4, 3}, /*data=*/{2, 4, 6, 12, 15, 18, 28, 32, 36, 50, 55, 60});
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+    EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
+
+    a = tf_a.make({2, 2, 3}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    b = tf_a.make({2, 2, 1}, /*data=*/{2, 3, 4, 5});
+
+    // Destination for output of mul.
+    out = tf_a.zeros({2, 2, 3});
+    expected = tf_a.make(
+        {2, 2, 3}, /*data=*/{2, 4, 6, 12, 15, 18, 28, 32, 36, 50, 55, 60});
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+    EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
+
+    a = tf_a.make(
+        {2, 2, 3, 5},
+        /*data=*/{1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15,
+                  16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+                  31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+                  46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60});
+    b = tf_a.make(
+        {2, 2, 3, 1},
+        /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+
+    // Destination for output of mul.
+    out = tf_a.zeros({2, 2, 3, 5});
+    expected = tf_a.make(
+        {2, 2, 3, 5},
+        /*data=*/{1,   2,   3,   4,   5,   12,  14,  16,  18,  20,  33,  36,
+                  39,  42,  45,  64,  68,  72,  76,  80,  105, 110, 115, 120,
+                  125, 156, 162, 168, 174, 180, 217, 224, 231, 238, 245, 288,
+                  296, 304, 312, 320, 369, 378, 387, 396, 405, 460, 470, 480,
+                  490, 500, 561, 572, 583, 594, 605, 672, 684, 696, 708, 720});
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+    EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
+  }
+
+  template <ScalarType DTYPE>
   void test_broadcast_b2a() {
     TensorFactory<DTYPE> tf_a;
     // a and b of different shapes
@@ -392,6 +446,18 @@ TEST_F(OpMulOutTest, BroadcastNDTest) {
   test_broadcast_4D<ScalarType::Float>();
   test_broadcast_4D<ScalarType::Half>();
   test_broadcast_4D<ScalarType::BFloat16>();
+
+  // Test broadcasting on the last dimension
+  test_broadcast_last_dim<ScalarType::Float>();
+  test_broadcast_last_dim<ScalarType::Half>();
+  test_broadcast_last_dim<ScalarType::BFloat16>();
+}
+
+TEST_F(OpMulOutTest, BroadcastLastDimTest) {
+  // Test broadcasting on the last dimension
+  test_broadcast_last_dim<ScalarType::Float>();
+  test_broadcast_last_dim<ScalarType::Half>();
+  test_broadcast_last_dim<ScalarType::BFloat16>();
 }
 
 // Broadcast tensor a and b's size to a new size c.
