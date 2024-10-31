@@ -1,7 +1,7 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(
     "@fbsource//xplat/executorch/kernels/optimized:lib_defs.bzl",
-    "get_vec_android_preprocessor_flags",
+    "get_vec_preprocessor_flags",
     "get_vec_cxx_preprocessor_flags",
 )
 load("@fbsource//xplat/executorch/kernels/test:util.bzl", "define_supported_features_lib")
@@ -27,7 +27,7 @@ def _lib_test_bin(name, extra_deps = [], in_cpu = False):
             "//executorch/kernels/optimized{}:{}".format(cpu_path, lib_root),
         ] + extra_deps,
         cxx_platform_preprocessor_flags = get_vec_cxx_preprocessor_flags(),
-        fbandroid_platform_preprocessor_flags = get_vec_android_preprocessor_flags(),
+        preprocessor_flags = get_vec_preprocessor_flags(),
     )
 
 def define_common_targets():
