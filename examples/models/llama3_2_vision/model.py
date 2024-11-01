@@ -40,7 +40,9 @@ class Llama3_2Decoder(EagerModelBase):
 
     def __init__(self, **kwargs):
         # Set member vars from kwargs.
-        self.max_seq_len = kwargs.get("max_seq_len", 8192)  # Trained to be a lot larger, but this value is kept small because of static kv cache at the moment.
+        self.max_seq_len = kwargs.get(
+            "max_seq_len", 8192
+        )  # Trained to be a lot larger, but this value is kept small because of static kv cache at the moment.
         self.encoder_max_seq_len = kwargs.get(
             "encoder_max_seq_len", int(4 * (448 / 14) ** 2 + 1)
         )  # Same as above.
