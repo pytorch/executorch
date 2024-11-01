@@ -214,6 +214,19 @@ def define_common_targets(is_fbcode = False):
     ##
     if is_fbcode:
         runtime.python_library(
+            name = "utils_lib",
+            srcs = [
+                "utils.py",
+            ],
+            visibility = [
+                "//executorch/backends/vulkan/...",
+            ],
+            deps = [
+                "//caffe2:torch",
+            ]
+        )
+
+        runtime.python_library(
             name = "custom_ops_lib",
             srcs = [
                 "custom_ops_lib.py"
