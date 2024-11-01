@@ -32,6 +32,7 @@ def _replace_mha_with_inference_mha(module: torch.nn.Module) -> None:
         else:
             replace_mha_with_inference_mha(child)
 
+
 def replace_mha_with_inference_mha(module: torch.nn.Module) -> torch.nn.Module:
     """
     Replace TorchTune's MHA with an inference friendly version of MHA that

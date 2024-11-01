@@ -70,9 +70,9 @@ from .source_transformation.sdpa import (
     replace_sdpa_with_simple_sdpa,
 )
 
-from .source_transformation.vulkan_rope import replace_with_vulkan_rotary_emb
-
 from .source_transformation.torchtune.attention import replace_mha_with_inference_mha
+
+from .source_transformation.vulkan_rope import replace_with_vulkan_rotary_emb
 
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
@@ -1018,5 +1018,9 @@ def _get_source_transforms(  # noqa
 
     if args.vulkan:
         transforms.append(replace_with_vulkan_rotary_emb)
+
+    print(
+        f"Performing the following source transformations: {[transform.__name__ for transform in transforms]}"
+    )
 
     return transforms
