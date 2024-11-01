@@ -9,11 +9,11 @@ nchw_to_bitw8_image_nobitw8buffer:
     STORAGE: texture3d
     DTYPE: int8
   generate_variant_forall:
-    DTYPE:
-      - VALUE: int8
-      - VALUE: uint8
     STORAGE:
       - VALUE: texture2d
       - VALUE: texture3d
+    DTYPE:
+      - VALUE: int8
+      - VALUE: uint8
   shader_variants:
     - NAME: nchw_to_bitw8_image_nobitw8buffer
