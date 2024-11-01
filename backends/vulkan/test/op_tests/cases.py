@@ -126,8 +126,7 @@ common_MKN_list = [
 ]
 
 
-@register_test_suite("aten.linear.default")
-def get_linear_inputs():
+def get_linear_texture_inputs():
     MKN_list = common_MKN_list
 
     inputs_list = [((M, K), (N, K), None) for M, K, N in MKN_list]
@@ -142,7 +141,30 @@ def get_linear_inputs():
         "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
+    test_suite.test_name_suffix = "texture"
     return test_suite
+
+
+def get_linear_buffer_inputs():
+    MKN_list = common_MKN_list
+
+    inputs_list = [((M, K), (N, K), None) for M, K, N in MKN_list]
+    inputs_list += [((3, M, K), (N, K), None) for M, K, N in MKN_list]
+
+    test_suite = VkTestSuite(inputs_list)
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = ["utils::kBuffer"]
+    test_suite.test_name_suffix = "buffer"
+    return test_suite
+
+
+@register_test_suite("aten.linear.default")
+def get_linear_test_suites():
+    return [get_linear_texture_inputs(), get_linear_buffer_inputs()]
 
 
 @register_test_suite("aten._weight_int8pack_mm.default")
