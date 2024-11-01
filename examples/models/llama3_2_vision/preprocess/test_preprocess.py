@@ -26,6 +26,7 @@ from executorch.extension.pybindings.portable_lib import (
 )
 
 from PIL import Image
+from torch._inductor.package import package_aoti
 
 from torchtune.models.clip.inference._transform import CLIPImageTransform
 
@@ -55,8 +56,10 @@ def initialize_models(resize_to_max_canvas: bool) -> Dict[str, Any]:
         possible_resolutions=None,
     )
 
+    # Eager model.
     model = CLIPImageTransformModel(config)
 
+    # Exported model.
     exported_model = torch.export.export(
         model.get_eager_model(),
         model.get_example_inputs(),
@@ -64,10 +67,15 @@ def initialize_models(resize_to_max_canvas: bool) -> Dict[str, Any]:
         strict=False,
     )
 
-    aoti_path = torch._inductor.aot_compile(
+    # AOTInductor model.
+    so = torch._export.aot_compile(
         exported_model.module(),
-        model.get_example_inputs(),
+        args=model.get_example_inputs(),
+        options={"aot_inductor.package": True},
+        dynamic_shapes=model.get_dynamic_shapes(),
     )
+    aoti_path = "preprocess.pt2"
+    package_aoti(aoti_path, so)
 
     edge_program = to_edge(
         exported_model, compile_config=EdgeCompileConfig(_check_ir_validity=False)
@@ -274,7 +282,7 @@ class TestImageTransform:
 
         # Run aoti model and check it matches reference model.
         aoti_path = models["aoti_path"]
-        aoti_model = torch._export.aot_load(aoti_path, "cpu")
+        aoti_model = torch._inductor.aoti_load_package(aoti_path)
         aoti_image, aoti_ar = aoti_model(image_tensor, inscribed_size, best_resolution)
         assert_expected(aoti_image, reference_image, rtol=0, atol=1e-4)
         assert (
