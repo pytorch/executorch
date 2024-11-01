@@ -19,9 +19,11 @@ ${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
-${layout_declare_buffer(B, "w", "nchw_out", DTYPE)}
+${layout_declare_buffer(B, "w", "buf_out", DTYPE)}
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 ${layout_declare_ubo(B, "ivec4", "sizes")}
+$if not TO_STAGING:
+  ${layout_declare_ubo(B, "ivec4", "buf_strides")}
 
 #include "indexing_utils.h"
 
@@ -31,23 +33,23 @@ ${layout_declare_spec_const(C, "int", "t_layout", "DEFAULT_LAYOUT")}
 const lowp ivec4 axis_map = unhash_axis_map(t_layout);
 const lowp int packed_dim = unhash_packed_dim(t_layout);
 
-void write_out_texel(VEC4_T texel, ivec4 tensor_idx) {
-  const ivec4 buf_indices = tidx_to_nchwi(
-      tensor_idx,
-      sizes,
-      packed_dim);
+void write_out_texel(VEC4_T texel, ivec4 tidx) {
+  $if TO_STAGING:
+    const ivec4 buf_indices = tidx_to_nchwi(tidx, sizes, packed_dim);
+  $else:
+    const ivec4 buf_indices = tidx_to_4bufi(tidx, buf_strides, packed_dim);
 
-  if (tensor_idx[packed_dim] < sizes[packed_dim]) {
-    nchw_out[buf_indices.x] = BUF_T(texel.x);
+  if (tidx[packed_dim] < sizes[packed_dim]) {
+    buf_out[buf_indices.x] = BUF_T(texel.x);
   }
-  if (tensor_idx[packed_dim] + 1 < sizes[packed_dim]) {
-    nchw_out[buf_indices.y] = BUF_T(texel.y);
+  if (tidx[packed_dim] + 1 < sizes[packed_dim]) {
+    buf_out[buf_indices.y] = BUF_T(texel.y);
   }
-  if (tensor_idx[packed_dim] + 2 < sizes[packed_dim]) {
-    nchw_out[buf_indices.z] = BUF_T(texel.z);
+  if (tidx[packed_dim] + 2 < sizes[packed_dim]) {
+    buf_out[buf_indices.z] = BUF_T(texel.z);
   }
-  if (tensor_idx[packed_dim] + 3 < sizes[packed_dim]) {
-    nchw_out[buf_indices.w] = BUF_T(texel.w);
+  if (tidx[packed_dim] + 3 < sizes[packed_dim]) {
+    buf_out[buf_indices.w] = BUF_T(texel.w);
   }
 }
 

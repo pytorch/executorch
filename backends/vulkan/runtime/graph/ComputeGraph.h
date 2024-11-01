@@ -612,6 +612,22 @@ class ComputeGraph final {
     return {t, staging};
   }
 
+  /*
+   * Add an input tensor with the specified properties along with its staging
+   * buffer.
+   */
+  inline IOValueRef add_input_tensor(
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::StorageType storage_type,
+      const utils::GPUMemoryLayout memory_layout,
+      const int64_t shared_object_idx = -1) {
+    ValueRef t = add_tensor(
+        sizes, dtype, storage_type, memory_layout, shared_object_idx);
+    ValueRef staging = set_input_tensor(t);
+    return {t, staging};
+  }
+
   SharedObject& get_shared_object(const int64_t idx);
 
   //
