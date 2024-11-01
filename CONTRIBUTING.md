@@ -260,8 +260,8 @@ for basics.
      - `Release notes: api`: changes to public facing apis (any interfaces, pybinded runtime methods, etc.).
      - `Release notes: backends`: changes to any of the backend delegates.
      - `Release notes: build`: changes related to the build system, including major dependency upgrades, notable build flags, optimizations, etc.
-     - `Release notes: SDK`: changes to any of ExecuTorch's SDKs, for example the debugger & profiler.
-     - `Release notes: examples`: changes to any of our example LLMs integrations, such as Llama3 and Llava.
+     - `Release notes: devtools`: changes to any of ExecuTorch's developer tools, for example the debugger & profiler.
+     - `Release notes: examples`: changes to any code under `examples/`.
      - `Release notes: misc`: anything notable that doesn't belong in the above categories.
    - See https://github.com/pytorch/executorch/pull/3612 for an example PR that
      follows this advice.
