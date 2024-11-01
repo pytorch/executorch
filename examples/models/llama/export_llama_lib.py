@@ -962,6 +962,7 @@ def _get_source_transforms(  # noqa
     if args.expand_rope_table:
         transforms.append(materialze_broadcast_of_rope_freq_cis)
 
+    transforms.append(replace_mha_with_inference_mha)
     if args.use_sdpa_with_kv_cache:
         if is_torchtune_model:
             assert (
