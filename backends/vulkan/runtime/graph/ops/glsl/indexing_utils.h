@@ -88,6 +88,21 @@ ivec4 tidx_to_nchwi(const ivec4 tidx, const ivec4 sizes, const int packed_dim) {
   return base_i + ivec4(0, 1, 2, 3) * strides[packed_dim];
 }
 
+/*
+ * Get the buffer indices that contain the data of the texel that corresponds to
+ * to the provided tensor index. Since the texel have 4 elements, 4 buffer
+ * indices will be retrieved.
+ */
+ivec4 tidx_to_4bufi(
+    const ivec4 tidx,
+    const ivec4 strides,
+    const int packed_dim) {
+  int base_i = tidx.x * strides.x + tidx.y * strides.y + tidx.z * strides.z +
+      tidx.w * strides.w;
+
+  return base_i + ivec4(0, 1, 2, 3) * strides[packed_dim];
+}
+
 ivec4 nchwi_to_tidx(const int nchwi, const ivec4 sizes) {
   return ivec4(
       nchwi % sizes.x,
