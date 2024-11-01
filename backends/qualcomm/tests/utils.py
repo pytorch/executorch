@@ -20,6 +20,7 @@ from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import (
     get_16a4w_qnn_ptq_config,
     get_default_16bit_qnn_ptq_config,
+    get_default_8bit_qat_proto,
     QnnQuantizer,
     QuantDtype,
 )
@@ -44,7 +45,11 @@ from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.program import ExecutorchProgram, ExecutorchProgramManager
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.ao.quantization.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 
 
 def generate_context_binary(
@@ -425,6 +430,30 @@ class TestQNN(unittest.TestCase):
         }
         self.assertTrue(nodes.intersection(q_and_dq))
         return quantized_module
+
+    def get_prepared_qat_module(
+        self,
+        module: torch.nn.Module,
+        inputs: Tuple[torch.Tensor],
+        is_conv_per_channel: Optional[bool] = True,
+        is_linear_per_channel: Optional[bool] = False,
+        custom_quant_annotations: Tuple[Callable] = (),
+        quant_dtype: QuantDtype = QuantDtype.use_8a8w,
+    ) -> torch.fx.GraphModule:
+        m = torch.export.export_for_training(module, inputs).module()
+
+        quantizer = QnnQuantizer()
+        quantizer.add_custom_quant_annotations(custom_quant_annotations)
+        quantizer.set_per_channel_conv_quant(is_conv_per_channel)
+        quantizer.set_per_channel_linear_quant(is_linear_per_channel)
+
+        if quant_dtype == QuantDtype.use_8a8w:
+            quantizer.set_bit8_op_quant_config(get_default_8bit_qat_proto())
+        else:
+            raise RuntimeError("Shuld not be here")
+
+        prepared = prepare_qat_pt2e(m, quantizer)
+        return torch.ao.quantization.move_exported_model_to_train(prepared)
 
     def split_graph(self, graph_module: torch.fx.GraphModule, division: int):
         class SplitGraph(ExportPass):

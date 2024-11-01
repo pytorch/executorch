@@ -40,16 +40,14 @@ class Llama3_2Decoder(EagerModelBase):
 
     def __init__(self, **kwargs):
         # Set member vars from kwargs.
-        self.max_seq_len = kwargs.get("max_seq_len", 8192)
+        self.max_seq_len = kwargs.get("max_seq_len", 8192)  # Trained to be a lot larger, but this value is kept small because of static kv cache at the moment.
         self.encoder_max_seq_len = kwargs.get(
             "encoder_max_seq_len", int(4 * (448 / 14) ** 2 + 1)
-        )
+        )  # Same as above.
         self.generate_full_logits = kwargs.get("generate_full_logits", False)
         self.enable_dynamic_shape = kwargs.get("enable_dynamic_shape", False)
         self.output_prune_map_path = kwargs.get("output_prune_map_path", None)
-        # TODO: enable kv cache with TransformerDecoder's setup_cache().
         self.use_kv_cache = kwargs.get("use_kv_cache", False)
-        self.use_sdpa_with_kv_cache = kwargs.get("use_sdpa_with_kv_cache", False)
         self.verbose = kwargs.get("verbose", False)
         self.args = kwargs.get("args", None)
 
@@ -59,6 +57,14 @@ class Llama3_2Decoder(EagerModelBase):
         # Sharded checkpoint.
         checkpoint_dir = kwargs.get("checkpoint_dir", None)
         params_path = kwargs.get("params", ckpt_dir / "demo_config.json")
+
+        self.causal_mask = torch.tril(
+            torch.ones(
+                size=(self.max_seq_len, self.max_seq_len),
+                dtype=torch.bool,
+            )
+        )
+        self.input_pos = torch.arange(self.max_seq_len)
 
         # Load checkpoint and params.
         device = "cpu"
@@ -101,7 +107,7 @@ class Llama3_2Decoder(EagerModelBase):
         # Load checkpoint.
         missing, unexpected = self.model_.load_state_dict(
             checkpoint,
-            strict=False,
+            strict=True,
             assign=True,
         )
         if kwargs.get("verbose", False):
@@ -126,6 +132,13 @@ class Llama3_2Decoder(EagerModelBase):
 
             self.model_ = prune_output_vocab(self.model_, output_prune_map)
 
+        # if self.use_kv_cache:
+        #     print("Setting up KV cache on the model...")
+        #     self.model_.setup_caches(
+        #         batch_size=1,
+        #         dtype=self.dtype,
+        #     )
+
     def get_eager_model(self) -> torch.nn.Module:
         if self.dtype:
             return self.model_.to(self.dtype)
@@ -133,24 +146,25 @@ class Llama3_2Decoder(EagerModelBase):
             return self.model_.to(torch.float16)
 
     def get_example_inputs(self):
-        return (torch.ones(1, 64, dtype=torch.long),)  # positional inputs
+        return (torch.ones(1, 64, dtype=torch.long),)
 
     def get_example_kwarg_inputs(self):
         # TODO: add input_pos and mask when after making cache work.
         return {
-            # "mask": None,
+            # "mask": self.causal_mask[None, 64, None, :],
             # "encoder_input": None,
             # "encoder_mask": None,
-            # "input_pos": torch.ones(64, dtype=torch.long),
+            # "input_pos": self.input_pos[None, 64]
         }
 
     def get_dynamic_shapes(self):
-        dim = torch.export.Dim("token_dim", min=1, max=self.max_seq_len)
+        batch_size = 1
+        dim_seq_len = torch.export.Dim("token_dim", min=1, max=self.max_seq_len)
         dynamic_shapes = {
-            "tokens": {0: 1, 1: dim},
-            # "encoder_input": {0:1, 1:dim_enc, 2:4096},
-            # "encoder_mask": {0:1, 1:dim, 2:dim_enc},
-            # "mask": None,
-            # "input_pos" : {0: dim},
+            "tokens": {0: batch_size, 1: dim_seq_len},
+            # "encoder_input": {0: 1, 1: dim_enc, 2: 4096},
+            # "encoder_mask": {0: 1, 1: dim, 2: dim_enc},
+            # "mask": {0: batch_size, 1: dim_seq_len, 2: self.max_seq_len},
+            # "input_pos" : {0: batch_size, 1: dim_seq_len},
         }
         return dynamic_shapes

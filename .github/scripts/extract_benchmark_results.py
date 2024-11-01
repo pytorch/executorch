@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import re
-import time
 import zipfile
 from argparse import Action, ArgumentParser, Namespace
 from io import BytesIO
@@ -26,12 +25,15 @@ ARTIFACTS_FILENAME_REGEX = re.compile(r"(android|ios)-artifacts-(?P<job_id>\d+).
 
 # iOS-related regexes and variables
 IOS_TEST_SPEC_REGEX = re.compile(
-    r"Test Case\s+'-\[(?P<test_class>\w+)\s+(?P<test_name>\w+)\]'\s+measured\s+\[(?P<metric>.+)\]\s+average:\s+(?P<value>[\d\.]+),"
+    r"Test Case\s+'-\[(?P<test_class>\w+)\s+(?P<test_name>[\w\+]+)\]'\s+measured\s+\[(?P<metric>.+)\]\s+average:\s+(?P<value>[\d\.]+),"
 )
 IOS_TEST_NAME_REGEX = re.compile(
-    r"test_(?P<method>forward|load|generate)_(?P<model_name>\w+)_pte.*iOS_(?P<ios_ver>\w+)_iPhone(?P<iphone_ver>\w+)"
+    r"test_(?P<method>forward|load|generate)_(?P<model_name>[\w\+]+)_pte.*iOS_(?P<ios_ver>\w+)_iPhone(?P<iphone_ver>\w+)"
 )
-IOS_MODEL_NAME_REGEX = re.compile(r"(?P<model>[^_]+)_(?P<backend>\w+)_(?P<dtype>\w+)")
+# The backend name could contain +, i.e. tinyllama_xnnpack+custom+qe_fp32
+IOS_MODEL_NAME_REGEX = re.compile(
+    r"(?P<model>[^_]+)_(?P<backend>[\w\+]+)_(?P<dtype>\w+)"
+)
 
 
 class ValidateArtifacts(Action):
@@ -159,19 +161,8 @@ def initialize_ios_metadata(test_name: str) -> Dict[str, any]:
     ios_ver = m.group("ios_ver").replace("_", ".")
     iphone_ver = m.group("iphone_ver").replace("_", ".")
 
-    # NB: This looks brittle, but unless we can return iOS benchmark results in JSON
-    # format by the test, the mapping is needed to match with Android test
-    if method == "load":
-        metric = "model_load_time(ms)"
-    elif method == "forward":
-        metric = (
-            "generate_time(ms)"
-            if "llama" in model_name
-            else "avg_inference_latency(ms)"
-        )
-    elif method == "generate":
-        metric = "token_per_sec"
-
+    # The default backend and quantization dtype if the script couldn't extract
+    # them from the model name
     backend = ""
     quantization = "unknown"
 
@@ -194,8 +185,9 @@ def initialize_ios_metadata(test_name: str) -> Dict[str, any]:
             "availMem": 0,
             "totalMem": 0,
         },
-        "metric": metric,
+        "method": method,
         # These fields will be populated later by extract_ios_metric
+        "metric": "",
         "actualValue": 0,
         "targetValue": 0,
     }
@@ -210,10 +202,38 @@ def extract_ios_metric(
     """
     Map the metric name from iOS xcresult to the benchmark result
     """
-    if metric_name == "Clock Monotonic Time, s":
-        # The benchmark value is in ms
-        benchmark_result["actualValue"] = metric_value * 1000
-    elif metric_name == "Tokens Per Second, t/s":
+    method = benchmark_result.get("method", "")
+    if not method:
+        return benchmark_result
+
+    # NB: This looks brittle, but unless we can return iOS benchmark results in JSON
+    # format by the test, the mapping is needed to match with Android test
+    if method == "load":
+        if metric_name == "Clock Monotonic Time, s":
+            benchmark_result["metric"] = "model_load_time(ms)"
+            benchmark_result["actualValue"] = metric_value * 1000
+
+        elif metric_name == "Memory Peak Physical, kB":
+            # NB: Showing the value in mB is friendlier IMO
+            benchmark_result["metric"] = "peak_load_mem_usage(mb)"
+            benchmark_result["actualValue"] = metric_value / 1024
+
+    elif method == "forward":
+        if metric_name == "Clock Monotonic Time, s":
+            benchmark_result["metric"] = (
+                "generate_time(ms)"
+                if "llama" in test_name
+                else "avg_inference_latency(ms)"
+            )
+            benchmark_result["actualValue"] = metric_value * 1000
+
+        elif metric_name == "Memory Peak Physical, kB":
+            # NB: Showing the value in mB is friendlier IMO
+            benchmark_result["metric"] = "peak_inference_mem_usage(mb)"
+            benchmark_result["actualValue"] = metric_value / 1024
+
+    elif method == "generate" and metric_name == "Tokens Per Second, t/s":
+        benchmark_result["metric"] = "token_per_sec"
         benchmark_result["actualValue"] = metric_value
 
     return benchmark_result
@@ -235,6 +255,7 @@ def extract_ios_benchmark_results(
 
         with request.urlopen(artifact_s3_url) as data:
             current_test_name = ""
+            current_metric_name = ""
             current_record = {}
 
             for line in data.read().decode("utf8").splitlines():
@@ -242,24 +263,25 @@ def extract_ios_benchmark_results(
                 if not s:
                     continue
 
-                test_class = s.group("test_class")
                 test_name = s.group("test_name")
                 metric_name = s.group("metric")
                 metric_value = float(s.group("value"))
 
-                if test_name != current_test_name:
-                    if current_record:
+                if test_name != current_test_name or metric_name != current_metric_name:
+                    if current_record and current_record.get("metric", ""):
                         # Save the benchmark result in the same format used by Android
                         benchmark_results.append(current_record.copy())
 
                     current_test_name = test_name
+                    current_metric_name = metric_name
                     current_record = initialize_ios_metadata(current_test_name)
 
                 current_record = extract_ios_metric(
                     current_record, test_name, metric_name, metric_value
                 )
 
-            benchmark_results.append(current_record.copy())
+            if current_record and current_record.get("metric", ""):
+                benchmark_results.append(current_record.copy())
 
         return benchmark_results
 
