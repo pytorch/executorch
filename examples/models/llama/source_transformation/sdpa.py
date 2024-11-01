@@ -80,7 +80,7 @@ class SDPACustom(torch.nn.Module):
                 input_pos[0].item(),
                 seqlen,
                 None,  # Attention mask
-                0,  # Dropout probability, ignored by the code
+                0,  # dropout probability. Ignored by the code
                 True,  # is_causal
             )
         return output.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
@@ -102,65 +102,6 @@ def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
     from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa
 
     _replace_sdpa_with_custom_op(module)
-    return module
-
-
-class SDPAOnlyCustom(torch.nn.Module):
-    """
-    Just the custom SDPA op, no KV cache update included. Can only be used
-    in conjunction with a quantized KV cache.
-    """
-
-    def __init__(
-        self,
-    ):
-        super().__init__()
-
-    def forward(
-        self,
-        input_pos: torch.Tensor,
-        q: torch.Tensor,
-        k: torch.Tensor,
-        v: torch.Tensor,
-        bsz: int,
-        seqlen: int,
-        mask: torch.Tensor = None,
-    ):
-        # Custom op only supports float32 currently. Converting to/from float32 is
-        # faster than not having the op.
-        input_dtype = q.dtype
-        q = q.to(dtype=torch.float)
-        k = k.to(dtype=torch.float)
-        v = v.to(dtype=torch.float)
-        output = torch.ops.llama.custom_sdpa(
-            q,
-            k,
-            v,
-            input_pos[0].item(),
-            None,  # Attention mask
-            0,  # Dropout probability, ignored by the code.
-            True,  # is_causal
-        )
-        return output.view(bsz, seqlen, -1).to(dtype=input_dtype)
-
-
-def _replace_sdpa_with_sdpa_only_custom_op(module: torch.nn.Module):
-    for name, child in module.named_children():
-        if isinstance(child, SDPA):
-            assert (
-                child.kv_cache.cache_fp_type == torch.float32
-            ), "Only float32 is supported for custom SDPA"
-            setattr(
-                module,
-                name,
-                SDPAOnlyCustom(),
-            )
-        else:
-            _replace_sdpa_with_sdpa_only_custom_op(child)
-
-
-def replace_sdpa_with_sdpa_only_custom_op(module: torch.nn.Module) -> torch.nn.Module:
-    _replace_sdpa_with_sdpa_only_custom_op(module)
     return module
 
 

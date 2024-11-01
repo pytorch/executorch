@@ -54,7 +54,6 @@ from .source_transformation.quantize import (
 )
 from .source_transformation.quantized_kv_cache import (
     replace_kv_cache_with_quantized_kv_cache,
-    replace_torchtune_kv_cache_with_quantized_kv_cache,
 )
 from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
 
@@ -66,14 +65,9 @@ from .source_transformation.sdpa import (
     replace_sdpa_with_coreml_sdpa,
     replace_sdpa_with_custom_op,
     replace_sdpa_with_flex_sdpa,
-    replace_sdpa_with_sdpa_only_custom_op,
     replace_sdpa_with_simple_sdpa,
 )
-
-from .source_transformation.torchtune.attention import replace_mha_with_inference_mha
-
 from .source_transformation.vulkan_rope import replace_with_vulkan_rotary_emb
-
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -243,7 +237,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--use_sdpa_with_kv_cache",
         default=False,
         action="store_true",
-        help="Whether to use a custom sdpa + kv_cache update when kv cache is enabled.",
+        help="Whether to use sdpa_with_kv_cache update op when using kv cache",
     )
     parser.add_argument(
         "--disable_dynamic_shape",
@@ -595,18 +589,6 @@ def _validate_args(args):
     if args.num_sharding > 0 and not args.qnn:
         raise ValueError("Model shard is only supported with qnn backend now.")
 
-    if args.model in TORCHTUNE_DEFINED_MODELS:
-        if args.use_sdpa_with_kv_cache:
-            if not args.use_kv_cache and not args.quantize_kv_cache:
-                raise ValueError(
-                    f"TorchTune-defined {args.model} only works with custom SDPA op + quantized KV cache at the moment. Please enable use_kv_cache and quantize_kv_cache when use_sdpa_with_kv_cache is enabled."
-                )
-        if args.use_kv_cache:
-            if not args.quantize_kv_cache:
-                raise ValueError(
-                    f"TorchTune-defined {args.model} only works with quantized KV cache at the moment. Please enable quantize_kv_cache when use_kv_cache is enabled."
-                )
-
 
 def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
     _validate_args(args)
@@ -910,7 +892,6 @@ def _load_llama_model(
 def _get_source_transforms(  # noqa
     modelname: str, dtype_override: Optional[DType], args
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
-    is_torchtune_model = modelname in TORCHTUNE_DEFINED_MODELS
     transforms = []
 
     if args.use_spin_quant:
@@ -962,29 +943,12 @@ def _get_source_transforms(  # noqa
     if args.expand_rope_table:
         transforms.append(materialze_broadcast_of_rope_freq_cis)
 
-    transforms.append(replace_mha_with_inference_mha)
     if args.use_sdpa_with_kv_cache:
-        if is_torchtune_model:
-            assert (
-                args.use_kv_cache and args.quantize_kv_cache
-            ), "use_sdpa_with_kv_cache requires use_kv_cache=True and quantize_kv_cache=True for TorchTune at the moment."
-            transforms.append(replace_mha_with_inference_mha)
-            transforms.append(replace_sdpa_with_sdpa_only_custom_op)
-        else:
-            transforms.append(replace_sdpa_with_custom_op)
+        transforms.append(replace_sdpa_with_custom_op)
 
     if args.quantize_kv_cache:
         assert args.use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
-        if is_torchtune_model:
-            transforms.append(
-                lambda module: replace_torchtune_kv_cache_with_quantized_kv_cache(
-                    module,
-                    is_transposed=not args.use_sdpa_with_kv_cache,
-                    enable_dynamic_shape=args.enable_dynamic_shape,
-                )
-            )
-        else:
-            transforms.append(replace_kv_cache_with_quantized_kv_cache)
+        transforms.append(replace_kv_cache_with_quantized_kv_cache)
 
     if args.use_kv_cache:
         if args.qnn:
@@ -1018,9 +982,5 @@ def _get_source_transforms(  # noqa
 
     if args.vulkan:
         transforms.append(replace_with_vulkan_rotary_emb)
-
-    print(
-        f"Performing the following source transformations: {[transform.__name__ for transform in transforms]}"
-    )
 
     return transforms

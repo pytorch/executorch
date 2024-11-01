@@ -11,7 +11,6 @@ import torch
 import torch.nn as nn
 from executorch.examples.models.llama.llama_transformer import KVCache
 from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noqa: F401
-from torchtune.modules.kv_cache import KVCache as TorchTuneKVCache
 
 
 """
@@ -208,31 +207,8 @@ class QuantizedKVCache(nn.Module):
             kv_cache.enable_dynamic_shape,
         )
 
-    @classmethod
-    def from_torchtune_float(
-        cls,
-        kv_cache,
-        cache_type: QuantizedCacheType,
-        is_transposed: bool,
-        enable_dynamic_shape: bool,
-    ):
-        cache_shape = kv_cache.k_cache.shape
-        if kv_cache.is_tranposed:
-            max_batch_size, n_heads, max_seq_length, head_dim = cache_shape
-        else:
-            max_batch_size, max_seq_length, n_heads, head_dim = cache_shape
-        return cls(
-            max_batch_size,
-            max_seq_length,
-            n_heads,
-            head_dim,
-            cache_type,
-            is_transposed,
-            enable_dynamic_shape,
-        )
 
-
-def replace_kv_cache_with_quantized_kv_cache(module: nn.Module) -> nn.Module:
+def replace_kv_cache_with_quantized_kv_cache(module):
     logging.warning(
         "Replacing KVCache with QuantizedKVCache. This modifies the model in place."
     )
@@ -242,44 +218,6 @@ def replace_kv_cache_with_quantized_kv_cache(module: nn.Module) -> nn.Module:
                 module,
                 name,
                 QuantizedKVCache.from_float(child, QuantizedCacheType.AffineAsymmetric),
-            )
-        else:
-            replace_kv_cache_with_quantized_kv_cache(child)
-    return module
-
-
-def replace_torchtune_kv_cache_with_quantized_kv_cache(
-    module: nn.Module, is_transposed: bool, enable_dynamic_shape: bool
-) -> nn.Module:
-    """
-    Replace TorchTune KVCache with Executorch's quantized KVCache.
-
-    Args:
-        is_transposed: whether q, k, and v are transposed. Should set to false  when sdpa custom op source transform is enabled.
-        enable_dynamic_shape: whether dynamic shapes are enabled.
-
-    Returns:
-        The passed in model.
-    """
-    logging.warning(
-        "Replacing KVCache with QuantizedKVCache. This modifies the model in place."
-    )
-    for name, child in module.named_children():
-        if isinstance(child, TorchTuneKVCache):
-            cache_shape = child.k_cache.shape
-            if is_transposed:
-                max_batch_size, n_heads, max_seq_length, head_dim = cache_shape
-            else:
-                max_batch_size, max_seq_length, n_heads, head_dim = cache_shape
-            setattr(
-                module,
-                name,
-                QuantizedKVCache.from_torchtune_float(
-                    child,
-                    QuantizedCacheType.AffineAsymmetric,
-                    is_transposed,
-                    enable_dynamic_shape,
-                ),
             )
         else:
             replace_kv_cache_with_quantized_kv_cache(child)
