@@ -124,28 +124,7 @@ if USE_PYTORCH_NIGHTLY:
         f"torchvision==0.20.0.{NIGHTLY_VERSION}",  # For testing.
         "typing-extensions",
     ]
-else:
-    # This route is used in CI to test the pinned PyTorch commit. Note that we
-    # don't need to set any version number here because they have already been
-    # installed on CI before this step, so pip won't reinstall them
-    EXIR_REQUIREMENTS = [
-        "torch",
-        "torchvision",
-        "typing-extensions",
-    ]
 
-# pip packages needed for development.
-DEVEL_REQUIREMENTS = [
-    "cmake",  # For building binary targets.
-    "pip>=23",  # For building the pip package.
-    "pyyaml",  # Imported by the kernel codegen tools.
-    "setuptools>=63",  # For building the pip package.
-    "tomli",  # Imported by extract_sources.py when using python < 3.11.
-    "wheel",  # For building the pip package archive.
-    "zstd",  # Imported by resolve_buck.py.
-]
-
-if USE_PYTORCH_NIGHTLY:
     # pip packages needed to run examples.
     # TODO: Make each example publish its own requirements.txt
     EXAMPLES_REQUIREMENTS = [
@@ -158,12 +137,29 @@ else:
     # This route is used in CI to test the pinned PyTorch commit. Note that we
     # don't need to set any version number here because they have already been
     # installed on CI before this step, so pip won't reinstall them
+    EXIR_REQUIREMENTS = [
+        "torch",
+        "torchvision",
+        "typing-extensions",
+    ]
+
     EXAMPLES_REQUIREMENTS = [
         "timm==1.0.7",
         "torchaudio",
         "torchsr==1.0.4",
         "transformers==4.42.4",
     ]
+
+# pip packages needed for development.
+DEVEL_REQUIREMENTS = [
+    "cmake",  # For building binary targets.
+    "pip>=23",  # For building the pip package.
+    "pyyaml",  # Imported by the kernel codegen tools.
+    "setuptools>=63",  # For building the pip package.
+    "tomli",  # Imported by extract_sources.py when using python < 3.11.
+    "wheel",  # For building the pip package archive.
+    "zstd",  # Imported by resolve_buck.py.
+]
 
 # Assemble the list of requirements to actually install.
 # TODO: Add options for reducing the number of requirements.
