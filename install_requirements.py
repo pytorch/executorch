@@ -117,38 +117,25 @@ NIGHTLY_VERSION = "dev20241019"
 # The pip repository that hosts nightly torch packages.
 TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 
-if USE_PYTORCH_NIGHTLY:
-    # pip packages needed by exir.
-    EXIR_REQUIREMENTS = [
-        f"torch==2.6.0.{NIGHTLY_VERSION}",
-        f"torchvision==0.20.0.{NIGHTLY_VERSION}",  # For testing.
-        "typing-extensions",
-    ]
+# pip packages needed by exir.
+EXIR_REQUIREMENTS = [
+    f"torch==2.6.0.{NIGHTLY_VERSION}" if USE_PYTORCH_NIGHTLY else "torch",
+    (
+        f"torchvision==0.20.0.{NIGHTLY_VERSION}"
+        if USE_PYTORCH_NIGHTLY
+        else "torchvision"
+    ),  # For testing.
+    "typing-extensions",
+]
 
-    # pip packages needed to run examples.
-    # TODO: Make each example publish its own requirements.txt
-    EXAMPLES_REQUIREMENTS = [
-        "timm==1.0.7",
-        f"torchaudio==2.5.0.{NIGHTLY_VERSION}",
-        "torchsr==1.0.4",
-        "transformers==4.42.4",
-    ]
-else:
-    # This route is used in CI to test the pinned PyTorch commit. Note that we
-    # don't need to set any version number here because they have already been
-    # installed on CI before this step, so pip won't reinstall them
-    EXIR_REQUIREMENTS = [
-        "torch",
-        "torchvision",
-        "typing-extensions",
-    ]
-
-    EXAMPLES_REQUIREMENTS = [
-        "timm==1.0.7",
-        "torchaudio",
-        "torchsr==1.0.4",
-        "transformers==4.42.4",
-    ]
+# pip packages needed to run examples.
+# TODO: Make each example publish its own requirements.txt
+EXAMPLES_REQUIREMENTS = [
+    "timm==1.0.7",
+    f"torchaudio==2.5.0.{NIGHTLY_VERSION}" if USE_PYTORCH_NIGHTLY else "torchaudio",
+    "torchsr==1.0.4",
+    "transformers==4.42.4",
+]
 
 # pip packages needed for development.
 DEVEL_REQUIREMENTS = [
