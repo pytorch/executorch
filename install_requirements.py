@@ -119,6 +119,9 @@ TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 
 # pip packages needed by exir.
 EXIR_REQUIREMENTS = [
+    # Setting USE_PYTORCH_NIGHTLY to false to test the pinned PyTorch commit. Note
+    # that we don't need to set any version number there because they have already
+    # been installed on CI before this step, so pip won't reinstall them
     f"torch==2.6.0.{NIGHTLY_VERSION}" if USE_PYTORCH_NIGHTLY else "torch",
     (
         f"torchvision==0.20.0.{NIGHTLY_VERSION}"
