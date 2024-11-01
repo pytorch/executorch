@@ -104,7 +104,6 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-kv",
         "--kv_cache",
-        default=True,
         action="store_true",
     )
 
