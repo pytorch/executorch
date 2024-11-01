@@ -10,7 +10,6 @@ from typing import Optional
 
 import torch
 
-from examples.models.llama.llama_transformer import ModelArgs
 from executorch.examples.models.llama.export_llama_lib import (
     _prepare_for_llama_export,
     build_args_parser as _build_args_parser,

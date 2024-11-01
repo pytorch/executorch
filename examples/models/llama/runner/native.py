@@ -10,7 +10,10 @@ from typing import Optional
 
 import torch
 
-from executorch.examples.models.llama.export_llama_lib import EXECUTORCH_DEFINED_MODELS, TORCHTUNE_DEFINED_MODELS
+from executorch.examples.models.llama.export_llama_lib import (
+    EXECUTORCH_DEFINED_MODELS,
+    TORCHTUNE_DEFINED_MODELS,
+)
 
 from executorch.extension.pybindings.portable_lib import _load_for_executorch
 

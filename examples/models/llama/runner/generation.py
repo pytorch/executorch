@@ -9,7 +9,6 @@ from typing import List, Optional, TypedDict
 
 import torch
 
-from executorch.examples.models.llama.llama_transformer import ModelArgs
 from executorch.extension.llm.tokenizer.utils import get_tokenizer
 
 
@@ -63,7 +62,7 @@ class LlamaRunner(ABC):
     ):
         """
         Constructor.
-        
+
         Args:
         tokenizer_path: path to tokenizer.model file.
         max_seq_len: max length of the output sequence, after which the output will be clipped.
@@ -100,13 +99,17 @@ class LlamaRunner(ABC):
         logits = self.forward(
             tokens=torch.tensor([prompt_tokens], dtype=torch.long, device=self.device),
             input_pos=(
-                torch.tensor([0], dtype=torch.long, device=self.device) if self.use_kv_cache else None
+                torch.tensor([0], dtype=torch.long, device=self.device)
+                if self.use_kv_cache
+                else None
             ),
         )
 
-        # TODO: accomodate TorchTune model, which doesn't
-        # make an optimization of dropping all logits but the last.
         current_token = next_token(logits[:, -1, :], temperature, top_p)
+        if self.has_full_logits:
+            current_token = next_token(logits[:, -1, :], temperature, top_p)
+        else:
+            current_token = next_token(logits, temperature, top_p)
         tokens = prompt_tokens + [current_token]
 
         i = 0
