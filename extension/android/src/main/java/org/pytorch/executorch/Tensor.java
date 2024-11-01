@@ -679,4 +679,105 @@ public abstract class Tensor {
     tensor.mHybridData = hybridData;
     return tensor;
   }
+
+  /**
+   * Serializes a {@code Tensor} into a byte array.
+   *
+   * @return The serialized byte array.
+   * @apiNote This method is experimental and subject to change without notice. This does NOT
+   *     supoprt list type.
+   */
+  public byte[] toByteArray() {
+    int dtypeSize = 0;
+    byte[] tensorAsByteArray = null;
+    if (dtype() == DType.FLOAT) {
+      dtypeSize = 4;
+      tensorAsByteArray = new byte[(int) numel() * dtypeSize];
+      Tensor_float32 thiz = (Tensor_float32) this;
+      ByteBuffer.wrap(tensorAsByteArray).asFloatBuffer().put(thiz.getDataAsFloatArray());
+    } else if (dtype() == DType.DOUBLE) {
+      dtypeSize = 8;
+      tensorAsByteArray = new byte[(int) numel() * dtypeSize];
+      Tensor_float64 thiz = (Tensor_float64) this;
+      ByteBuffer.wrap(tensorAsByteArray).asDoubleBuffer().put(thiz.getDataAsDoubleArray());
+    } else if (dtype() == DType.UINT8) {
+      dtypeSize = 1;
+      tensorAsByteArray = new byte[(int) numel()];
+      Tensor_uint8 thiz = (Tensor_uint8) this;
+      ByteBuffer.wrap(tensorAsByteArray).put(thiz.getDataAsUnsignedByteArray());
+    } else if (dtype() == DType.INT8) {
+      dtypeSize = 1;
+      tensorAsByteArray = new byte[(int) numel()];
+      Tensor_int8 thiz = (Tensor_int8) this;
+      ByteBuffer.wrap(tensorAsByteArray).put(thiz.getDataAsByteArray());
+    } else if (dtype() == DType.INT16) {
+      throw new IllegalArgumentException("DType.INT16 is not supported in Java so far");
+    } else if (dtype() == DType.INT32) {
+      dtypeSize = 4;
+      tensorAsByteArray = new byte[(int) numel() * dtypeSize];
+      Tensor_int32 thiz = (Tensor_int32) this;
+      ByteBuffer.wrap(tensorAsByteArray).asIntBuffer().put(thiz.getDataAsIntArray());
+    } else if (dtype() == DType.INT64) {
+      dtypeSize = 8;
+      tensorAsByteArray = new byte[(int) numel() * dtypeSize];
+      Tensor_int64 thiz = (Tensor_int64) this;
+      ByteBuffer.wrap(tensorAsByteArray).asLongBuffer().put(thiz.getDataAsLongArray());
+    } else {
+      throw new IllegalArgumentException("Unknown Tensor dtype");
+    }
+    ByteBuffer byteBuffer =
+        ByteBuffer.allocate(1 + 1 + 4 * shape.length + dtypeSize * (int) numel());
+    byteBuffer.put((byte) dtype().jniCode);
+    byteBuffer.put((byte) shape.length);
+    for (long s : shape) {
+      byteBuffer.putInt((int) s);
+    }
+    byteBuffer.put(tensorAsByteArray);
+    return byteBuffer.array();
+  }
+
+  /**
+   * Deserializes a {@code Tensor} from a byte[].
+   *
+   * @param buffer The byte array to deserialize from.
+   * @return The deserialized {@code Tensor}.
+   * @apiNote This method is experimental and subject to change without notice. This does NOT
+   *     supoprt list type.
+   */
+  public static Tensor fromByteArray(byte[] bytes) {
+    if (bytes == null) {
+      throw new IllegalArgumentException("bytes cannot be null");
+    }
+    ByteBuffer buffer = ByteBuffer.wrap(bytes);
+    if (!buffer.hasRemaining()) {
+      throw new IllegalArgumentException("invalid buffer");
+    }
+    byte scalarType = buffer.get();
+    byte numberOfDimensions = buffer.get();
+    long[] shape = new long[(int) numberOfDimensions];
+    long numel = 1;
+    for (int i = 0; i < numberOfDimensions; i++) {
+      int dim = buffer.getInt();
+      if (dim < 0) {
+        throw new IllegalArgumentException("invalid shape");
+      }
+      shape[i] = dim;
+      numel *= dim;
+    }
+    if (scalarType == DType.FLOAT.jniCode) {
+      return new Tensor_float32(buffer.asFloatBuffer(), shape);
+    } else if (scalarType == DType.DOUBLE.jniCode) {
+      return new Tensor_float64(buffer.asDoubleBuffer(), shape);
+    } else if (scalarType == DType.UINT8.jniCode) {
+      return new Tensor_uint8(buffer, shape);
+    } else if (scalarType == DType.INT8.jniCode) {
+      return new Tensor_int8(buffer, shape);
+    } else if (scalarType == DType.INT16.jniCode) {
+      return new Tensor_int32(buffer.asIntBuffer(), shape);
+    } else if (scalarType == DType.INT64.jniCode) {
+      return new Tensor_int64(buffer.asLongBuffer(), shape);
+    } else {
+      throw new IllegalArgumentException("Unknown Tensor dtype");
+    }
+  }
 }
