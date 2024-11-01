@@ -12,7 +12,7 @@ import math
 from typing import List, Optional, Tuple
 
 import torch
-from executorch.examples.models.llama2.llama_transformer import Attention
+from executorch.examples.models.llama.llama_transformer import Attention
 from torch import nn
 
 
@@ -28,7 +28,7 @@ def apply_rotary_emb_single(
     return x_out
 
 
-class KVCacheSha(torch.nn.Module):
+class KVCacheSHA(torch.nn.Module):
     def __init__(
         self,
         max_batch_size: int,
@@ -74,7 +74,7 @@ class KVCacheSha(torch.nn.Module):
         )
 
 
-class SDPASha(torch.nn.Module):
+class SDPASHA(torch.nn.Module):
 
     def __init__(
         self,
@@ -89,7 +89,7 @@ class SDPASha(torch.nn.Module):
         self.head_dim = head_dim
         self.n_rep = n_rep
         self.dim = dim
-        self.kv_cache = KVCacheSha(
+        self.kv_cache = KVCacheSHA(
             max_batch_size, max_seq_length, n_heads // n_rep, head_dim
         )
         self.scale_factor = math.sqrt(head_dim)
@@ -123,7 +123,7 @@ class SDPASha(torch.nn.Module):
         return torch.cat(output, dim=-1)
 
 
-class AttentionSha(nn.Module):
+class AttentionSHA(nn.Module):
     def __init__(self, attention_mha: nn.Module):
         super().__init__()
         if not attention_mha.use_kv_cache:
@@ -136,7 +136,7 @@ class AttentionSha(nn.Module):
         self.max_batch_size = attention_mha.max_batch_size
         self.max_seq_len = attention_mha.max_seq_len
         self.head_dim = attention_mha.dim // self.n_heads
-        self.SDPA = SDPASha(
+        self.SDPA = SDPASHA(
             self.max_batch_size,
             self.max_seq_len,
             self.n_heads,
@@ -212,7 +212,7 @@ def replace_attention_to_attention_sha(module: torch.nn.Module):
             setattr(
                 module,
                 name,
-                AttentionSha(child),
+                AttentionSHA(child),
             )
         else:
             replace_attention_to_attention_sha(child)

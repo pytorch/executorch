@@ -678,15 +678,24 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
             get_custom_quant_ios_dtype,
         )
 
+        atten = builder_exported_to_edge.model.layers[0].attention
+        if args.use_qnn_sha:
+            cache_shape = torch.Size(
+                (atten.max_batch_size, atten.max_seq_len, atten.head_dim)
+            )
+        else:
+            cache_shape = torch.Size(
+                (
+                    atten.max_batch_size,
+                    atten.max_seq_len,
+                    atten.n_kv_heads,
+                    atten.head_dim,
+                )
+            )
         # pyre-ignore
         tag_quant_io(
             builder_exported_to_edge.edge_manager.exported_program().graph_module,
-            partial(
-                get_custom_quant_ios_dtype,  # pyre-ignore
-                builder_exported_to_edge.model.layers[
-                    0
-                ].attention.kv_cache.past_k_caches.shape,
-            ),
+            partial(get_custom_quant_ios_dtype, cache_shape),  # pyre-ignore
         )
 
     logging.info("Lowering model using following partitioner(s): ")
