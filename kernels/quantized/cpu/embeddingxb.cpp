@@ -134,7 +134,7 @@ void check_embedding_xbit_args(
     for (int32_t i = 0; i < weight_scales.dim(); ++i) {
       ET_CHECK_MSG(
           opt_weight_zero_points.value().size(i) == weight_scales.size(i),
-          "Dimension size misatch at dim %" PRId8
+          "Dimension size misatch at dim %" PRIi32
           "Weight_zero_point size = %zd"
           ", weight_scales size = %zd.",
           i,

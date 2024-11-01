@@ -17,8 +17,10 @@ from executorch.backends.transforms.fuse_dequant_linear import FuseDequantLinear
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 
-from executorch.backends.vulkan._passes import RemoveLocalScalarDenseOpsTransform
-from executorch.backends.vulkan._passes.insert_prepack_nodes import insert_prepack_nodes
+from executorch.backends.vulkan._passes import (
+    insert_prepack_nodes,
+    RemoveLocalScalarDenseOpsTransform,
+)
 
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
@@ -32,6 +34,7 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 from executorch.exir.backend.utils import DelegateMappingBuilder
+from executorch.exir.pass_base import ExportPass, PassBase
 
 from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
 
@@ -46,6 +49,35 @@ from torch.export._remove_auto_functionalized_pass import (
 DEFAULT_DEBUG_HANDLE = 65535
 
 
+# pyre-ignore
+def apply_passes(program: ExportedProgram, passes) -> ExportedProgram:
+    for p in passes:
+
+        if issubclass(type(p), ExportPass) or issubclass(type(p), PassBase):
+            new_gm = program.graph_module
+            # This is a workaround to allow the memory planning pass to work without
+            # having to first apply ToOutVarPass(). See the `greedy()` function in
+            # `exir.memory_planning`; if this attribute isn't set, assertions in
+            # `collect_spec_from_nodes()` will fail.
+            if isinstance(p, MemoryPlanningPass):
+                new_gm.encounter_to_out_var_failure = True
+
+            new_gm_res = p(new_gm)
+            assert new_gm_res is not None
+            new_gm = new_gm_res.graph_module
+
+            # See the application of this function in exir/program/_program.py for more
+            # details on why this step is necessary.
+            if isinstance(p, SpecPropPass):
+                p.update_placeholder_tensor_specs(program, new_gm)
+
+            _copy_module(program.graph_module, new_gm)
+        else:
+            program = p(program)
+
+    return program
+
+
 @final
 class VulkanBackend(BackendDetails):
     @classmethod
@@ -57,35 +89,44 @@ class VulkanBackend(BackendDetails):
     ) -> PreprocessResult:
         program = unsafe_remove_auto_functionalized_pass(program)
 
-        passes = [
-            RemoveCloneOpsTransform(),
-            AddmmToLinearTransform(),
-            FuseDequantLinearPass(),
-            FuseViewCopyTransform(),
-            FuseBatchNormWithConvPass(program),
-            FuseClampPass(),
-            SpecPropPass(),
-            ConstraintBasedSymShapeEvalPass(),
-            RemoveLocalScalarDenseOpsTransform(),
-            MemoryPlanningPass(),
-        ]
+        # First, apply passes that fuse/remove operators to consolidate the graph
+        # structure but still preserve an "ATen-compliant" graph structure (i.e. all
+        # arguments to ATen operators must match the ATen function schema).
+        program = apply_passes(
+            program,
+            [
+                RemoveCloneOpsTransform(),
+                AddmmToLinearTransform(),
+                FuseDequantLinearPass(),
+                FuseViewCopyTransform(),
+                FuseBatchNormWithConvPass(program),
+                FuseClampPass(),
+            ],
+        )
 
-        new_gm = program.graph_module
+        # Next annotate tensor nodes with TensorSpec structs which is needed for dynamic
+        # shapes and memory planning. Until this point, the graph must be ATen compliant
+        # because SpecPropPass will be calling the underlying ATen operators during its
+        # execution.
+        program = apply_passes(program, [SpecPropPass()])
 
-        for p in passes:
-            # This is a workaround to allow the memory planning pass to work without
-            # having to first apply ToOutVarPass(). See the `greedy()` function in
-            # `exir.memory_planning`; if this attribute isn't set, assertions in
-            # `collect_spec_from_nodes()` will fail.
-            if isinstance(p, MemoryPlanningPass):
-                new_gm.encounter_to_out_var_failure = True
-            new_gm_res = p(new_gm)
-            assert new_gm_res is not None
-            new_gm = new_gm_res.graph_module
+        # Apply graph transforms which either require `TensorSpec`s to have been created
+        # or would create an non ATen compliant graph structure.
+        program = apply_passes(
+            program,
+            [
+                # Since this pass may replace a scalar argument with a tensor argument,
+                # this pass may result in a non ATen compliant graph structure.
+                RemoveLocalScalarDenseOpsTransform(),
+                insert_prepack_nodes,
+            ],
+        )
 
-        _copy_module(program.graph_module, new_gm)
-
-        program = insert_prepack_nodes(program)
+        # Finally, apply dynamic shape passes and memory planning pass. These passes
+        # must be applied only when the graph structure is finalized.
+        program = apply_passes(
+            program, [ConstraintBasedSymShapeEvalPass(), MemoryPlanningPass()]
+        )
 
         graph_builder = VkGraphBuilder(
             program, DelegateMappingBuilder(generated_identifiers=True)
