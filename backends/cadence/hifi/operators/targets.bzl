@@ -123,7 +123,6 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:all_deps",
             "//executorch/kernels/portable/cpu/pattern:all_deps",
             "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/backends/cadence/hifi/kernels:kernels",
             "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
         ],
@@ -143,7 +142,6 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:all_deps",
             "//executorch/kernels/portable/cpu/pattern:all_deps",
             "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/backends/cadence/hifi/kernels:kernels",
             "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
         ],
