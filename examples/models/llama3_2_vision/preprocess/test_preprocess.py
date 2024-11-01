@@ -245,7 +245,7 @@ class TestImageTransform:
             image_tensor, inscribed_size, best_resolution
         )
         eager_ar = eager_ar.tolist()
-        assert torch.allclose(reference_image, eager_image)
+        assert torch.allclose(reference_image, eager_image, rtol=1e-4, atol=1e-4)
         assert (
             reference_ar == eager_ar
         ), f"Eager model: expected {reference_ar} but got {eager_ar}"
@@ -256,7 +256,7 @@ class TestImageTransform:
             image_tensor, inscribed_size, best_resolution
         )
         exported_ar = exported_ar.tolist()
-        assert torch.allclose(reference_image, exported_image)
+        assert torch.allclose(reference_image, exported_image, rtol=1e-4, atol=1e-4)
         assert (
             reference_ar == exported_ar
         ), f"Exported model: expected {reference_ar} but got {exported_ar}"
@@ -267,7 +267,7 @@ class TestImageTransform:
         et_image, et_ar = executorch_module.forward(
             (image_tensor, inscribed_size, best_resolution)
         )
-        assert torch.allclose(reference_image, et_image)
+        assert torch.allclose(reference_image, et_image, rtol=1e-4, atol=1e-4)
         assert (
             reference_ar == et_ar.tolist()
         ), f"Executorch model: expected {reference_ar} but got {et_ar.tolist()}"

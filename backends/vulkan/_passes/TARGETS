@@ -12,6 +12,7 @@ runtime.python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/exir:pass_base",
+        "//executorch/backends/vulkan:utils_lib",
     ],
 )
 

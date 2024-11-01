@@ -833,9 +833,7 @@ def generate_qnn_executorch_compiler_spec(
         qnn_executorch_options.library_path = "libQnnSaver.so"
 
     if optrace:
-        qnn_executorch_options.profile_level = (
-            QnnExecuTorchProfileLevel.kProfileOptrace
-        )
+        qnn_executorch_options.profile_level = QnnExecuTorchProfileLevel.kProfileOptrace
     elif profile:
         qnn_executorch_options.profile_level = (
             QnnExecuTorchProfileLevel.kProfileDetailed
