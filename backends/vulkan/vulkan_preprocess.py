@@ -20,6 +20,7 @@ from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransf
 from executorch.backends.vulkan._passes import (
     insert_prepack_nodes,
     RemoveLocalScalarDenseOpsTransform,
+    TagMemoryMetaPass,
 )
 
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
@@ -125,7 +126,12 @@ class VulkanBackend(BackendDetails):
         # Finally, apply dynamic shape passes and memory planning pass. These passes
         # must be applied only when the graph structure is finalized.
         program = apply_passes(
-            program, [ConstraintBasedSymShapeEvalPass(), MemoryPlanningPass()]
+            program,
+            [
+                TagMemoryMetaPass(),
+                ConstraintBasedSymShapeEvalPass(),
+                MemoryPlanningPass(),
+            ],
         )
 
         graph_builder = VkGraphBuilder(
