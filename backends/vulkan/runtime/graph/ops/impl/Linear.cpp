@@ -279,9 +279,12 @@ void linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   ValueRef weight = prepack_standard(
       graph, weight_data, graph.storage_type_of(out), utils::kWidthPacked);
   ValueRef mat2_is_transposed = graph.add_scalar(true);
+
   if (graph.val_is_none(bias)) {
     return add_matmul_node(graph, input, weight, out, mat2_is_transposed);
   } else {
+    // Buffer implementation does not yet support biases
+    VK_CHECK_COND(!graph.is_buffer_storage(out));
     return add_addmm_node(
         graph,
         bias,
