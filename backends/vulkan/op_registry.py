@@ -55,6 +55,10 @@ class TextureImplFeatures:
             self.valid_packed_dims = valid_packed_dims
 
     def valid_memory_layouts(self) -> Set[VkMemoryLayout]:
+        """
+        Derive the set of memory layouts supported by the texture implementation based
+        on the valid packed dimensions.
+        """
         layouts = set()
 
         if PackedDim.WIDTH in self.valid_packed_dims:
@@ -112,6 +116,15 @@ class OpFeatures:
             self.check_node_fn = check_node_fn
 
     def propose_storage_type(self) -> Optional[VkStorageType]:
+        """
+        Propose a storage type that should be used for this operator. A proposal can be
+        made if one of the following is true:
+        1. The operator specifies an optimal storage type
+        2. Only one storage type is supported.
+
+        If both storage types are supported and no optimal storage type is specified,
+        then None is returned to indicate that there is no preference in storage type.
+        """
         if self.optimal_storage is not None:
             return self.optimal_storage
 
@@ -123,6 +136,9 @@ class OpFeatures:
         return None
 
     def supported_storage_types(self) -> Set[VkStorageType]:
+        """
+        Return the set of storage types supported by this operator.
+        """
         storage_types = set()
         if self.texture_impl is not None:
             storage_types.add(VkStorageType.TEXTURE_3D)
@@ -132,6 +148,16 @@ class OpFeatures:
         return storage_types
 
     def propose_memory_layout(self, storage: VkStorageType) -> Optional[VkMemoryLayout]:
+        """
+        Given a storage type as a precondition, propose a memory layout that should be
+        used for this operator. A proposal can be made if one of the following is true:
+        1. The operator specifies an optimal memory layout
+        2. Only one memory layout is supported.
+
+        If multiple memory layouts are supported and no optimal memory layout is
+        specified then return None to indicate that the "best" memory layout for the
+        operator is ambiguous.
+        """
         if self.optimal_layout is not None:
             return self.optimal_layout
 
@@ -144,6 +170,10 @@ class OpFeatures:
         return None
 
     def supported_memory_layouts(self, storage: VkStorageType) -> Set[VkMemoryLayout]:
+        """
+        Return the set of memory layouts supported by this operator for a given storage
+        type.
+        """
         if storage == VkStorageType.TEXTURE_3D:
             assert self.texture_impl is not None
             return self.texture_impl.valid_memory_layouts()
@@ -515,14 +545,6 @@ def get_op_features(target: OpKey) -> OpFeatures:
         return vulkan_supported_ops[target]
     else:
         return vulkan_supported_ops[target]
-
-
-def optimal_storage_type(target: OpKey) -> Optional[VkStorageType]:
-    return get_op_features(target).optimal_storage
-
-
-def optimal_memory_layout(target: OpKey) -> Optional[VkMemoryLayout]:
-    return get_op_features(target).optimal_layout
 
 
 def handles_own_prepacking(target: OpKey) -> bool:
