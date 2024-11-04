@@ -7,9 +7,11 @@
 import unittest
 
 import torch
+from executorch.examples.models.llama.llama_transformer import ModelArgs, Rope
 
 from executorch.examples.models.llama.source_transformation.attention_sink import (
     KVCacheWithAttentionSink,
+    RopeWithAttentionSink,
 )
 
 
@@ -176,3 +178,110 @@ class KVCacheWithAttentionSinkTest(unittest.TestCase):
 
         torch.testing.assert_close(k_out, expected_k_out)
         torch.testing.assert_close(v_out, expected_v_out)
+
+
+class RopeWithAttentionSinkTest(unittest.TestCase):
+
+    def setUp(self):
+        self.params = ModelArgs(use_kv_cache=True, enable_dynamic_shape=True)
+        self.rope = Rope(self.params)
+        self.rope_with_attention_sink = RopeWithAttentionSink(rope=self.rope)
+        self.seq_len = 32
+        self.n_local_heads = self.params.n_heads
+        self.n_local_kv_heads = self.params.n_heads
+        self.head_dim = self.params.dim // self.params.n_heads
+        self.q = torch.ones(
+            (1, self.seq_len, self.n_local_heads, self.head_dim), dtype=torch.float32
+        )
+        self.k = torch.full(
+            (1, self.seq_len, self.n_local_kv_heads, self.head_dim),
+            2,
+            dtype=torch.float32,
+        )
+
+    def test_rotate_backward(self):
+        original_position = 128
+        new_position = 127
+
+        pre_rotated_q, pre_rotated_k = self.rope.forward(
+            q=self.q,
+            k=self.k,
+            seq_len=self.seq_len,
+            input_pos=torch.tensor([original_position], dtype=torch.int32),
+        )
+
+        q, k = self.rope_with_attention_sink.forward(
+            q=pre_rotated_q,
+            k=pre_rotated_k,
+            original_position=original_position,
+            new_position=new_position,
+            seq_len=self.seq_len,
+        )
+
+        expected_q, expected_k = self.rope.forward(
+            q=self.q,
+            k=self.k,
+            seq_len=self.seq_len,
+            input_pos=torch.tensor([new_position], dtype=torch.int32),
+        )
+
+        torch.testing.assert_close(q, expected_q)
+        torch.testing.assert_close(k, expected_k)
+
+    def test_rotate_inplace(self):
+        original_position = 128
+        new_position = 128
+
+        pre_rotated_q, pre_rotated_k = self.rope.forward(
+            q=self.q,
+            k=self.k,
+            seq_len=self.seq_len,
+            input_pos=torch.tensor([original_position], dtype=torch.int32),
+        )
+
+        q, k = self.rope_with_attention_sink.forward(
+            q=pre_rotated_q,
+            k=pre_rotated_k,
+            original_position=original_position,
+            new_position=new_position,
+            seq_len=self.seq_len,
+        )
+
+        expected_q, expected_k = self.rope.forward(
+            q=self.q,
+            k=self.k,
+            seq_len=self.seq_len,
+            input_pos=torch.tensor([new_position], dtype=torch.int32),
+        )
+
+        torch.testing.assert_close(q, expected_q)
+        torch.testing.assert_close(k, expected_k)
+
+    def test_rotate_forward(self):
+        original_position = 128
+        new_position = 129
+
+        pre_rotated_q, pre_rotated_k = self.rope.forward(
+            q=self.q,
+            k=self.k,
+            seq_len=self.seq_len,
+            input_pos=torch.tensor([original_position], dtype=torch.int32),
+        )
+
+        q, k = self.rope_with_attention_sink.forward(
+            q=pre_rotated_q,
+            k=pre_rotated_k,
+            original_position=original_position,
+            new_position=new_position,
+            seq_len=self.seq_len,
+        )
+
+        expected_q, expected_k = self.rope.forward(
+            q=self.q,
+            k=self.k,
+            seq_len=self.seq_len,
+            input_pos=torch.tensor([new_position], dtype=torch.int32),
+        )
+
+        torch.testing.assert_close(q, expected_q)
+        torch.testing.assert_close(k, expected_k)

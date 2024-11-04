@@ -11,6 +11,8 @@ from typing import Tuple
 
 import torch
 
+from executorch.examples.models.llama.llama_transformer import Rope
+
 from torch import nn
 
 
@@ -112,3 +114,46 @@ class KVCacheWithAttentionSink(nn.Module):
             narrowed_k.copy_(k_val)
             narrowed_v.copy_(v_val)
         return self.k_cache, self.v_cache
+
+
+class RopeWithAttentionSink(nn.Module):
+    """
+    Rope that helps adjust position encoding when tokens are shifted in KVCache.
+    For AttentionSink, when tokens are shifted in KVCache, we need to use positions
+    in KVCache instead of positions in the actual text.
+    """
+
+    def __init__(self, rope: Rope):
+        super().__init__()
+        self.rope = rope
+
+    def forward(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        original_position: int,
+        new_position: int,
+        seq_len: int,
+    ):
+        """
+        Rerotate keys from original_position to new_position. This is done by rerotating
+        keys with (new_position * theta - original_position * theta) with the following matrix:
+        (cos(delta), -sin(delta)
+         sin(delta), cos(delta))
+         where delta = new_position * theta - original_position * theta
+
+         Based on https://github.com/huggingface/transformers/blame/main/src/transformers/cache_utils.py#L961
+        """
+        original_freqs_cos = self.rope.freqs_cos.narrow(0, original_position, seq_len)
+        original_freqs_sin = self.rope.freqs_sin.narrow(0, original_position, seq_len)
+        new_freqs_cos = self.rope.freqs_cos.narrow(0, new_position, seq_len)
+        new_freqs_sin = self.rope.freqs_sin.narrow(0, new_position, seq_len)
+        rerotation_cos = (
+            new_freqs_cos * original_freqs_cos + new_freqs_sin * original_freqs_sin
+        )
+        rerotation_sin = (
+            new_freqs_sin * original_freqs_cos - new_freqs_cos * original_freqs_sin
+        )
+
+        q, k = self.rope.apply_rotary_emb(q, k, rerotation_cos, rerotation_sin)
+        return q, k
