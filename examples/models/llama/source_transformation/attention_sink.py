@@ -79,25 +79,25 @@ class KVCacheWithAttentionSink(nn.Module):
             num_to_evict = min(start_pos + seq_length - self.cache_size, seq_length)
 
             # Shift the existing entries to the left
-            # pyre-ignore: Incompatible parameter type [6]
             k_to_keep = self.k_cache.narrow(
                 dim_to_slice,
-                self.sink_size + num_to_evict,
-                self.window_size - num_to_evict,
+                self.sink_size + num_to_evict,  # pyre-ignore [6]
+                self.window_size - num_to_evict,  # pyre-ignore [6]
             ).clone()
-            # pyre-ignore: Incompatible parameter type [6]
             v_to_keep = self.v_cache.narrow(
                 dim_to_slice,
-                self.sink_size + num_to_evict,
-                self.window_size - num_to_evict,
+                self.sink_size + num_to_evict,  # pyre-ignore [6]
+                self.window_size - num_to_evict,  # pyre-ignore [6]
             ).clone()
-            # pyre-ignore: Incompatible parameter type [6]
             k_new_position = self.k_cache.narrow(
-                dim_to_slice, self.sink_size, self.window_size - num_to_evict
+                dim_to_slice,
+                self.sink_size,
+                self.window_size - num_to_evict,  # pyre-ignore [6]
             )
-            # pyre-ignore: Incompatible parameter type [6]
             v_new_position = self.v_cache.narrow(
-                dim_to_slice, self.sink_size, self.window_size - num_to_evict
+                dim_to_slice,
+                self.sink_size,
+                self.window_size - num_to_evict,  # pyre-ignore [6]
             )
             k_new_position.copy_(k_to_keep)
             v_new_position.copy_(v_to_keep)
