@@ -61,11 +61,16 @@ class TagMemoryMetaPass(ExportPass):
     necessary.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        texture_limits: utils.ImageExtents,
+        default_storage_type: VkStorageType = VkStorageType.TEXTURE_3D,
+        default_memory_layout: VkMemoryLayout = VkMemoryLayout.TENSOR_WIDTH_PACKED,
+    ):
         super().__init__()
-        self.default_storage: VkStorageType = VkStorageType.DEFAULT_STORAGE
-        self.default_layout: VkMemoryLayout = VkMemoryLayout.DEFAULT_LAYOUT
-        self.texture_limits = (16384, 16384, 2048)
+        self.default_storage: VkStorageType = default_storage_type
+        self.default_layout: VkMemoryLayout = default_memory_layout
+        self.texture_limits = texture_limits
 
     def propose_node_storage(
         self,

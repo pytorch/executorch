@@ -9,8 +9,6 @@
 import logging
 from typing import Any, Callable, Dict, final, List, Mapping, Optional, Tuple
 
-import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
-
 import executorch.backends.vulkan.utils as utils
 
 import torch
@@ -21,7 +19,11 @@ from executorch.backends.vulkan.op_registry import (
     OpFeatures,
     vulkan_supported_ops,
 )
-from executorch.backends.vulkan.serialization.vulkan_graph_schema import VkStorageType
+
+from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
+    VkMemoryLayout,
+    VkStorageType,
+)
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -60,7 +62,9 @@ class VulkanSupportedOperators(OperatorSupportBase):
     ) -> Tuple[bool, str]:
         """
         Check if a given node is compatible with the Vulkan delegate's implementation
-        of the operator called by the node.
+        of the operator called by the node. Each tensor argument participating in the
+        operator call must be able to be represented with a (storage type, memory layout)
+        combination that is supported by the operator implementation.
         """
         target = node.target
         # Account for custom operators
@@ -72,10 +76,8 @@ class VulkanSupportedOperators(OperatorSupportBase):
         # Extract the features for the node's operator, if no override was provided
         op_features = features
         if features is None:
-            # pyre-ignore
             if not has_impl(target):
                 return False, "no operator implementation"
-            # pyre-ignore
             op_features = get_op_features(target)
 
         assert op_features is not None
@@ -125,6 +127,17 @@ class VulkanSupportedOperators(OperatorSupportBase):
         return False, f"Unsupported node type: {node.format_node()}"
 
     def is_linear_permute(self, node: torch.fx.Node) -> Tuple[bool, bool]:
+        """
+        Detect if a node is a permute/transpose that precedes a call to a `mm` or
+        `addmm` operator. This node can be fused with the `mm` or `addmm` to produce a
+        `linear` operator.
+
+        This function returns two bool values:
+        1. The first indicates if this node can be fused into a linear node
+        2. The second indicates if the overall linear op can be executed with Vulkan
+
+        The node will be partitioned only if both are true.
+        """
         if node.target not in [
             exir_ops.edge.aten.t_copy.default,
             exir_ops.edge.aten.permute_copy.default,
@@ -154,8 +167,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
         `local_scalar_dense(torch.select.int(scalar_tensor, 0, 0))` in the graph.
         This function marks the entire chain as supported by the Vulkan delegate.
 
-        Later, within vulkan_preprocess there will be a graph transform which
-        replaces the chain with passing in the scalar tensor directly.
+        Later, within vulkan_preprocess there will be a graph transform which replaces
+        the chain with passing in the scalar tensor directly.
+
+        Similar to the `is_linear_permute` function, this function has 2 return values.
         """
         if node.target == exir_ops.edge.aten.select_copy.int:
             if len(node.users) != 1:
@@ -236,9 +251,7 @@ def parse_compile_options(compile_options: Dict[str, Any]) -> List[CompileSpec]:
     compile_specs = []
 
     for key, value in compile_options.items():
-        if isinstance(
-            value, (vk_graph_schema.VkStorageType, vk_graph_schema.VkMemoryLayout)
-        ):
+        if isinstance(value, (VkStorageType, VkMemoryLayout)):
             value_bytes = int(value).to_bytes(4, byteorder="little")
             compile_specs.append(CompileSpec(key, value_bytes))
 
@@ -288,7 +301,7 @@ class VulkanPartitioner(Partitioner):
         partition_tags = {}
 
         texture_limits: utils.ImageExtents = self.options.get(
-            "texture_limits", (16384, 16384, 2048)
+            "texture_limits", utils.DEFAULT_TEXTURE_LIMITS
         )
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
