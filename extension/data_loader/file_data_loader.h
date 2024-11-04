@@ -27,7 +27,10 @@ namespace extension {
 class FileDataLoader final : public executorch::runtime::DataLoader {
  public:
   /**
-   * Creates a new FileDataLoader that wraps the named file descriptor.
+   * Creates a new FileDataLoader that wraps the named file descriptor, and the
+   * ownership of the file descriptor is passed. This helper is used when ET is
+   * running in a process that does not have access to the filesystem, and the
+   * caller is able to open the file and pass the file descriptor.
    *
    * @param[in] file_descriptor_uri File descriptor with the prefix "fd:///",
    *     followed by the file descriptor number.
