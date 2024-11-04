@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/runtime/core/tensor_shape_dynamism.h> // @manual
+#include <executorch/runtime/platform/compiler.h>
 #ifdef USE_ATEN_LIB
 #include <ATen/Tensor.h> // @manual
 #include <c10/core/Device.h>
