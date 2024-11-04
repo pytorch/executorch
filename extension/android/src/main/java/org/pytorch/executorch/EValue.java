@@ -61,7 +61,7 @@ public class EValue {
     "ListInt",
     "ListTensor",
     "ListScalar",
-    "ListOptionalScalar",
+    "ListOptionalTensor",
   };
 
   @DoNotStrip private final int mTypeCode;
@@ -265,6 +265,12 @@ public class EValue {
   public Tensor[] toTensorList() {
     preconditionType(TYPE_CODE_LIST_TENSOR, mTypeCode);
     return (Tensor[]) mData;
+  }
+
+  @DoNotStrip
+  public Optional<Tensor>[] toOptionalTensorList() {
+    preconditionType(TYPE_CODE_LIST_OPTIONAL_TENSOR, mTypeCode);
+    return (Optional<Tensor>[]) mData;
   }
 
   private void preconditionType(int typeCodeExpected, int typeCode) {
