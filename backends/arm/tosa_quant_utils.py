@@ -15,14 +15,31 @@ import numpy as np
 import serializer.tosa_serializer as ts
 import torch.fx
 import tosa.Op as TosaOp
-from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
+from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaSerializerTensor
 from torch.fx import Node
 
+
 q_op = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
 dq_op = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
-dq_q_ops = [q_op, dq_op]
+dq_q_ops = (q_op, dq_op)
+passable_ops = [
+    exir_ops.edge.aten.view_copy.default,
+    exir_ops.edge.aten.permute_copy.default,
+    exir_ops.edge.aten.squeeze_copy.dims,
+    exir_ops.edge.aten.unsqueeze_copy.default,
+    exir_ops.edge.aten.split_with_sizes_copy.default,
+    exir_ops.edge.aten.repeat.default,
+    exir_ops.edge.aten.clone.default,
+    exir_ops.edge.aten.slice_copy.Tensor,
+    exir_ops.edge.aten.cat.default,
+]
+
+
+def register_passable_op(op):
+    """We need to be able to add custom ops such as tosa_transpose to the passable_op list after they have been created"""
+    passable_ops.append(op)
 
 
 class QuantArgs(NamedTuple):
@@ -30,6 +47,19 @@ class QuantArgs(NamedTuple):
     zp: int
     qmin: int
     qmax: int
+    dtype: torch.dtype
+
+    def quantize_value(self, x):
+        if not isinstance(x, torch.Tensor):
+            x = torch.Tensor([x])
+        return torch.clip(
+            torch.round(x / self.scale) + self.zp,
+            self.qmin,
+            self.qmax,
+        ).to(self.dtype)
+
+    def dequantize_value(self, qx):
+        return (qx - self.zp) * self.scale
 
 
 def quantize_value(x, qargs: QuantArgs, dtype=np.int8):
@@ -44,81 +74,135 @@ def dequantize_value(qx, qargs: QuantArgs):
     return (qx - qargs.zp) * qargs.scale
 
 
-def is_quant_node(node: torch.fx.Node):
+def qargs_from_qnode(node: torch.fx.Node):
+    assert node.target in dq_q_ops, f"Op {node} is not a quant node."
 
-    consumer_node_condition = False
-    if len(list(node.users)) > 0:
-        consumer_node = list(node.users)[0]
-
-        # For Rank > 2 Linear layers, the quant node is after the view_copy
-        if (
-            node.target == exir_ops.edge.aten.addmm.default
-            and consumer_node.target == exir_ops.edge.aten.view_copy.default
-        ):
-            consumer_consumer_node = list(consumer_node.users)[0]
-            return True if consumer_consumer_node.target == q_op else False
-        consumer_node_condition = consumer_node.target == q_op
-
-    input_node_condition = False
-    if len(node.all_input_nodes) > 0:
-        input = node.all_input_nodes[0]
-        input_node_condition = input.target in dq_q_ops
-
-    return node.target in dq_q_ops or consumer_node_condition or input_node_condition
+    return QuantArgs(*node.args[1:])
 
 
-def get_quant_node_dtype(node: torch.fx.Node):
-    # pyre-ignore[16]: Undefined attribute.
-    if "tosa" in node.target.__name__:
+def get_neighbour_quant_args(
+    node: torch.fx.Node,
+) -> tuple[list[QuantArgs], list[QuantArgs]]:
+    user_q_args = []
+
+    for user in node.users:
+        q_args = search_quant_arg_downstream(user)
+        if q_args:
+            user_q_args.append(q_args)
+
+    input_q_nodes = []
+    for input_node in node.all_input_nodes:
+        q_args = search_quant_arg_upstream(input_node)
+        if q_args:
+            input_q_nodes.append(q_args)
+    return user_q_args, input_q_nodes
+
+
+def all_q_args_equal(q_arg_list: list[QuantArgs]) -> bool:
+    first_q_arg = q_arg_list[0]
+    for q_arg in q_arg_list:
+        if q_arg != first_q_arg:
+            return False
+    return True
+
+
+def is_node_quantized(node: torch.fx.Node) -> bool:
+    if node.target in dq_q_ops:
+        return True
+
+    user_q_args, input_q_args = get_neighbour_quant_args(node)
+
+    # If we did not find any neighbouring quant nodes, we are not quantized.
+    if len(input_q_args) == 0 and len(user_q_args) == 0:
+        return False
+
+    if node.target in passable_ops:
+        assert all_q_args_equal(
+            user_q_args + input_q_args
+        ), f"Node {node} needs same quantization parameters on all inputs and outputs."
+
+    return True
+
+
+def search_quant_arg_downstream(node: torch.fx.Node) -> QuantArgs | None:
+    """
+    Iterates downward in the graph passing through 'passable_ops' to find and return a quantization node,
+    starting with 'node'.
+    If a  passable node with multiple consumers is encountered,
+    find QuantArgs for all consumers and assert that they are equal.
+    If a node not in passable_ops is encountered, return None.
+    If a node without consumers is encountered, return None.
+    """
+    if node.target in dq_q_ops:
+        return qargs_from_qnode(node)
+    if node.target not in passable_ops:
+        return None
+    consumer_nodes = list(node.users)
+    if len(consumer_nodes) == 0:
+        return None
+    elif len(consumer_nodes) == 1:
+        return search_quant_arg_downstream(consumer_nodes[0])
+    else:
+        consumer_qargs: list[QuantArgs] = []
+        for input in consumer_nodes:
+            quant_args = search_quant_arg_downstream(input)
+            if quant_args:
+                consumer_qargs.append(quant_args)
+        if len(quant_args) == 0:
+            return None
+        assert all_q_args_equal(
+            consumer_qargs
+        ), f"Encountered a op, {node}, in passable_ops with different QuantArgs for different consumers."
+        return consumer_qargs[0]
+
+
+def search_quant_arg_upstream(node: torch.fx.Node) -> QuantArgs | None:
+    """
+    Iterates upward in the graph passing through 'passable_ops' to find and return a quantization node,
+    starting with 'node'.
+    If a  passable node with multiple inputs is encountered,
+    find QuantArgs for all inputs and assert that they are equal.
+    If a node not in passable_ops is encountered, return None.
+    If a node without inputs is encountered, return None.
+    """
+
+    if node.target in dq_q_ops:
+        return qargs_from_qnode(node)
+    if node.target not in passable_ops:
+        return None
+    input_nodes = list(node.all_input_nodes)
+    if len(input_nodes) == 0:
+        return None
+    elif len(input_nodes) == 1:
+        return search_quant_arg_upstream(input_nodes[0])
+    else:
+        input_qargs: list[QuantArgs] = []
+        for input in input_nodes:
+            quant_args = search_quant_arg_upstream(input)
+            if quant_args:
+                input_qargs.append(quant_args)
+        if len(quant_args) == 0:
+            return None
+        assert all_q_args_equal(
+            input_qargs
+        ), f"Encountered a op, {node}, in passable_ops with different QuantArgs for different inputs."
+        return input_qargs[0]
+
+
+def get_quantized_node_output_dtype(node: torch.fx.Node):
+    if hasattr(node.target, "__name__") and "tosa" in node.target.__name__:
         return node.meta["val"].dtype
-
     if node.target in dq_q_ops:
         return node.args[5]
 
     # if not a tosa node, nor a q/dq op, walk the graph until we find a q op
-    consumer_node = list(node.users)[0]
-    while True:
-        if consumer_node.target in dq_q_ops:
-            return consumer_node.args[5]
-
-        # Try to move on to the next node
-        if len(consumer_node.users) == 0:
-            raise RuntimeError(f"No quantized node found in graph for node {node}")
-        consumer_node = list(consumer_node.users)[0]
-
-
-def is_quant_arg(arg):
-    consumer_node = list(arg.users)[0]
-    return consumer_node.target == q_op
-
-
-def get_quant_arg_dtype(node: torch.fx.Node):
-    consumer_node = list(node.users)[0]
-
-    # Get type of quant node, args differ from per_tensor and per_channel.
-    if consumer_node.target == q_op:
-        if is_quant_arg(node):
-            return map_dtype(consumer_node.args[5])
-        else:
-            raise RuntimeError("Quantization argument not found")
-
-
-def get_quant_node_args(node: torch.fx.Node):
-    """
-    Get the quantization parameters from a quant node.
-
-    Args:
-        node: The quant node.
-    Returns:
-        QuantArgs: scale, zp, qmin, qmax
-    """
-    quant_args = [TosaArg(arg) for arg in node.args]
-    return QuantArgs(
-        quant_args[1].number,
-        quant_args[2].number,
-        quant_args[3].number,
-        quant_args[4].number,
-    )
+    user_q_args, input_q_args = get_neighbour_quant_args(node)
+    if len(user_q_args) > 0:
+        return user_q_args[0].dtype
+    elif node.target in passable_ops and len(input_q_args):
+        return input_q_args[0].dtype
+    else:
+        raise RuntimeError("No quantized node found in graph")
 
 
 # Check if scale32 mode is used for given output element type
@@ -267,14 +351,14 @@ def rescale_nodes_to_int32(
     needed by rescale_node_back_to_int8.
     """
 
-    tensors = [TosaArg(node.args[0]) for node in nodes]
+    tensors = [TosaArg(node) for node in nodes]
 
     # Reshape tensor according to tosa dim order
     for tensor in tensors:
         dim_order = tensor.dim_order
         tensor.shape = [tensor.shape[i] for i in dim_order]
 
-    qargs = [get_quant_node_args(node) for node in nodes]
+    qargs = [search_quant_arg_upstream(node) for node in nodes]
 
     # Scale the int8 quantized input to a common scale in the integer
     # domain
@@ -307,7 +391,7 @@ def rescale_node_back_to_int8(
         scale: the scaling factor used to rescale to int32, from the function 'rescale_nodes_to_int32'
         tosa_graph: the tosa_graph to manipulate.
     """
-    qargs_out = get_quant_node_args(list(node.users)[0])
+    qargs_out = search_quant_arg_downstream(list(node.users)[0])
     output_rescale_scale = scale / qargs_out.scale
 
     # Rescale Back to INT8
@@ -334,7 +418,7 @@ def build_rescale_conv_output(
     output_zp,
 ):
     # TODO add check to verify if this is a Per-channel quantization.
-    post_conv2d_scale = (input_scale.number * weight_scale.number) / output_scale.number
+    post_conv2d_scale = (input_scale * weight_scale) / output_scale
 
     # Since we assume the input tensor that is being rescaled is int32 date type, zero point must be 0.
     build_rescale(
@@ -345,6 +429,6 @@ def build_rescale_conv_output(
         output_type,
         op.shape,
         0,
-        output_zp.number,
+        output_zp,
     )
     return
