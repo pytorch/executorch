@@ -253,6 +253,7 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 ":custom_ops_lib",
+                ":utils_lib",
                 "//caffe2:torch",
                 "//executorch/exir/dialects:lib",
                 "//executorch/backends/vulkan/serialization:lib",
