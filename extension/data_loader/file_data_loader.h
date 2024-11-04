@@ -100,6 +100,11 @@ class FileDataLoader final : public executorch::runtime::DataLoader {
       void* buffer) const override;
 
  private:
+  static executorch::runtime::Result<FileDataLoader> fromFileDescriptor(
+      const char* file_name,
+      const int fd,
+      size_t alignment = alignof(std::max_align_t));
+
   FileDataLoader(
       int fd,
       size_t file_size,
