@@ -91,7 +91,7 @@ def main(args):
         quant_max=torch.iinfo(torch.int8).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=0,
-        observer_or_fake_quant_ctr=ParamObserver.with_args(
+        observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(
             **{"steps": 200, "use_mse": True}
         ),
     )
