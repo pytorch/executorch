@@ -83,6 +83,8 @@ def is_tensor_node(node: torch.fx.Node) -> bool:
 
 ImageExtents = Tuple[int, int, int]
 
+DEFAULT_TEXTURE_LIMITS = (16384, 16384, 2048)
+
 
 class PackedDim(IntEnum):
     WIDTH = 0
