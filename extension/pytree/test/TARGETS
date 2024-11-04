@@ -17,6 +17,7 @@ cpp_unittest(
 )
 
 python_unittest(
+    # @autodeps-skip
     name = "pybindings_test",
     srcs = [
         "test.py",
