@@ -136,6 +136,8 @@ Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
       </em>
 </p>
 
+[Please visit this section to try it on non-CPU backend, including CoreML, MPS, Qualcomm HTP or MediaTek](non_cpu_backends.md).
+
 # Instructions
 
 ## Tested on
@@ -242,6 +244,9 @@ You can export and run the original Llama 3 8B instruct model.
 
     Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `--embedding-quantize 4,32` as shown above to further reduce the model size.
 
+
+    If you're interested in deploying on non-CPU backends, [please refer the non-cpu-backend section](non_cpu_backends.md)
+
 ## Step 3: Run on your computer to validate
 
 1. Build executorch with optimized CPU performance as follows. Build options available [here](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt#L59).
@@ -261,7 +266,7 @@ You can export and run the original Llama 3 8B instruct model.
 
     cmake --build cmake-out -j16 --target install --config Release
     ```
-Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the session of Common Issues and Mitigations below for solutions.
+Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the section of Common Issues and Mitigations below for solutions.
 
 2. Build llama runner.
     ```

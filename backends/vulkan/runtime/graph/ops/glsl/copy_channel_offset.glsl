@@ -14,17 +14,14 @@
 
 layout(std430) buffer;
 
-#include "indexing_utils.h"
+${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "r", "existing_out", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 
-${layout_declare_tensor(0, "w", "t_out", DTYPE, STORAGE)}
-${layout_declare_tensor(1, "r", "existing_out", DTYPE, STORAGE)}
-${layout_declare_tensor(2, "r", "t_in", DTYPE, STORAGE)}
+${layout_declare_ubo(B, "ivec4", "out_sizes")}
+${layout_declare_ubo(B, "ivec4", "in_sizes")}
 
-${layout_declare_ubo(3, "ivec4", "out_sizes")}
-${layout_declare_ubo(4, "ivec4", "out_axis_map")}
-${layout_declare_ubo(5, "ivec4", "in_sizes")}
-${layout_declare_ubo(6, "ivec4", "in_axis_map")}
-layout(set = 0, binding = 7) uniform PRECISION restrict CopyArgs {
+layout(set = 0, binding = 5) uniform PRECISION restrict CopyArgs {
   // Operates on (x, y, z) logical extents.
   ivec3 range;
   // Analogus to range variable in copy. It defines the # of channel being
@@ -35,9 +32,16 @@ layout(set = 0, binding = 7) uniform PRECISION restrict CopyArgs {
   int src_channel_offset;
 };
 
+#include "indexing_utils.h"
+
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int packed_dim = C_DIM;
+${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 out_axis_map = unhash_axis_map(out_layout);
+const lowp int packed_dim = unhash_packed_dim(out_layout);
+
+${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 in_axis_map = unhash_axis_map(in_layout);
 
 void main() {
   // Note: Unlike other shaders, the range is often not equal to the destination

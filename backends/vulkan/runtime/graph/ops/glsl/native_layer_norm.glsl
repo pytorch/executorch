@@ -31,13 +31,13 @@ ${layout_declare_ubo(B, "float", "epsilon")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-${layout_declare_spec_const(C, "int", "in_axis_map_hash", "DEFAULT_AXIS_MAP_HASH")}
-${layout_declare_spec_const(C, "int", "in_packed_dim", "C_DIM")}
-const ivec4 in_axis_map = UNHASH_AXIS_MAP(in_axis_map_hash, in_packed_dim);
+${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 in_axis_map = unhash_axis_map(in_layout);
+const lowp int in_packed_dim = unhash_packed_dim(in_layout);
 
-${layout_declare_spec_const(C, "int", "out_axis_map_hash", "DEFAULT_AXIS_MAP_HASH")}
-${layout_declare_spec_const(C, "int", "out_packed_dim", "C_DIM")}
-const ivec4 out_axis_map = UNHASH_AXIS_MAP(out_axis_map_hash, out_packed_dim);
+${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 out_axis_map = unhash_axis_map(out_layout);
+const lowp int out_packed_dim = unhash_packed_dim(out_layout);
 
 void main() {
   const ivec3 lpos = ivec3(gl_GlobalInvocationID);

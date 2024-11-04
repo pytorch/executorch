@@ -44,7 +44,7 @@ execute_process(
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-if(RESULT_VARIABLE EQUAL 0)
+if(SYSCONFIG_RESULT EQUAL 0)
   message(STATUS "Sysconfig extension suffix: ${EXT_SUFFIX}")
 else()
   message(FATAL_ERROR "Failed to retrieve sysconfig config var EXT_SUFFIX: ${SYSCONFIG_ERROR}")

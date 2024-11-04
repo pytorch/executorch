@@ -75,26 +75,12 @@
 
 #endif // defined(__GNUC__)
 
-#if (__cplusplus) >= 201703L
-
 #define ET_DEPRECATED [[deprecated]]
 #define ET_EXPERIMENTAL \
   [[deprecated("This API is experimental and may change without notice.")]]
 #define ET_FALLTHROUGH [[fallthrough]]
 #define ET_NODISCARD [[nodiscard]]
 #define ET_UNUSED [[maybe_unused]]
-
-#else
-
-#define ET_DEPRECATED __attribute__((deprecated))
-#define ET_EXPERIMENTAL \
-  __attribute__((       \
-      deprecated("This API is experimental and may change without notice.")))
-#define ET_FALLTHROUGH __attribute__((fallthrough))
-#define ET_NODISCARD __attribute__((warn_unused_result))
-#define ET_UNUSED __attribute__((unused))
-
-#endif // (__cplusplus) >= 201703L
 
 // UNLIKELY Macro
 // example
