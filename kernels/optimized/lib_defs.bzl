@@ -19,6 +19,9 @@ def get_vec_preprocessor_flags():
     if not runtime.is_oss:
         # various ovr_configs are not available in oss
         preprocessor_flags = select({
+            "ovr_config//os:linux-x86_64": [
+                "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
+            ] if not runtime.is_oss else [],
             "ovr_config//os:iphoneos": [
                 "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
             ] if not runtime.is_oss else [],
