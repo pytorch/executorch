@@ -12,6 +12,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.fail;
 
 import com.facebook.jni.annotations.DoNotStrip;
 
@@ -148,60 +149,70 @@ public class EValueTest {
     assertFalse(evalue.isTensor());
     try {
         evalue.toTensor();
+        fail("Should have thrown an exception");
     } catch (IllegalStateException e) {}
     
     // try bool
     assertFalse(evalue.isBool());
     try {
         evalue.toBool();
+        fail("Should have thrown an exception");
     } catch (IllegalStateException e) {}
     
     // try int
     assertFalse(evalue.isInt());
     try {
         evalue.toInt();
+        fail("Should have thrown an exception");
     } catch (IllegalStateException e) {}
     
     // try double
     assertFalse(evalue.isDouble());
     try {
         evalue.toDouble();
+        fail("Should have thrown an exception");
     } catch (IllegalStateException e) {}
     
     // try string
     assertFalse(evalue.isString());
     try {
         evalue.toStr();
+        fail("Should have thrown an exception");
     } catch (IllegalStateException e) {}
     
     // try bool list
     assertFalse(evalue.isBoolList());
     try {
         evalue.toBoolList();
+        fail("Should have thrown an exception");
     } catch (IllegalStateException e) {}
     
     // try int list
     assertFalse(evalue.isIntList());
     try {
         evalue.toIntList();
+        fail("Should have thrown an exception");
     } catch (IllegalStateException e) {}
     
     // try double list
     assertFalse(evalue.isDoubleList());
     try {
         evalue.toBool();
+        fail("Should have thrown an exception");
     } catch (IllegalStateException e) {}
     
     // try Tensor list
     assertFalse(evalue.isTensorList());
     try {
         evalue.toTensorList();
+        fail("Should have thrown an exception");
     } catch (IllegalStateException e) {}
     
     // try optional Tensor list
     assertFalse(evalue.isOptionalTensorList());
     try {
         evalue.toOptionalTensorList();
+        fail("Should have thrown an exception");
     } catch (IllegalStateException e) {}
   }
 }
