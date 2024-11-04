@@ -57,26 +57,12 @@ class LlamaRunner(ABC):
         max_batch_size: int,
         use_kv_cache: bool,
         vocab_size: int,
-        has_full_logits: bool = False,
         device: str = "cpu",
     ):
-        """
-        Constructor.
-
-        Args:
-        tokenizer_path: path to tokenizer.model file.
-        max_seq_len: max length of the output sequence, after which the output will be clipped.
-        max_batch_size: max batch size.
-        use_kv_cache: whether to use a KV cache.
-        vocab_size: number of items in the vocab.
-        has_full_logits: whether the model returns the full logits or only returns the last logit.
-        device: device to run the runner on.
-        """
         self.max_seq_len = max_seq_len
         self.max_batch_size = max_batch_size
         self.use_kv_cache = use_kv_cache
         self.tokenizer = get_tokenizer(tokenizer_path)
-        self.has_full_logits = has_full_logits
         self.device = device
         assert vocab_size == self.tokenizer.n_words
 
@@ -95,7 +81,7 @@ class LlamaRunner(ABC):
         top_p: float = 0.9,
         echo: bool = False,
     ) -> List[int]:
-        # prefill
+        # Prefill
         logits = self.forward(
             tokens=torch.tensor([prompt_tokens], dtype=torch.long, device=self.device),
             input_pos=(
@@ -105,11 +91,7 @@ class LlamaRunner(ABC):
             ),
         )
 
-        current_token = next_token(logits[:, -1, :], temperature, top_p)
-        if self.has_full_logits:
-            current_token = next_token(logits[:, -1, :], temperature, top_p)
-        else:
-            current_token = next_token(logits, temperature, top_p)
+        current_token = next_token(logits, temperature, top_p)
         tokens = prompt_tokens + [current_token]
 
         i = 0
@@ -129,12 +111,7 @@ class LlamaRunner(ABC):
                     tokens=torch.tensor([tokens], dtype=torch.long, device=self.device),
                 )
 
-            # If the logits aren't already clipped to only contain the last logit, clip them.
-            if self.has_full_logits:
-                current_token = next_token(logits[:, -1, :], temperature, top_p)
-            else:
-                current_token = next_token(logits, temperature, top_p)
-
+            current_token = next_token(logits, temperature, top_p)
             if current_token == self.tokenizer.eos_id or (
                 hasattr(self.tokenizer, "stop_tokens")
                 and current_token in self.tokenizer.stop_tokens
