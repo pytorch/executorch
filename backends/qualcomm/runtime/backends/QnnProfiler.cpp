@@ -23,8 +23,9 @@ QnnProfile::QnnProfile(
     QnnProfile_Level_t qnnProfileLevel = 0;
     if (profile_level == QnnExecuTorchProfileLevel::kProfileBasic) {
       qnnProfileLevel = QNN_PROFILE_LEVEL_BASIC;
-    } else if (profile_level == QnnExecuTorchProfileLevel::kProfileDetailed
-        || profile_level == QnnExecuTorchProfileLevel::kProfileOptrace) {
+    } else if (
+        profile_level == QnnExecuTorchProfileLevel::kProfileDetailed ||
+        profile_level == QnnExecuTorchProfileLevel::kProfileOptrace) {
       qnnProfileLevel = QNN_PROFILE_LEVEL_DETAILED;
     } else {
       QNN_EXECUTORCH_LOG_WARN("Invalid profile level");
@@ -46,7 +47,8 @@ QnnProfile::QnnProfile(
 
     if (profile_level == QnnExecuTorchProfileLevel::kProfileOptrace) {
       if (handle_ == nullptr) {
-        QNN_EXECUTORCH_LOG_WARN("Prfoile handle is null, cannot enable optrace");
+        QNN_EXECUTORCH_LOG_WARN(
+            "Prfoile handle is null, cannot enable optrace");
         return;
       }
 
@@ -54,7 +56,8 @@ QnnProfile::QnnProfile(
       qnnProfileConfig.option = QNN_PROFILE_CONFIG_OPTION_ENABLE_OPTRACE;
       std::array<const QnnProfile_Config_t*, 2> profileConfigs = {
           &qnnProfileConfig, nullptr};
-      error = qnn_interface.qnn_profile_set_config(handle_, profileConfigs.data());
+      error =
+          qnn_interface.qnn_profile_set_config(handle_, profileConfigs.data());
 
       if (error != QNN_SUCCESS) {
         QNN_EXECUTORCH_LOG_WARN(
