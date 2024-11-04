@@ -16,11 +16,10 @@ from executorch.backends.arm.operators.node_visitor import NodeVisitor
 from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
 
 from executorch.backends.arm.tosa_quant_utils import (
-    get_quantized_node_output_dtype,
-    is_node_quantized,
+    get_quant_node_args,
+    get_quant_node_dtype,
+    is_quant_node,
     q_op,
-    search_quant_arg_downstream,
-    search_quant_arg_upstream,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp
@@ -238,8 +237,8 @@ def build_avg_pool_2d_common(
     output_zp = 0
 
     if is_quant_node:
-        input_zp = search_quant_arg_upstream(cast(torch.fx.Node, node.args[0])).zp
-        output_zp = search_quant_arg_downstream(list(node.users)[0]).zp
+        input_zp = get_quant_node_args(cast(torch.fx.Node, node.args[0])).zp
+        output_zp = get_quant_node_args(list(node.users)[0]).zp
 
     attr = ts.TosaSerializerAttribute()
     attr.PoolAttribute(
@@ -298,11 +297,6 @@ def process_call_function(
     # Convert output (this node itself)
     output = TosaArg(node)
 
-    is_quant_node = is_node_quantized(node)
-    if is_quant_node:
-        output_dtype = map_dtype(get_quantized_node_output_dtype(node))
-    else:
-        output_dtype = output.dtype
     tosa_graph.currRegion.currBasicBlock.addTensor(
         output.name,
         (
@@ -310,7 +304,7 @@ def process_call_function(
             if is_permute_node_before_addmm(node)
             else tosa_shape(output.shape, output.dim_order)
         ),
-        output_dtype,
+        map_dtype(get_quant_node_dtype(node)) if is_quant_node(node) else output.dtype,
     )
 
     # Visiting each Node
@@ -322,7 +316,7 @@ def process_call_function(
             tosa_graph,
             inputs,
             output,
-            is_quant_node,
+            is_quant_node(node),
         )
     else:
         raise RuntimeError(f"Unknown operator {node.target}")
