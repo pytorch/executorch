@@ -14,7 +14,11 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import build_rescale, get_quant_node_args
+from executorch.backends.arm.tosa_quant_utils import (
+    build_rescale,
+    search_quant_arg_downstream,
+    search_quant_arg_upstream,
+)
 from executorch.backends.arm.tosa_utils import (
     build_reshape,
     expand_dims,
@@ -54,8 +58,8 @@ class MMVisitor(NodeVisitor):
         # For INT8, we need to get the zero point, otherwise it is 0
         input0_zp, input1_zp = 0, 0
         if is_quant_node:
-            input0_zp = get_quant_node_args(input0).zp
-            input1_zp = get_quant_node_args(input1).zp
+            input0_zp = search_quant_arg_upstream(input0).zp
+            input1_zp = search_quant_arg_upstream(input1).zp
 
         mat_mul_result = tosa_graph.addIntermediate(
             output_new_shape, ts.DType.INT32 if is_quant_node else output.dtype
@@ -86,9 +90,9 @@ class MMVisitor(NodeVisitor):
 
         # As INT8 accumulates into INT32, we need to rescale it back to INT8
         if is_quant_node:
-            input0_q_params = get_quant_node_args(input0)
-            input1_q_params = get_quant_node_args(input1)
-            output_q_params = get_quant_node_args(list(node.users)[0])
+            input0_q_params = search_quant_arg_upstream(input0)
+            input1_q_params = search_quant_arg_upstream(input1)
+            output_q_params = search_quant_arg_downstream(list(node.users)[0])
 
             final_output_scale = (
                 input0_q_params.scale * input1_q_params.scale

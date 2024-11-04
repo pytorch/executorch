@@ -38,7 +38,7 @@ class ReluVisitor(NodeVisitor):
         clamp_min_qs = 0
         clamp_max_qs = 0
         if is_quant_node:
-            out_qargs = tqutils.get_quant_node_args(list(node.users)[0])
+            out_qargs = tqutils.search_quant_arg_downstream(list(node.users)[0])
             clamp_min_qs = tqutils.quantize_value(0, out_qargs)
             clamp_max_qs = tqutils.quantize_value(float("inf"), out_qargs)
 
