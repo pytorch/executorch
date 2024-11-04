@@ -25,7 +25,6 @@ from executorch.backends.vulkan._passes import (
     TagMemoryMetaPass,
 )
 
-from executorch.backends.vulkan._passes.tag_memory_meta_pass import TagMemoryMetaPass
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkMemoryLayout,
