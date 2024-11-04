@@ -6,11 +6,12 @@
 
 from .efficient_sam import build_efficient_sam
 
+
 def build_efficient_sam_vitt():
     return build_efficient_sam(
         encoder_patch_embed_dim=192,
         encoder_num_heads=3,
-        checkpoint="weights/efficient_sam_vitt.pt",
+        checkpoint="https://huggingface.co/merve/EfficientSAM/resolve/main/efficient_sam_vitt.pt",
     ).eval()
 
 
