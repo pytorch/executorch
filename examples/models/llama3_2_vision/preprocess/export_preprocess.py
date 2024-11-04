@@ -24,28 +24,21 @@ def main():
         strict=False,
     )
 
-    # Executorch
+    # AOTInductor. Note: export AOTI before ExecuTorch, as
+    # ExecuTorch will modify the ExportedProgram.
+    torch._inductor.aot_compile(
+        ep.module(),
+        model.get_example_inputs(),
+        options={"aot_inductor.output_path": "preprocess_aoti.so"},
+    )
+
+    # Executorch.
     edge_program = to_edge(
         ep, compile_config=EdgeCompileConfig(_check_ir_validity=False)
     )
     et_program = edge_program.to_executorch()
     with open("preprocess_et.pte", "wb") as file:
         et_program.write_to_file(file)
-
-    # Export.
-    # ep = torch.export.export(
-    #     model.get_eager_model(),
-    #     model.get_example_inputs(),
-    #     dynamic_shapes=model.get_dynamic_shapes(),
-    #     strict=False,
-    # )
-    #
-    # # AOTInductor
-    # torch._inductor.aot_compile(
-    #     ep.module(),
-    #     model.get_example_inputs(),
-    #     options={"aot_inductor.output_path": "preprocess_aoti.so"},
-    # )
 
 
 if __name__ == "__main__":

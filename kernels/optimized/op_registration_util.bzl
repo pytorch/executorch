@@ -4,6 +4,10 @@ load(
     "@fbsource//xplat/executorch/kernels/optimized:lib_defs.bzl",
     "get_vec_android_preprocessor_flags",
 )
+load(
+    "@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl",
+    "get_compiler_optimization_flags",
+)
 
 def op_target(name, deps = []):
     """Registers an optimized implementation for an operator overload group.
@@ -87,7 +91,7 @@ def define_op_library(name, deps):
         ],
         # kernels often have helpers with no prototypes just disabling the warning here as the headers
         # are codegend and linked in later
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = ["-Wno-missing-prototypes"] + get_compiler_optimization_flags(),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ] + augmented_deps,

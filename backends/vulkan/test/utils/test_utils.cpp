@@ -118,8 +118,8 @@ void record_bitw8_image_to_nchw_nobitw8buffer_op(
   utils::uvec3 global_wg_size = {buffer_len, 1, 1};
 
   std::string kernel_name = "bitw8_image_to_nchw_nobitw8buffer";
-  add_dtype_suffix(kernel_name, v_src);
   add_storage_type_suffix(kernel_name, v_src);
+  add_dtype_suffix(kernel_name, v_src);
 
   context->submit_compute_job(
       VK_KERNEL_FROM_STR(kernel_name),
