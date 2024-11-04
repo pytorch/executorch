@@ -136,8 +136,8 @@ class RopeWithAttentionSink(nn.Module):
         seq_len: int,
     ):
         """
-        Rerotate keys from original_position to new_position. This is done by rerotating
-        keys with (new_position * theta - original_position * theta) with the following matrix:
+        Rerotate q and k from original_position to new_position. This is done by rerotating q
+        and k with (new_position * theta - original_position * theta) with the following matrix:
         (cos(delta), -sin(delta)
          sin(delta), cos(delta))
          where delta = new_position * theta - original_position * theta
