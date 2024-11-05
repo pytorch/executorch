@@ -56,7 +56,7 @@ class TagMemoryMetaPass(ExportPass):
     performance.
 
     This pass is responsible for ensuring that all tensors participating in an operator
-    call is has a valid/optimal (storage type, memory layout) setting, and insert
+    call have a valid/optimal (storage type, memory layout) setting, and insert
     transition operators to transfer input tensors to the correct memory settings when
     necessary.
     """
@@ -82,7 +82,7 @@ class TagMemoryMetaPass(ExportPass):
         1. In some cases, a tensor involved in the computation may be too large to be
            represented as a texture. If this is the case, the node is "opinionated" and
            buffer representation must be used.
-        1. If the operator called by the node indicates a optimal storage type, or only
+        1. If the operator called by the node indicates an optimal storage type, or only
            supports a single storage type, use that storage type. If either is true,
            then the node is considered to be opinionated as well. If multiple storage
            and no preferred storage type is indicated, then the node is not opinionated;
