@@ -14,9 +14,8 @@ import torch
 
 from executorch.examples.models.llama3_2_vision.vision_encoder import (
     FlamingoVisionEncoderModel,
-    VisionEncoderConfig,
 )
-from torch._inductor.package import load_package, package_aoti
+from torch._inductor.package import package_aoti
 
 
 class FlamingoVisionEncoderTest(unittest.TestCase):
@@ -24,7 +23,7 @@ class FlamingoVisionEncoderTest(unittest.TestCase):
         super().setUp()
 
     def test_flamingo_vision_encoder(self) -> None:
-        model = FlamingoVisionEncoderModel(VisionEncoderConfig())
+        model = FlamingoVisionEncoderModel()
         encoder = model.model
         eager_res = encoder.forward(*model.get_example_inputs())
 
@@ -38,7 +37,7 @@ class FlamingoVisionEncoderTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = package_aoti(os.path.join(tmpdir, "vision_encoder.pt2"), so)
             print(path)
-            encoder_aoti = load_package(path)
+            encoder_aoti = torch._inductor.aoti_load_package(path)
 
             y = encoder_aoti(*model.get_example_inputs())
 

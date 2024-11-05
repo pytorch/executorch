@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 import torch
 
@@ -41,8 +42,10 @@ class VisionEncoderConfig:
 
 
 class FlamingoVisionEncoderModel(EagerModelBase):
-    def __init__(self, config: VisionEncoderConfig = VisionEncoderConfig()):
+    def __init__(self, config: Optional[VisionEncoderConfig] = None):
         super().__init__()
+        if config is None:
+            config = VisionEncoderConfig()
         self.config = config
         self.model = flamingo_vision_encoder(
             patch_size=config.patch_size,
@@ -56,6 +59,7 @@ class FlamingoVisionEncoderModel(EagerModelBase):
             max_num_tiles=config.max_num_tiles,
             in_channels=config.in_channels,
         )
+        self.model = replace_tile_positional_embedding(self.model)
         self.image = torch.randn(
             1, 1, 4, 3, self.config.tile_size, self.config.tile_size
         )
@@ -66,7 +70,6 @@ class FlamingoVisionEncoderModel(EagerModelBase):
         )
 
     def get_eager_model(self, **kwargs):
-        self.model = replace_tile_positional_embedding(self.model)
         return self.model
 
     def get_example_inputs(self):
