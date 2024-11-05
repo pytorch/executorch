@@ -220,8 +220,8 @@ target_link_libraries(
   arm_executor_runner
   extension_runner_util
   ethosu_target_init
-  executorch
   "-Wl,--whole-archive"
+  executorch
   executorch_delegate_ethos_u
   quantized_ops_lib
   portable_ops_lib
