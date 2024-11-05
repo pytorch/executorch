@@ -94,9 +94,11 @@ class VulkanSupportedOperators(OperatorSupportBase):
         # If there are no valid texture memory layouts, then buffer storage must be
         # supported by the operator implementation.
         if len(valid_texture_layouts) == 0:
-            # TODO: once memory metadata tagging pass is implemented, check that the
-            # op impl supports buffers instead
-            return False, "requires buffer representation"
+            compatible = VkStorageType.BUFFER in features.supported_storage_types()
+            reason = "op is compatible"
+            if not compatible:
+                reason = "op requires buffers which is not supported by op impl"
+            return compatible, reason
 
         op_available_layouts = features.supported_memory_layouts(
             VkStorageType.TEXTURE_3D

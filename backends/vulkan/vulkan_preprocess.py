@@ -6,7 +6,9 @@
 
 # pyre-strict
 
-from typing import final, List
+from typing import Any, Dict, final, List
+
+import executorch.backends.vulkan.utils as utils
 
 from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
 from executorch.backends.transforms.fuse_batch_norm_with_conv import (
@@ -20,9 +22,14 @@ from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransf
 from executorch.backends.vulkan._passes import (
     insert_prepack_nodes,
     RemoveLocalScalarDenseOpsTransform,
+    TagMemoryMetaPass,
 )
 
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
+from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
+    VkMemoryLayout,
+    VkStorageType,
+)
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     serialize_vulkan_graph,
 )
@@ -78,6 +85,24 @@ def apply_passes(program: ExportedProgram, passes) -> ExportedProgram:
     return program
 
 
+def parse_compile_spec(compile_specs: List[CompileSpec]) -> Dict[str, Any]:
+    options = {}
+    for spec in compile_specs:
+        if spec.key == "storage_type_override":
+            options[spec.key] = VkStorageType(
+                int.from_bytes(spec.value, byteorder="little")
+            )
+        if spec.key == "memory_layout_override":
+            options[spec.key] = VkMemoryLayout(
+                int.from_bytes(spec.value, byteorder="little")
+            )
+        if spec.key in {"texture_limits_x", "texture_limits_y", "texture_limits_z"}:
+            options[spec.key] = int.from_bytes(spec.value, byteorder="little")
+        # Unhandled options are ignored
+
+    return options
+
+
 @final
 class VulkanBackend(BackendDetails):
     @classmethod
@@ -87,6 +112,25 @@ class VulkanBackend(BackendDetails):
         program: ExportedProgram,
         module_compile_spec: List[CompileSpec],
     ) -> PreprocessResult:
+        compile_options = parse_compile_spec(module_compile_spec)
+        limits_x = compile_options.get(
+            "texture_limits_x", utils.DEFAULT_TEXTURE_LIMITS[0]
+        )
+        limits_y = compile_options.get(
+            "texture_limits_y", utils.DEFAULT_TEXTURE_LIMITS[1]
+        )
+        limits_z = compile_options.get(
+            "texture_limits_z", utils.DEFAULT_TEXTURE_LIMITS[2]
+        )
+        texture_limits = (limits_x, limits_y, limits_z)
+
+        default_storage_type = compile_options.get(
+            "storage_type_override", VkStorageType.TEXTURE_3D
+        )
+        default_memory_layout = compile_options.get(
+            "memory_layout_override", VkMemoryLayout.TENSOR_WIDTH_PACKED
+        )
+
         program = unsafe_remove_auto_functionalized_pass(program)
 
         # First, apply passes that fuse/remove operators to consolidate the graph
@@ -122,10 +166,31 @@ class VulkanBackend(BackendDetails):
             ],
         )
 
+        # Optionally apply the memory metadata tagging pass, which will insert storage
+        # type and memory layout transition nodes to ensure that all tensor arguments
+        # to an operator is in a supported or optimal configuration. If this pass is not
+        # applied, there will be a risk that some operators recieve arguments with
+        # memory settings that are not supported by the implementation.
+        if not compile_options.get("skip_tag_memory_metadata", False):
+            program = apply_passes(
+                program,
+                [
+                    TagMemoryMetaPass(
+                        texture_limits,
+                        default_storage_type=default_storage_type,
+                        default_memory_layout=default_memory_layout,
+                    ),
+                ],
+            )
+
         # Finally, apply dynamic shape passes and memory planning pass. These passes
         # must be applied only when the graph structure is finalized.
         program = apply_passes(
-            program, [ConstraintBasedSymShapeEvalPass(), MemoryPlanningPass()]
+            program,
+            [
+                ConstraintBasedSymShapeEvalPass(),
+                MemoryPlanningPass(),
+            ],
         )
 
         graph_builder = VkGraphBuilder(
