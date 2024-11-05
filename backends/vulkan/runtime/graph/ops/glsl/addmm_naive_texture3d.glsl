@@ -16,8 +16,6 @@ $if MAT2_IS_TRANSPOSED:
 $if HAS_BIAS:
   #define HAS_BIAS
 
-#include "indexing_utils.h"
-
 ${layout_declare_tensor(B, "w", "out_tensor", DTYPE, "texture3d")}
 ${layout_declare_tensor(B, "r", "mat1_tensor", DTYPE, "texture3d")}
 ${layout_declare_tensor(B, "r", "mat2_tensor", DTYPE, "texture3d")}
@@ -25,22 +23,32 @@ $if HAS_BIAS:
   ${layout_declare_tensor(B, "r", "bias_tensor", DTYPE, "texture3d")}
 ${layout_declare_ubo(B, "ivec4", "out_sizes")}
 ${layout_declare_ubo(B, "ivec3", "out_limits")}
-${layout_declare_ubo(B, "ivec4", "out_axis_map")}
 ${layout_declare_ubo(B, "ivec4", "mat1_sizes")}
-${layout_declare_ubo(B, "ivec4", "mat1_axis_map")}
 ${layout_declare_ubo(B, "ivec4", "mat2_sizes")}
-${layout_declare_ubo(B, "ivec4", "mat2_axis_map")}
 $if HAS_BIAS:
   ${layout_declare_ubo(B, "ivec4", "bias_sizes")}
-  ${layout_declare_ubo(B, "ivec4", "bias_axis_map")}
   ${layout_declare_ubo(B, "float", "alpha", "float", "beta")}
+
+#include "indexing_utils.h"
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int out_packed_dim = C_DIM;
-layout(constant_id = 4) const int mat1_packed_dim = W_DIM;
-layout(constant_id = 5) const int mat2_packed_dim = H_DIM;
-layout(constant_id = 6) const int bias_packed_dim = W_DIM;
+${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 out_axis_map = unhash_axis_map(out_layout);
+const lowp int out_packed_dim = unhash_packed_dim(out_layout);
+
+${layout_declare_spec_const(C, "int", "mat1_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 mat1_axis_map = unhash_axis_map(mat1_layout);
+const lowp int mat1_packed_dim = unhash_packed_dim(mat1_layout);
+
+${layout_declare_spec_const(C, "int", "mat2_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 mat2_axis_map = unhash_axis_map(mat2_layout);
+const lowp int mat2_packed_dim = unhash_packed_dim(mat2_layout);
+
+$if HAS_BIAS:
+  ${layout_declare_spec_const(C, "int", "bias_layout", "DEFAULT_LAYOUT")}
+  const lowp ivec4 bias_axis_map = unhash_axis_map(bias_layout);
+  const lowp int bias_packed_dim = unhash_packed_dim(bias_layout);
 
 #ifdef HAS_BIAS
 vec4 get_bias_texel_W_packed(ivec3 logical_pos) {

@@ -22,6 +22,9 @@
 
 #include <gflags/gflags.h>
 
+#include <fcntl.h>
+#include <unistd.h>
+
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/runner_util/inputs.h>
@@ -36,6 +39,10 @@ DEFINE_string(
     model_path,
     "model.pte",
     "Model serialized in flatbuffer format.");
+DEFINE_bool(
+    is_fd_uri,
+    false,
+    "True if the model_path passed is a file descriptor with the prefix \"fd:///\".");
 
 using executorch::extension::FileDataLoader;
 using executorch::runtime::Error;
@@ -66,7 +73,12 @@ int main(int argc, char** argv) {
   // DataLoaders that use mmap() or point to data that's already in memory, and
   // users can create their own DataLoaders to load from arbitrary sources.
   const char* model_path = FLAGS_model_path.c_str();
-  Result<FileDataLoader> loader = FileDataLoader::from(model_path);
+  const bool is_fd_uri = FLAGS_is_fd_uri;
+
+  Result<FileDataLoader> loader = is_fd_uri
+      ? FileDataLoader::fromFileDescriptorUri(model_path)
+      : FileDataLoader::from(model_path);
+
   ET_CHECK_MSG(
       loader.ok(),
       "FileDataLoader::from() failed: 0x%" PRIx32,

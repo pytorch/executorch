@@ -13,7 +13,7 @@ install_ubuntu() {
   apt-get install -y --no-install-recommends clang-"$CLANG_VERSION"
   apt-get install -y --no-install-recommends llvm-"$CLANG_VERSION"
   # Also require LLD linker from llvm and libomp to build PyTorch from source
-  apt-get install -y lld "libomp-${CLANG_VERSION}-dev"
+  apt-get install -y lld "libomp-${CLANG_VERSION}-dev" "libc++-${CLANG_VERSION}-dev"
 
   # Use update-alternatives to make this version the default
   update-alternatives --install /usr/bin/clang clang /usr/bin/clang-"$CLANG_VERSION" 50
