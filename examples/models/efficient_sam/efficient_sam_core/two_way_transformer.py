@@ -5,8 +5,6 @@ from torch import nn, Tensor
 from .mlp import MLPBlock
 
 
-
-
 class TwoWayTransformer(nn.Module):
     def __init__(
         self,
