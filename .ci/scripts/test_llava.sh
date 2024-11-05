@@ -8,11 +8,11 @@
 set -exu
 # shellcheck source=/dev/null
 
-BUILD_TYPE=${1:-Debug}
 TARGET_OS=${2:-Native}
 BUILD_DIR=${3:-cmake-out}
+CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release}
 
-echo "Building with BUILD_TYPE: $BUILD_TYPE, TARGET_OS: $TARGET_OS, BUILD_DIR: $BUILD_DIR"
+echo "Building with CMAKE_BUILD_TYPE: $CMAKE_BUILD_TYPE, TARGET_OS: $TARGET_OS, BUILD_DIR: $BUILD_DIR"
 
 if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
     PYTHON_EXECUTABLE=python3
@@ -32,7 +32,7 @@ if hash nproc &> /dev/null; then NPROC=$(nproc); fi
 
 EXECUTORCH_COMMON_CMAKE_ARGS="                      \
         -DCMAKE_INSTALL_PREFIX=${BUILD_DIR}         \
-        -DCMAKE_BUILD_TYPE=${BUILD_TYPE}            \
+        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}            \
         -DEXECUTORCH_ENABLE_LOGGING=ON              \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON      \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
@@ -49,7 +49,7 @@ cmake_install_executorch_libraries() {
         ${EXECUTORCH_COMMON_CMAKE_ARGS} \
         -B${BUILD_DIR} .
 
-    cmake --build ${BUILD_DIR} -j${NPROC} --target install --config ${BUILD_TYPE}
+    cmake --build ${BUILD_DIR} -j${NPROC} --target install --config ${CMAKE_BUILD_TYPE}
 }
 
 cmake_install_executorch_libraries_for_android() {
@@ -59,14 +59,14 @@ cmake_install_executorch_libraries_for_android() {
         ${EXECUTORCH_COMMON_CMAKE_ARGS}                                         \
         -B${BUILD_DIR} .
 
-    cmake --build ${BUILD_DIR} -j${NPROC} --target install --config ${BUILD_TYPE}
+    cmake --build ${BUILD_DIR} -j${NPROC} --target install --config ${CMAKE_BUILD_TYPE}
 }
 
 
 LLAVA_COMMON_CMAKE_ARGS="                        \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -DCMAKE_INSTALL_PREFIX=${BUILD_DIR}      \
-        -DCMAKE_BUILD_TYPE=${BUILD_TYPE}         \
+        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}         \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON     \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON  \
         -DEXECUTORCH_BUILD_XNNPACK=ON"
@@ -81,7 +81,7 @@ cmake_build_llava_runner() {
         -B${BUILD_DIR}/${dir}             \
         ${dir}
 
-    cmake --build ${BUILD_DIR}/${dir} -j${NPROC} --config ${BUILD_TYPE}
+    cmake --build ${BUILD_DIR}/${dir} -j${NPROC} --config ${CMAKE_BUILD_TYPE}
 }
 
 
@@ -98,7 +98,7 @@ cmake_build_llava_runner_for_android() {
         -B${BUILD_DIR}/${dir}                                                   \
         ${dir}
 
-    cmake --build ${BUILD_DIR}/${dir} -j${NPROC} --config ${BUILD_TYPE}
+    cmake --build ${BUILD_DIR}/${dir} -j${NPROC} --config ${CMAKE_BUILD_TYPE}
 }
 
 # only export the one without custom op for now since it's
