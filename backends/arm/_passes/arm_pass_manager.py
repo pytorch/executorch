@@ -40,10 +40,10 @@ from executorch.backends.arm._passes.scalars_to_attribute_pass import (
     ScalarsToAttributePass,
 )
 from executorch.backends.arm._passes.size_adjust_conv2d_pass import SizeAdjustConv2DPass
-from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
 from executorch.backends.arm._passes.unsqueeze_scalar_placeholders_pass import (
     UnsqueezeScalarPlaceholdersPass,
 )
+from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_manager import PassManager
