@@ -27,6 +27,9 @@ _SUPPORTED_OPS = [
     torch.ops.aten.unsqueeze.default,
     torch.ops.aten.unsqueeze_copy.default,
     torch.ops.aten.reshape.default,
+    torch.ops.aten.repeat.default,
+    torch.ops.aten.expand_copy.default,
+    torch.ops.aten.expand.default,
     # Disabling these as there seems to be an issue with support for complex
     # datatypes in torch:
     # torch.ops.aten.view_as_complex.default,

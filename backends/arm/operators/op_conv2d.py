@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
-from typing import cast, List
+from typing import List
 
 import serializer.tosa_serializer as ts
 import torch
@@ -15,9 +15,10 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import (
     build_rescale_conv_output,
-    get_quant_node_args,
+    search_quant_arg_downstream,
+    search_quant_arg_upstream,
 )
-from executorch.backends.arm.tosa_utils import build_reshape, getNodeArgs, tosa_shape
+from executorch.backends.arm.tosa_utils import build_reshape, tosa_shape
 
 from serializer.tosa_serializer import TosaOp
 
@@ -82,7 +83,9 @@ class Conv2dVisitor(NodeVisitor):
         )
 
         input_zp = (
-            get_quant_node_args(node.all_input_nodes[0]).zp if is_quant_node else 0
+            search_quant_arg_upstream(node.all_input_nodes[0]).zp
+            if is_quant_node
+            else 0
         )
 
         attr.ConvAttribute(
@@ -158,9 +161,10 @@ class Conv2dVisitor(NodeVisitor):
         # integer value domain of the next op. Otherwise return float32 output.
         if is_quant_node:
             # Get scale_factor from input, weight, and output.
-            _, input_scale, _, _, _, _ = getNodeArgs(cast(torch.fx.Node, node.args[0]))
-            _, weight_scale, _, _, _, _ = getNodeArgs(cast(torch.fx.Node, node.args[1]))
-            _, output_scale, output_zp, _, _, _ = getNodeArgs(list(node.users)[0])
+            input_scale = search_quant_arg_upstream(node.all_input_nodes[0]).scale
+            weight_scale = search_quant_arg_upstream(node.all_input_nodes[1]).scale
+            output_qargs = search_quant_arg_downstream(list(node.users)[0])
+
             build_rescale_conv_output(
                 tosa_graph,
                 # pyre-fixme[61]: Uninitialized local [61]: Local variable `conv2d_res` is undefined, or not always defined.
@@ -169,6 +173,6 @@ class Conv2dVisitor(NodeVisitor):
                 actual_out_type,
                 input_scale,
                 weight_scale,
-                output_scale,
-                output_zp,
+                output_qargs.scale,
+                output_qargs.zp,
             )
