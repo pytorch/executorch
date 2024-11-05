@@ -33,8 +33,45 @@
 #include <fbjni/ByteBuffer.h>
 #include <fbjni/fbjni.h>
 
+using namespace executorch::extension;
+using namespace torch::executor;
+
 #ifdef __ANDROID__
 #include <android/log.h>
+#include <mutex>
+#include <sstream>
+
+// Number of entries to store in the in-memory log buffer.
+const size_t log_buffer_length = 16;
+
+struct log_entry {
+  et_timestamp_t timestamp;
+  et_pal_log_level_t level;
+  std::string filename;
+  std::string function;
+  size_t line;
+  std::string message;
+
+  log_entry(
+      et_timestamp_t timestamp,
+      et_pal_log_level_t level,
+      const char* filename,
+      const char* function,
+      size_t line,
+      const char* message,
+      size_t length)
+      : timestamp(timestamp),
+        level(level),
+        filename(filename),
+        function(function),
+        line(line),
+        message(message, length) {}
+};
+
+namespace {
+std::vector<log_entry> log_buffer_;
+std::mutex log_buffer_mutex_;
+} // namespace
 
 // For Android, write to logcat
 void et_pal_emit_log_message(
@@ -45,6 +82,15 @@ void et_pal_emit_log_message(
     size_t line,
     const char* message,
     size_t length) {
+  std::lock_guard<std::mutex> guard(log_buffer_mutex_);
+
+  while (log_buffer_.size() >= log_buffer_length) {
+    log_buffer_.erase(log_buffer_.begin());
+  }
+
+  log_buffer_.emplace_back(
+      timestamp, level, filename, function, line, message, length);
+
   int android_log_level = ANDROID_LOG_UNKNOWN;
   if (level == 'D') {
     android_log_level = ANDROID_LOG_DEBUG;
@@ -59,9 +105,6 @@ void et_pal_emit_log_message(
   __android_log_print(android_log_level, "ExecuTorch", "%s", message);
 }
 #endif
-
-using namespace executorch::extension;
-using namespace torch::executor;
 
 namespace executorch::extension {
 class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
@@ -391,12 +434,44 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     return jresult;
   }
 
+  facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>>
+  readLogBuffer() {
+#ifdef __ANDROID__
+    std::lock_guard<std::mutex> guard(log_buffer_mutex_);
+
+    const auto size = log_buffer_.size();
+    facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> ret =
+        facebook::jni::JArrayClass<jstring>::newArray(size);
+
+    for (auto i = 0u; i < size; i++) {
+      const auto& entry = log_buffer_[i];
+      // Format the log entry as "[TIMESTAMP FUNCTION FILE:LINE] LEVEL MESSAGE".
+      std::stringstream ss;
+      ss << "[" << entry.timestamp << " " << entry.function << " "
+         << entry.filename << ":" << entry.line << "] "
+         << static_cast<char>(entry.level) << " " << entry.message;
+
+      facebook::jni::local_ref<facebook::jni::JString> jstr_message =
+          facebook::jni::make_jstring(ss.str().c_str());
+      (*ret)[i] = jstr_message;
+    }
+
+    return ret;
+#else
+    return facebook::jni::JArrayClass<String>::newArray(0);
+#endif
+  }
+
   static void registerNatives() {
     registerHybrid({
         makeNativeMethod("initHybrid", ExecuTorchJni::initHybrid),
         makeNativeMethod("forward", ExecuTorchJni::forward),
         makeNativeMethod("execute", ExecuTorchJni::execute),
         makeNativeMethod("loadMethod", ExecuTorchJni::load_method),
+
+#ifdef __ANDROID__
+        makeNativeMethod("readLogBuffer", ExecuTorchJni::readLogBuffer),
+#endif
     });
   }
 };
