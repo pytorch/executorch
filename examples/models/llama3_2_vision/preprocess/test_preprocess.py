@@ -26,6 +26,7 @@ from executorch.extension.pybindings.portable_lib import (
 )
 
 from PIL import Image
+from torch._inductor.package import package_aoti
 
 from torchtune.models.clip.inference._transform import CLIPImageTransform
 
@@ -55,8 +56,10 @@ def initialize_models(resize_to_max_canvas: bool) -> Dict[str, Any]:
         possible_resolutions=None,
     )
 
+    # Eager model.
     model = CLIPImageTransformModel(config)
 
+    # Exported model.
     exported_model = torch.export.export(
         model.get_eager_model(),
         model.get_example_inputs(),
@@ -64,22 +67,35 @@ def initialize_models(resize_to_max_canvas: bool) -> Dict[str, Any]:
         strict=False,
     )
 
-    # aoti_path = torch._inductor.aot_compile(
-    #     exported_model.module(),
-    #     model.get_example_inputs(),
-    # )
+    # AOTInductor model.
+    so = torch._export.aot_compile(
+        exported_model.module(),
+        args=model.get_example_inputs(),
+        options={"aot_inductor.package": True},
+        dynamic_shapes=model.get_dynamic_shapes(),
+    )
+    aoti_path = "preprocess.pt2"
+    package_aoti(aoti_path, so)
 
     edge_program = to_edge(
         exported_model, compile_config=EdgeCompileConfig(_check_ir_validity=False)
     )
     executorch_model = edge_program.to_executorch()
 
+    # Re-export as ExecuTorch edits the ExportedProgram.
+    exported_model = torch.export.export(
+        model.get_eager_model(),
+        model.get_example_inputs(),
+        dynamic_shapes=model.get_dynamic_shapes(),
+        strict=False,
+    )
+
     return {
         "config": config,
         "reference_model": reference_model,
         "model": model,
         "exported_model": exported_model,
-        # "aoti_path": aoti_path,
+        "aoti_path": aoti_path,
         "executorch_model": executorch_model,
     }
 
@@ -265,11 +281,13 @@ class TestImageTransform:
         ), f"Executorch model: expected {reference_ar} but got {et_ar.tolist()}"
 
         # Run aoti model and check it matches reference model.
-        # aoti_path = models["aoti_path"]
-        # aoti_model = torch._export.aot_load(aoti_path, "cpu")
-        # aoti_image, aoti_ar = aoti_model(image_tensor, inscribed_size, best_resolution)
-        # self.assertTrue(torch.allclose(reference_image, aoti_image))
-        # self.assertEqual(reference_ar, aoti_ar.tolist())
+        aoti_path = models["aoti_path"]
+        aoti_model = torch._inductor.aoti_load_package(aoti_path)
+        aoti_image, aoti_ar = aoti_model(image_tensor, inscribed_size, best_resolution)
+        assert_expected(aoti_image, reference_image, rtol=0, atol=1e-4)
+        assert (
+            reference_ar == aoti_ar.tolist()
+        ), f"AOTI model: expected {reference_ar} but got {aoti_ar.tolist()}"
 
     # This test setup mirrors the one in torchtune:
     # https://github.com/pytorch/torchtune/blob/main/tests/torchtune/models/clip/test_clip_image_transform.py
