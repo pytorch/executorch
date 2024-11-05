@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from enum import IntEnum
-from typing import Set, Tuple
+from typing import Optional, Set, Tuple
 
 import torch
 
@@ -13,6 +13,9 @@ from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkMemoryLayout,
     VkStorageType,
 )
+
+from executorch.exir.tensor import TensorSpec
+
 from torch._export.utils import is_buffer, is_param
 
 from torch._subclasses.fake_tensor import FakeTensor
@@ -170,3 +173,43 @@ def possible_node_memory_layouts(
             )
 
     return valid_layouts
+
+
+##
+## TensorSpec Utils
+##
+
+
+def set_node_spec_attr(node: torch.fx.Node, attr: str, value):
+    assert "spec" in node.meta
+    spec = node.meta["spec"]
+    if isinstance(spec, TensorSpec):
+        setattr(spec, attr, value)
+    elif isinstance(spec, list) or isinstance(spec, tuple):
+        for s in spec:
+            assert isinstance(s, TensorSpec)
+            setattr(s, attr, value)
+    else:
+        raise RuntimeError(f"Cannot set attr for spec of type {type(spec)}")
+
+
+def get_node_spec_attr(node: torch.fx.Node, attr: str, return_first: bool = True):
+    assert "spec" in node.meta
+    spec = node.meta["spec"]
+    if isinstance(spec, TensorSpec):
+        return getattr(spec, attr) if hasattr(spec, attr) else None
+    elif isinstance(spec, list) or isinstance(spec, tuple):
+        if return_first:
+            return getattr(spec[0], attr) if hasattr(spec, attr) else None
+        else:
+            return [getattr(s, attr) if hasattr(s, attr) else None for s in spec]
+    else:
+        raise RuntimeError(f"Cannot get attr for spec of type {type(spec)}")
+
+
+def get_node_storage_type(node: torch.fx.Node) -> Optional[VkStorageType]:
+    return get_node_spec_attr(node, "vk_storage_type")
+
+
+def get_node_memory_layout(node: torch.fx.Node) -> Optional[VkMemoryLayout]:
+    return get_node_spec_attr(node, "vk_memory_layout")
