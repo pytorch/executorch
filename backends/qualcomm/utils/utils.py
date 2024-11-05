@@ -770,6 +770,7 @@ def generate_qnn_executorch_compiler_spec(
     online_prepare: bool = False,
     dump_intermediate_outputs: bool = False,
     profile: bool = False,
+    optrace: bool = False,
     shared_buffer: bool = False,
     is_from_context_binary: bool = False,
 ) -> List[CompileSpec]:
@@ -831,7 +832,9 @@ def generate_qnn_executorch_compiler_spec(
     if saver:
         qnn_executorch_options.library_path = "libQnnSaver.so"
 
-    if profile:
+    if optrace:
+        qnn_executorch_options.profile_level = QnnExecuTorchProfileLevel.kProfileOptrace
+    elif profile:
         qnn_executorch_options.profile_level = (
             QnnExecuTorchProfileLevel.kProfileDetailed
         )

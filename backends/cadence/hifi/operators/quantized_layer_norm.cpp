@@ -27,7 +27,7 @@ namespace native {
 // Compute quantized layer_norm. The current implementation assumes that the
 // input is per-tensor quantized.
 template <typename T>
-void quantized_layer_norm_(
+void quantized_layer_norm_per_tensor_(
     const Tensor& input,
     float input_scale,
     int64_t input_zero_point,
@@ -107,7 +107,7 @@ void quantized_layer_norm_(
   int64_t input_zero_point = in_zero_point.const_data_ptr<int64_t>()[0];
 
   // Call other overload
-  quantized_layer_norm_<T>(
+  quantized_layer_norm_per_tensor_<T>(
       input,
       input_scale,
       input_zero_point,
@@ -120,7 +120,7 @@ void quantized_layer_norm_(
 }
 
 void quantized_layer_norm_out(
-    KernelRuntimeContext& ctx,
+    __ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& in_scale,
     const Tensor& in_zero_point,
@@ -134,6 +134,44 @@ void quantized_layer_norm_out(
 #define typed_quantized_layer_norm(ctype, dtype) \
   case ScalarType::dtype: {                      \
     quantized_layer_norm_<ctype>(                \
+        input,                                   \
+        in_scale,                                \
+        in_zero_point,                           \
+        weight,                                  \
+        bias,                                    \
+        eps,                                     \
+        output_scale,                            \
+        output_zero_point,                       \
+        out);                                    \
+    break;                                       \
+  }
+
+  ScalarType dtype = input.scalar_type();
+  switch (dtype) {
+    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_layer_norm)
+    default:
+      ET_DCHECK_MSG(
+          false, "Unhandled dtype %s", torch::executor::toString(dtype));
+  }
+
+#undef typed_quantized_layer_norm
+}
+
+void quantized_layer_norm_per_tensor_out(
+    __ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& input,
+    double in_scale,
+    int64_t in_zero_point,
+    __ET_UNUSED const IntArrayRef normalized_shape,
+    const Tensor& weight,
+    const Tensor& bias,
+    double eps,
+    double output_scale,
+    int64_t output_zero_point,
+    Tensor& out) {
+#define typed_quantized_layer_norm(ctype, dtype) \
+  case ScalarType::dtype: {                      \
+    quantized_layer_norm_per_tensor_<ctype>(     \
         input,                                   \
         in_scale,                                \
         in_zero_point,                           \
