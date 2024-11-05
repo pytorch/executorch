@@ -40,9 +40,6 @@ def get_vec_deps():
     if not runtime.is_oss:
         # various ovr_configs are not available in oss
         deps = select({
-            "ovr_config//os:linux-x86_64": [
-                "fbsource//third-party/sleef:sleef",
-            ] if not runtime.is_oss else [],
             "ovr_config//os:iphoneos": [
                 "fbsource//third-party/sleef:sleef_arm",
             ] if not runtime.is_oss else [],
