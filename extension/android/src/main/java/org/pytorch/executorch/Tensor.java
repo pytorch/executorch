@@ -8,7 +8,6 @@
 
 package org.pytorch.executorch;
 
-import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
@@ -339,8 +338,6 @@ public abstract class Tensor {
     return new Tensor_float64(data, shape);
   }
 
-  @DoNotStrip private HybridData mHybridData;
-
   private Tensor(long[] shape) {
     checkShape(shape);
     this.shape = Arrays.copyOf(shape, shape.length);
@@ -658,7 +655,7 @@ public abstract class Tensor {
   // Called from native
   @DoNotStrip
   private static Tensor nativeNewTensor(
-      ByteBuffer data, long[] shape, int dtype, HybridData hybridData) {
+      ByteBuffer data, long[] shape, int dtype) {
     Tensor tensor = null;
 
     if (DType.FLOAT.jniCode == dtype) {
@@ -676,7 +673,6 @@ public abstract class Tensor {
     } else {
       throw new IllegalArgumentException("Unknown Tensor dtype");
     }
-    tensor.mHybridData = hybridData;
     return tensor;
   }
 }
