@@ -133,6 +133,24 @@ def define_libs(is_fbcode=False):
             "@EXECUTORCH_CLIENTS",
         ],
         deps = get_vec_deps(),
+        cxx_platform_deps = select({
+            "DEFAULT": [
+                (
+                    DEVSERVER_PLATFORM_REGEX,
+                    [
+                        "fbsource//third-party/sleef:sleef",
+                    ],
+                ),
+            ],
+            "ovr_config//cpu:arm64": [
+                (
+                    DEVSERVER_PLATFORM_REGEX,
+                    [
+                        "fbsource//third-party/sleef:sleef_arm",
+                    ],
+                ),
+            ],
+        }),
     )
 
     runtime.cxx_library(
