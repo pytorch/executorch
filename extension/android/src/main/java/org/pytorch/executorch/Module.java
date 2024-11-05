@@ -99,6 +99,11 @@ public class Module {
     return mNativePeer.loadMethod(methodName);
   }
 
+  /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
+  public String[] readLogBuffer() {
+    return mNativePeer.readLogBuffer();
+  }
+
   /**
    * Explicitly destroys the native torch::jit::Module. Calling this method is not required, as the
    * native object will be destroyed when this object is garbage-collected. However, the timing of
