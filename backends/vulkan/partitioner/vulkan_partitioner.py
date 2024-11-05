@@ -74,13 +74,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
             target = first_arg.name()
 
         # Extract the features for the node's operator, if no override was provided
-        op_features = features
         if features is None:
             if not has_impl(target):
                 return False, "no operator implementation"
-            op_features = get_op_features(target)
-
-        assert op_features is not None
+            features = get_op_features(target)
 
         valid_texture_layouts = utils.possible_node_memory_layouts(
             node, self.texture_limits
@@ -101,7 +98,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
             # op impl supports buffers instead
             return False, "requires buffer representation"
 
-        op_available_layouts = op_features.supported_memory_layouts(
+        op_available_layouts = features.supported_memory_layouts(
             VkStorageType.TEXTURE_3D
         )
 

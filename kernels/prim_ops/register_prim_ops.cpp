@@ -148,7 +148,7 @@ static Kernel prim_ops[] = {
           EValue& out = *stack[2];
           if (a.isInt() && b.isInt()) {
             const int64_t quot = a.toInt() / b.toInt();
-            if (std::signbit(a.toInt()) == std::signbit(b.toInt())) {
+            if ((a.toInt() < 0) == (b.toInt() < 0)) {
               out = EValue(quot);
               return;
             }
