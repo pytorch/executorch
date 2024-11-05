@@ -507,6 +507,9 @@ endif()
 target_include_directories(
   executorch_core PUBLIC ${_common_include_directories}
 )
+target_include_directories(
+  executorch_core INTERFACE ${TORCH_INCLUDE_DIRS}
+)
 target_compile_options(executorch_core PUBLIC ${_common_compile_options})
 if(MAX_KERNEL_NUM)
   target_compile_definitions(
@@ -668,6 +671,8 @@ if(EXECUTORCH_BUILD_PTHREADPOOL
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/threadpool)
 endif()
 
+find_package(Torch CONFIG REQUIRED)
+
 if(EXECUTORCH_BUILD_PYBIND)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
 
@@ -680,7 +685,6 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   # find pytorch lib, to allow pybind to take at::Tensor as input/output
-  find_package(Torch CONFIG REQUIRED)
   find_library(
     TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
   )

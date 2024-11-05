@@ -122,6 +122,9 @@ def define_common_targets():
         exported_headers = [
             "compiler.h",
         ],
+        exported_deps = [
+            "//caffe2/c10:c10",
+        ] if not runtime.is_oss else [],
         visibility = [
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
