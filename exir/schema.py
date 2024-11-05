@@ -12,7 +12,7 @@ from typing import List, Optional, Union
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
-from executorch.exir.common_schema import ScalarType
+from executorch.exir.common_schema import ScalarType, DataSegment
 
 
 @dataclass
@@ -270,12 +270,6 @@ class ExecutionPlan:
     # Runtime should use the len(constant_buffer) as the ground truch of
     # constant memory buffer size, and ignore non_const_buffer_sizes[0].
     non_const_buffer_sizes: List[int]
-
-
-@dataclass
-class DataSegment:
-    offset: int
-    size: int
 
 
 @dataclass
