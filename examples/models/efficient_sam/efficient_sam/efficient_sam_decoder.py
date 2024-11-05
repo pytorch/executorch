@@ -124,13 +124,25 @@ class PositionEmbeddingRandom(nn.Module):
         # outputs d_1 x ... x d_n x C shape
         return torch.cat([torch.sin(coords), torch.cos(coords)], dim=-1)
 
+    def custom_cumsum(self, tensor: torch.Tensor, dim: int) -> torch.Tensor:
+        """Custom cumulative sum."""
+        tensor = tensor.transpose(dim, 0)
+        original_shape = tensor.shape
+        n = original_shape[0]
+        tensor = tensor.reshape(n, -1)
+        tril = torch.tril(torch.ones(n, n, device=tensor.device, dtype=tensor.dtype))
+        tensor = tril @ tensor
+        tensor = tensor.view(original_shape)
+        tensor = tensor.transpose(0, dim)
+        return tensor
+
     def forward(self, size: Tuple[int, int]) -> torch.Tensor:
         """Generate positional encoding for a grid of the specified size."""
         h, w = size
         device = self.positional_encoding_gaussian_matrix.device
         grid = torch.ones([h, w], device=device, dtype=torch.float32)
-        y_embed = grid.cumsum(dim=0) - 0.5
-        x_embed = grid.cumsum(dim=1) - 0.5
+        y_embed = self.custom_cumsum(grid, dim=0) - 0.5
+        x_embed = self.custom_cumsum(grid, dim=1) - 0.5
         y_embed = y_embed / h
         x_embed = x_embed / w
 
