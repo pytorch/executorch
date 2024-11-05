@@ -22,6 +22,7 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
+#include <charconv>
 
 // Some platforms (e.g. Xtensa) do not support pread() that we use to read the
 // file at different offsets simultaneously from multiple threads not affecting
@@ -98,8 +99,12 @@ Result<int> getFDFromUri(const char* file_descriptor_uri) {
   fd_without_prefix[fd_len] = '\0';
 
   // check if remaining fd string is a valid integer
-  int fd = ::atoi(fd_without_prefix);
-  return fd;
+  // int fd = strtol(fd_without_prefix, NULL, 10);
+  // int fd = ::atoi(fd_without_prefix);
+  // int fd = parse_int(fd_without_prefix);
+  // int fd;
+  // std::from_chars(fd_without_prefix, fd_without_prefix + fd_len, fd);
+  return 0;
 }
 
 Result<FileDataLoader> FileDataLoader::fromFileDescriptor(
