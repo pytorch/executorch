@@ -223,6 +223,8 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 "//caffe2:torch",
+                "//executorch/exir:tensor",
+                "//executorch/backends/vulkan/serialization:lib",
             ]
         )
 
