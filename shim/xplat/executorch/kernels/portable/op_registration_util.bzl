@@ -118,7 +118,7 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         ],
         visibility = [
             "//executorch/kernels/portable/test/...",
-            "//executorch/kernels/quantized/test/...",
+            "//executorch/kernels/quantized/...",
             "//executorch/kernels/optimized/test/...",
             "//executorch/kernels/test/...",
             "@EXECUTORCH_CLIENTS",
@@ -126,7 +126,10 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         fbandroid_platform_deps = android_deps,
         # kernels often have helpers with no prototypes just disabling the warning here as the headers
         # are codegend and linked in later
-        compiler_flags = ["-Wno-missing-prototypes"] + (
+        compiler_flags = select({
+                "DEFAULT": ["-Wno-missing-prototypes"],
+                "ovr_config//os:windows": [],
+            }) + (
             # For shared library build, we don't want to expose symbols of
             # kernel implementation (ex torch::executor::native::tanh_out)
             # to library users. They should use kernels through registry only.
