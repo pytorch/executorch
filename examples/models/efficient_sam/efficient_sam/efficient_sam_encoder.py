@@ -165,7 +165,7 @@ def get_abs_pos(
 
     if size != h or size != w:
         new_abs_pos = F.interpolate(
-            abs_pos.reshape(1, size, size, -1).permute(0, 3, 1, 2),
+            abs_pos.reshape(1, size, size, -1).permute(0, 3, 1, 2).contiguous(),
             size=(h, w),
             mode="bicubic",
             align_corners=False,
