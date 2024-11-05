@@ -16,8 +16,8 @@ file_extension "pte";
 // Table that contains the metadata about how
 // to unflatten the flattened input/output from compiler
 table ContainerMetadata {
-  encoded_inp_str:string;
-  encoded_out_str:string;
+  encoded_inp_str: string;
+  encoded_out_str: string;
 }
 
 table Null {}
@@ -27,7 +27,7 @@ table Null {}
 // This refers to where the buffer needs to be placed in an existing
 // memory and at what offset from its base address.
 table AllocationDetails {
-  memory_id:uint;  // ID of the memory where this data needs to be placed.
+  memory_id: uint;  // ID of the memory where this data needs to be placed.
 
   // Offset in bytes relative to the start of the memory area indicated by
   // memory_id.
@@ -36,8 +36,8 @@ table AllocationDetails {
   // larger models. To preserve backwards compatibility, the high bits are
   // managed in a separate 32-bit field. Users should combine the two fields
   // to get the full 64-bit offset.
-  memory_offset_low:uint;  // Least significant 32 bits
-  memory_offset_high:uint;  // Most significant 32 bits. Defaults to zero.
+  memory_offset_low: uint;  // Least significant 32 bits
+  memory_offset_high: uint;  // Most significant 32 bits. Defaults to zero.
 }
 
 // Indicates the types of shape a Tensor may have, from the point
@@ -61,21 +61,21 @@ table ExtraTensorInfo {
   //  program.mutable_data_segments that specifies where the data is located in.
   //  If not present and the data is located in a segment, then the data is in
   //  the first index.
-  mutable_data_segments_idx:uint64;
+  mutable_data_segments_idx: uint64;
 
   // [Optional] The unique name of the tensor. e.g. 'mod.linear.weight'
-  fully_qualified_name:string;
+  fully_qualified_name: string;
 }
 
 table Tensor {
-  scalar_type:ScalarType;
+  scalar_type: ScalarType;
 
   // Offset in scalar_type elements (e.g., multiples of 4 bytes for an int
   // scalar type) from the beginning of the tensor buffer to the beginning of
   // the actual data. Currently, the runtime only supports a value of zero.
-  storage_offset:int;
+  storage_offset: int;
 
-  sizes:[int];
+  sizes: [int];
 
   // Specifies in what order the dimensions are laid out in memory (from outer
   // to inner).
@@ -88,10 +88,10 @@ table Tensor {
   // - (0, 2, 1) represents a [row, batch, column] ordering where "column" is
   //   the innermost dimension, then comes "batch", and the outermost dimension
   //   is "row".
-  dim_order:[ubyte];
+  dim_order: [ubyte];
 
   // out of scope M1
-  requires_grad:bool;
+  requires_grad: bool;
 
   // Overall, a Tensor is either constant or mutable. At method load time
   //  constant tensors receive a dataptr into the serialized program. Mutable
@@ -117,13 +117,13 @@ table Tensor {
   //  in program.mutable_data_segments[0] otherwise if tensor_info is non-null
   //  then the mutable_data_segment index is specified by
   //  tensor_info.mutable_data_segments_index.
-  data_buffer_idx:uint;
+  data_buffer_idx: uint;
 
   // [Optional] preallocation details for non-constants (null otherwise).
-  allocation_info:AllocationDetails;
+  allocation_info: AllocationDetails;
 
   // May not be needed.
-  layout:byte;
+  layout: byte;
 
   // Determines the type of the tensor's shape, from the point of view of its
   // dynamic or not behavior, and consequently how the allocation of the
@@ -137,39 +137,39 @@ table Tensor {
   //
   // 3. dynamism == DYNAMIC_UNBOUND: the stored sizes field can be ignored since
   //    shape is fully dynamic.
-  shape_dynamism:TensorShapeDynamism;
+  shape_dynamism: TensorShapeDynamism;
 
   // [Optional] Additional information about the Tensor that is not applicable
   // to most tensors.
-  extra_tensor_info:ExtraTensorInfo;
+  extra_tensor_info: ExtraTensorInfo;
 }
 
 table Int {
-  int_val:long;
+  int_val: long;
 }
 
 table Bool {
-  bool_val:bool;
+  bool_val: bool;
 }
 
 table Double {
-  double_val:double;
+  double_val: double;
 }
 
 table String {
-  string_val:string;
+  string_val: string;
 }
 
 table IntList {
-  items:[long];
+  items: [long];
 }
 
 table DoubleList {
-  items:[double];
+  items: [double];
 }
 
 table BoolList {
-  items:[bool];
+  items: [bool];
 }
 
 // Unlike primitive lists, tensor lists have mutable members and aliasing behavior when
@@ -177,12 +177,12 @@ table BoolList {
 // serialized by serializing its elements into the ExecutionPlan.values array, and then
 // serializing their corresponding indices into TensorList.items.
 table TensorList {
-  items:[int];  // EValue indices.
+  items: [int];  // EValue indices.
 }
 
 // Similar to TensorList except the indices can also point to None.
 table OptionalTensorList {
-  items:[int];
+  items: [int];
 }
 
 // Supported values in Executorch kernels, Enums are serialized as ints.
@@ -202,30 +202,30 @@ union KernelTypes {
 
 // Abstraction for program values. A subset of types supported in core pytorch kernels.
 table EValue {
-  val:KernelTypes;
+  val: KernelTypes;
 }
 
 table Operator {
   // Operator registry and lookup is uniquely identified by its name, and overload name.
   // TODO(larryliu): is there a more efficient way to represent this
-  name:string;
-  overload:string;
+  name: string;
+  overload: string;
 }
 
 table KernelCall {
   // Index to the operators table in the program.
-  op_index:int;
+  op_index: int;
 
   // Indexes to the (values) required by the operation (in and out).
-  args:[int];
+  args: [int];
 }
 
 table DelegateCall {
   // Index to the delegates table in the program.
-  delegate_index:int;
+  delegate_index: int;
 
   // Indexes to the (values) required by the delegates (in and out).
-  args:[int];
+  args: [int];
 }
 
 table MoveCall {
@@ -259,20 +259,20 @@ union InstructionArguments {
 
 // Basic unit of execution
 table Instruction {
-  instr_args:InstructionArguments;
+  instr_args: InstructionArguments;
 }
 
 table Frame {
   // For storing the frame to print stacktraces
-  filename:string;  // Name of the file in which the instruction exists
-  lineno:int;       // Line number at which the instruction was called
-  name:string;      // Name of the function the instruction was called from
-  context:string;   // Source code of the instruction
+  filename: string;  // Name of the file in which the instruction exists
+  lineno: int;       // Line number at which the instruction was called
+  name: string;      // Name of the function the instruction was called from
+  context: string;   // Source code of the instruction
 }
 
 table FrameList {
   // For storing the frames to print stacktraces
-  items:[Frame];
+  items: [Frame];
 }
 
 // Indicates where a piece of data is stored.
@@ -322,17 +322,17 @@ table BackendDelegate {
 // seperate chains.
 table Chain {
   // Indices of the values that are (non-static) inputs into this Chain.
-  inputs:[int];
+  inputs: [int];
 
   // Indices of the values that are outputs out of this Chain.
-  outputs:[int];
+  outputs: [int];
 
   // List of instructions to be executed in order.
-  instructions:[Instruction];
+  instructions: [Instruction];
 
   // Optional list of frames for each instruction.
   // The backend config must have 'emit_stacktrace' set to true to emit
-  stacktrace:[FrameList];
+  stacktrace: [FrameList];
 }
 
 table ExecutionPlan {
@@ -344,22 +344,22 @@ table ExecutionPlan {
   container_meta_type: ContainerMetadata;
 
   // A list of all values used in this execution plan.
-  values:[EValue];
+  values: [EValue];
 
   // Indices to the 'Evalues' that are inputs to this execution plan.
   // This list contains only the non-constant tensors (i.e. not part of
   // the saved program).
-  inputs:[int];
+  inputs: [int];
 
   // Indices to the 'Evalues' that are outputs of this execution plan.
   // This signals a lifespan that goes beyond the execution.
-  outputs:[int];
+  outputs: [int];
 
   // List of Chains of kernels.
-  chains:[Chain];
+  chains: [Chain];
 
   // Operators used in this execution plan
-  operators:[Operator];
+  operators: [Operator];
 
   // A list of delegates and each is a special instance of execution, the same level of chains.
   delegates: [BackendDelegate];
@@ -379,7 +379,7 @@ table Buffer {
   // During serialization, this alignment may be rewritten to a larger value.
   // The magic "@executorch-tensor-alignment" comment tells EXIR which lines to
   // patch.
-  storage:[ubyte] (force_align: 16);  // @executorch-tensor-alignment
+  storage: [ubyte] (force_align: 16);  // @executorch-tensor-alignment
 }
 
 // Delegate data stored directly in the flatbuffer. This is a different type
@@ -404,31 +404,31 @@ table SubsegmentOffsets {
 
 table Program {
   // Schema version.
-  version:uint;
+  version: uint;
 
   // List of ExecutionPlans that make up the program. Each ExecutionPlan corresponds with a
   // different entry point into the model.
-  execution_plan:[ExecutionPlan];
+  execution_plan: [ExecutionPlan];
 
   // Tables of constant data, used for constant Values (e.g.data field of weight tensors).
   // Each constant is assigned an index into the table which are each individually aligned.
   // 0 index is reserved to be pointed to by non-constant Tensors.
   // If this field is non-empty, constant_segment.offsets must be empty.
   // DEPRECATED: After D61996249 on 2024-09-05, no new PTE files will use this field.
-  constant_buffer:[Buffer];
+  constant_buffer: [Buffer];
 
   // List of delegate data. Pointed to by BackendDelegateDataReference.
-  backend_delegate_data:[BackendDelegateInlineData];
+  backend_delegate_data: [BackendDelegateInlineData];
 
   // List of data segments that follow the Program data in this file, sorted by
   // offset. Elements in this schema can refer to these segments by index.
-  segments:[DataSegment];
+  segments: [DataSegment];
 
   // Describes the offsets of each constant tensor, relative to the segment
   // offset. If constant_segment.offsets field is non-empty, constant_buffer
   // must be empty. constant_segment.offsets[0] is reserved to be pointed to by
   // non-constant Tensors.
-  constant_segment:SubsegmentOffsets;
+  constant_segment: SubsegmentOffsets;
 
   // [Optional] Describes the offsets into various segments for each mutable
   // tensor. Only mutable tensors with a meaningful initial state are
@@ -438,7 +438,7 @@ table Program {
   // into the mutable tensor, as opposed to loading the .pte data into
   // constant memory, copying it over, and then being unable to release the
   // constant segment. No two elements should point to the same segment.
-  mutable_data_segments:[SubsegmentOffsets];
+  mutable_data_segments: [SubsegmentOffsets];
 }
 
 root_type Program;
