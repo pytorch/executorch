@@ -62,14 +62,25 @@ class PromptEncoder(nn.Module):
         point_embedding = self.pe_layer.forward_with_coords(
             points, self.input_image_size
         )
-        invalid_label_ids = torch.eq(labels, -1)[:,:,None]
-        point_label_ids = torch.eq(labels, 1)[:,:,None]
-        topleft_label_ids = torch.eq(labels, 2)[:,:,None]
-        bottomright_label_ids = torch.eq(labels, 3)[:,:,None]
-        point_embedding = point_embedding + self.invalid_points.weight[:,None,:] * invalid_label_ids
-        point_embedding = point_embedding + self.point_embeddings.weight[:,None,:] * point_label_ids
-        point_embedding = point_embedding + self.bbox_top_left_embeddings.weight[:,None,:] * topleft_label_ids
-        point_embedding = point_embedding + self.bbox_bottom_right_embeddings.weight[:,None,:] * bottomright_label_ids
+        invalid_label_ids = torch.eq(labels, -1)[:, :, None]
+        point_label_ids = torch.eq(labels, 1)[:, :, None]
+        topleft_label_ids = torch.eq(labels, 2)[:, :, None]
+        bottomright_label_ids = torch.eq(labels, 3)[:, :, None]
+        point_embedding = (
+            point_embedding + self.invalid_points.weight[:, None, :] * invalid_label_ids
+        )
+        point_embedding = (
+            point_embedding + self.point_embeddings.weight[:, None, :] * point_label_ids
+        )
+        point_embedding = (
+            point_embedding
+            + self.bbox_top_left_embeddings.weight[:, None, :] * topleft_label_ids
+        )
+        point_embedding = (
+            point_embedding
+            + self.bbox_bottom_right_embeddings.weight[:, None, :]
+            * bottomright_label_ids
+        )
         return point_embedding
 
     def forward(
@@ -136,6 +147,34 @@ class PositionEmbeddingRandom(nn.Module):
         return self._pe_encoding(coords.to(torch.float))  # B x N x C
 
 
+class CustomGroupNorm(nn.Module):
+    def __init__(self, num_groups, num_channels, eps=1e-5, affine=True):
+        """Custom Group Normalization."""
+        super(CustomGroupNorm, self).__init__()
+        self.num_groups = num_groups
+        self.num_channels = num_channels
+        self.eps = eps
+        self.affine = affine
+
+        if self.affine:
+            self.weight = nn.Parameter(torch.ones(num_channels))
+            self.bias = nn.Parameter(torch.zeros(num_channels))
+
+    def forward(self, x):
+        N, C, *rest = x.shape
+        G = self.num_groups
+        x = x.view(N, G, C // G, *rest)
+        shape = (2, *range(3, x.dim()))
+        mean = x.mean(dim=shape, keepdim=True)
+        var = ((x - mean) ** 2).mean(dim=shape, keepdim=True)
+        x = (x - mean) / (var + self.eps).sqrt()
+        x = x.view(N, C, *rest)
+        shape = (1, -1, *([1] * len(rest)))
+        if self.affine:
+            x = x * self.weight.view(shape) + self.bias.view(shape)
+        return x
+
+
 class MaskDecoder(nn.Module):
     def __init__(
         self,
@@ -190,9 +229,11 @@ class MaskDecoder(nn.Module):
                         kernel_size=2,
                         stride=2,
                     ),
-                    nn.GroupNorm(1, layer_dims)
-                    if idx < len(upscaling_layer_dims) - 1
-                    else nn.Identity(),
+                    (
+                        CustomGroupNorm(1, layer_dims)
+                        if idx < len(upscaling_layer_dims) - 1
+                        else nn.Identity()
+                    ),
                     activation(),
                 )
             )
