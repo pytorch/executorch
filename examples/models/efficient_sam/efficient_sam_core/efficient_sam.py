@@ -4,17 +4,16 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the same directory.
 
-import math
-from typing import Any, List, Tuple, Type
+from typing import List, Tuple
 
 import torch
 import torch.nn.functional as F
 
-from torch import nn, Tensor
+from torch import nn
 
 from .efficient_sam_decoder import MaskDecoder, PromptEncoder
 from .efficient_sam_encoder import ImageEncoderViT
-from .two_way_transformer import TwoWayAttentionBlock, TwoWayTransformer
+from .two_way_transformer import TwoWayTransformer
 
 
 class EfficientSam(nn.Module):
@@ -27,8 +26,8 @@ class EfficientSam(nn.Module):
         prompt_encoder: PromptEncoder,
         decoder_max_num_input_points: int,
         mask_decoder: MaskDecoder,
-        pixel_mean: List[float] = [0.485, 0.456, 0.406],
-        pixel_std: List[float] = [0.229, 0.224, 0.225],
+        pixel_mean: List[float] = None,
+        pixel_std: List[float] = None,
     ) -> None:
         """
         SAM predicts object masks from an image and input prompts.
@@ -47,6 +46,10 @@ class EfficientSam(nn.Module):
         self.prompt_encoder = prompt_encoder
         self.decoder_max_num_input_points = decoder_max_num_input_points
         self.mask_decoder = mask_decoder
+        if pixel_mean is None:
+            pixel_mean = [0.485, 0.456, 0.406]
+        if pixel_std is None:
+            pixel_std = [0.229, 0.224, 0.225]
         self.register_buffer(
             "pixel_mean", torch.Tensor(pixel_mean).view(1, 3, 1, 1), False
         )

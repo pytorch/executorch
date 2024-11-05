@@ -1,7 +1,9 @@
 import math
 from typing import Tuple, Type
+
 import torch
 from torch import nn, Tensor
+
 from .mlp import MLPBlock
 
 
@@ -84,7 +86,7 @@ class TwoWayTransformer(nn.Module):
         keys = image_embedding
 
         # Apply transformer blocks and final layernorm
-        for idx, layer in enumerate(self.layers):
+        for _, layer in enumerate(self.layers):
             queries, keys = layer(
                 queries=queries,
                 keys=keys,

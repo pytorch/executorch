@@ -5,7 +5,7 @@
 # LICENSE file in the same directory.
 
 import math
-from typing import List, Optional, Tuple, Type
+from typing import List, Type
 
 import torch
 import torch.nn as nn
@@ -216,7 +216,7 @@ class ImageEncoderViT(nn.Module):
         num_positions = num_patches + 1
         self.pos_embed = nn.Parameter(torch.zeros(1, num_positions, patch_embed_dim))
         self.blocks = nn.ModuleList()
-        for i in range(depth):
+        for _ in range(depth):
             vit_block = Block(patch_embed_dim, num_heads, mlp_ratio, True)
             self.blocks.append(vit_block)
         self.neck = nn.Sequential(

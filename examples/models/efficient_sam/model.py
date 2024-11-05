@@ -8,9 +8,9 @@ import logging
 
 import torch
 
-from .efficient_sam_core.build_efficient_sam import build_efficient_sam_vitt
-
 from ..model_base import EagerModelBase
+
+from .efficient_sam_core.build_efficient_sam import build_efficient_sam_vitt
 
 
 class EfficientSAM(EagerModelBase):
