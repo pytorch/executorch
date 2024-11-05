@@ -6,7 +6,7 @@ SIZE_TEST_SOURCES = [
 
 SIZE_TEST_DEPS = [
     "//executorch/runtime/executor:program",
-    "//executorch/extension/data_loader:file_data_loader",
+    "//executorch/extension/data_loader:mmap_data_loader",
 ]
 
 def define_common_targets():

@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
@@ -15,7 +15,7 @@
 #include <stdio.h>
 
 using namespace torch::executor;
-using torch::executor::util::FileDataLoader;
+using torch::executor::util::MmapDataLoader;
 
 static uint8_t method_allocator_pool[1024];
 static uint8_t activation_pool[512];
@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
 
   MemoryManager memory_manager(&method_allocator, &planned_memory);
 
-  Result<FileDataLoader> loader = FileDataLoader::from(argv[1]);
+  Result<MmapDataLoader> loader = MmapDataLoader::from(argv[1]);
   ET_CHECK_MSG(
       loader.ok(),
       "FileDataLoader::from() failed: 0x%" PRIx32,
