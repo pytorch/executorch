@@ -6,13 +6,13 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_verision")
 
 # Construct the input and output file names. All input and output files rely on scalar_type file.
-SCHEMA_NAME = "schema"
+SCHEMA_NAME = "qc_compiler_spec"
 
 INPUT_SCHEMA = "serialization/" + SCHEMA_NAME + ".fbs"
 
 OUTPUT_SCHEMA_HEADER = SCHEMA_NAME + "_generated.h"
 
-SCHEMA_GEN_RULE_NAME = "schema_generated"
+SCHEMA_GEN_RULE_NAME = "qc_compiler_spec_generated"
 
 SCHEMA_LIRRARY_NAME = SCHEMA_NAME
 
