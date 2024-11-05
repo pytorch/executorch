@@ -143,7 +143,7 @@ def _prepare_schema(
     """
     program_schema = "program.fbs"
     # Included by the root program schema; must also be present.
-    deps = ["scalar_type.fbs"]
+    deps = ["common.fbs"]
 
     schemas = _ResourceFiles([program_schema] + deps)
 

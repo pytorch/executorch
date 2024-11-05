@@ -19,6 +19,6 @@ runtime.python_library(
         "//executorch/devtools/etrecord/...",
     ],
     deps = [
-        "//executorch/exir:scalar_type",
+        "//executorch/exir:common_schema",
     ],
 )

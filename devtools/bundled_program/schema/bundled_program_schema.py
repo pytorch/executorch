@@ -9,7 +9,7 @@
 from dataclasses import dataclass
 from typing import List, Union
 
-from executorch.exir.scalar_type import ScalarType
+from executorch.exir.common_schema import ScalarType
 
 
 @dataclass

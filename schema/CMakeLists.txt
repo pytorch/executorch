@@ -60,7 +60,7 @@ function(generate_program_schema _schema_srcs _schema_name)
 endfunction()
 
 # Generate common schema
-set(common_schema_srcs scalar_type.fbs)
+set(common_schema_srcs common.fbs)
 generate_program_schema("${common_schema_srcs}" "common_schema")
 
 # For the other schemas

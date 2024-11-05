@@ -79,7 +79,7 @@ if [[ "${MODE}" =~ .*qnn.* ]]; then
   export LD_LIBRARY_PATH="${QNN_SDK_ROOT}/lib/x86_64-linux-clang"
   export PYTHONPATH=".."
   cp schema/program.fbs exir/_serialize/program.fbs
-  cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
+  cp schema/common.fbs exir/_serialize/common.fbs
   cp -f build-x86/backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so backends/qualcomm/python
   cp -f build-x86/backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so backends/qualcomm/python
 

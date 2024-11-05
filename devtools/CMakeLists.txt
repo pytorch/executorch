@@ -37,10 +37,10 @@ if(NOT FLATC_EXECUTABLE)
 endif()
 
 # Paths to headers generated from the .fbs files. set(_etdump_schemas
-# etdump_schema_flatcc.fbs scalar_type.fbs)
+# etdump_schema_flatcc.fbs common.fbs)
 
-set(_etdump_schema_names "etdump_schema_flatcc.fbs" "scalar_type.fbs")
-set(_bundled_input_schema_names "bundled_program_schema.fbs" "scalar_type.fbs")
+set(_etdump_schema_names "etdump_schema_flatcc.fbs" "common.fbs")
+set(_bundled_input_schema_names "bundled_program_schema.fbs" "common.fbs")
 
 foreach(schema_file ${_etdump_schema_names})
   list(APPEND _etdump_schema__srcs

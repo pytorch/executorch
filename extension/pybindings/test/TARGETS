@@ -19,7 +19,7 @@ runtime.python_library(
         "//caffe2:torch_fx",
         "//executorch/exir:lib",
         "//executorch/exir:pass_manager",
-        "//executorch/exir:scalar_type",
+        "//executorch/exir:common_schema",
         "//executorch/exir/_serialize:lib",
         "//executorch/exir/emit:lib",
         "//executorch/exir/passes:lib",
