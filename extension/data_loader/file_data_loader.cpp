@@ -76,7 +76,7 @@ FileDataLoader::~FileDataLoader() {
   ::close(fd_);
 }
 
-Result<int> getFDFromUri(const char* file_descriptor_uri) {
+static Result<int> getFDFromUri(const char* file_descriptor_uri) {
   // check if the uri starts with the prefix "fd://"
   ET_CHECK_OR_RETURN_ERROR(
       strncmp(
