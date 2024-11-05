@@ -14,7 +14,7 @@ import unittest
 class TestSchema(unittest.TestCase):
     def test_schema_sync(self) -> None:
         # make the test work in both internal and oss.
-        prefix = ("executorch/" if os.path.exists("executorch/schema/common.fbs") else "")
+        prefix = "executorch/" if os.path.exists("executorch/schema/common.fbs") else ""
 
         self.assertTrue(
             filecmp.cmp(
