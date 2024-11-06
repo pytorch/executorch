@@ -443,6 +443,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=None,
         help="path to the input pruning token mapping file (token_map.json)",
     )
+
+    parser.add_argument(
+        "--export_only",
+        default=False,
+        action="store_true",
+        help="If true, stops right after torch.export() and saves the exported model.",
+    )
     return parser
 
 
@@ -587,9 +594,16 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
 
     # export_to_edge
-    builder_exported_to_edge = (
+    builder_exported = (
         _prepare_for_llama_export(modelname, args)
         .export()
+    )
+
+    if args.export_only:
+        exit()
+
+    builder_exported_to_edge = (
+        builder_exported
         .pt2e_quantize(quantizers)
         .export_to_edge()
     )

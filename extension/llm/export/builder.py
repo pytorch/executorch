@@ -186,22 +186,25 @@ class LLMEdgeManager:
                 # functional graph. See issue https://github.com/pytorch/executorch/pull/4627 for more details
                 # pyre-fixme[8]: Attribute has type `Optional[GraphModule]`; used as
                 #  `Module`.
-                self.pre_autograd_graph_module = torch.export.export(
+                exported_module = torch.export.export(
                     self.model,
                     self.example_inputs,
                     self.example_kwarg_inputs,
                     dynamic_shapes=dynamic_shape,
                     strict=True,
-                ).module()
+                )
             else:
                 # pyre-fixme[8]: Attribute has type `Optional[GraphModule]`; used as
                 #  `Module`.
-                self.pre_autograd_graph_module = export_for_training(
+                exported_module = export_for_training(
                     self.model,
                     self.example_inputs,
                     kwargs=self.example_kwarg_inputs,
                     dynamic_shapes=dynamic_shape,
-                ).module()
+                )
+            self.pre_autograd_graph_module = exported_module.module()
+            if self.args.export_only:
+                torch.export.save(exported_module, self.args.output_name)
 
         return self
 
