@@ -570,7 +570,7 @@ def get_quantizer_and_quant_params(args):
 
 def _qmode_type(value):
     choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w"]
-    patterns = [r"torchao:8da{\d+}w"]
+    patterns = [r"torchao:8da(\d+)w"]
 
     if value in choices:
         return value
@@ -579,9 +579,11 @@ def _qmode_type(value):
         matches = re.findall(pattern, value)
         if len(matches) == 1:
             return value
+
     raise argparse.ArgumentTypeError(
-            f"Got qmode {value}, but expected one of {choices}, or one of the regex patterns {patterns}."
+        f"Got qmode {value}, but expected one of {choices}, or one of the regex patterns {patterns}."
     )
+
 
 def _validate_args(args):
     """
@@ -596,7 +598,9 @@ def _validate_args(args):
     if args.num_sharding > 0 and not args.qnn:
         raise ValueError("Model shard is only supported with qnn backend now.")
 
-    if args.quantization_mode.startswith("torchao:") or args.embedding_quantize.startswith("torchao:"):
+    if args.quantization_mode.startswith(
+        "torchao:"
+    ) or args.embedding_quantize.startswith("torchao:"):
         if args.enable_dynamic_shape:
             raise ValueError(
                 "Dynamic shape is not currently supported with torchao ops. Please use --disable_dynamic_shape."
