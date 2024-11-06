@@ -27,8 +27,6 @@
 #define ET_ENABLE_PROGRAM_VERIFICATION 1
 #endif
 
-#pragma clang diagnostic ignored "-Wshadow"
-
 namespace executorch {
 namespace runtime {
 
@@ -88,7 +86,11 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
     } else if (eh.error() == Error::NotFound) {
       // No header; the program consumes the whole file, and there are no
       // segments.
-      program_size = ET_UNWRAP(loader->size());
+      auto result = loader->size();
+      if (!result.ok()) {
+        return result.error();
+      }
+      program_size = result.get();
     } else {
       ET_LOG(Error, "Extended header may be corrupt");
       return eh.error();
