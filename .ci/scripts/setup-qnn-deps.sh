@@ -31,8 +31,9 @@ install_qnn() {
 }
 
 setup_libc++() {
+  clang_version=$1
   sudo apt-get update
-  pkgs_to_check=('libc++-dev')
+  pkgs_to_check=("libc++-${clang_version}-dev")
   j=0
   while [ $j -lt ${#pkgs_to_check[*]} ]; do
     install_status=$(verify_pkg_installed ${pkgs_to_check[$j]})
@@ -47,5 +48,6 @@ setup_libc++() {
   done
 }
 
-setup_libc++
+# This needs to match with the clang version from the Docker image
+setup_libc++ 12
 install_qnn

@@ -65,7 +65,7 @@ static inline int32_t get_embedding_dim(
 void check_embedding_xbit_args(
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
+    const exec_aten::optional<Tensor>& opt_weight_zero_points,
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
@@ -134,7 +134,7 @@ void check_embedding_xbit_args(
     for (int32_t i = 0; i < weight_scales.dim(); ++i) {
       ET_CHECK_MSG(
           opt_weight_zero_points.value().size(i) == weight_scales.size(i),
-          "Dimension size misatch at dim %" PRId8
+          "Dimension size misatch at dim %" PRIi32
           "Weight_zero_point size = %zd"
           ", weight_scales size = %zd.",
           i,
@@ -170,7 +170,7 @@ template <typename CTYPE_PARAMS, typename CTYPE_OUT>
 void embedding_xbit_per_channel(
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
+    const exec_aten::optional<Tensor>& opt_weight_zero_points,
     const Tensor& indices,
     Tensor& out,
     int weight_nbit) {
@@ -260,7 +260,7 @@ Tensor& quantized_embedding_xbit_out(
     // non quant input and returns fp output
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
+    const exec_aten::optional<Tensor>& opt_weight_zero_points,
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
@@ -299,7 +299,7 @@ Tensor& quantized_embedding_xbit_out(
     KernelRuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
+    const exec_aten::optional<Tensor>& opt_weight_zero_points,
     int64_t weight_quant_min,
     int64_t weight_quant_max,
     const Tensor& indices,
@@ -325,7 +325,7 @@ Tensor& quantized_embedding_xbit_dtype_out(
     // non quant input and returns fp output
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
+    const exec_aten::optional<Tensor>& opt_weight_zero_points,
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
@@ -368,7 +368,7 @@ Tensor& quantized_embedding_xbit_dtype_out(
     KernelRuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
+    const exec_aten::optional<Tensor>& opt_weight_zero_points,
     int64_t weight_quant_min,
     int64_t weight_quant_max,
     const Tensor& indices,

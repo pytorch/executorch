@@ -37,13 +37,18 @@ parseListOptionalType(
     const flatbuffers::Vector<int32_t>* value_indices,
     EValue* values_,
     MemoryManager* memory_manager) {
-  auto* evalp_list = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-      memory_manager->method_allocator(), EValue*, value_indices->size());
-
-  auto* optional_tensor_list = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-      memory_manager->method_allocator(),
-      executorch::aten::optional<T>,
+  auto* evalp_list = memory_manager->method_allocator()->allocateList<EValue*>(
       value_indices->size());
+  if (evalp_list == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
+
+  auto* optional_tensor_list =
+      memory_manager->method_allocator()
+          ->allocateList<executorch::aten::optional<T>>(value_indices->size());
+  if (optional_tensor_list == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
 
   size_t output_idx = 0;
   // For each index look up the corresponding EValue (which has been
