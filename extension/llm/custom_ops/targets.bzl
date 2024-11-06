@@ -1,9 +1,13 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(
+    "@fbsource//xplat/executorch/kernels/optimized:lib_defs.bzl",
+    "get_vec_preprocessor_flags",
+    "get_vec_deps",
+)
+load(
     "@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl",
     "get_compiler_optimization_flags",
 )
-
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -26,6 +30,7 @@ def define_common_targets():
                 "op_sdpa.h",
                 "op_update_quantized_cache.h",
             ],
+            preprocessor_flags = get_vec_preprocessor_flags(),
             exported_deps = [
                 "//executorch/runtime/kernel:kernel_includes",
                 "//executorch/kernels/portable/cpu:scalar_utils",
@@ -38,7 +43,7 @@ def define_common_targets():
             deps = [
                 "//executorch/kernels/portable/cpu/util:reduce_util",
                 "//executorch/extension/llm/custom_ops/spinquant:fast_hadamard_transform",
-            ],
+            ] + get_vec_deps(),
             compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"] + get_compiler_optimization_flags(),
             visibility = [
                 "//executorch/...",
