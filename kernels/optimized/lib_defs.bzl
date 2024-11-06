@@ -22,7 +22,7 @@ def get_vec_preprocessor_flags():
             "ovr_config//os:linux-x86_64": [
                 "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
             ] if not runtime.is_oss else [],
-            "ovr_config//os:iphoneos": [
+            "ovr_config//os:iphoneos-arm64": [
                 "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
             ] if not runtime.is_oss else [],
             "ovr_config//os:macos-arm64": [
@@ -40,7 +40,7 @@ def get_vec_deps():
     if not runtime.is_oss:
         # various ovr_configs are not available in oss
         deps = select({
-            "ovr_config//os:iphoneos": [
+            "ovr_config//os:iphoneos-arm64": [
                 "fbsource//third-party/sleef:sleef_arm",
             ] if not runtime.is_oss else [],
             "ovr_config//os:macos-arm64": [
@@ -132,7 +132,6 @@ def define_libs(is_fbcode=False):
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
-        deps = get_vec_deps(),
         cxx_platform_deps = select({
             "DEFAULT": [
                 (
@@ -151,6 +150,14 @@ def define_libs(is_fbcode=False):
                 ),
             ],
         }),
+        fbandroid_platform_deps = [
+            (
+                "^android-arm64.*$",
+                [
+                    "fbsource//third-party/sleef:sleef_arm",
+                ],
+            ),
+        ],
     )
 
     runtime.cxx_library(

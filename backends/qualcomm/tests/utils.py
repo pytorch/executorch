@@ -17,13 +17,7 @@ import torch
 from executorch import exir
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
-from executorch.backends.qualcomm.quantizer.quantizer import (
-    get_16a4w_qnn_ptq_config,
-    get_default_16bit_qnn_ptq_config,
-    get_default_8bit_qat_proto,
-    QnnQuantizer,
-    QuantDtype,
-)
+from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QcomChipset,
 )
@@ -405,18 +399,7 @@ class TestQNN(unittest.TestCase):
         quantizer.add_custom_quant_annotations(custom_quant_annotations)
         quantizer.set_per_channel_conv_quant(is_conv_per_channel)
         quantizer.set_per_channel_linear_quant(is_linear_per_channel)
-
-        if quant_dtype == QuantDtype.use_8a8w:
-            pass  # default setting
-        elif quant_dtype == QuantDtype.use_16a16w:
-            quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
-            quantizer.set_bit16_op_quant_config(get_default_16bit_qnn_ptq_config())
-        elif quant_dtype == QuantDtype.use_16a4w:
-            quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
-            quantizer.set_bit16_op_quant_config(get_16a4w_qnn_ptq_config())
-            quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
-        else:
-            raise AssertionError(f"No support for QuantDtype {quant_dtype}.")
+        quantizer.set_quant_config(quant_dtype)
 
         prepared = prepare_pt2e(m, quantizer)
         prepared(*inputs)
@@ -448,12 +431,27 @@ class TestQNN(unittest.TestCase):
         quantizer.set_per_channel_linear_quant(is_linear_per_channel)
 
         if quant_dtype == QuantDtype.use_8a8w:
-            quantizer.set_bit8_op_quant_config(get_default_8bit_qat_proto())
+            quantizer.set_quant_config(quant_dtype, is_qat=True)
         else:
             raise RuntimeError("Shuld not be here")
 
         prepared = prepare_qat_pt2e(m, quantizer)
         return torch.ao.quantization.move_exported_model_to_train(prepared)
+
+    def get_converted_sgd_trained_module(
+        self,
+        ori_module: torch.nn.Module,
+        prepared: torch.nn.Module,
+        inputs: Tuple[torch.Tensor],
+    ) -> torch.fx.GraphModule:
+        optimizer = torch.optim.SGD(prepared.parameters(), lr=0.0001)
+        criterion = torch.nn.CrossEntropyLoss()
+        output = prepared(*inputs)
+        loss = criterion(output, ori_module(*inputs))
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        return torch.ao.quantization.quantize_pt2e.convert_pt2e(prepared)
 
     def split_graph(self, graph_module: torch.fx.GraphModule, division: int):
         class SplitGraph(ExportPass):

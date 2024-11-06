@@ -55,7 +55,7 @@ class StubBackend final : public BackendInterface {
   using InitFn = std::function<Result<DelegateHandle*>(
       FreeableBuffer*,
       ArrayRef<CompileSpec>,
-      MemoryAllocator*)>;
+      BackendInitContext&)>;
   using ExecuteFn = std::function<Error(DelegateHandle*, EValue**)>;
   using DestroyFn = std::function<void(DelegateHandle*)>;
 
@@ -83,8 +83,7 @@ class StubBackend final : public BackendInterface {
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
     if (init_fn_) {
-      return init_fn_.value()(
-          processed, compile_specs, context.get_runtime_allocator());
+      return init_fn_.value()(processed, compile_specs, context);
     }
     // Return a benign value otherwise.
     return nullptr;
@@ -351,7 +350,7 @@ TEST_P(BackendIntegrationTest, FreeingProcessedBufferSucceeds) {
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
           ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED BackendInitContext& backend_init_context)
           -> Result<DelegateHandle*> {
         init_called = true;
         processed_data = processed->data();
@@ -395,7 +394,7 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
           ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED BackendInitContext& backend_init_context)
           -> Result<DelegateHandle*> {
         init_processed = processed;
         return processed;
@@ -492,7 +491,7 @@ TEST_P(BackendIntegrationTest, SegmentInfoIsPassedIntoDataLoader) {
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
           ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED BackendInitContext& backend_init_context)
           -> Result<DelegateHandle*> {
         processed_data = processed->data();
         processed->Free();
@@ -606,7 +605,7 @@ TEST_P(DelegateDataAlignmentTest, ExpectedDataAlignment) {
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
           ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED BackendInitContext& backend_init_context)
           -> Result<DelegateHandle*> {
         processed_data = processed->data();
         return nullptr;
