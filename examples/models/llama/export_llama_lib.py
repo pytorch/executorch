@@ -568,39 +568,20 @@ def get_quantizer_and_quant_params(args):
     return pt2e_quant_params, quantizers, quant_dtype
 
 
-def _is_valid_torchao_qmode_type(value):
-    if not isinstance(value, str):
-        return False
+def _qmode_type(value):
+    choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w"]
+    patterns = [r"torchao:8da{\d+}w"]
 
-    if not value.startswith("torchao:"):
-        return False
+    if value in choices:
+        return value
 
-    patterns = [
-        r"emb.(\d+),(\d+)&lin8da.(\d+),(\d+)",
-        r"emb.(\d+),(\d+)",
-        r"lin8da.(\d+),(\d+)",
-    ]
     for pattern in patterns:
         matches = re.findall(pattern, value)
         if len(matches) == 1:
-            return True
-    return False
-
-
-def _qmode_type(value):
-    choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w"]
-    if not (value in choices or _is_valid_torchao_qmode_type(value)):
-        raise argparse.ArgumentTypeError(
-            f"Got qmode {value}, but expected one of: {choices} or a valid torchao quantization pattern such as:"
-            + "\n\t* torchao:emb.{embed_bitwidth},{embed_groupsize}"
-            + "\n\t\t (e.g., torchao:emb.4,32)"
-            + "\n\t* torchao:emb.{embed_bitwidth},{embed_groupsize}&lin8da.{linear_bitwidth},{linear_groupsize}"
-            + "\n\t\t (e.g., torchao:emb.4,32&lin8da.4,128)"
-            + "\n\t* torchao:lin8da.{linear_bitwidth},{linear_groupsize}"
-            + "\nt\t\t (e.g., torchao:lin8da.4,128)"
-        )
-    return value
-
+            return value
+    raise argparse.ArgumentTypeError(
+            f"Got qmode {value}, but expected one of {choices}, or one of the regex patterns {patterns}."
+    )
 
 def _validate_args(args):
     """
@@ -615,10 +596,10 @@ def _validate_args(args):
     if args.num_sharding > 0 and not args.qnn:
         raise ValueError("Model shard is only supported with qnn backend now.")
 
-    if _is_valid_torchao_qmode_type(args.quantization_mode):
+    if args.quantization_mode.startswith("torchao:") or args.embedding_quantize.startswith("torchao:"):
         if args.enable_dynamic_shape:
             raise ValueError(
-                "Dynamic shape is not currently supported with torchao qmode. Please use --disable_dynamic_shape."
+                "Dynamic shape is not currently supported with torchao ops. Please use --disable_dynamic_shape."
                 "If you need this feature, please file an issue."
             )
 
