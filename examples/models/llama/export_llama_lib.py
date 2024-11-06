@@ -598,9 +598,13 @@ def _validate_args(args):
     if args.num_sharding > 0 and not args.qnn:
         raise ValueError("Model shard is only supported with qnn backend now.")
 
-    if args.quantization_mode.startswith(
-        "torchao:"
-    ) or args.embedding_quantize.startswith("torchao:"):
+    if (
+        args.quantization_mode is not None
+        and args.quantization_mode.startswith("torchao:")
+    ) or (
+        args.embedding_quantize is not None
+        and args.embedding_quantize.startswith("torchao:")
+    ):
         if args.enable_dynamic_shape:
             raise ValueError(
                 "Dynamic shape is not currently supported with torchao ops. Please use --disable_dynamic_shape."
