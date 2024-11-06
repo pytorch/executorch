@@ -195,7 +195,9 @@ class Rope(torch.nn.Module):
                 # symints, due to querying the data from tensor.
                 # this path avoids that for mps backend, although probably mps backend
                 # can support dynamic shape?
-                assert seq_len == 1, "Expected seq_len to be 1 when using kv_cache without dynamic shape"
+                assert (
+                    seq_len == 1
+                ), "Expected seq_len to be 1 when using kv_cache without dynamic shape"
                 freqs_cos = self.freqs_cos[input_pos]
                 freqs_sin = self.freqs_sin[input_pos]
 
