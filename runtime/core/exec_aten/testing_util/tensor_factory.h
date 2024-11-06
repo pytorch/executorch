@@ -15,9 +15,7 @@
 #include <ATen/ATen.h>
 #else // !USE_ATEN_LIB
 #include <numeric>
-// @nolint PATTERNLINT Ok to use stdlib for this test framework
 #include <memory>
-// @nolint PATTERNLINT Ok to use stdlib for this test framework
 #include <vector>
 #endif // !USE_ATEN_LIB
 
