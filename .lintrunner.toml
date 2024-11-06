@@ -196,3 +196,87 @@ command = [
     '@{{PATHSFILE}}',
 ]
 is_formatter = true
+
+[[linter]]
+code = 'NOSTDINC'
+include_patterns = [
+    "**/*.c",
+    "**/*.cpp",
+    "**/*.h",
+    "**/*.hpp",
+]
+exclude_patterns = [
+    '**/devtools/**',
+    '**/test/**',
+    '**/testing_util/**',
+    '**/third-party/**',
+    'backends/mediatek/**',
+    'backends/vulkan/**',
+    'backends/xnnpack/**',
+    'devtools/**',
+    'examples/**',
+    'extension/**',
+    'kernels/optimized/**',
+    'scripts/**',
+    'third-party/**',
+    'util/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'grep_linter',
+    '--pattern=([^\\S\r\n]*#include\s*<(deque|exception|forward_list|functional|list|map|multimap|multiset|priority_queue|queue|set|stack|string|unordered_map|unordered_multimap|unordered_multiset|unordered_set|vector)>)',
+    '--linter-name=NOSTDINC',
+    '--error-name=Standard C++ container include in core',
+    """--error-description=\
+        Standard library containers should not be included in ExecuTorch core \
+        because they may call malloc, which is not allowed in core. \
+    """,
+    '--',
+    '@{{PATHSFILE}}',
+]
+
+[[linter]]
+code = 'NOTORCHINC'
+include_patterns = [
+    "**/*.c",
+    "**/*.cpp",
+    "**/*.h",
+    "**/*.hpp",
+]
+exclude_patterns = [
+    '**/devtools/**',
+    '**/testing_util/**',
+    '**/third-party/**',
+    'backends/mediatek/**',
+    'backends/vulkan/**',
+    'backends/xnnpack/**',
+    'devtools/**',
+    'examples/**',
+    'extension/**',
+    'kernels/optimized/**',
+    'scripts/**',
+    'test/**',
+    'third-party/**',
+    'util/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'grep_linter',
+    '--pattern=#include\s+[<"](aten/|ATen/|torch/)',
+    '--linter-name=NOTORCHINC',
+    '--error-name=ATen or torch include',
+    """--error-description=\
+        PyTorch includes in ExecuTorch core are prohibited to prevent \
+        accidentally breaking core's requirements; please make sure this \
+        header complies (e.g., no streams/malloc/syscalls) and then include \
+        a patch to update this linter.\
+    """,
+    '--',
+    '@{{PATHSFILE}}',
+]
