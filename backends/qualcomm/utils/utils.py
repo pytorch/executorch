@@ -331,7 +331,7 @@ def _transform(
 def capture_program(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
-    custom_pass_config: Set[str] = None,
+    custom_pass_config: Set[str] = frozenset(),
 ) -> exir.ExirExportedProgram:
     ep = torch.export.export(module, inputs)
     decomposed_ep = ep.run_decompositions(get_decomp_table())
@@ -770,6 +770,7 @@ def generate_qnn_executorch_compiler_spec(
     online_prepare: bool = False,
     dump_intermediate_outputs: bool = False,
     profile: bool = False,
+    optrace: bool = False,
     shared_buffer: bool = False,
     is_from_context_binary: bool = False,
 ) -> List[CompileSpec]:
@@ -831,7 +832,9 @@ def generate_qnn_executorch_compiler_spec(
     if saver:
         qnn_executorch_options.library_path = "libQnnSaver.so"
 
-    if profile:
+    if optrace:
+        qnn_executorch_options.profile_level = QnnExecuTorchProfileLevel.kProfileOptrace
+    elif profile:
         qnn_executorch_options.profile_level = (
             QnnExecuTorchProfileLevel.kProfileDetailed
         )

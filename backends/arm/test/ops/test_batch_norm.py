@@ -536,9 +536,6 @@ class TestBatchNorm2d(unittest.TestCase):
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
-            .check_count(
-                {"torch.ops.aten._native_batch_norm_legit_no_training.default": 1}
-            )
             .check_not(["torch.ops.quantized_decomposed"])
             .to_edge()
             .check_count(

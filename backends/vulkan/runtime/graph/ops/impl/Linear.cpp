@@ -119,20 +119,16 @@ void add_addmm_naive_node(
       {
           graph.sizes_ubo(out),
           graph.logical_limits_ubo(out),
-          graph.axis_map_ubo(out),
           graph.sizes_ubo(mat1),
-          graph.axis_map_ubo(mat1),
           graph.sizes_ubo(mat2),
-          graph.axis_map_ubo(mat2),
           graph.sizes_ubo(self),
-          graph.axis_map_ubo(self),
           graph.create_params_buffer(params),
       },
       // Specialization Constants
-      {graph.packed_dim_of(out),
-       graph.packed_dim_of(mat1),
-       graph.packed_dim_of(mat2),
-       graph.packed_dim_of(self)},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(mat1),
+       graph.hashed_layout_of(mat2),
+       graph.hashed_layout_of(self)},
       // Resizing Logic
       resize_addmm_node,
       {mat2_is_transposed}));
@@ -215,17 +211,16 @@ void add_addmm_optimized_node(
       // Shader params buffers
       {
           graph.sizes_ubo(out),
-          graph.axis_map_ubo(out),
           graph.sizes_ubo(mat1_W_packed),
-          graph.axis_map_ubo(mat1_W_packed),
           graph.sizes_ubo(mat2_packed),
-          graph.axis_map_ubo(mat2_packed),
           graph.sizes_ubo(self),
-          graph.axis_map_ubo(self),
           graph.create_params_buffer(params),
       },
       // Specialization Constants
-      {graph.packed_dim_of(out)},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(mat1_W_packed),
+       graph.hashed_layout_of(mat2_packed),
+       graph.hashed_layout_of(self)},
       // Resizing Logic
       resize_addmm_node,
       {mat2_is_transposed}));
@@ -284,9 +279,12 @@ void linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   ValueRef weight = prepack_standard(
       graph, weight_data, graph.storage_type_of(out), utils::kWidthPacked);
   ValueRef mat2_is_transposed = graph.add_scalar(true);
+
   if (graph.val_is_none(bias)) {
     return add_matmul_node(graph, input, weight, out, mat2_is_transposed);
   } else {
+    // Buffer implementation does not yet support biases
+    VK_CHECK_COND(!graph.is_buffer_storage(out));
     return add_addmm_node(
         graph,
         bias,
