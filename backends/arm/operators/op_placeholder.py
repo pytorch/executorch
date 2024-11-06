@@ -10,9 +10,9 @@ import serializer.tosa_serializer as ts
 import torch.fx
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import (
+    get_quant_arg_upstream,
     get_quantized_node_output_dtype,
     is_node_quantized,
-    search_quant_arg_upstream,
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.arm.tosa_utils import (
@@ -68,8 +68,8 @@ def process_quantized_bias(
         _,
     ) = consumer_node.all_input_nodes
 
-    input_node_scale = search_quant_arg_upstream(input_node).scale
-    weight_node_scale = search_quant_arg_upstream(weight_node).scale
+    input_node_scale = get_quant_arg_upstream(input_node).scale
+    weight_node_scale = get_quant_arg_upstream(weight_node).scale
     bias_values_quantized = (
         (parameter_values / (input_node_scale * weight_node_scale))
         .round()

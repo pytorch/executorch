@@ -15,8 +15,8 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import (
     build_rescale_conv_output,
-    search_quant_arg_downstream,
-    search_quant_arg_upstream,
+    get_quant_arg_downstream,
+    get_quant_arg_upstream,
 )
 from executorch.backends.arm.tosa_utils import build_reshape, tosa_shape
 
@@ -83,9 +83,7 @@ class Conv2dVisitor(NodeVisitor):
         )
 
         input_zp = (
-            search_quant_arg_upstream(node.all_input_nodes[0]).zp
-            if is_quant_node
-            else 0
+            get_quant_arg_upstream(node.all_input_nodes[0]).zp if is_quant_node else 0
         )
 
         attr.ConvAttribute(
@@ -161,9 +159,9 @@ class Conv2dVisitor(NodeVisitor):
         # integer value domain of the next op. Otherwise return float32 output.
         if is_quant_node:
             # Get scale_factor from input, weight, and output.
-            input_scale = search_quant_arg_upstream(node.all_input_nodes[0]).scale
-            weight_scale = search_quant_arg_upstream(node.all_input_nodes[1]).scale
-            output_qargs = search_quant_arg_downstream(list(node.users)[0])
+            input_scale = get_quant_arg_upstream(node.all_input_nodes[0]).scale
+            weight_scale = get_quant_arg_upstream(node.all_input_nodes[1]).scale
+            output_qargs = get_quant_arg_downstream(list(node.users)[0])
 
             build_rescale_conv_output(
                 tosa_graph,

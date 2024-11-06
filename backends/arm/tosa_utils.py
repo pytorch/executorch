@@ -16,11 +16,11 @@ from executorch.backends.arm.operators.node_visitor import NodeVisitor
 from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
 
 from executorch.backends.arm.tosa_quant_utils import (
+    get_quant_arg_downstream,
+    get_quant_arg_upstream,
     get_quantized_node_output_dtype,
     is_node_quantized,
     q_op,
-    search_quant_arg_downstream,
-    search_quant_arg_upstream,
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -184,8 +184,8 @@ def build_avg_pool_2d_common(
     output_zp = 0
 
     if is_quant_node:
-        input_zp = search_quant_arg_upstream(cast(torch.fx.Node, node.args[0])).zp
-        output_zp = search_quant_arg_downstream(list(node.users)[0]).zp
+        input_zp = get_quant_arg_upstream(cast(torch.fx.Node, node.args[0])).zp
+        output_zp = get_quant_arg_downstream(list(node.users)[0]).zp
 
     attr = ts.TosaSerializerAttribute()
     attr.PoolAttribute(

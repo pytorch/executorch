@@ -15,8 +15,8 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import (
+    get_quant_arg_downstream,
     quantize_value,
-    search_quant_arg_downstream,
 )
 from executorch.backends.arm.tosa_utils import tosa_shape
 from torch.fx import Node
@@ -42,7 +42,7 @@ class FullVisitor(NodeVisitor):
 
         value = inputs[1].number
         if is_quant_node:
-            qargs = search_quant_arg_downstream(list(node.users)[0])
+            qargs = get_quant_arg_downstream(list(node.users)[0])
             qvalue = quantize_value(value, qargs)
             dtype = ts.DType.INT8
             data = np.full(shape, qvalue, dtype=np.int8)

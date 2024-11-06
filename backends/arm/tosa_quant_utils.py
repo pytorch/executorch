@@ -8,7 +8,7 @@
 # Utiliy functions for TOSA quantized lowerings
 
 import math
-from typing import NamedTuple, Sequence
+from typing import Callable, cast, NamedTuple, Sequence
 
 import numpy as np
 
@@ -58,7 +58,7 @@ class QuantArgs(NamedTuple):
             self.qmax,
         ).to(self.dtype)
 
-    def dequantize_value(self, qx):
+    def dequantize_value(self, qx: int) -> float:
         return (qx - self.zp) * self.scale
 
 
@@ -77,7 +77,13 @@ def dequantize_value(qx, qargs: QuantArgs):
 def qargs_from_qnode(node: torch.fx.Node):
     assert node.target in dq_q_ops, f"Op {node} is not a quant node."
 
-    return QuantArgs(*node.args[1:])
+    return QuantArgs(
+        scale=cast(float, node.args[1]),
+        zp=cast(int, node.args[2]),
+        qmin=cast(int, node.args[3]),
+        qmax=cast(int, node.args[4]),
+        dtype=cast(torch.dtype, node.args[5]),
+    )
 
 
 def get_neighbour_quant_args(
@@ -156,6 +162,15 @@ def search_quant_arg_downstream(node: torch.fx.Node) -> QuantArgs | None:
         return consumer_qargs[0]
 
 
+def get_quant_arg_downstream(node: torch.fx.Node) -> QuantArgs:
+    """Calls search_quant_arg_downstream and asserts that QuantArgs are found,
+    meaning return value can't be None.
+    """
+    qargs = search_quant_arg_downstream(node)
+    assert qargs, f"Did not find QuantArgs downstream for node {node}"
+    return qargs
+
+
 def search_quant_arg_upstream(node: torch.fx.Node) -> QuantArgs | None:
     """
     Iterates upward in the graph passing through 'passable_ops' to find and return a quantization node,
@@ -189,17 +204,26 @@ def search_quant_arg_upstream(node: torch.fx.Node) -> QuantArgs | None:
         return input_qargs[0]
 
 
-def get_quantized_node_output_dtype(node: torch.fx.Node):
-    if hasattr(node.target, "__name__") and "tosa" in node.target.__name__:
+def get_quant_arg_upstream(node: torch.fx.Node) -> QuantArgs:
+    """Calls search_quant_arg_upstream and asserts that QuantArgs are found,
+    meaning return value can't be None.
+    """
+    qargs = search_quant_arg_upstream(node)
+    assert qargs, f"Did not find QuantArgs upstream for node {node}"
+    return qargs
+
+
+def get_quantized_node_output_dtype(node: torch.fx.Node) -> torch.dtype:
+    if isinstance(node.target, Callable) and "tosa" in node.target.__name__:
         return node.meta["val"].dtype
     if node.target in dq_q_ops:
-        return node.args[5]
+        return cast(torch.dtype, node.args[5])
 
     # if not a tosa node, nor a q/dq op, walk the graph until we find a q op
     user_q_args, input_q_args = get_neighbour_quant_args(node)
     if len(user_q_args) > 0:
         return user_q_args[0].dtype
-    elif node.target in passable_ops and len(input_q_args):
+    elif node.target in passable_ops and len(input_q_args) > 0:
         return input_q_args[0].dtype
     else:
         raise RuntimeError("No quantized node found in graph")
@@ -358,7 +382,7 @@ def rescale_nodes_to_int32(
         dim_order = tensor.dim_order
         tensor.shape = [tensor.shape[i] for i in dim_order]
 
-    qargs = [search_quant_arg_upstream(node) for node in nodes]
+    qargs = [get_quant_arg_upstream(node) for node in nodes]
 
     # Scale the int8 quantized input to a common scale in the integer
     # domain
@@ -391,7 +415,7 @@ def rescale_node_back_to_int8(
         scale: the scaling factor used to rescale to int32, from the function 'rescale_nodes_to_int32'
         tosa_graph: the tosa_graph to manipulate.
     """
-    qargs_out = search_quant_arg_downstream(list(node.users)[0])
+    qargs_out = get_quant_arg_downstream(list(node.users)[0])
     output_rescale_scale = scale / qargs_out.scale
 
     # Rescale Back to INT8

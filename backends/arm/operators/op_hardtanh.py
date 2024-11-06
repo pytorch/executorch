@@ -15,8 +15,8 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.tosa_mapping import TosaArg
 
 from executorch.backends.arm.tosa_quant_utils import (
+    get_quant_arg_upstream,
     quantize_value,
-    search_quant_arg_upstream,
 )
 from serializer.tosa_serializer import TosaOp
 
@@ -40,7 +40,7 @@ class HardTanhVisitor(NodeVisitor):
 
         if is_quant_node:
             # Get quant parameters
-            qargs = search_quant_arg_upstream(node.all_input_nodes[0])
+            qargs = get_quant_arg_upstream(node.all_input_nodes[0])
             # Convert to quantized representation
             clamp_min_qs = quantize_value(inputs[1].number, qargs)
             clamp_max_qs = quantize_value(inputs[2].number, qargs)
