@@ -113,10 +113,8 @@ void add_native_layer_norm_node(
       },
       // Specialization Constants
       {
-          hash_axis_map(t_input->axis_map()),
-          t_input->packed_dim(),
-          hash_axis_map(t_out->axis_map()),
-          t_out->packed_dim(),
+          t_input->hashed_layout(),
+          t_out->hashed_layout(),
       },
       // Resizing Logic
       resize_native_layer_norm_node,

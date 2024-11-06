@@ -173,9 +173,9 @@ class Rope(torch.nn.Module):
         self,
         q: torch.Tensor,
         k: torch.Tensor,
-        seq_len: int,
         input_pos: Optional[torch.Tensor] = None,
     ):
+        seq_len = q.shape[1]
         if self.params.use_kv_cache:
             assert (
                 input_pos is not None
@@ -195,6 +195,9 @@ class Rope(torch.nn.Module):
                 # symints, due to querying the data from tensor.
                 # this path avoids that for mps backend, although probably mps backend
                 # can support dynamic shape?
+                assert (
+                    seq_len == 1
+                ), "Expected seq_len to be 1 when using kv_cache without dynamic shape"
                 freqs_cos = self.freqs_cos[input_pos]
                 freqs_sin = self.freqs_sin[input_pos]
 
@@ -392,7 +395,7 @@ class Attention(nn.Module):
         v = v.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
 
         # RoPE relative positional embeddings
-        q, k = self.rope.forward(q, k, seqlen, input_pos)
+        q, k = self.rope.forward(q, k, input_pos)
 
         if self.use_kv_cache:
             assert input_pos is not None

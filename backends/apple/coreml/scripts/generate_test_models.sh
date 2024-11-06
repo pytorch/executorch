@@ -31,3 +31,12 @@ done
 
 echo "Executorch: Generating stateful model"
 python3 "$SCRIPT_DIR_PATH/../runtime/test/export_stateful_model.py"
+
+COMPILE_MODELS=("add_mul")
+echo "Executorch: Generating compiled model"
+for MODEL in "${COMPILE_MODELS[@]}"
+do
+  echo "Executorch: Generating compiled $MODEL model" 
+  python3 -m examples.apple.coreml.scripts.export --model_name "$MODEL" --compile
+  mv -f "$MODEL""_compiled_coreml_all.pte" "$COREML_DIR_PATH/runtime/test/models"
+done
