@@ -324,7 +324,9 @@ message(STATUS "Using python executable '${PYTHON_EXECUTABLE}'")
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/..)
+find_package(Torch CONFIG REQUIRED)
+
+set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/.. ${TORCH_INCLUDE_DIRS})
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -680,7 +682,6 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   # find pytorch lib, to allow pybind to take at::Tensor as input/output
-  find_package(Torch CONFIG REQUIRED)
   find_library(
     TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
   )

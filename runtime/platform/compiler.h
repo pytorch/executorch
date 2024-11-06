@@ -13,6 +13,8 @@
 
 #pragma once
 
+#include <c10/macros/Macros.h>
+
 /*
  * Compiler support checks. Follows the logic used by pytorch/c10/util/C++17.h
  * but may support older versions.
@@ -55,9 +57,9 @@
  */
 
 #define ET_NORETURN [[noreturn]]
-#define ET_NOINLINE __attribute__((noinline))
-#define ET_INLINE __attribute__((always_inline)) inline
-#define ET_INLINE_ATTRIBUTE __attribute__((always_inline))
+#define ET_NOINLINE C10_NOINLINE
+#define ET_INLINE C10_ALWAYS_INLINE
+#define ET_INLINE_ATTRIBUTE C10_ALWAYS_INLINE_ATTRIBUTE
 
 #if defined(__GNUC__)
 
@@ -88,14 +90,14 @@
 //   do something
 // }
 #if (__cplusplus) >= 202002L
-
+// TODO: backport these to c10 and remove ET definition
 #define ET_LIKELY(expr) (expr) [[likely]]
 #define ET_UNLIKELY(expr) (expr) [[unlikely]]
 
 #else
 
-#define ET_LIKELY(expr) (expr)
-#define ET_UNLIKELY(expr) (expr)
+#define ET_LIKELY(expr) C10_LIKELY(expr)
+#define ET_UNLIKELY(expr) C10_UNLIKELY(expr)
 
 #endif // (__cplusplus) >= 202002L
 
