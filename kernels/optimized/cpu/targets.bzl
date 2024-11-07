@@ -20,8 +20,7 @@ _OPTIMIZED_ATEN_OPS = (
         name = "op_div",
         deps = [
             ":binary_ops",
-            "//executorch/kernels/portable/cpu:scalar_utils",
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu:op_div_impl",
         ],
     ),
     op_target(name = "op_exp"),
