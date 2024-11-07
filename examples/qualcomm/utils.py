@@ -16,7 +16,13 @@ import numpy as np
 
 import torch
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
-from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
+from executorch.backends.qualcomm.quantizer.quantizer import (
+    get_16a4w_qnn_ptq_config,
+    get_default_16bit_qnn_ptq_config,
+    get_default_8bit_qnn_ptq_config,
+    QnnQuantizer,
+    QuantDtype,
+)
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QcomChipset,
 )
@@ -31,11 +37,7 @@ from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torch.ao.quantization.observer import MovingAverageMinMaxObserver
-from torch.ao.quantization.quantize_pt2e import (
-    convert_pt2e,
-    prepare_pt2e,
-    prepare_qat_pt2e,
-)
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class SimpleADB:
@@ -185,58 +187,36 @@ class SimpleADB:
             callback()
 
 
-def ptq_calibrate(captured_model, quantizer, dataset):
-    annotated_model = prepare_pt2e(captured_model, quantizer)
-    print("Quantizing(PTQ) the model...")
-    # calibration
-    if callable(dataset):
-        dataset(annotated_model)
-    else:
-        for data in dataset:
-            annotated_model(*data)
-    return annotated_model
-
-
-def qat_train(ori_model, captured_model, quantizer, dataset):
-    data, targets = dataset
-    annotated_model = torch.ao.quantization.move_exported_model_to_train(
-        prepare_qat_pt2e(captured_model, quantizer)
-    )
-    optimizer = torch.optim.SGD(annotated_model.parameters(), lr=0.00001)
-    criterion = torch.nn.CrossEntropyLoss()
-    for i, d in enumerate(data):
-        print(f"Epoch {i}")
-        if i > 3:
-            # Freeze quantizer parameters
-            annotated_model.apply(torch.ao.quantization.disable_observer)
-        if i > 2:
-            # Freeze batch norm mean and variance estimates
-            annotated_model.apply(torch.nn.intrinsic.qat.freeze_bn_stats)
-
-        output = annotated_model(*d)
-        loss = criterion(output, targets[i])
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-    return torch.ao.quantization.quantize_pt2e.convert_pt2e(
-        torch.ao.quantization.move_exported_model_to_eval(annotated_model)
-    )
-
-
 def make_quantizer(
-    quant_dtype: Optional[QuantDtype] = QuantDtype.use_8a8w,
+    quant_dtype: Optional[QuantDtype],
     custom_annotations=(),
     per_channel_conv=True,
     per_channel_linear=False,
     act_observer=MovingAverageMinMaxObserver,
-    is_qat=False,
 ):
     quantizer = QnnQuantizer()
     quantizer.add_custom_quant_annotations(custom_annotations)
     quantizer.set_per_channel_conv_quant(per_channel_conv)
     quantizer.set_per_channel_linear_quant(per_channel_linear)
-    quantizer.set_quant_config(quant_dtype, is_qat, act_observer)
+
+    if quant_dtype == QuantDtype.use_8a8w:
+        quantizer.set_bit8_op_quant_config(
+            get_default_8bit_qnn_ptq_config(act_observer=act_observer)
+        )
+    elif quant_dtype == QuantDtype.use_16a16w:
+        quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
+        quantizer.set_bit16_op_quant_config(
+            get_default_16bit_qnn_ptq_config(act_observer=act_observer)
+        )
+    elif quant_dtype == QuantDtype.use_16a4w:
+        quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
+        quantizer.set_bit16_op_quant_config(
+            get_16a4w_qnn_ptq_config(act_observer=act_observer)
+        )
+        quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
+    else:
+        raise AssertionError(f"No support for QuantDtype {quant_dtype}.")
+
     return quantizer
 
 
@@ -255,22 +235,18 @@ def build_executorch_binary(
     metadata=None,
     dump_intermediate_outputs=False,
     custom_pass_config=frozenset(),
-    qat_training_data=None,
 ):
     if quant_dtype is not None:
+        quantizer = custom_quantizer or make_quantizer(quant_dtype=quant_dtype)
         captured_model = torch.export.export(model, inputs).module()
-        if qat_training_data:
-            quantizer = custom_quantizer or make_quantizer(
-                quant_dtype=quant_dtype, is_qat=True
-            )
-            # qat training
-            annotated_model = qat_train(
-                model, captured_model, quantizer, qat_training_data
-            )
+        annotated_model = prepare_pt2e(captured_model, quantizer)
+        print("Quantizing the model...")
+        # calibration
+        if callable(dataset):
+            dataset(annotated_model)
         else:
-            quantizer = custom_quantizer or make_quantizer(quant_dtype=quant_dtype)
-            # ptq calibration
-            annotated_model = ptq_calibrate(captured_model, quantizer, dataset)
+            for data in dataset:
+                annotated_model(*data)
 
         quantized_model = convert_pt2e(annotated_model)
         edge_prog = capture_program(quantized_model, inputs, custom_pass_config)
