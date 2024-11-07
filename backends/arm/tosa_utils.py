@@ -16,8 +16,9 @@ from executorch.backends.arm.operators.node_visitor import NodeVisitor
 from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
 
 from executorch.backends.arm.tosa_quant_utils import (
+    get_output_quant_dtype,
     get_quant_node_args,
-    get_quant_node_dtype,
+    is_output_quant,
     is_quant_node,
     q_op,
 )
@@ -304,10 +305,13 @@ def process_call_function(
             if is_permute_node_before_addmm(node)
             else tosa_shape(output.shape, output.dim_order)
         ),
-        map_dtype(get_quant_node_dtype(node)) if is_quant_node(node) else output.dtype,
+        (
+            map_dtype(get_output_quant_dtype(node))
+            if is_output_quant(node)
+            else output.dtype
+        ),
     )
 
-    # Visiting each Node
     # pyre-ignore[16]: Undefined attribute.
     if node.target.__name__ in node_visitors:
         # pyre-ignore[16]: Undefined attribute.
