@@ -475,11 +475,7 @@ ATEN_OPS = (
     op_target(
         name = "op_div",
         deps = [
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:dtype_util",
-            "//executorch/kernels/portable/cpu/util:elementwise_util",
-            "//executorch/kernels/portable/cpu/util:math_util",
-            ":scalar_utils",
+            "//executorch/kernels/portable/cpu:op_div_impl",
         ],
     ),
     op_target(
