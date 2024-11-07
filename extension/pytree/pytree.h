@@ -138,6 +138,8 @@ struct ContainerHandle {
 
   /*implicit*/ ContainerHandle(container_type* c) : handle(c) {}
 
+  /*implicit*/ ContainerHandle(std::unique_ptr<container_type> c) : handle(std::move(c)) {}
+
   void set_leaf(leaf_type* leaf) {
     pytree_assert(handle->kind == Kind::Leaf);
     handle->leaf = leaf;
@@ -485,10 +487,10 @@ TreeSpec<Aux> from_str_internal(
       read_idx++;
       auto layout = read_node_layout(spec, read_idx);
       const auto size = layout.size();
-      auto c = new TreeSpecContainer<Aux>(kind, size);
+      auto c = std::make_unique<TreeSpecContainer<Aux>>(kind, size);
 
       if (Kind::Custom == kind) {
-        c->custom_type = custom_type;
+        c->custom_type = std::move(custom_type);
       }
 
       size_t child_idx = 0;
@@ -515,7 +517,7 @@ TreeSpec<Aux> from_str_internal(
       read_idx++;
       auto layout = read_node_layout(spec, read_idx);
       const auto size = layout.size();
-      auto c = new TreeSpecContainer<Aux>(Kind::Dict, size);
+      auto c = std::make_unique<TreeSpecContainer<Aux>>(Kind::Dict, size);
 
       size_t child_idx = 0;
       size_t leaves_offset = 0;
