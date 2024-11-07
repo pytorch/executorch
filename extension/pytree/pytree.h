@@ -55,6 +55,7 @@ using KeyInt = int32_t;
 
 struct Key {
   enum class Kind : uint8_t { None, Int, Str } kind_;
+
  private:
   std::variant<std::monostate, KeyInt, KeyStr> repr_;
 
