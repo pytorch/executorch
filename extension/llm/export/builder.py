@@ -203,7 +203,7 @@ class LLMEdgeManager:
                     dynamic_shapes=dynamic_shape,
                 )
             self.pre_autograd_graph_module = exported_module.module()
-            if self.args.export_only:
+            if hasattr(self.args, "export_only") and self.args.export_only:
                 torch.export.save(exported_module, self.args.output_name)
 
         return self
