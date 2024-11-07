@@ -55,6 +55,7 @@ using KeyInt = int32_t;
 
 struct Key {
   enum class Kind : uint8_t { None, Int, Str } kind_;
+
  private:
   std::variant<std::monostate, KeyInt, KeyStr> repr_;
 
@@ -138,7 +139,8 @@ struct ContainerHandle {
 
   /*implicit*/ ContainerHandle(container_type* c) : handle(c) {}
 
-  /*implicit*/ ContainerHandle(std::unique_ptr<container_type> c) : handle(std::move(c)) {}
+  /*implicit*/ ContainerHandle(std::unique_ptr<container_type> c)
+      : handle(std::move(c)) {}
 
   void set_leaf(leaf_type* leaf) {
     pytree_assert(handle->kind == Kind::Leaf);
@@ -550,7 +552,7 @@ TreeSpec<Aux> from_str_internal(
         read_idx++;
       }
       c->leaves_num = leaves_offset;
-      return c;
+      return TreeSpec<Aux>(std::move(c));
     }
 
     case Config::kLeaf:
