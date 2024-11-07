@@ -433,6 +433,13 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--use_attention_sink",
+        default="4,2044,1024",
+        type=str,
+        help="Use attention sink to have fluent multi-round conversation. '<sink_size>,<window_size>,<batch_eviction_size>'"
+    )
+
+    parser.add_argument(
         "--output_prune_map",
         default=None,
         help="path to the output pruning token mapping file (token_map.json)",

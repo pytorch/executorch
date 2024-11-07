@@ -7,13 +7,22 @@
 # Components for supporting Attention Sink. See
 # https://arxiv.org/abs/2309.17453 for more details about Attention Sink.
 
+import types
+from typing import Optional
+
 import torch
 
-from executorch.examples.models.llama.llama_transformer import KVCache, ModelArgs, Rope
+from executorch.examples.models.llama.llama_transformer import (
+    Attention,
+    KVCache,
+    ModelArgs,
+    Rope,
+)
 from executorch.examples.models.llama.rope import (
     apply_rotary_emb_to_k,
     hf_apply_rotary_emb_to_k,
 )
+from torchao.quantization.quant_api import _replace_with_custom_fn_if_matches_filter
 
 
 class RopeWithAttentionSink(Rope):
@@ -167,3 +176,106 @@ class KVCacheWithAttentionSink(KVCache):
             )
             self.position_shift -= num_to_evict  # pyre-ignore [8]
         return self.position_shift
+
+
+def attention_sink_forward(
+    self,
+    x: torch.Tensor,
+    input_pos: Optional[torch.Tensor] = None,
+):
+    assert self.use_kv_cache
+    assert input_pos is not None
+
+    bsz, seqlen, _ = x.shape
+
+    # QKV
+    q, k, v = self.wq(x), self.wk(x), self.wv(x)
+    # We need view_copy elimination
+    q = q.view(bsz, seqlen, self.n_local_heads, self.head_dim)
+    k = k.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
+    v = v.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
+
+    # Prepare for space in KV cache and get position shift
+    position_shift = self.kv_cache.evict_tokens(input_pos, seqlen)
+
+    shifted_position = input_pos + position_shift
+
+    # RoPE relative positional embeddings with shifted position in KV cache
+    q, k = self.rope.forward(q, k, shifted_position)
+
+    output = self.SDPA(shifted_position, q, k, v, bsz, seqlen, self.mask)
+    return self.wo(output)
+
+
+def _replace_rope(
+    module: torch.nn.Module, rope_with_attention_sink: RopeWithAttentionSink
+):
+    def filter_fn(child: torch.nn.Module, cur_fqn: str) -> bool:
+        return isinstance(child, Rope)
+
+    def replacement_fn(child: torch.nn.Module) -> torch.nn.Module:
+        return rope_with_attention_sink
+
+    _replace_with_custom_fn_if_matches_filter(module, replacement_fn, filter_fn)
+
+
+def _replace_kv_cache(
+    module: torch.nn.Module,
+    rope_with_attention_sink: RopeWithAttentionSink,
+    sink_size: int,
+    window_size: int,
+    eviction_batch_size: int,
+):
+    def filter_fn(child: torch.nn.Module, cur_fqn: str) -> bool:
+        return isinstance(child, KVCache)
+
+    def replacement_fn(child: torch.nn.Module) -> torch.nn.Module:
+        kv_cache_with_attention_sink = KVCacheWithAttentionSink(
+            n_heads=child.n_heads,
+            head_dim=child.head_dim,
+            transpose_cache=child.transpose_cache,
+            enable_dynamic_shape=child.enable_dynamic_shape,
+            rope=rope_with_attention_sink,
+            max_batch_size=child.max_batch_size,
+            window_size=window_size,
+            sink_size=sink_size,
+            eviction_batch_size=eviction_batch_size,
+            dtype=child.k_cache.dtype,
+        )
+        return kv_cache_with_attention_sink
+
+    _replace_with_custom_fn_if_matches_filter(module, replacement_fn, filter_fn)
+
+
+def _replace_attention_forward(module: torch.nn.Module):
+    for name, child_module in module._modules.items():
+        if len(list(child_module.children())) > 0:  # pyre-ignore [16]
+            _replace_attention_forward(child_module)  # pyre-ignore [6]
+
+        if isinstance(child_module, Attention):
+            module._modules[name].forward = types.MethodType(  # pyre-ignore
+                attention_sink_forward, module._modules[name]
+            )
+
+
+def enable_attention_sink(
+    module: torch.nn.Module,
+    params: ModelArgs,
+    sink_size: int = 4,
+    window_size: int = 2044,
+    eviction_batch_size: int = 1,
+) -> torch.nn.Module:
+    """
+    Transform the model to be able to run inference with Attention Sink.
+    There mainly three steps:
+    - Replace Rope with RopeWithAttentionSink
+    - Replace KVCache with KVCacheWithAttentionSink
+    - Replace Attention's forward with attention_sink_forward
+    """
+    rope_with_attention_sink = RopeWithAttentionSink(params=params)
+    _replace_rope(module, rope_with_attention_sink)
+    _replace_kv_cache(
+        module, rope_with_attention_sink, sink_size, window_size, eviction_batch_size
+    )
+    _replace_attention_forward(module)
+    return module

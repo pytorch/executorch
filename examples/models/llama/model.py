@@ -200,6 +200,20 @@ the checkpoint format to avoid generating faulty models.
             )
 
             sanitize_checkpoint_from_pre_quantization(checkpoint)
+        
+        if hasattr(self.args, "use_attention_sink"):
+            from .source_transformation.sink_attention import (
+                enable_attention_sink,
+            )
+            attention_sink_params = self.args.use_attention_sink.split(",")
+            assert len(attention_sink_params) == 3
+
+            self.model_ = enable_attention_sink(
+                module=self.model_,
+                params=model_args,
+                sink_size=int(attention_sink_params[0]),
+                window_size=int(attention_sink_params[1]),
+                eviction_batch_size=int(attention_sink_params[2]))
 
         # assign=True: load params/buffers by assignment instead of performing an in-place copy.
         # Because we are using device="meta", tensors do not have memory associated with them
