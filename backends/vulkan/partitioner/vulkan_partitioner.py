@@ -251,7 +251,7 @@ def parse_compile_options(compile_options: Dict[str, Any]) -> List[CompileSpec]:
         if isinstance(value, (VkStorageType, VkMemoryLayout)):
             value_bytes = int(value).to_bytes(4, byteorder="little")
             compile_specs.append(CompileSpec(key, value_bytes))
-        
+
         if isinstance(value, bool):
             value_bytes = value.to_bytes(1, byteorder="little")
             compile_specs.append(CompileSpec(key, value_bytes))
