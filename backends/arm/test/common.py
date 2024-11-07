@@ -91,6 +91,17 @@ def pytest_sessionfinish(session, exitstatus):
 
 # ==== End of Pytest hooks =====
 
+# ==== Custom Pytest decorators =====
+
+
+def expectedFailureOnFVP(test_item):
+    if is_option_enabled("corstone300"):
+        test_item.__unittest_expecting_failure__ = True
+    return test_item
+
+
+# ==== End of Custom Pytest decorators =====
+
 
 def load_libquantized_ops_aot_lib():
     so_ext = {
