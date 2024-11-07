@@ -8,13 +8,9 @@ import unittest
 from typing import Tuple
 
 import torch
-from executorch.backends.arm.quantizer.arm_quantizer import (
-    ArmQuantizer,
-    get_symmetric_quantization_config,
-)
+
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
@@ -59,7 +55,6 @@ class TestSimpleSlice(unittest.TestCase):
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor], permute: bool
     ):
 
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
@@ -68,7 +63,7 @@ class TestSimpleSlice(unittest.TestCase):
                     permute_memory_to_nhwc=permute
                 ),
             )
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
+            .quantize()
             .export()
             .check(["torch.ops.aten.slice.Tensor"])
             .to_edge()
@@ -84,14 +79,13 @@ class TestSimpleSlice(unittest.TestCase):
         module: torch.nn.Module,
         test_data: Tuple[torch.Tensor],
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_u55_compile_spec(),
             )
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
+            .quantize()
             .export()
             .check(["torch.ops.aten.slice.Tensor"])
             .to_edge()

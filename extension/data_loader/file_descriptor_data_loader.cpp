@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/data_loader/file_descriptor_data_loader.h>
 
 #include <algorithm>
 #include <cerrno>
@@ -23,17 +23,6 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
 
-// Some platforms (e.g. Xtensa) do not support pread() that we use to read the
-// file at different offsets simultaneously from multiple threads not affecting
-// each other. We list them below and use a workaround for them.
-#if defined(__xtensa__)
-#define ET_HAVE_PREAD 0
-#endif // defined(__xtensa__)
-
-#ifndef ET_HAVE_PREAD
-#define ET_HAVE_PREAD 1
-#endif // !ET_HAVE_PREAD
-
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
@@ -42,6 +31,8 @@ namespace executorch {
 namespace extension {
 
 namespace {
+
+static constexpr char kFdFilesystemPrefix[] = "fd:///";
 
 /**
  * Returns true if the value is an integer power of 2.
@@ -65,17 +56,44 @@ static uint8_t* align_pointer(void* ptr, size_t alignment) {
 }
 } // namespace
 
-FileDataLoader::~FileDataLoader() {
-  // file_name_ can be nullptr if this instance was moved from, but freeing a
-  // null pointer is safe.
-  std::free(const_cast<char*>(file_name_));
+FileDescriptorDataLoader::~FileDescriptorDataLoader() {
+  // file_descriptor_uri_ can be nullptr if this instance was moved from, but
+  // freeing a null pointer is safe.
+  std::free(const_cast<char*>(file_descriptor_uri_));
   // fd_ can be -1 if this instance was moved from, but closing a negative fd is
   // safe (though it will return an error).
   ::close(fd_);
 }
 
-Result<FileDataLoader> FileDataLoader::from(
-    const char* file_name,
+static Result<int> getFDFromUri(const char* file_descriptor_uri) {
+  // check if the uri starts with the prefix "fd://"
+  ET_CHECK_OR_RETURN_ERROR(
+      strncmp(
+          file_descriptor_uri,
+          kFdFilesystemPrefix,
+          strlen(kFdFilesystemPrefix)) == 0,
+      InvalidArgument,
+      "File descriptor uri (%s) does not start with %s",
+      file_descriptor_uri,
+      kFdFilesystemPrefix);
+
+  // strip "fd:///" from the uri
+  int fd_len = strlen(file_descriptor_uri) - strlen(kFdFilesystemPrefix);
+  char fd_without_prefix[fd_len + 1];
+  memcpy(
+      fd_without_prefix,
+      &file_descriptor_uri[strlen(kFdFilesystemPrefix)],
+      fd_len);
+  fd_without_prefix[fd_len] = '\0';
+
+  // check if remaining fd string is a valid integer
+  int fd = ::atoi(fd_without_prefix);
+  return fd;
+}
+
+Result<FileDescriptorDataLoader>
+FileDescriptorDataLoader::fromFileDescriptorUri(
+    const char* file_descriptor_uri,
     size_t alignment) {
   ET_CHECK_OR_RETURN_ERROR(
       is_power_of_2(alignment),
@@ -83,15 +101,12 @@ Result<FileDataLoader> FileDataLoader::from(
       "Alignment %zu is not a power of 2",
       alignment);
 
-  // Use open() instead of fopen() to avoid the layer of buffering that
-  // fopen() does. We will be reading large portions of the file in one shot,
-  // so buffering does not help.
-  int fd = ::open(file_name, O_RDONLY);
-  if (fd < 0) {
-    ET_LOG(
-        Error, "Failed to open %s: %s (%d)", file_name, strerror(errno), errno);
-    return Error::AccessFailed;
+  auto parsed_fd = getFDFromUri(file_descriptor_uri);
+  if (!parsed_fd.ok()) {
+    return parsed_fd.error();
   }
+
+  int fd = parsed_fd.get();
 
   // Cache the file size.
   struct stat st;
@@ -100,7 +115,7 @@ Result<FileDataLoader> FileDataLoader::from(
     ET_LOG(
         Error,
         "Could not get length of %s: %s (%d)",
-        file_name,
+        file_descriptor_uri,
         ::strerror(errno),
         errno);
     ::close(fd);
@@ -109,14 +124,15 @@ Result<FileDataLoader> FileDataLoader::from(
   size_t file_size = st.st_size;
 
   // Copy the filename so we can print better debug messages if reads fail.
-  const char* file_name_copy = ::strdup(file_name);
-  if (file_name_copy == nullptr) {
-    ET_LOG(Error, "strdup(%s) failed", file_name);
+  const char* file_descriptor_uri_copy = ::strdup(file_descriptor_uri);
+  if (file_descriptor_uri_copy == nullptr) {
+    ET_LOG(Error, "strdup(%s) failed", file_descriptor_uri);
     ::close(fd);
     return Error::MemoryAllocationFailed;
   }
 
-  return FileDataLoader(fd, file_size, alignment, file_name_copy);
+  return FileDescriptorDataLoader(
+      fd, file_size, alignment, file_descriptor_uri_copy);
 }
 
 namespace {
@@ -133,7 +149,7 @@ void FreeSegment(void* context, void* data, ET_UNUSED size_t size) {
 }
 } // namespace
 
-Result<FreeableBuffer> FileDataLoader::load(
+Result<FreeableBuffer> FileDescriptorDataLoader::load(
     size_t offset,
     size_t size,
     ET_UNUSED const DataLoader::SegmentInfo& segment_info) const {
@@ -146,7 +162,7 @@ Result<FreeableBuffer> FileDataLoader::load(
       offset + size <= file_size_,
       InvalidArgument,
       "File %s: offset %zu + size %zu > file_size_ %zu",
-      file_name_,
+      file_descriptor_uri_,
       offset,
       size,
       file_size_);
@@ -168,7 +184,7 @@ Result<FreeableBuffer> FileDataLoader::load(
     ET_LOG(
         Error,
         "Reading from %s at offset %zu: malloc(%zd) failed",
-        file_name_,
+        file_descriptor_uri_,
         offset,
         size);
     return Error::MemoryAllocationFailed;
@@ -210,7 +226,7 @@ Result<FreeableBuffer> FileDataLoader::load(
           reinterpret_cast<intptr_t>(buffer)));
 }
 
-Result<size_t> FileDataLoader::size() const {
+Result<size_t> FileDescriptorDataLoader::size() const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
       fd_ >= 0,
@@ -219,7 +235,7 @@ Result<size_t> FileDataLoader::size() const {
   return file_size_;
 }
 
-ET_NODISCARD Error FileDataLoader::load_into(
+ET_NODISCARD Error FileDescriptorDataLoader::load_into(
     size_t offset,
     size_t size,
     ET_UNUSED const SegmentInfo& segment_info,
@@ -233,7 +249,7 @@ ET_NODISCARD Error FileDataLoader::load_into(
       offset + size <= file_size_,
       InvalidArgument,
       "File %s: offset %zu + size %zu > file_size_ %zu",
-      file_name_,
+      file_descriptor_uri_,
       offset,
       size,
       file_size_);
@@ -244,24 +260,11 @@ ET_NODISCARD Error FileDataLoader::load_into(
   size_t needed = size;
   uint8_t* buf = reinterpret_cast<uint8_t*>(buffer);
 
-  // Make a duplicate fd if pread() is not available and we have to seek().
-  // Cannot use the standard dup() or fcntl() calls because the returned
-  // duplicate will share the underlying file record and affect the original fd
-  // when seeking on multiple threads simultaneously.
-  const auto dup_fd = ET_HAVE_PREAD ? fd_ : ::open(file_name_, O_RDONLY);
-
   while (needed > 0) {
     // Reads on macOS will fail with EINVAL if size > INT32_MAX.
     const auto chunk_size = std::min<size_t>(
         needed, static_cast<size_t>(std::numeric_limits<int32_t>::max()));
-    const auto nread =
-#if ET_HAVE_PREAD
-        ::pread(dup_fd, buf, chunk_size, offset);
-#else
-        (::lseek(dup_fd, offset, SEEK_SET) == (off_t)-1)
-        ? -1
-        : ::read(dup_fd, buf, chunk_size);
-#endif
+    const auto nread = ::pread(fd_, buf, chunk_size, offset);
     if (nread < 0 && errno == EINTR) {
       // Interrupted by a signal; zero bytes read.
       continue;
@@ -272,21 +275,15 @@ ET_NODISCARD Error FileDataLoader::load_into(
       ET_LOG(
           Error,
           "Reading from %s: failed to read %zu bytes at offset %zu: %s",
-          file_name_,
+          file_descriptor_uri_,
           size,
           offset,
           nread == 0 ? "EOF" : strerror(errno));
-      if (!ET_HAVE_PREAD) {
-        ::close(dup_fd);
-      }
       return Error::AccessFailed;
     }
     needed -= nread;
     buf += nread;
     offset += nread;
-  }
-  if (!ET_HAVE_PREAD) {
-    ::close(dup_fd);
   }
   return Error::Ok;
 }

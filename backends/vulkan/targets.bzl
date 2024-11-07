@@ -224,6 +224,8 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 "//caffe2:torch",
+                "//executorch/exir:tensor",
+                "//executorch/backends/vulkan/serialization:lib",
             ]
         )
 
@@ -254,6 +256,7 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 ":custom_ops_lib",
+                ":utils_lib",
                 "//caffe2:torch",
                 "//executorch/exir/dialects:lib",
                 "//executorch/backends/vulkan/serialization:lib",
