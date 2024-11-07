@@ -63,6 +63,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=0,
     )
 
+    parser.add_argument(
+        "--show_tokens",
+        action="store_true",
+        default=False,
+        help="Show the tokens that were generated",
+    )
+
     return parser
 
 
@@ -71,15 +78,12 @@ def main() -> None:
     args = parser.parse_args()
 
     runner = EagerLlamaRunner(args)
-    result = runner.text_completion(
+    generated_tokens = runner.text_completion(
         prompt=args.prompt,
         temperature=args.temperature,
     )
-    print(
-        "Response: \n{response}\n Tokens:\n {tokens}".format(
-            response=result["generation"], tokens=result["tokens"]
-        )
-    )
+    if args.show_tokens:
+        print(f"Tokens: {generated_tokens}")
 
 
 if __name__ == "__main__":
