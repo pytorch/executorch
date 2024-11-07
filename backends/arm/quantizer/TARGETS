@@ -1,6 +1,7 @@
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 python_library(
+    # @autodeps-skip
     name = "arm_quantizer",
     srcs = ["arm_quantizer.py"],
     deps = [
@@ -20,6 +21,7 @@ python_library(
 )
 
 python_library(
+    # @autodeps-skip
     name = "arm_quantizer_utils",
     srcs = ["arm_quantizer_utils.py"],
     deps = [
