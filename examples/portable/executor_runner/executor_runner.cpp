@@ -26,6 +26,7 @@
 #include <unistd.h>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/data_loader/file_descriptor_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/executor/method.h>
@@ -45,6 +46,7 @@ DEFINE_bool(
     "True if the model_path passed is a file descriptor with the prefix \"fd:///\".");
 
 using executorch::extension::FileDataLoader;
+using executorch::extension::FileDescriptorDataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::HierarchicalAllocator;
@@ -55,6 +57,33 @@ using executorch::runtime::MethodMeta;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
+
+static Result<Program> getProgram(
+    const bool is_fd_uri,
+    const char* model_path) {
+  // Create a loader to get the data of the program file. This demonstrates both
+  // FileDataLoader and FileDescriptorDataLoader. There are other DataLoaders
+  // that use mmap() or point to data that's already in memory, and users can
+  // create their own DataLoaders to load from arbitrary sources.
+  if (!is_fd_uri) {
+    Result<FileDataLoader> loader = FileDataLoader::from(model_path);
+
+    ET_CHECK_MSG(
+        loader.ok(),
+        "FileDataLoader::from() failed: 0x%" PRIx32,
+        (uint32_t)loader.error());
+    return Program::load(&loader.get());
+  } else {
+    Result<FileDescriptorDataLoader> loader =
+        FileDescriptorDataLoader::fromFileDescriptorUri(model_path);
+
+    ET_CHECK_MSG(
+        loader.ok(),
+        "FileDescriptorDataLoader::fromFileDescriptorUri() failed: 0x%" PRIx32,
+        (uint32_t)loader.error());
+    return Program::load(&loader.get());
+  }
+}
 
 int main(int argc, char** argv) {
   executorch::runtime::runtime_init();
@@ -75,18 +104,9 @@ int main(int argc, char** argv) {
   const char* model_path = FLAGS_model_path.c_str();
   const bool is_fd_uri = FLAGS_is_fd_uri;
 
-  Result<FileDataLoader> loader = is_fd_uri
-      ? FileDataLoader::fromFileDescriptorUri(model_path)
-      : FileDataLoader::from(model_path);
-
-  ET_CHECK_MSG(
-      loader.ok(),
-      "FileDataLoader::from() failed: 0x%" PRIx32,
-      (uint32_t)loader.error());
-
   // Parse the program file. This is immutable, and can also be reused between
   // multiple execution invocations across multiple threads.
-  Result<Program> program = Program::load(&loader.get());
+  Result<Program> program = getProgram(is_fd_uri, model_path);
   if (!program.ok()) {
     ET_LOG(Error, "Failed to parse model file %s", model_path);
     return 1;

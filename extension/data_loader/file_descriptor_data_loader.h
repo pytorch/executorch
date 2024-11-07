@@ -18,51 +18,49 @@ namespace executorch {
 namespace extension {
 
 /**
- * A DataLoader that loads segments from a file, allocating the memory
- * with `malloc()`.
+ * A DataLoader that loads segments from a file descriptor, allocating the
+ * memory with `malloc()`. This data loader is used when ET is running in a
+ * process that does not have access to the filesystem, and the caller is able
+ * to open the file and pass the file descriptor.
  *
  * Note that this will keep the file open for the duration of its lifetime, to
  * avoid the overhead of opening it again for every load() call.
  */
-class FileDataLoader final : public executorch::runtime::DataLoader {
+class FileDescriptorDataLoader final : public executorch::runtime::DataLoader {
  public:
   /**
-   * Creates a new FileDataLoader that wraps the named file.
+   * Creates a new FileDescriptorDataLoader that wraps the named file
+   * descriptor, and the ownership of the file descriptor is passed.
    *
-   * @param[in] file_name Path to the file to read from.
+   * @param[in] file_descriptor_uri File descriptor with the prefix "fd:///",
+   *     followed by the file descriptor number.
    * @param[in] alignment Alignment in bytes of pointers returned by this
    *     instance. Must be a power of two.
    *
-   * @returns A new FileDataLoader on success.
+   * @returns A new FileDescriptorDataLoader on success.
    * @retval Error::InvalidArgument `alignment` is not a power of two.
-   * @retval Error::AccessFailed `file_name` could not be opened, or its size
-   *     could not be found.
+   * @retval Error::AccessFailed `file_descriptor_uri` is incorrectly formatted,
+   * or its size could not be found.
    * @retval Error::MemoryAllocationFailed Internal memory allocation failure.
    */
-  static executorch::runtime::Result<FileDataLoader> from(
-      const char* file_name,
+  static executorch::runtime::Result<FileDescriptorDataLoader>
+  fromFileDescriptorUri(
+      const char* file_descriptor_uri,
       size_t alignment = alignof(std::max_align_t));
 
-  /// DEPRECATED: Use the lowercase `from()` instead.
-  ET_DEPRECATED static executorch::runtime::Result<FileDataLoader> From(
-      const char* file_name,
-      size_t alignment = alignof(std::max_align_t)) {
-    return from(file_name, alignment);
-  }
-
   // Movable to be compatible with Result.
-  FileDataLoader(FileDataLoader&& rhs) noexcept
-      : file_name_(rhs.file_name_),
+  FileDescriptorDataLoader(FileDescriptorDataLoader&& rhs) noexcept
+      : file_descriptor_uri_(rhs.file_descriptor_uri_),
         file_size_(rhs.file_size_),
         alignment_(rhs.alignment_),
         fd_(rhs.fd_) {
-    const_cast<const char*&>(rhs.file_name_) = nullptr;
+    const_cast<const char*&>(rhs.file_descriptor_uri_) = nullptr;
     const_cast<size_t&>(rhs.file_size_) = 0;
     const_cast<size_t&>(rhs.alignment_) = 0;
     const_cast<int&>(rhs.fd_) = -1;
   }
 
-  ~FileDataLoader() override;
+  ~FileDescriptorDataLoader() override;
 
   ET_NODISCARD
   executorch::runtime::Result<executorch::runtime::FreeableBuffer> load(
@@ -79,22 +77,22 @@ class FileDataLoader final : public executorch::runtime::DataLoader {
       void* buffer) const override;
 
  private:
-  FileDataLoader(
+  FileDescriptorDataLoader(
       int fd,
       size_t file_size,
       size_t alignment,
-      const char* file_name)
-      : file_name_(file_name),
+      const char* file_descriptor_uri)
+      : file_descriptor_uri_(file_descriptor_uri),
         file_size_(file_size),
         alignment_(alignment),
         fd_(fd) {}
 
   // Not safely copyable.
-  FileDataLoader(const FileDataLoader&) = delete;
-  FileDataLoader& operator=(const FileDataLoader&) = delete;
-  FileDataLoader& operator=(FileDataLoader&&) = delete;
+  FileDescriptorDataLoader(const FileDescriptorDataLoader&) = delete;
+  FileDescriptorDataLoader& operator=(const FileDescriptorDataLoader&) = delete;
+  FileDescriptorDataLoader& operator=(FileDescriptorDataLoader&&) = delete;
 
-  const char* const file_name_; // Owned by the instance.
+  const char* const file_descriptor_uri_; // Owned by the instance.
   const size_t file_size_;
   const size_t alignment_;
   const int fd_; // Owned by the instance.
@@ -108,7 +106,7 @@ namespace executor {
 namespace util {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::extension::FileDataLoader;
+using ::executorch::extension::FileDescriptorDataLoader;
 } // namespace util
 } // namespace executor
 } // namespace torch
