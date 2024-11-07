@@ -47,25 +47,25 @@ typedef struct {
 } ExecutionHandle;
 
 extern "C" {
-void __attribute__((weak)) ArmBackend_execute_begin() {}
-void __attribute__((weak)) ArmBackend_execute_end() {}
+void __attribute__((weak)) ArmEthosUBackend_execute_begin() {}
+void __attribute__((weak)) ArmEthosUBackend_execute_end() {}
 }
 
-class ArmBackendExecuteCallbacks {
+class ArmEthosUBackendExecuteCallbacks {
  public:
-  ArmBackendExecuteCallbacks() {
-    ArmBackend_execute_begin();
+  ArmEthosUBackendExecuteCallbacks() {
+    ArmEthosUBackend_execute_begin();
   }
-  ~ArmBackendExecuteCallbacks() {
-    ArmBackend_execute_end();
+  ~ArmEthosUBackendExecuteCallbacks() {
+    ArmEthosUBackend_execute_end();
   }
 };
 
-class ArmBackend final : public ::executorch::runtime::BackendInterface {
+class ArmEthosUBackend final : public ::executorch::runtime::BackendInterface {
  public:
-  ArmBackend() {}
+  ArmEthosUBackend() {}
 
-  ~ArmBackend() = default;
+  ~ArmEthosUBackend() = default;
 
   virtual bool is_available() const override {
     // TODO: revise to use a register check/init function
@@ -76,7 +76,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
-    ET_LOG(Info, "ArmBackend::init %p", processed->data());
+    ET_LOG(Info, "ArmEthosUBackend::init %p", processed->data());
 
     char* data = (char*)processed->data();
     size_t size = processed->size();
@@ -112,21 +112,22 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
     ExecutionHandle* execution_handle = (ExecutionHandle*)input_handle;
     VelaHandles handles;
 
-    ArmBackendExecuteCallbacks ArmBackend_execute_callbacks;
+    ArmEthosUBackendExecuteCallbacks ArmEthosUBackend_execute_callbacks;
     // Command stream - we know at this point it's aligned
     char* data = (char*)execution_handle->processed->data();
-    ET_LOG(Debug, "ArmBackend::execute %p", data);
+    ET_LOG(Debug, "ArmEthosUBackend::execute %p", data);
 
     // Read key sections from the vela_bin_stream
     if (vela_bin_read(data, &handles, execution_handle->processed->size()) ==
         false) {
-      ET_LOG(Error, "ArmBackend::vela_read: error, invalid binary layout");
+      ET_LOG(
+          Error, "ArmEthosUBackend::vela_read: error, invalid binary layout");
       return Error::InvalidProgram;
     }
 
     ET_LOG(
         Debug,
-        "ArmBackend::execute: Running program data:\n  cmd %p %zu\n  weight %p %zu\n  scratch %p %zu\n",
+        "ArmEthosUBackend::execute: Running program data:\n  cmd %p %zu\n  weight %p %zu\n  scratch %p %zu\n",
         handles.cmd_data,
         handles.cmd_data_size,
         handles.weight_data,
@@ -209,7 +210,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
         std::unique_ptr<ethosu_driver, decltype(&ethosu_release_driver)>(
             ethosu_reserve_driver(), ethosu_release_driver);
     if (driver == NULL) {
-      ET_LOG(Error, "ArmBackend::execute: ethosu_reserve_driver failed");
+      ET_LOG(Error, "ArmEthosUBackend::execute: ethosu_reserve_driver failed");
       return Error::InvalidState;
     }
 
@@ -232,7 +233,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
     if (result != 0) {
       ET_LOG(
           Error,
-          "ArmBackend::execute: Ethos-U invocation failed error (%d)",
+          "ArmEthosUBackend::execute: Ethos-U invocation failed error (%d)",
           result);
       return Error::InvalidProgram;
     }
@@ -352,8 +353,8 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
 };
 
 namespace {
-auto backend = ArmBackend();
-Backend backend_id{"ArmBackend", &backend};
+auto backend = ArmEthosUBackend();
+Backend backend_id{"ArmEthosUBackend", &backend};
 static auto registered = register_backend(backend_id);
 } // namespace
 

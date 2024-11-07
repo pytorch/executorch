@@ -12,33 +12,17 @@
 #
 
 import logging
-import os
-from typing import final, List, Optional
+from typing import Callable, List, Optional
 
-import serializer.tosa_serializer as ts
-from executorch.backends.arm.arm_vela import vela_compile
-from executorch.backends.arm.operators.node_visitor import get_node_visitors
-from executorch.backends.arm.operators.op_output import process_output
-from executorch.backends.arm.operators.op_placeholder import process_placeholder
-from executorch.backends.arm._passes.arm_pass_manager import (
-    ArmPassManager,
-)  # usort: skip
-from executorch.backends.arm.tosa_utils import (
-    dbg_fail,
-    dbg_tosa_dump,
-    process_call_function,
-)
-from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.backends.arm.arm_ethosu_backend import ArmEthosUBackend
+from executorch.backends.arm.arm_tosa_backend import ArmTOSABackend
+
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from torch.export.exported_program import ExportedProgram
+from executorch.exir.backend.partitioner import DelegationSpec
 
-# TOSA backend debug functionality
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
-TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
-if TOSA_DBG_VERBOSE:
-    logging.basicConfig(level=logging.INFO)
-    logger.setLevel(logging.INFO)
 
 
 class ArmCompileSpecBuilder:
@@ -167,6 +151,20 @@ def is_tosa(compile_spec: List[CompileSpec]) -> bool:
     return False
 
 
+def is_ethosu(compile_spec: List[CompileSpec]) -> bool:
+    for spec in compile_spec:
+        if spec.key == "output_format":
+            return spec.value.decode() == "vela"
+    return False
+
+
+def is_arm_compile_spec(compile_spec: list[CompileSpec]) -> bool:
+    for spec in compile_spec:
+        if spec.key == "output_format":
+            return spec.value.decode() in ["tosa", "vela"]
+    return False
+
+
 def get_intermediate_path(compile_spec: List[CompileSpec]) -> Optional[str]:
     for spec in compile_spec:
         if spec.key == "debug_artifact_path":
@@ -174,91 +172,25 @@ def get_intermediate_path(compile_spec: List[CompileSpec]) -> Optional[str]:
     return None
 
 
-def _get_first_delegation_tag(graph_module) -> str | None:
-    """Get the first delegation tag from the graph_module or return None."""
-    for node in graph_module.graph.nodes:
-        tag = node.meta.get("delegation_tag")
-        if tag:
-            return tag
+class ArmBackendSelector:
+    backend_filtering: list[Callable[[List[CompileSpec]], bool], str] = [
+        (is_tosa, ArmTOSABackend.__name__),
+        (is_ethosu, ArmEthosUBackend.__name__),
+    ]
 
-    logger.debug("No delegation tag found in partition.")
-    return None
-
-
-@final
-class ArmBackend(BackendDetails):
     @staticmethod
-    def preprocess(  # noqa: C901
-        edge_program: ExportedProgram,
-        compile_spec: List[CompileSpec],
-    ) -> PreprocessResult:
-        logger.info("ArmBackend::preprocess")
+    def get_delegation_spec(compile_spec: List[CompileSpec]) -> DelegationSpec:
+        """
+        Returns a corresponding DelegationSpec from a list of CompileSpec.
+        Figures out what the compile_spec list is targeting, e.g. tosa or vela.
+        """
 
-        # if a debug/test build capture output files from TOSA stage
-        artifact_path = None
-        output_format = ""
-        compile_flags = []
-        for spec in compile_spec:
-            if spec.key == "debug_artifact_path":
-                artifact_path = spec.value.decode()
-            if spec.key == "output_format":
-                output_format = spec.value.decode()
-            if spec.key == "compile_flags":
-                compile_flags.append(spec.value.decode())
+        backend_id = None
+        for filter_fn, backend_name in ArmBackendSelector.backend_filtering:
+            if filter_fn(compile_spec):
+                backend_id = backend_name
+                break
+        if backend_id is None:
+            raise RuntimeError("Wrong compile_spec. Not targetting Arm hardware")
 
-        # Check that the output format is set in the compile spec
-        if not output_format:
-            raise RuntimeError("output format is required")
-
-        if output_format == "vela" and len(compile_flags) == 0:
-            # Not testing for compile_flags correctness here, just that they are
-            # present. The compiler will give errors if they are not valid.
-            raise RuntimeError("compile flags are required for vela output format")
-
-        # Converted output for this subgraph, serializer needs path early as it emits
-        # const data directly. Path created and data written only in debug builds.
-        tosa_graph = ts.TosaSerializer(artifact_path)
-        graph_module = ArmPassManager().transform_to_backend_pipeline(
-            exported_program=edge_program, compile_spec=compile_spec
-        )
-
-        node_visitors = get_node_visitors(edge_program)
-
-        for node in graph_module.graph.nodes:
-            if node.op == "call_function":
-                process_call_function(node, tosa_graph, node_visitors)
-            elif node.op == "placeholder":
-                process_placeholder(node, tosa_graph, edge_program)
-            elif node.op == "output":
-                process_output(node, tosa_graph)
-            else:
-                # This will only happen if an unpartitioned graph is passed without
-                # any checking of compatibility.
-                dbg_fail(node, tosa_graph, artifact_path)
-
-        # TODO: It would be awesome if this dump could somehow be done on top level and not here.
-        # Problem is that the desc.json has to be created on the tosa_graph object, which we can't
-        # access from top level.
-        if artifact_path:
-            tag = _get_first_delegation_tag(graph_module)
-            dbg_tosa_dump(
-                tosa_graph,
-                artifact_path,
-                suffix="{}".format(f"_{tag}" if tag else ""),
-            )
-
-        # Serialize and return the program. While we have always produced TOSA
-        # output as an intermediate, some flows compile to device binaries in
-        # preprocess and some consume TOSA fb directly.
-        if output_format == "vela":
-            # Emit vela_bin_stream format
-            binary = vela_compile(tosa_graph, compile_flags)
-        elif output_format == "tosa":
-            # Emit TOSA flatbuffer
-            binary = bytes(tosa_graph.serialize())
-        else:
-            raise RuntimeError(f"Unknown format {output_format}")
-
-        # Continueing from above. Can I put tosa_graph into this function?
-        # debug_handle_map = ...
-        return PreprocessResult(processed_bytes=binary)
+        return DelegationSpec(backend_id, compile_spec)

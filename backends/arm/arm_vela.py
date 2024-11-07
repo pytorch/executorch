@@ -36,13 +36,12 @@ def vela_bin_pack_io(prefix, data):
 # Output via Vela to binary stream for ArmBackendEthosU
 # WARNING: Do not change this without changing VelaBinStream.cpp as that
 #          function consumes this format and the two need to align.
-def vela_compile(tosa_graph, args: List[str]):
+def vela_compile(tosa_flatbuffer, args: List[str]):
     with tempfile.TemporaryDirectory() as tmpdir:
         tosaname = "out.tosa"
-        flatbuffer = tosa_graph.serialize()
         tosa_path = os.path.join(tmpdir, tosaname)
         with open(tosa_path, "wb") as f:
-            f.write(flatbuffer)
+            f.write(tosa_flatbuffer)
 
         # invoke vela
         output_dir = os.path.join(tmpdir, "output")

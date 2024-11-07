@@ -11,14 +11,10 @@ import os
 from typing import cast, final, List
 
 import torch
-from executorch.backends.arm.arm_backend import ArmBackend  # usort: skip
+from executorch.backends.arm.arm_backend import ArmBackendSelector  # usort: skip
 from executorch.backends.arm._passes.tag_io_quant_pass import TagIOQuantPass
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.backend.partitioner import (
-    DelegationSpec,
-    Partitioner,
-    PartitionResult,
-)
+from executorch.exir.backend.partitioner import Partitioner, PartitionResult
 from executorch.exir.backend.utils import tag_constant_data
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes import PassManager
@@ -102,7 +98,7 @@ class TOSASupportedOperators(OperatorSupportBase):
 @final
 class ArmPartitioner(Partitioner):
     def __init__(self, compile_spec: List[CompileSpec]) -> None:
-        self.delegation_spec = DelegationSpec(ArmBackend.__name__, compile_spec)
+        self.delegation_spec = ArmBackendSelector.get_delegation_spec(compile_spec)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
