@@ -434,9 +434,9 @@ def build_args_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--use_attention_sink",
-        default="4,2044,1024",
+        default=None,
         type=str,
-        help="Use attention sink to have fluent multi-round conversation. '<sink_size>,<window_size>,<batch_eviction_size>'"
+        help="Use attention sink to have fluent multi-round conversation. '<sink_size>,<window_size>,<batch_eviction_size>', e.g., '4,2044,1024'.",
     )
 
     parser.add_argument(
