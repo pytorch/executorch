@@ -88,7 +88,7 @@ ethos_u_base_rev="24.08"
 
 # tosa reference model
 tosa_reference_model_url="https://review.mlplatform.org/tosa/reference_model"
-tosa_reference_model_rev="f9ea4ab7da19318fe36b1c34d68a3e40fd6e56c5"
+tosa_reference_model_rev="c5570b79e90c3a36ab8c4ddb8ee3fbc2cd3f7c38"
 
 # vela
 vela_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u-vela"
@@ -223,64 +223,19 @@ function patch_repo() {
 }
 
 function setup_tosa_reference_model() {
-    # The debug flow on the host includes running on a reference implementation of TOSA
-    # This is useful primarily for debug of quantization accuracy, but also for internal
-    # errors for the early codebase
-    cd "${root_dir}"
-    if [[ ! -e reference_model ]]; then
-        git clone ${tosa_reference_model_url}
-        cd reference_model
-        git checkout ${tosa_reference_model_rev}
-        git submodule update --init --recursive
-        cd ..
-    fi
-    cd reference_model
-    mkdir -p build
-    cd build
-    cmake ..
+    
+    # reference_model flatbuffers version clashes with Vela.
+    # go with Vela's since it newer.
+    # Could cause issues down the line, beware..
+    pip install tosa-tools@git+${tosa_reference_model_url}@${tosa_reference_model_rev} --no-dependencies flatbuffers
 
-    # make use of half the cores for building
-    if [[ "${OS}" == "Linux" ]]; then
-        n=$(( $(nproc) / 2 ))
-    elif [[ "${OS}" == "Darwin" ]]; then
-        n=$(( $(sysctl -n hw.logicalcpu) / 2 ))
-    else
-        n=1
-    fi
-
-    if [[ "$n" -lt 1 ]]; then
-        n=1
-    fi
-
-    make -j"${n}"
-    cd reference_model
-    tosa_bin_path=`pwd`
-    echo "export PATH=\${PATH}:${tosa_bin_path}" >> "${setup_path_script}"
 }
 
 function setup_vela() {
     #
     # Prepare the Vela compiler for AoT to Ethos-U compilation
     #
-    cd "${root_dir}"
-    if [[ ! -e ethos-u-vela ]]; then
-        git clone ${vela_repo_url}
-        repo_dir="${root_dir}/ethos-u-vela"
-        base_rev=${vela_rev}
-        patch_repo
-    fi
-    cd "${root_dir}/ethos-u-vela"
-
-    # different command for conda vs venv
-    VNV=$(python3 -c "import sys; print('venv') if (sys.prefix != sys.base_prefix) else print('not_venv')")
-    if [ ${VNV} == "venv" ]; then
-	pip install .
-    else
-       # if not venv, we need the site-path where the vela
-       vela_path=$(python -c "import site; print(site.USER_BASE+'/bin')")
-       echo "export PATH=\${PATH}:${vela_path}" >> ${setup_path_script}
-       pip install . --user
-    fi
+    pip install ethos-u-vela@git+${vela_repo_url}@${vela_rev}
 }
 
 ########
