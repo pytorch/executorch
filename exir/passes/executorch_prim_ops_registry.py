@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 import operator
 from typing import Dict, Set, Union
 
@@ -13,6 +14,8 @@ from executorch.exir.dialects._ops import bind_pattern_to_op, ops
 from torch import SymBool, SymFloat, SymInt
 from torch._ops import OpOverload
 from torch.library import Library
+
+# pyre-unsafe
 
 
 executorch_prims_lib = Library("executorch_prim", "DEF")
@@ -91,7 +94,13 @@ def neg(a: _SymScalar) -> _SymScalar:
     return -a  # pyre-ignore
 
 
+@bind_pattern_to_op(executorch_prims_lib, "trunc.Scalar(Scalar a) -> Scalar")
+def trunc(a: _SymScalar) -> _SymScalar:
+    return math.trunc(a)  # pyre-ignore
+
+
 _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS: Dict[OpOverload, OpOverload] = {
+    math.trunc: ops.backend.executorch_prim.trunc.Scalar,
     operator.sub: ops.backend.executorch_prim.sub.Scalar,
     operator.mul: ops.backend.executorch_prim.mul.Scalar,
     operator.add: ops.backend.executorch_prim.add.Scalar,
