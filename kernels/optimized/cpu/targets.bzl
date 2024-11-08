@@ -88,6 +88,7 @@ _OPTIMIZED_ATEN_OPS = (
         name = "op_sub",
         deps = [
             ":binary_ops",
+            "//executorch/kernels/portable/cpu:op_sub_impl",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
         ],
