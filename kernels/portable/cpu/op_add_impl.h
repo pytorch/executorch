@@ -8,29 +8,23 @@
 
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-#include <executorch/kernels/portable/cpu/op_add_impl.h>
-
 namespace torch {
 namespace executor {
 namespace native {
 
-Tensor& add_out(
+Tensor& add_out_impl(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     const Scalar& alpha,
-    Tensor& out) {
-  return add_out_impl(ctx, a, b, alpha, out);
-}
+    Tensor& out);
 
-Tensor& add_scalar_out(
+Tensor& add_scalar_out_impl(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     const Scalar& alpha,
-    Tensor& out) {
-  return add_scalar_out_impl(ctx, a, b, alpha, out);
-}
+    Tensor& out);
 
 } // namespace native
 } // namespace executor
