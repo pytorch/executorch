@@ -9,6 +9,7 @@
 #include <executorch/kernels/optimized/cpu/binary_ops.h>
 #include <executorch/kernels/optimized/vec/functional.h>
 #include <executorch/kernels/optimized/vec/vec.h>
+#include <executorch/kernels/portable/cpu/op_add_impl.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -176,35 +177,7 @@ Tensor& opt_add_out(
           lhs->sizes()[lhs->dim() - 1]);
     });
   } else {
-    ScalarType common_type =
-        promoteTypes(a_type, b_type, /*half_to_float*/ true);
-    ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
-
-    ET_KERNEL_CHECK(
-        ctx,
-        resize_to_broadcast_target_size(a, b, out) == Error::Ok,
-        InvalidArgument,
-        out);
-
-    ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, "add.out", CTYPE_A, [&]() {
-      ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, "add.out", CTYPE_B, [&]() {
-        using CTYPE_IN = typename torch::executor::
-            promote_types<CTYPE_A, CTYPE_B, /*half_to_float*/ true>::type;
-        ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
-        ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, "add.out", CTYPE_OUT, [&]() {
-          CTYPE_IN alpha_val;
-          ET_KERNEL_CHECK(
-              ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
-
-          AddInner<
-              can_cast<CTYPE_IN, CTYPE_OUT>::value,
-              CTYPE_A,
-              CTYPE_B,
-              CTYPE_IN,
-              CTYPE_OUT>::run(a, b, alpha_val, out);
-        });
-      });
-    });
+    add_out_impl(ctx, a, b, alpha, out);
   }
 
   return out;
@@ -255,30 +228,7 @@ Tensor& opt_add_scalar_out(
       });
     });
   } else {
-    ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, "add.Scalar_out", CTYPE_A, [&]() {
-      ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "add.Scalar_out", CTYPE_B, [&]() {
-        ET_SWITCH_REALB_TYPES(
-            common_type, ctx, "add.Scalar_out", CTYPE_IN, [&]() {
-              ET_SWITCH_REALHBBF16_TYPES(
-                  out_type, ctx, "add.Scalar_out", CTYPE_OUT, [&]() {
-                    CTYPE_B b_val;
-                    ET_EXTRACT_SCALAR(b, b_val);
-                    CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
-                    CTYPE_IN alpha_val;
-                    ET_EXTRACT_SCALAR(alpha, alpha_val);
-
-                    const size_t n = a.numel();
-                    const CTYPE_A* a_data = a.const_data_ptr<CTYPE_A>();
-                    CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-                    for (auto i = 0; i < n; ++i) {
-                      out_data[i] = static_cast<CTYPE_OUT>(
-                          static_cast<CTYPE_IN>(a_data[i]) +
-                          alpha_val * b_casted);
-                    }
-                  });
-            });
-      });
-    });
+    add_scalar_out_impl(ctx, a, b, alpha, out);
   }
 
   return out;
