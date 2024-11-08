@@ -6,12 +6,12 @@
 from typing import Sequence
 
 import torch
-from executorch.backends.qualcomm.quantizer.annotators import QUANT_ANNOTATION_KEY
 from executorch.backends.qualcomm.quantizer.quantizer import (
     get_16a8w_qnn_ptq_config,
-    get_8a8w_qnn_ptq_config,
+    get_default_8bit_qnn_ptq_config,
     QuantizationConfig,
 )
+from executorch.backends.qualcomm.quantizer.utils import QUANT_ANNOTATION_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.ao.quantization.quantizer import (
     QuantizationAnnotation,
@@ -110,7 +110,7 @@ def custom_annotate_llama_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noq
     # Annotate 16a8w for matmul op to get better performance
     quantization_config_16a8w = get_16a8w_qnn_ptq_config()
     # Annotate 8a8w for second input of matmul until past_kv_cache
-    quantization_config_8a8w = get_8a8w_qnn_ptq_config(act_symmetric=True)
+    quantization_config_8a8w = get_default_8bit_qnn_ptq_config(act_symmetric=True)
     for node in gm.graph.nodes:
         if node.op == "call_function" and node.target == torch.ops.aten.matmul.default:
             if "nn_module_stack" in node.meta:
