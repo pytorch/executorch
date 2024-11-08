@@ -55,6 +55,7 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
             exir_ops.edge.aten.native_layer_norm.default,
             exir_ops.edge.aten.avg_pool2d.default,
+            exir_ops.edge.aten.max_pool2d_with_indices.default,
             exir_ops.edge.aten.sigmoid.default,
             exir_ops.edge.aten.mm.default,
             exir_ops.edge.aten.repeat.default,
