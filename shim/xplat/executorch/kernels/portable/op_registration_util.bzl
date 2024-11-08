@@ -220,11 +220,7 @@ ATEN_OPS = (
     op_target(
         name = "op_add",
         deps = [
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:dtype_util",
-            "//executorch/kernels/portable/cpu/util:elementwise_util",
-            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
-            ":scalar_utils",
+            "//executorch/kernels/portable/cpu:op_add_impl",
         ],
     ),
     op_target(
@@ -1268,4 +1264,4 @@ def portable_source_list():
 
 def portable_header_list():
     """All the header file names from //executorch/kernels/portable/cpu/"""
-    return ["selective_build.h", "scalar_utils.h", "math_constants.h", "vec_ops.h", "op_div_impl.h", "op_mul_impl.h"]
+    return ["selective_build.h", "scalar_utils.h", "math_constants.h", "vec_ops.h", "op_div_impl.h", "op_mul_impl.h", "op_add_impl.h"]
