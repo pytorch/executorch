@@ -110,3 +110,61 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
         ],
     )
+
+    runtime.cxx_library(
+        name = "op_mul_impl",
+        srcs = ["op_mul_impl.cpp"],
+        exported_headers = ["op_mul_impl.h"],
+        visibility = [
+            "//executorch/kernels/portable/cpu/...",
+            "//executorch/kernels/optimized/cpu/...",
+            "//executorch/kernels/portable/test/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "op_add_impl",
+        srcs = ["op_add_impl.cpp"],
+        exported_headers = ["op_add_impl.h"],
+        visibility = [
+            "//executorch/kernels/portable/cpu/...",
+            "//executorch/kernels/optimized/cpu/...",
+            "//executorch/kernels/portable/test/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+    )
+
+    # The following will not participate in dtype selective build because
+    # they are refactored such to be used in optimized op implementations as well
+    # and we have not enabled selective build for optimized ops.
+    # To enable selective build for these ops, they must be copied over by
+    # selective build flow, however this results in such files, e.g. op_div_impl.cpp,
+    # getting compiled twice, once for selective build and once for optimized, and when
+    # put together they result in two copies of op_div_impl.o resulting in duplicate
+    # symbols
+    runtime.cxx_library(
+        name = "all_impl_deps",
+        deps = [
+            "//executorch/kernels/portable/cpu:op_add_impl",
+            "//executorch/kernels/portable/cpu:op_div_impl",
+            "//executorch/kernels/portable/cpu:op_mul_impl",
+        ],
+        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+    )
