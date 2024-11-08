@@ -110,3 +110,19 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
         ],
     )
+
+    # The following will not participate in dtype selective build because
+    # they are refactored such to be used in optimized op implementations as well
+    # and we have not enabled selective build for optimized ops.
+    # To enable selective build for these ops, they must be copied over by
+    # selective build flow, however this results in such files, e.g. op_div_impl.cpp,
+    # getting compiled twice, once for selective build and once for optimized, and when
+    # put together they result in two copies of op_div_impl.o resulting in duplicate
+    # symbols
+    runtime.cxx_library(
+        name = "all_impl_deps",
+        deps = [
+            "//executorch/kernels/portable/cpu:op_div_impl",
+        ],
+        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+    )
