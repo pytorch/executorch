@@ -151,6 +151,26 @@ def define_common_targets():
         ],
     )
 
+    runtime.cxx_library(
+        name = "op_sub_impl",
+        srcs = ["op_sub_impl.cpp"],
+        exported_headers = ["op_sub_impl.h"],
+        visibility = [
+            "//executorch/kernels/portable/cpu/...",
+            "//executorch/kernels/optimized/cpu/...",
+            "//executorch/kernels/portable/test/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+    )
+
     # The following will not participate in dtype selective build because
     # they are refactored such to be used in optimized op implementations as well
     # and we have not enabled selective build for optimized ops.
@@ -165,6 +185,7 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu:op_add_impl",
             "//executorch/kernels/portable/cpu:op_div_impl",
             "//executorch/kernels/portable/cpu:op_mul_impl",
+            "//executorch/kernels/portable/cpu:op_sub_impl",
         ],
         visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     )
