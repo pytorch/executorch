@@ -98,6 +98,10 @@ def parse_compile_spec(compile_specs: List[CompileSpec]) -> Dict[str, Any]:
             )
         if spec.key in {"texture_limits_x", "texture_limits_y", "texture_limits_z"}:
             options[spec.key] = int.from_bytes(spec.value, byteorder="little")
+
+        if spec.key == "skip_tag_memory_metadata":
+            options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
+
         # Unhandled options are ignored
 
     return options
