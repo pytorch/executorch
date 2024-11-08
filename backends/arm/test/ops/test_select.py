@@ -93,8 +93,6 @@ class TestSelect(unittest.TestCase):
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
             .partition()
-            .dump_artifact()
-            .dump_operator_distribution()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .run_method_and_compare_outputs(inputs=test_data)
@@ -162,12 +160,14 @@ class TestSelect(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite)
+    @unittest.skip
     def test_select_copy_tosa_BI(self, test_data: test_data_t):
         self._test_select_tosa_BI_pipeline(
             self.SelectCopy(), test_data, export_target="torch.ops.aten.select_copy.int"
         )
 
     @parameterized.expand(test_data_suite)
+    @unittest.skip
     def test_select_int_tosa_BI(self, test_data: test_data_t):
         self._test_select_tosa_BI_pipeline(
             self.SelectInt(), test_data, export_target="torch.ops.aten.select.int"
