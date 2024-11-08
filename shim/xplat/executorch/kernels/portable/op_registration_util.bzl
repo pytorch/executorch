@@ -220,11 +220,7 @@ ATEN_OPS = (
     op_target(
         name = "op_add",
         deps = [
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:dtype_util",
-            "//executorch/kernels/portable/cpu/util:elementwise_util",
-            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
-            ":scalar_utils",
+            "//executorch/kernels/portable/cpu:op_add_impl",
         ],
     ),
     op_target(
@@ -842,10 +838,7 @@ ATEN_OPS = (
     op_target(
         name = "op_mul",
         deps = [
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:dtype_util",
-            "//executorch/kernels/portable/cpu/util:elementwise_util",
-            ":scalar_utils",
+            "//executorch/kernels/portable/cpu:op_mul_impl",
         ],
     ),
     op_target(
@@ -1265,17 +1258,10 @@ CUSTOM_OPS = (
     ),
 )
 
-# Lists which ops are refactored into separate impl files that can be reused elsewhere.
-# Not the best way to track this since we should not have list files like this at all
-# but maybe we can figure out how to refactor selective build.
-ATEN_OP_IMPLS = ["op_div"]
-
 def portable_source_list():
     """All the source file names from //executorch/kernels/portable/cpu/"""
-    sources = [op["name"] + ".cpp" for op in ATEN_OPS + CUSTOM_OPS]
-    sources = sources + [op + "_impl.cpp" for op in ATEN_OP_IMPLS]
-    return sources
+    return [op["name"] + ".cpp" for op in ATEN_OPS + CUSTOM_OPS]
 
 def portable_header_list():
     """All the header file names from //executorch/kernels/portable/cpu/"""
-    return ["selective_build.h", "scalar_utils.h", "math_constants.h", "vec_ops.h", "op_div_impl.h"]
+    return ["selective_build.h", "scalar_utils.h", "math_constants.h", "vec_ops.h", "op_div_impl.h", "op_mul_impl.h", "op_add_impl.h"]

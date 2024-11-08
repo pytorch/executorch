@@ -6,27 +6,23 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/op_mul_impl.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
 namespace executor {
 namespace native {
 
-Tensor& mul_out(
+Tensor& mul_out_impl(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
-    Tensor& out) {
-  return mul_out_impl(ctx, a, b, out);
-}
+    Tensor& out);
 
-Tensor& mul_scalar_out(
+Tensor& mul_scalar_out_impl(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
-    Tensor& out) {
-  return mul_scalar_out_impl(ctx, a, b, out);
-}
+    Tensor& out);
 
 } // namespace native
 } // namespace executor
