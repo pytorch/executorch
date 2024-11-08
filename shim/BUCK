@@ -74,3 +74,19 @@ execution_platform(
     use_windows_path_separators = host_info().os.is_windows,
     visibility = ["PUBLIC"],
 )
+
+execution_platform(
+    name = "ios-arm64",
+    cpu_configuration = "prelude//cpu:arm64",
+    os_configuration = "prelude//os:ios",
+    use_windows_path_separators = False,
+    visibility = ["PUBLIC"],
+)
+
+execution_platform(
+    name = "macos-arm64",
+    cpu_configuration = "prelude//cpu:arm64",
+    os_configuration = "prelude//os:macos",
+    use_windows_path_separators = False,
+    visibility = ["PUBLIC"],
+)

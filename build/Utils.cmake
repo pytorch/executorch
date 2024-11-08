@@ -196,6 +196,19 @@ function(extract_sources sources_file)
         message(FATAL_ERROR "Unsupported ANDROID_ABI setting ${ANDROID_ABI}. Please add it here!")
       endif()
     endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+      if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+        set(target_platforms_arg "--target-platforms=shim//:ios-arm64")
+      endif()
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+      if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+        set(target_platforms_arg "--target-platforms=shim//:macos-arm64")
+      endif()
+    endif()
+
     execute_process(
       COMMAND
         ${PYTHON_EXECUTABLE} ${executorch_root}/build/extract_sources.py
