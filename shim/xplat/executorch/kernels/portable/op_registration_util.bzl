@@ -2,7 +2,21 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runti
 load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 
 def get_compiler_optimization_flags():
-    # App size regressons requires this to be baktraced until I have a better solution
+    # various ovr_configs are not available in oss
+    if not runtime.is_oss:
+      compiler_flags = select({
+        "DEFAULT": [],
+        "ovr_config//os:android-arm64": [
+              "-Os",
+        ],
+        "ovr_config//os:iphoneos": [
+            "-Os",
+        ],
+        "ovr_config//os:macos-arm64": [
+            "-Os",
+        ],
+      })
+      return compiler_flags
     return []
 
 def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = False, _aten_mode_deps = []):
