@@ -69,6 +69,7 @@ _OPTIMIZED_ATEN_OPS = (
         name = "op_mul",
         deps = [
             ":binary_ops",
+            "//executorch/kernels/portable/cpu:op_mul_impl",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
