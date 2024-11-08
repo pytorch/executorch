@@ -268,7 +268,6 @@ class ArmQuantizer(Quantizer):
         "sub",
         "mul",
         "mm",
-        "cat",
         "one_to_one",
         "generic",
         "sum",
