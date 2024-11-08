@@ -107,10 +107,7 @@ class TestNumericalDiffPrints(unittest.TestCase):
             ArmTester(
                 model,
                 example_inputs=model.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec(
-                    permute_memory_to_nhwc=True,
-                    custom_path=tempfile.mkdtemp("diff_print_test"),
-                ),
+                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=False),
             )
             .export()
             .to_edge()

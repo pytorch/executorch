@@ -13,7 +13,7 @@
 
 import logging
 import os
-from typing import cast, final, List, Optional
+from typing import final, List, Optional
 
 import serializer.tosa_serializer as ts
 from executorch.backends.arm.arm_vela import vela_compile
@@ -31,7 +31,6 @@ from executorch.backends.arm.tosa_utils import (
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
-from torch.fx import Node
 
 # TOSA backend debug functionality
 logger = logging.getLogger(__name__)
@@ -226,7 +225,6 @@ class ArmBackend(BackendDetails):
         node_visitors = get_node_visitors(edge_program)
 
         for node in graph_module.graph.nodes:
-            node = cast(Node, node)
             if node.op == "call_function":
                 process_call_function(node, tosa_graph, node_visitors)
             elif node.op == "placeholder":
@@ -238,6 +236,9 @@ class ArmBackend(BackendDetails):
                 # any checking of compatibility.
                 dbg_fail(node, tosa_graph, artifact_path)
 
+        # TODO: It would be awesome if this dump could somehow be done on top level and not here.
+        # Problem is that the desc.json has to be created on the tosa_graph object, which we can't
+        # access from top level.
         if artifact_path:
             tag = _get_first_delegation_tag(graph_module)
             dbg_tosa_dump(
@@ -258,4 +259,6 @@ class ArmBackend(BackendDetails):
         else:
             raise RuntimeError(f"Unknown format {output_format}")
 
+        # Continueing from above. Can I put tosa_graph into this function?
+        # debug_handle_map = ...
         return PreprocessResult(processed_bytes=binary)
