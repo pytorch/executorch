@@ -512,7 +512,7 @@ TreeSpec<Aux> from_str_internal(
         read_idx++;
       }
       c->leaves_num = leaves_offset;
-      return TreeSpec<Aux>(std:move(c));
+      return TreeSpec<Aux>(std::move(c));
     }
 
     case Config::kDict: {
