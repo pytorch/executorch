@@ -22,6 +22,11 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
+from executorch.backends.arm.test.common import (
+    arm_test_options,
+    current_time_formated,
+    get_option,
+)
 
 from executorch.backends.arm.test.runner_utils import (
     _get_input_quantization_params,
@@ -34,7 +39,7 @@ from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.devtools.backend_debug import get_delegation_info
-from executorch.exir import EdgeCompileConfig
+from executorch.exir import EdgeCompileConfig, EdgeProgramManager
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 from executorch.exir.lowered_backend_module import LoweredBackendModule
@@ -115,10 +120,15 @@ class ToExecutorch(tester.ToExecutorch):
         super().__init__(dynamic_shapes)
         self.tosa_test_util = tosa_test_util
 
+    def run(self, artifact: EdgeProgramManager, inputs=None):
+        self.executorch_program = artifact.to_executorch(self.config)
+        if module := getattr(
+            artifact.exported_program().graph_module, "lowered_module_0", None
+        ):
+            self.buffer = module.processed_bytes
+
     def run_artifact(self, inputs):
-        tosa_output = self.tosa_test_util.run_tosa_ref_model(
-            inputs=inputs,
-        )
+        tosa_output = self.tosa_test_util.run_tosa_graph(self.buffer, inputs)
         return tosa_output
 
 
@@ -311,7 +321,7 @@ class ArmTester(Tester):
             logger.info(f"Run #{run_iteration}, input shapes: {input_shape_str}")
 
             reference_output = reference_stage.run_artifact(reference_input)
-            test_output = tuple(test_stage.run_artifact(test_input))
+            test_output = test_stage.run_artifact(test_input)
             if (
                 is_nhwc
                 and test_stage == self.stages[self.stage_name(tester.ToExecutorch)]
@@ -575,6 +585,9 @@ def _get_tosa_operator_distribution(
 
 
 def _dump_str(to_print: str, path_to_dump: Optional[str] = None):
+    default_dump_path = get_option(arm_test_options.dump_path)
+    if not path_to_dump and default_dump_path:
+        path_to_dump = default_dump_path / f"ArmTester_{current_time_formated()}.log"
     if path_to_dump:
         with open(path_to_dump, "a") as fp:
             fp.write(to_print)

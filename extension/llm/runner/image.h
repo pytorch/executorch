@@ -9,8 +9,8 @@
 // A simple image struct.
 
 #pragma once
-#include <cstdint>
 #include <executorch/runtime/platform/compiler.h>
+#include <cstdint>
 #include <vector>
 
 namespace executorch {
