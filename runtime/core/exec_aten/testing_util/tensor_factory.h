@@ -14,8 +14,8 @@
 #ifdef USE_ATEN_LIB
 #include <ATen/ATen.h>
 #else // !USE_ATEN_LIB
-#include <numeric>
 #include <memory>
+#include <numeric>
 #include <vector>
 #endif // !USE_ATEN_LIB
 

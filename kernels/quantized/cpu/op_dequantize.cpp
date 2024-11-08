@@ -186,7 +186,7 @@ float get_scale(const Tensor& scale, size_t channel_ix) {
 Tensor& dequantize_per_channel_out(
     const Tensor& input,
     const Tensor& scale,
-    const optional<Tensor>& opt_zero_points,
+    const exec_aten::optional<Tensor>& opt_zero_points,
     int64_t axis,
     int64_t quant_min,
     int64_t quant_max,
@@ -261,7 +261,7 @@ Tensor& dequantize_per_channel_out(
       const auto* input_data_ptr = input.const_data_ptr<CTYPE_IN>();           \
       ET_CHECK_MSG(                                                            \
           axis == 0, "Axis must be 0 for a single dimensional tensors");       \
-      const optional<int64_t> dim;                                             \
+      const exec_aten::optional<int64_t> dim;                                  \
       apply_over_dim(                                                          \
           [input_data_ptr, out_data_ptr, zero_point_data, &scale](             \
               size_t numel, size_t stride, size_t base_ix) {                   \
@@ -331,7 +331,7 @@ Tensor& dequantize_per_channel_out(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
-    const optional<Tensor>& opt_zero_points,
+    const exec_aten::optional<Tensor>& opt_zero_points,
     int64_t axis,
     int64_t quant_min,
     int64_t quant_max,

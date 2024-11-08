@@ -622,7 +622,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         partitioners.append(
             get_vulkan_partitioner(
                 args.dtype_override,
-                args.quantization_mode,
+                args.enable_dynamic_shape,
             )
         )
         modelname = f"vulkan_{modelname}"
