@@ -122,7 +122,9 @@ class TestLinear(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=False),
+                compile_spec=common.get_tosa_compile_spec(
+                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=False
+                ),
             )
             .export()
             .check_count({"torch.ops.aten.linear.default": 1})
@@ -141,7 +143,9 @@ class TestLinear(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=False),
+                compile_spec=common.get_tosa_compile_spec(
+                    "TOSA-0.80.0+BI", permute_memory_to_nhwc=False
+                ),
             )
             .quantize()
             .export()
