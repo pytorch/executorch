@@ -61,7 +61,7 @@ message("Generated files ${gen_command_sources}")
 list(TRANSFORM _optimized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(optimized_kernels ${_optimized_kernels__srcs})
 target_link_libraries(
-  optimized_kernels PRIVATE executorch_core cpublas extension_threadpool
+  optimized_kernels PRIVATE executorch_core portable_kernels cpublas extension_threadpool
 )
 target_compile_options(optimized_kernels PUBLIC ${_common_compile_options})
 # Build a library for _optimized_kernels_srcs
