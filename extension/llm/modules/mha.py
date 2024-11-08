@@ -354,6 +354,7 @@ class SDPA(nn.Module):
         q = q.transpose(1, 2)
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
+
         output = self._attention_fn(
             q,
             k,
