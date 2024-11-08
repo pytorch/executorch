@@ -1265,16 +1265,9 @@ CUSTOM_OPS = (
     ),
 )
 
-# Lists which ops are refactored into separate impl files that can be reused elsewhere.
-# Not the best way to track this since we should not have list files like this at all
-# but maybe we can figure out how to refactor selective build.
-ATEN_OP_IMPLS = ["op_div"]
-
 def portable_source_list():
     """All the source file names from //executorch/kernels/portable/cpu/"""
-    sources = [op["name"] + ".cpp" for op in ATEN_OPS + CUSTOM_OPS]
-    sources = sources + [op + "_impl.cpp" for op in ATEN_OP_IMPLS]
-    return sources
+    return [op["name"] + ".cpp" for op in ATEN_OPS + CUSTOM_OPS]
 
 def portable_header_list():
     """All the header file names from //executorch/kernels/portable/cpu/"""

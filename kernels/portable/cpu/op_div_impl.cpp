@@ -13,6 +13,8 @@
 #include <executorch/runtime/platform/assert.h>
 #include <cmath>
 
+#include <executorch/kernels/portable/cpu/op_div_impl.h>
+
 namespace torch {
 namespace executor {
 namespace native {
