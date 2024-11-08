@@ -91,6 +91,17 @@ def pytest_sessionfinish(session, exitstatus):
 
 # ==== End of Pytest hooks =====
 
+# ==== Custom Pytest decorators =====
+
+
+def expectedFailureOnFVP(test_item):
+    if is_option_enabled("corstone300"):
+        test_item.__unittest_expecting_failure__ = True
+    return test_item
+
+
+# ==== End of Custom Pytest decorators =====
+
 
 def load_libquantized_ops_aot_lib():
     so_ext = {
@@ -181,19 +192,15 @@ def get_tosa_compile_spec_unbuilt(
     the compile spec before calling .build() to finalize it.
     """
     if not custom_path:
-        intermediate_path = maybe_get_tosa_collate_path() or tempfile.mkdtemp(
-            prefix="arm_tosa_"
-        )
-    else:
-        intermediate_path = custom_path
+        custom_path = maybe_get_tosa_collate_path()
 
-    if not os.path.exists(intermediate_path):
-        os.makedirs(intermediate_path, exist_ok=True)
+    if custom_path is not None and not os.path.exists(custom_path):
+        os.makedirs(custom_path, exist_ok=True)
     compile_spec_builder = (
         ArmCompileSpecBuilder()
         .tosa_compile_spec()
         .set_permute_memory_format(permute_memory_to_nhwc)
-        .dump_intermediate_artifacts_to(intermediate_path)
+        .dump_intermediate_artifacts_to(custom_path)
     )
 
     return compile_spec_builder
