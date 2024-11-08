@@ -87,3 +87,42 @@ def define_common_targets():
         srcs = native.glob(["*.h"]),
         visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     )
+
+    runtime.cxx_library(
+        name = "op_div_impl",
+        srcs = ["op_div_impl.cpp"],
+        exported_headers = ["op_div_impl.h"],
+        visibility = [
+            "//executorch/kernels/portable/cpu/...",
+            "//executorch/kernels/optimized/cpu/...",
+            "//executorch/kernels/portable/test/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+    )
+
+    # The following will not participate in dtype selective build because
+    # they are refactored such to be used in optimized op implementations as well
+    # and we have not enabled selective build for optimized ops.
+    # To enable selective build for these ops, they must be copied over by
+    # selective build flow, however this results in such files, e.g. op_div_impl.cpp,
+    # getting compiled twice, once for selective build and once for optimized, and when
+    # put together they result in two copies of op_div_impl.o resulting in duplicate
+    # symbols
+    runtime.cxx_library(
+        name = "all_impl_deps",
+        deps = [
+            "//executorch/kernels/portable/cpu:op_div_impl",
+        ],
+        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+    )
