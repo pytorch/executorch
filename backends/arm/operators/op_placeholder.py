@@ -14,6 +14,7 @@ from executorch.backends.arm.tosa_quant_utils import (
     get_quant_node_args,
     is_quant_arg,
 )
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.arm.tosa_utils import (
     is_bias_node_for_quantized_addmm,
     is_bias_node_for_quantized_conv,
@@ -26,6 +27,7 @@ from torch.export.exported_program import ExportedProgram
 def process_inputs(
     node: torch.fx.Node,
     tosa_graph: ts.TosaSerializer,
+    tosa_spec: TosaSpecification,
 ):
     """Serialize an input node"""
     # inputs need to be in default dim_order (contiguous memory format)
@@ -95,6 +97,7 @@ def process_inputs_to_parameters(
     node: torch.fx.Node,
     tosa_graph: ts.TosaSerializer,
     edge_program: ExportedProgram,
+    tosa_spec: TosaSpecification,
 ):
     """Serialize bias and non-quantized weights"""
     inputs = [TosaArg(node)]
@@ -106,9 +109,13 @@ def process_inputs_to_parameters(
 
     if is_bias_node_for_quantized_addmm(node) or is_bias_node_for_quantized_conv(node):
         # BI bias
+        assert tosa_spec.support_integer(), f"{tosa_spec} doesnt't support integer"
         process_quantized_bias(node, tosa_graph, parameter_values)
     else:
         # MI weights or bias
+        if inputs[0].dtype == torch.float32:
+            assert tosa_spec.support_float(), f"{tosa_spec} doesn't support float"
+
         parameter_values = np.transpose(parameter_values, inputs[0].dim_order)
 
         tosa_graph.addConst(
@@ -158,15 +165,16 @@ def process_placeholder(
     node: torch.fx.Node,
     tosa_graph: ts.TosaSerializer,
     edge_program: ExportedProgram,
+    tosa_spec: TosaSpecification,
 ):
     """Wrapper for processing and serializing all types of placeholders"""
     assert node.name == node.target, "Expect placeholder name and target to match"
     assert 0 == len(node.args), "Can't handle default input values"
 
     if node.name in edge_program.graph_signature.user_inputs:
-        process_inputs(node, tosa_graph)
+        process_inputs(node, tosa_graph, tosa_spec)
     elif node.name in edge_program.graph_signature.inputs_to_parameters:
-        process_inputs_to_parameters(node, tosa_graph, edge_program)
+        process_inputs_to_parameters(node, tosa_graph, edge_program, tosa_spec)
     elif node.name in edge_program.graph_signature.inputs_to_buffers:
         process_inputs_to_buffers(node, tosa_graph, edge_program)
     elif node.name in edge_program.graph_signature.inputs_to_lifted_tensor_constants:

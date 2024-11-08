@@ -21,6 +21,7 @@ from executorch.backends.arm.tosa_quant_utils import (
     is_quant_node,
     q_op,
 )
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
@@ -290,6 +291,7 @@ def process_call_function(
     node: torch.fx.Node,
     tosa_graph: ts.TosaSerializer,
     node_visitors: Dict[str, NodeVisitor],
+    tosa_spec: TosaSpecification,
 ):
     # Unpack arguments and convert
     inputs = getNodeArgs(node)
@@ -319,7 +321,7 @@ def process_call_function(
             is_quant_node(node),
         )
     else:
-        raise RuntimeError(f"Unknown operator {node.target}")
+        raise RuntimeError(f"Unknown operator {node.target} for TOSA : {tosa_spec}")
 
 
 def expand_dims(

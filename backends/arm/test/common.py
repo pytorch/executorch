@@ -177,16 +177,18 @@ def maybe_get_tosa_collate_path() -> str | None:
 
 
 def get_tosa_compile_spec(
-    permute_memory_to_nhwc=True, custom_path=None
+    tosa_version: str, permute_memory_to_nhwc=True, custom_path=None
 ) -> list[CompileSpec]:
     """
     Default compile spec for TOSA tests.
     """
-    return get_tosa_compile_spec_unbuilt(permute_memory_to_nhwc, custom_path).build()
+    return get_tosa_compile_spec_unbuilt(
+        tosa_version, permute_memory_to_nhwc, custom_path
+    ).build()
 
 
 def get_tosa_compile_spec_unbuilt(
-    permute_memory_to_nhwc=False, custom_path=None
+    tosa_version: str, permute_memory_to_nhwc=False, custom_path=None
 ) -> ArmCompileSpecBuilder:
     """Get the ArmCompileSpecBuilder for the default TOSA tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -202,7 +204,7 @@ def get_tosa_compile_spec_unbuilt(
         os.makedirs(intermediate_path, exist_ok=True)
     compile_spec_builder = (
         ArmCompileSpecBuilder()
-        .tosa_compile_spec()
+        .tosa_compile_spec(tosa_version)
         .set_permute_memory_format(permute_memory_to_nhwc)
         .dump_intermediate_artifacts_to(intermediate_path)
     )
