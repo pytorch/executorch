@@ -23,12 +23,14 @@ class ET_EXPERIMENTAL TextTokenGenerator {
   TextTokenGenerator(
       Tokenizer* tokenizer,
       TextDecoderRunner* text_decoder_runner,
+      bool use_int32_token,
       bool use_kv_cache,
       std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
       Stats* stats)
       : tokenizer_(tokenizer),
         text_decoder_runner_(text_decoder_runner),
         eos_ids_(std::move(eos_ids)),
+        use_int32_token_(use_int32_token),
         use_kv_cache_(use_kv_cache),
         stats_(stats) {}
 
@@ -54,6 +56,9 @@ class ET_EXPERIMENTAL TextTokenGenerator {
 
     std::vector<uint64_t> token_data; // allocate space for the tokens
     std::vector<executorch::aten::SizesType> token_shape;
+    exec_aten::ScalarType token_type = use_int32_token_
+        ? exec_aten::ScalarType::Int
+        : exec_aten::ScalarType::Long;
 
     // Token after prefill
     uint64_t cur_token = tokens.back();
@@ -70,8 +75,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
     }
 
     // initialize tensor wrappers
-    auto tokens_managed = from_blob(
-        token_data.data(), token_shape, executorch::aten::ScalarType::Long);
+    auto tokens_managed = from_blob(token_data.data(), token_shape, token_type);
     auto start_pos_managed =
         from_blob(&pos, {1}, executorch::aten::ScalarType::Long);
 
@@ -133,6 +137,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
   Tokenizer* tokenizer_;
   TextDecoderRunner* text_decoder_runner_;
   std::unique_ptr<std::unordered_set<uint64_t>> eos_ids_;
+  bool use_int32_token_;
   bool use_kv_cache_;
 
   // state machine

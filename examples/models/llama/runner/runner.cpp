@@ -34,6 +34,7 @@ static constexpr auto kMaxSeqLen = "get_max_seq_len";
 static constexpr auto kVocabSize = "get_vocab_size";
 static constexpr auto kUseKVCache = "use_kv_cache";
 static constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
+static constexpr auto kUseInt32Token = "use_int32_token";
 } // namespace
 
 Runner::Runner(
@@ -51,6 +52,7 @@ Runner::Runner(
           {kMaxSeqLen, 128},
           {kUseKVCache, true},
           {kUseSDPAWithKVCache, false},
+          {kUseInt32Token, true},
       }) {
   ET_LOG(
       Info,
@@ -127,12 +129,14 @@ Error Runner::load() {
       temperature_);
   text_prefiller_ = std::make_unique<llm::TextPrefiller>(
       text_decoder_runner_.get(),
+      metadata_.at(kUseInt32Token),
       metadata_.at(kUseKVCache),
       metadata_.at(kEnableDynamicShape));
 
   text_token_generator_ = std::make_unique<llm::TextTokenGenerator>(
       tokenizer_.get(),
       text_decoder_runner_.get(),
+      metadata_.at(kUseInt32Token),
       metadata_.at(kUseKVCache),
       std::move(eos_ids),
       &stats_);

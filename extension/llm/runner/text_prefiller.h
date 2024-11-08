@@ -24,6 +24,7 @@ class ET_EXPERIMENTAL TextPrefiller {
  public:
   TextPrefiller(
       TextDecoderRunner* text_decoder_runner,
+      bool use_int32_token,
       bool use_kv_cache_,
       bool enable_parallel_prefill);
   /**
@@ -40,6 +41,7 @@ class ET_EXPERIMENTAL TextPrefiller {
 
  private:
   TextDecoderRunner* text_decoder_runner_;
+  bool use_int32_token_;
   bool use_kv_cache_;
   bool enable_parallel_prefill_;
 };

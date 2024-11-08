@@ -17,9 +17,11 @@ namespace llm {
 
 TextPrefiller::TextPrefiller(
     TextDecoderRunner* text_decoder_runner,
+    bool use_int32_token,
     bool use_kv_cache,
     bool enable_parallel_prefill)
     : text_decoder_runner_(text_decoder_runner),
+      use_int32_token_(use_int32_token),
       use_kv_cache_(use_kv_cache),
       enable_parallel_prefill_(enable_parallel_prefill) {}
 
@@ -36,12 +38,13 @@ TextPrefiller::TextPrefiller(
 
   // store the token
   uint64_t cur_token;
+  exec_aten::ScalarType token_type = use_int32_token_
+      ? exec_aten::ScalarType::Int
+      : exec_aten::ScalarType::Long;
   if (enable_parallel_prefill_ || !use_kv_cache_) {
     // initialize tensor wrappers
-    auto tokens = from_blob(
-        prompt_tokens.data(),
-        {1, num_prompt_tokens},
-        exec_aten::ScalarType::Long);
+    auto tokens =
+        from_blob(prompt_tokens.data(), {1, num_prompt_tokens}, token_type);
 
     auto start_pos_tensor =
         from_blob(&start_pos, {1}, exec_aten::ScalarType::Long);
@@ -60,7 +63,7 @@ TextPrefiller::TextPrefiller(
     cur_token = prompt_tokens[0];
 
     // initialize tensor wrappers
-    auto tokens = from_blob(&cur_token, {1, 1}, exec_aten::ScalarType::Long);
+    auto tokens = from_blob(&cur_token, {1, 1}, token_type);
 
     auto start_pos_tensor =
         from_blob(&start_pos, {1}, exec_aten::ScalarType::Long);

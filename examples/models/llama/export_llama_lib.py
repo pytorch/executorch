@@ -519,6 +519,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             checkpoint=checkpoint_path,
             checkpoint_dir=checkpoint_dir,
             params_path=params_path,
+            use_int32_token=True if args.qnn else False,
             use_kv_cache=args.use_kv_cache,
             use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
             generate_full_logits=args.generate_full_logits,
@@ -746,6 +747,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
 def _load_llama_model_metadata(
     weight_type: WeightType,
+    use_int32_token: bool,
     use_kv_cache: bool,
     use_sdpa_with_kv_cache: bool,
     enable_dynamic_shape: bool,
@@ -759,6 +761,7 @@ def _load_llama_model_metadata(
         "get_max_seq_len": model_args.max_seq_len,
         "get_n_layers": model_args.n_layers,
         "get_vocab_size": model_args.vocab_size,
+        "use_int32_token": use_int32_token,
         "use_kv_cache": use_kv_cache,
         "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
         "enable_dynamic_shape": enable_dynamic_shape,
@@ -779,6 +782,7 @@ def _load_llama_model(
     checkpoint: Optional[str] = None,
     checkpoint_dir: Optional[str] = None,
     params_path: str,
+    use_int32_token: bool = False,
     use_kv_cache: bool = False,
     use_sdpa_with_kv_cache: bool = False,
     generate_full_logits: bool = False,
@@ -852,6 +856,10 @@ def _load_llama_model(
         else:
             raise ValueError(f"Unsupported dtype {dtype}")
 
+    if use_int32_token:
+        token = example_inputs[0].to(torch.int32)
+        example_inputs = (token,) + example_inputs[1:]
+
     return LLMEdgeManager(
         model=model,
         modelname=modelname,
@@ -870,6 +878,7 @@ def _load_llama_model(
         verbose=verbose,
         metadata=_load_llama_model_metadata(
             weight_type,
+            use_int32_token,
             use_kv_cache,
             use_sdpa_with_kv_cache,
             enable_dynamic_shape,
