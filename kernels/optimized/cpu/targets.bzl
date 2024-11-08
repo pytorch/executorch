@@ -6,6 +6,7 @@ _OPTIMIZED_ATEN_OPS = (
         name = "op_add",
         deps = [
             ":binary_ops",
+            "//executorch/kernels/portable/cpu:op_add_impl",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
         ],
