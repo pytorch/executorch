@@ -728,7 +728,6 @@ if(EXECUTORCH_BUILD_PYBIND)
       # nightly binary is built with _GLIBCXX_USE_CXX11_ABI set to 0 while its
       # CI build sets this to 1 (default)
     list(APPEND _pybind_compile_options -D_GLIBCXX_USE_CXX11_ABI=0)
-  else()
   endif()
 
   # util lib
