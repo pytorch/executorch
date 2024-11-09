@@ -716,25 +716,19 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   # compile options for pybind
+  set(_pybind_compile_options
+      -Wno-deprecated-declarations
+      -fPIC
+      -frtti
+      -fexceptions
+  )
   if(EXECUTORCH_DO_NOT_USE_CXX11_ABI)
-    set(_pybind_compile_options
-        -Wno-deprecated-declarations
-        -fPIC
-        -frtti
-        -fexceptions
-        # libtorch is built with the old ABI, so we need to do the same for any
-        # .cpp files that include torch, c10, or ATen targets. Note that PyTorch
-        # nightly binary is built with _GLIBCXX_USE_CXX11_ABI set to 0 while its
-        # CI build sets this to 1 (default)
-        -D_GLIBCXX_USE_CXX11_ABI=0
-    )
+      # libtorch is built with the old ABI, so we need to do the same for any
+      # .cpp files that include torch, c10, or ATen targets. Note that PyTorch
+      # nightly binary is built with _GLIBCXX_USE_CXX11_ABI set to 0 while its
+      # CI build sets this to 1 (default)
+    list(APPEND _pybind_compile_options -D_GLIBCXX_USE_CXX11_ABI=0)
   else()
-    set(_pybind_compile_options
-        -Wno-deprecated-declarations
-        -fPIC
-        -frtti
-        -fexceptions
-    )
   endif()
 
   # util lib
