@@ -54,7 +54,7 @@ WORD32 xa_nn_elm_div_mode_f32xf32_f32(FLOAT32 * __restrict__ p_out,
           XT_LASX2IP(x1, inp1_a, inp1);
           XT_LASX2IP(x2, inp2_a, inp2);
           y = XT_DIV_SX2(x1, x2);
-          y = FITRUNC_SX2(y);
+          y = XT_FITRUNC_SX2(y);
           XT_SASX2IP(y, out_a, out);
       }
     }
@@ -66,7 +66,7 @@ WORD32 xa_nn_elm_div_mode_f32xf32_f32(FLOAT32 * __restrict__ p_out,
         XT_LASX2IP(x1, inp1_a, inp1);
         XT_LASX2IP(x2, inp2_a, inp2);
         y = XT_DIV_SX2(x1, x2);
-        y = FIFLOOR_SX2(y);
+        y = XT_FIFLOOR_SX2(y);
         XT_SASX2IP(y, out_a, out);
     }
     }
@@ -80,9 +80,9 @@ WORD32 xa_nn_elm_div_mode_f32xf32_f32(FLOAT32 * __restrict__ p_out,
         XT_LSIP(a2, (xtfloat *)inp2, 0);
         a = XT_DIV_S(a1, a2);
       if(mode == 0)
-        a = FITRUNC_S(a);
+        a = XT_FITRUNC_S(a);
       else
-        a = FIFLOOR_S(a);
+        a = XT_FIFLOOR_S(a);
         XT_SSI(a, (xtfloat *)out, 0);
     }
 
@@ -138,7 +138,7 @@ static void internal_elm_div_mode_broadcast_2D_f32xf32_f32(FLOAT32 * __restrict_
             XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
             XT_LSX2IP(x2, p_b, 2 * sizeof(FLOAT32));
             y = XT_DIV_SX2(x2, x1);
-            y = FITRUNC_SX2(y);
+            y = XT_FITRUNC_SX2(y);
             XT_SSX2IP(y, p_c, 2 * sizeof(FLOAT32)); 
           }
         }
@@ -149,7 +149,7 @@ static void internal_elm_div_mode_broadcast_2D_f32xf32_f32(FLOAT32 * __restrict_
           XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
           XT_LSX2IP(x2, p_b, 2 * sizeof(FLOAT32));
           y = XT_DIV_SX2(x2, x1);
-          y = FIFLOOR_SX2(y);
+          y = XT_FIFLOOR_SX2(y);
           XT_SSX2IP(y, p_c, 2 * sizeof(FLOAT32)); 
         }
       }
@@ -166,7 +166,7 @@ static void internal_elm_div_mode_broadcast_2D_f32xf32_f32(FLOAT32 * __restrict_
             XT_LASX2IP(x1, vinp1, p_a);
             XT_LASX2IP(x2, vinp2, p_b);
             y = XT_DIV_SX2(x2, x1);
-            y = FITRUNC_SX2(y);
+            y = XT_FITRUNC_SX2(y);
             XT_SASX2IP(y, out_a, p_c); 
           }
         }
@@ -177,7 +177,7 @@ static void internal_elm_div_mode_broadcast_2D_f32xf32_f32(FLOAT32 * __restrict_
           XT_LASX2IP(x1, vinp1, p_a);
           XT_LASX2IP(x2, vinp2, p_b);
           y = XT_DIV_SX2(x2, x1);
-          y = FIFLOOR_SX2(y);
+          y = XT_FIFLOOR_SX2(y);
           XT_SASX2IP(y, out_a, p_c); 
         }
         }
@@ -189,9 +189,9 @@ static void internal_elm_div_mode_broadcast_2D_f32xf32_f32(FLOAT32 * __restrict_
         XT_LSIP(b0, (xtfloat *)p_b, sizeof(FLOAT32));
         c0 = XT_DIV_S(b0, a0);   
         if(mode == 0)
-          c0 = FITRUNC_S(c0);
+          c0 = XT_FITRUNC_S(c0);
         else
-        c0 = FIFLOOR_S(c0);
+        c0 = XT_FIFLOOR_S(c0);
         XT_SSI(c0, (xtfloat *)p_c, 0);
       }      
     }
@@ -213,7 +213,7 @@ static void internal_elm_div_mode_broadcast_2D_f32xf32_f32(FLOAT32 * __restrict_
             XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
             XT_LSX2IP(x2, p_b, 2 * sizeof(FLOAT32));
             y = XT_DIV_SX2(x1, x2);
-            y = FITRUNC_SX2(y);
+            y = XT_FITRUNC_SX2(y);
             XT_SSX2IP(y, p_c, 2 * sizeof(FLOAT32)); 
           }
         }
@@ -224,7 +224,7 @@ static void internal_elm_div_mode_broadcast_2D_f32xf32_f32(FLOAT32 * __restrict_
           XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
           XT_LSX2IP(x2, p_b, 2 * sizeof(FLOAT32));
           y = XT_DIV_SX2(x1, x2);
-          y = FIFLOOR_SX2(y);
+          y = XT_FIFLOOR_SX2(y);
           XT_SSX2IP(y, p_c, 2 * sizeof(FLOAT32)); 
         }
       }
@@ -241,7 +241,7 @@ static void internal_elm_div_mode_broadcast_2D_f32xf32_f32(FLOAT32 * __restrict_
             XT_LASX2IP(x1, vinp1, p_a);
             XT_LASX2IP(x2, vinp2, p_b);
             y = XT_DIV_SX2(x1, x2);
-            y = FITRUNC_SX2(y);
+            y = XT_FITRUNC_SX2(y);
             XT_SASX2IP(y, out_a, p_c); 
           }
         }
@@ -252,7 +252,7 @@ static void internal_elm_div_mode_broadcast_2D_f32xf32_f32(FLOAT32 * __restrict_
           XT_LASX2IP(x1, vinp1, p_a);
           XT_LASX2IP(x2, vinp2, p_b);
           y = XT_DIV_SX2(x1, x2);
-          y = FIFLOOR_SX2(y);
+          y = XT_FIFLOOR_SX2(y);
           XT_SASX2IP(y, out_a, p_c); 
         }
         }
@@ -264,9 +264,9 @@ static void internal_elm_div_mode_broadcast_2D_f32xf32_f32(FLOAT32 * __restrict_
         XT_LSIP(b0, (xtfloat *)p_b, sizeof(FLOAT32));
         c0 = XT_DIV_S(a0, b0);   
         if(mode == 0)
-          c0 = FITRUNC_S(c0);
+          c0 = XT_FITRUNC_S(c0);
         else
-        c0 = FIFLOOR_S(c0);
+        c0 = XT_FIFLOOR_S(c0);
         XT_SSI(c0, (xtfloat *)p_c, 0);
       }      
     }  
@@ -302,7 +302,7 @@ static void internal_elm_div_mode_broadcast_f32xf32_f32(FLOAT32 * __restrict__ p
         {
           XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
           y = XT_DIV_SX2(x2, x1);
-          y = FITRUNC_SX2(y);
+          y = XT_FITRUNC_SX2(y);
           XT_SSX2IP(y, p_c, 2 * sizeof(FLOAT32)); 
         }
       }
@@ -312,7 +312,7 @@ static void internal_elm_div_mode_broadcast_f32xf32_f32(FLOAT32 * __restrict__ p
       {
         XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
         y = XT_DIV_SX2(x2, x1);
-        y = FIFLOOR_SX2(y);
+        y = XT_FIFLOOR_SX2(y);
         XT_SSX2IP(y, p_c, 2 * sizeof(FLOAT32)); 
       }
     }
@@ -328,7 +328,7 @@ static void internal_elm_div_mode_broadcast_f32xf32_f32(FLOAT32 * __restrict__ p
         {
           XT_LASX2IP(x1, inp1_a, p_a);
           y = XT_DIV_SX2(x2, x1);
-          y = FITRUNC_SX2(y);
+          y = XT_FITRUNC_SX2(y);
           XT_SASX2IP(y, out_a, p_c);
         }
       }
@@ -338,7 +338,7 @@ static void internal_elm_div_mode_broadcast_f32xf32_f32(FLOAT32 * __restrict__ p
         {
         XT_LASX2IP(x1, inp1_a, p_a);
         y = XT_DIV_SX2(x2, x1);
-        y = FIFLOOR_SX2(y);
+        y = XT_FIFLOOR_SX2(y);
         XT_SASX2IP(y, out_a, p_c);
         }          
       }
@@ -349,9 +349,9 @@ static void internal_elm_div_mode_broadcast_f32xf32_f32(FLOAT32 * __restrict__ p
       XT_LSIP(a0_7, (xtfloat *)p_a, sizeof(FLOAT32));
       out = XT_DIV_S(x2, a0_7);   
       if(mode == 0)
-        out = FITRUNC_S(out);
+        out = XT_FITRUNC_S(out);
       else
-      out = FIFLOOR_S(out);
+      out = XT_FIFLOOR_S(out);
       XT_SSI(out, (xtfloat *)p_c, 0);
     }
   }
@@ -366,7 +366,7 @@ static void internal_elm_div_mode_broadcast_f32xf32_f32(FLOAT32 * __restrict__ p
         {
           XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
           y = XT_DIV_SX2(x1, x2);
-          y = FITRUNC_SX2(y);
+          y = XT_FITRUNC_SX2(y);
           XT_SSX2IP(y, p_c, 2 * sizeof(FLOAT32)); 
         }
       }
@@ -376,7 +376,7 @@ static void internal_elm_div_mode_broadcast_f32xf32_f32(FLOAT32 * __restrict__ p
       {
         XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
         y = XT_DIV_SX2(x1, x2);
-        y = FIFLOOR_SX2(y);
+        y = XT_FIFLOOR_SX2(y);
         XT_SSX2IP(y, p_c, 2 * sizeof(FLOAT32)); 
       }
     }
@@ -392,7 +392,7 @@ static void internal_elm_div_mode_broadcast_f32xf32_f32(FLOAT32 * __restrict__ p
         {
           XT_LASX2IP(x1, inp1_a, p_a);
           y = XT_DIV_SX2(x1, x2);
-          y = FITRUNC_SX2(y);
+          y = XT_FITRUNC_SX2(y);
           XT_SASX2IP(y, out_a, p_c);
         }
       }
@@ -402,7 +402,7 @@ static void internal_elm_div_mode_broadcast_f32xf32_f32(FLOAT32 * __restrict__ p
         {
         XT_LASX2IP(x1, inp1_a, p_a);
         y = XT_DIV_SX2(x1, x2);
-        y = FIFLOOR_SX2(y);
+        y = XT_FIFLOOR_SX2(y);
         XT_SASX2IP(y, out_a, p_c);
         }
       }
@@ -413,9 +413,9 @@ static void internal_elm_div_mode_broadcast_f32xf32_f32(FLOAT32 * __restrict__ p
       XT_LSIP(a0_7, (xtfloat *)p_a, sizeof(FLOAT32));
       out = XT_DIV_S(a0_7, x2);   
       if(mode == 0)
-        out = FITRUNC_S(out);
+        out = XT_FITRUNC_S(out);
       else
-      out = FIFLOOR_S(out);
+      out = XT_FIFLOOR_S(out);
       XT_SSI(out, (xtfloat *)p_c, 0);
     }    
   }
