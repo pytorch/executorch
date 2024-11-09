@@ -47,6 +47,13 @@ namespace executorch {
 namespace runtime {
 namespace etensor {
 
+namespace unimplemented_dtype{
+  struct alignas(1) Float8_e5m2 {};
+  struct alignas(1) Float8_e4m3fn {};
+  struct alignas(1) Float8_e5m2fnuz {};
+  struct alignas(1) Float8_e4m3fnuz {};
+}
+
 /**
  * Calls the provided macro on every ScalarType, providing the C type and the
  * ScalarType name to each call.
@@ -82,7 +89,12 @@ namespace etensor {
   _(::torch::executor::bits2x4, Bits2x4) /* 19 */                             \
   _(::torch::executor::bits4x2, Bits4x2) /* 20 */                             \
   _(::torch::executor::bits8, Bits8) /* 21 */                                 \
-  _(::torch::executor::bits16, Bits16) /* 22 */
+  _(::torch::executor::bits16, Bits16) /* 22 */                               \
+  _(executorch::runtime::etensor::unimplemented_dtype::Float8_e5m2, Float8_e5m2) /* 23 */                   \
+  _(executorch::runtime::etensor::unimplemented_dtype::Float8_e4m3fn, Float8_e4m3fn) /* 24 */               \
+  _(executorch::runtime::etensor::unimplemented_dtype::Float8_e5m2fnuz, Float8_e5m2fnuz) /* 25 */           \
+  _(executorch::runtime::etensor::unimplemented_dtype::Float8_e4m3fnuz, Float8_e4m3fnuz) /* 26 */           \
+  _(uint16_t, UInt16) /* 27 */
 
 /**
  * Data types (dtypes) that can be used as element types in ETensors.
