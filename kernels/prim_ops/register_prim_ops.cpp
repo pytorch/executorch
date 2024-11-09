@@ -12,6 +12,8 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 
+#include <cmath>
+
 using torch::executor::function::et_copy_index;
 
 namespace torch {
@@ -148,7 +150,7 @@ static Kernel prim_ops[] = {
           EValue& out = *stack[2];
           if (a.isInt() && b.isInt()) {
             const int64_t quot = a.toInt() / b.toInt();
-            if (std::signbit(a.toInt()) == std::signbit(b.toInt())) {
+            if ((a.toInt() < 0) == (b.toInt() < 0)) {
               out = EValue(quot);
               return;
             }
@@ -298,6 +300,20 @@ static Kernel prim_ops[] = {
             out = EValue(a.toInt() % b.toInt());
           } else {
             ET_CHECK_MSG(false, "%zu, %zu", (size_t)a.tag, (size_t)b.tag);
+          }
+        }),
+
+    // trunc.Scalar(Scalar a) -> Scalar
+    Kernel(
+        "executorch_prim::trunc.Scalar",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& out = *stack[1];
+          if (a.isDouble()) {
+            out = EValue(static_cast<int64_t>(trunc(a.toDouble())));
+          } else {
+            ET_CHECK_MSG(false, "%zu", (size_t)a.tag);
           }
         }),
 
