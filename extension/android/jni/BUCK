@@ -1,5 +1,6 @@
 load("@fbsource//tools/build_defs/android:fb_android_cxx_library.bzl", "fb_android_cxx_library")
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "executorch_generated_lib")
 
 oncall("executorch")
@@ -25,7 +26,7 @@ executorch_generated_lib(
 
 fb_android_cxx_library(
     name = "executorch_jni",
-    srcs = ["jni_layer.cpp"],
+    srcs = ["jni_layer.cpp", "log.cpp"],
     headers = ["jni_layer_constants.h"],
     allow_jni_merging = False,
     compiler_flags = [
@@ -36,6 +37,7 @@ fb_android_cxx_library(
     soname = "libexecutorch.$(ext)",
     visibility = ["PUBLIC"],
     deps = [
+        ":log_provider_static",
         "//fbandroid/libraries/fbjni:fbjni",
         "//fbandroid/native/fb:fb",
         "//third-party/glog:glog",
@@ -49,7 +51,7 @@ fb_android_cxx_library(
 
 fb_android_cxx_library(
     name = "executorch_jni_full",
-    srcs = ["jni_layer.cpp"],
+    srcs = ["jni_layer.cpp", "log.cpp"],
     headers = ["jni_layer_constants.h"],
     allow_jni_merging = False,
     compiler_flags = [
@@ -60,6 +62,7 @@ fb_android_cxx_library(
     soname = "libexecutorch.$(ext)",
     visibility = ["PUBLIC"],
     deps = [
+        ":log_provider_static",
         ":generated_op_lib_optimized_static",
         "//fbandroid/libraries/fbjni:fbjni",
         "//fbandroid/native/fb:fb",
@@ -88,6 +91,7 @@ fb_android_cxx_library(
     soname = "libexecutorch.$(ext)",
     visibility = ["PUBLIC"],
     deps = [
+        ":log_provider_static",
         "//fbandroid/libraries/fbjni:fbjni",
         "//fbandroid/native/fb:fb",
         "//third-party/glog:glog",
@@ -100,4 +104,19 @@ fb_android_cxx_library(
         "//xplat/executorch/extension/threadpool:cpuinfo_utils_static",
         "//xplat/executorch/extension/threadpool:threadpool_static",
     ],
+)
+
+runtime.cxx_library(
+    name = "log_provider",
+    srcs = ["log.cpp"],
+    exported_headers = ["log.h"],
+    compiler_flags = [
+        "-frtti",
+        "-fexceptions",
+        "-Wno-unused-variable",
+    ],
+    deps = [
+        "//executorch/runtime/core:core",
+    ],
+    visibility = ["@EXECUTORCH_CLIENTS"],
 )
