@@ -56,4 +56,6 @@ source ".ci/scripts/test_llama.sh" stories110M cmake fp16 portable ${BUILD_AAR_D
 popd
 mkdir -p "$BASEDIR"/src/libs
 cp "$BUILD_AAR_DIR/executorch.aar" "$BASEDIR"/src/libs/executorch.aar
+python add_model.py
+mv "add.pte" "$BASEDIR"/src/androidTest/resources/add.pte
 unzip -o "$BUILD_AAR_DIR"/model.zip -d "$BASEDIR"/src/androidTest/resources
