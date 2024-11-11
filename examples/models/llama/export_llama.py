@@ -7,10 +7,13 @@
 # Example script for exporting Llama2 to flatbuffer
 
 import logging
+import sys
 
 import torch
 
 from .export_llama_lib import build_args_parser, export_llama
+
+sys.setrecursionlimit(4096)
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
