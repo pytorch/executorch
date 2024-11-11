@@ -82,8 +82,13 @@ class VulkanSupportedOperators(OperatorSupportBase):
         valid_texture_layouts = utils.possible_node_memory_layouts(
             node, self.texture_limits
         )
-        for arg in node.args:
-            if isinstance(arg, torch.fx.Node) and utils.is_tensor_node(arg):
+
+        for i, arg in enumerate(node.args):
+            if (
+                isinstance(arg, torch.fx.Node)
+                and utils.is_tensor_node(arg)
+                and i not in features.skip_limits_check
+            ):
                 arg_texture_layouts = utils.possible_node_memory_layouts(
                     arg, self.texture_limits
                 )
