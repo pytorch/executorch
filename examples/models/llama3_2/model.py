@@ -1,0 +1,150 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
+
+import json
+from typing import Any, Dict
+
+import torch
+from executorch.examples.models.checkpoint import (
+    get_checkpoint_dtype,
+    get_default_model_resource_dir,
+)
+
+from executorch.examples.models.model_base import EagerModelBase
+from torchtune.models.llama3_2._model_builders import llama3_2_1b
+from torchtune.models.convert_weights import meta_to_tune
+
+
+class Llama3_2(EagerModelBase):
+    """
+    Llama3.2 as from TorchTune.
+    """
+
+    def __init__(self, **kwargs):
+        # Set member vars from kwargs.
+        self.max_seq_len = kwargs.get(
+            "max_seq_len", 8192
+        )  # Trained to be a lot larger, but this value is kept small because of static kv cache at the moment.
+        self.encoder_max_seq_len = kwargs.get(
+            "encoder_max_seq_len", int(4 * (448 / 14) ** 2 + 1)
+        )  # Same as above.
+        self.output_prune_map_path = kwargs.get("output_prune_map_path", None)
+        self.use_kv_cache = kwargs.get("use_kv_cache", False)
+        self.verbose = kwargs.get("verbose", False)
+        self.args = kwargs.get("args", None)
+
+        ckpt_dir = get_default_model_resource_dir(__file__)
+        # Single checkpoint file.
+        checkpoint_path = kwargs.get("checkpoint", ckpt_dir / "demo_rand_params.pth")
+        # Sharded checkpoint.
+        checkpoint_dir = kwargs.get("checkpoint_dir", None)
+        params_path = kwargs.get("params", ckpt_dir / "demo_config.json")
+
+        self.causal_mask = torch.tril(
+            torch.ones(
+                size=(self.max_seq_len, self.max_seq_len),
+                dtype=torch.bool,
+            )
+        )
+        self.input_pos = torch.arange(self.max_seq_len)
+
+        # Load checkpoint and params.
+        device = "cpu"
+        if checkpoint_dir is not None:
+            raise NotImplementedError(
+                "Sharded checkpoint not yet supported for Llama3_2Decoder."
+            )
+        else:
+            checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
+        checkpoint = meta_to_tune(checkpoint)
+        with open(params_path, "r") as f:
+            params = json.loads(f.read())
+
+        # Find dtype from checkpoint. (skip for now)
+        self.dtype = get_checkpoint_dtype(checkpoint)
+
+        # Load model.
+        self.model_ = llama3_2_1b()
+
+        # Save params for future use.
+        for param_name, param_val in params.items():
+            setattr(self.model_, param_name, param_val)
+
+        # Quantize. (skip for now)
+
+        # Load checkpoint.
+        missing, unexpected = self.model_.load_state_dict(
+            checkpoint,
+            strict=False,
+            assign=True,
+        )
+        if kwargs.get("verbose", False):
+            print("============= missing keys ================")
+            print(missing)
+            print("============= /missing ================")
+            print("============= unexpected keys ================")
+            print(unexpected)
+            print("============= /unexpected ================")
+
+        # Prune the output layer if output_prune_map is provided.
+        output_prune_map = None
+        if self.output_prune_map_path is not None:
+            from executorch.examples.models.llama2.source_transformation.prune_output import (
+                prune_output_vocab,
+            )
+
+            with open(self.output_prune_map_path, "r") as f:
+                output_prune_map = json.load(f)
+            # Change keys from string to int (json only supports string keys)
+            output_prune_map = {int(k): v for (k, v) in output_prune_map.items()}
+
+            self.model_ = prune_output_vocab(self.model_, output_prune_map)
+
+        if self.use_kv_cache:
+            print("Setting up KV cache on the model...")
+            self.model_.setup_caches(
+                batch_size=1,
+                dtype=self.dtype,
+                decoder_max_seq_len=self.max_seq_len,
+            )
+
+    def get_eager_model(self) -> torch.nn.Module:
+        if self.dtype:
+            return self.model_.to(self.dtype)
+        else:
+            return self.model_.to(torch.float16)
+
+    def get_example_inputs(self):
+        return (torch.ones(1, 32, dtype=torch.long),)
+
+    def get_example_kwarg_inputs(self):
+        # For export we must use the prefill versions of the
+        # causal mask and input_pos.
+        if self.use_kv_cache:
+            return {
+                "input_pos": self.input_pos[None, :32],
+                "mask": self.causal_mask[None, :32],
+            }
+        else:
+            return None
+
+    def get_dynamic_shapes(self):
+        batch_size = 1
+        dim_seq_len = torch.export.Dim("token_dim", min=1, max=self.max_seq_len)
+        if self.use_kv_cache:
+            dynamic_shapes = {
+                "tokens": {0: batch_size, 1: dim_seq_len},
+                "input_pos" : {0: batch_size, 1: dim_seq_len},
+                "mask": {0: batch_size, 1: dim_seq_len, 2: None},
+            }
+        else:
+            dynamic_shapes = {
+                "tokens": {0: batch_size, 1: dim_seq_len},
+            }
+        return dynamic_shapes
+

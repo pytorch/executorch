@@ -146,12 +146,15 @@ class LlamaRunner(ABC):
             This method generates text completion for the provided prompt, employing nucleus sampling to introduce controlled randomness.
         """
         prompt_tokens = self.tokenizer.encode(prompt, bos=True, eos=False)
+        print(f"Encoded prompt: {prompt_tokens}")
+        print("Generating")
         generation_tokens = self.generate(
             prompt_tokens=prompt_tokens,
             temperature=temperature,
             top_p=top_p,
             echo=echo,
         )
+        print("Generated")
         return {
             "generation": self.tokenizer.decode(generation_tokens),
             "tokens": generation_tokens,
