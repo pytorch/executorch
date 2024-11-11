@@ -89,7 +89,7 @@ class ArmCompileSpecBuilder:
             self.compiler_flags.append(extra_flags)
 
         base_tosa_version = "TOSA-0.80.0+BI"
-        if "U55" in config:
+        if "u55" in config:
             # Add the Ethos-U55 extension marker
             base_tosa_version += "+u55"
         self.tosa_version = TosaSpecification.create_from_string(base_tosa_version)
