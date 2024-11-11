@@ -57,7 +57,7 @@ class MaxPool2dVisitor(NodeVisitor):
         output_zp = 0
 
         if is_quant_node:
-            input_zp = get_quant_arg_upstream(torch.fx.Node, node.all_input_nodes[0]).zp
+            input_zp = get_quant_arg_upstream(node.all_input_nodes[0]).zp
             output_zp = get_quant_arg_downstream(list(node.users)[0]).zp
 
         attr = ts.TosaSerializerAttribute()
