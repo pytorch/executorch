@@ -276,7 +276,6 @@ class Attention(nn.Module):
         self.max_batch_size = args.max_batch_size
         self.max_seq_len = args.max_seq_len
         self.dim = args.dim
-        # self.dim = 4096, self.n_heads = 32, self.head_dim = 4096 / 32 = 125
         self.wq = nn.Linear(self.dim, self.n_heads * self.head_dim, bias=False)
         self.wk = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wv = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=False)
