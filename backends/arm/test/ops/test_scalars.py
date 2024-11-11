@@ -153,9 +153,21 @@ class TestScalars(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data)
         )
 
-    # Most MI tests fail, just show one working for now.
-    @parameterized.expand((tensor_scalar_tests[6],))
+    @parameterized.expand(tensor_scalar_tests)
     def test_MI(self, test_name: str, op: torch.nn.Module, x, y):
+        expected_exception = None
+        if any(token in test_name for token in ("Sub_int", "Sub__int")):
+            expected_exception = RuntimeError
+        elif test_name.endswith("_st"):
+            expected_exception = AttributeError
+
+        if expected_exception:
+            with self.assertRaises(
+                expected_exception, msg=f"Test {test_name} is expected to fail."
+            ):
+                self._test_add_tosa_MI_pipeline(op, (x, y))
+            return
+
         self._test_add_tosa_MI_pipeline(op, (x, y))
 
     # op(Scalar float, tensor) works if the scalar is constant.
