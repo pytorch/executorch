@@ -52,6 +52,7 @@ class ArmCompileSpecBuilder:
         # TODO MLETORCH-265 Remove permute_nhwc flag
         self.permute_nhwc = False
         self.quantize_io = False
+        self.tosa_version = None
 
     def ethosu_compile_spec(
         self,
