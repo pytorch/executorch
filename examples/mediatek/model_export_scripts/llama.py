@@ -462,7 +462,6 @@ def main():
                 "eos_token_id_tensor": torch.tensor(tokenizer.eos_token_id),
                 "response_cap": args.response_cap,
             },
-            keep_in_memory=True
         )
 
     for chunk_idx, chunk in enumerate(models):

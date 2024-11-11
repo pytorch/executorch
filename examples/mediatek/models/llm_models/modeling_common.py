@@ -751,6 +751,7 @@ class ModelChunk(BaseModelChunk):
                 for _ in range(2 * self.num_blocks)
             ],
         )
+        # Specify dims that would be dynamic during calibration
         # Note: Assume cache size fixed shape as torch dynamic shape cannot handle dim 3 being
         # combination of 2 dynamic dims
         if get_dym_shape:
