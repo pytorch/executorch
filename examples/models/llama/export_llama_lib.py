@@ -12,6 +12,7 @@ import argparse
 import copy
 import json
 import logging
+import re
 import shlex
 from enum import Enum
 from json import JSONDecodeError
@@ -19,7 +20,6 @@ from pathlib import Path
 from typing import Callable, List, Optional, Union
 
 import pkg_resources
-
 import torch
 
 from executorch.devtools.etrecord import generate_etrecord
@@ -153,12 +153,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         ],
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
+
     parser.add_argument(
         "-qmode",
         "--quantization_mode",
-        type=str,
+        type=_qmode_type,
         default=None,
-        choices=["int8", "8da4w", "8da4w-gptq", "vulkan_4w"],
         help="type of quantization",
     )
 
@@ -568,6 +568,23 @@ def get_quantizer_and_quant_params(args):
     return pt2e_quant_params, quantizers, quant_dtype
 
 
+def _qmode_type(value):
+    choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w"]
+    patterns = [r"torchao:8da(\d+)w"]
+
+    if value in choices:
+        return value
+
+    for pattern in patterns:
+        matches = re.findall(pattern, value)
+        if len(matches) == 1:
+            return value
+
+    raise argparse.ArgumentTypeError(
+        f"Got qmode {value}, but expected one of {choices}, or one of the regex patterns {patterns}."
+    )
+
+
 def _validate_args(args):
     """
     TODO: Combine all the backends under --backend args
@@ -580,6 +597,19 @@ def _validate_args(args):
 
     if args.num_sharding > 0 and not args.qnn:
         raise ValueError("Model shard is only supported with qnn backend now.")
+
+    if (
+        args.quantization_mode is not None
+        and args.quantization_mode.startswith("torchao:")
+    ) or (
+        args.embedding_quantize is not None
+        and args.embedding_quantize.startswith("torchao:")
+    ):
+        if args.enable_dynamic_shape:
+            raise ValueError(
+                "Dynamic shape is not currently supported with torchao ops. Please use --disable_dynamic_shape."
+                "If you need this feature, please file an issue."
+            )
 
 
 def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
