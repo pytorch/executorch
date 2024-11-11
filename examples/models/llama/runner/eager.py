@@ -91,10 +91,11 @@ def main() -> None:
         else runner.text_completion(
             prompt=args.prompt,
             temperature=args.temperature,
+            echo=True,
         )
     )
     if args.show_tokens:
-        print(f"Tokens: {generated_tokens}")
+        print(f"Generated {len(generated_tokens)} tokens: {generated_tokens}")
 
 
 if __name__ == "__main__":
