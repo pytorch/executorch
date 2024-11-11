@@ -62,10 +62,8 @@ class AddVisitor_080_BI(NodeVisitor):
                 input_nodes, tosa_graph
             )
 
-            # Preapre sub output tensor
-            broadcasted_shape = tutils.broadcast_shapes(
-                rescaled_inputs[0].shape, rescaled_inputs[0].shape
-            )
+            # Prepare add output tensor
+            broadcasted_shape = tutils.tosa_shape(output.shape, output.dim_order)
             add_output = tosa_graph.addIntermediate(broadcasted_shape, ts.DType.INT32)
         else:
             add_output = output
