@@ -54,7 +54,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--prompt",
         type=str,
-        default="Hello",
+        default=None,
     )
 
     parser.add_argument(
@@ -70,6 +70,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Show the tokens that were generated",
     )
 
+    parser.add_argument(
+        "--chat",
+        action="store_true",
+        default=False,
+        help="Have multi-turn chat with the model",
+    )
+
     return parser
 
 
@@ -78,9 +85,13 @@ def main() -> None:
     args = parser.parse_args()
 
     runner = EagerLlamaRunner(args)
-    generated_tokens = runner.text_completion(
-        prompt=args.prompt,
-        temperature=args.temperature,
+    generated_tokens = (
+        runner.chat_completion(temperature=args.temperature)
+        if args.chat
+        else runner.text_completion(
+            prompt=args.prompt,
+            temperature=args.temperature,
+        )
     )
     if args.show_tokens:
         print(f"Tokens: {generated_tokens}")
