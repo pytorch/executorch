@@ -88,7 +88,7 @@ ethos_u_base_rev="24.08"
 
 # tosa reference model
 tosa_reference_model_url="https://review.mlplatform.org/tosa/reference_model"
-tosa_reference_model_rev="ef31e7222e99cb1c24b2aff9fc52b2d609612283" 
+tosa_reference_model_rev="f9ea4ab7da19318fe36b1c34d68a3e40fd6e56c5"
  
 ########
 ### Mandatory user args
@@ -227,13 +227,30 @@ function setup_tosa_reference_model() {
         cd reference_model
         git checkout ${tosa_reference_model_rev}
         git submodule update --init --recursive
+        cd ..
+    fi
+    cd reference_model
+    mkdir -p build
+    cd build
+    cmake ..
+
+    # make use of half the cores for building
+    if [[ "${OS}" == "Linux" ]]; then
+        n=$(( $(nproc) / 2 ))
+    elif [[ "${OS}" == "Darwin" ]]; then
+        n=$(( $(sysctl -n hw.logicalcpu) / 2 ))
+    else
+        n=1
     fi
 
-    echo "pip installing reference_model..."
-    repo_dir="${root_dir}/reference_model"
-    cd $repo_dir
-    pip install .
+    if [[ "$n" -lt 1 ]]; then
+        n=1
+    fi
 
+    make -j"${n}"
+    cd reference_model
+    tosa_bin_path=`pwd`
+    echo "export PATH=\${PATH}:${tosa_bin_path}" >> "${setup_path_script}"
 }
 
 function setup_vela() {
