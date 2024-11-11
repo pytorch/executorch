@@ -16,11 +16,9 @@ from executorch.backends.arm.tosa_quant_utils import (
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.arm.tosa_utils import (
-    is_bias_node_for_quantized_addmm,
     is_bias_node_for_quantized_conv,
     tosa_shape,
 )
-from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 
 
@@ -57,25 +55,13 @@ def process_quantized_bias(
 ):
     """
     Serialize bias node that needs to be quantized.
-    This can be either an addmm or conv bias node.
     """
     consumer_node = list(node.users)[0]
-    if is_bias_node_for_quantized_addmm(node):
-        (
-            _,
-            input_node,
-            weight_node_permuted,
-        ) = consumer_node.all_input_nodes
-
-        weight_node = weight_node_permuted.all_input_nodes[0]
-        if input_node.target == exir_ops.edge.aten.view_copy.default:
-            input_node = input_node.all_input_nodes[0]
-    else:
-        (
-            input_node,
-            weight_node,
-            _,
-        ) = consumer_node.all_input_nodes
+    (
+        input_node,
+        weight_node,
+        _,
+    ) = consumer_node.all_input_nodes
 
     input_node_scale = get_quant_node_args(input_node).scale
     weight_node_scale = get_quant_node_args(weight_node).scale
@@ -107,7 +93,7 @@ def process_inputs_to_parameters(
     assert isinstance(parameter_data, torch.Tensor), "Expect Attr to be tensor"
     parameter_values = parameter_data.detach().numpy()
 
-    if is_bias_node_for_quantized_addmm(node) or is_bias_node_for_quantized_conv(node):
+    if is_bias_node_for_quantized_conv(node):
         # BI bias
         assert tosa_spec.support_integer(), f"{tosa_spec} doesnt't support integer"
         process_quantized_bias(node, tosa_graph, parameter_values)
