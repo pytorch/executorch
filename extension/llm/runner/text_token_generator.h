@@ -23,10 +23,10 @@ class ET_EXPERIMENTAL TextTokenGenerator {
   TextTokenGenerator(
       Tokenizer* tokenizer,
       TextDecoderRunner* text_decoder_runner,
-      bool use_int32_token,
       bool use_kv_cache,
       std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
-      Stats* stats)
+      Stats* stats,
+      bool use_int32_token = false)
       : tokenizer_(tokenizer),
         text_decoder_runner_(text_decoder_runner),
         eos_ids_(std::move(eos_ids)),

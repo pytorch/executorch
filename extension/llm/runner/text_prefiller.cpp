@@ -17,9 +17,9 @@ namespace llm {
 
 TextPrefiller::TextPrefiller(
     TextDecoderRunner* text_decoder_runner,
-    bool use_int32_token,
     bool use_kv_cache,
-    bool enable_parallel_prefill)
+    bool enable_parallel_prefill,
+    bool use_int32_token)
     : text_decoder_runner_(text_decoder_runner),
       use_int32_token_(use_int32_token),
       use_kv_cache_(use_kv_cache),

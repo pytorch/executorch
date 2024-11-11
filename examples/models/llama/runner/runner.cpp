@@ -129,17 +129,17 @@ Error Runner::load() {
       temperature_);
   text_prefiller_ = std::make_unique<llm::TextPrefiller>(
       text_decoder_runner_.get(),
-      metadata_.at(kUseInt32Token),
       metadata_.at(kUseKVCache),
-      metadata_.at(kEnableDynamicShape));
+      metadata_.at(kEnableDynamicShape),
+      metadata_.at(kUseInt32Token));
 
   text_token_generator_ = std::make_unique<llm::TextTokenGenerator>(
       tokenizer_.get(),
       text_decoder_runner_.get(),
-      metadata_.at(kUseInt32Token),
       metadata_.at(kUseKVCache),
       std::move(eos_ids),
-      &stats_);
+      &stats_,
+      metadata_.at(kUseInt32Token));
 
   return Error::Ok;
 }

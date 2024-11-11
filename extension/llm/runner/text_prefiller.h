@@ -24,9 +24,9 @@ class ET_EXPERIMENTAL TextPrefiller {
  public:
   TextPrefiller(
       TextDecoderRunner* text_decoder_runner,
-      bool use_int32_token,
       bool use_kv_cache_,
-      bool enable_parallel_prefill);
+      bool enable_parallel_prefill,
+      bool use_int32_token = false);
   /**
    * Prefill an LLM Module with the given text input.
    * @param prompt_tokens The text prompt tokens to the LLM Module. Encoded by
