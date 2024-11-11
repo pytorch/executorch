@@ -47,9 +47,10 @@ class Tokenizer:
         return t
 
     def decode(self, t: List[int]) -> str:
+        # pyre-fixme[16]: `SentencePieceProcessor` has no attribute `encode`.
         return self.sp_model.decode(t)
 
-    def decode(self, t: int) -> str:
+    def decode_token(self, t: int) -> str:
         # pyre-fixme[16]: `SentencePieceProcessor` has no attribute `encode`.
         return self.sp_model.decode(t)
 

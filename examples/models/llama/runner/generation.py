@@ -79,7 +79,7 @@ class LlamaRunner(ABC):
         )
 
         current_token = next_token(logits, temperature, top_p)
-        print(f"{self.tokenizer.decode(current_token)}", end="", flush=True)
+        print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
         tokens = prompt_tokens + [current_token]
 
         while len(tokens) < self.params.max_seq_len:
@@ -103,7 +103,7 @@ class LlamaRunner(ABC):
                 and current_token in self.tokenizer.stop_tokens
             ):
                 break
-            print(f"{self.tokenizer.decode(current_token)}", end="", flush=True)
+            print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
         print("\n")
 
         return tokens if echo else tokens[len(prompt_tokens) :]

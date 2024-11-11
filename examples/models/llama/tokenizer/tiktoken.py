@@ -185,7 +185,7 @@ class Tokenizer:
         # Typecast is safe here. Tiktoken doesn't do anything list-related with the sequence.
         return self.model.decode(cast(List[int], t))
 
-    def decode(self, t: int) -> str:
+    def decode_token(self, t: int) -> str:
         """
         Decodes a single token ID into a string.
 
