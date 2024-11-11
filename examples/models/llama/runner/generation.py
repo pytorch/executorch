@@ -125,7 +125,7 @@ class LlamaRunner(ABC):
             echo (bool, optional): Flag indicating whether to include prompt tokens in the generated output. Defaults to False.
 
         Returns:
-            CompletionPrediction: Completion prediction, which contains the generated text completion.
+            Generated list of tokens.
 
         Note:
             This method generates text completion for the provided prompt, employing nucleus sampling to introduce controlled randomness.
