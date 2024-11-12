@@ -216,29 +216,44 @@ def get_tosa_compile_spec_unbuilt(
 
 
 def get_u55_compile_spec(
-    permute_memory_to_nhwc=True, quantize_io=False, custom_path=None
+    permute_memory_to_nhwc=True,
+    quantize_io=False,
+    custom_path=None,
+    reorder_inputs=None,
 ) -> list[CompileSpec]:
     """
     Default compile spec for Ethos-U55 tests.
     """
     return get_u55_compile_spec_unbuilt(
-        permute_memory_to_nhwc, quantize_io=quantize_io, custom_path=custom_path
+        permute_memory_to_nhwc,
+        quantize_io=quantize_io,
+        custom_path=custom_path,
+        reorder_inputs=reorder_inputs,
     ).build()
 
 
 def get_u85_compile_spec(
-    permute_memory_to_nhwc=True, quantize_io=False, custom_path=None
+    permute_memory_to_nhwc=True,
+    quantize_io=False,
+    custom_path=None,
+    reorder_inputs=None,
 ) -> list[CompileSpec]:
     """
     Default compile spec for Ethos-U85 tests.
     """
     return get_u85_compile_spec_unbuilt(
-        permute_memory_to_nhwc, quantize_io=quantize_io, custom_path=custom_path
+        permute_memory_to_nhwc,
+        quantize_io=quantize_io,
+        custom_path=custom_path,
+        reorder_inputs=reorder_inputs,
     ).build()
 
 
 def get_u55_compile_spec_unbuilt(
-    permute_memory_to_nhwc=True, quantize_io=False, custom_path=None
+    permute_memory_to_nhwc=True,
+    quantize_io=False,
+    custom_path=None,
+    reorder_inputs=None,
 ) -> ArmCompileSpecBuilder:
     """Get the ArmCompileSpecBuilder for the Ethos-U55 tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -257,12 +272,16 @@ def get_u55_compile_spec_unbuilt(
         .set_quantize_io(is_option_enabled("quantize_io") or quantize_io)
         .set_permute_memory_format(permute_memory_to_nhwc)
         .dump_intermediate_artifacts_to(artifact_path)
+        .set_input_order(reorder_inputs)
     )
     return compile_spec
 
 
 def get_u85_compile_spec_unbuilt(
-    permute_memory_to_nhwc=True, quantize_io=False, custom_path=None
+    permute_memory_to_nhwc=True,
+    quantize_io=False,
+    custom_path=None,
+    reorder_inputs=None,
 ) -> list[CompileSpec]:
     """Get the ArmCompileSpecBuilder for the Ethos-U85 tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -279,6 +298,7 @@ def get_u85_compile_spec_unbuilt(
         .set_quantize_io(is_option_enabled("quantize_io") or quantize_io)
         .set_permute_memory_format(permute_memory_to_nhwc)
         .dump_intermediate_artifacts_to(artifact_path)
+        .set_input_order(reorder_inputs)
     )
     return compile_spec
 
