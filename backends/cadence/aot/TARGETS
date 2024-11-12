@@ -11,6 +11,7 @@ load(
     "CXX",
 )
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "executorch_generated_lib")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("odai_jarvis")
 
@@ -101,5 +102,17 @@ executorch_generated_lib(
         "//executorch/backends/cadence/reference/operators:cadence_cpu_ops",
         "//executorch/kernels/portable:executorch_all_ops",
         "//executorch/kernels/portable:operators",
+    ],
+)
+
+python_unittest(
+    name = "test_pass_filter",
+    srcs = [
+        "tests/test_pass_filter.py",
+    ],
+    typing = True,
+    deps = [
+        ":pass_utils",
+        "//executorch/exir:pass_base",
     ],
 )
