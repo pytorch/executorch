@@ -28,11 +28,11 @@ class CadencePassAttribute:
 
 
 # A dictionary that maps an ExportPass to its attributes.
-_ALL_CADENCE_PASSES: dict[ExportPass, CadencePassAttribute] = {}
+ALL_CADENCE_PASSES: dict[ExportPass, CadencePassAttribute] = {}
 
 
 def get_cadence_pass_attribute(p: ExportPass) -> CadencePassAttribute:
-    return _ALL_CADENCE_PASSES[p]
+    return ALL_CADENCE_PASSES[p]
 
 
 # A decorator that registers a pass.
@@ -40,14 +40,14 @@ def register_cadence_pass(
     pass_attribute: CadencePassAttribute,
 ) -> Callable[[ExportPass], ExportPass]:
     def wrapper(cls: ExportPass) -> ExportPass:
-        _ALL_CADENCE_PASSES[cls] = pass_attribute
+        ALL_CADENCE_PASSES[cls] = pass_attribute
         return cls
 
     return wrapper
 
 
 def get_all_available_cadence_passes() -> Set[ExportPass]:
-    return set(_ALL_CADENCE_PASSES.keys())
+    return set(ALL_CADENCE_PASSES.keys())
 
 
 # Create a new filter to filter out relevant passes from all Jarvis passes.
