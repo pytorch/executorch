@@ -14,7 +14,7 @@ runtime.python_library(
         "//executorch/devtools/...",
     ],
     deps = [
-        "//executorch/exir:common_schema",
+        "//executorch/exir:scalar_type",
     ],
 )
 
@@ -25,7 +25,7 @@ runtime.python_library(
     ],
     resources = {
         "//executorch/devtools/etdump:etdump_schema_flatcc.fbs": "etdump_schema_flatcc.fbs",
-        "//executorch/schema:common.fbs": "common.fbs",
+        "//executorch/schema:scalar_type.fbs": "scalar_type.fbs",
     },
     visibility = [
         "//executorch/devtools/...",

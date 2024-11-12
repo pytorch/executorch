@@ -34,5 +34,5 @@ class DataSegment:
 class FlatTensor:
     version: int
     tensor_alignment: int
-    tensor_segments: List[TensorMetadata]
-    data_segments: List[DataSegment]
+    tensors: List[TensorMetadata]
+    segments: List[DataSegment]
