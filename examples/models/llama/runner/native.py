@@ -107,15 +107,11 @@ def main() -> None:
     parser = build_args_parser()
     args = parser.parse_args()
     runner = NativeLlamaRunner(args)
-    result = runner.text_completion(
+    generated_tokens = runner.text_completion(
         prompt=args.prompt,
         temperature=args.temperature,
     )
-    print(
-        "Response: \n{response}\n Tokens:\n {tokens}".format(
-            response=result["generation"], tokens=result["tokens"]
-        )
-    )
+    print(f"Response: {generated_tokens}")
 
 
 if __name__ == "__main__":

@@ -721,10 +721,15 @@ if(EXECUTORCH_BUILD_PYBIND)
       -fPIC
       -frtti
       -fexceptions
-      # libtorch is built with the old ABI, so we need to do the same for any
-      # .cpp files that include torch, c10, or ATen targets.
-      -D_GLIBCXX_USE_CXX11_ABI=0
   )
+  if(EXECUTORCH_DO_NOT_USE_CXX11_ABI)
+      # libtorch is built with the old ABI, so we need to do the same for any
+      # .cpp files that include torch, c10, or ATen targets. Note that PyTorch
+      # nightly binary is built with _GLIBCXX_USE_CXX11_ABI set to 0 while its
+      # CI build sets this to 1 (default)
+    list(APPEND _pybind_compile_options -D_GLIBCXX_USE_CXX11_ABI=0)
+  endif()
+
   # util lib
   add_library(
     util ${CMAKE_CURRENT_SOURCE_DIR}/extension/evalue_util/print_evalue.cpp

@@ -1,3 +1,4 @@
+# @noautodeps
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 python_library(
@@ -66,6 +67,18 @@ python_library(
         "fbsource//third-party/serialization_lib/python/tosa:tosa",
         ":tosa_mapping",
         "//executorch/exir/dialects:lib",
+    ],
+)
+
+python_library(
+    name = "tosa_specification",
+    srcs = [
+        "tosa_specification.py",
+    ],
+    typing = True,
+    deps = [
+        "fbsource//third-party/pypi/packaging:packaging",
+        "//executorch/exir/backend:compile_spec_schema",
     ],
 )
 

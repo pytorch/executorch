@@ -8,7 +8,6 @@
 from . import (  # noqa
     node_visitor,
     op_add,
-    op_addmm,
     op_avg_pool2d,
     op_batch_norm,
     op_bmm,
@@ -20,6 +19,7 @@ from . import (  # noqa
     op_get_item,
     op_hardtanh,
     op_log,
+    op_max_pool2d,
     op_mm,
     op_mul,
     op_permute,
