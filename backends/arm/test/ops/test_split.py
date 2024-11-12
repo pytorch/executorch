@@ -7,13 +7,9 @@
 import unittest
 
 import torch
-from executorch.backends.arm.quantizer.arm_quantizer import (
-    ArmQuantizer,
-    get_symmetric_quantization_config,
-)
+
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
@@ -60,7 +56,7 @@ class TestSimpleSplit(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
             )
             .export()
             .to_edge()
@@ -79,14 +75,13 @@ class TestSimpleSplit(unittest.TestCase):
         self, module: torch.nn.Module, test_data: test_data_t
     ):
 
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
             )
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
+            .quantize()
             .export()
             .to_edge()
             .partition()
@@ -98,14 +93,13 @@ class TestSimpleSplit(unittest.TestCase):
     def _test_split_ethosu_BI_pipeline(
         self, compile_spec: CompileSpec, module: torch.nn.Module, test_data: test_data_t
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
                 compile_spec=compile_spec,
             )
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
+            .quantize()
             .export()
             .check(["torch.ops.aten.split.Tensor"])
             .to_edge()

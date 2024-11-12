@@ -13,6 +13,7 @@ runtime.python_library(
     ],
     deps = [
         "//executorch/backends/vulkan:op_registry",
+        "//executorch/backends/vulkan:utils_lib",
         "//executorch/backends/vulkan:vulkan_preprocess",
         "//executorch/exir:delegate",
         "//executorch/exir:lib",

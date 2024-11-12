@@ -503,5 +503,66 @@ TEST_F(RegisterPrimOpsTest, TestETViewEmpty) {
       getOpsFn("executorch_prim::et_view.default")(context, bad_stack), "");
 }
 
+TEST_F(RegisterPrimOpsTest, TestCeil) {
+  std::array<double, 10> inputs = {
+      0.0, 0.25, 0.5, 0.75, 1.0, 1.75, -0.5, -1.0, -1.5, 9.999999};
+  std::array<int64_t, 10> expected = {0, 1, 1, 1, 1, 2, 0, -1, -1, 10};
+
+  for (auto i = 0; i < inputs.size(); i++) {
+    EValue values[2];
+    values[0] = EValue(inputs[i]);
+    values[1] = EValue(0.0);
+
+    EValue* stack[2];
+    for (size_t j = 0; j < 2; j++) {
+      stack[j] = &values[j];
+    }
+
+    getOpsFn("executorch_prim::ceil.Scalar")(context, stack);
+    EXPECT_EQ(stack[1]->toInt(), expected[i]);
+  }
+}
+
+TEST_F(RegisterPrimOpsTest, TestRound) {
+  // Note that Python uses round-to-even for halfway values.
+  std::array<double, 10> inputs = {
+      0.0, 0.25, 0.5, 0.75, 1.0, 1.5, -0.5, -1.0, -1.5, 9.999999};
+  std::array<int64_t, 10> expected = {0, 0, 0, 1, 1, 2, 0, -1, -2, 10};
+
+  for (auto i = 0; i < inputs.size(); i++) {
+    EValue values[2];
+    values[0] = EValue(inputs[i]);
+    values[1] = EValue(0.0);
+
+    EValue* stack[2];
+    for (size_t j = 0; j < 2; j++) {
+      stack[j] = &values[j];
+    }
+
+    getOpsFn("executorch_prim::round.Scalar")(context, stack);
+    EXPECT_EQ(stack[1]->toInt(), expected[i]);
+  }
+}
+
+TEST_F(RegisterPrimOpsTest, TestTrunc) {
+  std::array<double, 10> inputs = {
+      0.0, 0.25, 0.5, 0.75, 1.0, 1.75, -0.5, -1.0, -1.5, 9.999999};
+  std::array<int64_t, 10> expected = {0, 0, 0, 0, 1, 1, 0, -1, -1, 9};
+
+  for (auto i = 0; i < inputs.size(); i++) {
+    EValue values[2];
+    values[0] = EValue(inputs[i]);
+    values[1] = EValue(0.0);
+
+    EValue* stack[2];
+    for (size_t j = 0; j < 2; j++) {
+      stack[j] = &values[j];
+    }
+
+    getOpsFn("executorch_prim::trunc.Scalar")(context, stack);
+    EXPECT_EQ(stack[1]->toInt(), expected[i]);
+  }
+}
+
 } // namespace executor
 } // namespace torch
