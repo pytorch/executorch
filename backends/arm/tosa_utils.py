@@ -16,11 +16,13 @@ from executorch.backends.arm.operators.node_visitor import NodeVisitor
 from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
 
 from executorch.backends.arm.tosa_quant_utils import (
-    get_quant_node_args,
-    get_quant_node_dtype,
-    is_quant_node,
+    get_quant_arg_downstream,
+    get_quant_arg_upstream,
+    get_quantized_node_output_dtype,
+    is_node_quantized,
     q_op,
 )
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
@@ -130,31 +132,6 @@ def get_output_node(node: Node) -> Node:
     return list(node.users)[0]
 
 
-# Helper function to do broadcasting
-# Ref: https://www.mlplatform.org/tosa/tosa_spec.html#_broadcasting
-def broadcast_shapes(shape1, shape2):
-    assert len(shape1) == len(shape2), "broadcast_shapes::shapes must have same ranks"
-
-    need_broadcasting = False
-    for val1, val2 in zip(shape1, shape2):
-        if val1 != val2:
-            need_broadcasting = True
-    if not need_broadcasting:
-        return shape1
-
-    broadcasted_shape = list(shape1)
-    shape2 = list(shape2)
-    for idx, _ in enumerate(broadcasted_shape):
-        if broadcasted_shape[idx] == 1:
-            broadcasted_shape[idx] = shape2[idx]
-        else:
-            assert not (
-                shape2[idx] != 1 and shape2[idx] != broadcasted_shape[idx]
-            ), "broadcast_shapes::broadcast shape mismatch"
-
-    return broadcasted_shape
-
-
 """ TOSA reshape returns a tensor with the same type/values as the input.
     No data conversion happens during a reshape operation. """
 
@@ -163,36 +140,6 @@ def build_reshape(tosa_fb, input_name, new_shape, output_name):
     attr = ts.TosaSerializerAttribute()
     attr.ReshapeAttribute(new_shape)
     tosa_fb.addOperator(TosaOp.Op().RESHAPE, [input_name], [output_name], attr)
-
-
-def is_permute_node_before_addmm(node):
-    return (
-        node.target == exir_ops.edge.aten.permute_copy.default
-        and list(node.users)[0].target == exir_ops.edge.aten.addmm.default
-    )
-
-
-def is_bias_node_for_quantized_addmm(node):
-    consumer_node = list(node.users)[0]
-    # consumer node is addmm
-    is_rank2_linear_bias = (
-        consumer_node.target == exir_ops.edge.aten.addmm.default
-        and list(consumer_node.users)[0].target == q_op
-    )
-
-    # rank>2 linear layers
-    # consumer_consumer node is view_copy
-    is_rank_greater_than_2_linear_bias = False
-    if (
-        consumer_node.target == exir_ops.edge.aten.addmm.default
-        and list(consumer_node.users)[0].target == exir_ops.edge.aten.view_copy.default
-    ):
-        consumer_consumer_node = list(consumer_node.users)[0]
-        is_rank_greater_than_2_linear_bias = (
-            list(consumer_consumer_node.users)[0].target == q_op
-        )
-
-    return is_rank2_linear_bias or is_rank_greater_than_2_linear_bias
 
 
 def is_bias_node_for_quantized_conv(node):
@@ -237,8 +184,8 @@ def build_avg_pool_2d_common(
     output_zp = 0
 
     if is_quant_node:
-        input_zp = get_quant_node_args(cast(torch.fx.Node, node.args[0])).zp
-        output_zp = get_quant_node_args(list(node.users)[0]).zp
+        input_zp = get_quant_arg_upstream(cast(torch.fx.Node, node.args[0])).zp
+        output_zp = get_quant_arg_downstream(list(node.users)[0]).zp
 
     attr = ts.TosaSerializerAttribute()
     attr.PoolAttribute(
@@ -290,6 +237,7 @@ def process_call_function(
     node: torch.fx.Node,
     tosa_graph: ts.TosaSerializer,
     node_visitors: Dict[str, NodeVisitor],
+    tosa_spec: TosaSpecification,
 ):
     # Unpack arguments and convert
     inputs = getNodeArgs(node)
@@ -297,14 +245,15 @@ def process_call_function(
     # Convert output (this node itself)
     output = TosaArg(node)
 
+    is_quant_node = is_node_quantized(node)
+    if is_quant_node:
+        output_dtype = map_dtype(get_quantized_node_output_dtype(node))
+    else:
+        output_dtype = output.dtype
     tosa_graph.currRegion.currBasicBlock.addTensor(
         output.name,
-        (
-            tosa_shape(inputs[0].shape, inputs[0].dim_order)
-            if is_permute_node_before_addmm(node)
-            else tosa_shape(output.shape, output.dim_order)
-        ),
-        map_dtype(get_quant_node_dtype(node)) if is_quant_node(node) else output.dtype,
+        (tosa_shape(output.shape, output.dim_order)),
+        output_dtype,
     )
 
     # Visiting each Node
@@ -316,10 +265,10 @@ def process_call_function(
             tosa_graph,
             inputs,
             output,
-            is_quant_node(node),
+            is_quant_node,
         )
     else:
-        raise RuntimeError(f"Unknown operator {node.target}")
+        raise RuntimeError(f"Unknown operator {node.target} for TOSA : {tosa_spec}")
 
 
 def expand_dims(

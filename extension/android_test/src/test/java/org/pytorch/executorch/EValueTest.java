@@ -129,7 +129,7 @@ public class EValueTest {
         Optional.of(Tensor.fromBlob(data[1], shape[1])));
     assertTrue(evalue.isOptionalTensorList());
 
-    assertTrue(evalue.toOptionalTensorList()[0].isEmpty());
+    assertTrue(!evalue.toOptionalTensorList()[0].isPresent());
 
     assertTrue(evalue.toOptionalTensorList()[1].isPresent());
     assertTrue(Arrays.equals(evalue.toOptionalTensorList()[1].get().shape, shape[0]));

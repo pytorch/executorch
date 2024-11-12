@@ -35,3 +35,19 @@ enum ScalarType : byte {
   // BITS4x2 = 20,
   // BITS8 = 21,
 }
+
+// Describes a contiguous piece of data that lives outside of the flatbuffer data,
+// typically appended afterwards in the file.
+// For .pte and .ptd files, the "extended header" in the file, when present,
+// points to the segment base offset.
+table DataSegment {
+  // Segment offsets are relative to the segment base offset provided in the
+  // extended file header. Segments will typically be aligned in a way to make
+  // it possible to use mmap() to load them.
+  offset: uint64;
+
+  // The size in bytes of valid data starting at the offset. The segment
+  // data may be followed by padding before the segment that follows it,
+  // to make it easier to use mmap().
+  size: uint64;
+}
