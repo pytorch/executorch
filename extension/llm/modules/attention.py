@@ -9,6 +9,7 @@ from typing import Optional
 
 import torch
 import torchtune.modules.attention as TorchTuneAttention
+from executorch.extension.llm.modules.kv_cache import KVCache as InferenceKVCache
 from torch import nn
 from torchtune.modules.attention_utils import _MaskType, _sdpa_or_flex_attention
 from torchtune.modules.kv_cache import KVCache
@@ -148,7 +149,6 @@ class MultiHeadAttention(nn.Module):
             num_kv_heads=self.num_kv_heads,
             num_heads=self.num_heads,
             head_dim=self.head_dim,
-            q_per_kv=self.num_heads // self.num_kv_heads,
             attn_dropout=self.attn_dropout if self.training else 0.0,
             is_causal=self.is_causal,
             attention_fn=self._attention_call,
@@ -177,12 +177,13 @@ class MultiHeadAttention(nn.Module):
                 "Key value caches are already setup. You cannot call ``setup_caches()`` twice. Skipping."
             )
         else:
-            self.kv_cache = KVCache(
+            self.kv_cache = InferenceKVCache(
                 batch_size=batch_size,
                 max_seq_len=max_seq_len,
-                num_heads=self.num_heads,
+                num_kv_heads=self.num_kv_heads,
                 head_dim=self.head_dim,
                 dtype=dtype,
+                transpose_cache=False,
             )
             self._sdpa.kv_cache = self.kv_cache
             self.cache_enabled = True
@@ -307,7 +308,6 @@ class SDPA(nn.Module):
         num_kv_heads: int,
         num_heads: int,
         head_dim: int,
-        q_per_kv: int,
         attn_dropout: float,
         is_causal: bool,
         attention_fn,
@@ -317,7 +317,7 @@ class SDPA(nn.Module):
         self.num_kv_heads = num_kv_heads
         self.num_heads = num_heads
         self.head_dim = head_dim
-        self.q_per_kv = q_per_kv
+        self.q_per_kv = self.num_heads // self.num_kv_heads
         self.attn_dropout = attn_dropout
         self.is_causal = is_causal
         self._attention_fn = attention_fn
@@ -330,25 +330,25 @@ class SDPA(nn.Module):
         v: torch.Tensor,  # [b, s, n_kv, h_d]
         bsz: int,
         seq_len: int,
-        mask: torch.Tensor = None,
+        mask: Optional[_MaskType] = None,
     ) -> torch.Tensor:
         # View + expand + reshape bring num_kv_heads to num_heads for k and v
         # to match q.
 
         # k: [bsz, seq_len, n_kv, 1, h_d]
         # v: [bsz, seq_len, n_kv, 1, h_d]
-        k = k.view(bsz, seq_len, self.num_kv_heads, 1, self.head_dim)
-        v = v.view(bsz, seq_len, self.num_kv_heads, 1, self.head_dim)
+        k = k.view(bsz, -1, self.num_kv_heads, 1, self.head_dim)
+        v = v.view(bsz, -1, self.num_kv_heads, 1, self.head_dim)
 
         # Expand the key and value tensors to have the same shape
         # as the query tensor by copying values across the relevant dim
         if self.num_heads != self.num_kv_heads:
-            k = k.expand(bsz, seq_len, self.num_kv_heads, self.q_per_kv, self.head_dim)
-            v = v.expand(bsz, seq_len, self.num_kv_heads, self.q_per_kv, self.head_dim)
+            k = k.expand(bsz, -1, self.num_kv_heads, self.q_per_kv, self.head_dim)
+            v = v.expand(bsz, -1, self.num_kv_heads, self.q_per_kv, self.head_dim)
 
         # [bsz, s, n_h, h_d]
-        k = k.reshape(bsz, seq_len, -1, self.head_dim)
-        v = v.reshape(bsz, seq_len, -1, self.head_dim)
+        k = k.reshape(bsz, -1, self.num_heads, self.head_dim)
+        v = v.reshape(bsz, -1, self.num_heads, self.head_dim)
 
         # [bsz, n_h, s, h_d]
         q = q.transpose(1, 2)
