@@ -1,7 +1,7 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 
 //
-// See README.md before modifying this file.
+// See executorch/schema/README.md before modifying this file.
 //
 
 namespace executorch_flatbuffer;
