@@ -448,8 +448,11 @@ class RunnerUtil:
                 ), "There are no quantization parameters, check output parameters"
                 tosa_ref_output = (tosa_ref_output - quant_param.zp) * quant_param.scale
 
+            if tosa_ref_output.dtype == np.double:
+                tosa_ref_output = tosa_ref_output.astype("float32")
+
             # tosa_output is a numpy array, convert to torch tensor for comparison
-            tosa_ref_outputs.append(torch.from_numpy(tosa_ref_output.astype("float32")))
+            tosa_ref_outputs.append(torch.from_numpy(tosa_ref_output))
 
         return tosa_ref_outputs
 
@@ -457,7 +460,9 @@ class RunnerUtil:
 def prep_data_for_save(
     data, is_quantized: bool, input_name: str, quant_param: QuantizationParams
 ):
-    data_np = np.array(data.detach(), order="C").astype(np.float32)
+    data_np = np.array(data.detach(), order="C").astype(
+        f"{data.dtype}".replace("torch.", "")
+    )
 
     if is_quantized:
         assert quant_param.node_name in input_name, (
