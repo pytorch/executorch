@@ -9,7 +9,7 @@ import unittest
 import torch
 from executorch.exir import EdgeCompileConfig, to_edge
 
-from executorch.extension.llm.modules.mha import (
+from executorch.extension.llm.modules.attention import (
     MultiHeadAttention as ETMultiHeadAttention,
 )
 from executorch.runtime import Runtime
@@ -82,10 +82,12 @@ class AttentionTest(unittest.TestCase):
         # Common inputs.
         seq_len = 10
         self.x = torch.randn(1, seq_len, self.embed_dim)
+        self.input_pos = torch.arange(seq_len).unsqueeze(0)  # shape [1, seq_len]
         seq_len_dim = torch.export.Dim("seq_len", min=1, max=100)
         self.dynamic_shapes = (
             {0: torch.export.Dim.STATIC, 1: seq_len_dim, 2: torch.export.Dim.STATIC},
             {0: torch.export.Dim.STATIC, 1: seq_len_dim, 2: torch.export.Dim.STATIC},
+            {0: torch.export.Dim.STATIC, 1: seq_len_dim},
         )
 
     def test_attention_eager(self):
@@ -94,25 +96,46 @@ class AttentionTest(unittest.TestCase):
 
         self.assertTrue(torch.allclose(et_res, tt_res))
 
-        # TODO: KV cache.
-        # self.et_mha.setup_cache(1, dtype=torch.float16, max_seq_len=20)
-        # self.tt_mha.setup_cache(1, dtype=torch.float16, max_seq_len=20)
+        # test with kv cache
+        self.et_mha.setup_cache(1, dtype=torch.float32, max_seq_len=20)
+        self.tt_mha.setup_cache(1, dtype=torch.float32, max_seq_len=20)
 
-        # et_res = self.et_mha(self.x, self.x) # Self attention.
-        # tt_res = self.tt_mha(self.x, self.x) # Self attention.
+        et_res = self.et_mha(self.x, self.x)  # Self attention.
+        tt_res = self.tt_mha(self.x, self.x)  # Self attention.
 
-        # self.assertTrue(torch.allclose(et_res, tt_res))
+        self.assertTrue(torch.allclose(et_res, tt_res))
+        self.et_mha.reset_cache()
+        self.tt_mha.reset_cache()
+
+        et_res = self.et_mha(
+            self.x, self.x, input_pos=self.input_pos
+        )  # Self attention with input pos.
+        tt_res = self.tt_mha(
+            self.x, self.x, input_pos=self.input_pos
+        )  # Self attention with input pos.
+
+        self.assertTrue(torch.allclose(et_res, tt_res))
+
+        # test kv cache read. Input pos can be [10, 11, ..., 19]
+        next_input_pos = torch.arange(10, 20).unsqueeze(0)
+        et_res = self.et_mha(
+            self.x, self.x, input_pos=next_input_pos
+        )  # Self attention with input pos.
+        tt_res = self.tt_mha(
+            self.x, self.x, input_pos=next_input_pos
+        )  # Self attention with input pos.
+        self.assertTrue(torch.allclose(et_res, tt_res))
 
     def test_attention_export(self):
         # Self attention.
         et_mha_ep = torch.export.export(
             self.et_mha,
             (self.x, self.x),
-            kwargs=None,
+            kwargs={"input_pos": self.input_pos},
             dynamic_shapes=self.dynamic_shapes,
         )
-        et_res = et_mha_ep.module()(self.x, self.x)
-        tt_res = self.tt_mha(self.x, self.x)
+        et_res = et_mha_ep.module()(self.x, self.x, input_pos=self.input_pos)
+        tt_res = self.tt_mha(self.x, self.x, input_pos=self.input_pos)
         self.assertTrue(torch.allclose(et_res, tt_res))
 
         # TODO: KV cache.
@@ -126,7 +149,7 @@ class AttentionTest(unittest.TestCase):
         et_mha_ep = torch.export.export(
             self.et_mha,
             (self.x, self.x),
-            kwargs=None,
+            kwargs={"input_pos": self.input_pos},
             dynamic_shapes=self.dynamic_shapes,
         )
         et_program = to_edge(
@@ -136,8 +159,8 @@ class AttentionTest(unittest.TestCase):
         runtime = Runtime.get()
         program = runtime.load_program(et_program.buffer)
         method = program.load_method("forward")
-        et_res = method.execute((self.x, self.x))
-        tt_res = self.tt_mha(self.x, self.x)
+        et_res = method.execute((self.x, self.x, self.input_pos))
+        tt_res = self.tt_mha(self.x, self.x, input_pos=self.input_pos)
 
         self.assertTrue(torch.allclose(et_res[0], tt_res, atol=1e-06))
 
