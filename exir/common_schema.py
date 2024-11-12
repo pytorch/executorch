@@ -9,8 +9,8 @@
 from dataclasses import dataclass
 from enum import IntEnum
 
-
 # Check exir/common.fbs for explanations of these fields.
+
 
 class ScalarType(IntEnum):
     BYTE = 0

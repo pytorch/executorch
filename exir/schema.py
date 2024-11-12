@@ -12,7 +12,7 @@ from typing import List, Optional, Union
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
-from executorch.exir.common_schema import ScalarType, DataSegment
+from executorch.exir.common_schema import DataSegment, ScalarType
 
 
 @dataclass
