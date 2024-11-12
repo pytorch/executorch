@@ -12,6 +12,11 @@ from typing import cast, List, Optional, Union
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 
 import torch
+
+from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
+    VkMemoryLayout,
+    VkStorageType,
+)
 from executorch.backends.vulkan.utils import (
     is_constant,
     is_get_attr_node,
@@ -169,6 +174,15 @@ class VkGraphBuilder:
         if spec.mem_obj_id is not None:
             mem_obj_id = spec.mem_obj_id
 
+        storage_type = VkStorageType.DEFAULT_STORAGE
+        memory_layout = VkMemoryLayout.DEFAULT_LAYOUT
+        if hasattr(spec, "vk_storage_type"):
+            # pyre-ignore[16]
+            storage_type = spec.vk_storage_type
+        if hasattr(spec, "vk_memory_layout"):
+            # pyre-ignore[16]
+            memory_layout = spec.vk_memory_layout
+
         new_id = len(self.values)
         self.values.append(
             vk_graph_schema.VkValue(
@@ -177,6 +191,8 @@ class VkGraphBuilder:
                     dims=spec.shape,
                     constant_id=constant_id,
                     mem_obj_id=mem_obj_id,
+                    storage_type=storage_type,
+                    memory_layout=memory_layout,
                 )
             )
         )
