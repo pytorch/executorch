@@ -7,7 +7,7 @@
 import os
 import tempfile
 import zipfile
-from typing import Optional, Tuple, Union
+from typing import Any, Optional, Tuple
 
 import torch
 
@@ -32,7 +32,7 @@ class GenericModelEvaluator:
         else:
             self.tosa_output_path = None
 
-    def get_model_error(self) -> Union[float, float, float, float]:
+    def get_model_error(self) -> tuple[float, float, float, float]:
         """
         Returns the following metrics between the outputs of the FP32 and INT8 model:
         - Maximum error
@@ -51,7 +51,12 @@ class GenericModelEvaluator:
         max_percentage_error = torch.max(percentage_error).item()
         mean_absolute_error = torch.mean(torch.abs(difference).float()).item()
 
-        return max_error, max_absolute_error, max_percentage_error, mean_absolute_error
+        return (
+            float(max_error),
+            float(max_absolute_error),
+            float(max_percentage_error),
+            float(mean_absolute_error),
+        )
 
     def get_compression_ratio(self) -> float:
         """Compute the compression ratio of the outputted TOSA flatbuffer."""
@@ -67,7 +72,7 @@ class GenericModelEvaluator:
 
         return compression_ratio
 
-    def evaluate(self) -> dict[any]:
+    def evaluate(self) -> dict[str, Any]:
         max_error, max_absolute_error, max_percent_error, mean_absolute_error = (
             self.get_model_error()
         )
@@ -82,6 +87,8 @@ class GenericModelEvaluator:
         }
 
         if self.tosa_output_path:
+            # We know output_metrics["metrics"] is list since we just defined it, safe to ignore.
+            # pyre-ignore[16]
             output_metrics["metrics"][
                 "compression_ratio"
             ] = self.get_compression_ratio()
