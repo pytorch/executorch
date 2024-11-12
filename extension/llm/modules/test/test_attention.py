@@ -131,11 +131,11 @@ class AttentionTest(unittest.TestCase):
         et_mha_ep = torch.export.export(
             self.et_mha,
             (self.x, self.x),
-            kwargs=None,
+            kwargs={"input_pos": self.input_pos},
             dynamic_shapes=self.dynamic_shapes,
         )
-        et_res = et_mha_ep.module()(self.x, self.x)
-        tt_res = self.tt_mha(self.x, self.x)
+        et_res = et_mha_ep.module()(self.x, self.x, input_pos=self.input_pos)
+        tt_res = self.tt_mha(self.x, self.x, input_pos=self.input_pos)
         self.assertTrue(torch.allclose(et_res, tt_res))
 
         # TODO: KV cache.
@@ -149,7 +149,7 @@ class AttentionTest(unittest.TestCase):
         et_mha_ep = torch.export.export(
             self.et_mha,
             (self.x, self.x),
-            kwargs=None,
+            kwargs={"input_pos": self.input_pos},
             dynamic_shapes=self.dynamic_shapes,
         )
         et_program = to_edge(
@@ -159,8 +159,8 @@ class AttentionTest(unittest.TestCase):
         runtime = Runtime.get()
         program = runtime.load_program(et_program.buffer)
         method = program.load_method("forward")
-        et_res = method.execute((self.x, self.x))
-        tt_res = self.tt_mha(self.x, self.x)
+        et_res = method.execute((self.x, self.x, self.input_pos))
+        tt_res = self.tt_mha(self.x, self.x, input_pos=self.input_pos)
 
         self.assertTrue(torch.allclose(et_res[0], tt_res, atol=1e-06))
 
