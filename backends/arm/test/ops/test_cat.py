@@ -56,7 +56,7 @@ class TestCat(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
             )
             .export()
             .check_count({"torch.ops.aten.cat.default": 1})
@@ -76,7 +76,7 @@ class TestCat(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
             )
             .quantize()
             .export()
@@ -121,7 +121,7 @@ class TestCat(unittest.TestCase):
     def test_cat_4d_tosa_MI(self):
         square = torch.ones((2, 2, 2, 2))
         for dim in range(-3, 3):
-            test_data = ((square, square.clone()), dim)
+            test_data = ((square, square), dim)
             self._test_cat_tosa_MI_pipeline(self.Cat(), test_data)
 
     @parameterized.expand(Cat.test_parameters)

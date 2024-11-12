@@ -118,7 +118,7 @@ def define_common_targets(is_fbcode = False):
                 "fbsource//third-party/toolchains:android"
             ],
             "ovr_config//os:macos-arm64": [
-                "//third-party/khronos:moltenVK"
+                "//third-party/khronos:moltenVK_static"
             ],
         })
         VK_API_PREPROCESSOR_FLAGS += select({
