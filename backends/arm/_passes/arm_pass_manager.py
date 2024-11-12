@@ -23,6 +23,7 @@ from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
 from executorch.backends.arm._passes.decompose_layernorm_pass import (
     DecomposeLayerNormPass,
 )
+from executorch.backends.arm._passes.decompose_linear_pass import DecomposeLinearPass
 from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
 from executorch.backends.arm._passes.decompose_softmaxes_pass import (
     DecomposeSoftmaxesPass,
@@ -74,6 +75,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSoftmaxesPass())
+        self.add_pass(DecomposeLinearPass())
         for spec in compile_spec:
             if spec.key == "permute_memory_format":
                 memory_format = spec.value.decode()
