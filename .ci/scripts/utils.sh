@@ -124,7 +124,7 @@ download_stories_model_artifacts() {
 do_not_use_nightly_on_ci() {
   # An assert to make sure that we are not using PyTorch nightly on CI to prevent
   # regression as documented in https://github.com/pytorch/executorch/pull/6564
-  TORCH_VERSION=$(pip freeze | grep -w torch= | awk -F '==' {'print $2'} | tr -d '\n')
+  TORCH_VERSION=$(pip list | grep -w 'torch ' | awk -F ' ' {'print $2'} | tr -d '\n')
 
   pushd .ci/docker || return
   EXPECTED_TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
