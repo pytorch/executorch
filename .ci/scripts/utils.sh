@@ -126,15 +126,13 @@ do_not_use_nightly_on_ci() {
   # regression as documented in https://github.com/pytorch/executorch/pull/6564
   TORCH_VERSION=$(pip list | grep -w 'torch ' | awk -F ' ' {'print $2'} | tr -d '\n')
 
-  pushd .ci/docker || return
-  EXPECTED_TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
-  popd || return
-
   # The version of PyTorch building from source looks like 2.6.0a0+gitc8a648d that
   # includes the commit while nightly (2.6.0.dev20241019+cpu) or release (2.6.0)
-  # won't have that
-  if [[ "${TORCH_VERSION}" != *"+git${EXPECTED_TORCH_VERSION:0:7}"* ]]; then
-    echo "Unexpected torch version. Expected ${EXPECTED_TORCH_VERSION:0:7} from .ci/docker/ci_commit_pins/pytorch.txt, got ${TORCH_VERSION}"
+  # won't have that. Note that we couldn't check for the exact commit from the pin
+  # ci_commit_pins/pytorch.txt here because the value will be different when running
+  # this on PyTorch CI
+  if [[ "${TORCH_VERSION}" != *"+git"* ]]; then
+    echo "Unexpected torch version. Expected binary built from source, got ${TORCH_VERSION}"
     exit 1
   fi
 }
