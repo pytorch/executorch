@@ -40,19 +40,20 @@ python_library(
     ],
 )
 
+python_library(
+    name = "common_schema",
+    srcs = [
+        "common_schema.py",
+    ],
+)
+
 # Deprecated in ExecuTorch v0.5
 python_library(
     name = "scalar_type",
     srcs = [
         "scalar_type.py",
     ],
-)
-
-python_library(
-    name = "common_schema",
-    srcs = [
-        "common_schema.py",
-    ],
+    deps = [":common_schema"],
 )
 
 python_library(
