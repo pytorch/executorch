@@ -15,6 +15,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <variant>
 
 // NB: This is a local, pytree FunctionRef and not from the ExecuTorch runtime.
 #include <executorch/extension/pytree/function_ref.h>
@@ -55,29 +56,28 @@ using KeyInt = int32_t;
 struct Key {
   enum class Kind : uint8_t { None, Int, Str } kind_;
 
-  KeyInt as_int_ = {};
-  KeyStr as_str_ = {};
+ private:
+  std::variant<std::monostate, KeyInt, KeyStr> repr_;
 
-  Key() : kind_(Kind::None) {}
-  /*implicit*/ Key(KeyInt key) : kind_(Kind::Int), as_int_(std::move(key)) {}
-  /*implicit*/ Key(KeyStr key) : kind_(Kind::Str), as_str_(std::move(key)) {}
+ public:
+  Key() {}
+  /*implicit*/ Key(KeyInt key) : repr_(key) {}
+  /*implicit*/ Key(KeyStr key) : repr_(std::move(key)) {}
 
-  const Kind& kind() const {
-    return kind_;
+  Kind kind() const {
+    return static_cast<Kind>(repr_.index());
   }
 
-  const KeyInt& as_int() const {
-    pytree_assert(kind_ == Key::Kind::Int);
-    return as_int_;
+  KeyInt as_int() const {
+    return std::get<KeyInt>(repr_);
   }
 
-  operator const KeyInt&() const {
+  operator KeyInt() const {
     return as_int();
   }
 
   const KeyStr& as_str() const {
-    pytree_assert(kind_ == Key::Kind::Str);
-    return as_str_;
+    return std::get<KeyStr>(repr_);
   }
 
   operator const KeyStr&() const {
@@ -85,21 +85,7 @@ struct Key {
   }
 
   bool operator==(const Key& rhs) const {
-    if (kind_ != rhs.kind_) {
-      return false;
-    }
-    switch (kind_) {
-      case Kind::Str: {
-        return as_str_ == rhs.as_str_;
-      }
-      case Kind::Int: {
-        return as_int_ == rhs.as_int_;
-      }
-      case Kind::None: {
-        return true;
-      }
-    }
-    pytree_unreachable();
+    return repr_ == rhs.repr_;
   }
 
   bool operator!=(const Key& rhs) const {
