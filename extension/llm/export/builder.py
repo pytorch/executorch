@@ -8,6 +8,8 @@
 # eager models, apply source transformations and quantization and export them to
 # ExecuTorch.
 
+# pyre-unsafe
+
 import logging
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
@@ -184,8 +186,6 @@ class LLMEdgeManager:
             if hasattr(self.args, "qnn") and self.args.qnn:
                 # TODO: this is temporary and export_for_training doesn't work with qnn either. We need a
                 # functional graph. See issue https://github.com/pytorch/executorch/pull/4627 for more details
-                # pyre-fixme[8]: Attribute has type `Optional[GraphModule]`; used as
-                #  `Module`.
                 exported_module = torch.export.export(
                     self.model,
                     self.example_inputs,
@@ -194,14 +194,14 @@ class LLMEdgeManager:
                     strict=True,
                 )
             else:
-                # pyre-fixme[8]: Attribute has type `Optional[GraphModule]`; used as
-                #  `Module`.
                 exported_module = export_for_training(
                     self.model,
                     self.example_inputs,
                     kwargs=self.example_kwarg_inputs,
                     dynamic_shapes=dynamic_shape,
                 )
+            # pyre-fixme[8]: Attribute has type `Optional[GraphModule]`; used as
+            #  `Module`.
             self.pre_autograd_graph_module = exported_module.module()
             if hasattr(self.args, "export_only") and self.args.export_only:
                 torch.export.save(exported_module, self.args.output_name)
