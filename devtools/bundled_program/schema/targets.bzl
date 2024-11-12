@@ -1,17 +1,17 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-BUNLDED_STEM = "bundled_program_schema"
-SCALAR_TYPE_STEM = "scalar_type"
+BUNDLED_STEM = "bundled_program_schema"
+COMMON_STEM = "common"
 
-INPUT_BUNDLED = BUNLDED_STEM + ".fbs"
-INPUT_SCALAR_TYPE = SCALAR_TYPE_STEM + ".fbs"
+INPUT_BUNDLED = BUNDLED_STEM + ".fbs"
+INPUT_COMMON = COMMON_STEM + ".fbs"
 
-OUTPUT_BUNDLED_HEADER = BUNLDED_STEM + "_generated.h"
-OUTPUT_SCALAR_TYPE_HEADER = SCALAR_TYPE_STEM + "_generated.h"
+OUTPUT_BUNDLED_HEADER = BUNDLED_STEM + "_generated.h"
+OUTPUT_COMMON_HEADER = COMMON_STEM + "_generated.h"
 
 BUNDLED_GEN_RULE_NAME = "generate_bundled_program"
 
-BUNDLED_LIBRARY_NAME = BUNLDED_STEM + "_fbs"
+BUNDLED_LIBRARY_NAME = BUNDLED_STEM + "_fbs"
 
 def _generate_schema_header(rule_name, srcs, headers, default_header):
     """Generate header file given flatbuffer schema
@@ -54,7 +54,7 @@ def define_common_targets():
     )
 
     runtime.export_file(
-        name = INPUT_SCALAR_TYPE,
+        name = INPUT_COMMON,
         visibility = [
             "//executorch/devtools/bundled_program/serialize/...",
         ],
@@ -62,8 +62,8 @@ def define_common_targets():
 
     _generate_schema_header(
         BUNDLED_GEN_RULE_NAME,
-        [INPUT_BUNDLED, INPUT_SCALAR_TYPE],
-        [OUTPUT_BUNDLED_HEADER, OUTPUT_SCALAR_TYPE_HEADER],
+        [INPUT_BUNDLED, INPUT_COMMON],
+        [OUTPUT_BUNDLED_HEADER, OUTPUT_COMMON_HEADER],
         OUTPUT_BUNDLED_HEADER,
     )
 
@@ -77,7 +77,7 @@ def define_common_targets():
         ],
         exported_headers = {
             OUTPUT_BUNDLED_HEADER: ":{}[{}]".format(BUNDLED_GEN_RULE_NAME, OUTPUT_BUNDLED_HEADER),
-            OUTPUT_SCALAR_TYPE_HEADER: ":{}[{}]".format(BUNDLED_GEN_RULE_NAME, OUTPUT_SCALAR_TYPE_HEADER),
+            OUTPUT_COMMON_HEADER: ":{}[{}]".format(BUNDLED_GEN_RULE_NAME, OUTPUT_COMMON_HEADER),
         },
         exported_external_deps = ["flatbuffers-api"],
     )

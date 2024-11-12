@@ -1901,6 +1901,61 @@ TEST(VulkanComputeGraphTest, test_large_graph) {
   std::cout << ss.str();
 }
 
+void test_clone(
+    std::vector<int64_t> sizes,
+    utils::StorageType src_storage,
+    utils::GPUMemoryLayout src_layout,
+    utils::StorageType dst_storage,
+    utils::GPUMemoryLayout dst_layout) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  IOValueRef a =
+      graph.add_input_tensor(sizes, vkapi::kFloat, src_storage, src_layout);
+
+  IOValueRef out = {};
+  out.value = graph.add_tensor(sizes, vkapi::kFloat, dst_storage, dst_layout);
+
+  auto copyFn = VK_GET_OP_FN("aten.clone.default");
+  copyFn(graph, {a.value, kDummyValueRef, out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  fill_vtensor(graph, a, 0.0f, /*iota = */ true);
+
+  graph.propagate_resize();
+  graph.execute();
+
+  EXTRACT_TENSOR(out);
+  EXTRACT_TENSOR(a);
+
+  for (int i = 0; i < graph.numel_of(a.value); ++i) {
+    EXPECT_TRUE(data_out[i] == data_a[i]);
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_clone) {
+  std::vector<std::pair<utils::GPUMemoryLayout, utils::GPUMemoryLayout>> cases{
+      {utils::kWidthPacked, utils::kWidthPacked},
+      {utils::kWidthPacked, utils::kChannelsPacked},
+      {utils::kChannelsPacked, utils::kChannelsPacked},
+  };
+
+  for (std::vector<int64_t> sizes : standard_sizes_to_test) {
+    for (auto& [src_layout, dst_layout] : cases) {
+      test_clone(
+          sizes, utils::kTexture3D, src_layout, utils::kBuffer, dst_layout);
+      test_clone(
+          sizes, utils::kBuffer, src_layout, utils::kTexture3D, dst_layout);
+      test_clone(
+          sizes, utils::kTexture3D, src_layout, utils::kTexture3D, dst_layout);
+    }
+  }
+}
+
 TEST(VulkanComputeGraphTest, test_etvk_copy_offset_node) {
   GraphConfig config;
   ComputeGraph graph(config);

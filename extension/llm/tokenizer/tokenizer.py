@@ -50,6 +50,10 @@ class Tokenizer:
         # pyre-fixme[16]: `SentencePieceProcessor` has no attribute `encode`.
         return self.sp_model.decode(t)
 
+    def decode_token(self, t: int) -> str:
+        # pyre-fixme[16]: `SentencePieceProcessor` has no attribute `encode`.
+        return self.sp_model.decode(t)
+
     def export(self, output_path: str, *, prepend_padding: bool = False) -> None:
         """
         Export tokenizer.model to another serialization format. Here we did some lightweight

@@ -8,9 +8,9 @@
 from dataclasses import dataclass
 from typing import List
 
-from executorch.exir.scalar_type import ScalarType
+from executorch.exir.common_schema import ScalarType
 
-# Note: check executorch/schema/data.fbs for explanations of these fields.
+# Note: check executorch/extension/data_format/flat_tensor.fbs for explanations of these fields.
 
 
 @dataclass
@@ -31,7 +31,7 @@ class DataSegment:
 
 
 @dataclass
-class Data:
+class FlatTensor:
     version: int
     tensor_alignment: int
     tensor_segments: List[TensorMetadata]

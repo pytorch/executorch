@@ -6,15 +6,17 @@
 
 # pyre-strict
 
+from copy import deepcopy
+
 import executorch.backends.vulkan.custom_ops_lib  # noqa
 
 import torch
 
 from executorch.backends.vulkan.op_registry import handles_own_prepacking
+from executorch.backends.vulkan.utils import is_param_node
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
-from torch._export.utils import is_buffer, is_param
 from torch.export import ExportedProgram
 
 
@@ -29,26 +31,13 @@ def insert_prepack_nodes(program: ExportedProgram) -> ExportedProgram:
     argument into the operator implementation.
     """
 
-    def is_get_attr_node(node: torch.fx.Node) -> bool:
-        return isinstance(node, torch.fx.Node) and node.op == "get_attr"
-
-    def is_constant(node: torch.fx.Node) -> bool:
-        return node.name in program.graph_signature.inputs_to_lifted_tensor_constants
-
-    def is_param_node(node: torch.fx.Node) -> bool:
-        """
-        Check if the given node is a parameter within the exported program
-        """
-        return (
-            is_get_attr_node(node)
-            or is_param(program, node)
-            or is_buffer(program, node)
-            or is_constant(node)
-        )
-
     def prepack_not_required(node: torch.fx.Node) -> bool:
-        if not is_param_node(node):
+        if not is_param_node(program, node):
             return True
+
+        # Annotate that this node is going to represented as a tensorref in the Vulkan
+        # compute graph. This will be useful for later graph passes.
+        node.meta["vkdg_tensorref"] = True
 
         for user in node.users:
             if user.op == "call_function" and handles_own_prepacking(
@@ -69,9 +58,15 @@ def insert_prepack_nodes(program: ExportedProgram) -> ExportedProgram:
                 exir_ops.edge.et_vk.prepack.default,
                 (node,),
             )
-            prepack_node.meta["spec"] = node.meta["spec"]
+            # This pass assumes that the SpecPropPass() has already been applied
+            assert "spec" in node.meta
+            # Validate that the original node is marked as a constant. Constant tensors
+            # do not participate in memory planning.
+            assert node.meta["spec"].const
+            prepack_node.meta["val"] = node.meta["val"]
+            prepack_node.meta["spec"] = deepcopy(node.meta["spec"])
             # Set the mem_obj_id to -1 to indicate that this node requires a dedicated
-            # memory object. This pass must be executed AFTER the memory planning pass.
+            # memory object.
             prepack_node.meta["spec"].mem_obj_id = -1
             node.replace_all_uses_with(prepack_node, lambda x, y=prepack_node: x != y)
 

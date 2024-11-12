@@ -42,7 +42,7 @@ set_up_aot() {
 
   # Workaround for fbs files in exir/_serialize
   cp schema/program.fbs exir/_serialize/program.fbs
-  cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
+  cp schema/common.fbs exir/_serialize/common.fbs
 }
 
 build_qnn_backend

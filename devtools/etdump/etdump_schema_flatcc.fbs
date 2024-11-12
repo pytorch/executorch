@@ -1,4 +1,4 @@
-include "scalar_type.fbs";
+include "common.fbs";
 
 namespace etdump;
 

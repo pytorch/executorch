@@ -150,7 +150,7 @@ cp -f backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so $EXE
 
 # Workaround for fbs files in exir/_serialize
 cp $EXECUTORCH_ROOT/schema/program.fbs $EXECUTORCH_ROOT/exir/_serialize/program.fbs
-cp $EXECUTORCH_ROOT/schema/scalar_type.fbs $EXECUTORCH_ROOT/exir/_serialize/scalar_type.fbs
+cp $EXECUTORCH_ROOT/schema/common.fbs $EXECUTORCH_ROOT/exir/_serialize/common.fbs
 ```
 
 ### Runtime:

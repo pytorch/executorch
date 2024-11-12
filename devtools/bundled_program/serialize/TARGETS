@@ -11,7 +11,7 @@ runtime.python_library(
     ],
     resources = {
         "//executorch/devtools/bundled_program/schema:bundled_program_schema.fbs": "bundled_program_schema.fbs",
-        "//executorch/devtools/bundled_program/schema:scalar_type.fbs": "scalar_type.fbs",
+        "//executorch/devtools/bundled_program/schema:common.fbs": "common.fbs",
     },
     # Currently serialization API should only be used in some dedicated targets,
     # to avoid ODR violation when linking with another Flatbuffers library.
