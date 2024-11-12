@@ -2,8 +2,8 @@ The `schema.fbs` file in this directory describes the
 [Flatbuffers](https://google.github.io/flatbuffers/) schema used to serialize
 ExecuTorch programs.
 
-The `scalar_type.fbs` file contains schema for scalar types, used in both
-`schema.fbs` and `bundled_program_schema.fbs`.
+The `common.fbs` file contains schema for scalar types and other shared types,
+used in both `schema.fbs` and `bundled_program_schema.fbs`.
 
 ## Rules to ensure forward/backward compatibility
 

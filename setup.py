@@ -46,6 +46,8 @@
 # other computer software, distribute, and sublicense such enhancements or
 # derivative works thereof, in binary and source code form.
 
+# pyre-unsafe
+
 import contextlib
 import os
 import platform
@@ -413,15 +415,15 @@ class CustomBuildPy(build_py):
             # TODO(dbort): See if we can add a custom pyproject.toml section for
             # these, instead of hard-coding them here. See
             # https://setuptools.pypa.io/en/latest/userguide/extension.html
-            ("schema/scalar_type.fbs", "exir/_serialize/scalar_type.fbs"),
+            ("schema/common.fbs", "exir/_serialize/common.fbs"),
             ("schema/program.fbs", "exir/_serialize/program.fbs"),
             (
                 "devtools/bundled_program/schema/bundled_program_schema.fbs",
                 "devtools/bundled_program/serialize/bundled_program_schema.fbs",
             ),
             (
-                "devtools/bundled_program/schema/scalar_type.fbs",
-                "devtools/bundled_program/serialize/scalar_type.fbs",
+                "devtools/bundled_program/schema/common.fbs",
+                "devtools/bundled_program/serialize/common.fbs",
             ),
             # Install executorch-wheel-config.cmake to pip package.
             (

@@ -27,6 +27,7 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False):
         select({
             "DEFAULT": "",
             "ovr_config//os:android": "--optimize",
+            "ovr_config//os:linux": "--replace-u16vecn",
         })
     )
 
@@ -101,28 +102,37 @@ def define_common_targets(is_fbcode = False):
         "fbsource//third-party/VulkanMemoryAllocator/3.0.1:VulkanMemoryAllocator_xplat",
     ]
 
-    if not is_fbcode:
-        VK_API_DEPS += [
-            "fbsource//third-party/volk:volk",
-        ]
-        VK_API_DEPS += select({
-            "DEFAULT": [],
-            "ovr_config//os:android": ["fbsource//third-party/toolchains:android"],
-        })
-        VK_API_PREPROCESSOR_FLAGS += [
-            "-DUSE_VULKAN_WRAPPER",
-            "-DUSE_VULKAN_VOLK",
-        ]
-        VK_API_PREPROCESSOR_FLAGS += select({
-            "DEFAULT": [],
-            "ovr_config//os:android": ["-DVK_ANDROID_external_memory_android_hardware_buffer"],
-        })
-    else:
+    if is_fbcode:
         VK_API_DEPS += [
             "fbsource//third-party/swiftshader:swiftshader_vk_headers",
             "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
             "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_so",
         ]
+    else:
+        VK_API_DEPS += select({
+            "DEFAULT": [
+                "fbsource//third-party/volk:volk",
+            ],
+            "ovr_config//os:android": [
+                "fbsource//third-party/volk:volk",
+                "fbsource//third-party/toolchains:android"
+            ],
+            "ovr_config//os:macos-arm64": [
+                "//third-party/khronos:moltenVK_static"
+            ],
+        })
+        VK_API_PREPROCESSOR_FLAGS += select({
+            "DEFAULT": [
+                "-DUSE_VULKAN_WRAPPER",
+                "-DUSE_VULKAN_VOLK",
+            ],
+            "ovr_config//os:android": [
+                "-DUSE_VULKAN_WRAPPER",
+                "-DUSE_VULKAN_VOLK",
+                "-DVK_ANDROID_external_memory_android_hardware_buffer"
+            ],
+            "ovr_config//os:macos-arm64": []
+        })
 
     runtime.cxx_library(
         name = "vulkan_compute_api",
@@ -205,6 +215,21 @@ def define_common_targets(is_fbcode = False):
     ##
     if is_fbcode:
         runtime.python_library(
+            name = "utils_lib",
+            srcs = [
+                "utils.py",
+            ],
+            visibility = [
+                "//executorch/backends/vulkan/...",
+            ],
+            deps = [
+                "//caffe2:torch",
+                "//executorch/exir:tensor",
+                "//executorch/backends/vulkan/serialization:lib",
+            ]
+        )
+
+        runtime.python_library(
             name = "custom_ops_lib",
             srcs = [
                 "custom_ops_lib.py"
@@ -231,6 +256,7 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 ":custom_ops_lib",
+                ":utils_lib",
                 "//caffe2:torch",
                 "//executorch/exir/dialects:lib",
                 "//executorch/backends/vulkan/serialization:lib",

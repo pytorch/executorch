@@ -19,7 +19,7 @@ from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decomp
 
 # The prefix of schema files used for etdump
 ETDUMP_FLATCC_SCHEMA_NAME = "etdump_schema_flatcc"
-SCALAR_TYPE_SCHEMA_NAME = "scalar_type"
+COMMON_SCHEMA_NAME = "common"
 
 
 def _write_schema(d: str, schema_name: str) -> None:
@@ -49,7 +49,7 @@ def _convert_to_flatcc(etdump_json: str) -> bytes:
     with tempfile.TemporaryDirectory() as d:
         # load given and common schema
         _write_schema(d, ETDUMP_FLATCC_SCHEMA_NAME)
-        _write_schema(d, SCALAR_TYPE_SCHEMA_NAME)
+        _write_schema(d, COMMON_SCHEMA_NAME)
 
         schema_path = os.path.join(d, "{}.fbs".format(ETDUMP_FLATCC_SCHEMA_NAME))
         json_path = os.path.join(d, "{}.json".format(ETDUMP_FLATCC_SCHEMA_NAME))
@@ -65,7 +65,7 @@ def _convert_to_flatcc(etdump_json: str) -> bytes:
 def _convert_from_flatcc(etdump_flatbuffer: bytes, size_prefixed: bool = True) -> bytes:
     with tempfile.TemporaryDirectory() as d:
         _write_schema(d, ETDUMP_FLATCC_SCHEMA_NAME)
-        _write_schema(d, SCALAR_TYPE_SCHEMA_NAME)
+        _write_schema(d, COMMON_SCHEMA_NAME)
 
         schema_path = os.path.join(d, "{}.fbs".format(ETDUMP_FLATCC_SCHEMA_NAME))
         bin_path = os.path.join(d, "schema.bin")

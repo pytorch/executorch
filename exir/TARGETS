@@ -41,9 +41,9 @@ python_library(
 )
 
 python_library(
-    name = "scalar_type",
+    name = "common_schema",
     srcs = [
-        "scalar_type.py",
+        "common_schema.py",
     ],
 )
 
@@ -53,7 +53,7 @@ python_library(
         "schema.py",
     ],
     deps = [
-        ":scalar_type",
+        ":common_schema",
         "//executorch/exir/backend:compile_spec_schema",
     ],
 )

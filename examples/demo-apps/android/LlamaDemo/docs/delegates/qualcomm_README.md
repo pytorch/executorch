@@ -46,7 +46,7 @@ export EXECUTORCH_ROOT=$HOME/repos/executorch
 export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/:$LD_LIBRARY_PATH
 export PYTHONPATH=$EXECUTORCH_ROOT/..
 cp schema/program.fbs exir/_serialize/program.fbs
-cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
+cp schema/common.fbs exir/_serialize/common.fbs
 ```
 
 ### Build QNN backend with ExecuTorch

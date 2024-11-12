@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional
 
-from executorch.exir.scalar_type import ScalarType
+from executorch.exir.common_schema import ScalarType
 
 
 @dataclass

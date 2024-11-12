@@ -1,14 +1,14 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-# Construct the input and output file names. All input and output files rely on scalar_type file.
+# Construct the input and output file names. All input and output files rely on common file.
 PROGRAM_STEM = "program"
-SCALAR_TYPE_STEM = "scalar_type"
+COMMON_STEM = "common"
 
 INPUT_PROGRAM = PROGRAM_STEM + ".fbs"
-INPUT_SCALAR_TYPE = SCALAR_TYPE_STEM + ".fbs"
+INPUT_COMMON = COMMON_STEM + ".fbs"
 
 OUTPUT_PROGRAM_HEADER = PROGRAM_STEM + "_generated.h"
-OUTPUT_SCALAR_TYPE_HEADER = SCALAR_TYPE_STEM + "_generated.h"
+OUTPUT_COMMON_HEADER = COMMON_STEM + "_generated.h"
 
 PROGRAM_GEN_RULE_NAME = "generate_program"
 
@@ -54,7 +54,7 @@ def define_common_targets():
         ],
     )
     runtime.export_file(
-        name = INPUT_SCALAR_TYPE,
+        name = INPUT_COMMON,
         visibility = [
             "//executorch/exir/_serialize/...",
             "//executorch/devtools/etdump/...",
@@ -63,8 +63,8 @@ def define_common_targets():
 
     _generate_schema_header(
         PROGRAM_GEN_RULE_NAME,
-        [INPUT_PROGRAM, INPUT_SCALAR_TYPE],
-        [OUTPUT_PROGRAM_HEADER, OUTPUT_SCALAR_TYPE_HEADER],
+        [INPUT_PROGRAM, INPUT_COMMON],
+        [OUTPUT_PROGRAM_HEADER, OUTPUT_COMMON_HEADER],
         OUTPUT_PROGRAM_HEADER,
     )
 
@@ -81,7 +81,7 @@ def define_common_targets():
         ],
         exported_headers = {
             OUTPUT_PROGRAM_HEADER: ":{}[{}]".format(PROGRAM_GEN_RULE_NAME, OUTPUT_PROGRAM_HEADER),
-            OUTPUT_SCALAR_TYPE_HEADER: ":{}[{}]".format(PROGRAM_GEN_RULE_NAME, OUTPUT_SCALAR_TYPE_HEADER),
+            OUTPUT_COMMON_HEADER: ":{}[{}]".format(PROGRAM_GEN_RULE_NAME, OUTPUT_COMMON_HEADER),
         },
         exported_external_deps = ["flatbuffers-api"],
     )

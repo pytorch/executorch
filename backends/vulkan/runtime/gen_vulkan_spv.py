@@ -540,6 +540,7 @@ class SPVGenerator:
         env: Dict[Any, Any],
         glslc_path: Optional[str],
         glslc_flags: str = "",
+        replace_u16vecn: bool = False,
     ) -> None:
         if isinstance(src_dir_paths, str):
             self.src_dir_paths = [src_dir_paths]
@@ -549,6 +550,7 @@ class SPVGenerator:
         self.env = env
         self.glslc_path = glslc_path
         self.glslc_flags = glslc_flags
+        self.replace_u16vecn = replace_u16vecn
 
         self.glsl_src_files: Dict[str, str] = {}
         self.template_yaml_files: List[str] = []
@@ -705,6 +707,22 @@ class SPVGenerator:
                     self.create_shader_params(),
                 )
 
+    def maybe_replace_u16vecn(self, input_text: str) -> str:
+        """
+        There is a latency benefit to using u16vecn variables to store texture position
+        variables instead of ivecn, likely due to reduced register pressure. However,
+        SwiftShader does not support 16 bit integer types in shaders, so this is a crude
+        way to fallback to using ivecn to store texture positions so that testing with
+        SwiftShader is still possible.
+        """
+        if not self.replace_u16vecn:
+            return input_text
+        if "codegen-nosub" in input_text:
+            return input_text
+
+        input_text = input_text.replace("u16vec", "ivec")
+        return input_text
+
     def generateSPV(self, output_dir: str) -> Dict[str, str]:
         output_file_map = {}
 
@@ -716,6 +734,7 @@ class SPVGenerator:
 
             with codecs.open(source_glsl, "r", encoding="utf-8") as input_file:
                 input_text = input_file.read()
+                input_text = self.maybe_replace_u16vecn(input_text)
                 output_text = preprocess(input_text, shader_params)
 
             glsl_out_path = os.path.join(output_dir, f"{shader_name}.glsl")
@@ -1029,6 +1048,7 @@ def main(argv: List[str]) -> int:
     parser.add_argument("-c", "--glslc-path", required=True, help="")
     parser.add_argument("-t", "--tmp-dir-path", required=True, help="/tmp")
     parser.add_argument("-o", "--output-path", required=True, help="")
+    parser.add_argument("--replace-u16vecn", action="store_true", default=False)
     parser.add_argument("--optimize_size", action="store_true", help="")
     parser.add_argument("--optimize", action="store_true", help="")
     parser.add_argument(
@@ -1056,7 +1076,11 @@ def main(argv: List[str]) -> int:
         glslc_flags += "-O"
 
     shader_generator = SPVGenerator(
-        options.glsl_paths, env, options.glslc_path, glslc_flags
+        options.glsl_paths,
+        env,
+        options.glslc_path,
+        glslc_flags=glslc_flags,
+        replace_u16vecn=options.replace_u16vecn,
     )
     output_spv_files = shader_generator.generateSPV(options.tmp_dir_path)
 

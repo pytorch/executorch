@@ -136,7 +136,7 @@ if [ "$BUILD_X86_64" = true ]; then
     rm -f $PRJ_ROOT/backends/qualcomm/python/*
     cp -fv $BUILD_ROOT/backends/qualcomm/Py* "$PRJ_ROOT/backends/qualcomm/python"
     cp -fv "$PRJ_ROOT/schema/program.fbs" "$PRJ_ROOT/exir/_serialize/program.fbs"
-    cp -fv "$PRJ_ROOT/schema/scalar_type.fbs" "$PRJ_ROOT/exir/_serialize/scalar_type.fbs"
+    cp -fv "$PRJ_ROOT/schema/common.fbs" "$PRJ_ROOT/exir/_serialize/common.fbs"
 
    EXAMPLE_ROOT=examples/qualcomm
    CMAKE_PREFIX_PATH="${BUILD_ROOT}/lib/cmake/ExecuTorch;${BUILD_ROOT}/third-party/gflags;"

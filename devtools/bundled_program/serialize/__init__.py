@@ -23,7 +23,7 @@ from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decomp
 
 # The prefix of schema files used for bundled program
 BUNDLED_PROGRAM_SCHEMA_NAME = "bundled_program_schema"
-SCALAR_TYPE_SCHEMA_NAME = "scalar_type"
+COMMON_SCHEMA_NAME = "common"
 
 
 def write_schema(d: str, schema_name: str) -> None:
@@ -51,7 +51,7 @@ def convert_to_flatbuffer(program_json: str) -> bytes:
     with tempfile.TemporaryDirectory() as d:
         # load given and common schema
         write_schema(d, BUNDLED_PROGRAM_SCHEMA_NAME)
-        write_schema(d, SCALAR_TYPE_SCHEMA_NAME)
+        write_schema(d, COMMON_SCHEMA_NAME)
 
         schema_path = os.path.join(d, "{}.fbs".format(BUNDLED_PROGRAM_SCHEMA_NAME))
         json_path = os.path.join(d, "{}.json".format(BUNDLED_PROGRAM_SCHEMA_NAME))
@@ -66,7 +66,7 @@ def convert_to_flatbuffer(program_json: str) -> bytes:
 def convert_from_flatbuffer(program_flatbuffer: bytes) -> bytes:
     with tempfile.TemporaryDirectory() as d:
         write_schema(d, BUNDLED_PROGRAM_SCHEMA_NAME)
-        write_schema(d, SCALAR_TYPE_SCHEMA_NAME)
+        write_schema(d, COMMON_SCHEMA_NAME)
 
         schema_path = os.path.join(d, "{}.fbs".format(BUNDLED_PROGRAM_SCHEMA_NAME))
         bin_path = os.path.join(d, "schema.bin")

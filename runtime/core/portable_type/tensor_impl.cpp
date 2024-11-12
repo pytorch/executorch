@@ -110,8 +110,11 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
           numel_bound_);
 
       if (strides_ && dim_order_) {
-        ET_CHECK_OK_OR_RETURN_ERROR(
-            dim_order_to_stride(new_sizes.data(), dim_order_, dim_, strides_));
+        auto error =
+            dim_order_to_stride(new_sizes.data(), dim_order_, dim_, strides_);
+        if (error != Error::Ok) {
+          return error;
+        }
       }
       numel_ = new_numel;
       std::copy(new_sizes.begin(), new_sizes.end(), sizes_);

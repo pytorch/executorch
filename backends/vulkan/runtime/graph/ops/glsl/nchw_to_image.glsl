@@ -22,6 +22,8 @@ layout(std430) buffer;
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
 ${layout_declare_buffer(B, "r", "buf_in", DTYPE)}
 ${layout_declare_ubo(B, "ivec4", "sizes")}
+$if not FROM_STAGING:
+  ${layout_declare_ubo(B, "ivec4", "buf_strides")}
 
 #include "indexing_utils.h"
 
@@ -32,10 +34,10 @@ const lowp ivec4 axis_map = unhash_axis_map(t_layout);
 const lowp int packed_dim = unhash_packed_dim(t_layout);
 
 VEC4_T read_texel(ivec4 tidx) {
-  const ivec4 buf_indices = tidx_to_nchwi(
-      tidx,
-      sizes,
-      packed_dim);
+  $if FROM_STAGING:
+    const ivec4 buf_indices = tidx_to_nchwi(tidx, sizes, packed_dim);
+  $else:
+    const ivec4 buf_indices = tidx_to_4bufi(tidx, buf_strides, packed_dim);
 
   VEC4_T texel = VEC4_T(0);
   if (tidx[packed_dim] < sizes[packed_dim]) {

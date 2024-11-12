@@ -52,7 +52,7 @@ class QnnGraph {
 
   Qnn_ErrorHandle_t GraphFinalize() {
     return implementation_.GetQnnInterface().qnn_graph_finalize(
-        handle_, nullptr /* profile_handle */, nullptr /* signal_handle */);
+        handle_, profile_->GetHandle(), nullptr /* signal_handle */);
   };
   Qnn_ErrorHandle_t ProfileExecuteData(
       executorch::runtime::EventTracer* event_tracer) {
@@ -60,6 +60,10 @@ class QnnGraph {
   };
   Qnn_GraphHandle_t GetHandle() {
     return handle_;
+  }
+
+  QnnProfile* GetProfile() {
+    return profile_.get();
   }
 
  protected:
