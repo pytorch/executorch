@@ -270,7 +270,6 @@ class ArmQuantizer(Quantizer):
         "mm",
         "one_to_one",
         "generic",
-        "sum",
     ]
 
     def __init__(self) -> None:
