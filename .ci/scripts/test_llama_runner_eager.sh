@@ -42,11 +42,12 @@ run_and_verify() {
 	-d fp32 \
 	--max_seq_length 32 \
 	--temperature 0 \
+    --show_tokens \
 	--prompt "Once upon a time," > result.txt
 
     # Verify result.txt
     RESULT=$(cat result.txt)
-    EXPECTED_RESULT="there was a little girl"
+    EXPECTED_RESULT="727, 471, 263, 2217, 7826, 4257, 365, 2354, 29889, 2296, 18012, 304, 1708, 5377, 297, 278, 6575, 845, 457, 29889, 3118, 2462, 29892, 1183, 4446, 263"
     if [[ "${RESULT}" == *"${EXPECTED_RESULT}"* ]]; then
         echo "Actual result: ${RESULT}"
         echo "Success"
