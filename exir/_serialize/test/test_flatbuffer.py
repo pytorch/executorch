@@ -5,8 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
-
 import os
 import re
 import shutil
@@ -87,7 +85,7 @@ SCHEMA_FILES: Dict[str, bytes] = {
             b"}",
         ]
     ),
-    "common.fbs": b"\n".join(
+    "scalar_type.fbs": b"\n".join(
         [
             b"table ScalarType {",
             # Spaces around the colon.
@@ -158,7 +156,7 @@ class TestPrepareSchema(unittest.TestCase):
                 ),
             )
             self.assertEqual(
-                read_file(out_dir, "common.fbs"),
+                read_file(out_dir, "scalar_type.fbs"),
                 b"\n".join(
                     [
                         b"table ScalarType {",
@@ -194,7 +192,7 @@ class TestPrepareSchema(unittest.TestCase):
                 ),
             )
             self.assertEqual(
-                read_file(out_dir, "common.fbs"),
+                read_file(out_dir, "scalar_type.fbs"),
                 b"\n".join(
                     [
                         b"table ScalarType {",
@@ -234,7 +232,7 @@ class TestPrepareSchema(unittest.TestCase):
                 ),
             )
             self.assertEqual(
-                read_file(out_dir, "common.fbs"),
+                read_file(out_dir, "scalar_type.fbs"),
                 b"\n".join(
                     [
                         b"table ScalarType {",

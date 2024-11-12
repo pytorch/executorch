@@ -14,12 +14,14 @@ import unittest
 class TestSchema(unittest.TestCase):
     def test_schema_sync(self) -> None:
         # make the test work in both internal and oss.
-        prefix = "executorch/" if os.path.exists("executorch/schema/common.fbs") else ""
+        prefix = (
+            "executorch/" if os.path.exists("executorch/schema/scalar_type.fbs") else ""
+        )
 
         self.assertTrue(
             filecmp.cmp(
-                prefix + "devtools/bundled_program/schema/common.fbs",
-                prefix + "schema/common.fbs",
+                prefix + "devtools/bundled_program/schema/scalar_type.fbs",
+                prefix + "schema/scalar_type.fbs",
             ),
-            'Please run "hg cp fbcode//executorch/schema/common.fbs fbcode//executorch/devtools/bundled_program/schema/common.fbs" to sync schema changes.',
+            'Please run "hg cp fbcode//executorch/schema/scalar_type.fbs fbcode//executorch/devtools/bundled_program/schema/scalar_type.fbs" to sync schema changes.',
         )
