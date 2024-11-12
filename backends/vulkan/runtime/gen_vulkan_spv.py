@@ -721,6 +721,7 @@ class SPVGenerator:
             return input_text
 
         input_text = input_text.replace("u16vec", "ivec")
+        input_text = input_text.replace("uint16_t", "int")
         return input_text
 
     def generateSPV(self, output_dir: str) -> Dict[str, str]:
