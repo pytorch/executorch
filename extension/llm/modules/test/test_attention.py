@@ -13,6 +13,7 @@ from executorch.extension.llm.modules.attention import (
     MultiHeadAttention as ETMultiHeadAttention,
 )
 from executorch.runtime import Runtime
+from torch.testing import assert_close
 from torchtune.models.llama3_1._position_embeddings import Llama3ScaledRoPE
 from torchtune.modules.attention import MultiHeadAttention as TTMultiHeadAttention
 
@@ -94,7 +95,7 @@ class AttentionTest(unittest.TestCase):
         et_res = self.et_mha(self.x, self.x)  # Self attention.
         tt_res = self.tt_mha(self.x, self.x)  # Self attention.
 
-        self.assertTrue(torch.allclose(et_res, tt_res))
+        assert_close(et_res, tt_res)
 
         # test with kv cache
         self.et_mha.setup_cache(1, dtype=torch.float32, max_seq_len=20)
@@ -124,7 +125,8 @@ class AttentionTest(unittest.TestCase):
         tt_res = self.tt_mha(
             self.x, self.x, input_pos=next_input_pos
         )  # Self attention with input pos.
-        self.assertTrue(torch.allclose(et_res, tt_res))
+
+        assert_close(et_res, tt_res)
 
     def test_attention_export(self):
         # Self attention.
@@ -136,7 +138,8 @@ class AttentionTest(unittest.TestCase):
         )
         et_res = et_mha_ep.module()(self.x, self.x, input_pos=self.input_pos)
         tt_res = self.tt_mha(self.x, self.x, input_pos=self.input_pos)
-        self.assertTrue(torch.allclose(et_res, tt_res))
+
+        assert_close(et_res, tt_res)
 
         # TODO: KV cache.
 
@@ -162,6 +165,6 @@ class AttentionTest(unittest.TestCase):
         et_res = method.execute((self.x, self.x, self.input_pos))
         tt_res = self.tt_mha(self.x, self.x, input_pos=self.input_pos)
 
-        self.assertTrue(torch.allclose(et_res[0], tt_res, atol=1e-06))
+        assert_close(et_res[0], tt_res)
 
         # TODO: KV cache.
