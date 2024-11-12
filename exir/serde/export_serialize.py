@@ -21,7 +21,6 @@ import logging
 import math
 import operator
 import re
-import sys
 import typing
 
 from contextlib import contextmanager
