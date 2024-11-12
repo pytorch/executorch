@@ -71,6 +71,18 @@ python_library(
 )
 
 python_library(
+    name = "tosa_specification",
+    srcs = [
+        "tosa_specification.py",
+    ],
+    typing = True,
+    deps = [
+        "fbsource//third-party/pypi/packaging:packaging",
+        "//executorch/exir/backend:compile_spec_schema",
+    ],
+)
+
+python_library(
     name = "tosa_utils",
     srcs = [
         "tosa_utils.py",
