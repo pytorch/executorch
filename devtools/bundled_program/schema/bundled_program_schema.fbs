@@ -4,7 +4,7 @@
 // See README.md before modifying this file.
 //
 
-include "common.fbs";
+include "scalar_type.fbs";
 
 namespace bundled_program_flatbuffer;
 
