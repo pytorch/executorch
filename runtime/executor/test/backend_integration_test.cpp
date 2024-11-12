@@ -56,7 +56,8 @@ class StubBackend final : public BackendInterface {
       FreeableBuffer*,
       ArrayRef<CompileSpec>,
       BackendInitContext&)>;
-  using ExecuteFn = std::function<Error(DelegateHandle*, EValue**)>;
+  using ExecuteFn =
+      std::function<Error(BackendExecutionContext&, DelegateHandle*, EValue**)>;
   using DestroyFn = std::function<void(DelegateHandle*)>;
 
   // Default name that this backend is registered as.
@@ -98,7 +99,7 @@ class StubBackend final : public BackendInterface {
       DelegateHandle* handle,
       EValue** args) const override {
     if (execute_fn_) {
-      return execute_fn_.value()(handle, args);
+      return execute_fn_.value()(context, handle, args);
     }
     // Return a benign value otherwise.
     return Error::Ok;
@@ -404,7 +405,9 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
   // FreeableBuffer.
   DelegateHandle* execute_handle = nullptr;
   StubBackend::singleton().install_execute(
-      [&](DelegateHandle* handle, ET_UNUSED EValue** args) -> Error {
+      [&](ET_UNUSED BackendExecutionContext& backend_execution_context,
+          DelegateHandle* handle,
+          ET_UNUSED EValue** args) -> Error {
         execute_handle = handle;
         auto* processed = reinterpret_cast<FreeableBuffer*>(handle);
 
