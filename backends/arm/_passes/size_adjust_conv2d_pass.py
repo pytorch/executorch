@@ -9,7 +9,7 @@
 from typing import cast, Optional
 
 import torch.fx
-from executorch.backends.arm.tosa_quant_utils import is_quant_node
+from executorch.backends.arm.tosa_quant_utils import is_node_quantized
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._ops import OpOverload
@@ -113,7 +113,7 @@ class SizeAdjustConv2DPass(ExportPass):
                     slice_node = graph.create_node(
                         "call_function", self.slice_op, (last_node,) + args
                     )
-                    if is_quant_node(last_node):
+                    if is_node_quantized(last_node):
                         q_params = last_node.args[1:]
                         dq_node = insert_q_dq_pair(
                             graph_module.graph, slice_node, q_params

@@ -54,12 +54,12 @@ class TestMobileNetV2(unittest.TestCase):
             ArmTester(
                 self.mv2,
                 example_inputs=self.model_inputs,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=common.get_tosa_compile_spec(
+                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
+                ),
             )
             .export()
-            .to_edge(config=self._edge_compile_config)
-            .check(list(self.all_operators))
-            .partition()
+            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
             .to_executorch()
             .run_method_and_compare_outputs(inputs=self.model_inputs)
         )
@@ -69,13 +69,13 @@ class TestMobileNetV2(unittest.TestCase):
             ArmTester(
                 self.mv2,
                 example_inputs=self.model_inputs,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=common.get_tosa_compile_spec(
+                    "TOSA-0.80.0+BI", permute_memory_to_nhwc=True
+                ),
             )
             .quantize()
             .export()
-            .to_edge(config=self._edge_compile_config)
-            .check(list(self.operators_after_quantization))
-            .partition()
+            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
             .to_executorch()
             # atol=1.0 is a defensive upper limit
             # TODO MLETROCH-72
@@ -92,9 +92,7 @@ class TestMobileNetV2(unittest.TestCase):
             )
             .quantize()
             .export()
-            .to_edge(config=self._edge_compile_config)
-            .check(list(self.operators_after_quantization))
-            .partition()
+            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
             .to_executorch()
             .serialize()
         )
@@ -112,9 +110,7 @@ class TestMobileNetV2(unittest.TestCase):
             )
             .quantize()
             .export()
-            .to_edge(config=self._edge_compile_config)
-            .check(list(self.operators_after_quantization))
-            .partition()
+            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
             .to_executorch()
             .serialize()
         )
