@@ -303,6 +303,51 @@ static Kernel prim_ops[] = {
           }
         }),
 
+    // ceil.Scalar(Scalar a) -> Scalar
+    Kernel(
+        "executorch_prim::ceil.Scalar",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& out = *stack[1];
+          if (a.isDouble()) {
+            out = EValue(static_cast<int64_t>(ceil(a.toDouble())));
+          } else {
+            ET_CHECK_MSG(false, "Unsupported DType %zu", (size_t)a.tag);
+          }
+        }),
+
+    // round.Scalar(Scalar a) -> Scalar
+    Kernel(
+        "executorch_prim::round.Scalar",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& out = *stack[1];
+          if (a.isDouble()) {
+            // Round half to even to match Python round(). Need an explicit
+            // implementation as not all platforms support fenv rounding modes.
+            // See
+            // https://codeyarns.com/tech/2018-08-17-how-to-round-half-to-even.html
+            const auto val = a.toDouble();
+            const auto r = round(val);
+            const auto d = r - val;
+            auto res = 0.0;
+
+            if (std::abs(d) != 0.5) {
+              res = r;
+            } else if (fmod(r, 2.0) == 0.0) {
+              res = r;
+            } else {
+              res = val - d;
+            }
+
+            out = EValue(static_cast<int64_t>(res));
+          } else {
+            ET_CHECK_MSG(false, "Unsupported DType %zu", (size_t)a.tag);
+          }
+        }),
+
     // trunc.Scalar(Scalar a) -> Scalar
     Kernel(
         "executorch_prim::trunc.Scalar",

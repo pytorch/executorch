@@ -218,6 +218,7 @@ def verify_debug_data_equivalence(
 
         if isinstance(output_a, torch.Tensor):
             assert bool(
+                # pyre-fixme[6]: For 1st argument expected `Tensor` but got `bool`.
                 torch.all(output_a == output_b)
             ), "Tensors Debug Data is different. Expected to be equal."
         else:
