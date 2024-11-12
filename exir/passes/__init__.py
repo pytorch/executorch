@@ -339,7 +339,7 @@ class ToOutVarPass(PassBase):
                 self.call(get_submodule(node.args[0]))
                 self.call(get_submodule(node.args[1]))
                 continue
-            elif getattr(target, "__module__", None) == "_operator":
+            elif getattr(target, "__module__", None) in ("builtins", "_operator"):
                 continue
             elif target in to_out_var_skiplist:
                 continue
