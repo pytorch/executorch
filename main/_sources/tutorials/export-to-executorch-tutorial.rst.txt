@@ -183,13 +183,13 @@ different than the ones we used while tracing, we will run into an error:
         raise e
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 387, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1740, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1844, in _call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1848, in _call_impl
         return inner()
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1769, in inner
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1773, in inner
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 719, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 721, in _fn
         return fn(*args, **kwargs)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 37, in _check_input_constraints_pre_hook
         _check_input_constraints_for_graph(
@@ -307,13 +307,13 @@ Now let's try running the model with different shapes:
         raise e
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 387, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1740, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1844, in _call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1848, in _call_impl
         return inner()
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1769, in inner
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1773, in inner
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 719, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 721, in _fn
         return fn(*args, **kwargs)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 37, in _check_input_constraints_pre_hook
         _check_input_constraints_for_graph(
@@ -329,13 +329,13 @@ Now let's try running the model with different shapes:
         raise e
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 387, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1740, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1844, in _call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1848, in _call_impl
         return inner()
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1769, in inner
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1773, in inner
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 719, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 721, in _fn
         return fn(*args, **kwargs)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 37, in _check_input_constraints_pre_hook
         _check_input_constraints_for_graph(
@@ -595,19 +595,6 @@ there is only one program, it will by default be saved to the name "forward".
 
  .. code-block:: none
 
-    Edge Dialect graph of decode
-    ExportedProgram:
-        class GraphModule(torch.nn.Module):
-            def forward(self, x: "f32[1, 5]"):
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:266 in forward, code: return torch.nn.functional.linear(x, torch.randn(10, 5))
-                aten_randn_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_randn_default([10, 5], device = device(type='cpu'), pin_memory = False)
-                aten_permute_copy_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
-                aten_mm_default: "f32[1, 10]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
-                return (aten_mm_default,)
-            
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
-    Range constraints: {}
-
     Edge Dialect graph of encode
     ExportedProgram:
         class GraphModule(torch.nn.Module):
@@ -616,6 +603,19 @@ there is only one program, it will by default be saved to the name "forward".
                 aten_randn_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_randn_default([5, 10], device = device(type='cpu'), pin_memory = False)
                 aten_permute_copy_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
                 aten_mm_default: "f32[1, 5]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
+                return (aten_mm_default,)
+            
+    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
+    Range constraints: {}
+
+    Edge Dialect graph of decode
+    ExportedProgram:
+        class GraphModule(torch.nn.Module):
+            def forward(self, x: "f32[1, 5]"):
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:266 in forward, code: return torch.nn.functional.linear(x, torch.randn(10, 5))
+                aten_randn_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_randn_default([10, 5], device = device(type='cpu'), pin_memory = False)
+                aten_permute_copy_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
+                aten_mm_default: "f32[1, 10]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
                 return (aten_mm_default,)
             
     Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
@@ -874,7 +874,7 @@ can compose this lowered module with another module.
 
     /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py:63: UserWarning: Attempted to insert a get_attr Node with no underlying reference in the owning GraphModule! Call GraphModule.add_submodule to add the necessary submodule, GraphModule.add_parameter to add the necessary Parameter, or nn.Module.register_buffer to add the necessary buffer
       getattr_node = gm.graph.get_attr(lifted_node)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph.py:1794: UserWarning: Node non_lowerable_bias target non_lowerable.bias bias of non_lowerable does not reference an nn.Module, nn.Parameter, or buffer, which is what 'get_attr' Nodes typically target
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph.py:1800: UserWarning: Node non_lowerable_bias target non_lowerable.bias bias of non_lowerable does not reference an nn.Module, nn.Parameter, or buffer, which is what 'get_attr' Nodes typically target
       warnings.warn(
     Edge Dialect graph
     ExportedProgram:
@@ -1289,7 +1289,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 3.010 seconds)
+   **Total running time of the script:** (0 minutes 3.077 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
