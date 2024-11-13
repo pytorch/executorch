@@ -82,7 +82,7 @@ class AttentionTest(unittest.TestCase):
             pos_embeddings=self.pos_embeddings,
             max_seq_len=self.max_seq_len,
         )
-
+        self.et_mha.load_state_dict(self.tt_mha.state_dict())
         # Common inputs.
         seq_len = 10
         self.x = torch.randn(1, seq_len, self.embed_dim)
