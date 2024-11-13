@@ -7,6 +7,7 @@
 # pyre-unsafe
 
 import torch
+from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -42,16 +43,16 @@ class DecomposeMeanDimPass(ExportPass):
         if op not in (exir_ops.edge.aten.mean.dim, torch.ops.aten.mean.dim):
             return super().call_operator(op, args, kwargs, meta)
 
-        x = args[0]
-        dim = args[1]
-        keepdim = args[2] if len(args) > 2 else False
-        if not keepdim:
-            return super().call_operator(op, args, kwargs, meta)
-        # if keepdim == True and dim == [-1, -2], mean.dim can be
+        x = get_node_arg(args, 0)
+        dim = get_node_arg(args, 1)
+        keepdim = get_node_arg(args, 2, False)
+
+        # if dim == [-1, -2], mean.dim can be
         # decomposed to avg_pool2d. This is handled by ConvertMeanDimToAveragePool.
         if dim == [-1, -2]:
             # Simply return the mean.dim operator for future decomposition.
             return super().call_operator(op, args, kwargs, meta)
+
         shape = meta["val"].size()
         dtype = meta["val"].dtype
         input_shape = x.data.size()
