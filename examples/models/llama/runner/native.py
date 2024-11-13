@@ -41,7 +41,6 @@ class NativeLlamaRunner(LlamaRunner):
             max_batch_size=1,
             use_kv_cache=args.kv_cache,
             vocab_size=params["vocab_size"],
-            has_full_logits=args.model in TORCHTUNE_DEFINED_MODELS,
         )
         self.model = _load_for_executorch(args.pte)
 
