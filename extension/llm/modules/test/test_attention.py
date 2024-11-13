@@ -21,13 +21,10 @@ from torchtune.models.llama3_1._position_embeddings import Llama3ScaledRoPE
 from torchtune.modules.attention import MultiHeadAttention as TTMultiHeadAttention
 
 
-torch.manual_seed(0)
-
-
 class AttentionTest(unittest.TestCase):
     def setUp(self):
         super().setUp()
-
+        torch.manual_seed(0)
         # Constants
         self.embed_dim = 2048
         self.num_heads = 32
