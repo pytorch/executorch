@@ -37,7 +37,7 @@ class EagerLlamaRunner(LlamaRunner):
             model_args=model_args,
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
-        manager: LLMEdgeManager = _prepare_for_llama_export("llama", args)
+        manager: LLMEdgeManager = _prepare_for_llama_export(args)
         self.model = manager.model.eval().to(device=self.device)
 
     def forward(
@@ -54,13 +54,27 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--prompt",
         type=str,
-        default="Hello",
+        default=None,
     )
 
     parser.add_argument(
         "--temperature",
         type=float,
         default=0,
+    )
+
+    parser.add_argument(
+        "--show_tokens",
+        action="store_true",
+        default=False,
+        help="Show the tokens that were generated",
+    )
+
+    parser.add_argument(
+        "--chat",
+        action="store_true",
+        default=False,
+        help="Have multi-turn chat with the model",
     )
 
     return parser
@@ -71,15 +85,17 @@ def main() -> None:
     args = parser.parse_args()
 
     runner = EagerLlamaRunner(args)
-    result = runner.text_completion(
-        prompt=args.prompt,
-        temperature=args.temperature,
-    )
-    print(
-        "Response: \n{response}\n Tokens:\n {tokens}".format(
-            response=result["generation"], tokens=result["tokens"]
+    generated_tokens = (
+        runner.chat_completion(temperature=args.temperature)
+        if args.chat
+        else runner.text_completion(
+            prompt=args.prompt,
+            temperature=args.temperature,
+            echo=True,
         )
     )
+    if args.show_tokens:
+        print(f"Generated {len(generated_tokens)} tokens: {generated_tokens}")
 
 
 if __name__ == "__main__":

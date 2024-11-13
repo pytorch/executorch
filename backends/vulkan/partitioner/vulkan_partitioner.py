@@ -82,8 +82,13 @@ class VulkanSupportedOperators(OperatorSupportBase):
         valid_texture_layouts = utils.possible_node_memory_layouts(
             node, self.texture_limits
         )
-        for arg in node.args:
-            if isinstance(arg, torch.fx.Node) and utils.is_tensor_node(arg):
+
+        for i, arg in enumerate(node.args):
+            if (
+                isinstance(arg, torch.fx.Node)
+                and utils.is_tensor_node(arg)
+                and i not in features.skip_limits_check
+            ):
                 arg_texture_layouts = utils.possible_node_memory_layouts(
                     arg, self.texture_limits
                 )
@@ -250,6 +255,10 @@ def parse_compile_options(compile_options: Dict[str, Any]) -> List[CompileSpec]:
     for key, value in compile_options.items():
         if isinstance(value, (VkStorageType, VkMemoryLayout)):
             value_bytes = int(value).to_bytes(4, byteorder="little")
+            compile_specs.append(CompileSpec(key, value_bytes))
+
+        if isinstance(value, bool):
+            value_bytes = value.to_bytes(1, byteorder="little")
             compile_specs.append(CompileSpec(key, value_bytes))
 
         if key == "texture_limits":

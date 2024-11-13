@@ -35,6 +35,10 @@ def insert_prepack_nodes(program: ExportedProgram) -> ExportedProgram:
         if not is_param_node(program, node):
             return True
 
+        # Annotate that this node is going to represented as a tensorref in the Vulkan
+        # compute graph. This will be useful for later graph passes.
+        node.meta["vkdg_tensorref"] = True
+
         for user in node.users:
             if user.op == "call_function" and handles_own_prepacking(
                 # pyre-ignore
