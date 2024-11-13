@@ -87,7 +87,7 @@ def is_tensor_node(node: torch.fx.Node) -> bool:
 ImageExtents = Tuple[int, int, int]
 
 DEFAULT_TEXTURE_LIMITS = (16384, 16384, 2048)
-DEFAULT_BUFFER_LIMIT = 134217728
+DEFAULT_BUFFER_LIMIT = 128 * (1024 * 1024)
 
 
 class PackedDim(IntEnum):
