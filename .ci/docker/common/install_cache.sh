@@ -12,6 +12,34 @@ set -ex
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
+install_ubuntu() {
+  echo "Preparing to build sccache from source"
+  apt-get update
+  # libssl-dev will not work as it is upgraded to libssl3 in Ubuntu-22.04.
+  # Instead use lib and headers from OpenSSL1.1 installed in `install_openssl.sh``
+  apt-get install -y cargo
+  echo "Checking out sccache repo"
+  if [ -n "$CUDA_VERSION" ]; then
+    # TODO: Remove this
+    git clone https://github.com/pytorch/sccache
+  else
+    git clone https://github.com/mozilla/sccache -b v0.8.2
+  fi
+  cd sccache
+  echo "Building sccache"
+  cargo build --release
+  cp target/release/sccache /opt/cache/bin
+  echo "Cleaning up"
+  cd ..
+  rm -rf sccache
+  apt-get remove -y cargo rustc
+  apt-get autoclean && apt-get clean
+
+  echo "Downloading old sccache binary from S3 repo for PCH builds"
+  curl --retry 3 https://s3.amazonaws.com/ossci-linux/sccache -o /opt/cache/bin/sccache-0.2.14a
+  chmod 755 /opt/cache/bin/sccache-0.2.14a
+}
+
 install_binary() {
   echo "Downloading sccache binary from S3 repo"
   curl --retry 3 https://s3.amazonaws.com/ossci-linux/sccache -o /opt/cache/bin/sccache
@@ -26,11 +54,33 @@ export PATH="/opt/cache/bin:$PATH"
 # https://github.com/pytorch/sccache has started failing mysteriously
 # in which sccache server couldn't start with the following error:
 #   sccache: error: Invalid argument (os error 22)
-install_binary
+install_ubuntu
 
 function write_sccache_stub() {
   BINARY=$1
-  printf "#!/bin/sh\nif [ \$(env -u LD_PRELOAD ps -p \$PPID -o comm=) != sccache ]; then\n  exec sccache %s \"\$@\"\nelse\n  exec %s \"\$@\"\nfi" "$(which "${BINARY}")" "$(which "${BINARY}")" > "/opt/cache/bin/${BINARY}"
+  if [ $1 == "gcc" ]; then
+    # Do not call sccache recursively when dumping preprocessor argument
+    # For some reason it's very important for the first cached nvcc invocation
+    cat >"/opt/cache/bin/$1" <<EOF
+#!/bin/sh
+if [ "\$1" = "-E" ] || [ "\$2" = "-E" ]; then
+  exec $(which $1) "\$@"
+elif [ \$(env -u LD_PRELOAD ps -p \$PPID -o comm=) != sccache ]; then
+  exec sccache $(which $1) "\$@"
+else
+  exec $(which $1) "\$@"
+fi
+EOF
+  else
+    cat >"/opt/cache/bin/$1" <<EOF
+#!/bin/sh
+if [ \$(env -u LD_PRELOAD ps -p \$PPID -o comm=) != sccache ]; then
+  exec sccache $(which $1) "\$@"
+else
+  exec $(which $1) "\$@"
+fi
+EOF
+  fi
   chmod a+x "/opt/cache/bin/${BINARY}"
 }
 
@@ -44,7 +94,7 @@ init_sccache() {
 
   # NB: This function is adopted from PyTorch core at
   # https://github.com/pytorch/pytorch/blob/main/.ci/pytorch/common-build.sh
-  as_ci_user sccache --stop-server > /dev/null 2>&1 || true
+  as_ci_user sccache --stop-server >/dev/null 2>&1 || true
   rm -f "${SCCACHE_ERROR_LOG}" || true
 
   # Clear sccache stats before using it
