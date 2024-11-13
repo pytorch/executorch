@@ -80,7 +80,7 @@ verbosity_setting = None
 
 
 EXECUTORCH_DEFINED_MODELS = ["stories110m", "llama2", "llama3", "llama3_1", "llama3_2"]
-TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision]
+TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 
 
 class WeightType(Enum):
@@ -887,21 +887,23 @@ def _load_llama_model(
     else:
         raise ValueError(f"{modelname} is not a valid Llama model.")
 
-    model, example_inputs, example_kwarg_inputs, dynamic_shapes = EagerModelFactory.create_model(
-        module_name,
-        model_class_name,
-        checkpoint=checkpoint,
-        checkpoint_dir=checkpoint_dir,
-        params=params_path,
-        use_kv_cache=use_kv_cache,
-        use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
-        generate_full_logits=generate_full_logits,
-        fairseq2=weight_type == WeightType.FAIRSEQ2,
-        max_seq_len=max_seq_len,
-        enable_dynamic_shape=enable_dynamic_shape,
-        input_prune_map_path=input_prune_map_path,
-        output_prune_map_path=output_prune_map_path,
-        args=args,
+    model, example_inputs, example_kwarg_inputs, dynamic_shapes = (
+        EagerModelFactory.create_model(
+            module_name,
+            model_class_name,
+            checkpoint=checkpoint,
+            checkpoint_dir=checkpoint_dir,
+            params=params_path,
+            use_kv_cache=use_kv_cache,
+            use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
+            generate_full_logits=generate_full_logits,
+            fairseq2=weight_type == WeightType.FAIRSEQ2,
+            max_seq_len=max_seq_len,
+            enable_dynamic_shape=enable_dynamic_shape,
+            input_prune_map_path=input_prune_map_path,
+            output_prune_map_path=output_prune_map_path,
+            args=args,
+        )
     )
     if dtype_override:
         assert isinstance(
