@@ -82,6 +82,7 @@ runtime.python_library(
         "export_llama_lib.py",
         "model.py",
         "source_transformation/apply_spin_quant_r1_r2.py",
+        "source_transformation/attention.py",
         "source_transformation/lora.py",
         "source_transformation/pre_quantization.py",
         "source_transformation/prune_vocab.py",
@@ -126,10 +127,6 @@ runtime.python_library(
 runtime.python_binary(
     name = "eval_llama",
     main_function = "executorch.examples.models.llama.eval_llama.main",
-    preload_deps = [
-        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
-        "//executorch/kernels/quantized:aot_lib",
-    ],
     deps = [
         ":eval_library",
         "//caffe2:torch",

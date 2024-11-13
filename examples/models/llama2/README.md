@@ -37,7 +37,7 @@ You can export and run the original Llama 2 7B model.
 
 3. Export model and generate `.pte` file:
     ```
-    python -m examples.models.llama.export_llama --model llama2 --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w --group_size 128 -d fp32
+    python -m examples.models.llama.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w --group_size 128 -d fp32
     ```
 4. Create tokenizer.bin.
     ```

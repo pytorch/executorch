@@ -23,7 +23,7 @@ from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
 from executorch.examples.models.llama.runner.generation import LlamaRunner
 
 # Note: import this after portable_lib
-# from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa # usort: skip
+from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa # usort: skip
 from executorch.kernels import quantized  # noqa
 
 
@@ -47,20 +47,14 @@ class NativeLlamaRunner(LlamaRunner):
 
     def forward(
         self,
-        tokens: Optional[torch.LongTensor] = None,
-        input_pos: Optional[torch.LongTensor] = None,
+        tokens: torch.Tensor,
+        input_pos: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        # TODO: in LlamaRunner there is a generate function that automatically generates
-        # input_pos tensor and inputs it into the model. Atm TorchTune models use
-        # kwargs for the input_pos, so we will need to make some changes. At least
-        # for the time being, we can run the non-kv cache version of the Torchtune
-        # model with just the tokens like below.
-        return (self.model.forward((tokens,)))[0]
-        # return (
-        #     self.model.forward((tokens, input_pos))
-        #     if input_pos is not None
-        #     else self.model.forward((tokens,))
-        # )[0]
+        return (
+            self.model.forward((tokens, input_pos))
+            if input_pos is not None
+            else self.model.forward((tokens,))
+        )[0]
 
 
 def build_args_parser() -> argparse.ArgumentParser:
@@ -69,7 +63,7 @@ def build_args_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--model",
-        default="llama",
+        default="llama3",
         choices=EXECUTORCH_DEFINED_MODELS + TORCHTUNE_DEFINED_MODELS,
     )
 
@@ -124,15 +118,11 @@ def main() -> None:
     parser = build_args_parser()
     args = parser.parse_args()
     runner = NativeLlamaRunner(args)
-    result = runner.text_completion(
+    generated_tokens = runner.text_completion(
         prompt=args.prompt,
         temperature=args.temperature,
     )
-    print(
-        "Response: \n{response}\n Tokens:\n {tokens}".format(
-            response=result["generation"], tokens=result["tokens"]
-        )
-    )
+    print(f"Response: {generated_tokens}")
 
 
 if __name__ == "__main__":

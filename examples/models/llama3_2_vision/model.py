@@ -75,7 +75,9 @@ class Llama3_2Decoder(EagerModelBase):
                 "Sharded checkpoint not yet supported for Llama3_2Decoder."
             )
         else:
-            checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
+            checkpoint = torch.load(
+                checkpoint_path, map_location=device, weights_only=False, mmap=True
+            )
         checkpoint = llama3_vision_meta_to_tune(checkpoint)
         checkpoint = to_decoder_checkpoint(checkpoint)
         with open(params_path, "r") as f:

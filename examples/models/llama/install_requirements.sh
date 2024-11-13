@@ -10,12 +10,11 @@
 pip install snakeviz sentencepiece
 
 # Install torchao.
-TORCHAO_VERSION=$(cat "$(dirname "$0")"/../../../.ci/docker/ci_commit_pins/torchao.txt)
-pip install --no-use-pep517 "git+https://github.com/pytorch/ao.git@${TORCHAO_VERSION}"
+pip install "$(dirname "$0")/../../../third-party/ao"
 
 # Install lm-eval for Model Evaluation with lm-evalution-harness
 # Install tiktoken for tokenizer
-pip install lm_eval==0.4.2
+pip install lm_eval==0.4.5
 pip install tiktoken blobfile
 
 # Call the install helper for further setup
