@@ -17,13 +17,17 @@ namespace executor {
 namespace native {
 
 namespace {
+
+template <typename T>
+constexpr bool is_half_or_bf16_v = std::is_same_v<T, exec_aten::Half> ||
+    std::is_same_v<T, exec_aten::BFloat16>;
+
 template <
     typename CTYPE_IN,
     typename CTYPE_OUT,
     typename std::enable_if<
-        std::is_same_v<CTYPE_IN, CTYPE_OUT> &&
-            !std::is_same_v<CTYPE_IN, exec_aten::Half> &&
-            !std::is_same_v<CTYPE_OUT, exec_aten::BFloat16>,
+        std::is_same_v<CTYPE_IN, CTYPE_OUT> && !is_half_or_bf16_v<CTYPE_IN> &&
+            !is_half_or_bf16_v<CTYPE_OUT>,
         int>::type = 0>
 void sigmoid_data(
     const CTYPE_IN* in_data,
@@ -32,7 +36,7 @@ void sigmoid_data(
   using Vec = executorch::vec::Vectorized<CTYPE_IN>;
   executorch::vec::map<CTYPE_IN>(
       [](Vec x) {
-        auto one_plus_exp = x.neg().exp() + Vec(1.0);
+        auto one_plus_exp = x.neg().exp() + Vec(static_cast<CTYPE_IN>(1.0));
         return one_plus_exp.reciprocal();
       },
       out_data,
@@ -44,11 +48,8 @@ template <
     typename CTYPE_IN,
     typename CTYPE_OUT,
     typename std::enable_if<
-        !std::is_same_v<CTYPE_IN, CTYPE_OUT> ||
-            std::is_same_v<CTYPE_IN, exec_aten::Half> ||
-            std::is_same_v<CTYPE_IN, exec_aten::BFloat16> ||
-            std::is_same_v<CTYPE_OUT, exec_aten::Half> ||
-            std::is_same_v<CTYPE_OUT, exec_aten::BFloat16>,
+        !std::is_same_v<CTYPE_IN, CTYPE_OUT> || is_half_or_bf16_v<CTYPE_IN> ||
+            is_half_or_bf16_v<CTYPE_OUT>,
         int>::type = 0>
 void sigmoid_data(
     const CTYPE_IN* in_data,
@@ -56,7 +57,7 @@ void sigmoid_data(
     CTYPE_OUT* out_data) {
   for (size_t i = 0; i < numel; i++) {
     CTYPE_OUT xi = static_cast<CTYPE_OUT>(in_data[i]);
-    out_data[i] = (1.0 / (1.0 + std::exp(-xi)));
+    out_data[i] = (1.0f / (1.0f + std::exp(-xi)));
   }
 }
 

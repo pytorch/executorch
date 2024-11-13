@@ -38,7 +38,7 @@
 - op: sigmoid.out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::opt_exp_out
+      kernel_name: torch::executor::opt_sigmoid_out
 
 - op: le.Scalar_out
   kernels:
