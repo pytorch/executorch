@@ -4,16 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import argparse
 import json
 from typing import Optional
 
 import torch
 
-from executorch.examples.models.llama.export_llama_lib import (
-    _prepare_for_llama_export,
-    build_args_parser as _build_args_parser,
-)
+from executorch.examples.models.llama.export_llama_lib import _prepare_for_llama_export
+from executorch.examples.models.llama.runner.eager import execute_runner
 from executorch.examples.models.llama3_2_vision.runner.generation import (
     TorchTuneLlamaRunner,
 )
@@ -48,38 +45,8 @@ class EagerLlamaRunner(TorchTuneLlamaRunner):
         return self.model.forward(tokens=tokens, input_pos=input_pos, mask=mask)
 
 
-def build_args_parser() -> argparse.ArgumentParser:
-    parser = _build_args_parser()
-
-    parser.add_argument(
-        "--prompt",
-        type=str,
-        default="Hello",
-    )
-
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=0,
-    )
-
-    return parser
-
-
 def main() -> None:
-    parser = build_args_parser()
-    args = parser.parse_args()
-
-    runner = EagerLlamaRunner(args)
-    result = runner.text_completion(
-        prompt=args.prompt,
-        temperature=args.temperature,
-    )
-    print(
-        "Response: \n{response}\n Tokens:\n {tokens}".format(
-            response=result["generation"], tokens=result["tokens"]
-        )
-    )
+    execute_runner(EagerLlamaRunner)
 
 
 if __name__ == "__main__":

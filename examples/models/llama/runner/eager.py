@@ -6,7 +6,7 @@
 
 import argparse
 import json
-from typing import Optional
+from typing import Optional, Type
 
 import torch
 
@@ -77,11 +77,10 @@ def build_args_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
+def execute_runner(runner_class: Type[LlamaRunner]) -> None:
     parser = build_args_parser()
     args = parser.parse_args()
-
-    runner = EagerLlamaRunner(args)
+    runner = runner_class(args)
     generated_tokens = (
         runner.chat_completion(temperature=args.temperature)
         if args.chat
@@ -93,6 +92,10 @@ def main() -> None:
     )
     if args.show_tokens:
         print(f"Generated {len(generated_tokens)} tokens: {generated_tokens}")
+
+
+def main() -> None:
+    execute_runner(EagerLlamaRunner)
 
 
 if __name__ == "__main__":
