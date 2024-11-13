@@ -77,7 +77,7 @@ test_model() {
     # Install requirements for export_llama
     bash examples/models/llama/install_requirements.sh
     # Test export_llama script: python3 -m examples.models.llama.export_llama
-    "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model llama2 -c examples/models/llama/params/demo_rand_params.pth -p examples/models/llama/params/demo_config.json
+    "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama -c examples/models/llama/params/demo_rand_params.pth -p examples/models/llama/params/demo_config.json
     run_portable_executor_runner
     rm "./${MODEL_NAME}.pte"
   fi

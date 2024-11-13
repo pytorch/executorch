@@ -88,8 +88,8 @@ def model_should_run_on_event(model: str, event: str) -> bool:
     if event == "pull_request":
         return model in ["mv3", "vit"]
     elif event == "push":
-        # 'emformer_predict' is running super slow. Only run it periodically
-        return model not in ["emformer_predict"]
+        # These are super slow. Only run it periodically
+        return model not in ["dl3", "edsr", "emformer_predict"]
     else:
         return True
 

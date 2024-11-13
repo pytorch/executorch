@@ -5,16 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, TypedDict
+from typing import List, Optional
 
 import torch
 
 from executorch.extension.llm.tokenizer.utils import get_tokenizer
-
-
-class CompletionPrediction(TypedDict, total=False):
-    generation: str
-    tokens: List[str]  # not required
 
 
 def sample_top_p(probs, p):
@@ -46,6 +41,7 @@ def next_token(logits: torch.Tensor, temperature: float, top_p: float) -> int:
     if temperature > 0:
         probs = torch.softmax(logits / temperature, dim=-1)
         return sample_top_p(probs, top_p).item()
+    # Pyre-ignore[7]: Incompatible return type [7]: Expected `int` but got `Union[bool, float, int]`
     return torch.argmax(logits, dim=-1).item()
 
 
@@ -83,37 +79,39 @@ class LlamaRunner(ABC):
     @abstractmethod
     def forward(
         self,
-        tokens: Optional[torch.LongTensor] = None,
-        input_pos: Optional[torch.LongTensor] = None,
+        tokens: torch.Tensor,
+        input_pos: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         pass
 
     def generate(  # noqa: C901
         self,
         prompt_tokens: List[int],
+        max_seq_len: int,
         temperature: float = 0.8,
         top_p: float = 0.9,
         echo: bool = False,
+        pos_base: int = 0,
     ) -> List[int]:
         # prefill
         logits = self.forward(
             tokens=torch.tensor([prompt_tokens], dtype=torch.long, device=self.device),
             input_pos=(
-                torch.tensor([0], dtype=torch.long, device=self.device)
+                torch.tensor([pos_base], dtype=torch.long, device=self.device)
                 if self.use_kv_cache
                 else None
             ),
         )
 
-        current_token = next_token(logits[:, -1, :], temperature, top_p)
         if self.has_full_logits:
             current_token = next_token(logits[:, -1, :], temperature, top_p)
         else:
             current_token = next_token(logits, temperature, top_p)
+        print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
         tokens = prompt_tokens + [current_token]
 
         i = 0
-        while len(tokens) < self.max_seq_len:
+        while len(tokens) < max_seq_len:
             print(f"{i} out of {self.max_seq_len} max tokens generated")
             if self.use_kv_cache:
                 logits = self.forward(
@@ -121,7 +119,9 @@ class LlamaRunner(ABC):
                         [[current_token]], dtype=torch.long, device=self.device
                     ),
                     input_pos=torch.tensor(
-                        [len(tokens) - 1], dtype=torch.long, device=self.device
+                        [pos_base + len(tokens) - 1],
+                        dtype=torch.long,
+                        device=self.device,
                     ),
                 )
             else:
@@ -134,6 +134,7 @@ class LlamaRunner(ABC):
                 current_token = next_token(logits[:, -1, :], temperature, top_p)
             else:
                 current_token = next_token(logits, temperature, top_p)
+            tokens.append(current_token)
 
             if current_token == self.tokenizer.eos_id or (
                 hasattr(self.tokenizer, "stop_tokens")
@@ -141,8 +142,9 @@ class LlamaRunner(ABC):
             ):
                 break
 
-            tokens.append(current_token)
             i += 1
+            print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
+        print("\n")
 
         return tokens if echo else tokens[len(prompt_tokens) :]
 
@@ -152,7 +154,7 @@ class LlamaRunner(ABC):
         temperature: float = 0.6,
         top_p: float = 0.9,
         echo: bool = False,
-    ) -> CompletionPrediction:
+    ) -> List[int]:
         """
         Perform text completion for a prompt using the language model.
 
@@ -163,19 +165,62 @@ class LlamaRunner(ABC):
             echo (bool, optional): Flag indicating whether to include prompt tokens in the generated output. Defaults to False.
 
         Returns:
-            CompletionPrediction: Completion prediction, which contains the generated text completion.
+            Generated list of tokens.
 
         Note:
             This method generates text completion for the provided prompt, employing nucleus sampling to introduce controlled randomness.
         """
-        prompt_tokens = self.tokenizer.encode(prompt, bos=True, eos=False)
-        generation_tokens = self.generate(
-            prompt_tokens=prompt_tokens,
+        return self.generate(
+            prompt_tokens=self.tokenizer.encode(prompt, bos=True, eos=False),
+            max_seq_len=self.max_seq_len,
             temperature=temperature,
             top_p=top_p,
             echo=echo,
         )
-        return {
-            "generation": self.tokenizer.decode(generation_tokens),
-            "tokens": generation_tokens,
-        }
+
+    def chat_completion(
+        self,
+        temperature: float = 0.6,
+        top_p: float = 0.9,
+    ) -> List[int]:
+        """
+        Perform multi-turn chat with the language model.
+
+            Args:
+                prompt (str): Text prompt for completion.
+                temperature (float, optional): Temperature value for controlling randomness in sampling. Defaults to 0.6.
+                top_p (float, optional): Top-p probability threshold for nucleus sampling. Defaults to 0.9.
+                echo (bool, optional): Flag indicating whether to include prompt tokens in the generated output. Defaults to False.
+
+            Returns:
+                Generated list of tokens.
+
+            Note:
+                This method generates text completion for the provided prompt, employing nucleus sampling to introduce controlled randomness.
+        """
+        exit_prompt = "exit"
+        tokens = []
+        prompt = input("Me: ")
+        while prompt and prompt != exit_prompt:
+            print("LLM: ", end="", flush=True)
+            new_tokens = self.generate(
+                prompt_tokens=self.tokenizer.encode(
+                    self._format_prompt(prompt), bos=True, eos=False
+                ),
+                max_seq_len=self.max_seq_len,
+                temperature=temperature,
+                top_p=top_p,
+                echo=True,
+                pos_base=len(tokens),
+            )
+            tokens.extend(new_tokens)
+            prompt = input("Me: ")
+        return tokens
+
+    def _format_prompt(self, prompt: str) -> str:
+        return f"""
+<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+You are a helpful assistant<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"""

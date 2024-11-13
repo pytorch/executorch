@@ -98,7 +98,7 @@ def main() -> None:
             # for us to update with the gradients in-place.
             # See https://github.com/pytorch/executorch/blob/main/extension/pybindings/pybindings.cpp#L736
             # for more info.
-            out = et_mod.forward((tokens, labels), clone_outputs=False)  # pyre-ignore
+            out = et_mod.forward((tokens, labels), clone_outputs=False)
 
             loss = out[0]
             losses.append(loss.item())

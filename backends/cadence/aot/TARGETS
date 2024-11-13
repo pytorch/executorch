@@ -11,6 +11,7 @@ load(
     "CXX",
 )
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "executorch_generated_lib")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("odai_jarvis")
 
@@ -47,10 +48,26 @@ python_library(
     ],
 )
 
+
+python_library(
+    name = "pass_utils",
+    srcs = [
+        "pass_utils.py",
+    ],
+    deps = [
+        ":utils",
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/passes:lib",
+        "//executorch/exir/passes:spec_prop_pass",
+    ],
+)
+
 python_library(
     name = "passes",
     srcs = [
-        "_passes.py",
+        "passes.py",
     ],
     deps = [
         ":utils",
@@ -86,5 +103,17 @@ executorch_generated_lib(
         "//executorch/backends/cadence/reference/operators:cadence_cpu_ops",
         "//executorch/kernels/portable:executorch_all_ops",
         "//executorch/kernels/portable:operators",
+    ],
+)
+
+python_unittest(
+    name = "test_pass_filter",
+    srcs = [
+        "tests/test_pass_filter.py",
+    ],
+    typing = True,
+    deps = [
+        ":pass_utils",
+        "//executorch/exir:pass_base",
     ],
 )
