@@ -11,6 +11,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import datetime
+from enum import auto, Enum
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -19,7 +23,15 @@ import torch
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
-_enabled_options: list[str] = []
+
+class arm_test_options(Enum):
+    quantize_io = auto()
+    corstone300 = auto()
+    dump_path = auto()
+    date_format = auto()
+
+
+_test_options: dict[arm_test_options, Any] = {}
 
 # ==== Pytest hooks ====
 
@@ -27,19 +39,30 @@ _enabled_options: list[str] = []
 def pytest_addoption(parser):
     parser.addoption("--arm_quantize_io", action="store_true")
     parser.addoption("--arm_run_corstone300", action="store_true")
+    parser.addoption("--default_dump_path", default=None)
+    parser.addoption("--date_format", default="%d-%b-%H:%M:%S")
 
 
 def pytest_configure(config):
     if config.option.arm_quantize_io:
         load_libquantized_ops_aot_lib()
-        _enabled_options.append("quantize_io")
+        _test_options[arm_test_options.quantize_io] = True
     if config.option.arm_run_corstone300:
         corstone300_exists = shutil.which("FVP_Corstone_SSE-300_Ethos-U55")
         if not corstone300_exists:
             raise RuntimeError(
                 "Tests are run with --arm_run_corstone300 but corstone300 FVP is not installed."
             )
-        _enabled_options.append("corstone300")
+        _test_options[arm_test_options.corstone300] = True
+    if config.option.default_dump_path:
+        dump_path = Path(config.option.default_dump_path).expanduser()
+        if dump_path.exists() and os.path.isdir(dump_path):
+            _test_options[arm_test_options.dump_path] = dump_path
+        else:
+            raise RuntimeError(
+                f"Supplied argument 'default_dump_path={dump_path}' that does not exist or is not a directory."
+            )
+    _test_options[arm_test_options.date_format] = config.option.date_format
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 
@@ -54,7 +77,30 @@ def pytest_collection_modifyitems(config, items):
                 item.add_marker(skip_if_aot_lib_not_loaded)
 
 
+def pytest_sessionstart(session):
+    pass
+
+
+def pytest_sessionfinish(session, exitstatus):
+    if get_option(arm_test_options.dump_path):
+        _clean_dir(
+            get_option(arm_test_options.dump_path),
+            f"ArmTester_{get_option(arm_test_options.date_format)}.log",
+        )
+
+
 # ==== End of Pytest hooks =====
+
+# ==== Custom Pytest decorators =====
+
+
+def expectedFailureOnFVP(test_item):
+    if is_option_enabled("corstone300"):
+        test_item.__unittest_expecting_failure__ = True
+    return test_item
+
+
+# ==== End of Custom Pytest decorators =====
 
 
 def load_libquantized_ops_aot_lib():
@@ -76,7 +122,9 @@ def load_libquantized_ops_aot_lib():
         torch.ops.load_library(library_path)
 
 
-def is_option_enabled(option: str, fail_if_not_enabled: bool = False) -> bool:
+def is_option_enabled(
+    option: str | arm_test_options, fail_if_not_enabled: bool = False
+) -> bool:
     """
     Returns whether an option is successfully enabled, i.e. if the flag was
     given to pytest and the necessary requirements are available.
@@ -87,13 +135,22 @@ def is_option_enabled(option: str, fail_if_not_enabled: bool = False) -> bool:
     The optional parameter 'fail_if_not_enabled' makes the function raise
       a RuntimeError instead of returning False.
     """
-    if option.lower() in _enabled_options:
+    if isinstance(option, str):
+        option = arm_test_options[option.lower()]
+
+    if option in _test_options and _test_options[option]:
         return True
     else:
         if fail_if_not_enabled:
             raise RuntimeError(f"Required option '{option}' for test is not enabled")
         else:
             return False
+
+
+def get_option(option: arm_test_options) -> Any | None:
+    if option in _test_options:
+        return _test_options[option]
+    return None
 
 
 def maybe_get_tosa_collate_path() -> str | None:
@@ -120,16 +177,18 @@ def maybe_get_tosa_collate_path() -> str | None:
 
 
 def get_tosa_compile_spec(
-    permute_memory_to_nhwc=True, custom_path=None
+    tosa_version: str, permute_memory_to_nhwc=True, custom_path=None
 ) -> list[CompileSpec]:
     """
     Default compile spec for TOSA tests.
     """
-    return get_tosa_compile_spec_unbuilt(permute_memory_to_nhwc, custom_path).build()
+    return get_tosa_compile_spec_unbuilt(
+        tosa_version, permute_memory_to_nhwc, custom_path
+    ).build()
 
 
 def get_tosa_compile_spec_unbuilt(
-    permute_memory_to_nhwc=False, custom_path=None
+    tosa_version: str, permute_memory_to_nhwc=False, custom_path=None
 ) -> ArmCompileSpecBuilder:
     """Get the ArmCompileSpecBuilder for the default TOSA tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -145,7 +204,7 @@ def get_tosa_compile_spec_unbuilt(
         os.makedirs(intermediate_path, exist_ok=True)
     compile_spec_builder = (
         ArmCompileSpecBuilder()
-        .tosa_compile_spec()
+        .tosa_compile_spec(tosa_version)
         .set_permute_memory_format(permute_memory_to_nhwc)
         .dump_intermediate_artifacts_to(intermediate_path)
     )
@@ -219,3 +278,32 @@ def get_u85_compile_spec_unbuilt(
         .dump_intermediate_artifacts_to(artifact_path)
     )
     return compile_spec
+
+
+def current_time_formated() -> str:
+    """Return current time as a formated string"""
+    return datetime.now().strftime(get_option(arm_test_options.date_format))
+
+
+def _clean_dir(dir: Path, filter: str, num_save=10):
+    sorted_files: list[tuple[datetime, Path]] = []
+    for file in dir.iterdir():
+        try:
+            creation_time = datetime.strptime(file.name, filter)
+            insert_index = -1
+            for i, to_compare in enumerate(sorted_files):
+                compare_time = to_compare[0]
+                if creation_time < compare_time:
+                    insert_index = i
+                    break
+            if insert_index == -1 and len(sorted_files) < num_save:
+                sorted_files.append((creation_time, file))
+            else:
+                sorted_files.insert(insert_index, (creation_time, file))
+        except ValueError:
+            continue
+
+    if len(sorted_files) > num_save:
+        for remove in sorted_files[0 : len(sorted_files) - num_save]:
+            file = remove[1]
+            file.unlink()

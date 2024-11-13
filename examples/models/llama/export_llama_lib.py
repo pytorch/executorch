@@ -12,6 +12,7 @@ import argparse
 import copy
 import json
 import logging
+import re
 import shlex
 from enum import Enum
 from json import JSONDecodeError
@@ -19,7 +20,6 @@ from pathlib import Path
 from typing import Callable, List, Optional, Union
 
 import pkg_resources
-
 import torch
 
 from executorch.devtools.etrecord import generate_etrecord
@@ -50,6 +50,8 @@ from .source_transformation.apply_spin_quant_r1_r2 import (
     fuse_layer_norms,
     get_model_with_r1_r2,
 )
+
+from .source_transformation.attention import replace_attention_to_attention_sha
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
@@ -79,6 +81,10 @@ pkg_name = __name__
 verbosity_setting = None
 
 
+EXECUTORCH_DEFINED_MODELS = ["stories110m", "llama2", "llama3", "llama3_1", "llama3_2"]
+TORCHTUNE_DEFINED_MODELS = []
+
+
 class WeightType(Enum):
     LLAMA = "LLAMA"
     FAIRSEQ2 = "FAIRSEQ2"
@@ -103,7 +109,7 @@ def verbose_export():
 
 
 def build_model(
-    modelname: str = "model",
+    modelname: str = "llama3",
     extra_opts: str = "",
     *,
     par_local_output: bool = False,
@@ -114,11 +120,11 @@ def build_model(
     else:
         output_dir_path = "."
 
-    argString = f"--checkpoint par:{modelname}_ckpt.pt --params par:{modelname}_params.json {extra_opts} --output-dir {output_dir_path}"
+    argString = f"--model {modelname} --checkpoint par:model_ckpt.pt --params par:model_params.json {extra_opts} --output-dir {output_dir_path}"
     parser = build_args_parser()
     args = parser.parse_args(shlex.split(argString))
     # pkg_name = resource_pkg_name
-    return export_llama(modelname, args)
+    return export_llama(args)
 
 
 def build_args_parser() -> argparse.ArgumentParser:
@@ -128,6 +134,12 @@ def build_args_parser() -> argparse.ArgumentParser:
     # parser.add_argument(
     #     "-q", "--quantized_ckpt", default=None, help="quantized checkpoint file"
     # )
+    parser.add_argument(
+        "--model",
+        default="llama3",
+        choices=EXECUTORCH_DEFINED_MODELS + TORCHTUNE_DEFINED_MODELS,
+        help="The Lllama model architecture to use. stories110M, llama2, llama3, llama3_1, and llama3_2 use the same underlying LlamaTransformer architecture defined in ExecuTorch. All other models use TorchTune model definitions.",
+    )
     parser.add_argument(
         "-E",
         "--embedding-quantize",
@@ -153,12 +165,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         ],
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
+
     parser.add_argument(
         "-qmode",
         "--quantization_mode",
-        type=str,
+        type=_qmode_type,
         default=None,
-        choices=["int8", "8da4w", "8da4w-gptq", "vulkan_4w"],
         help="type of quantization",
     )
 
@@ -173,6 +185,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--checkpoint_dir",
         default=None,
         help="checkpoint directory. Use with a sharded checkpoint, not for the standard llama2 model. Note, checkpoint_dir takes precedence over checkpoint if both are set.",
+    )
+
+    parser.add_argument(
+        "--use_qnn_sha",
+        action="store_true",
+        help="Change multi head attention to multiple single head attention for qnn backend (Qualcomm)",
     )
 
     parser.add_argument(
@@ -443,6 +461,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=None,
         help="path to the input pruning token mapping file (token_map.json)",
     )
+
+    parser.add_argument(
+        "--export_only",
+        default=False,
+        action="store_true",
+        help="If true, stops right after torch.export() and saves the exported model.",
+    )
     return parser
 
 
@@ -465,13 +490,13 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
         return return_val
 
 
-def export_llama(modelname, args) -> str:
+def export_llama(args) -> str:
     if args.profile_path is not None:
         try:
             from executorch.util.python_profiler import CProfilerFlameGraph
 
             with CProfilerFlameGraph(args.profile_path):
-                builder = _export_llama(modelname, args)
+                builder = _export_llama(args)
                 assert (
                     filename := builder.get_saved_pte_filename()
                 ) is not None, "Fail to get file name from builder"
@@ -482,14 +507,14 @@ def export_llama(modelname, args) -> str:
             )
             return ""
     else:
-        builder = _export_llama(modelname, args)
+        builder = _export_llama(args)
         assert (
             filename := builder.get_saved_pte_filename()
         ) is not None, "Fail to get file name from builder"
         return filename
 
 
-def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
+def _prepare_for_llama_export(args) -> LLMEdgeManager:
     """
     Helper function for export_llama. Loads the model from checkpoint and params,
     and sets up a LLMEdgeManager with initial transforms and dtype conversion.
@@ -515,7 +540,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
 
     return (
         _load_llama_model(
-            modelname=modelname,
+            args.model,
             checkpoint=checkpoint_path,
             checkpoint_dir=checkpoint_dir,
             params_path=params_path,
@@ -538,7 +563,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             args=args,
         )
         .set_output_dir(output_dir_path)
-        .source_transform(_get_source_transforms(modelname, dtype_override, args))
+        .source_transform(_get_source_transforms(args.model, dtype_override, args))
     )
 
 
@@ -568,6 +593,23 @@ def get_quantizer_and_quant_params(args):
     return pt2e_quant_params, quantizers, quant_dtype
 
 
+def _qmode_type(value):
+    choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w"]
+    patterns = [r"torchao:8da(\d+)w"]
+
+    if value in choices:
+        return value
+
+    for pattern in patterns:
+        matches = re.findall(pattern, value)
+        if len(matches) == 1:
+            return value
+
+    raise argparse.ArgumentTypeError(
+        f"Got qmode {value}, but expected one of {choices}, or one of the regex patterns {patterns}."
+    )
+
+
 def _validate_args(args):
     """
     TODO: Combine all the backends under --backend args
@@ -581,18 +623,33 @@ def _validate_args(args):
     if args.num_sharding > 0 and not args.qnn:
         raise ValueError("Model shard is only supported with qnn backend now.")
 
+    if (
+        args.quantization_mode is not None
+        and args.quantization_mode.startswith("torchao:")
+    ) or (
+        args.embedding_quantize is not None
+        and args.embedding_quantize.startswith("torchao:")
+    ):
+        if args.enable_dynamic_shape:
+            raise ValueError(
+                "Dynamic shape is not currently supported with torchao ops. Please use --disable_dynamic_shape."
+                "If you need this feature, please file an issue."
+            )
 
-def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
+
+def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
     _validate_args(args)
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
 
     # export_to_edge
-    builder_exported_to_edge = (
-        _prepare_for_llama_export(modelname, args)
-        .export()
-        .pt2e_quantize(quantizers)
-        .export_to_edge()
-    )
+    builder_exported = _prepare_for_llama_export(args).export()
+
+    if args.export_only:
+        exit()
+
+    builder_exported_to_edge = builder_exported.pt2e_quantize(
+        quantizers
+    ).export_to_edge()
 
     modelname = builder_exported_to_edge.modelname
 
@@ -622,7 +679,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         partitioners.append(
             get_vulkan_partitioner(
                 args.dtype_override,
-                args.quantization_mode,
+                args.enable_dynamic_shape,
             )
         )
         modelname = f"vulkan_{modelname}"
@@ -670,15 +727,24 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
             get_custom_quant_ios_dtype,
         )
 
+        atten = builder_exported_to_edge.model.layers[0].attention
+        if args.use_qnn_sha:
+            cache_shape = torch.Size(
+                (atten.max_batch_size, atten.max_seq_len, atten.head_dim)
+            )
+        else:
+            cache_shape = torch.Size(
+                (
+                    atten.max_batch_size,
+                    atten.max_seq_len,
+                    atten.n_kv_heads,
+                    atten.head_dim,
+                )
+            )
         # pyre-ignore
         tag_quant_io(
             builder_exported_to_edge.edge_manager.exported_program().graph_module,
-            partial(
-                get_custom_quant_ios_dtype,  # pyre-ignore
-                builder_exported_to_edge.model.layers[
-                    0
-                ].attention.kv_cache.past_k_caches.shape,
-            ),
+            partial(get_custom_quant_ios_dtype, cache_shape),  # pyre-ignore
         )
 
     logging.info("Lowering model using following partitioner(s): ")
@@ -774,8 +840,8 @@ def _load_llama_model_metadata(
 
 
 def _load_llama_model(
+    modelname: str = "llama3",
     *,
-    modelname: str = "llama2",
     checkpoint: Optional[str] = None,
     checkpoint_dir: Optional[str] = None,
     params_path: str,
@@ -803,15 +869,27 @@ def _load_llama_model(
     Returns:
         An instance of LLMEdgeManager which contains the eager mode model.
     """
+
     assert (
         checkpoint or checkpoint_dir
     ) and params_path, "Both checkpoint/checkpoint_dir and params can't be empty"
     logging.info(
         f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}"
     )
+
+    if modelname in EXECUTORCH_DEFINED_MODELS:
+        module_name = "llama"
+        model_class_name = "Llama2Model"  # TODO: Change to "LlamaModel" in examples/models/llama/model.py.
+    elif modelname in TORCHTUNE_DEFINED_MODELS:
+        raise NotImplementedError(
+            "Torchtune Llama models are not yet supported in ExecuTorch export."
+        )
+    else:
+        raise ValueError(f"{modelname} is not a valid Llama model.")
+
     model, example_inputs, example_kwarg_inputs, _ = EagerModelFactory.create_model(
-        module_name="llama",
-        model_class_name="Llama2Model",
+        module_name,
+        model_class_name,
         checkpoint=checkpoint,
         checkpoint_dir=checkpoint_dir,
         params=params_path,
@@ -947,15 +1025,27 @@ def _get_source_transforms(  # noqa
                 convert_linear_to_conv2d,
             )
 
-            transforms.append(replace_kv_cache_with_simple_kv_cache)
-            transforms.append(replace_sdpa_with_flex_sdpa)
-            transforms.append(replace_causal_mask)
-            transforms.append(replace_rms_norm_with_native_rms_norm)
-            if args.optimized_rotation_path:
-                transforms.append(fuse_layer_norms)
-                transforms.append(get_model_with_r1_r2(args.optimized_rotation_path))
-            # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
-            transforms.append(convert_linear_to_conv2d)
+            if args.use_qnn_sha:
+                if args.optimized_rotation_path:
+                    transforms.append(fuse_layer_norms)
+                    transforms.append(
+                        get_model_with_r1_r2(args.optimized_rotation_path)
+                    )
+                transforms.append(replace_attention_to_attention_sha)
+                transforms.append(replace_causal_mask)
+                transforms.append(replace_rms_norm_with_native_rms_norm)
+                transforms.append(convert_linear_to_conv2d)
+            else:
+                transforms.append(replace_kv_cache_with_simple_kv_cache)
+                transforms.append(replace_sdpa_with_flex_sdpa)
+                transforms.append(replace_causal_mask)
+                transforms.append(replace_rms_norm_with_native_rms_norm)
+                if args.optimized_rotation_path:
+                    transforms.append(fuse_layer_norms)
+                    transforms.append(
+                        get_model_with_r1_r2(args.optimized_rotation_path)
+                    )
+                transforms.append(convert_linear_to_conv2d)
 
         elif args.mps:
             # Currently mps doesn't support sdpa op, use the simpler decomposition

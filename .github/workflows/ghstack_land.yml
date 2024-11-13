@@ -5,6 +5,7 @@ on:
     branches:
       - 'gh/cccclai/[0-9]+/base'
       - 'gh/dbort/[0-9]+/base'
+      - 'gh/dvorjackz/[0-9]+/base'
       - 'gh/guangy10/[0-9]+/base'
       - 'gh/helunwencser/[0-9]+/base'
       - 'gh/jorgep31415/[0-9]+/base'

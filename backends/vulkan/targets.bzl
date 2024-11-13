@@ -27,6 +27,7 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False):
         select({
             "DEFAULT": "",
             "ovr_config//os:android": "--optimize",
+            "ovr_config//os:linux": "--replace-u16vecn",
         })
     )
 
@@ -117,7 +118,7 @@ def define_common_targets(is_fbcode = False):
                 "fbsource//third-party/toolchains:android"
             ],
             "ovr_config//os:macos-arm64": [
-                "//third-party/khronos:moltenVK"
+                "//third-party/khronos:moltenVK_static"
             ],
         })
         VK_API_PREPROCESSOR_FLAGS += select({
@@ -223,6 +224,8 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 "//caffe2:torch",
+                "//executorch/exir:tensor",
+                "//executorch/backends/vulkan/serialization:lib",
             ]
         )
 
@@ -253,6 +256,7 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 ":custom_ops_lib",
+                ":utils_lib",
                 "//caffe2:torch",
                 "//executorch/exir/dialects:lib",
                 "//executorch/backends/vulkan/serialization:lib",
