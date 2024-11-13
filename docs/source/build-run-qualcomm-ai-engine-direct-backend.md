@@ -59,7 +59,7 @@ This example is verified with SM8550 and SM8450.
    - Click the "Get Software" button to download a version of QNN SDK.
    - However, at the moment of updating this tutorial, the above website doesn't provide QNN SDK newer than 2.22.6.
    - The below is public links to download various QNN versions. Hope they can be publicly discoverable soon.
-   - [QNN 2.26.0](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.26.0.240828.zip)
+   - [QNN 2.28.0](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.28.0.241029.zip)
 
 The directory with installed Qualcomm AI Engine Direct SDK looks like:
 ```
