@@ -4,13 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from abc import ABC, abstractmethod
-from typing import List, Optional, TypedDict
+from typing import List
 
 import torch
-
-from executorch.extension.llm.tokenizer.utils import get_tokenizer
-from executorch.examples.models.llama.runner.generation import LlamaRunner, next_token, sample_top_p
+from executorch.examples.models.llama.runner.generation import LlamaRunner, next_token
 
 
 class TorchTuneLlamaRunner(LlamaRunner):
@@ -54,13 +51,17 @@ class TorchTuneLlamaRunner(LlamaRunner):
         mask = self.causal_mask[None, :seq_len]
         if self.use_kv_cache:
             logits = self.forward(
-                tokens=torch.tensor([prompt_tokens], dtype=torch.long, device=self.device),
+                tokens=torch.tensor(
+                    [prompt_tokens], dtype=torch.long, device=self.device
+                ),
                 input_pos=input_pos,
                 mask=mask,
             )
         else:
             logits = self.forward(
-                tokens=torch.tensor([prompt_tokens], dtype=torch.long, device=self.device),
+                tokens=torch.tensor(
+                    [prompt_tokens], dtype=torch.long, device=self.device
+                ),
             )
 
         # Only need the last logit.
@@ -98,4 +99,3 @@ class TorchTuneLlamaRunner(LlamaRunner):
             seq_len += 1
 
         return tokens if echo else tokens[len(prompt_tokens) :]
-

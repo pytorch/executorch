@@ -13,9 +13,10 @@ import torch
 from executorch.examples.models.llama.export_llama_lib import (
     _prepare_for_llama_export,
     build_args_parser as _build_args_parser,
-    TORCHTUNE_DEFINED_MODELS,
 )
-from executorch.examples.models.llama3_2_vision.runner.generation import TorchTuneLlamaRunner
+from executorch.examples.models.llama3_2_vision.runner.generation import (
+    TorchTuneLlamaRunner,
+)
 from executorch.extension.llm.export import LLMEdgeManager
 
 

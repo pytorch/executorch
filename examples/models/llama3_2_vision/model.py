@@ -175,7 +175,7 @@ class Llama3_2Decoder(EagerModelBase):
                 # "encoder_input": {0: 1, 1: dim_enc, 2: 4096},
                 # "encoder_mask": {0: 1, 1: dim, 2: dim_enc},
                 "mask": {0: batch_size, 1: dim_seq_len, 2: None},
-                "input_pos" : {0: batch_size, 1: dim_seq_len},
+                "input_pos": {0: batch_size, 1: dim_seq_len},
             }
         else:
             dynamic_shapes = {
