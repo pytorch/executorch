@@ -630,7 +630,10 @@ def executorch_generated_lib(
             link_whole = True,
             visibility = visibility,
             # Operator Registration is done through static tables
-            compiler_flags = ["-Wno-global-constructors"] + compiler_flags,
+            compiler_flags = select({
+                "DEFAULT": ["-Wno-global-constructors"],
+                "ovr_config//os:windows": [],
+            }) + compiler_flags,
             deps = [
                 "//executorch/runtime/kernel:operator_registry",
                 "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,

@@ -15,9 +15,11 @@ def define_common_targets():
         srcs = glob([
             "*.cpp",
         ]),
+        exported_headers = glob(["*.h"]),
         platforms = CXX,
         deps = [
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:all_deps",
+            "//executorch/kernels/portable/cpu/pattern:all_deps",
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "fbsource//third-party/nnlib-hifi4/xa_nnlib:libxa_nnlib",

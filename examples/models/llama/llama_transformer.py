@@ -156,7 +156,7 @@ class KVCache(nn.Module):
     ):
         super().__init__()
         self.max_seq_length = max_seq_length
-        self.is_tranposed = transpose_cache
+        self.is_transposed = transpose_cache
         if transpose_cache:
             cache_shape = (max_batch_size, n_heads, max_seq_length, head_dim)
         else:
@@ -265,21 +265,21 @@ class Attention(nn.Module):
     def __init__(self, args: ModelArgs, layer_id: int):
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
-        self.n_kv_heads = args.n_heads if args.n_kv_heads is None else args.n_kv_heads
-        assert args.n_heads % self.n_kv_heads == 0
+        self.n_heads = args.n_heads
+        self.n_kv_heads = self.n_heads if args.n_kv_heads is None else args.n_kv_heads
+        assert self.n_heads % self.n_kv_heads == 0
         model_parallel_size = 1
-        self.n_local_heads = args.n_heads // model_parallel_size
+        self.n_local_heads = self.n_heads // model_parallel_size
         self.n_local_kv_heads = self.n_kv_heads // model_parallel_size
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
-        self.head_dim = args.dim // args.n_heads
+        self.head_dim = args.dim // self.n_heads
         self.max_batch_size = args.max_batch_size
         self.max_seq_len = args.max_seq_len
         self.dim = args.dim
-        # args.dim = 4096, args.n_heads = 32, self.head_dim = 4096 / 32 = 125
-        self.wq = nn.Linear(args.dim, args.n_heads * self.head_dim, bias=False)
-        self.wk = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
-        self.wv = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
-        self.wo = nn.Linear(args.n_heads * self.head_dim, args.dim, bias=False)
+        self.wq = nn.Linear(self.dim, self.n_heads * self.head_dim, bias=False)
+        self.wk = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=False)
+        self.wv = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=False)
+        self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
 
         self.layer_id = layer_id
 

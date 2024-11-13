@@ -20,8 +20,11 @@ install_executorch() {
   which pip
   # Install executorch, this assumes that Executorch is checked out in the
   # current directory.
-  # TODO(T199538337): clean up install scripts to use install_requirements.sh
-  ./install_requirements.sh --pybind xnnpack
+  if [[ "${1:-}" == "use-pt-pinned-commit" ]]; then
+    ./install_requirements.sh --pybind xnnpack --use-pt-pinned-commit
+  else
+    ./install_requirements.sh --pybind xnnpack
+  fi
   # Just print out the list of packages for debugging
   pip list
 }
@@ -110,10 +113,26 @@ cmake_install_executorch_lib() {
 }
 
 download_stories_model_artifacts() {
-    # Download stories110M.pt and tokenizer from Github
+  # Download stories110M.pt and tokenizer from Github
   curl -Ls "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt" --output stories110M.pt
   curl -Ls "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model" --output tokenizer.model
   # Create params.json file
   touch params.json
   echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
+}
+
+do_not_use_nightly_on_ci() {
+  # An assert to make sure that we are not using PyTorch nightly on CI to prevent
+  # regression as documented in https://github.com/pytorch/executorch/pull/6564
+  TORCH_VERSION=$(pip list | grep -w 'torch ' | awk -F ' ' {'print $2'} | tr -d '\n')
+
+  # The version of PyTorch building from source looks like 2.6.0a0+gitc8a648d that
+  # includes the commit while nightly (2.6.0.dev20241019+cpu) or release (2.6.0)
+  # won't have that. Note that we couldn't check for the exact commit from the pin
+  # ci_commit_pins/pytorch.txt here because the value will be different when running
+  # this on PyTorch CI
+  if [[ "${TORCH_VERSION}" != *"+git"* ]]; then
+    echo "Unexpected torch version. Expected binary built from source, got ${TORCH_VERSION}"
+    exit 1
+  fi
 }

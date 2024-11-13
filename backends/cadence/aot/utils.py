@@ -43,14 +43,20 @@ def get_conv1d_output_size(
     padding: int,
     dilation: int,
     kernel_size: int,
+    channel_last: bool,
 ) -> torch.Size:
     assert len(in_size) == 3
-    N, C, L = in_size
+    if channel_last:
+        N, L, C = in_size
+    else:
+        N, C, L = in_size
 
     # Reference: https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
     lout = (L + 2 * padding - dilation * (kernel_size - 1) - 1) // stride + 1
 
-    return torch.Size((in_size[0], out_channels, lout))
+    if channel_last:
+        return torch.Size((N, lout, out_channels))
+    return torch.Size((N, out_channels, lout))
 
 
 # Get the output size of a 2D convolution given the input size and parameters
@@ -76,7 +82,8 @@ def get_conv2d_output_size(
     wout = (W + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) // stride[
         1
     ] + 1
-
+    if channel_last:
+        return torch.Size((N, hout, wout, out_channels))
     return torch.Size((in_size[0], out_channels, hout, wout))
 
 

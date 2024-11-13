@@ -25,7 +25,7 @@ Check out the [Getting Started](https://pytorch.org/executorch/stable/getting-st
 Check out the examples of [Llama](./examples/models/llama/README.md), [Llava](./examples/models/llava/README.md) and [other models](./examples/README.md) running on edge devices using ExecuTorch.
 
 
-**[UPDATE - 09/25]** We have added support for running [Llama 3.2 1B/3B](./examples/models/llama/README.md) models via ExecuTorch.
+**[UPDATE - 10/24]** We have added support for running [Llama 3.2 Quantized 1B/3B](./examples/models/llama/README.md) models via ExecuTorch.
 
 ## Feedback
 
@@ -42,6 +42,11 @@ We recommend using the latest release tag from the
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for details about issues, PRs, code
 style, CI jobs, and other development topics.
+
+To connect with us and other community members, we invite you to join PyTorch Slack community by filling out this [form](https://docs.google.com/forms/d/e/1FAIpQLSeADnUNW36fjKjYzyHDOzEB_abKQE9b6gqqW9NXse6O0MWh0A/viewform). Once you've joined, you can:
+* Head to the `#executorch-general` channel for general questions, discussion, and community support.
+* Join the `#executorch-contributors` channel if you're interested in contributing directly to project development.
+
 
 ## Directory Structure
 
@@ -92,7 +97,7 @@ tools.
 ├── runtime                         #  Core C++ runtime.
 |   ├── backend                     #  Backend delegate runtime APIs.
 |   ├── core                        #  Core structures used across all levels of the runtime.
-|   ├── executor                    #  Model loading, initalization, and execution.
+|   ├── executor                    #  Model loading, initialization, and execution.
 |   ├── kernel                      #  Kernel registration and management.
 |   ├── platform                    #  Layer between architecture specific code and portable C++.
 ├── schema                          #  ExecuTorch PTE file format flatbuffer
