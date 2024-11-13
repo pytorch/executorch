@@ -16,7 +16,6 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 #include <array>
-// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <vector>
 
 #ifdef ET_USE_THREADPOOL
