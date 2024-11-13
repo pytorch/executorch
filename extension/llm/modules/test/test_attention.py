@@ -167,9 +167,9 @@ class AttentionTest(unittest.TestCase):
             path = package_aoti(os.path.join(tempdir, "mha.pt2"), so)
             mha_aoti = load_package(path)
 
-            et_res = mha_aoti(self.x, self.x, input_pos=self.input_pos)
+            aoti_res = mha_aoti(self.x, self.x, input_pos=self.input_pos)
             tt_res = self.tt_mha(self.x, self.x, input_pos=self.input_pos)
-            self.assertTrue(torch.allclose(et_res, tt_res))
+            assert_close(aoti_res, tt_res)
 
     def test_attention_executorch(self):
         # Self attention.
