@@ -15,7 +15,6 @@ import torch
 from executorch.examples.models.llama3_2_vision.vision_encoder import (
     FlamingoVisionEncoderModel,
 )
-from torch._inductor.package import package_aoti
 from torch.testing import assert_close
 
 
@@ -29,14 +28,17 @@ class FlamingoVisionEncoderTest(unittest.TestCase):
         eager_res = encoder.forward(*model.get_example_inputs())
 
         # AOTI
-        so = torch._export.aot_compile(
+        ep = torch.export.export(
             encoder,
             model.get_example_inputs(),
-            options={"aot_inductor.package": True},
             dynamic_shapes=model.get_dynamic_shapes(),
         )
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = package_aoti(os.path.join(tmpdir, "vision_encoder.pt2"), so)
+            path = torch._inductor.aoti_compile_and_package(
+                ep,
+                model.get_example_inputs(),
+                package_path=os.path.join(tmpdir, "vision_encoder.pt2"),
+            )
             print(path)
             encoder_aoti = torch._inductor.aoti_load_package(path)
 
