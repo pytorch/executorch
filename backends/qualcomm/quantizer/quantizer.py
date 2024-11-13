@@ -36,6 +36,9 @@ from .qconfig import (
     QuantizationConfig,
 )
 
+# To bypass the meta internal test error
+get_default_16bit_qnn_ptq_config = get_16a16w_qnn_ptq_config
+
 __all__ = [
     "QnnQuantizer",
     "QuantDtype",
