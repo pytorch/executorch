@@ -168,14 +168,22 @@ class Rope(torch.nn.Module):
             self.apply_rotary_emb = hf_apply_rotary_emb
         else:
             self.apply_rotary_emb = RotaryEmbedding()
+        self.cos = None
+        self.sin = None
 
     def forward(
         self,
         q: torch.Tensor,
         k: torch.Tensor,
+    ):
+        assert self.cos is not None and self.sin is not None
+        return self.apply_rotary_emb(q, k, self.cos, self.sin)
+
+    def init(
+        self,
+        seq_len: int,
         input_pos: Optional[torch.Tensor] = None,
     ):
-        seq_len = q.shape[1]
         if self.params.use_kv_cache:
             assert (
                 input_pos is not None
@@ -187,9 +195,9 @@ class Rope(torch.nn.Module):
                 torch._check_is_size(input_pos_item)
                 torch._check(input_pos_item < self.params.max_seq_len)
                 # pyre-ignore: Incompatible parameter type [6]: torch.narrow does expect int or Tensor
-                freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seq_len)
+                self.cos = self.freqs_cos.narrow(0, input_pos_item, seq_len)
                 # pyre-ignore: Incompatible parameter type [6]
-                freqs_sin = self.freqs_sin.narrow(0, input_pos_item, seq_len)
+                self.sin = self.freqs_sin.narrow(0, input_pos_item, seq_len)
             else:
                 # When not using dynamic shape, use of the .item results in
                 # symints, due to querying the data from tensor.
@@ -198,15 +206,17 @@ class Rope(torch.nn.Module):
                 assert (
                     seq_len == 1
                 ), "Expected seq_len to be 1 when using kv_cache without dynamic shape"
-                freqs_cos = self.freqs_cos[input_pos]
-                freqs_sin = self.freqs_sin[input_pos]
+                self.cos = self.freqs_cos[input_pos]
+                self.sin = self.freqs_sin[input_pos]
 
         else:
             assert input_pos is None, "input_pos is unused when use_kv_cache is False"
-            freqs_cos = self.freqs_cos[:seq_len]
-            freqs_sin = self.freqs_sin[:seq_len]
-        q, k = self.apply_rotary_emb(q, k, freqs_cos, freqs_sin)
-        return q, k
+            self.cos = self.freqs_cos[:seq_len]
+            self.sin = self.freqs_sin[:seq_len]
+
+    def deinit(self):
+        self.cos = None
+        self.sin = None
 
 
 class KVCache(nn.Module):
@@ -342,7 +352,6 @@ class Attention(nn.Module):
         self.max_batch_size = args.max_batch_size
         self.max_seq_len = args.max_seq_len
         self.dim = args.dim
-        # self.dim = 4096, self.n_heads = 32, self.head_dim = 4096 / 32 = 125
         self.wq = nn.Linear(self.dim, self.n_heads * self.head_dim, bias=False)
         self.wk = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wv = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=False)
@@ -395,7 +404,7 @@ class Attention(nn.Module):
         v = v.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
 
         # RoPE relative positional embeddings
-        q, k = self.rope.forward(q, k, input_pos)
+        q, k = self.rope.forward(q, k)
 
         if self.use_kv_cache:
             assert input_pos is not None
@@ -543,8 +552,12 @@ class Transformer(nn.Module):
         if tokens is not None and h is None:
             h = self.tok_embeddings(tokens)
 
+        self.rope.init(h.shape[1], input_pos)
+
         for layer in self.layers:
             h = layer(h, input_pos)
+
+        self.rope.deinit()
 
         if not self.generate_full_logits:
             # Only the last logit is used for the new generated token

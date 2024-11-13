@@ -90,6 +90,9 @@ class OpFeatures:
         # then the insert_prepack_nodes pass will not insert prepack nodes for the args
         # of the op.
         "handles_own_prepacking",
+        # Optional dictionary to specify a custom function to calculate the required
+        # image extents for a particular argument index.
+        "skip_limits_check",
         # Optional check function used during partitioning to determine if a node's
         # inputs are supported by the operator implementation.
         "check_node_fn",
@@ -103,6 +106,7 @@ class OpFeatures:
         optimal_storage: Optional[VkStorageType] = None,
         optimal_layout: Optional[VkMemoryLayout] = None,
         handles_own_prepacking: bool = False,
+        skip_limits_check: Optional[Set[int]] = None,
         check_node_fn: Optional[Callable] = None,
     ):
         self.texture_impl: Optional[TextureImplFeatures] = texture_impl
@@ -111,6 +115,11 @@ class OpFeatures:
         self.optimal_storage: Optional[VkStorageType] = optimal_storage
         self.optimal_layout: Optional[VkMemoryLayout] = optimal_layout
         self.handles_own_prepacking: bool = handles_own_prepacking
+
+        self.skip_limits_check: Set[int] = set()
+        if skip_limits_check is not None:
+            self.skip_limits_check = skip_limits_check
+
         self.check_node_fn: Callable = allow_node
         if check_node_fn is not None:
             self.check_node_fn = check_node_fn
@@ -433,6 +442,7 @@ def register_convolution_op(features: OpFeatures):
     features.optimal_storage = VkStorageType.TEXTURE_3D
     features.optimal_layout = VkMemoryLayout.TENSOR_CHANNELS_PACKED
     features.handles_own_prepacking = True
+    features.skip_limits_check = {1, 2}
     return features
 
 

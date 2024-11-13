@@ -27,6 +27,7 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False):
         select({
             "DEFAULT": "",
             "ovr_config//os:android": "--optimize",
+            "ovr_config//os:linux": "--replace-u16vecn",
         })
     )
 
@@ -117,7 +118,7 @@ def define_common_targets(is_fbcode = False):
                 "fbsource//third-party/toolchains:android"
             ],
             "ovr_config//os:macos-arm64": [
-                "//third-party/khronos:moltenVK"
+                "//third-party/khronos:moltenVK_static"
             ],
         })
         VK_API_PREPROCESSOR_FLAGS += select({

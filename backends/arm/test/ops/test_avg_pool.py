@@ -55,7 +55,9 @@ class TestAvgPool2d(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=common.get_tosa_compile_spec(
+                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
+                ),
             )
             .export()
             .check(["torch.ops.aten.avg_pool2d.default"])
@@ -76,7 +78,9 @@ class TestAvgPool2d(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=common.get_tosa_compile_spec(
+                    "TOSA-0.80.0+BI", permute_memory_to_nhwc=True
+                ),
             )
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()

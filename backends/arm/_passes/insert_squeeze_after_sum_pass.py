@@ -8,9 +8,7 @@ from typing import cast
 
 import torch
 import torch.fx
-from executorch.backends.arm._passes.arm_pass_utils import create_node, insert_q_dq_pair
-
-from executorch.backends.arm.tosa_quant_utils import get_quant_node_args, is_quant_node
+from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -28,8 +26,6 @@ class InsertSqueezeAfterSumPass(ExportPass):
         sum(dims, keep_dim = False)
     After pass:
         sum(dims, keep_dim = True)
-        (q)
-        (dq)
         squeeze(dim = dims)
     """
 
@@ -45,12 +41,6 @@ class InsertSqueezeAfterSumPass(ExportPass):
                 continue
 
             dim_list = cast(list[int], sum_node.args[1])
-            quantized = is_quant_node(sum_node)
-            if quantized:
-                qparams = get_quant_node_args(sum_node.all_input_nodes[0])
-                qparams = qparams + (torch.int8,)
-            else:
-                qparams = None
 
             # Add keep_dim = True arg to sum node.
             sum_node.args = sum_node.args[0:2] + (True,)
@@ -61,8 +51,6 @@ class InsertSqueezeAfterSumPass(ExportPass):
                 )
                 sum_node.replace_all_uses_with(squeeze_node)
                 squeeze_node.args = (sum_node, dim_list)
-                if quantized:
-                    sum_node = insert_q_dq_pair(graph_module.graph, sum_node, qparams)
         graph_module.graph.eliminate_dead_code()
         graph_module.recompile()
         graph_module = super().call(graph_module).graph_module
