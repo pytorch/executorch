@@ -192,7 +192,8 @@ def main():
             example_inputs,
         )
 
-    save_executorch_program(exec_program, args.model_name, args.compute_unit)
+    model_name = f"{args.model_name}_compiled" if args.compile else args.model_name
+    save_executorch_program(exec_program, model_name, args.compute_unit)
     generate_etrecord(f"{args.model_name}_coreml_etrecord.bin", edge_copy, exec_program)
 
     if args.save_processed_bytes and lowered_module is not None:

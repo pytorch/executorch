@@ -32,7 +32,6 @@ void quantize_per_tensor_out(
     Tensor& out) {
   const float* input_data = input.const_data_ptr<float>();
   const size_t numel = out.numel();
-
   if (out.scalar_type() == ScalarType::Byte) {
     uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
     cadence::impl::HiFi::kernels::quantize<uint8_t>(
@@ -45,12 +44,19 @@ void quantize_per_tensor_out(
     int16_t* out_data = out.mutable_data_ptr<int16_t>();
     cadence::impl::HiFi::kernels::quantize<int16_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
+  } else if (out.scalar_type() == ScalarType::Bits16) {
+    uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
+    cadence::impl::HiFi::kernels::quantize<uint16_t>(
+        out_data, input_data, 1. / scale, zero_point, numel);
   } else if (out.scalar_type() == ScalarType::Int) {
     int32_t* out_data = out.mutable_data_ptr<int32_t>();
     cadence::impl::HiFi::kernels::quantize<int32_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
   } else {
-    ET_CHECK_MSG(false, "Unhandled input dtype %hhd", out.scalar_type());
+    ET_CHECK_MSG(
+        false,
+        "Unhandled output dtype %hhd",
+        static_cast<int8_t>(out.scalar_type()));
   }
 }
 

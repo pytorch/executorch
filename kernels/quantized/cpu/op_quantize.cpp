@@ -281,7 +281,7 @@ Tensor& quantize_per_channel_out(
   check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
 
   // a list contains all dimensions except axis
-  int64_t dims[input.dim() - 1];
+  int64_t dims[kTensorDimensionLimit];
   for (int64_t i = 0; i < input.dim() - 1; i++) {
     if (i < axis) {
       dims[i] = i;

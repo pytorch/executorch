@@ -27,6 +27,7 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False):
         select({
             "DEFAULT": "",
             "ovr_config//os:android": "--optimize",
+            "ovr_config//os:linux": "--replace-u16vecn",
         })
     )
 
@@ -81,43 +82,6 @@ def define_common_targets(is_fbcode = False):
         ],
     )
 
-    runtime.genrule(
-        name = "gen_vk_delegate_schema",
-        srcs = [
-            "serialization/schema.fbs",
-        ],
-        # We're only generating a single file, so it seems like we could use
-        # `out`, but `flatc` takes a directory as a parameter, not a single
-        # file. Use `outs` so that `${OUT}` is expanded as the containing
-        # directory instead of the file itself.
-        outs = {
-            "schema_generated.h": ["schema_generated.h"],
-        },
-        cmd = " ".join([
-            "$(exe {})".format(runtime.external_dep_location("flatc")),
-            "--cpp",
-            "--cpp-std c++11",
-            "--scoped-enums",
-            "-o ${OUT}",
-            "${SRCS}",
-        ]),
-        default_outs = ["."],
-    )
-
-    runtime.cxx_library(
-        name = "vk_delegate_schema",
-        srcs = [],
-        visibility = [
-            "//executorch/backends/vulkan/...",
-        ],
-        exported_headers = {
-            "schema_generated.h": ":gen_vk_delegate_schema[schema_generated.h]",
-        },
-        exported_external_deps = [
-            "flatbuffers-api",
-        ],
-    )
-
     runtime.filegroup(
         name = "vulkan_graph_runtime_shaders",
         srcs = native.glob([
@@ -138,28 +102,37 @@ def define_common_targets(is_fbcode = False):
         "fbsource//third-party/VulkanMemoryAllocator/3.0.1:VulkanMemoryAllocator_xplat",
     ]
 
-    if not is_fbcode:
-        VK_API_DEPS += [
-            "fbsource//third-party/volk:volk",
-        ]
-        VK_API_DEPS += select({
-            "DEFAULT": [],
-            "ovr_config//os:android": ["fbsource//third-party/toolchains:android"],
-        })
-        VK_API_PREPROCESSOR_FLAGS += [
-            "-DUSE_VULKAN_WRAPPER",
-            "-DUSE_VULKAN_VOLK",
-        ]
-        VK_API_PREPROCESSOR_FLAGS += select({
-            "DEFAULT": [],
-            "ovr_config//os:android": ["-DVK_ANDROID_external_memory_android_hardware_buffer"],
-        })
-    else:
+    if is_fbcode:
         VK_API_DEPS += [
             "fbsource//third-party/swiftshader:swiftshader_vk_headers",
             "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
             "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_so",
         ]
+    else:
+        VK_API_DEPS += select({
+            "DEFAULT": [
+                "fbsource//third-party/volk:volk",
+            ],
+            "ovr_config//os:android": [
+                "fbsource//third-party/volk:volk",
+                "fbsource//third-party/toolchains:android"
+            ],
+            "ovr_config//os:macos-arm64": [
+                "//third-party/khronos:moltenVK_static"
+            ],
+        })
+        VK_API_PREPROCESSOR_FLAGS += select({
+            "DEFAULT": [
+                "-DUSE_VULKAN_WRAPPER",
+                "-DUSE_VULKAN_VOLK",
+            ],
+            "ovr_config//os:android": [
+                "-DUSE_VULKAN_WRAPPER",
+                "-DUSE_VULKAN_VOLK",
+                "-DVK_ANDROID_external_memory_android_hardware_buffer"
+            ],
+            "ovr_config//os:macos-arm64": []
+        })
 
     runtime.cxx_library(
         name = "vulkan_compute_api",
@@ -225,8 +198,8 @@ def define_common_targets(is_fbcode = False):
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
-            ":vk_delegate_schema",
             ":vulkan_graph_runtime",
+            "//executorch/backends/vulkan/serialization:vk_delegate_schema",
             "//executorch/runtime/core:event_tracer",
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
@@ -236,3 +209,79 @@ def define_common_targets(is_fbcode = False):
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
     )
+
+    ##
+    ## AOT targets
+    ##
+    if is_fbcode:
+        runtime.python_library(
+            name = "utils_lib",
+            srcs = [
+                "utils.py",
+            ],
+            visibility = [
+                "//executorch/backends/vulkan/...",
+            ],
+            deps = [
+                "//caffe2:torch",
+                "//executorch/exir:tensor",
+                "//executorch/backends/vulkan/serialization:lib",
+            ]
+        )
+
+        runtime.python_library(
+            name = "custom_ops_lib",
+            srcs = [
+                "custom_ops_lib.py"
+            ],
+            visibility = [
+                "//executorch/...",
+                "//executorch/vulkan/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            deps = [
+                "//caffe2:torch",
+            ]
+        )
+
+        runtime.python_library(
+            name = "op_registry",
+            srcs = [
+                "op_registry.py",
+            ],
+            visibility = [
+                "//executorch/...",
+                "//executorch/vulkan/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            deps = [
+                ":custom_ops_lib",
+                ":utils_lib",
+                "//caffe2:torch",
+                "//executorch/exir/dialects:lib",
+                "//executorch/backends/vulkan/serialization:lib",
+            ]
+        )
+
+        runtime.python_library(
+            name = "vulkan_preprocess",
+            srcs = [
+                "vulkan_preprocess.py",
+            ],
+            visibility = [
+                "//executorch/...",
+                "//executorch/vulkan/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            deps = [
+                "//executorch/backends/transforms:addmm_mm_to_linear",
+                "//executorch/backends/transforms:fuse_batch_norm_with_conv",
+                "//executorch/backends/transforms:fuse_conv_with_clamp",
+                "//executorch/backends/transforms:fuse_dequant_linear",
+                "//executorch/backends/transforms:fuse_view_copy",
+                "//executorch/backends/transforms:remove_clone_ops",
+                "//executorch/backends/vulkan/_passes:vulkan_passes",
+                "//executorch/backends/vulkan/serialization:lib",
+                "//executorch/exir/backend:backend_details",
+            ],
+        )

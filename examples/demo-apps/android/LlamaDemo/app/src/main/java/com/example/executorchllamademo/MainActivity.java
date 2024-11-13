@@ -125,7 +125,8 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     long runStartTime = System.currentTimeMillis();
     mModule =
         new LlamaModule(
-            ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType()),
+            ModelUtils.getModelCategory(
+                mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType()),
             modelPath,
             tokenizerPath,
             temperature);
@@ -174,6 +175,11 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
             + modelPath
             + "\nTokenizer path: "
             + tokenizerPath
+            + "\nBackend: "
+            + mCurrentSettingsFields.getBackendType().toString()
+            + "\nModelType: "
+            + ModelUtils.getModelCategory(
+                mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType())
             + "\nTemperature: "
             + temperature
             + "\nModel loaded time: "
@@ -229,6 +235,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
 
     try {
       Os.setenv("ADSP_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir, true);
+      Os.setenv("LD_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir, true);
     } catch (ErrnoException e) {
       finish();
     }
@@ -285,6 +292,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
       }
       boolean isUpdated = !mCurrentSettingsFields.equals(updatedSettingsFields);
       boolean isLoadModel = updatedSettingsFields.getIsLoadModel();
+      setBackendMode(updatedSettingsFields.getBackendType());
       if (isUpdated) {
         if (isLoadModel) {
           // If users change the model file, but not pressing loadModelButton, we won't load the new
@@ -293,6 +301,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
         } else {
           askUserToSelectModel();
         }
+
         checkForClearChatHistory(updatedSettingsFields);
         // Update current to point to the latest
         mCurrentSettingsFields = new SettingsFields(updatedSettingsFields);
@@ -300,6 +309,22 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     } else {
       askUserToSelectModel();
     }
+  }
+
+  private void setBackendMode(BackendType backendType) {
+    if (backendType.equals(BackendType.XNNPACK) || backendType.equals(BackendType.QUALCOMM)) {
+      setXNNPACKMode();
+    } else if (backendType.equals(BackendType.MEDIATEK)) {
+      setMediaTekMode();
+    }
+  }
+
+  private void setXNNPACKMode() {
+    requireViewById(R.id.addMediaButton).setVisibility(View.VISIBLE);
+  }
+
+  private void setMediaTekMode() {
+    requireViewById(R.id.addMediaButton).setVisibility(View.GONE);
   }
 
   private void checkForClearChatHistory(SettingsFields updatedSettingsFields) {
@@ -672,7 +697,8 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
           addSelectedImagesToChatThread(mSelectedImageUri);
           String finalPrompt;
           String rawPrompt = mEditTextMessage.getText().toString();
-          if (ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType())
+          if (ModelUtils.getModelCategory(
+                  mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType())
               == ModelUtils.VISION_MODEL) {
             finalPrompt = mCurrentSettingsFields.getFormattedSystemAndUserPrompt(rawPrompt);
           } else {
@@ -705,7 +731,9 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
                         }
                       });
                   long generateStartTime = System.currentTimeMillis();
-                  if (ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType())
+                  if (ModelUtils.getModelCategory(
+                          mCurrentSettingsFields.getModelType(),
+                          mCurrentSettingsFields.getBackendType())
                       == ModelUtils.VISION_MODEL) {
                     mModule.generateFromPos(
                         finalPrompt,

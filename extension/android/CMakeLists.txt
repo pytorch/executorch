@@ -64,7 +64,7 @@ set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
 target_link_options_shared_lib(executorch)
 
-add_library(executorch_jni SHARED jni/jni_layer.cpp)
+add_library(executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp)
 
 set(link_libraries)
 list(
@@ -146,7 +146,7 @@ if(EXECUTORCH_JNI_CUSTOM_LIBRARY)
 endif()
 
 if(EXECUTORCH_BUILD_LLAMA_JNI)
-  target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp)
+  target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp jni/log.cpp)
   list(APPEND link_libraries llama_runner llava_runner)
   target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_LLAMA_JNI=1)
   add_subdirectory(
@@ -158,6 +158,29 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
     ${EXECUTORCH_ROOT}/examples/models/llama/runner
     ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama/runner
   )
+
+  if(NEURON_BUFFER_ALLOCATOR_LIB)
+      target_sources(
+      executorch_jni PRIVATE
+      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/mtk_llama_runner.cpp
+      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/LlamaModelChunk.cpp
+      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/LlamaRuntime.cpp
+      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/ModelChunk.cpp
+      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/MultiModelLoader.cpp
+      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/llm_helper/mask_builder.cpp
+      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/llm_helper/rotary_embedding.cpp
+      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/llm_helper/token_embedding.cpp
+    )
+    target_include_directories(
+      executorch_jni PRIVATE
+      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/
+      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner
+    )
+    add_library(libneuron_buffer_allocator SHARED IMPORTED)
+    set_property(TARGET libneuron_buffer_allocator PROPERTY IMPORTED_LOCATION ${NEURON_BUFFER_ALLOCATOR_LIB})
+    list(APPEND link_libraries neuron_backend libneuron_buffer_allocator)
+    target_compile_definitions(executorch_jni PRIVATE EXECUTORCH_BUILD_MEDIATEK=1)
+  endif()
 endif()
 
 target_include_directories(
@@ -167,4 +190,4 @@ target_include_directories(
 
 target_compile_options(executorch_jni PUBLIC ${_common_compile_options})
 
-target_link_libraries(executorch_jni ${link_libraries})
+target_link_libraries(executorch_jni ${link_libraries} log)

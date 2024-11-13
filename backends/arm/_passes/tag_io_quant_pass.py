@@ -43,9 +43,9 @@ class TagIOQuantPass(ExportPass):
 
             # tag dq of outputs
             if node.op == "output":
-                quant, *_ = node.args[0]
-                if self.is_dequant_node(quant):
-                    quant.meta["arm_override_partition"] = False
+                for quant in node.args[0]:
+                    if self.is_dequant_node(quant):
+                        quant.meta["arm_override_partition"] = False
 
         graph_module.recompile()
         return PassResult(graph_module, True)
