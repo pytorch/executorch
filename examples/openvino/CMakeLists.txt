@@ -53,7 +53,7 @@ target_include_directories(
 )
 
 # Set the path to the library directory
-set(LIBRARY_DIR "/home/icx-6338/ynimmaga/executorch_new/executorch/cmake-openvino-out/lib/")
+set(LIBRARY_DIR "${CMAKE_CURRENT_LIST_DIR}/../../cmake-openvino-out/lib/")
 
 # List the libraries you want to link (without the 'lib' prefix and file extension)
 set(LIBRARIES_TO_LINK ${LIBRARY_DIR}/libopenvino_backend.so 

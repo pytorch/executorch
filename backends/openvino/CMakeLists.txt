@@ -35,8 +35,8 @@ target_include_directories(
 
 set(OPENVINO_LIB_PATH ${OPENVINO_DIR}/runtime/lib/intel64)
 set(OPENVINO_LIBS
-    ${OPENVINO_LIB_PATH}/libopenvino.so
-    ${OPENVINO_LIB_PATH}/libopenvino_ir_frontend.so.2450
+    ${OPENVINO_LIB_PATH}/libopenvino.so.2025.0.0
+    ${OPENVINO_LIB_PATH}/libopenvino_ir_frontend.so.2025.0.0
     ${OPENVINO_LIB_PATH}/libopenvino_c.so
     ${OPENVINO_LIB_PATH}/libopenvino_intel_cpu_plugin.so
     ${OPENVINO_LIB_PATH}/libopenvino_intel_gpu_plugin.so
