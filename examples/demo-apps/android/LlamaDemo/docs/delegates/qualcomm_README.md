@@ -101,12 +101,12 @@ We support PTQ by default. The entire export may take ~20 minutes (Llama 3.1 8B)
 Examples:
 ```
 # 4 bits weight only quantize
-python -m examples.models.llama.export_llama --model llama3 --checkpoint "${MODEL_DIR}/consolidated.00.pth" -p "${MODEL_DIR}/params.json" -kv --disable_dynamic_shape --qnn --pt2e_quantize qnn_16a4w -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="test.pte”
+python -m examples.models.llama.export_llama --checkpoint "${MODEL_DIR}/consolidated.00.pth" -p "${MODEL_DIR}/params.json" -kv --disable_dynamic_shape --qnn --pt2e_quantize qnn_16a4w -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="test.pte”
 ```
 If the model is really big, it may require model sharding because the Qualcomm DSP is a 32bit system and has a 4GB size limit . For example for Llama 3 8B models, we need to shard the model into 4, but ExecuTorch still packages it into one PTE file. Here is an example:
 ```
 # 8 bits quantization with 4 shards
-python -m examples.models.llama.export_llama --model llama3 --checkpoint "${MODEL_DIR}/consolidated.00.pth" -p "${MODEL_DIR}/params.json" -kv --disable_dynamic_shape --qnn --pt2e_quantize qnn_8a8w -d fp32 --num_sharding 4 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="test.pte”
+python -m examples.models.llama.export_llama --checkpoint "${MODEL_DIR}/consolidated.00.pth" -p "${MODEL_DIR}/params.json" -kv --disable_dynamic_shape --qnn --pt2e_quantize qnn_8a8w -d fp32 --num_sharding 4 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="test.pte”
 ```
 Note: if you encountered issues below
 ```

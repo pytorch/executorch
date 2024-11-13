@@ -168,7 +168,6 @@ LLAMA_CHECKPOINT=path/to/checkpoint.pth
 LLAMA_PARAMS=path/to/params.json
 
 python -m examples.models.llama.export_llama \
-  --model llama3_2
   --checkpoint "${LLAMA_CHECKPOINT:?}" \
   --params "${LLAMA_PARAMS:?}" \
   -kv \
@@ -190,7 +189,6 @@ LLAMA_QUANTIZED_CHECKPOINT=path/to/spinquant/checkpoint.pth
 LLAMA_PARAMS=path/to/spinquant/params.json
 
 python -m examples.models.llama.export_llama \
-   --model llama3_2
    --checkpoint "${LLAMA_QUANTIZED_CHECKPOINT:?}" \
    --params "${LLAMA_PARAMS:?}" \
    --use_sdpa_with_kv_cache \
@@ -216,7 +214,6 @@ LLAMA_QUANTIZED_CHECKPOINT=path/to/qlora/checkpoint.pth
 LLAMA_PARAMS=path/to/qlora/params.json
 
 python -m examples.models.llama.export_llama \
-   --model llama3_2
    --checkpoint "${LLAMA_QUANTIZED_CHECKPOINT:?}" \
    --params "${LLAMA_PARAMS:?}" \
    -qat \

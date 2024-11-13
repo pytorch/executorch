@@ -19,7 +19,7 @@ From `executorch` root:
     ```
 3. Export model and generate `.pte` file.
     ```
-    python -m examples.models.llama.export_llama --model llama3 -c stories110M.pt -p params.json -X -kv
+    python -m examples.models.llama.export_llama -c stories110M.pt -p params.json -X -kv
     ```
 
 ## Smaller model delegated to other backends
@@ -27,9 +27,9 @@ From `executorch` root:
 Currently we supported lowering the stories model to other backends, including, CoreML, MPS and QNN. Please refer to the instruction
 for each backend ([CoreML](https://pytorch.org/executorch/main/build-run-coreml.html), [MPS](https://pytorch.org/executorch/main/build-run-mps.html), [QNN](https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html)) before trying to lower them. After the backend library is installed, the script to export a lowered model is
 
-- Lower to CoreML: `python -m examples.models.llama.export_llama --model llama3 -kv --disable_dynamic_shape --coreml -c stories110M.pt -p params.json `
-- MPS: `python -m examples.models.llama.export_llama --model llama3 -kv --disable_dynamic_shape --mps -c stories110M.pt -p params.json `
-- QNN: `python -m examples.models.llama.export_llama --model llama3 -kv --disable_dynamic_shape --qnn -c stories110M.pt -p params.json `
+- Lower to CoreML: `python -m examples.models.llama.export_llama -kv --disable_dynamic_shape --coreml -c stories110M.pt -p params.json `
+- MPS: `python -m examples.models.llama.export_llama -kv --disable_dynamic_shape --mps -c stories110M.pt -p params.json `
+- QNN: `python -m examples.models.llama.export_llama -kv --disable_dynamic_shape --qnn -c stories110M.pt -p params.json `
 
 The iOS LLAMA app supports the CoreML and MPS model and the Android LLAMA app supports the QNN model. On Android, it also allow to cross compiler the llama runner binary, push to the device and run.
 

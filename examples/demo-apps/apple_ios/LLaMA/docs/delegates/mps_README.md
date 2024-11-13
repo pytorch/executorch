@@ -45,9 +45,9 @@ Install the required packages to export the model
 sh examples/models/llama/install_requirements.sh
 ```
 
-Export the model (Llama 3 in this case)
+Export the model
 ```
-python -m examples.models.llama.export_llama --model llama3 --checkpoint "${MODEL_DIR}/consolidated.00.pth" --params "${MODEL_DIR}/params.json" -kv --use_sdpa_with_kv_cache --mps -d fp32 --disable_dynamic_shape -qmode 8da4w -G 32
+python -m examples.models.llama.export_llama --checkpoint "${MODEL_DIR}/consolidated.00.pth" --params "${MODEL_DIR}/params.json" -kv --use_sdpa_with_kv_cache --mps -d fp32 --disable_dynamic_shape -qmode 8da4w -G 32
 ```
 
 ## Pushing Model and Tokenizer
