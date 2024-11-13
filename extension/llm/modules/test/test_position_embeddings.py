@@ -164,17 +164,21 @@ class TiledTokenPositionalEmbeddingTest(unittest.TestCase):
         assert_close(y, ref_y)
 
     def test_tiled_token_positional_embedding_aoti(self):
-        so = torch._export.aot_compile(
+        tpe_ep = torch.export.export(
             self.tpe,
-            args=(self.x, self.aspect_ratio),
-            options={"aot_inductor.package": True},
+            (self.x, self.aspect_ratio),
             dynamic_shapes=(
                 self.dynamic_shape,
                 None,
             ),  # assuming aspect ratio is static
         )
+
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = package_aoti(os.path.join(tmpdir, "tpe.pt2"), so)
+            path = torch._inductor.aoti_compile_and_package(
+                tpe_ep,
+                (self.x, self.aspect_ratio),
+                package_path=os.path.join(tmpdir, "tpe.pt2"),
+            )
             tpe_aoti = load_package(path)
 
             y = tpe_aoti(self.x, self.aspect_ratio)
