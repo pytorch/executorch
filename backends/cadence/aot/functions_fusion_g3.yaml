@@ -71,7 +71,6 @@
   kernels:
     - arg_meta: null
       kernel_name: cadence::impl::G3::mul_out
-
 - op: mul.Scalar_out
   kernels:
     - arg_meta: null

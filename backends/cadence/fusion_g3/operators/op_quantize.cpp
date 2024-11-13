@@ -806,4 +806,8 @@ Tensor& quantize_per_token_out(
 } // namespace native
 } // namespace G3
 } // namespace impl
+<<<<<<< HEAD
 } // namespace cadence
+=======
+} // namespace cadence
+>>>>>>> 7bd011ff5 (Updated name space of the operators by appending cadence)
