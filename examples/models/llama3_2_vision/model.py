@@ -111,7 +111,7 @@ class Llama3_2Decoder(EagerModelBase):
         # Load checkpoint.
         missing, unexpected = self.model_.load_state_dict(
             checkpoint,
-            strict=True,
+            strict=False,
             assign=True,
         )
         if kwargs.get("verbose", False):
