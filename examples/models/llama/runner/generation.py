@@ -110,9 +110,7 @@ class LlamaRunner(ABC):
         print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
         tokens = prompt_tokens + [current_token]
 
-        i = 0
         while len(tokens) < max_seq_len:
-            print(f"{i} out of {self.max_seq_len} max tokens generated")
             if self.use_kv_cache:
                 logits = self.forward(
                     tokens=torch.tensor(
@@ -142,7 +140,6 @@ class LlamaRunner(ABC):
             ):
                 break
 
-            i += 1
             print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
         print("\n")
 
