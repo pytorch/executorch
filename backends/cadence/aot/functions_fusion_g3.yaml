@@ -20,17 +20,17 @@
 - op: _softmax.out
   kernels:
     - arg_meta: null
-      kernel_name: impl::FusionG3::softmax_out
+      kernel_name: cadence::impl::G3::softmax_out
 
 - op: add.out
   kernels:
     - arg_meta: null
-      kernel_name: impl::FusionG3::add_out
+      kernel_name: cadence::impl::G3::add_out
 
 - op: add.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: impl::FusionG3::add_scalar_out
+      kernel_name: cadence::impl::G3::add_scalar_out
 
 - op: bmm.out
   kernels:
@@ -40,7 +40,7 @@
 - op: cat.out
   kernels:
     - arg_meta: null
-      kernel_name: impl::FusionG3::cat_out
+      kernel_name: cadence::impl::G3::cat_out
 
 - op: clone.out
   kernels:
@@ -70,12 +70,12 @@
 - op: mul.out
   kernels:
     - arg_meta: null
-      kernel_name: impl::FusionG3::mul_out
+      kernel_name: cadence::impl::G3::mul_out
       
 - op: mul.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: impl::FusionG3::mul_scalar_out
+      kernel_name: cadence::impl::G3::mul_scalar_out
 
 - op: permute_copy.out
   kernels:
@@ -115,5 +115,4 @@
 - op: native_layer_norm.out
   kernels:
     - arg_meta: null
-      kernel_name: impl::FusionG3::native_layer_norm_out
-    
+      kernel_name: cadence::impl::G3::native_layer_norm_out     

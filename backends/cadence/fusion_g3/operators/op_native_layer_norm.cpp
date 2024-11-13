@@ -20,8 +20,9 @@ using ScalarType = exec_aten::ScalarType;
 using IntArrayRef = exec_aten::ArrayRef<int64_t>;
 using torch::executor::Error;
 
+namespace cadence {
 namespace impl {
-namespace FusionG3 {
+namespace G3 {
 namespace native {
 
 namespace {
@@ -272,5 +273,6 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
 }
 
 } // namespace native
-} // namespace FusionG3
+} // namespace G3
 } // namespace impl
+} // namespace cadence

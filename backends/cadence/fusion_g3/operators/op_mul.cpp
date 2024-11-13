@@ -19,8 +19,9 @@ using torch::executor::KernelRuntimeContext;
 using executorch::runtime::canCast;
 using torch::executor::Error;
 
+namespace cadence {
 namespace impl {
-namespace FusionG3 { 
+namespace G3 { 
 namespace native {
 
 Tensor& mul_out(KernelRuntimeContext& ctx,
@@ -203,24 +204,6 @@ Tensor& mul_scalar_out(KernelRuntimeContext& ctx,
 }
 
 } // namespace impl
-} // namespace FusionG3
+} // namespace G3
 } // namespace native
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+} // namespace cadence

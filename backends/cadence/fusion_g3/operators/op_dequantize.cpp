@@ -36,8 +36,9 @@ using optional = exec_aten::optional<T>;
 /**
  * For an input tensor, use the scale and zero_point arguments to quantize it.
  */
+namespace cadence { 
 namespace impl {
-namespace FusionG3 {
+namespace G3 {
 namespace native {
 
 namespace {
@@ -803,5 +804,6 @@ Tensor& dequantize_per_token_out(
 }
 
 } // namespace native
-} // namespace FusionG3
+} // namespace G3
 } // namespace impl
+} // namespace cadence

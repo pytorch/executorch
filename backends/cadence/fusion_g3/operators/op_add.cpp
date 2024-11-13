@@ -20,8 +20,9 @@ using torch::executor::KernelRuntimeContext;
 using executorch::runtime::canCast;
 using torch::executor::Error;
 
+namespace cadence {
 namespace impl {
-namespace FusionG3 { 
+namespace G3 { 
 namespace native {
 
 
@@ -242,6 +243,6 @@ Tensor& add_scalar_out(KernelRuntimeContext& ctx,
 }
 
 } // namespace native
-} // namespace FusionG3
+} // namespace G3
 } // namespace impl
-
+} //namespace cadence

@@ -20,8 +20,9 @@ using exec_aten::Tensor;
 using torch::executor::KernelRuntimeContext;
 using torch::executor::Error;
 
+namespace cadence {
 namespace impl {
-namespace FusionG3 { 
+namespace G3 { 
 namespace native {
 
 Tensor& softmax_out(
@@ -113,5 +114,6 @@ Tensor& softmax_out(
 }
 
 } // namespace native
-} // namespace FusionG3
+} // namespace G3
 } // namespace impl
+} // namespace cadence

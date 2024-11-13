@@ -34,7 +34,7 @@ using torch::executor::Error;
 /**
  * For an input tensor, use the scale and zero_point arguments to quantize it.
  */
-
+namespace cadence {
 namespace impl {
 namespace FusionG3 {
 namespace native {
@@ -792,6 +792,7 @@ Tensor& quantize_per_token_out(
       input, scale, zero_point, quant_min, quant_max, dtype, out);
 }
 
-}; // namespace native
-}; // namespace FusionG3
-}; // namespace impl
+} // namespace native
+} // namespace G3
+} // namespace impl
+} // namespace cadence

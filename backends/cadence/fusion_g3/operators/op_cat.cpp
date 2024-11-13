@@ -18,9 +18,20 @@ using exec_aten::Tensor;
 using torch::executor::KernelRuntimeContext;
 using torch::executor::Error;
 
+/* ScalarType in Executorch do not have support for below data types.
+ * So, creating a placeholder for these data types. Once, ScalarTypes is
+ * updated to have support for below data types, these can be removed and 
+ * operator need to be updated accordingly
+ */
+ enum datatype {
+ Ushort = 20,
+ Uint = 23,
+ };
 
+
+namespace cadence {
 namespace impl {
-namespace FusionG3 {
+namespace G3 {
 namespace native {
 
 
@@ -95,6 +106,22 @@ Tensor& cat_out(KernelRuntimeContext& ctx,
                          inp_shapes_size[0], tensors.size(), (int)dim, sizeof(char));
         
     }
+    if(out.scalar_type() == (ScalarType)Uint)
+    {
+        xa_nn_cat(out_data, out_shapes, inp_tensors, inp_tensors_shapes,
+                       inp_shapes_size[0], tensors.size(), (int)dim, sizeof(int));
+    }
+    else if(out.scalar_type() == (ScalarType)Ushort)
+    {
+        xa_nn_cat(out_data, out_shapes, inp_tensors, inp_tensors_shapes,
+                        inp_shapes_size[0], tensors.size(), (int)dim, sizeof(short));
+    }
+    else if(out.scalar_type() == ScalarType::Byte)
+    {
+        xa_nn_cat(out_data, out_shapes, inp_tensors, inp_tensors_shapes,
+                         inp_shapes_size[0], tensors.size(), (int)dim, sizeof(char));
+        
+    }    
     else
     {
         // Special handling when all inputs are 1D-empty tensors for aten consistency
@@ -145,5 +172,6 @@ Tensor& cat_out(KernelRuntimeContext& ctx,
 }
 
 } // namespace native
-} // namespace FusionG3
+} // namespace G3
 } // namespace impl
+} // namespace cadence
