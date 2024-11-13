@@ -34,10 +34,6 @@ install_ubuntu() {
   rm -rf sccache
   apt-get remove -y cargo rustc
   apt-get autoclean && apt-get clean
-
-  echo "Downloading old sccache binary from S3 repo for PCH builds"
-  curl --retry 3 https://s3.amazonaws.com/ossci-linux/sccache -o /opt/cache/bin/sccache-0.2.14a
-  chmod 755 /opt/cache/bin/sccache-0.2.14a
 }
 
 install_binary() {
@@ -50,10 +46,6 @@ mkdir -p /opt/cache/bin
 sed -e 's|PATH="\(.*\)"|PATH="/opt/cache/bin:\1"|g' -i /etc/environment
 export PATH="/opt/cache/bin:$PATH"
 
-# NB: Install the pre-built binary from S3 as building from source
-# https://github.com/pytorch/sccache has started failing mysteriously
-# in which sccache server couldn't start with the following error:
-#   sccache: error: Invalid argument (os error 22)
 install_ubuntu
 
 function write_sccache_stub() {
