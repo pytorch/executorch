@@ -90,7 +90,9 @@ torch::executor::ScalarType torch_to_executorch_scalar_type(
     case c10::ScalarType::QUInt8:
       return torch::executor::ScalarType::QUInt8;
     default:
-      ET_ASSERT_UNREACHABLE();
+      ET_ASSERT_UNREACHABLE_MSG(
+          "Unrecognized dtype: %hhd",
+          static_cast<int8_t>(c10::typeMetaToScalarType(type)));
   }
 }
 
@@ -122,7 +124,8 @@ c10::ScalarType executorch_to_torch_scalar_type(
     case torch::executor::ScalarType::QUInt8:
       return c10::ScalarType::QUInt8;
     default:
-      ET_ASSERT_UNREACHABLE();
+      ET_ASSERT_UNREACHABLE_MSG(
+          "Unrecognized dtype: %hhd", static_cast<int8_t>(type));
   }
 }
 
