@@ -682,6 +682,10 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
                 args.enable_dynamic_shape,
             )
         )
+        # Apply XNNPACK after Vulkan so that undelegated ops can be accelerated by XNNPACK
+        partitioners.append(
+            get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
+        )
         modelname = f"vulkan_{modelname}"
 
     if args.mps:
