@@ -270,7 +270,7 @@ jobs:
             git config --global user.email "pytorchbot@users.noreply.github.com"
             git add Package.swift
             git commit -m "${VERSION}"
-            git push origin "${BRANCH}"
+            git push -f origin "${BRANCH}"
           else
             echo "Draft Package.swift:"
             cat Package.swift
