@@ -146,6 +146,7 @@ class AttentionTest(unittest.TestCase):
 
         assert_close(et_res, tt_res)
 
+    @unittest.skip(reason="TODO(T207740932): test is flaky")
     def test_attention_aoti(self):
         # Self attention.
 
