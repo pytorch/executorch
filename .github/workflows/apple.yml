@@ -236,9 +236,11 @@ jobs:
           fi
 
           for FILENAME in "${RUNNER_TEMP}"/frameworks-ios/*.zip; do
+            [ -e "${FILENAME}" ] || continue
             FRAMEWORK_NAME=$(basename "${FILENAME}" | sed "s/-${VERSION}.zip//")
             CHECKSUM=$(shasum -a 256 "${FILENAME}" | cut -d ' ' -f1)
             echo "${FRAMEWORK_NAME} ${CHECKSUM}" >> "${RUNNER_TEMP}/checksums.txt"
+            ${AWS_CMD} "${FILENAME}" s3://ossci-ios/executorch/ --acl public-read
           done
       - name: Update SwiftPM
         shell: bash
