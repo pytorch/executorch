@@ -109,11 +109,15 @@ void add_q_8w_linear_node(
          graph.sizes_ubo(mat1_W_packed)});
   }
 
+  // set global work group size to be 1 dimensional
+  const utils::uvec3 wg_size = {
+      static_cast<uint32_t>(graph.numel_of(out_W_packed)), 1, 1};
+
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out_W_packed),
-      graph.create_local_wg_size(out_W_packed),
+      wg_size,
+      graph.create_local_wg_size(wg_size),
       // Inputs and Outputs
       {{out_W_packed, vkapi::MemoryAccessType::WRITE},
        {{mat1_W_packed, q_mat2, scales}, vkapi::MemoryAccessType::READ}},

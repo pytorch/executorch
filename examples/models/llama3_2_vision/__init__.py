@@ -5,5 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 
 from .text_decoder.model import Llama3_2Decoder
+from .vision_encoder import FlamingoVisionEncoderModel, VisionEncoderConfig
 
-__all__ = [Llama3_2Decoder]
+__all__ = [
+    "FlamingoVisionEncoderModel",
+    "Llama3_2Decoder",
+    "VisionEncoderConfig",
+]
