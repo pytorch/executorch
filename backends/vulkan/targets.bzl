@@ -117,7 +117,7 @@ def define_common_targets(is_fbcode = False):
                 "fbsource//third-party/volk:volk",
                 "fbsource//third-party/toolchains:android"
             ],
-            "ovr_config//os:macos-arm64": [
+            "ovr_config//os:macos": [
                 "//third-party/khronos:moltenVK_static"
             ],
         })
@@ -131,7 +131,7 @@ def define_common_targets(is_fbcode = False):
                 "-DUSE_VULKAN_VOLK",
                 "-DVK_ANDROID_external_memory_android_hardware_buffer"
             ],
-            "ovr_config//os:macos-arm64": []
+            "ovr_config//os:macos": []
         })
 
     runtime.cxx_library(

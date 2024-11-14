@@ -74,6 +74,7 @@
  * @param[in] _cond Condition asserted as true.
  */
 #define ET_DCHECK(_cond) ((void)0)
+#define ET_DEBUG_ONLY [[maybe_unused]]
 
 #else // NDEBUG
 
@@ -95,6 +96,7 @@
  * @param[in] _cond Condition asserted as true.
  */
 #define ET_DCHECK(_cond) ET_CHECK(_cond)
+#define ET_DEBUG_ONLY
 
 #endif // NDEBUG
 

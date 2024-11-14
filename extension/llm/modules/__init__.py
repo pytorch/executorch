@@ -6,6 +6,8 @@
 
 from ._position_embeddings import (
     replace_tile_positional_embedding,
+    replace_tiled_token_positional_embedding,
+    TiledTokenPositionalEmbedding,
     TilePositionalEmbedding,
 )
 from .attention import MultiHeadAttention, replace_mha_with_inference_mha
@@ -13,7 +15,9 @@ from .kv_cache import KVCache
 
 __all__ = [
     "TilePositionalEmbedding",
+    "TiledTokenPositionalEmbedding",
     "replace_tile_positional_embedding",
+    "replace_tiled_token_positional_embedding",
     "MultiHeadAttention",
     "replace_mha_with_inference_mha",
     "KVCache",

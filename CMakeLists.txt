@@ -324,6 +324,19 @@ message(STATUS "Using python executable '${PYTHON_EXECUTABLE}'")
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".
+# TODO(#6475): This requires/assumes that the repo lives in a directory named
+# exactly `executorch`. Check the assumption first. Remove this check once we
+# stop relying on the assumption.
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR FILENAME _repo_dir_name)
+if(NOT "${_repo_dir_name}" STREQUAL "executorch")
+  message(
+    FATAL_ERROR
+      "The ExecuTorch repo must be cloned into a directory named exactly "
+      "`executorch`; found `${_repo_dir_name}`. See "
+      "https://github.com/pytorch/executorch/issues/6475 for progress on a "
+      "fix for this restriction."
+  )
+endif()
 set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 #
