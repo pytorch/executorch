@@ -22,8 +22,12 @@ endif()
 set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_add.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_div.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_maximum.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_mean.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_minimum.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_mul.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_pow.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_rsqrt.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_sigmoid.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_sub.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_tanh.cpp"
