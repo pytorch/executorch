@@ -12,7 +12,6 @@
 #include <executorch/runtime/platform/log.h>
 #include <cinttypes>
 #include <sstream>
-// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <string>
 
 namespace executorch {
