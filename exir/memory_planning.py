@@ -551,6 +551,7 @@ def greedy(
     graph_signature: Optional[ExportGraphSignature] = None,
     alloc_graph_input: bool = True,
     alloc_graph_output: bool = True,
+    input_buffer_sizes: Optional[List[int]] = None,
 ) -> List[int]:
     spec2obj = {}
     shared_objects = defaultdict(list)
@@ -574,18 +575,17 @@ def greedy(
 
     if len(shared_objects) == 0:
         # Cannot find any tensor in the graph that needs to be allocated.
-        # Return [0, 0] to be consistent with default behavior of naive.
-        total_sizes = [0, 0]
+        # Return the input sizes or [0, 0] to be consistent with default behavior of naive.
+        total_sizes = input_buffer_sizes or [0, 0]
     else:
-        total_sizes = [0] * (max(shared_objects.keys()) + 1)
+        num_buffers = max(shared_objects.keys()) + 1
+        if input_buffer_sizes is None:
+            total_sizes = [0] * num_buffers
+        else:
+            total_sizes = input_buffer_sizes + [0] * (num_buffers - len(input_buffer_sizes))
+
         for mem_id in shared_objects:
-            input_total_size = 0
-            if bufsizes := getattr(graph_module, "input_mem_buffer_sizes", None):
-                if len(bufsizes) > mem_id:
-                    input_total_size = bufsizes[mem_id]
-            total_sizes[mem_id] = materialize_buffer(
-                shared_objects[mem_id], input_total_size
-            )
+            total_sizes[mem_id] = materialize_buffer(shared_objects[mem_id], total_sizes[mem_id])
 
         # Since we now know the number of shared objects we need and the size of
         # each shared object, we can assign offset in the memory buffer for each
@@ -604,6 +604,7 @@ def naive(
     graph_signature: Optional[ExportGraphSignature] = None,
     alloc_graph_input: bool = True,
     alloc_graph_output: bool = True,
+    input_buffer_sizes: Optional[List[int]] = None,
 ) -> List[int]:
 
     # allocate 'allocated' bytes from buffer with id mem_id.
@@ -615,10 +616,7 @@ def naive(
         bufsizes[mem_id] += allocated
         return ret
 
-    bufsizes = getattr(graph_module, "input_mem_buffer_sizes", None)
-    if bufsizes is None:
-        bufsizes = [0, 0]
-
+    bufsizes = input_buffer_sizes or [0, 0]
     bufsizes = typing.cast(List[int], bufsizes)
     for spec in collect_specs_from_nodes(
         graph_module.graph.nodes,
@@ -727,6 +725,8 @@ def apply_algo(
     graph_signature: Optional[ExportGraphSignature] = None,
     alloc_graph_input: bool = True,
     alloc_graph_output: bool = True,
+    # the sizes of buffers already allocated when recursively applied on submodules
+    input_buffer_sizes: Optional[List[int]] = None,
 ) -> List[int]:
     """
     Recursively apply algo to graph_module and its submodules for control flow.
@@ -741,19 +741,21 @@ def apply_algo(
     """
     specs = update_all_tensors_lifetime(graph_module, graph_signature)
     bufsizes: List[int] = algo(
-        graph_module, alignment, graph_signature, alloc_graph_input, alloc_graph_output
+        graph_module,
+        alignment,
+        graph_signature,
+        alloc_graph_input,
+        alloc_graph_output,
+        input_buffer_sizes,
     )
     insert_calls_to_free(graph_module, specs)
 
     def handle_submodule(
-        submodule_nd: torch.fx.Node, alloc_graph_input: bool = False
+        submodule_nd: torch.fx.Node, current_buffer_sizes, alloc_graph_input: bool = False
     ) -> None:
-        nonlocal bufsizes
         assert submodule_nd.op == "get_attr"
         submodule = getattr(graph_module, submodule_nd.target)
-        # memory planning for submodule need to be aware of the amount of
-        # buffer already allocated.
-        submodule.input_mem_buffer_sizes = bufsizes
+        submodule.input_mem_buffer_sizes = current_buffer_sizes
         bufsizes = apply_algo(
             algo,
             submodule,
@@ -761,23 +763,24 @@ def apply_algo(
             graph_signature,
             alloc_graph_input=alloc_graph_input,
             alloc_graph_output=True,
+            input_buffer_sizes=current_buffer_sizes,
         )
         submodule.meta.update({"non_const_buffer_sizes": bufsizes})
+        return bufsizes
 
     for cond_node in get_cond_nodes(graph_module):
-        handle_submodule(typing.cast(torch.fx.Node, cond_node.args[1]))
-        handle_submodule(typing.cast(torch.fx.Node, cond_node.args[2]))
+        bufsizes = handle_submodule(typing.cast(torch.fx.Node, cond_node.args[1]), bufsizes)
+        bufsizes = handle_submodule(typing.cast(torch.fx.Node, cond_node.args[2]), bufsizes)
 
     for while_node in get_while_nodes(graph_module):
-        handle_submodule(typing.cast(torch.fx.Node, while_node.args[0]))
-        handle_submodule(typing.cast(torch.fx.Node, while_node.args[1]))
+        bufsizes = handle_submodule(typing.cast(torch.fx.Node, while_node.args[0]), bufsizes)
+        bufsizes = handle_submodule(typing.cast(torch.fx.Node, while_node.args[1]), bufsizes)
     # TODO: Add test coverage for map operator once dynamo tracing is
     # fully supported for this. T142287208
     for map_node in get_map_nodes(graph_module):
-        handle_submodule(
-            typing.cast(torch.fx.Node, map_node.args[0]), alloc_graph_input=True
+        bufsizes = handle_submodule(
+            typing.cast(torch.fx.Node, map_node.args[0]), bufsizes, alloc_graph_input=True
         )
 
     graph_module.meta.update({"non_const_buffer_sizes": bufsizes})
-
     return bufsizes
