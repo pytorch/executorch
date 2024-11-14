@@ -24,7 +24,8 @@ class ET_EXPERIMENTAL TextPrefiller {
   TextPrefiller(
       TextDecoderRunner* text_decoder_runner,
       bool use_kv_cache_,
-      bool enable_parallel_prefill);
+      bool enable_parallel_prefill,
+      bool use_int32_token = false);
   /**
    * Prefill an LLM Module with the given text input.
    * @param prompt_tokens The text prompt tokens to the LLM Module. Encoded by
@@ -39,6 +40,7 @@ class ET_EXPERIMENTAL TextPrefiller {
 
  private:
   TextDecoderRunner* text_decoder_runner_;
+  bool use_int32_token_;
   bool use_kv_cache_;
   bool enable_parallel_prefill_;
 };
