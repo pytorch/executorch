@@ -9,9 +9,7 @@
 #pragma once
 
 #include <cinttypes>
-// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <string>
-// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <vector>
 
 #include <executorch/runtime/core/error.h>
