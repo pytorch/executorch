@@ -1,6 +1,10 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
 load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 
+def get_compiler_optimization_flags():
+    # App size regressons requires this to be baktraced until I have a better solution
+    return []
+
 def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = False, _aten_mode_deps = []):
     """Registers an implementation of an operator overload group.
 
@@ -114,7 +118,7 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         ],
         visibility = [
             "//executorch/kernels/portable/test/...",
-            "//executorch/kernels/quantized/test/...",
+            "//executorch/kernels/quantized/...",
             "//executorch/kernels/optimized/test/...",
             "//executorch/kernels/test/...",
             "@EXECUTORCH_CLIENTS",
@@ -122,7 +126,10 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         fbandroid_platform_deps = android_deps,
         # kernels often have helpers with no prototypes just disabling the warning here as the headers
         # are codegend and linked in later
-        compiler_flags = ["-Wno-missing-prototypes"] + (
+        compiler_flags = select({
+                "DEFAULT": ["-Wno-missing-prototypes"],
+                "ovr_config//os:windows": [],
+            }) + (
             # For shared library build, we don't want to expose symbols of
             # kernel implementation (ex torch::executor::native::tanh_out)
             # to library users. They should use kernels through registry only.
@@ -132,7 +139,7 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
             # library, and it blocks users like unit tests to use kernel
             # implementation directly. So we enable this for xplat only.
             ["-fvisibility=hidden"] if is_xplat() else []
-        ),
+        ) + get_compiler_optimization_flags(),
         deps = [
             "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
         ] + deps,
@@ -783,11 +790,14 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_masked_select",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+        ],
+    ),
+    op_target(
         name = "op_max",
         deps = [
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
-            "//executorch/kernels/portable/cpu/util:index_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -819,9 +829,6 @@ ATEN_OPS = (
     op_target(
         name = "op_min",
         deps = [
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
-            "//executorch/kernels/portable/cpu/util:index_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),

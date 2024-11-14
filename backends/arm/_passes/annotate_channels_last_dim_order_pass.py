@@ -12,8 +12,9 @@ import torch
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
+    insert_q_dq_pair,
 )
-from executorch.backends.arm.tosa_quant_utils import dq_op
+from executorch.backends.arm.tosa_quant_utils import dq_op, q_op, register_passable_op
 from executorch.backends.arm.tosa_utils import is_consumer_node_depthwise_conv2d
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -39,6 +40,9 @@ def _transpose_impl(*args, **kwargs):
     assert len(dim) <= 4
     # Pass-through in edge-IR
     return args[0]
+
+
+register_passable_op(torch.ops.passthrough_to_tosa._transpose)
 
 
 class AnnotateChannelsLastDimOrder(ExportPass):
@@ -79,37 +83,89 @@ class AnnotateChannelsLastDimOrder(ExportPass):
 
         return False
 
+    def insert_input_transpose(self, node, input_node, graph_module):
+        quantize = input_node.target == dq_op
+        q_params = input_node.args[1:] if quantize else None
+        with graph_module.graph.inserting_before(node):
+            permute_node = create_node(
+                graph_module.graph,
+                torch.ops.passthrough_to_tosa._transpose,
+                args=(input_node, list(self.NHWC_inverse_order)),
+                quantize=quantize,
+                q_params=q_params,
+            )
+            node.replace_input_with(input_node, permute_node)
+
+            permute_node.meta["tosa_dim_order"] = tuple(
+                range(len(input_node.meta["val"].size()))
+            )
+
+    def insert_output_transpose(self, node, graph_module):
+        with graph_module.graph.inserting_after(node):
+            permute_node = create_node(
+                graph_module.graph,
+                torch.ops.passthrough_to_tosa._transpose,
+                args=(node, list(self.NHWC_order)),
+            )
+            permute_node.meta["tosa_dim_order"] = self.NHWC_order
+            node.meta["tosa_dim_order"] = (0, 1, 2, 3)
+            users = [user for user in node.users if user != permute_node]
+            for user in users:
+                user.replace_input_with(node, permute_node)
+
+            quantize = node.args[0] == q_op
+            if quantize:
+                q_params = node.args[0].args[1:]
+                insert_q_dq_pair(graph_module.graph, node, q_params)
+
     def insert_tosa_transposes(self, graph_module: torch.fx.GraphModule):
+        """
+        Reshape operations are not equivalent in NCHW and NHWC.
+        To get around this, transposes need to be added if the previous or new shape
+        fulfil the following condition:
+            C > 1 and (H or W > 1)
+
+        This is relevant for the following operations;
+        squeeze:     4D ->  3D
+        unsqueeze:  <4D ->  4D
+        view:       <4D ->  4D
+        view:        4D -> <4D
+        view:        4D ->  4D
+        """
+
+        def transpose_condition(shape):
+            if len(shape) != 4:
+                return False
+            C = shape[1]
+            H = shape[2]
+            W = shape[3]
+            return C > 1 and (H > 1 or W > 1)
+
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
             if node.target == exir_ops.edge.aten.squeeze_copy.dims:
                 input_node = node.args[0]
-                if input_node.meta["val"].dim() == 4:
-                    with graph_module.graph.inserting_before(node):
-                        permute_node = create_node(
-                            graph_module.graph,
-                            torch.ops.passthrough_to_tosa._transpose,
-                            args=(input_node, list(self.NHWC_inverse_order)),
-                        )
-                        permute_node.meta["tosa_dim_order"] = tuple(
-                            range(len(input_node.meta["val"].size()))
-                        )
-                        node.replace_input_with(input_node, permute_node)
+                input_shape = input_node.meta["val"].shape
+                if transpose_condition(input_shape):
+                    self.insert_input_transpose(node, input_node, graph_module)
 
-            if node.target == exir_ops.edge.aten.unsqueeze_copy.default:
-                if node.meta["val"].dim() == 4:
-                    with graph_module.graph.inserting_after(node):
-                        permute_node = create_node(
-                            graph_module.graph,
-                            torch.ops.passthrough_to_tosa._transpose,
-                            args=(node, list(self.NHWC_order)),
-                        )
-                        permute_node.meta["tosa_dim_order"] = self.NHWC_order
-                        node.meta["tosa_dim_order"] = (0, 1, 2, 3)
-                        users = [user for user in node.users if user != permute_node]
-                        for user in users:
-                            user.replace_input_with(node, permute_node)
+            elif node.target == exir_ops.edge.aten.unsqueeze_copy.default:
+                output_shape = node.meta["val"].shape
+                if transpose_condition(output_shape):
+                    self.insert_output_transpose(node, graph_module)
+
+            elif node.target == exir_ops.edge.aten.view_copy.default:
+                input_node = node.args[0]
+
+                old_shape = input_node.meta["val"].shape
+                new_shape = node.meta["val"].shape
+
+                if transpose_condition(old_shape):
+                    self.insert_input_transpose(node, input_node, graph_module)
+
+                if transpose_condition(new_shape):
+                    self.insert_output_transpose(node, graph_module)
 
     def call(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:

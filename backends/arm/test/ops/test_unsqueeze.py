@@ -13,14 +13,9 @@ from typing import Sequence, Tuple
 
 import torch
 
-from executorch.backends.arm.quantizer.arm_quantizer import (
-    ArmQuantizer,
-    get_symmetric_quantization_config,
-)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
-from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
@@ -40,7 +35,7 @@ class TestSimpleUnsqueeze(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
             )
             .export()
             .check_count({"torch.ops.aten.unsqueeze.default": 1})
@@ -54,14 +49,13 @@ class TestSimpleUnsqueeze(unittest.TestCase):
     def _test_unsqueeze_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor, int]
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
             )
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
+            .quantize()
             .export()
             .check_count({"torch.ops.aten.unsqueeze.default": 1})
             .to_edge()
@@ -77,14 +71,13 @@ class TestSimpleUnsqueeze(unittest.TestCase):
         module: torch.nn.Module,
         test_data: Tuple[torch.Tensor, int],
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
                 compile_spec=compile_spec,
             )
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
+            .quantize()
             .export()
             .check_count({"torch.ops.aten.unsqueeze.default": 1})
             .to_edge()

@@ -8,7 +8,7 @@
 import logging
 import operator
 import os
-from typing import cast, final, List
+from typing import Callable, cast, final, List, Optional, Tuple
 
 import torch
 from executorch.backends.arm.arm_backend import ArmBackend  # usort: skip
@@ -39,7 +39,6 @@ class TOSASupportedOperators(OperatorSupportBase):
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         supported = node.op == "call_function" and node.target in [
             exir_ops.edge.aten.add.Tensor,
-            exir_ops.edge.aten.addmm.default,
             exir_ops.edge.aten.expand_copy.default,
             exir_ops.edge.aten.cat.default,
             exir_ops.edge.aten.bmm.default,
@@ -49,12 +48,14 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.div.Tensor,
             exir_ops.edge.aten.exp.default,
             exir_ops.edge.aten.log.default,
+            exir_ops.edge.aten.linear.default,
             exir_ops.edge.aten.split_with_sizes_copy.default,
             exir_ops.edge.aten.full.default,
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
             exir_ops.edge.aten.native_layer_norm.default,
             exir_ops.edge.aten.avg_pool2d.default,
+            exir_ops.edge.aten.max_pool2d_with_indices.default,
             exir_ops.edge.aten.sigmoid.default,
             exir_ops.edge.aten.mm.default,
             exir_ops.edge.aten.repeat.default,
@@ -62,10 +63,13 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.relu.default,
             exir_ops.edge.aten.rsqrt.default,
             exir_ops.edge.aten._softmax.default,
+            exir_ops.edge.aten.select_copy.int,
+            exir_ops.edge.aten._log_softmax.default,
             exir_ops.edge.aten.slice_copy.Tensor,
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.sum.dim_IntList,
             exir_ops.edge.aten.tanh.default,
+            exir_ops.edge.aten.upsample_nearest2d.vec,
             exir_ops.edge.aten.view_copy.default,
             exir_ops.edge.aten.clone.default,
             exir_ops.edge.aten.mean.dim,
@@ -134,3 +138,13 @@ class ArmPartitioner(Partitioner):
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )
+
+    def ops_to_not_decompose(
+        self,
+        ep: ExportedProgram,
+    ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        ops_to_not_decompose = [
+            torch.ops.aten.linear.default,
+            torch.ops.aten.upsample_nearest2d.vec,
+        ]
+        return (ops_to_not_decompose, None)

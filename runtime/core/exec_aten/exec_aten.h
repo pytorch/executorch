@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/runtime/core/tensor_shape_dynamism.h> // @manual
+#include <executorch/runtime/platform/compiler.h>
 #ifdef USE_ATEN_LIB
 #include <ATen/Tensor.h> // @manual
 #include <c10/core/Device.h>
@@ -61,8 +62,8 @@ template <typename T>
 using ArrayRef = c10::ArrayRef<T>;
 template <typename T>
 using optional = std::optional<T>;
-using nullopt_t = c10::nullopt_t;
-using c10::nullopt;
+using nullopt_t = std::nullopt_t;
+using std::nullopt;
 using ScalarType = at::ScalarType;
 using Scalar = c10::Scalar;
 using MemoryFormat = c10::MemoryFormat;

@@ -243,9 +243,13 @@
 
 - op: masked_scatter.out
 
+- op: masked_select.out
+
 - op: max_pool2d_with_indices.out
 
 - op: max.dim_max
+
+- op: max.unary_out
 
 - op: max.unary_out
 
@@ -254,6 +258,8 @@
 - op: mean.out
 
 - op: min.dim_min
+
+- op: min.unary_out
 
 - op: minimum.out
 

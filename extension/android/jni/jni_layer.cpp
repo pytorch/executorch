@@ -17,6 +17,7 @@
 
 #include "jni_layer_constants.h"
 
+#include <executorch/extension/android/jni/log.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/extension/tensor/tensor.h>
@@ -32,33 +33,6 @@
 
 #include <fbjni/ByteBuffer.h>
 #include <fbjni/fbjni.h>
-
-#ifdef __ANDROID__
-#include <android/log.h>
-
-// For Android, write to logcat
-void et_pal_emit_log_message(
-    et_timestamp_t timestamp,
-    et_pal_log_level_t level,
-    const char* filename,
-    const char* function,
-    size_t line,
-    const char* message,
-    size_t length) {
-  int android_log_level = ANDROID_LOG_UNKNOWN;
-  if (level == 'D') {
-    android_log_level = ANDROID_LOG_DEBUG;
-  } else if (level == 'I') {
-    android_log_level = ANDROID_LOG_INFO;
-  } else if (level == 'E') {
-    android_log_level = ANDROID_LOG_ERROR;
-  } else if (level == 'F') {
-    android_log_level = ANDROID_LOG_FATAL;
-  }
-
-  __android_log_print(android_log_level, "ExecuTorch", "%s", message);
-}
-#endif
 
 using namespace executorch::extension;
 using namespace torch::executor;
@@ -391,12 +365,43 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     return jresult;
   }
 
+  facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>>
+  readLogBuffer() {
+#ifdef __ANDROID__
+
+    facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> ret;
+
+    access_log_buffer([&](std::vector<log_entry>& buffer) {
+      const auto size = buffer.size();
+      ret = facebook::jni::JArrayClass<jstring>::newArray(size);
+      for (auto i = 0u; i < size; i++) {
+        const auto& entry = buffer[i];
+        // Format the log entry as "[TIMESTAMP FUNCTION FILE:LINE] LEVEL
+        // MESSAGE".
+        std::stringstream ss;
+        ss << "[" << entry.timestamp << " " << entry.function << " "
+           << entry.filename << ":" << entry.line << "] "
+           << static_cast<char>(entry.level) << " " << entry.message;
+
+        facebook::jni::local_ref<facebook::jni::JString> jstr_message =
+            facebook::jni::make_jstring(ss.str().c_str());
+        (*ret)[i] = jstr_message;
+      }
+    });
+
+    return ret;
+#else
+    return facebook::jni::JArrayClass<String>::newArray(0);
+#endif
+  }
+
   static void registerNatives() {
     registerHybrid({
         makeNativeMethod("initHybrid", ExecuTorchJni::initHybrid),
         makeNativeMethod("forward", ExecuTorchJni::forward),
         makeNativeMethod("execute", ExecuTorchJni::execute),
         makeNativeMethod("loadMethod", ExecuTorchJni::load_method),
+        makeNativeMethod("readLogBuffer", ExecuTorchJni::readLogBuffer),
     });
   }
 };

@@ -333,9 +333,6 @@ class SingleLlama:
     def get_example_inputs(self):
         return self.llama_model.get_example_inputs()
 
-    def get_export_inputs(self):
-        return self.llama_model.get_export_inputs()
-
 
 def compile(args):
     os.makedirs(args.artifact, exist_ok=True)
@@ -564,6 +561,7 @@ if __name__ == "__main__":
         exit(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
 
     if args.compile_only:
+        compile(args)
         exit(f"Finish compile_only and save to {args.artifact}")
 
     try:

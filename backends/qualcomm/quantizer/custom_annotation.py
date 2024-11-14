@@ -11,7 +11,11 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
     get_default_8bit_qnn_ptq_config,
     QuantizationConfig,
 )
-from executorch.backends.qualcomm.quantizer.utils import QUANT_ANNOTATION_KEY
+from executorch.backends.qualcomm.quantizer.utils import (
+    get_ptq_per_channel_quant_config,
+    QUANT_ANNOTATION_KEY,
+)
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.ao.quantization.quantizer import (
     QuantizationAnnotation,
     SharedQuantizationSpec,
@@ -120,6 +124,36 @@ def custom_annotate_llama_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noq
                     annotate_matmul_input1(node.args[1], quantization_config_8a8w)
 
 
+def custom_annotate_llama_last_conv_16a8w(gm: torch.fx.GraphModule) -> None:
+    def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None:
+        input_qspec_map = {}
+        input_act = node.args[0]
+        input_spec = quantization_config.input_activation
+        input_qspec_map[input_act] = input_spec
+
+        weight = node.args[1]
+        input_qspec_map[weight] = quantization_config.weight
+
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=quantization_config.output_activation,
+            _annotated=True,
+        )
+
+    quantization_config_16a8w_per_channel = get_ptq_per_channel_quant_config(
+        torch.uint16, weight_dtype=torch.int8
+    )
+    for node in gm.graph.nodes:
+        if node.op == "call_function" and node.target == torch.ops.aten.conv2d.default:
+            if "nn_module_stack" in node.meta:
+                module_values_list = list(node.meta["nn_module_stack"].values())
+                full_qualified_name = module_values_list[0][0]
+                if full_qualified_name == "L['self'].llama.output":
+                    annotate_conv2d(
+                        node, quantization_config=quantization_config_16a8w_per_channel
+                    )
+
+
 def custom_annotate_matmul_16a8w(gm: torch.fx.GraphModule):
     """
     Annotate matmul op with 16a8w quantization config
@@ -144,3 +178,35 @@ def custom_annotate_matmul_16a8w(gm: torch.fx.GraphModule):
     for node in gm.graph.nodes:
         if node.op == "call_function" and node.target == torch.ops.aten.matmul.default:
             annotate_matmul(node, quantization_config_16a8w)
+
+
+def get_custom_quant_ios_dtype(
+    cache_shape: torch.Size,
+    node: torch.fx.Node,
+    kv_dtype=torch.uint8,
+    sharding_dtype=torch.uint16,
+):
+    """
+    This function is specific for llama inputs and outputs
+    """
+    if node.op == "placeholder" and "attention_sdpa_kv_cache_past_" in node.name:
+        return kv_dtype
+
+    # Tag index put node before copy node, because copy is a skipped node in qnn
+    if (
+        exir_ops.edge.aten.index_put.default == node.target
+        and node.meta["val"].shape == cache_shape
+    ):
+        return kv_dtype
+
+    # Tag sharding io
+    if exir_ops.edge.llama.fallback.default in [
+        u.target for u in list(node.users.keys())
+    ] + [node.target]:
+        return sharding_dtype
+
+    # Tag index op as quantized tensors. It is caused by sharding
+    if exir_ops.edge.aten.index.Tensor in [
+        u.target for u in list(node.users.keys())
+    ] + [node.target]:
+        return sharding_dtype

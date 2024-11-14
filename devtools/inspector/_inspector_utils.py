@@ -112,6 +112,7 @@ def _parse_tensor_value(
             ScalarType.BYTE: (torch.uint8, 1),
             ScalarType.CHAR: (torch.int8, 1),
             ScalarType.BOOL: (torch.bool, 1),
+            ScalarType.BITS16: (torch.uint16, 2),
             ScalarType.SHORT: (torch.int16, 2),
             ScalarType.HALF: (torch.float16, 2),
             ScalarType.INT: (torch.int, 4),
@@ -217,6 +218,7 @@ def verify_debug_data_equivalence(
 
         if isinstance(output_a, torch.Tensor):
             assert bool(
+                # pyre-fixme[6]: For 1st argument expected `Tensor` but got `bool`.
                 torch.all(output_a == output_b)
             ), "Tensors Debug Data is different. Expected to be equal."
         else:
