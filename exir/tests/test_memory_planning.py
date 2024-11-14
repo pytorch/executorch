@@ -524,6 +524,68 @@ class TestMisc(unittest.TestCase):
                 idx += 1
         self.assertEqual(graph_module.meta["non_const_buffer_sizes"], expected_bufsizes)
 
+    def test_multiple_pools_with_cond(self) -> None:
+        class MultiplePoolsWithCondToyModel(torch.nn.Module):
+            def forward(self, b, x):
+                def true_fn(x):
+                    return x + x
+
+                def false_fn(x):
+                    return x * x
+
+                return torch.cond(b, true_fn, false_fn, (x,))
+
+        edge_program = to_edge(
+            export(
+                MultiplePoolsWithCondToyModel(),
+                (torch.tensor([True], dtype=torch.bool), torch.ones(1)),
+            )
+        )
+
+        edge_program.to_executorch(
+            exir.ExecutorchBackendConfig(
+                memory_planning_pass=CustomPoolMemoryPlanningPass(
+                    memory_planning_algo=greedy,
+                    alignment=1,
+                ),
+            )
+        )
+        graph_module = edge_program.exported_program().graph_module
+
+        verifier = Verifier(
+            graph_module,
+            alloc_graph_input=True,
+            alloc_graph_output=True,
+        )
+        verifier.verify_storage_reuse()
+        verifier.verify_graph_input_output()
+
+        true_gm = None
+        false_gm = None
+        for node in graph_module.graph.nodes:
+            if node.target == torch.ops.higher_order.cond:
+                true_gm = getattr(graph_module, node.args[1].target)
+                false_gm = getattr(graph_module, node.args[2].target)
+
+        self.assertTrue(true_gm is not None and false_gm is not None)
+        for node in true_gm.graph.nodes:
+            if node.op == "call_function" and node.target == torch.ops.aten.add.out:
+                # true_fn calls add, for which the custom planning assign mem_id 3
+                spec = node.meta.get("spec")
+                self.assertTrue(spec is not None)
+                self.assertEqual(spec.mem_id, 3)
+                self.assertEqual(spec.mem_offset, 0)
+
+        for node in false_gm.graph.nodes:
+            if node.op == "call_function" and node.target == torch.ops.aten.mul.out:
+                # false_fn calls mul, for which the custom planning assign mem_id 1
+                spec = node.meta.get("spec")
+                self.assertTrue(spec is not None)
+                self.assertEqual(spec.mem_id, 1)
+                self.assertEqual(spec.mem_offset, 9)
+
+        self.assertEqual(graph_module.meta["non_const_buffer_sizes"], [0, 13, 0, 4])
+
     def test_constants_not_memory_planned(self) -> None:
         class Simple(torch.nn.Module):
             def __init__(self) -> None:
