@@ -888,6 +888,8 @@ def _load_llama_model(
         if modelname == "llama3_2_vision":
             module_name = "llama3_2_vision"
             model_class_name = "Llama3_2Decoder"
+        else:
+            raise ValueError(f"{modelname} is not a valid Llama model.")
     else:
         raise ValueError(f"{modelname} is not a valid Llama model.")
 
