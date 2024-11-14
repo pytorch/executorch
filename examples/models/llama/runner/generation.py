@@ -135,7 +135,7 @@ class LlamaRunner(ABC):
             This method generates text completion for the provided prompt, employing nucleus sampling to introduce controlled randomness.
         """
         return self.generate(
-            prompt_tokens=self.tokenizer.encode(prompt, bos=True, eos=False),
+            prompt_tokens=self.tokenizer.encode(prompt, bos=False, eos=False),
             max_seq_len=self.params.max_seq_len,
             temperature=temperature,
             top_p=top_p,
@@ -169,7 +169,7 @@ class LlamaRunner(ABC):
             print("LLM: ", end="", flush=True)
             new_tokens = self.generate(
                 prompt_tokens=self.tokenizer.encode(
-                    self._format_prompt(prompt), bos=True, eos=False
+                    self._format_prompt(prompt), bos=False, eos=False
                 ),
                 max_seq_len=self.params.max_seq_len,
                 temperature=temperature,
@@ -182,8 +182,7 @@ class LlamaRunner(ABC):
         return tokens
 
     def _format_prompt(self, prompt: str) -> str:
-        return f"""
-<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+        return f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 
 You are a helpful assistant<|eot_id|><|start_header_id|>user<|end_header_id|>
 

@@ -84,18 +84,19 @@ def main() -> None:
     parser = build_args_parser()
     args = parser.parse_args()
 
-    runner = EagerLlamaRunner(args)
-    generated_tokens = (
-        runner.chat_completion(temperature=args.temperature)
-        if args.chat
-        else runner.text_completion(
-            prompt=args.prompt,
-            temperature=args.temperature,
-            echo=True,
+    with torch.no_grad():
+        runner = EagerLlamaRunner(args)
+        generated_tokens = (
+            runner.chat_completion(temperature=args.temperature)
+            if args.chat
+            else runner.text_completion(
+                prompt=args.prompt,
+                temperature=args.temperature,
+                echo=True,
+            )
         )
-    )
-    if args.show_tokens:
-        print(f"Generated {len(generated_tokens)} tokens: {generated_tokens}")
+        if args.show_tokens:
+            print(f"Generated {len(generated_tokens)} tokens: {generated_tokens}")
 
 
 if __name__ == "__main__":
