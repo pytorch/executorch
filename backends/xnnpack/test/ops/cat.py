@@ -57,7 +57,6 @@ class TestCat(unittest.TestCase):
                     }
                 )
 
-
             if legacy_mode:
                 tester.to_edge()
                 tester.partition()
@@ -68,7 +67,9 @@ class TestCat(unittest.TestCase):
                 tester.check_not(["torch.ops.quantized_decomposed"])
 
             (
-                tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                tester.check_count(
+                    {"torch.ops.higher_order.executorch_call_delegate": 1}
+                )
                 .check_not(["executorch_exir_dialects_edge__ops_aten_cat"])
                 .to_executorch()
                 .serialize()
