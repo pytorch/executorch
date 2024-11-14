@@ -246,7 +246,6 @@ class MultiHeadAttention(nn.Module):
         # x has shape [b, s_x, d]
         # y has shape [b, s_y, d]
         b, s_x, _ = x.shape
-        s_y = y.shape[1] if y is not None else 0
 
         # q has shape [b, s_x, num_heads * head_dim]
         q = self.q_proj(x)
@@ -263,16 +262,9 @@ class MultiHeadAttention(nn.Module):
         if self.q_norm is not None:
             q = self.q_norm(q)
 
-        if y is None:
-            if self.kv_cache is None:
-                raise ValueError(
-                    "Must provide y input or use kv_cache to enable streaming decoding"
-                )
-            k = self.kv_cache.k_cache
-            v = self.kv_cache.v_cache
-        else:
+        def calculate_kv(y):
             # Update k and v shape, positional embeddings, and normalization
-
+            s_y = y.shape[1]
             # k has shape [b, s_y, num_kv_heads * head_dim]
             # v has shape [b, s_y, num_kv_heads * head_dim]
             k = self.k_proj(y)
@@ -288,10 +280,35 @@ class MultiHeadAttention(nn.Module):
             # Normalize k
             if self.k_norm is not None:
                 k = self.k_norm(k)
+            return k, v
 
+        def true_fn(y):
+            kv_cache = self.kv_cache.clone()
+            return kv_cache.k_cache, kv_cache.v_cache, kv_cache.cache_pos
+
+        def false_fn(y):
+            k, v = calculate_kv(y)
+            kv_cache = self.kv_cache.clone()
+            kv_cache.update(k, v)
+            return kv_cache.k_cache, kv_cache.v_cache, kv_cache.cache_pos
+
+        # If kv cache is None, we expect y to be provided
+        if self.kv_cache is None:
+            assert (
+                y is not None
+            ), "Must provide y input or use kv_cache to enable streaming decoding"
+            k, v = calculate_kv(y)
+        else:
+            # Expecting the k, v returning here to be the same size of self.kv_cache
+            # In eager, we expect this predicate to specialize. In export, this will
+            # become a SymBool so it's not specialized.
+            k, v, cache_pos = torch.cond(
+                torch.isnan(y).all().item(), true_fn, false_fn, (y,)
+            )
             # Update key-value cache
-            if self.kv_cache is not None and self.cache_enabled:
-                k, v = self.kv_cache.update(k, v)
+            self.kv_cache.k_cache.copy_(k)
+            self.kv_cache.v_cache.copy_(v)
+            self.kv_cache.cache_pos.copy_(cache_pos)
 
         output = self._sdpa(q, k, v, b, s_x)
         return self.output_proj(output)

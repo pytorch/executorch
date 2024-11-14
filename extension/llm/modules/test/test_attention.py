@@ -41,9 +41,11 @@ class AttentionTest(unittest.TestCase):
         self.k_proj = torch.nn.Linear(
             self.embed_dim, self.num_kv_heads * self.head_dim, bias=False
         )
+        self.k_proj.weight.requires_grad = False
         self.v_proj = torch.nn.Linear(
             self.embed_dim, self.num_kv_heads * self.head_dim, bias=False
         )
+        self.v_proj.weight.requires_grad = False
         self.output_proj = torch.nn.Linear(self.embed_dim, self.embed_dim, bias=False)
         self.pos_embeddings = Llama3ScaledRoPE(
             dim=self.head_dim,
