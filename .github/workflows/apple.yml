@@ -191,7 +191,7 @@ jobs:
 
   upload-frameworks-ios:
     runs-on: ubuntu-22.04
-    needs: [build-frameworks-ios, set-version]
+    # needs: [build-frameworks-ios, set-version]
     timeout-minutes: 30
     # UNCOMMENT THIS LINE BEFORE LANDING
     # envionrment: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/nightly') && 'cherry-pick-bot' || '' }}
@@ -226,6 +226,8 @@ jobs:
         run: |
           echo "UPLOAD_ON_MAIN=1" >> "${GITHUB_ENV}"
       - name: Upload the artifact to ossci-ios S3 bucket
+        # DEBUG
+        if: false
         shell: bash
         run: |
           set -eux
