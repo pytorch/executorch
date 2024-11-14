@@ -363,9 +363,17 @@ static Kernel prim_ops[] = {
         }),
 
     // executorch_prim::et_copy_index.tensor(tensor, tensor) -> tensor
-    Kernel("executorch_prim::et_copy_index.tensor", &et_copy_index),
+    Kernel(
+        "executorch_prim::et_copy_index.tensor",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          et_copy_index(context, stack);
+        }),
     // executorch_prim::et_view.default(Tensor, int[]) -> Tensor
-    Kernel("executorch_prim::et_view.default", &et_view),
+    Kernel(
+        "executorch_prim::et_view.default",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          et_view(context, stack);
+        }),
 
 };
 

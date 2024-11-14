@@ -163,6 +163,7 @@ def quantize(  # noqa C901
         # Apply additional quantizer for linear layers that aren't lowered to Vulkan
         # at the moment
         from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
+
         model = Int8DynActInt4WeightQuantizer(
             precision=torch_dtype, groupsize=q_group_size
         ).quantize(model)

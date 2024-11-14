@@ -56,21 +56,6 @@ list(PREPEND _qaihub_llama3_8b_runner__srcs
 # Adding a compile option to differentiate llama2 with llama3 logic
 list(APPEND _common_compile_options -DQAIHUB_LLAMA3_RUNNER)
 
-# find RE2 for tokenizer
-set(ABSL_ENABLE_INSTALL ON)
-set(ABSL_PROPAGATE_CXX_STD ON)
-set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/third-party/abseil-cpp
-  ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
-)
-add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/third-party/re2
-  ${CMAKE_CURRENT_BINARY_DIR}/re2
-)
-set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
-
 list(
   APPEND _qaihub_llama3_8b_runner__srcs
   ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizer/tiktoken.cpp
