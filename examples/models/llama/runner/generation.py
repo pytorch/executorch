@@ -91,7 +91,7 @@ class LlamaRunner(ABC):
                         [[current_token]], dtype=torch.long, device=self.device
                     ),
                     input_pos=torch.tensor(
-                        [pos_base + len(tokens) - 1],
+                        [pos_base + len(tokens)],
                         dtype=torch.long,
                         device=self.device,
                     ),
