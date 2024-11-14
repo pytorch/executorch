@@ -4,6 +4,8 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the same directory.
 
+# Source: https://github.com/yformer/EfficientSAM/blob/main/efficient_sam/efficient_sam_decoder.py
+
 from typing import List, Tuple, Type
 
 import numpy as np
@@ -123,6 +125,7 @@ class PositionEmbeddingRandom(nn.Module):
         # outputs d_1 x ... x d_n x C shape
         return torch.cat([torch.sin(coords), torch.cos(coords)], dim=-1)
 
+    # TODO: Remove custom_cumsum implementation once issue #6201 is resolved
     def custom_cumsum(self, tensor: torch.Tensor, dim: int) -> torch.Tensor:
         """Custom cumulative sum."""
         tensor = tensor.transpose(dim, 0)
@@ -140,6 +143,7 @@ class PositionEmbeddingRandom(nn.Module):
         h, w = size
         device = self.positional_encoding_gaussian_matrix.device
         grid = torch.ones([h, w], device=device, dtype=torch.float32)
+        # Modification: Use custom_cumsum as a workaround for issue #6201
         y_embed = self.custom_cumsum(grid, dim=0) - 0.5
         x_embed = self.custom_cumsum(grid, dim=1) - 0.5
         y_embed = y_embed / h
@@ -158,6 +162,7 @@ class PositionEmbeddingRandom(nn.Module):
         return self._pe_encoding(coords.to(torch.float))  # B x N x C
 
 
+# TODO: Remove CustomGroupNorm implementation once issue #6817 is resolved
 class CustomGroupNorm(nn.Module):
     def __init__(self, num_groups, num_channels, eps=1e-5, affine=True):
         """Custom Group Normalization."""
@@ -241,6 +246,7 @@ class MaskDecoder(nn.Module):
                         stride=2,
                     ),
                     (
+                        # Modification: Use CustomGroupNorm as a workaround for issue #6817
                         CustomGroupNorm(1, layer_dims)
                         if idx < len(upscaling_layer_dims) - 1
                         else nn.Identity()

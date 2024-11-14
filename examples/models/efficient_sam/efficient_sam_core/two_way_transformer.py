@@ -1,3 +1,5 @@
+# Source: https://github.com/yformer/EfficientSAM/blob/main/efficient_sam/two_way_transformer.py
+
 import math
 from typing import Tuple, Type
 

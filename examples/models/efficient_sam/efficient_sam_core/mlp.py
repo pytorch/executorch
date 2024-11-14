@@ -1,3 +1,5 @@
+# Source: https://github.com/yformer/EfficientSAM/blob/main/efficient_sam/mlp.py
+
 from typing import Type
 
 from torch import nn

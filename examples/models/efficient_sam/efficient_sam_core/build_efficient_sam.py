@@ -4,6 +4,8 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the same directory.
 
+# Source: https://github.com/yformer/EfficientSAM/blob/main/efficient_sam/build_efficient_sam.py
+
 from .efficient_sam import build_efficient_sam
 
 

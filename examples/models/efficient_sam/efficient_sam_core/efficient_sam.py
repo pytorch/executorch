@@ -4,6 +4,8 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the same directory.
 
+# Source: https://github.com/yformer/EfficientSAM/blob/main/efficient_sam/efficient_sam.py
+
 from typing import List, Tuple
 
 import torch

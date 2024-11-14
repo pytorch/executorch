@@ -4,6 +4,8 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the same directory.
 
+# Source: https://github.com/yformer/EfficientSAM/blob/main/efficient_sam/efficient_sam_encoder.py
+
 import math
 from typing import List, Type
 
@@ -165,6 +167,9 @@ def get_abs_pos(
 
     if size != h or size != w:
         new_abs_pos = F.interpolate(
+            # Modification: Change memory format to contiguous
+            # 1. Makes it exportable to ExecuTorch
+            # 2. XNNPACK backend only supports contiguous memory format for inputs
             abs_pos.reshape(1, size, size, -1).permute(0, 3, 1, 2).contiguous(),
             size=(h, w),
             mode="bicubic",
