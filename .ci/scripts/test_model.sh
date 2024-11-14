@@ -87,6 +87,10 @@ test_model() {
     bash examples/models/llava/install_requirements.sh
     STRICT="--no-strict"
   fi
+  if [[ "$MODEL_NAME" == "llama3_2_vision_encoder" ]]; then
+    # Install requirements for llama vision
+    bash examples/models/llama3_2_vision/install_requirements.sh
+  fi
   # python3 -m examples.portable.scripts.export --model_name="llama2" should works too
   "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}" "${STRICT}"
   run_portable_executor_runner
