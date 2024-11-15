@@ -37,14 +37,13 @@ class TestGenericModelEvaluator(unittest.TestCase):
             example_input,
             "tmp/output_tag0.tosa",
         )
-        max_error, max_absolute_error, max_percentage_error, mae = (
-            evaluator.get_model_error()
-        )
 
-        self.assertEqual(max_error, 1.0)
-        self.assertEqual(max_absolute_error, 1.0)
-        self.assertEqual(max_percentage_error, 25.0)
-        self.assertEqual(mae, 0.25)
+        model_error_dict = evaluator.get_model_error()
+
+        self.assertEqual(model_error_dict["max_error"], [1.0])
+        self.assertEqual(model_error_dict["max_absolute_error"], [1.0])
+        self.assertEqual(model_error_dict["max_percentage_error"], [25.0])
+        self.assertEqual(model_error_dict["mean_absolute_error"], [0.25])
 
     def test_get_compression_ratio(self):
         with tempfile.NamedTemporaryFile(delete=True) as temp_bin:
