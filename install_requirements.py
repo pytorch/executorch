@@ -137,7 +137,7 @@ EXAMPLES_REQUIREMENTS = [
     "timm==1.0.7",
     f"torchaudio==2.5.0.{NIGHTLY_VERSION}" if USE_PYTORCH_NIGHTLY else "torchaudio",
     "torchsr==1.0.4",
-    "transformers==4.46.1",
+    "transformers==4.42.4", # TODO update back to 4.46.1 once the error is fixed
 ]
 
 # pip packages needed for development.
