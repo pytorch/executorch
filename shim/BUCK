@@ -90,3 +90,11 @@ execution_platform(
     use_windows_path_separators = False,
     visibility = ["PUBLIC"],
 )
+
+execution_platform(
+    name = "macos-x86_64",
+    cpu_configuration = "prelude//cpu:x86_64",
+    os_configuration = "prelude//os:macos",
+    use_windows_path_separators = False,
+    visibility = ["PUBLIC"],
+)

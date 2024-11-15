@@ -206,6 +206,8 @@ function(extract_sources sources_file)
     if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
       if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
         set(target_platforms_arg "--target-platforms=shim//:macos-arm64")
+      elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+        set(target_platforms_arg "--target-platforms=shim//:macos-x86_64")
       endif()
     endif()
 
