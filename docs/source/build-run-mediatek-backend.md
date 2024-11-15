@@ -37,7 +37,7 @@ Follow the steps below to setup your build environment:
 1. **Setup ExecuTorch Environment**: Refer to the [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup) guide for detailed instructions on setting up the ExecuTorch environment.
 
 2. **Setup MediaTek Backend Environment**
-- Install the dependent libs. Ensure that you are inside backends/mediatek/ directory
+- Install the dependent libs. Ensure that you are inside `backends/mediatek/` directory
    ```bash
    pip3 install -r requirements.txt
    ```
@@ -53,7 +53,7 @@ Follow the steps below to setup your build environment:
 
 ## Build
 
-### AOT (Ahead-of-time) components:
+### Ahead of time:
 
 **Exporting a PyTorch Model for MediaTek Backend**:
 1. Lower and export the `.pte` file for on-device execution. The export script samples are povided under `example/mediatek/`. For example, the following commnad exports the `.pte` using the scripts provided.
