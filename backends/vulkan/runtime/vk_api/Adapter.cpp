@@ -156,7 +156,39 @@ Adapter::Adapter(
       pipeline_layout_cache_(device_.handle),
       compute_pipeline_cache_(device_.handle, cache_data_path),
       sampler_cache_(device_.handle),
-      vma_(instance_, physical_device_.handle, device_.handle) {}
+      vma_(instance_, physical_device_.handle, device_.handle),
+      linear_tiling_3d_enabled_{true} {
+  // Test creating a 3D image with linear tiling to see if it is supported.
+  // According to the Vulkan spec, linear tiling may not be supported for 3D
+  // images.
+  VkExtent3D image_extents{1u, 1u, 1u};
+  const VkImageCreateInfo image_create_info{
+      VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, // sType
+      nullptr, // pNext
+      0u, // flags
+      VK_IMAGE_TYPE_3D, // imageType
+      VK_FORMAT_R32G32B32A32_SFLOAT, // format
+      image_extents, // extents
+      1u, // mipLevels
+      1u, // arrayLayers
+      VK_SAMPLE_COUNT_1_BIT, // samples
+      VK_IMAGE_TILING_LINEAR, // tiling
+      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, // usage
+      VK_SHARING_MODE_EXCLUSIVE, // sharingMode
+      0u, // queueFamilyIndexCount
+      nullptr, // pQueueFamilyIndices
+      VK_IMAGE_LAYOUT_UNDEFINED, // initialLayout
+  };
+  VkImage image = VK_NULL_HANDLE;
+  VkResult res =
+      vkCreateImage(device_.handle, &image_create_info, nullptr, &image);
+  if (res == VK_ERROR_FEATURE_NOT_PRESENT) {
+    linear_tiling_3d_enabled_ = false;
+  } else if (res == VK_SUCCESS) {
+    vkDestroyImage(device_.handle, image, nullptr);
+  }
+  return;
+}
 
 Adapter::Queue Adapter::request_queue() {
   // Lock the mutex as multiple threads can request a queue at the same time
