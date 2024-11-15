@@ -807,7 +807,7 @@
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
 				kind = branch;
-				branch = "swiftpm-0.4.0.2024114";
+				branch = "swiftpm-0.4.0.20241114";
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
