@@ -57,6 +57,7 @@ class LlamaRunner(ABC):
     ):
         """
         Constructor.
+
         Args:
         tokenizer_path: path to tokenizer.model file.
         max_seq_len: max length of the output sequence, after which the output will be clipped.
@@ -99,7 +100,10 @@ class LlamaRunner(ABC):
             ),
         )
 
-        current_token = next_token(logits, temperature, top_p)
+        if self.has_full_logits:
+            current_token = next_token(logits[:, -1, :], temperature, top_p)
+        else:
+            current_token = next_token(logits, temperature, top_p)
         print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
         tokens = prompt_tokens + [current_token]
 
