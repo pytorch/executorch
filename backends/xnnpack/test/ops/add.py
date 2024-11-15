@@ -251,7 +251,7 @@ class TestAdd(unittest.TestCase):
             tester.check_count(
                 {"torch.ops.aten.add.Tensor": 1, "torch.ops.aten.relu.default": 1}
             )
-            tesster.check(["torch.ops.quantized_decomposed"])
+            tester.check(["torch.ops.quantized_decomposed"])
             if legacy:
                 tester.to_edge()
                 tester.partition()
