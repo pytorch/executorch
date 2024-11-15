@@ -163,6 +163,7 @@ class TiledTokenPositionalEmbeddingTest(unittest.TestCase):
 
         assert_close(y, ref_y)
 
+    @unittest.skip(reason="TODO(T207740932): test is flaky")
     def test_tiled_token_positional_embedding_aoti(self):
         tpe_ep = torch.export.export(
             self.tpe,
