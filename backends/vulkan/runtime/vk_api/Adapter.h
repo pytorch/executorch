@@ -156,21 +156,37 @@ class Adapter final {
   // Physical Device Features
 
   inline bool supports_16bit_storage_buffers() {
+#ifdef VK_KHR_16bit_storage
     return physical_device_.shader_16bit_storage.storageBuffer16BitAccess ==
         VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_16bit_storage */
   }
 
   inline bool supports_8bit_storage_buffers() {
+#ifdef VK_KHR_8bit_storage
     return physical_device_.shader_8bit_storage.storageBuffer8BitAccess ==
         VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_8bit_storage */
   }
 
   inline bool supports_float16_shader_types() {
+#ifdef VK_KHR_shader_float16_int8
     return physical_device_.shader_float16_int8_types.shaderFloat16 == VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_shader_float16_int8 */
   }
 
   inline bool supports_int8_shader_types() {
+#ifdef VK_KHR_shader_float16_int8
     return physical_device_.shader_float16_int8_types.shaderInt8 == VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_shader_float16_int8 */
   }
 
   inline bool supports_int16_shader_types() {
