@@ -142,12 +142,13 @@ class Llama3_2Decoder(EagerModelBase):
 
             self.model_ = prune_output_vocab(self.model_, output_prune_map)
 
-        # if self.use_kv_cache:
-        #     print("Setting up KV cache on the model...")
-        #     self.model_.setup_caches(
-        #         batch_size=1,
-        #         dtype=self.dtype,
-        #     )
+        if self.use_kv_cache:
+            print("Setting up KV cache on the model...")
+            self.model_.setup_caches(
+                batch_size=1,
+                dtype=self.dtype,
+                decoder_max_seq_len=self.max_seq_len,
+            )
 
     def get_eager_model(self) -> torch.nn.Module:
         if self.dtype:
@@ -156,25 +157,34 @@ class Llama3_2Decoder(EagerModelBase):
             return self.model_.to(torch.float16)
 
     def get_example_inputs(self):
-        return (torch.ones(1, 64, dtype=torch.long),)
+        return (torch.ones(1, 32, dtype=torch.long),)
 
     def get_example_kwarg_inputs(self):
-        # TODO: add input_pos and mask when after making cache work.
-        return {
-            # "mask": self.causal_mask[None, 64, None, :],
-            # "encoder_input": None,
-            # "encoder_mask": None,
-            # "input_pos": self.input_pos[None, 64]
-        }
+        # For export we must use the prefill versions of the
+        # causal mask and input_pos.
+        if self.use_kv_cache:
+            return {
+                "input_pos": self.input_pos[None, :32],
+                "mask": self.causal_mask[None, :32],
+                # "encoder_input": None,
+                # "encoder_mask": None,
+            }
+        else:
+            return None
 
     def get_dynamic_shapes(self):
         batch_size = 1
         dim_seq_len = torch.export.Dim("token_dim", min=1, max=self.max_seq_len)
-        dynamic_shapes = {
-            "tokens": {0: batch_size, 1: dim_seq_len},
-            # "encoder_input": {0: 1, 1: dim_enc, 2: 4096},
-            # "encoder_mask": {0: 1, 1: dim, 2: dim_enc},
-            # "mask": {0: batch_size, 1: dim_seq_len, 2: self.max_seq_len},
-            # "input_pos" : {0: batch_size, 1: dim_seq_len},
-        }
+        if self.use_kv_cache:
+            dynamic_shapes = {
+                "tokens": {0: batch_size, 1: dim_seq_len},
+                # "encoder_input": {0: 1, 1: dim_enc, 2: 4096},
+                # "encoder_mask": {0: 1, 1: dim, 2: dim_enc},
+                "mask": {0: batch_size, 1: dim_seq_len, 2: None},
+                "input_pos": {0: batch_size, 1: dim_seq_len},
+            }
+        else:
+            dynamic_shapes = {
+                "tokens": {0: batch_size, 1: dim_seq_len},
+            }
         return dynamic_shapes

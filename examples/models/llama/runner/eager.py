@@ -6,14 +6,13 @@
 
 import argparse
 import json
-from typing import Optional
+from typing import Optional, Type
 
 import torch
 
 from executorch.examples.models.llama.export_llama_lib import (
     _prepare_for_llama_export,
     build_args_parser as _build_args_parser,
-    TORCHTUNE_DEFINED_MODELS,
 )
 from executorch.examples.models.llama.runner.generation import LlamaRunner
 from executorch.extension.llm.export.builder import LLMEdgeManager
@@ -33,7 +32,6 @@ class EagerLlamaRunner(LlamaRunner):
             max_batch_size=1,
             use_kv_cache=args.use_kv_cache,
             vocab_size=params["vocab_size"],
-            has_full_logits=args.model in TORCHTUNE_DEFINED_MODELS,
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
         manager: LLMEdgeManager = _prepare_for_llama_export(args)
@@ -79,11 +77,10 @@ def build_args_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
+def execute_runner(runner_class: Type[LlamaRunner]) -> None:
     parser = build_args_parser()
     args = parser.parse_args()
-
-    runner = EagerLlamaRunner(args)
+    runner = runner_class(args)
     generated_tokens = (
         runner.chat_completion(temperature=args.temperature)
         if args.chat
@@ -95,6 +92,10 @@ def main() -> None:
     )
     if args.show_tokens:
         print(f"Generated {len(generated_tokens)} tokens: {generated_tokens}")
+
+
+def main() -> None:
+    execute_runner(EagerLlamaRunner)
 
 
 if __name__ == "__main__":
