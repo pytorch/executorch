@@ -58,7 +58,11 @@ jobs:
         bash .ci/scripts/setup-conda.sh
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
-        # Build and test xecutorch
+        # Install requirements for llama vision
+        if [[ "$MODEL_NAME" == "llama3_2_vision_encoder" ]]; then
+          ${CONDA_RUN} bash examples/models/llama3_2_vision/install_requirements.sh
+        fi
+        # Build and test executorch
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
 
   test-custom-ops-macos:

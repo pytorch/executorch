@@ -102,19 +102,16 @@ def define_common_targets(is_fbcode = False):
         android_deps = [
             "fbsource//third-party/toolchains:android",
         ]
-        default_flags = [
-            "-DUSE_VULKAN_WRAPPER",
-        ]
-        android_flags = [
-            "-DUSE_VULKAN_WRAPPER",
-            "-DVK_ANDROID_external_memory_android_hardware_buffer",
-        ]
+        default_flags = []
+        android_flags = []
 
         if not no_volk:
             for deps in [default_deps, android_deps]:
                 deps.append("fbsource//third-party/volk:volk")
             for flags in [default_flags, android_flags]:
+                flags.append("-DUSE_VULKAN_WRAPPER")
                 flags.append("-DUSE_VULKAN_VOLK")
+            android_flags.append("-DVK_ANDROID_external_memory_android_hardware_buffer")
         else:
             android_deps.append("fbsource//third-party/toolchains:vulkan")
 
@@ -128,7 +125,7 @@ def define_common_targets(is_fbcode = False):
             VK_API_DEPS += select({
                 "DEFAULT": default_deps,
                 "ovr_config//os:android": android_deps,
-                "ovr_config//os:macos-arm64": [
+                "ovr_config//os:macos": [
                     "//third-party/khronos:moltenVK_static"
                 ],
             })
@@ -175,7 +172,7 @@ def define_common_targets(is_fbcode = False):
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
-                ":vulkan_graph_runtime_shaderlib",
+                ":vulkan_graph_runtime_shaderlib{}".format(suffix),
             ],
             define_static_target = False,
             # Static initialization is used to register operators to the global operator registry,

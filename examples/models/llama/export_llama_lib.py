@@ -81,6 +81,10 @@ pkg_name = __name__
 verbosity_setting = None
 
 
+EXECUTORCH_DEFINED_MODELS = ["stories110m", "llama2", "llama3", "llama3_1", "llama3_2"]
+TORCHTUNE_DEFINED_MODELS = []
+
+
 class WeightType(Enum):
     LLAMA = "LLAMA"
     FAIRSEQ2 = "FAIRSEQ2"
@@ -105,7 +109,7 @@ def verbose_export():
 
 
 def build_model(
-    modelname: str = "model",
+    modelname: str = "llama3",
     extra_opts: str = "",
     *,
     par_local_output: bool = False,
@@ -116,11 +120,11 @@ def build_model(
     else:
         output_dir_path = "."
 
-    argString = f"--checkpoint par:{modelname}_ckpt.pt --params par:{modelname}_params.json {extra_opts} --output-dir {output_dir_path}"
+    argString = f"--model {modelname} --checkpoint par:model_ckpt.pt --params par:model_params.json {extra_opts} --output-dir {output_dir_path}"
     parser = build_args_parser()
     args = parser.parse_args(shlex.split(argString))
     # pkg_name = resource_pkg_name
-    return export_llama(modelname, args)
+    return export_llama(args)
 
 
 def build_args_parser() -> argparse.ArgumentParser:
@@ -130,6 +134,12 @@ def build_args_parser() -> argparse.ArgumentParser:
     # parser.add_argument(
     #     "-q", "--quantized_ckpt", default=None, help="quantized checkpoint file"
     # )
+    parser.add_argument(
+        "--model",
+        default="llama3",
+        choices=EXECUTORCH_DEFINED_MODELS + TORCHTUNE_DEFINED_MODELS,
+        help="The Lllama model architecture to use. stories110M, llama2, llama3, llama3_1, and llama3_2 use the same underlying LlamaTransformer architecture defined in ExecuTorch. All other models use TorchTune model definitions.",
+    )
     parser.add_argument(
         "-E",
         "--embedding-quantize",
@@ -451,6 +461,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=None,
         help="path to the input pruning token mapping file (token_map.json)",
     )
+
+    parser.add_argument(
+        "--export_only",
+        default=False,
+        action="store_true",
+        help="If true, stops right after torch.export() and saves the exported model.",
+    )
     return parser
 
 
@@ -473,13 +490,13 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
         return return_val
 
 
-def export_llama(modelname, args) -> str:
+def export_llama(args) -> str:
     if args.profile_path is not None:
         try:
             from executorch.util.python_profiler import CProfilerFlameGraph
 
             with CProfilerFlameGraph(args.profile_path):
-                builder = _export_llama(modelname, args)
+                builder = _export_llama(args)
                 assert (
                     filename := builder.get_saved_pte_filename()
                 ) is not None, "Fail to get file name from builder"
@@ -490,14 +507,14 @@ def export_llama(modelname, args) -> str:
             )
             return ""
     else:
-        builder = _export_llama(modelname, args)
+        builder = _export_llama(args)
         assert (
             filename := builder.get_saved_pte_filename()
         ) is not None, "Fail to get file name from builder"
         return filename
 
 
-def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
+def _prepare_for_llama_export(args) -> LLMEdgeManager:
     """
     Helper function for export_llama. Loads the model from checkpoint and params,
     and sets up a LLMEdgeManager with initial transforms and dtype conversion.
@@ -523,7 +540,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
 
     return (
         _load_llama_model(
-            modelname=modelname,
+            args.model,
             checkpoint=checkpoint_path,
             checkpoint_dir=checkpoint_dir,
             params_path=params_path,
@@ -546,7 +563,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             args=args,
         )
         .set_output_dir(output_dir_path)
-        .source_transform(_get_source_transforms(modelname, dtype_override, args))
+        .source_transform(_get_source_transforms(args.model, dtype_override, args))
     )
 
 
@@ -620,17 +637,19 @@ def _validate_args(args):
             )
 
 
-def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
+def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
     _validate_args(args)
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
 
     # export_to_edge
-    builder_exported_to_edge = (
-        _prepare_for_llama_export(modelname, args)
-        .export()
-        .pt2e_quantize(quantizers)
-        .export_to_edge()
-    )
+    builder_exported = _prepare_for_llama_export(args).export()
+
+    if args.export_only:
+        exit()
+
+    builder_exported_to_edge = builder_exported.pt2e_quantize(
+        quantizers
+    ).export_to_edge()
 
     modelname = builder_exported_to_edge.modelname
 
@@ -662,6 +681,10 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
                 args.dtype_override,
                 args.enable_dynamic_shape,
             )
+        )
+        # Apply XNNPACK after Vulkan so that undelegated ops can be accelerated by XNNPACK
+        partitioners.append(
+            get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
         )
         modelname = f"vulkan_{modelname}"
 
@@ -821,8 +844,8 @@ def _load_llama_model_metadata(
 
 
 def _load_llama_model(
+    modelname: str = "llama3",
     *,
-    modelname: str = "llama2",
     checkpoint: Optional[str] = None,
     checkpoint_dir: Optional[str] = None,
     params_path: str,
@@ -850,15 +873,27 @@ def _load_llama_model(
     Returns:
         An instance of LLMEdgeManager which contains the eager mode model.
     """
+
     assert (
         checkpoint or checkpoint_dir
     ) and params_path, "Both checkpoint/checkpoint_dir and params can't be empty"
     logging.info(
         f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}"
     )
+
+    if modelname in EXECUTORCH_DEFINED_MODELS:
+        module_name = "llama"
+        model_class_name = "Llama2Model"  # TODO: Change to "LlamaModel" in examples/models/llama/model.py.
+    elif modelname in TORCHTUNE_DEFINED_MODELS:
+        raise NotImplementedError(
+            "Torchtune Llama models are not yet supported in ExecuTorch export."
+        )
+    else:
+        raise ValueError(f"{modelname} is not a valid Llama model.")
+
     model, example_inputs, example_kwarg_inputs, _ = EagerModelFactory.create_model(
-        module_name="llama",
-        model_class_name="Llama2Model",
+        module_name,
+        model_class_name,
         checkpoint=checkpoint,
         checkpoint_dir=checkpoint_dir,
         params=params_path,

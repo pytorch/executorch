@@ -69,6 +69,7 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.sum.dim_IntList,
             exir_ops.edge.aten.tanh.default,
+            exir_ops.edge.aten.upsample_nearest2d.vec,
             exir_ops.edge.aten.view_copy.default,
             exir_ops.edge.aten.clone.default,
             exir_ops.edge.aten.mean.dim,
@@ -144,5 +145,6 @@ class ArmPartitioner(Partitioner):
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
         ops_to_not_decompose = [
             torch.ops.aten.linear.default,
+            torch.ops.aten.upsample_nearest2d.vec,
         ]
         return (ops_to_not_decompose, None)

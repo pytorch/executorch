@@ -503,6 +503,33 @@ struct is_qint_type
     : std::integral_constant<bool, isQIntType(CppTypeToScalarType<T>::value)> {
 };
 
+constexpr bool isFloat8Type(::executorch::aten::ScalarType t) {
+  // Don't forget to extend this when adding new QInt types
+  return t == ::executorch::aten::ScalarType::Float8_e5m2 ||
+      t == ::executorch::aten::ScalarType::Float8_e4m3fn ||
+      t == ::executorch::aten::ScalarType::Float8_e5m2fnuz ||
+      t == ::executorch::aten::ScalarType::Float8_e4m3fnuz;
+}
+
+template <typename T>
+struct is_float8_type
+    : std::
+          integral_constant<bool, isFloat8Type(CppTypeToScalarType<T>::value)> {
+};
+
+constexpr bool isBarebonesUnsignedType(::executorch::aten::ScalarType t) {
+  // Don't forget to extend this when adding new QInt types
+  return t == ::executorch::aten::ScalarType::UInt16 ||
+      t == ::executorch::aten::ScalarType::UInt32 ||
+      t == ::executorch::aten::ScalarType::UInt64;
+}
+
+template <typename T>
+struct is_barebones_unsigned_type
+    : std::integral_constant<
+          bool,
+          isBarebonesUnsignedType(CppTypeToScalarType<T>::value)> {};
+
 inline ::executorch::aten::ScalarType toQIntType(
     ::executorch::aten::ScalarType t) {
   switch (t) {
@@ -883,6 +910,15 @@ struct promote_types {
       std::is_same<T1, T2>::value ||
           (!is_bits_type<T1>::value && !is_bits_type<T2>::value),
       "promote_types not valid for bits dtypes");
+  static_assert(
+      std::is_same<T1, T2>::value ||
+          (!is_float8_type<T1>::value && !is_float8_type<T2>::value),
+      "promote_types not valid for float8 dtypes");
+  static_assert(
+      std::is_same<T1, T2>::value ||
+          (!is_barebones_unsigned_type<T1>::value &&
+           !is_barebones_unsigned_type<T2>::value),
+      "promote_types not valid for barebones unsigned dtypes");
 
   using promoted_type_not_respecting_half_to_float =
       typename internal::promote_types_lookup<T1, T2>::type;
@@ -943,6 +979,24 @@ inline ::executorch::aten::ScalarType promoteTypes(
   if (::executorch::runtime::isBitsType(a) ||
       ::executorch::runtime::isBitsType(b)) {
     ET_CHECK_MSG(false, "promoteTypes not valid for bits dtypes");
+  }
+
+  // For Float8 types, only allow exact match
+  if (::executorch::runtime::isFloat8Type(a) && a == b) {
+    return a;
+  }
+  if (::executorch::runtime::isFloat8Type(a) ||
+      ::executorch::runtime::isFloat8Type(b)) {
+    ET_CHECK_MSG(false, "promoteTypes not valid for float8 dtypes");
+  }
+
+  // For barebones uint types, only allow exact match
+  if (::executorch::runtime::isBarebonesUnsignedType(a) && a == b) {
+    return a;
+  }
+  if (::executorch::runtime::isBarebonesUnsignedType(a) ||
+      ::executorch::runtime::isBarebonesUnsignedType(b)) {
+    ET_CHECK_MSG(false, "promoteTypes not valid for barebone unsigned dtypes");
   }
 
   // 12 types are handled by this function, see the constexpr definitions above
@@ -1433,8 +1487,10 @@ using ::executorch::runtime::canCast;
 using ::executorch::runtime::convert;
 using ::executorch::runtime::CppTypeToScalarType;
 using ::executorch::runtime::elementSize;
+using ::executorch::runtime::is_barebones_unsigned_type;
 using ::executorch::runtime::is_bits_type;
 using ::executorch::runtime::is_complex_type;
+using ::executorch::runtime::is_float8_type;
 using ::executorch::runtime::is_integral_type;
 using ::executorch::runtime::is_qint_type;
 using ::executorch::runtime::isBitsType;
