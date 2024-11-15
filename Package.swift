@@ -62,7 +62,7 @@ let deliverables = [
 let package = Package(
   name: "executorch",
   platforms: [
-    .iOS(.v17),
+    .iOS(.v15),
   ],
   products: deliverables.keys.map { key in
     .library(name: key, targets: ["\(key)_dependencies"])
