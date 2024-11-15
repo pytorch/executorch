@@ -310,7 +310,7 @@ class MultiHeadAttention(nn.Module):
             self.kv_cache.v_cache.copy_(v)
             self.kv_cache.cache_pos.copy_(cache_pos)
 
-        output = self._sdpa(q, k, v, b, s_x)
+        output = self._sdpa(q, k, v, b, s_x, mask=mask)
         return self.output_proj(output)
 
 

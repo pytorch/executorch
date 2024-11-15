@@ -131,17 +131,16 @@ class KVCache(TuneKVCache):
     def clone(self) -> "KVCache":
         """Create a clone of the KVCache."""
         if self.transpose_cache:
-            max_seq_len = self.k_cache.shape[1]
-            num_kv_heads = self.k_cache.shape[2]
-        else:
-            max_seq_len = self.k_cache.shape[2]
             num_kv_heads = self.k_cache.shape[1]
+        else:
+            num_kv_heads = self.k_cache.shape[2]
         clone = KVCache(
             batch_size=self.batch_size,
-            max_seq_len=max_seq_len,
+            max_seq_len=self.max_seq_len,
             num_kv_heads=num_kv_heads,
             head_dim=self.k_cache.shape[3],
             dtype=self.k_cache.dtype,
+            transpose_cache=self.transpose_cache,
         )
         clone.k_cache.copy_(self.k_cache)
         clone.v_cache.copy_(self.v_cache)
