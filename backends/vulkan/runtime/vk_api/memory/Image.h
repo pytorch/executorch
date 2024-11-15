@@ -74,6 +74,7 @@ class VulkanImage final {
     VkImageType image_type;
     VkFormat image_format;
     VkExtent3D image_extents;
+    VkImageTiling image_tiling;
     VkImageUsageFlags image_usage;
   };
 

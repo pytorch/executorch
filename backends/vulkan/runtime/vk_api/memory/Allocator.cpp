@@ -99,6 +99,7 @@ VulkanImage Allocator::create_image(
     const VkExtent3D& extents,
     const VkFormat image_format,
     const VkImageType image_type,
+    const VkImageTiling image_tiling,
     const VkImageViewType image_view_type,
     const VulkanImage::SamplerProperties& sampler_props,
     VkSampler sampler,
@@ -117,6 +118,7 @@ VulkanImage Allocator::create_image(
       image_type,
       image_format,
       extents,
+      image_tiling,
       usage,
   };
 

@@ -92,6 +92,8 @@ class Adapter final {
   // Memory Management
   SamplerCache sampler_cache_;
   Allocator vma_;
+  // Miscellaneous
+  bool linear_tiling_3d_enabled_;
 
  public:
   // Physical Device metadata
@@ -151,6 +153,10 @@ class Adapter final {
 
   inline Allocator& vma() {
     return vma_;
+  }
+
+  inline bool linear_tiling_3d_enabled() const {
+    return linear_tiling_3d_enabled_;
   }
 
   // Physical Device Features
