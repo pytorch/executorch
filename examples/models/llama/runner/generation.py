@@ -100,10 +100,7 @@ class LlamaRunner(ABC):
             ),
         )
 
-        if self.has_full_logits:
-            current_token = next_token(logits[:, -1, :], temperature, top_p)
-        else:
-            current_token = next_token(logits, temperature, top_p)
+        current_token = next_token(logits, temperature, top_p)
         print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
         tokens = prompt_tokens + [current_token]
 
