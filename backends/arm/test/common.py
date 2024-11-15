@@ -310,3 +310,14 @@ def _clean_dir(dir: Path, filter: str, num_save=10):
         for remove in sorted_files[0 : len(sorted_files) - num_save]:
             file = remove[1]
             file.unlink()
+
+
+def get_target_board(compile_spec: list[CompileSpec]) -> str | None:
+    for spec in compile_spec:
+        if spec.key == "compile_flags":
+            flags = spec.value.decode()
+            if "u55" in flags:
+                return "corstone-300"
+            elif "u85" in flags:
+                return "corstone-320"
+    return None
