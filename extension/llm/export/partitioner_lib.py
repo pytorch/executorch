@@ -140,7 +140,7 @@ def get_coreml_partitioner(
         minimum_deployment_target=minimum_deployment_target,
         compute_precision=ct.precision(ct.precision.FLOAT16.value),
         # using `ComputeUnit.ALL` can increase the model load time, default to `ComputeUnit.CPU_AND_GPU`
-        compute_unit=ct.ComputeUnit[ct.ComputeUnit.CPU_AND_AE.name.upper()],
+        compute_unit=ct.ComputeUnit[ct.ComputeUnit.CPU_AND_NE.name.upper()],
         model_type=CoreMLBackend.MODEL_TYPE.MODEL,  # pyre-fixme[16]
         op_linear_quantizer_config=op_linear_quantizer_config,
     )
