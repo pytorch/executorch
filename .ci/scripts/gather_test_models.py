@@ -25,7 +25,7 @@ CUSTOM_RUNNERS = {
         "resnet50": "linux.12xlarge",
         "llava": "linux.12xlarge",
         "llama3_2_vision_encoder": "linux.12xlarge",
-        "llama3_2_text_decoder": "linux.12xlarge",
+        "llama3_2_text_decoder": "linux.24xlarge",
         # This one causes timeout on smaller runner, the root cause is unclear (T161064121)
         "dl3": "linux.12xlarge",
         "emformer_join": "linux.12xlarge",
@@ -88,7 +88,7 @@ def model_should_run_on_event(model: str, event: str) -> bool:
     We put higher priority and fast models to pull request and rest to push.
     """
     if event == "pull_request":
-        return model in ["mv3", "vit"]
+        return model in ["mv3", "vit", "llama_3_2_text_decoder"]
     elif event == "push":
         # These are super slow. Only run it periodically
         return model not in ["dl3", "edsr", "emformer_predict"]
