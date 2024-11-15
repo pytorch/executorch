@@ -23,3 +23,4 @@ fi
 # of nightly. This allows CI to test against latest commits from PyTorch
 install_executorch "use-pt-pinned-commit"
 build_executorch_runner "${BUILD_TOOL}"
+do_not_use_nightly_on_ci

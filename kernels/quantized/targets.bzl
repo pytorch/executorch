@@ -67,6 +67,8 @@ def define_common_targets():
             ops = [
                 "quantized_decomposed::dequantize_per_tensor.out",
                 "quantized_decomposed::dequantize_per_tensor.Tensor_out",
+                "quantized_decomposed::quantize_per_tensor.out",
+                "quantized_decomposed::quantize_per_tensor.Tensor_out",
             ],
     )
 

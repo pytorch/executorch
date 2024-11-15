@@ -37,7 +37,7 @@ class EagerLlamaRunner(LlamaRunner):
             model_args=model_args,
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
-        manager: LLMEdgeManager = _prepare_for_llama_export("llama", args)
+        manager: LLMEdgeManager = _prepare_for_llama_export(args)
         self.model = manager.model.eval().to(device=self.device)
 
     def forward(
@@ -91,10 +91,11 @@ def main() -> None:
         else runner.text_completion(
             prompt=args.prompt,
             temperature=args.temperature,
+            echo=True,
         )
     )
     if args.show_tokens:
-        print(f"Tokens: {generated_tokens}")
+        print(f"Generated {len(generated_tokens)} tokens: {generated_tokens}")
 
 
 if __name__ == "__main__":

@@ -9,7 +9,6 @@
 #pragma once
 
 #include <cstdint>
-// @nolint PATTERNLINT Ok to use stdlib for this optional library
 #include <functional>
 
 namespace executorch {
