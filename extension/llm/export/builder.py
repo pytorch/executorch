@@ -156,18 +156,17 @@ class LLMEdgeManager:
     def _get_dynamic_shape(self) -> Any:
         if self.dynamic_shapes:
             return self.dynamic_shapes
-
-        dim = torch.export.Dim("token_dim", max=self.max_seq_len - 1)
-
-        if not self.use_kv_cache:
-            # Only one input argument: tokens
-            self.dynamic_shapes = ({1: dim},)
-        elif self.enable_dynamic_shape:
-            # Two input arguments: tokens and input_pos but input_pos is static shape
-            self.dynamic_shapes = ({1: dim}, {0: 1})
-        else:
-            # Two input arguments: tokens and input_pos but both are of static shape
+        
+        if not self.enable_dynamic_shape:
             self.dynamic_shapes = None
+        else:
+            dim = torch.export.Dim("token_dim", max=self.max_seq_len - 1)
+            if not self.use_kv_cache:
+                # Only one input argument: tokens
+                self.dynamic_shapes = ({1: dim},)
+            else:
+                # Two input arguments: tokens and input_pos but input_pos is static shape
+                self.dynamic_shapes = ({1: dim}, {0: 1})
         return self.dynamic_shapes
 
     def _get_edge_config(self) -> EdgeCompileConfig:
