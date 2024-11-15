@@ -1,6 +1,7 @@
+load("@fbcode//target_determinator/macros:ci.bzl", "ci")
 load("@fbsource//tools/build_defs:fb_xplat_cxx_binary.bzl", "fb_xplat_cxx_binary")
 load("@fbsource//tools/build_defs:fb_xplat_cxx_test.bzl", "fb_xplat_cxx_test")
-load("@fbsource//tools/build_defs:platform_defs.bzl", "ANDROID", "MACOSX")
+load("@fbsource//tools/build_defs:platform_defs.bzl", "ANDROID", "MACOSX", "CXX")
 load(
     "@fbsource//xplat/executorch/backends/vulkan:targets.bzl",
     "vulkan_spv_shader_lib",
@@ -9,6 +10,12 @@ load(
 def define_compute_api_test_targets():
     for no_volk in [True, False]:
         suffix = "_no_volk" if no_volk else ""
+        platforms = [ANDROID, CXX]
+        labels = []
+        if no_volk:
+            platforms = [ANDROID]
+            labels = ci.labels(ci.linux(ci.mode("fbsource//arvr/mode/android/mac/dbg")))
+
         vulkan_spv_shader_lib(
             name = "test_shader_lib{}".format(suffix),
             spv_filegroups = {
@@ -27,6 +34,8 @@ def define_compute_api_test_targets():
                 "utils/test_utils.h",
             ],
             apple_sdks = MACOSX,
+            labels = labels,
+            platforms = platforms,
             visibility = ["PUBLIC"],
             deps = [
                 ":test_shader_lib{}".format(suffix),
