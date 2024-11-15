@@ -1,5 +1,8 @@
+load("@fbcode//target_determinator/macros:ci.bzl", "ci")
 load("@fbcode_macros//build_defs:native_rules.bzl", "buck_genrule")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//tools/build_defs:platform_defs.bzl", "ANDROID", "CXX", "FBCODE")
+
 
 def get_vulkan_compiler_flags():
     return ["-Wno-missing-prototypes", "-Wno-global-constructors"]
@@ -43,12 +46,21 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
     )
 
     suffix = "_no_volk" if no_volk else ""
+    platforms = [ANDROID, CXX]
+    labels = []
+    if no_volk:
+        platforms = [ANDROID]
+        labels = ci.labels(ci.linux(ci.mode("fbsource//arvr/mode/android/mac/dbg")))
+
+
     runtime.cxx_library(
         name = name,
         srcs = [
             ":{}[{}.cpp]".format(genrule_name, name),
         ],
         compiler_flags = get_vulkan_compiler_flags(),
+        labels = labels,
+        platforms = platforms,
         define_static_target = False,
         # Static initialization is used to register shaders to the global shader registry,
         # therefore link_whole must be True to make sure unused symbols are not discarded.
@@ -91,7 +103,17 @@ def define_common_targets(is_fbcode = False):
     )
 
     for no_volk in [True, False]:
+        # No volk not available for FBCode
+        if no_volk and is_fbcode:
+            continue
+
         suffix = "_no_volk" if no_volk else ""
+
+        platforms = [ANDROID, CXX]
+        labels = []
+        if no_volk:
+            platforms = [ANDROID]
+            labels = ci.labels(ci.linux(ci.mode("fbsource//arvr/mode/android/mac/dbg")))
 
         VK_API_PREPROCESSOR_FLAGS = []
         VK_API_DEPS = [
@@ -148,6 +170,8 @@ def define_common_targets(is_fbcode = False):
                 "runtime/utils/**/*.h",
                 "runtime/vk_api/**/*.h",
             ]),
+            labels = labels,
+            platforms = platforms,
             visibility = [
                 "//executorch/backends/vulkan/...",
                 "@EXECUTORCH_CLIENTS",
@@ -165,6 +189,8 @@ def define_common_targets(is_fbcode = False):
             exported_headers = native.glob([
                 "runtime/graph/**/*.h",
             ]),
+            labels = labels,
+            platforms = platforms,
             visibility = [
                 "//executorch/backends/...",
                 "//executorch/extension/pybindings/...",
@@ -202,6 +228,8 @@ def define_common_targets(is_fbcode = False):
             headers = native.glob([
                 "runtime/*.h",
             ]),
+            labels = labels,
+            platforms = platforms,
             visibility = [
                 "//executorch/backends/...",
                 "//executorch/extension/pybindings/...",

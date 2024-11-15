@@ -27,7 +27,7 @@ struct PhysicalDevice final {
   VkPhysicalDeviceMemoryProperties memory_properties;
 
   // Head of the linked list of extensions to be requested
-  void* extension_features{nullptr};
+  void* extension_features;
 
   // Additional features available from extensions
 #ifdef VK_KHR_16bit_storage
