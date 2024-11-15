@@ -7,6 +7,7 @@
 # pyre-unsafe
 
 import json
+import os
 from typing import Any, Dict
 
 import torch
@@ -52,10 +53,15 @@ class Llama3_2Decoder(EagerModelBase):
         self.use_kv_cache = kwargs.get("use_kv_cache", False)
         self.verbose = kwargs.get("verbose", False)
         self.args = kwargs.get("args", None)
+        self.dtype = None
+        self.use_checkpoint = False
 
         ckpt_dir = get_default_model_resource_dir(__file__)
         # Single checkpoint file.
         checkpoint_path = kwargs.get("checkpoint", ckpt_dir / "demo_rand_params.pth")
+        if os.path.isfile(checkpoint_path):
+            self.use_checkpoint = True
+
         # Sharded checkpoint.
         checkpoint_dir = kwargs.get("checkpoint_dir", None)
         params_path = kwargs.get("params", ckpt_dir / "demo_config.json")
@@ -74,17 +80,16 @@ class Llama3_2Decoder(EagerModelBase):
             raise NotImplementedError(
                 "Sharded checkpoint not yet supported for Llama3_2Decoder."
             )
-        else:
+        elif self.use_checkpoint:
             checkpoint = torch.load(
                 checkpoint_path, map_location=device, weights_only=False, mmap=True
             )
-        checkpoint = llama3_vision_meta_to_tune(checkpoint)
-        checkpoint = to_decoder_checkpoint(checkpoint)
+            checkpoint = llama3_vision_meta_to_tune(checkpoint)
+            checkpoint = to_decoder_checkpoint(checkpoint)
+            self.dtype = get_checkpoint_dtype(checkpoint)
+
         with open(params_path, "r") as f:
             params = json.loads(f.read())
-
-        # Find dtype from checkpoint. (skip for now)
-        self.dtype = get_checkpoint_dtype(checkpoint)
 
         # Load model.
         # Cannot use "with torch.device("meta"):" because it causes some exceptions during export,
@@ -108,19 +113,20 @@ class Llama3_2Decoder(EagerModelBase):
 
         # Quantize. (skip for now)
 
-        # Load checkpoint.
-        missing, unexpected = self.model_.load_state_dict(
-            checkpoint,
-            strict=False,
-            assign=True,
-        )
-        if kwargs.get("verbose", False):
-            print("============= missing keys ================")
-            print(missing)
-            print("============= /missing ================")
-            print("============= unexpected keys ================")
-            print(unexpected)
-            print("============= /unexpected ================")
+        if self.use_checkpoint:
+            # Load checkpoint.
+            missing, unexpected = self.model_.load_state_dict(
+                checkpoint,
+                strict=False,
+                assign=True,
+            )
+            if kwargs.get("verbose", False):
+                print("============= missing keys ================")
+                print(missing)
+                print("============= /missing ================")
+                print("============= unexpected keys ================")
+                print(unexpected)
+                print("============= /unexpected ================")
 
         # Prune the output layer if output_prune_map is provided.
         output_prune_map = None
