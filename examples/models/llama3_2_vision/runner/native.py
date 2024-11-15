@@ -14,20 +14,21 @@ from executorch.examples.models.llama.export_llama_lib import (
     EXECUTORCH_DEFINED_MODELS,
     TORCHTUNE_DEFINED_MODELS,
 )
+from executorch.examples.models.llama3_2_vision.runner.generation import (
+    TorchTuneLlamaRunner,
+)
 
 from executorch.extension.pybindings.portable_lib import _load_for_executorch
 
 # Load custom ops and quantized ops.
 from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
 
-from executorch.examples.models.llama.runner.generation import LlamaRunner
-
 # Note: import this after portable_lib
 from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa # usort: skip
 from executorch.kernels import quantized  # noqa
 
 
-class NativeLlamaRunner(LlamaRunner):
+class NativeLlamaRunner(TorchTuneLlamaRunner):
     """
     Runs llama via ExecuTorch with provided pte file.
     """
@@ -43,15 +44,17 @@ class NativeLlamaRunner(LlamaRunner):
             vocab_size=params["vocab_size"],
         )
         self.model = _load_for_executorch(args.pte)
+        self.use_kv_cache = args.kv_cache
 
     def forward(
         self,
         tokens: torch.Tensor,
         input_pos: Optional[torch.Tensor] = None,
+        mask: Optional[torch.LongTensor] = None,
     ) -> torch.Tensor:
         return (
-            self.model.forward((tokens, input_pos))
-            if input_pos is not None
+            self.model.forward((tokens, input_pos, mask))
+            if self.use_kv_cache
             else self.model.forward((tokens,))
         )[0]
 
