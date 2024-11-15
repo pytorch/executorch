@@ -81,7 +81,7 @@ class TestSimpleExpand(unittest.TestCase):
         self, compile_spec: CompileSpec, module: torch.nn.Module, test_data: Tuple
     ):
         quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -95,7 +95,10 @@ class TestSimpleExpand(unittest.TestCase):
             .check_not(["torch.ops.aten.expand.default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if common.is_option_enabled("corstone300"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(Expand.test_parameters)
     def test_expand_tosa_MI(self, test_input, multiples):
@@ -105,13 +108,17 @@ class TestSimpleExpand(unittest.TestCase):
     def test_expand_tosa_BI(self, test_input, multiples):
         self._test_expand_tosa_BI_pipeline(self.Expand(), (test_input, multiples))
 
+    # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(Expand.test_parameters)
+    @common.expectedFailureOnFVP
     def test_expand_u55_BI(self, test_input, multiples):
         self._test_expand_ethosu_BI_pipeline(
             common.get_u55_compile_spec(), self.Expand(), (test_input, multiples)
         )
 
+    # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(Expand.test_parameters)
+    @common.expectedFailureOnFVP
     def test_expand_u85_BI(self, test_input, multiples):
         self._test_expand_ethosu_BI_pipeline(
             common.get_u85_compile_spec(), self.Expand(), (test_input, multiples)
