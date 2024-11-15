@@ -245,6 +245,7 @@ vkapi::VulkanImage allocate_image(
       vkapi::create_extent3d(image_extents),
       image_format,
       image_type,
+      context_ptr->preferred_image_tiling(),
       image_view_type,
       sampler_props,
       sampler,
