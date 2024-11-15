@@ -57,12 +57,27 @@ let deliverables = [
     "sha256": "f2eaeb66f7fd1a1c1b80ca9a0c8fdfec58d38f17a64b46a995ca38127e16c00c",
     "sha256" + debug: "e8ed2eae51760b24b7f5bfa94233f2dbd47f01b0144e322c0b508e9c23dee59d",
   ],
-]
+].reduce(into: [String: [String: Any]]()) {
+  $0[$1.key] = $1.value
+  $0[$1.key + debug] = $1.value
+}
+.reduce(into: [String: [String: Any]]()) {
+  var newValue = $1.value
+  if $1.key.hasSuffix(debug) {
+    $1.value.forEach { key, value in
+      if key.hasSuffix(debug) {
+        newValue[String(key.dropLast(debug.count))] = value
+      }
+    }
+  }
+  $0[$1.key] = newValue.filter { key, _ in !key.hasSuffix(debug) }
+}
 
 let package = Package(
   name: "executorch",
   platforms: [
-    .iOS(.v15),
+    .iOS(.v17),
+    .macOS(.v10_15),
   ],
   products: deliverables.keys.map { key in
     .library(name: key, targets: ["\(key)_dependencies"])
