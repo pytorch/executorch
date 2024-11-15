@@ -36,32 +36,26 @@ Tensor& sigmoid_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
       out,
       "Failed to resize output tensor.");
 
-  ScalarType common_type = in.scalar_type();
-  ScalarType compute_type = utils::get_compute_type(common_type);
-  // For integer types, we need to promote to the next higher float type
-  if (compute_type != ScalarType::Float && compute_type != ScalarType::Double) {
-    compute_type = ScalarType::Float;
-  }
+  ScalarType compute_type =
+      executorch::runtime::isFloatingType(in.scalar_type()) ? in.scalar_type()
+                                                            : ScalarType::Float;
+  compute_type = utils::get_compute_type(compute_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "sigmoid.out";
 
-  ET_KERNEL_CHECK(
-      ctx, executorch::runtime::isRealType(compute_type), InvalidArgument, out);
-
-  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+  ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
         [](const CTYPE_COMPUTE val_in) {
-          CTYPE_COMPUTE in_casted = static_cast<CTYPE_COMPUTE>(val_in);
           CTYPE_COMPUTE out_val = static_cast<CTYPE_COMPUTE>(1.0) /
-              (static_cast<CTYPE_COMPUTE>(1.0) + exp(-in_casted));
+              (static_cast<CTYPE_COMPUTE>(1.0) + exp(-val_in));
           return out_val;
         },
         ctx,
         in,
         utils::SupportedTensorDtypes::REALHBBF16,
         out,
-        utils::SupportedTensorDtypes::REALHBBF16);
+        utils::SupportedTensorDtypes::FLOATHBF16);
   });
 
   return out;
