@@ -39,7 +39,12 @@ Context::Context(size_t adapter_i, const ContextConfig& config)
       buffer_clearlist_mutex_{},
       buffers_to_clear_{},
       image_clearlist_mutex_{},
-      images_to_clear_{} {}
+      images_to_clear_{},
+      preferred_image_tiling_{VK_IMAGE_TILING_OPTIMAL} {
+  if (adapter_p_->linear_tiling_3d_enabled()) {
+    preferred_image_tiling_ = VK_IMAGE_TILING_LINEAR;
+  }
+}
 
 Context::~Context() {
   try {
