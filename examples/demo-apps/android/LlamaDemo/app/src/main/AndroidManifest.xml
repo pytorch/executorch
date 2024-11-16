@@ -16,7 +16,7 @@
 
     <application
         android:name=".ETLogging"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:extractNativeLibs="true"
         android:fullBackupContent="@xml/backup_rules"
@@ -34,6 +34,30 @@
 
         <uses-native-library
             android:name="libcdsprpc.so"
+            android:required="false" />
+
+        <uses-native-library
+            android:name="libapuwareutils_v2.mtk.so"
+            android:required="false" />
+
+        <uses-native-library
+            android:name="libapuwareapusys_v2.mtk.so"
+            android:required="false" />
+
+        <uses-native-library
+            android:name="libnir_neon_driver_ndk.mtk.so"
+            android:required="false" />
+
+        <uses-native-library
+            android:name="libnir_neon_driver_ndk.mtk.vndk.so"
+            android:required="false" />
+
+        <uses-native-library
+            android:name="libcmdl_ndk.mtk.vndk.so"
+            android:required="false" />
+
+        <uses-native-library
+            android:name="libcmdl_ndk.mtk.so"
             android:required="false" />
 
         <activity

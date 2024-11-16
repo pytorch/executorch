@@ -18,8 +18,8 @@
 #include <string>
 #include <vector>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace neuron {
 
 struct NeuronDeleter {
@@ -119,5 +119,5 @@ class NeuronExecutor {
 };
 
 } // namespace neuron
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

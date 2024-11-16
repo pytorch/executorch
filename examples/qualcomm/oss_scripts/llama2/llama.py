@@ -12,9 +12,9 @@ import time
 from multiprocessing.connection import Client
 
 import torch
+from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
 
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
-from executorch.backends.qualcomm.passes.build_quant_io import BuildQuantIo
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
@@ -26,6 +26,7 @@ from executorch.backends.qualcomm.utils.utils import (
     convert_linear_to_conv2d,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
+    get_soc_to_chipset_map,
 )
 from executorch.examples.qualcomm.oss_scripts.llama2.model.static_llama import (
     LlamaModel,
@@ -45,14 +46,6 @@ from executorch.extension.llm.export.builder import DType
 from sentencepiece import SentencePieceProcessor
 from torch.ao.quantization.observer import MinMaxObserver
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-
-
-soc_to_chipset_map = {
-    "SM8650": QcomChipset.SM8650,
-    "SM8550": QcomChipset.SM8550,
-    "SM8475": QcomChipset.SM8475,
-    "SM8450": QcomChipset.SM8450,
-}
 
 
 pte_filename = "llama2_qnn"
@@ -150,7 +143,7 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:
 
 def annotate_linear_16a8w_in_affine_layer(gm: torch.fx.GraphModule) -> None:
     from executorch.backends.qualcomm.quantizer.quantizer import (
-        get_ptq_per_channel_weight_config,
+        get_ptq_per_channel_quant_config,
         QuantizationConfig,
     )
     from executorch.backends.qualcomm.quantizer.utils import QUANT_ANNOTATION_KEY
@@ -172,7 +165,7 @@ def annotate_linear_16a8w_in_affine_layer(gm: torch.fx.GraphModule) -> None:
             _annotated=True,
         )
 
-    quantization_config_16a8w_per_channel = get_ptq_per_channel_weight_config(
+    quantization_config_16a8w_per_channel = get_ptq_per_channel_quant_config(
         torch.uint16, weight_dtype=torch.int8
     )
     for node in gm.graph.nodes:
@@ -340,9 +333,6 @@ class SingleLlama:
     def get_example_inputs(self):
         return self.llama_model.get_example_inputs()
 
-    def get_export_inputs(self):
-        return self.llama_model.get_export_inputs()
-
 
 def compile(args):
     os.makedirs(args.artifact, exist_ok=True)
@@ -401,7 +391,7 @@ def compile(args):
     end_quantize_ts = time.time()
     print("single_llama.quantize(quant_dtype)", end_quantize_ts - start_quantize_ts)
     single_llama.lowering_modules(
-        args.artifact, kv_type=kv_type, soc_model=soc_to_chipset_map[args.model]
+        args.artifact, kv_type=kv_type, soc_model=get_soc_to_chipset_map()[args.model]
     )
     end_lowering_ts = time.time()
     print("Complete Compile", end_lowering_ts - end_quantize_ts)
@@ -570,11 +560,12 @@ if __name__ == "__main__":
         inference(args, args.pre_gen_pte)
         exit(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
 
-    compile(args)
     if args.compile_only:
+        compile(args)
         exit(f"Finish compile_only and save to {args.artifact}")
 
     try:
+        compile(args)
         inference(args)
     except Exception as e:
         if args.ip and args.port != -1:

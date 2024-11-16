@@ -94,8 +94,11 @@ void add_addmm_naive_node(
     const ValueRef out,
     const Params& params,
     const ValueRef mat2_is_transposed) {
-  ValueRef self = prepack_if_tensor_ref(graph, self_data, utils::kWidthPacked);
-  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kHeightPacked);
+  utils::StorageType stype = graph.storage_type_of(out);
+  ValueRef self = prepack_standard(
+      graph, self_data, stype, utils::kWidthPacked, /*passthrough = */ true);
+  ValueRef mat2 = prepack_standard(
+      graph, mat2_data, stype, utils::kHeightPacked, /*passthrough = */ true);
 
   std::string kernel_name =
       graph.get_bool(mat2_is_transposed) ? "linear_naive" : "addmm_naive";
@@ -104,7 +107,7 @@ void add_addmm_naive_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   utils::uvec3 global_wg_size = graph.logical_limits_of(out);
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_wg_size,
@@ -116,20 +119,16 @@ void add_addmm_naive_node(
       {
           graph.sizes_ubo(out),
           graph.logical_limits_ubo(out),
-          graph.axis_map_ubo(out),
           graph.sizes_ubo(mat1),
-          graph.axis_map_ubo(mat1),
           graph.sizes_ubo(mat2),
-          graph.axis_map_ubo(mat2),
           graph.sizes_ubo(self),
-          graph.axis_map_ubo(self),
           graph.create_params_buffer(params),
       },
       // Specialization Constants
-      {graph.packed_dim_of(out),
-       graph.packed_dim_of(mat1),
-       graph.packed_dim_of(mat2),
-       graph.packed_dim_of(self)},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(mat1),
+       graph.hashed_layout_of(mat2),
+       graph.hashed_layout_of(self)},
       // Resizing Logic
       resize_addmm_node,
       {mat2_is_transposed}));
@@ -145,9 +144,11 @@ void add_addmm_optimized_node(
     const ValueRef out,
     const Params& params,
     const ValueRef mat2_is_transposed) {
-  ValueRef self =
-      prepack_if_tensor_ref(graph, self_data, utils::kChannelsPacked);
-  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kHeightPacked);
+  utils::StorageType stype = graph.storage_type_of(out);
+  ValueRef self = prepack_standard(
+      graph, self_data, stype, utils::kChannelsPacked, /*passthrough=*/true);
+  ValueRef mat2 = prepack_standard(
+      graph, mat2_data, stype, utils::kHeightPacked, /*passthrough=*/true);
 
   // Ensure mat1 is width packed
   ValueRef mat1_W_packed = graph.add_tensor_like(mat1, utils::kWidthPacked);
@@ -199,7 +200,7 @@ void add_addmm_optimized_node(
   }
   utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
@@ -210,17 +211,16 @@ void add_addmm_optimized_node(
       // Shader params buffers
       {
           graph.sizes_ubo(out),
-          graph.axis_map_ubo(out),
           graph.sizes_ubo(mat1_W_packed),
-          graph.axis_map_ubo(mat1_W_packed),
           graph.sizes_ubo(mat2_packed),
-          graph.axis_map_ubo(mat2_packed),
           graph.sizes_ubo(self),
-          graph.axis_map_ubo(self),
           graph.create_params_buffer(params),
       },
       // Specialization Constants
-      {graph.packed_dim_of(out)},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(mat1_W_packed),
+       graph.hashed_layout_of(mat2_packed),
+       graph.hashed_layout_of(self)},
       // Resizing Logic
       resize_addmm_node,
       {mat2_is_transposed}));
@@ -276,12 +276,15 @@ void linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   ValueRef weight_data = args.at(1);
   ValueRef bias = args.at(2);
   ValueRef out = args.at(3);
-  ValueRef weight =
-      prepack_if_tensor_ref(graph, weight_data, utils::kWidthPacked);
+  ValueRef weight = prepack_standard(
+      graph, weight_data, graph.storage_type_of(out), utils::kWidthPacked);
   ValueRef mat2_is_transposed = graph.add_scalar(true);
+
   if (graph.val_is_none(bias)) {
     return add_matmul_node(graph, input, weight, out, mat2_is_transposed);
   } else {
+    // Buffer implementation does not yet support biases
+    VK_CHECK_COND(!graph.is_buffer_storage(out));
     return add_addmm_node(
         graph,
         bias,

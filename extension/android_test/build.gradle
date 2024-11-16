@@ -1,0 +1,56 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+plugins {
+  id("com.android.application") version "8.1.0" apply false
+}
+
+group 'org.pytorch.executorch'
+
+apply plugin: "com.android.application"
+
+android {
+    namespace 'org.pytorch.executorch'
+    compileSdk = 34
+
+    defaultConfig {
+        minSdk = 28
+        targetSdk = 33
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    sourceSets {
+        androidTest {
+                resources.srcDirs += [ 'src/androidTest/resources' ]
+        }
+    }
+}
+
+dependencies {
+    implementation 'com.facebook.soloader:nativeloader:0.10.5'
+    implementation("com.facebook.fbjni:fbjni:0.5.1")
+    implementation(files("src/libs/executorch.aar"))
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test:rules:1.2.0'
+    androidTestImplementation 'commons-io:commons-io:2.4'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+    androidTestImplementation 'com.google.gms:google-services:4.3.3'
+}
+
+task('setupNativeLibs', type: Exec){
+    commandLine("bash", "setup.sh")
+}
+
+gradle.projectsEvaluated {
+    preBuild.dependsOn setupNativeLibs
+}

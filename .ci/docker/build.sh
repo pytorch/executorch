@@ -37,11 +37,15 @@ case "${IMAGE_NAME}" in
     ARM_SDK=yes
     CLANG_VERSION=12
     ;;
+  executorch-ubuntu-22.04-qnn-sdk)
+    QNN_SDK=yes
+    CLANG_VERSION=12
+    ;;
   executorch-ubuntu-22.04-clang12-android)
     LINTRUNNER=""
     CLANG_VERSION=12
     # From https://developer.android.com/ndk/downloads
-    ANDROID_NDK_VERSION=r26c
+    ANDROID_NDK_VERSION=r27b
     ;;
   *)
     echo "Invalid image name ${IMAGE_NAME}"
@@ -72,6 +76,7 @@ docker build \
   --build-arg "LINTRUNNER=${LINTRUNNER:-}" \
   --build-arg "BUILD_DOCS=${BUILD_DOCS}" \
   --build-arg "ARM_SDK=${ARM_SDK:-}" \
+  --build-arg "QNN_SDK=${QNN_SDK:-}" \
   --build-arg "ANDROID_NDK_VERSION=${ANDROID_NDK_VERSION:-}" \
   -f "${OS}"/Dockerfile \
   "$@" \

@@ -52,7 +52,7 @@ void add_repeat_interleave_node(
   const utils::uvec3 global_wg_size = graph.logical_limits_of(in);
   const utils::uvec3 local_wg_size = graph.create_local_wg_size(global_wg_size);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       // Shader
       VK_KERNEL_FROM_STR(kernel_name),
@@ -63,11 +63,12 @@ void add_repeat_interleave_node(
       {{out, vkapi::MemoryAccessType::WRITE},
        {in, vkapi::MemoryAccessType::READ}},
       // Parameter buffers
-      {graph.logical_limits_ubo(in),
-       graph.axis_map_ubo(in),
-       graph.axis_map_ubo(out)},
+      {graph.logical_limits_ubo(in)},
       // Specialization Constants
-      {nrepeats, repeat_dim},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(in),
+       nrepeats,
+       repeat_dim},
       // Resizing Logic
       resize_repeat_interleave_node,
       {num_repeats, dim}));

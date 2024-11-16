@@ -30,6 +30,7 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:select_copy_util",
             "//executorch/kernels/portable/cpu/util:advanced_index_util",
             "//executorch/kernels/portable/cpu/util:slice_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
         visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     )
@@ -75,6 +76,34 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
+    )
+
+    runtime.cxx_library(
+        name = "dtype_util",
+        srcs = ["dtype_util.cpp"],
+        exported_headers = [
+            "dtype_util.h",
+        ],
+        compiler_flags = ["-Wno-missing-prototypes"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+    )
+
+    runtime.cxx_library(
+        name = "elementwise_util",
+        exported_headers = [
+            "elementwise_util.h",
+        ],
+        compiler_flags = ["-Wno-missing-prototypes"],
+        deps = [
+            ":broadcast_util",
+            ":dtype_util",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
     )
 
     runtime.cxx_library(

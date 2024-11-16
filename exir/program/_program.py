@@ -453,7 +453,6 @@ class ExirExportedProgram:
     def __deepcopy__(
         self, memo: Optional[Dict[int, Any]] = None
     ) -> "ExirExportedProgram":
-
         new_eep = ExirExportedProgram(
             copy.deepcopy(self.exported_program, memo),
             self.after_to_edge_passes,
@@ -764,7 +763,6 @@ def _replace_aten_ops_with_transformed_ops(
     program: ExportedProgram,
     partitioner,
 ):
-
     ops_to_not_decompose = set()
     partitioners = partitioner.get(name)
     if partitioners is None:
@@ -925,9 +923,12 @@ def _gen_edge_manager_for_partitioners(
                 curr_ops_no_decomp, _ = curr_partitioner.ops_to_not_decompose(program)
                 all_ops_no_decomp |= set(curr_ops_no_decomp)
 
-            program = program.run_decompositions(
-                _default_decomposition_table(), _preserve_ops=tuple(all_ops_no_decomp)
-            )
+            table = _default_decomposition_table()
+
+            for op in all_ops_no_decomp:
+                table.pop(op, None)
+
+            program = program.run_decompositions(table)
             # Among all the preserved aten ops, use the check_op_fn to do an additional
             # check on which ops need to be preserved and which ops need to be decomposed
             # Those which are truly preserved will be replaced with transformed ops
@@ -972,36 +973,39 @@ def to_edge_transform_and_lower(
     exported programs in ATen dialect. It differs fundamentally from to_edge in that it
     combines the conversion of the ATen dialect to the edge dialect program, then running
     the transformation passes and then subsequently lowering the programs to their
-    corresponding backends all in a single pass.
+    corresponding backends all into a single API.
+
     This is fundamentally useful for lowering to backends that have ops registered that they
     do not want to be decomposed and thus rely on matching with these non-decomposed ops. For
     these sorts of backends this is the *only* API that should be used to lower to the edge
     dialect. Using a combination of to_edge(...) and to_backend(...) will result in inconsistent
     or wrong behavior.
 
+    This API is the primary recommended way to lower to the CPU based XNNPack backend.
+
     Args:
         programs: Can be a single ExportedProgram or a dictionary mapping function names
-        to their corresponding ExportedPrograms. If only a single ExportedProgram is
-        provided it will be assigned the name "forward".
+            to their corresponding ExportedPrograms. If only a single ExportedProgram is
+            provided it will be assigned the name "forward".
 
         transform_passes: The passes can either be a list of passes, or a dictionary
-        mapping method names to lists of passes. If it is just a list of passes, all methods
-        in the given EdgeProgramManager will be transformed with the provided passes. If it
-        is a dictionary, only method names specified in the dictionary will be transformed
-        with their corresponding passes.
+            mapping method names to lists of passes. If it is just a list of passes, all methods
+            in the given EdgeProgramManager will be transformed with the provided passes. If it
+            is a dictionary, only method names specified in the dictionary will be transformed
+            with their corresponding passes.
 
         partitioner: The partitioner can either be a Partitioner subclass instance, or a
-        dictionary mapping method names to Partitioner subclass instance. If it is a
-        Partitioner subclass, all programs in the given EdgeProgramManager will be lowered
-        using the given partitioner. If it is a dictionary, only method names specified in
-        the dictionary will be lowered with the given partitioner.
+            dictionary mapping method names to Partitioner subclass instance. If it is a
+            Partitioner subclass, all programs in the given EdgeProgramManager will be lowered
+            using the given partitioner. If it is a dictionary, only method names specified in
+            the dictionary will be lowered with the given partitioner.
 
         constant_methods: An optional dictionary of method name to the constant value
-        returned by that method in eager mode. Often used to store config information on
-        Edge models.
+            returned by that method in eager mode. Often used to store config information on
+            Edge models.
 
         compile_config: An optional argument used to provide greater control over the
-        transformation to edge dialect process.
+            transformation to edge dialect process.
 
     Returns:
         EdgeProgramManager
@@ -1014,9 +1018,9 @@ def to_edge_transform_and_lower(
         aten_programs = programs
 
     if not isinstance(partitioner, dict) and partitioner is not None:
-        partitioner = {"forward": partitioner}
+        partitioner = {name: partitioner for name in aten_programs.keys()}
     elif partitioner is None:
-        partitioner = {"forward": []}
+        partitioner = {name: [] for name in aten_programs.keys()}
 
     edge_manager = _gen_edge_manager_for_partitioners(
         partitioner, aten_programs, config, constant_methods
@@ -1031,7 +1035,6 @@ def to_edge_transform_and_lower(
                 edge_manager = edge_manager.to_backend({name: curr_partitioner})
 
     for name, program in edge_manager._edge_programs.items():
-
         ops_set_to_not_decompose: Set[torch._ops.OpOverload] = set()
         partitioners = partitioner.get(name, [])
         for curr_partitioner in partitioners:
@@ -1094,9 +1097,10 @@ def to_edge_with_preserved_ops(
 
     for name, program in aten_programs.items():
         # Decompose to Core ATen
-        program = program.run_decompositions(
-            _default_decomposition_table(), _preserve_ops=preserve_ops
-        )
+        table = _default_decomposition_table()
+        for op in preserve_ops:
+            table.pop(op, None)
+        program = program.run_decompositions(table)
         edge_programs[name] = _generate_edge_program(
             name, config, program, list(preserve_ops)
         )

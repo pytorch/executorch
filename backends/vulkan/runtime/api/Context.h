@@ -18,6 +18,7 @@
 #include <executorch/backends/vulkan/runtime/vk_api/Fence.h>
 #include <executorch/backends/vulkan/runtime/vk_api/QueryPool.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
+#include <executorch/backends/vulkan/runtime/vk_api/VkUtils.h>
 
 namespace vkcompute {
 namespace api {
@@ -194,6 +195,11 @@ class Context final {
       vkapi::PipelineBarrier&,
       const vkapi::ShaderInfo&,
       const utils::uvec3&);
+
+  void register_blit(
+      vkapi::PipelineBarrier&,
+      vkapi::VulkanImage& src,
+      vkapi::VulkanImage& dst);
 
   template <typename... Arguments>
   bool submit_compute_job(

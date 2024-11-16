@@ -9,7 +9,7 @@
 #import "LLaMARunner.h"
 
 #import <ExecuTorch/ExecuTorchLog.h>
-#import <executorch/examples/models/llama2/runner/runner.h>
+#import <executorch/examples/models/llama/runner/runner.h>
 #import <executorch/examples/models/llava/runner/llava_runner.h>
 
 using executorch::extension::llm::Image;
@@ -40,7 +40,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
   [ExecuTorchLog.sharedLog removeSink:self];
 }
 
-- (BOOL)isloaded {
+- (BOOL)isLoaded {
   return _runner->is_loaded();
 }
 
@@ -128,7 +128,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
   [ExecuTorchLog.sharedLog removeSink:self];
 }
 
-- (BOOL)isloaded {
+- (BOOL)isLoaded {
   return _runner->is_loaded();
 }
 

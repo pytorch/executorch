@@ -13,13 +13,10 @@
 #pragma once
 
 #include <cstdint>
-// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <functional>
 #include <memory>
-// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <string>
 #include <type_traits>
-// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <unordered_map>
 
 #include <executorch/extension/llm/runner/image.h>
@@ -36,7 +33,7 @@ namespace executorch {
 namespace extension {
 namespace llm {
 
-class MultimodalRunner {
+class ET_EXPERIMENTAL MultimodalRunner {
  public:
   explicit MultimodalRunner(
       const std::string& model_path,

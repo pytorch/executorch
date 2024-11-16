@@ -87,7 +87,7 @@ void add_softmax_node(
     group_dim = other_dim_2;
   }
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       // shader_descriptor,
       VK_KERNEL_FROM_STR(kernel_name),
