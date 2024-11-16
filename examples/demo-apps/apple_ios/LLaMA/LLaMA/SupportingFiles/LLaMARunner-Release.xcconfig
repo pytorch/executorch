@@ -1,0 +1,18 @@
+HEADER_SEARCH_PATHS = $(inherited) \
+$(SRCROOT)/../../../../.. \
+$(TEMP_DIR)/cmake/include
+
+LIBRARY_SEARCH_PATHS = $(inherited) \
+$(TEMP_DIR)/cmake/lib
+
+COMMON_LDFLAGS = $(inherited) \
+@$(TEMP_DIR)/cmake/linker_flags
+
+OTHER_LDFLAGS[sdk=iphonesimulator*] = $(COMMON_LDFLAGS) \
+-force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-simulator-debug.a
+
+OTHER_LDFLAGS[sdk=iphoneos*] = $(COMMON_LDFLAGS) \
+-force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-ios-debug.a
+
+OTHER_LDFLAGS[sdk=macos*] = $(COMMON_LDFLAGS) \
+-force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-macos-debug.a
