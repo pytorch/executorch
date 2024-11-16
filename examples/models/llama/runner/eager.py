@@ -80,7 +80,7 @@ def build_args_parser() -> argparse.ArgumentParser:
 def execute_runner(runner_class: Type[LlamaRunner]) -> None:
     parser = build_args_parser()
     args = parser.parse_args()
-    runner = runner_class(args)
+    runner = runner_class(args)  # pyre-ignore: Missing argument [20]
     generated_tokens = (
         runner.chat_completion(temperature=args.temperature)
         if args.chat
