@@ -199,7 +199,7 @@ class LlamaRunner(ABC):
                 temperature=temperature,
                 top_p=top_p,
                 echo=True,
-                pos_base=len(tokens),
+                pos_base=len(tokens) - 1 if len(tokens) > 0 else 0
             )
             tokens.extend(new_tokens)
             prompt = input("Me: ")
