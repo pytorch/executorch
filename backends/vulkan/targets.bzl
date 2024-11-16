@@ -1,10 +1,25 @@
+load("@fbcode//target_determinator/macros:ci.bzl", "ci")
 load("@fbcode_macros//build_defs:native_rules.bzl", "buck_genrule")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//tools/build_defs:platform_defs.bzl", "ANDROID", "CXX", "FBCODE")
+
 
 def get_vulkan_compiler_flags():
     return ["-Wno-missing-prototypes", "-Wno-global-constructors"]
 
-def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False):
+def get_labels(no_volk):
+    if no_volk:
+        return ci.labels(ci.linux(ci.mode("fbsource//arvr/mode/android/mac/dbg")))
+    else:
+        return []
+
+def get_platforms(no_volk):
+    if no_volk:
+        return [ANDROID]
+    else:
+        return [ANDROID, CXX]
+
+def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = False):
     gen_vulkan_spv_target = "//xplat/executorch/backends/vulkan:gen_vulkan_spv_bin"
     glslc_path = "//xplat/caffe2/fb/vulkan/dotslash:glslc"
 
@@ -42,12 +57,15 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False):
         labels = ["uses_dotslash"],
     )
 
+    suffix = "_no_volk" if no_volk else ""
     runtime.cxx_library(
         name = name,
         srcs = [
             ":{}[{}.cpp]".format(genrule_name, name),
         ],
         compiler_flags = get_vulkan_compiler_flags(),
+        labels = get_labels(no_volk),
+        platforms = get_platforms(no_volk),
         define_static_target = False,
         # Static initialization is used to register shaders to the global shader registry,
         # therefore link_whole must be True to make sure unused symbols are not discarded.
@@ -56,7 +74,7 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False):
         # Define a soname that can be used for dynamic loading in Java, Python, etc.
         soname = "lib{}.$(ext)".format(name),
         exported_deps = [
-            "//executorch/backends/vulkan:vulkan_compute_api",
+            "//executorch/backends/vulkan:vulkan_compute_api{}".format(suffix),
         ],
     )
 
@@ -89,126 +107,144 @@ def define_common_targets(is_fbcode = False):
         ]),
     )
 
-    vulkan_spv_shader_lib(
-        name = "vulkan_graph_runtime_shaderlib",
-        spv_filegroups = {
-            ":vulkan_graph_runtime_shaders": "runtime/graph/ops/glsl",
-        },
-        is_fbcode = is_fbcode,
-    )
+    for no_volk in [True, False]:
+        # No volk builds only available on xplat to build for Android
+        if no_volk and is_fbcode:
+            continue
 
-    VK_API_PREPROCESSOR_FLAGS = []
-    VK_API_DEPS = [
-        "fbsource//third-party/VulkanMemoryAllocator/3.0.1:VulkanMemoryAllocator_xplat",
-    ]
+        suffix = "_no_volk" if no_volk else ""
 
-    if is_fbcode:
-        VK_API_DEPS += [
-            "fbsource//third-party/swiftshader:swiftshader_vk_headers",
-            "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
-            "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_so",
+        VK_API_PREPROCESSOR_FLAGS = []
+        VK_API_DEPS = [
+            "fbsource//third-party/VulkanMemoryAllocator/3.0.1:VulkanMemoryAllocator_xplat",
         ]
-    else:
-        VK_API_DEPS += select({
-            "DEFAULT": [
-                "fbsource//third-party/volk:volk",
-            ],
-            "ovr_config//os:android": [
-                "fbsource//third-party/volk:volk",
-                "fbsource//third-party/toolchains:android"
-            ],
-            "ovr_config//os:macos": [
-                "//third-party/khronos:moltenVK_static"
-            ],
-        })
-        VK_API_PREPROCESSOR_FLAGS += select({
-            "DEFAULT": [
-                "-DUSE_VULKAN_WRAPPER",
-                "-DUSE_VULKAN_VOLK",
-            ],
-            "ovr_config//os:android": [
-                "-DUSE_VULKAN_WRAPPER",
-                "-DUSE_VULKAN_VOLK",
-                "-DVK_ANDROID_external_memory_android_hardware_buffer"
-            ],
-            "ovr_config//os:macos": []
-        })
 
-    runtime.cxx_library(
-        name = "vulkan_compute_api",
-        compiler_flags = get_vulkan_compiler_flags(),
-        srcs = native.glob([
-            "runtime/api/**/*.cpp",
-            "runtime/utils/**/*.cpp",
-            "runtime/vk_api/**/*.cpp",
-        ]),
-        exported_headers = native.glob([
-            "runtime/api/**/*.h",
-            "runtime/utils/**/*.h",
-            "runtime/vk_api/**/*.h",
-        ]),
-        visibility = [
-            "//executorch/backends/vulkan/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_preprocessor_flags = VK_API_PREPROCESSOR_FLAGS,
-        exported_deps = VK_API_DEPS,
-    )
+        default_deps = []
+        android_deps = ["fbsource//third-party/toolchains:android"]
+        default_flags = []
+        android_flags = []
 
-    runtime.cxx_library(
-        name = "vulkan_graph_runtime",
-        srcs = native.glob([
-            "runtime/graph/**/*.cpp",
-        ]),
-        compiler_flags = get_vulkan_compiler_flags(),
-        exported_headers = native.glob([
-            "runtime/graph/**/*.h",
-        ]),
-        visibility = [
-            "//executorch/backends/...",
-            "//executorch/extension/pybindings/...",
-            "//executorch/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            ":vulkan_graph_runtime_shaderlib",
-        ],
-        define_static_target = False,
-        # Static initialization is used to register operators to the global operator registry,
-        # therefore link_whole must be True to make sure unused symbols are not discarded.
-        # @lint-ignore BUCKLINT: Avoid `link_whole=True`
-        link_whole = True,
-        # Define an soname that can be used for dynamic loading in Java, Python, etc.
-        soname = "libvulkan_graph_runtime.$(ext)",
-    )
+        if no_volk:
+            android_deps.append("fbsource//third-party/toolchains:vulkan")
+        else:
+            for deps in [default_deps, android_deps]:
+                deps.append("fbsource//third-party/volk:volk")
+            for flags in [default_flags, android_flags]:
+                flags.append("-DUSE_VULKAN_WRAPPER")
+                flags.append("-DUSE_VULKAN_VOLK")
+            android_flags.append("-DVK_ANDROID_external_memory_android_hardware_buffer")
 
-    runtime.cxx_library(
-        name = "vulkan_backend_lib",
-        srcs = native.glob([
-            "runtime/*.cpp",
-        ]),
-        compiler_flags = get_vulkan_compiler_flags(),
-        headers = native.glob([
-            "runtime/*.h",
-        ]),
-        visibility = [
-            "//executorch/backends/...",
-            "//executorch/extension/pybindings/...",
-            "//executorch/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        deps = [
-            ":vulkan_graph_runtime",
-            "//executorch/backends/vulkan/serialization:vk_delegate_schema",
-            "//executorch/runtime/core:event_tracer",
-            "//executorch/runtime/backend:interface",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
-        ],
-        define_static_target = False,
-        # VulkanBackend.cpp needs to compile with executor as whole
-        # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
-        link_whole = True,
-    )
+        if is_fbcode:
+            VK_API_DEPS += [
+                "fbsource//third-party/swiftshader:swiftshader_vk_headers",
+                "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
+                "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_so",
+            ]
+        else:
+            VK_API_DEPS += select({
+                "DEFAULT": default_deps,
+                "ovr_config//os:android": android_deps,
+                "ovr_config//os:macos": [
+                    "//third-party/khronos:moltenVK_static"
+                ],
+            })
+            VK_API_PREPROCESSOR_FLAGS += select({
+                "DEFAULT": default_flags,
+                "ovr_config//os:android": android_flags,
+                "ovr_config//os:macos": []
+            })
+
+        runtime.cxx_library(
+            name = "vulkan_compute_api{}".format(suffix),
+            compiler_flags = get_vulkan_compiler_flags(),
+            srcs = native.glob([
+                "runtime/api/**/*.cpp",
+                "runtime/utils/**/*.cpp",
+                "runtime/vk_api/**/*.cpp",
+            ]),
+            exported_headers = native.glob([
+                "runtime/api/**/*.h",
+                "runtime/utils/**/*.h",
+                "runtime/vk_api/**/*.h",
+            ]),
+            labels = get_labels(no_volk),
+            platforms = get_platforms(no_volk),
+            visibility = [
+                "//executorch/backends/vulkan/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_preprocessor_flags = VK_API_PREPROCESSOR_FLAGS,
+            exported_deps = VK_API_DEPS,
+        )
+
+        runtime.cxx_library(
+            name = "vulkan_graph_runtime{}".format(suffix),
+            srcs = native.glob([
+                "runtime/graph/**/*.cpp",
+            ]),
+            compiler_flags = get_vulkan_compiler_flags(),
+            exported_headers = native.glob([
+                "runtime/graph/**/*.h",
+            ]),
+            labels = get_labels(no_volk),
+            platforms = get_platforms(no_volk),
+            visibility = [
+                "//executorch/backends/...",
+                "//executorch/extension/pybindings/...",
+                "//executorch/test/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                ":vulkan_graph_runtime_shaderlib{}".format(suffix),
+            ],
+            define_static_target = False,
+            # Static initialization is used to register operators to the global operator registry,
+            # therefore link_whole must be True to make sure unused symbols are not discarded.
+            # @lint-ignore BUCKLINT: Avoid `link_whole=True`
+            link_whole = True,
+            # Define an soname that can be used for dynamic loading in Java, Python, etc.
+            soname = "libvulkan_graph_runtime.$(ext)",
+        )
+
+        vulkan_spv_shader_lib(
+            name = "vulkan_graph_runtime_shaderlib{}".format(suffix),
+            spv_filegroups = {
+                ":vulkan_graph_runtime_shaders": "runtime/graph/ops/glsl",
+            },
+            is_fbcode = is_fbcode,
+            no_volk = no_volk,
+        )
+
+
+        runtime.cxx_library(
+            name = "vulkan_backend_lib{}".format(suffix),
+            srcs = native.glob([
+                "runtime/*.cpp",
+            ]),
+            compiler_flags = get_vulkan_compiler_flags(),
+            headers = native.glob([
+                "runtime/*.h",
+            ]),
+            labels = get_labels(no_volk),
+            platforms = get_platforms(no_volk),
+            visibility = [
+                "//executorch/backends/...",
+                "//executorch/extension/pybindings/...",
+                "//executorch/test/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            deps = [
+                ":vulkan_graph_runtime{}".format(suffix),
+                "//executorch/backends/vulkan/serialization:vk_delegate_schema",
+                "//executorch/runtime/core:event_tracer",
+                "//executorch/runtime/backend:interface",
+                "//executorch/runtime/core/exec_aten/util:tensor_util",
+            ],
+            define_static_target = False,
+            # VulkanBackend.cpp needs to compile with executor as whole
+            # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
+            link_whole = True,
+        )
 
     ##
     ## AOT targets
