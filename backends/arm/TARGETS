@@ -9,6 +9,7 @@ python_library(
     typing = True,
     deps = [
         ":arm_backend",
+        "//executorch/backends/arm/operator_support:operator_support",
         "//executorch/backends/arm/_passes:passes",
         "//executorch/exir:lib",
     ],
