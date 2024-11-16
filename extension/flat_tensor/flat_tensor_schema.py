@@ -8,7 +8,7 @@
 from dataclasses import dataclass
 from typing import List
 
-from executorch.exir.common_schema import ScalarType
+from executorch.exir.scalar_type import ScalarType
 
 # Note: check executorch/extension/data_format/flat_tensor.fbs for explanations of these fields.
 

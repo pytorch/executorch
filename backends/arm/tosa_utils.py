@@ -7,22 +7,18 @@
 
 import logging
 import os
-from typing import Any, cast, Dict
+from typing import Any, cast
 
 import numpy as np
 import serializer.tosa_serializer as ts
 import torch
-from executorch.backends.arm.operators.node_visitor import NodeVisitor
-from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
+from executorch.backends.arm.tosa_mapping import TosaArg
 
 from executorch.backends.arm.tosa_quant_utils import (
     get_quant_arg_downstream,
     get_quant_arg_upstream,
-    get_quantized_node_output_dtype,
-    is_node_quantized,
     q_op,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
@@ -233,44 +229,6 @@ def tosa_shape(shape, dim_order):
     return tuple([shape[dim] for dim in dim_order])
 
 
-def process_call_function(
-    node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
-    node_visitors: Dict[str, NodeVisitor],
-    tosa_spec: TosaSpecification,
-):
-    # Unpack arguments and convert
-    inputs = getNodeArgs(node)
-
-    # Convert output (this node itself)
-    output = TosaArg(node)
-
-    is_quant_node = is_node_quantized(node)
-    if is_quant_node:
-        output_dtype = map_dtype(get_quantized_node_output_dtype(node))
-    else:
-        output_dtype = output.dtype
-    tosa_graph.currRegion.currBasicBlock.addTensor(
-        output.name,
-        (tosa_shape(output.shape, output.dim_order)),
-        output_dtype,
-    )
-
-    # Visiting each Node
-    # pyre-ignore[16]: Undefined attribute.
-    if node.target.__name__ in node_visitors:
-        # pyre-ignore[16]: Undefined attribute.
-        node_visitors[node.target.__name__].define_node(
-            node,
-            tosa_graph,
-            inputs,
-            output,
-            is_quant_node,
-        )
-    else:
-        raise RuntimeError(f"Unknown operator {node.target} for TOSA : {tosa_spec}")
-
-
 def expand_dims(
     tosa_graph: ts.TosaSerializer,
     input_node: TosaArg,
@@ -298,3 +256,48 @@ def expand_dims(
     build_reshape(tosa_graph, input_node.name, new_shape, intermediate.name)
 
     return intermediate
+
+
+def get_resize_parameters(
+    input_size: torch.Tensor,
+    output_size: torch.Tensor,
+    resize_mode: int,
+    align_corners: bool,
+):
+    """Get the tosa.resize parameters based on the input and output size.
+
+    Args:
+        input_size (torch.Tensor): Size of the input
+        output_size (torch.Tensor): Size of the output
+        resize_mode (tosa.ResizeMode): The TOSA resize mode
+        align_corners (bool): Align the corners pixels of the input and output
+
+    Returns:
+        scale_n (torch.Tensor), scale_d (torch.Tensor),
+        offset (torch.Tensor), border (torch.Tensor)
+    """
+    assert torch.all(input_size > 0)
+    assert torch.all(output_size > 0)
+
+    scale_n = torch.tensor(
+        [
+            so - 1 if align_corners and si > 1 and so > 1 else so
+            for si, so in zip(input_size, output_size)
+        ]
+    )
+    scale_d = torch.tensor(
+        [
+            si - 1 if align_corners and si > 1 and so > 1 else si
+            for si, so in zip(input_size, output_size)
+        ]
+    )
+
+    gcd = torch.gcd(scale_n, scale_d)
+    scale_n = scale_n // gcd
+    scale_d = scale_d // gcd
+
+    # No half-pixel centre support in PyTorch, no offset needed
+    offset = torch.zeros_like(input_size)
+    border = scale_d * (output_size - 1) - scale_n * (input_size - 1) + offset
+
+    return scale_n, scale_d, offset, border

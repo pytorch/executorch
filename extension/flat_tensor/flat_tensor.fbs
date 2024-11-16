@@ -1,6 +1,6 @@
 // Schema for flatbuffer-serialized tensors.
 
-include "common.fbs";
+include "scalar_type.fbs";
 namespace flat_tensor;
 
 // Update after BC breaking changes.
@@ -56,8 +56,6 @@ table DataSegment {
 }
 
 // FlatTensor is a flatbuffer-based format for storing and loading tensors.
-// FlatTensor interoperates with the ExecuTorch PTE file, providing the option
-// to store tensors outside of the PTE file.
 table FlatTensor {
   // Schema version.
   version: uint32;

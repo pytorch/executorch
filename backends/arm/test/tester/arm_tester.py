@@ -287,7 +287,6 @@ class ArmTester(Tester):
             inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom input data.
                 The default is random data.
         """
-
         edge_stage = self.stages[self.stage_name(tester.ToEdge)]
         if edge_stage is None:
             edge_stage = self.stages[self.stage_name(tester.ToEdgeTransformAndLower)]
