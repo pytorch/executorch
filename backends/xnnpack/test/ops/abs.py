@@ -20,17 +20,20 @@ class TestAbs(unittest.TestCase):
             return z
 
     def _test_abs(self, inputs):
-        (
-            Tester(self.Abs(), inputs)
-            .export()
-            .check_count({"torch.ops.aten.abs.default": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_abs_default"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(self.Abs(), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.abs.default": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(["executorch_exir_dialects_edge__ops_aten_abs_default"])
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_fp16_abs(self):
         inputs = (
