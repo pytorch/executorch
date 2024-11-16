@@ -203,8 +203,8 @@ def _validate_update_cache_params(
     ), f"Start position  + length = {start_pos + seq_len} must be less than sequence length {cache.size(1)}"
 
 
-@impl(custom_ops_lib, "update_quantized_cache", "Meta")
-def update_quantized_cache_meta(
+@impl(custom_ops_lib, "update_cache", "Meta")
+def update_cache_meta(
     value,
     cache,
     start_pos,

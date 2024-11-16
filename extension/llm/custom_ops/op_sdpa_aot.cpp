@@ -9,7 +9,7 @@
 #include <executorch/extension/aten_util/make_aten_functor_from_et_functor.h>
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 #include <executorch/extension/llm/custom_ops/op_sdpa.h>
-#include <executorch/extension/llm/custom_ops/op_update_quantized_cache.h>
+#include <executorch/extension/llm/custom_ops/op_update_cache.h>
 
 #include <torch/library.h>
 
@@ -127,22 +127,22 @@ at::Tensor custom_sdpa_aten(
   return output;
 }
 
-Tensor& update_quantized_cache_out_no_context(
+Tensor& update_cache_out_no_context(
     const Tensor& value,
     Tensor& cache,
     const int64_t start_pos,
     Tensor& output) {
   exec_aten::RuntimeContext context{};
-  return torch::executor::native::update_quantized_cache_out(
+  return torch::executor::native::update_cache_out(
       context, value, cache, start_pos, output);
 }
 
-at::Tensor update_quantized_cache_aten(
+at::Tensor update_cache_aten(
     const at::Tensor& value,
     at::Tensor& cache,
     const int64_t start_pos) {
   auto output = at::empty({1});
-  WRAP_TO_ATEN(update_quantized_cache_out_no_context, 3)
+  WRAP_TO_ATEN(update_cache_out_no_context, 3)
   (value, cache, start_pos, output);
   return output;
 }
@@ -169,10 +169,10 @@ TORCH_LIBRARY_FRAGMENT(llama, m) {
       "Tensor? attn_mask=None, float drpout_p=0.0, bool is_causal=False, "
       "float? scale=None, *, Tensor(a!) out) -> Tensor(a!)");
   m.def(
-      "update_quantized_cache(Tensor value, Tensor(a!) cache, "
+      "update_cache(Tensor value, Tensor(a!) cache, "
       "SymInt start_pos) -> Tensor");
   m.def(
-      "update_quantized_cache.out(Tensor value, Tensor(a!) cache, "
+      "update_cache.out(Tensor value, Tensor(a!) cache, "
       "SymInt start_pos, *, Tensor(b!) out) -> Tensor(b!)");
 }
 
@@ -188,11 +188,8 @@ TORCH_LIBRARY_IMPL(llama, CompositeExplicitAutograd, m) {
   m.impl(
       "custom_sdpa.out",
       WRAP_TO_ATEN(torch::executor::native::custom_sdpa_out_no_context, 8));
+  m.impl("update_cache", torch::executor::native::update_cache_aten);
   m.impl(
-      "update_quantized_cache",
-      torch::executor::native::update_quantized_cache_aten);
-  m.impl(
-      "update_quantized_cache.out",
-      WRAP_TO_ATEN(
-          torch::executor::native::update_quantized_cache_out_no_context, 3));
+      "update_cache.out",
+      WRAP_TO_ATEN(torch::executor::native::update_cache_out_no_context, 3));
 }
