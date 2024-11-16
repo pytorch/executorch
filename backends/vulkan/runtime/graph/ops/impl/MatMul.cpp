@@ -48,16 +48,10 @@ void resize_matmul_node(
   const int out_rows = mat2_is_transposed ? utils::val_at(-2, mat2->sizes())
                                           : utils::val_at(-1, mat2->sizes());
 
-  std::vector<int64_t> new_out_sizes(3);
-  if (mat1->sizes().size() == 2) {
-    new_out_sizes.resize(2);
-    new_out_sizes.at(0) = out_cols;
-    new_out_sizes.at(1) = out_rows;
-  } else {
-    new_out_sizes.at(0) = mat1->sizes().at(0);
-    new_out_sizes.at(1) = out_cols;
-    new_out_sizes.at(2) = out_rows;
-  }
+  const int64_t out_dim = out->dim();
+  std::vector<int64_t> new_out_sizes(mat1->sizes());
+  new_out_sizes.at(out_dim - 1) = out_rows;
+  new_out_sizes.at(out_dim - 2) = out_cols;
 
   out->virtual_resize(new_out_sizes);
 }
@@ -68,7 +62,12 @@ void add_matmul_naive_buffer_node(
     const ValueRef mat2_data,
     const ValueRef out,
     const ValueRef mat2_is_transposed) {
-  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kHeightPacked);
+  ValueRef mat2 = prepack_standard(
+      graph,
+      mat2_data,
+      graph.storage_type_of(out),
+      utils::kHeightPacked,
+      /*passthrough = */ true);
 
   std::string kernel_name = "matmul_naive_buffer";
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
@@ -78,7 +77,12 @@ void add_matmul_naive_buffer_node(
       graph.size_at<uint32_t>(-2, out),
       graph.size_at<uint32_t>(-3, out) * graph.size_at<uint32_t>(-4, out)};
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  int mat2_is_transposed_val = (mat2_is_transposed != kDummyValueRef &&
+                                graph.get_bool(mat2_is_transposed))
+      ? 1
+      : 0;
+
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
@@ -97,7 +101,7 @@ void add_matmul_naive_buffer_node(
           graph.numel_ubo(out),
       },
       // Specialization Constants
-      {},
+      {mat2_is_transposed_val},
       // Resizing Logic
       resize_matmul_node,
       {mat2_is_transposed}));
@@ -109,7 +113,12 @@ void add_matmul_naive_texture3d_node(
     const ValueRef mat2_data,
     const ValueRef out,
     const ValueRef mat2_is_transposed) {
-  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kHeightPacked);
+  ValueRef mat2 = prepack_standard(
+      graph,
+      mat2_data,
+      graph.storage_type_of(out),
+      utils::kHeightPacked,
+      /*passthrough = */ true);
 
   std::string kernel_name = graph.get_bool(mat2_is_transposed)
       ? "matmul_transposed_naive"
@@ -119,7 +128,7 @@ void add_matmul_naive_texture3d_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   utils::uvec3 global_wg_size = graph.logical_limits_of(out);
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_wg_size,
@@ -131,16 +140,13 @@ void add_matmul_naive_texture3d_node(
       {
           graph.sizes_ubo(out),
           graph.logical_limits_ubo(out),
-          graph.axis_map_ubo(out),
           graph.sizes_ubo(mat1),
-          graph.axis_map_ubo(mat1),
           graph.sizes_ubo(mat2),
-          graph.axis_map_ubo(mat2),
       },
       // Specialization Constants
-      {graph.packed_dim_of(out),
-       graph.packed_dim_of(mat1),
-       graph.packed_dim_of(mat2)},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(mat1),
+       graph.hashed_layout_of(mat2)},
       // Resizing Logic
       resize_matmul_node,
       {mat2_is_transposed}));
@@ -152,7 +158,12 @@ void add_matmul_optimized_node(
     const ValueRef mat2_data,
     const ValueRef out,
     const ValueRef mat2_is_transposed) {
-  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kHeightPacked);
+  ValueRef mat2 = prepack_standard(
+      graph,
+      mat2_data,
+      graph.storage_type_of(out),
+      utils::kHeightPacked,
+      /*passthrough = */ true);
 
   // Ensure mat1 is width packed
   ValueRef mat1_W_packed = graph.add_tensor_like(mat1, utils::kWidthPacked);
@@ -204,7 +215,7 @@ void add_matmul_optimized_node(
 
   utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
@@ -215,14 +226,13 @@ void add_matmul_optimized_node(
       // Shader params buffers
       {
           graph.sizes_ubo(out),
-          graph.axis_map_ubo(out),
           graph.sizes_ubo(mat1_W_packed),
-          graph.axis_map_ubo(mat1_W_packed),
           graph.sizes_ubo(mat2_packed),
-          graph.axis_map_ubo(mat2_packed),
       },
       // Specialization Constants
-      {graph.packed_dim_of(out)},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(mat1_W_packed),
+       graph.hashed_layout_of(mat2_packed)},
       // Resizing Logic
       resize_matmul_node,
       {mat2_is_transposed}));

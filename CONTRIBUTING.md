@@ -242,14 +242,27 @@ for basics.
    - Give the PR a clear and thorough description. Don't just describe what the PR
      does: the diff will do that. Explain *why* you are making this change, in a
      way that will make sense to someone years from now.
-   - Add the line `Test Plan:` (with that spelling, capitalization, and trailing
-     colon character), followed by lines containing repeatable instructions for
+   - Explain how you have tested your changes by including repeatable instructions for
      testing the PR.
      - If you added tests, this can be as simple as the command you used to run the
        tests.
      - If you tested the PR manually, include the steps and the outputs. Help a
        future editor understand how to test the code that you're modifying
        today.
+   - If your PR contains or is representative of a feature/bug fix that should be
+     called out in the release notes, please add a label for "Release notes: \<area\>",
+	 where \<area\> describes which part of ExecuTorch the change pertains to, e.g.
+	 "Release notes: runtime". Here are all of the categories:
+     - `Release notes: runtime`: changes related to the core runtime which loads the program methods, initializes delegates, and runs the lowered graph.
+     - `Release notes: exir`: changes to any internal representations, such as any edge-related dialects. Also any changes to passes that may modify the exir, such as memory planning.
+     - `Release notes: quantization`: changes to quantization.
+     - `Release notes: ops & kernels`: changes to the opset and any new / changed kernel implementations.
+     - `Release notes: api`: changes to public facing apis (any interfaces, pybinded runtime methods, etc.).
+     - `Release notes: backends`: changes to any of the backend delegates.
+     - `Release notes: build`: changes related to the build system, including major dependency upgrades, notable build flags, optimizations, etc.
+     - `Release notes: devtools`: changes to any of ExecuTorch's developer tools, for example the debugger & profiler.
+     - `Release notes: examples`: changes to any code under `examples/`.
+     - `Release notes: misc`: anything notable that doesn't belong in the above categories.
    - See https://github.com/pytorch/executorch/pull/3612 for an example PR that
      follows this advice.
 1. Before asking for a review, ensure that all [CI (continuous integration)

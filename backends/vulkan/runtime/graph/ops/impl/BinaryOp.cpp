@@ -51,9 +51,8 @@ void add_binary_op_node(
     const ValueRef alpha,
     const ValueRef out,
     const std::string& op_name) {
-  ValueRef arg1 = prepack_if_tensor_ref(graph, in1);
-  ValueRef arg2 =
-      prepack_if_tensor_ref(graph, in2, graph.estimate_memory_layout_of(arg1));
+  ValueRef arg1 = prepack_standard_like(graph, in1, out, true);
+  ValueRef arg2 = prepack_standard_like(graph, in2, out, true);
 
   vTensorPtr t_in1 = graph.get_tensor(arg1);
   vTensorPtr t_in2 = graph.get_tensor(arg2);
@@ -75,7 +74,7 @@ void add_binary_op_node(
   kernel_name += op_name;
   add_dtype_suffix(kernel_name, *t_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
@@ -85,15 +84,12 @@ void add_binary_op_node(
        {{arg1, arg2}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {t_out->sizes_ubo(),
-       t_out->axis_map_ubo(),
        t_in1->sizes_ubo(),
-       t_in1->axis_map_ubo(),
        t_in2->sizes_ubo(),
-       t_in2->axis_map_ubo(),
        graph.create_params_buffer(broadcast_params),
        graph.create_params_buffer(alpha_val)},
       // Specialization Constants
-      {SV(t_out->packed_dim())},
+      {t_out->hashed_layout(), t_in1->hashed_layout(), t_in2->hashed_layout()},
       // Resizing Logic
       resize_binary_op_node,
       {}));

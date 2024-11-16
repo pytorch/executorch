@@ -9,8 +9,8 @@
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpContext.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpContextCustomConfig.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 
 std::vector<QnnContext_CustomConfig_t>
@@ -19,7 +19,8 @@ HtpContextCustomConfig::CreateContextCustomConfig() {
   QnnHtpContext_CustomConfig_t* p_custom_config = nullptr;
   const HtpContext* htp_ctx = static_cast<const HtpContext*>(context_);
 
-  if (htp_options_->use_multi_contexts()) {
+  if (htp_options_->use_multi_contexts() &&
+      htp_options_->max_sf_buf_size() != 0) {
     p_custom_config = AllocContextCustomConfig();
     p_custom_config->option =
         QNN_HTP_CONTEXT_CONFIG_OPTION_REGISTER_MULTI_CONTEXTS;
@@ -34,5 +35,5 @@ HtpContextCustomConfig::CreateContextCustomConfig() {
 }
 
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

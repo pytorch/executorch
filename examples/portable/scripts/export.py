@@ -58,16 +58,14 @@ def main() -> None:
             f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}."
         )
 
-    model, example_inputs, dynamic_shapes = EagerModelFactory.create_model(
+    model, example_inputs, _, dynamic_shapes = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
     backend_config = ExecutorchBackendConfig()
     if args.segment_alignment is not None:
         backend_config.segment_alignment = int(args.segment_alignment, 16)
-    if (
-        dynamic_shapes is not None
-    ):  # capture_pre_autograd_graph does not work with dynamic shapes
+    if dynamic_shapes is not None:
         edge_manager = export_to_edge(
             model,
             example_inputs,

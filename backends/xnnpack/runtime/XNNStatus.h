@@ -11,8 +11,8 @@
 #include <assert.h>
 #include <xnnpack.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace xnnpack {
 namespace delegate {
 
@@ -34,5 +34,5 @@ inline const char* xnn_status_to_string(enum xnn_status type) {
 
 } // namespace delegate
 } // namespace xnnpack
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

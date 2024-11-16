@@ -55,6 +55,8 @@ executorch_flatbuffer_ScalarType_enum_t get_flatbuffer_scalar_type(
       return executorch_flatbuffer_ScalarType_DOUBLE;
     case exec_aten::ScalarType::Bool:
       return executorch_flatbuffer_ScalarType_BOOL;
+    case exec_aten::ScalarType::Bits16:
+      return executorch_flatbuffer_ScalarType_BITS16;
     default:
       ET_CHECK_MSG(
           0,

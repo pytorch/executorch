@@ -17,8 +17,8 @@
 
 static constexpr size_t kRuntimeMemorySize = 50 * 1024U * 1024U; // 50 MB
 
-using namespace torch::executor;
-using torch::executor::testing::TensorFactory;
+using namespace executorch::runtime;
+using executorch::runtime::testing::TensorFactory;
 
 namespace {
 // TODO: Move the following methods to a utility class, so that it can be shared with `executor_runner.main.mm`
@@ -107,8 +107,8 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
          }
          Buffer buffer(tensor_meta->nbytes(), 0);
          auto sizes = tensor_meta->sizes();
-         exec_aten::TensorImpl tensor_impl(tensor_meta->scalar_type(), std::size(sizes), const_cast<int *>(sizes.data()), buffer.data());
-         exec_aten::Tensor tensor(&tensor_impl);
+         executorch::aten::TensorImpl tensor_impl(tensor_meta->scalar_type(), std::size(sizes), const_cast<int *>(sizes.data()), buffer.data());
+         executorch::aten::Tensor tensor(&tensor_impl);
          EValue input_value(std::move(tensor));
          Error err = method.set_input(input_value, i);
          if (err != Error::Ok) {
@@ -129,7 +129,7 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
 @implementation CoreMLBackendDelegateTests
 
 + (void)setUp {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 }
 
 + (nullable NSURL *)bundledResourceWithName:(NSString *)name extension:(NSString *)extension {
@@ -208,6 +208,12 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
     [self executeModelAtURL:modelURL nLoads:1 nExecutions:2];
 }
 #endif
+
+- (void)testAddMulCompiledProgramExecute {
+    NSURL *modelURL = [[self class] bundledResourceWithName:@"add_mul_compiled_coreml_all" extension:@"pte"];
+    XCTAssertNotNil(modelURL);
+    [self executeModelAtURL:modelURL nLoads:1 nExecutions:2];
+}
 
 - (void)executeMultipleModelsConcurrently:(NSArray<NSURL *> *)modelURLs
                                    nLoads:(NSUInteger)nLoads

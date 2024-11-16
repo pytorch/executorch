@@ -101,7 +101,7 @@ def _get_input_quantization_params(
             ):  # break early if we have all the inputs quantized parameters
                 break
     if len(quant_params) == 0:
-        raise RuntimeError("No Quantization parameters not found in exported model.")
+        raise RuntimeError("No Quantization parameters found in exported model.")
     return quant_params
 
 
@@ -439,14 +439,20 @@ class RunnerUtil:
 
             if self.is_quantized:
                 # Need to dequant back to FP32 for comparison with torch output
+                # Convert to int32 prior to dequantize the output
+                if tosa_ref_output.dtype == np.int8:
+                    tosa_ref_output = tosa_ref_output.astype(np.int32)
                 quant_param = self.qp_output
                 assert (
                     quant_param is not None
                 ), "There are no quantization parameters, check output parameters"
                 tosa_ref_output = (tosa_ref_output - quant_param.zp) * quant_param.scale
 
+            if tosa_ref_output.dtype == np.double:
+                tosa_ref_output = tosa_ref_output.astype("float32")
+
             # tosa_output is a numpy array, convert to torch tensor for comparison
-            tosa_ref_outputs.append(torch.from_numpy(tosa_ref_output.astype("float32")))
+            tosa_ref_outputs.append(torch.from_numpy(tosa_ref_output))
 
         return tosa_ref_outputs
 
@@ -454,12 +460,15 @@ class RunnerUtil:
 def prep_data_for_save(
     data, is_quantized: bool, input_name: str, quant_param: QuantizationParams
 ):
-    data_np = np.array(data.detach(), order="C").astype(np.float32)
+    data_np = np.array(data.detach(), order="C").astype(
+        f"{data.dtype}".replace("torch.", "")
+    )
 
     if is_quantized:
-        assert (
-            quant_param.node_name in input_name
-        ), "These quantization params do not match the input tensor name"
+        assert quant_param.node_name in input_name, (
+            f"The quantization params name '{quant_param.node_name}' does not "
+            f"match the input tensor name '{input_name}'."
+        )
         data_np = (
             ((data_np / np.float32(quant_param.scale)) + quant_param.zp)
             .round()

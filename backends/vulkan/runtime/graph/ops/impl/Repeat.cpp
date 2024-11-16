@@ -26,6 +26,11 @@ void check_args(
   VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
   VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
 
+  VK_CHECK_COND(in.storage_type() == out.storage_type());
+  if (in.storage_type() == utils::kTexture2D) {
+    VK_CHECK_COND(in.dim() <= 2);
+  }
+
   int64_t in_dim = in.dim();
   VK_CHECK_COND(
       in_dim <= repeats.size(),
@@ -97,7 +102,7 @@ void add_repeat_channel_node(
 
   auto shader = VK_KERNEL_FROM_STR(kernel_name);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,

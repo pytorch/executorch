@@ -8,10 +8,12 @@
 
 import logging
 import operator
+import os
 from typing import Dict, List, Tuple
 
 import torch
-from executorch.exir import memory
+
+from executorch.exir import ExecutorchProgramManager, memory
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from tabulate import tabulate
@@ -41,14 +43,20 @@ def get_conv1d_output_size(
     padding: int,
     dilation: int,
     kernel_size: int,
+    channel_last: bool,
 ) -> torch.Size:
     assert len(in_size) == 3
-    N, C, L = in_size
+    if channel_last:
+        N, L, C = in_size
+    else:
+        N, C, L = in_size
 
     # Reference: https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
     lout = (L + 2 * padding - dilation * (kernel_size - 1) - 1) // stride + 1
 
-    return torch.Size((in_size[0], out_channels, lout))
+    if channel_last:
+        return torch.Size((N, lout, out_channels))
+    return torch.Size((N, out_channels, lout))
 
 
 # Get the output size of a 2D convolution given the input size and parameters
@@ -74,7 +82,8 @@ def get_conv2d_output_size(
     wout = (W + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) // stride[
         1
     ] + 1
-
+    if channel_last:
+        return torch.Size((N, hout, wout, out_channels))
     return torch.Size((in_size[0], out_channels, hout, wout))
 
 
@@ -185,3 +194,36 @@ def model_gm_has_SDPA(model_gm: torch.fx.GraphModule) -> bool:
             if node.target == torch.ops.aten.scaled_dot_product_attention.default:
                 return True
     return False
+
+
+def save_pte_program(
+    prog: ExecutorchProgramManager, model_name: str, output_dir: str = ""
+) -> None:
+    if model_name.endswith(".pte"):
+        filename = model_name
+    else:
+        filename = os.path.join(output_dir, f"{model_name}.pte")
+
+    try:
+        with open(filename, "wb") as file:
+            prog.write_to_file(file)
+            logging.info(f"Saved exported program to {filename}")
+    except Exception as e:
+        logging.error(f"Error while saving to {filename}: {e}")
+
+
+def save_bpte_program(
+    buffer: bytes,
+    model_name: str,
+    output_dir: str = "",
+) -> None:
+    if model_name.endswith(".bpte"):
+        filename = model_name
+    else:
+        filename = os.path.join(output_dir, f"{model_name}.bpte")
+    try:
+        with open(filename, "wb") as f:
+            f.write(buffer)
+        logging.info(f"Saved exported program to {filename}")
+    except Exception as e:
+        logging.error(f"Error while saving to {output_dir}: {e}")

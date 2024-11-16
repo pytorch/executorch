@@ -20,7 +20,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 // This constant is unused in this shader but is kept so that the signature is
 // consistent with nchw_to_image.
-layout(constant_id = 3) const int UNUSED_packed_dim = W_DIM;
+${layout_declare_spec_const(C, "int", "UNUSED_layout", "0")}
 
 void main() {
   int out_bufi = int(gl_GlobalInvocationID.x);

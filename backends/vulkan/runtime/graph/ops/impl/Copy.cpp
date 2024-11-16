@@ -31,6 +31,7 @@ void add_copy_offset_node(
   std::string kernel_name = "copy_offset";
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
+  add_storage_type_suffix(kernel_name, *t_out);
 
   const struct Block final {
     alignas(16) ivec3 range;
@@ -44,24 +45,22 @@ void add_copy_offset_node(
 
   auto shader = VK_KERNEL_FROM_STR(kernel_name);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
       {
-          {out, vkapi::MemoryAccessType::WRITE},
-          {in, vkapi::MemoryAccessType::READ},
+          {out, vkapi::kWrite},
+          {in, vkapi::kRead},
       },
       // Parameter buffers
       {
           graph.create_params_buffer(offset_params),
-          t_out->axis_map_ubo(),
-          t_in->axis_map_ubo(),
       },
       // Specialization Constants
-      {}));
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)}));
 }
 
 void add_copy_channel_offset_node(
@@ -154,7 +153,7 @@ void add_copy_channel_offset_node(
 
     auto shader = VK_KERNEL_FROM_STR(kernel_name);
 
-    graph.execute_nodes().emplace_back(new ExecuteNode(
+    graph.execute_nodes().emplace_back(new DispatchNode(
         graph,
         VK_KERNEL_FROM_STR(kernel_name),
         global_size,
@@ -168,13 +167,11 @@ void add_copy_channel_offset_node(
         // Parameter buffers
         {
             t_out->sizes_ubo(),
-            t_out->axis_map_ubo(),
             t_in->sizes_ubo(),
-            t_in->axis_map_ubo(),
             graph.create_params_buffer(channel_offset_params),
         },
         // Specialization Constants
-        {}));
+        {graph.hashed_layout_of(out), graph.hashed_layout_of(in)}));
   }
 }
 

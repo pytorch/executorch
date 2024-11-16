@@ -32,19 +32,16 @@ def get_xnnpack_partitioner(dynamic_quant_only_partitioner: bool = True):
 
 
 def get_vulkan_partitioner(
-    dtype_override: Optional[str] = None, quantization_mode: Optional[str] = None
+    dtype_override: Optional[str] = None, enable_dynamic_shape: bool = False
 ):
     assert (
         dtype_override == "fp32" or dtype_override is None
     ), "Vulkan backend does not support non fp32 dtypes at the moment"
-    assert (
-        quantization_mode is None
-    ), "Vulkan backend does not support quantization at the moment"
     from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
         VulkanPartitioner,
     )
 
-    return VulkanPartitioner({"require_dynamic_shapes": True})
+    return VulkanPartitioner({"require_dynamic_shapes": enable_dynamic_shape})
 
 
 def get_mps_partitioner(use_kv_cache: bool = False):
@@ -179,7 +176,7 @@ def get_qnn_partitioner(
         )
 
     use_fp16 = True
-    skip_node_op_set = {"llama.fallback.default", "aten.embedding.default"}
+    skip_node_op_set = {"llama.fallback.default"}
     if pt2e_quantize is not None:
         use_fp16 = False
 

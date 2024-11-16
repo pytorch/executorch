@@ -9,9 +9,12 @@
 #include <pybind11/pybind11.h>
 
 namespace py = pybind11;
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
+
 PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
   // TODO: Add related documents for configurations listed below
   using namespace qnn_delegate;
@@ -35,8 +38,9 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .def("IsTensorDump", &PyQnnManager::IsTensorDump)
       .def("AllocateTensor", &PyQnnManager::AllocateTensor)
       .def("GetGraphInputs", &PyQnnManager::GetGraphInputs)
-      .def("GetGraphOutputs", &PyQnnManager::GetGraphOutputs);
+      .def("GetGraphOutputs", &PyQnnManager::GetGraphOutputs)
+      .def("GetSpillFillBufferSize", &PyQnnManager::GetSpillFillBufferSize);
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

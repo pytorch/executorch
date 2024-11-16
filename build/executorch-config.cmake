@@ -1,3 +1,4 @@
+
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
@@ -9,11 +10,26 @@
 # is:
 #
 # find_package(executorch REQUIRED)
+# -------
+#
+# Finds the ExecuTorch library
+#
+# This will define the following variables:
+#
+#   EXECUTORCH_FOUND        -- True if the system has the ExecuTorch library
+#   EXECUTORCH_INCLUDE_DIRS -- The include directories for ExecuTorch
+#   EXECUTORCH_LIBRARIES    -- Libraries to link against
+#
+# The actual values for these variables will be different from what executorch-config.cmake
+# in executorch pip package gives, but we wanted to keep the contract of exposing these
+# CMake variables.
 
 cmake_minimum_required(VERSION 3.19)
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../..")
 set(required_lib_list executorch executorch_core portable_kernels)
+set(EXECUTORCH_LIBRARIES)
+set(EXECUTORCH_INCLUDE_DIRS ${_root})
 foreach(lib ${required_lib_list})
   set(lib_var "LIB_${lib}")
   add_library(${lib} STATIC IMPORTED)
@@ -24,7 +40,11 @@ foreach(lib ${required_lib_list})
   )
   set_target_properties(${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}")
   target_include_directories(${lib} INTERFACE ${_root})
+  list(APPEND EXECUTORCH_LIBRARIES ${lib})
 endforeach()
+
+# If we reach here, ET required libraries are found.
+set(EXECUTORCH_FOUND ON)
 
 target_link_libraries(executorch INTERFACE executorch_core)
 
@@ -41,6 +61,7 @@ set(lib_list
     ${FLATCCRT_LIB}
     coremldelegate
     mpsdelegate
+    neuron_backend
     qnn_executorch_backend
     portable_ops_lib
     extension_module
@@ -89,5 +110,6 @@ foreach(lib ${lib_list})
     endif()
     set_target_properties(${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}")
     target_include_directories(${lib} INTERFACE ${_root})
+    list(APPEND EXECUTORCH_LIBRARIES ${lib})
   endif()
 endforeach()

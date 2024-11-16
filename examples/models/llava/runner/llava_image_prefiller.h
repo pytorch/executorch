@@ -15,7 +15,7 @@
 
 namespace example {
 
-class LlavaImagePrefiller
+class ET_EXPERIMENTAL LlavaImagePrefiller
     : public ::executorch::extension::llm::ImagePrefiller {
  public:
   LlavaImagePrefiller(::executorch::extension::Module* module)

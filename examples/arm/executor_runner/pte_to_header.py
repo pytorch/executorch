@@ -64,15 +64,15 @@ if __name__ == "__main__":
     with open(args.pte, "rb") as fr, open(outfile, "w") as fw:
         data = fr.read()
         hexstream = binascii.hexlify(data).decode("utf-8")
-        hexstring = attr + "model_pte[] = {"
+        fw.write(attr + "model_pte[] = {")
 
         for i in range(0, len(hexstream), 2):
             if 0 == (i % hex_digits_per_line):
-                hexstring += "\n"
-            hexstring += "0x" + hexstream[i : i + 2] + ", "
+                fw.write("\n")
+            fw.write("0x" + hexstream[i : i + 2] + ", ")
 
-        hexstring += "};\n"
-        fw.write(hexstring)
+        fw.write("};\n")
+
         print(
-            f"Input: {args.pte} with {len(data)} bytes. Output: {outfile} with {len(hexstring)} bytes. Section: {args.section}."
+            f"Input: {args.pte} with {len(data)} bytes. Output: {outfile} with {fw.tell()} bytes. Section: {args.section}."
         )

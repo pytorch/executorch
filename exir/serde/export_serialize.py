@@ -148,6 +148,7 @@ _TORCH_TO_SERIALIZE_DTYPE = {
     torch.complex128: ScalarType.COMPLEXDOUBLE,
     torch.bool: ScalarType.BOOL,
     torch.bfloat16: ScalarType.BFLOAT16,
+    torch.uint16: ScalarType.UINT16
 }
 
 
@@ -1846,7 +1847,13 @@ class GraphModuleDeserializer:
             self.symbol_name_to_range = {}
             if symbol_name_to_range:
                 for k, vr in symbol_name_to_range.items():
-                    lower = int(vr.lower)
+                    if math.isinf(vr.lower) and vr.lower < 0:
+                        lower = -math.inf
+                    elif math.isinf(vr.lower):
+                        lower = math.inf
+                    else:
+                        lower = int(vr.lower)
+
                     if vr.upper >= 2:  # max is >= 2, not sym bool range
                         lower = max(2, lower)
                     self.symbol_name_to_range[k] = symbolic_shapes.ValueRanges(

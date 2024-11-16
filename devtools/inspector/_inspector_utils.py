@@ -7,10 +7,13 @@
 # pyre-unsafe
 
 import math
+import sys
 from enum import Enum
-from typing import Dict, List, Mapping, Optional, Tuple, TypeAlias, Union
+from typing import Dict, IO, List, Mapping, Optional, Tuple, TypeAlias, Union
 
 import executorch.devtools.etdump.schema_flatcc as flatcc
+
+import pandas as pd
 
 import torch
 
@@ -29,6 +32,8 @@ from executorch.devtools.etdump.schema_flatcc import (
 
 from executorch.devtools.etdump.serialize import deserialize_from_etdump_flatcc
 from executorch.devtools.etrecord import ETRecord
+
+from tabulate import tabulate
 
 FORWARD = "forward"
 EDGE_DIALECT_GRAPH_KEY = "edge_dialect_graph_module"
@@ -107,6 +112,7 @@ def _parse_tensor_value(
             ScalarType.BYTE: (torch.uint8, 1),
             ScalarType.CHAR: (torch.int8, 1),
             ScalarType.BOOL: (torch.bool, 1),
+            ScalarType.BITS16: (torch.uint16, 2),
             ScalarType.SHORT: (torch.int16, 2),
             ScalarType.HALF: (torch.float16, 2),
             ScalarType.INT: (torch.int, 4),
@@ -212,6 +218,7 @@ def verify_debug_data_equivalence(
 
         if isinstance(output_a, torch.Tensor):
             assert bool(
+                # pyre-fixme[6]: For 1st argument expected `Tensor` but got `bool`.
                 torch.all(output_a == output_b)
             ), "Tensors Debug Data is different. Expected to be equal."
         else:
@@ -293,6 +300,28 @@ def gen_etdump_object(
         )
 
     return deserialize_from_etdump_flatcc(etdump_data)
+
+
+def display_or_print_df(df: pd.DataFrame, file: IO[str] = sys.stdout):
+    try:
+        from IPython import get_ipython
+        from IPython.display import display
+
+        def style_text_size(val, size=12):
+            return f"font-size: {size}px"
+
+        if get_ipython() is not None:
+            styled_df = df.style.applymap(style_text_size)
+            display(styled_df)
+        else:
+            raise Exception(
+                "Environment unable to support IPython. Fall back to print()."
+            )
+    except:
+        print(
+            tabulate(df, headers="keys", tablefmt="fancy_grid"),
+            file=file,
+        )
 
 
 def plot_metric(result: List[float], metric_name: str):

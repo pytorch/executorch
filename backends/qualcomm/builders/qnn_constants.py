@@ -147,6 +147,12 @@ class OpGelu:
     op_name: str = "Gelu"
 
 
+class OpGroupNorm:
+    op_name: str = "GroupNorm"
+    param_epsilon = "epsilon"
+    param_group = "group"
+
+
 @dataclass(init=False, frozen=True)
 class OpHardSwish:
     op_name: str = "HardSwish"
@@ -350,6 +356,13 @@ class OpTanh:
 class OpTile:
     op_name: str = "Tile"
     param_multiples: str = "multiples"
+
+
+@dataclass(init=False, frozen=True)
+class OpTopK:
+    op_name: str = "TopK"
+    param_k: str = "k"
+    param_largest: str = "largest"
 
 
 @dataclass(init=False, frozen=True)

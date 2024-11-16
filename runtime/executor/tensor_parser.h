@@ -18,12 +18,12 @@ namespace executorch {
 namespace runtime {
 namespace deserialization {
 
-ET_NODISCARD Result<exec_aten::Tensor> parseTensor(
+ET_NODISCARD Result<executorch::aten::Tensor> parseTensor(
     const Program* program,
     MemoryManager* memory_manager,
     const executorch_flatbuffer::Tensor* s_tensor);
 
-ET_NODISCARD Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
+ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
     const flatbuffers::Vector<int32_t>* tensor_indices,
     EValue* values_,
     MemoryManager* memory_manager);
@@ -32,18 +32,23 @@ ET_NODISCARD Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
 // list of optionals: list of optional Tensor, list of optional float etc, so we
 // just use a template to avoid boilerplate.
 template <typename T>
-ET_NODISCARD Result<BoxedEvalueList<exec_aten::optional<T>>>
+ET_NODISCARD Result<BoxedEvalueList<executorch::aten::optional<T>>>
 parseListOptionalType(
     const flatbuffers::Vector<int32_t>* value_indices,
     EValue* values_,
     MemoryManager* memory_manager) {
-  auto* evalp_list = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-      memory_manager->method_allocator(), EValue*, value_indices->size());
-
-  auto* optional_tensor_list = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-      memory_manager->method_allocator(),
-      exec_aten::optional<T>,
+  auto* evalp_list = memory_manager->method_allocator()->allocateList<EValue*>(
       value_indices->size());
+  if (evalp_list == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
+
+  auto* optional_tensor_list =
+      memory_manager->method_allocator()
+          ->allocateList<executorch::aten::optional<T>>(value_indices->size());
+  if (optional_tensor_list == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
 
   size_t output_idx = 0;
   // For each index look up the corresponding EValue (which has been
@@ -57,19 +62,19 @@ parseListOptionalType(
     // copy assignment is not defined if its non trivial.
     if (index == -1) {
       new (&optional_tensor_list[output_idx])
-          exec_aten::optional<T>(exec_aten::nullopt);
+          executorch::aten::optional<T>(executorch::aten::nullopt);
       // no value to point to. BoxedEvalueList for optional tensor will convert
       // this to nullopt.
       // TODO(T161156879): do something less hacky here.
       evalp_list[output_idx] = nullptr;
     } else {
       new (&optional_tensor_list[output_idx])
-          exec_aten::optional<T>(values_[index].toOptional<T>());
+          executorch::aten::optional<T>(values_[index].toOptional<T>());
       evalp_list[output_idx] = &values_[static_cast<size_t>(index)];
     }
     output_idx++;
   }
-  return BoxedEvalueList<exec_aten::optional<T>>(
+  return BoxedEvalueList<executorch::aten::optional<T>>(
       evalp_list, optional_tensor_list, value_indices->size());
 }
 
