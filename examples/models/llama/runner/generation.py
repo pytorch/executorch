@@ -9,7 +9,6 @@ from typing import List, Optional
 
 import torch
 
-from executorch.examples.models.llama.llama_transformer import ModelArgs
 from executorch.extension.llm.tokenizer.utils import get_tokenizer
 
 
@@ -47,11 +46,32 @@ def next_token(logits: torch.Tensor, temperature: float, top_p: float) -> int:
 
 
 class LlamaRunner(ABC):
-    def __init__(self, tokenizer_path: str, model_args: ModelArgs, device: str = "cpu"):
-        self.params = model_args
+    def __init__(
+        self,
+        tokenizer_path: str,
+        max_seq_len: int,
+        max_batch_size: int,
+        use_kv_cache: bool,
+        vocab_size: int,
+        device: str = "cpu",
+    ):
+        """
+        Constructor.
+
+        Args:
+        tokenizer_path: path to tokenizer.model file.
+        max_seq_len: max length of the output sequence, after which the output will be clipped.
+        max_batch_size: max batch size.
+        use_kv_cache: whether to use a KV cache.
+        vocab_size: number of items in the vocab.
+        device: device to run the runner on.
+        """
+        self.max_seq_len = max_seq_len
+        self.max_batch_size = max_batch_size
+        self.use_kv_cache = use_kv_cache
         self.tokenizer = get_tokenizer(tokenizer_path)
-        assert model_args.vocab_size == self.tokenizer.n_words
         self.device = device
+        assert vocab_size == self.tokenizer.n_words
 
     @abstractmethod
     def forward(
@@ -64,17 +84,18 @@ class LlamaRunner(ABC):
     def generate(  # noqa: C901
         self,
         prompt_tokens: List[int],
+        max_seq_len: int,
         temperature: float = 0.8,
         top_p: float = 0.9,
         echo: bool = False,
         pos_base: int = 0,
     ) -> List[int]:
-        # prefill
+        # Prefill
         logits = self.forward(
             tokens=torch.tensor([prompt_tokens], dtype=torch.long, device=self.device),
             input_pos=(
                 torch.tensor([pos_base], dtype=torch.long, device=self.device)
-                if self.params.use_kv_cache
+                if self.use_kv_cache
                 else None
             ),
         )
@@ -83,8 +104,8 @@ class LlamaRunner(ABC):
         print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
         tokens = prompt_tokens + [current_token]
 
-        while len(tokens) < self.params.max_seq_len:
-            if self.params.use_kv_cache:
+        while len(tokens) < max_seq_len:
+            if self.use_kv_cache:
                 logits = self.forward(
                     tokens=torch.tensor(
                         [[current_token]], dtype=torch.long, device=self.device
@@ -99,13 +120,17 @@ class LlamaRunner(ABC):
                 logits = self.forward(
                     tokens=torch.tensor([tokens], dtype=torch.long, device=self.device),
                 )
+
+            # If the logits aren't already clipped to only contain the last logit, clip them.
             current_token = next_token(logits, temperature, top_p)
             tokens.append(current_token)
+
             if current_token == self.tokenizer.eos_id or (
                 hasattr(self.tokenizer, "stop_tokens")
                 and current_token in self.tokenizer.stop_tokens
             ):
                 break
+
             print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
         print("\n")
 
@@ -135,6 +160,7 @@ class LlamaRunner(ABC):
         """
         return self.generate(
             prompt_tokens=self.tokenizer.encode(prompt, bos=True, eos=False),
+            max_seq_len=self.max_seq_len,
             temperature=temperature,
             top_p=top_p,
             echo=echo,
@@ -169,6 +195,7 @@ class LlamaRunner(ABC):
                 prompt_tokens=self.tokenizer.encode(
                     self._format_prompt(prompt), bos=True, eos=False
                 ),
+                max_seq_len=self.max_seq_len,
                 temperature=temperature,
                 top_p=top_p,
                 echo=True,

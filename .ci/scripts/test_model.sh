@@ -77,7 +77,7 @@ test_model() {
     # Install requirements for export_llama
     bash examples/models/llama/install_requirements.sh
     # Test export_llama script: python3 -m examples.models.llama.export_llama
-    "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama -c examples/models/llama/params/demo_rand_params.pth -p examples/models/llama/params/demo_config.json
+    "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -c examples/models/llama/params/demo_rand_params.pth -p examples/models/llama/params/demo_config.json
     run_portable_executor_runner
     rm "./${MODEL_NAME}.pte"
   fi
@@ -86,6 +86,10 @@ test_model() {
     # Install requirements for llava
     bash examples/models/llava/install_requirements.sh
     STRICT="--no-strict"
+  fi
+  if [[ "$MODEL_NAME" == "llama3_2_vision_encoder" || "$MODEL_NAME" == "llama3_2_text_decoder" ]]; then
+    # Install requirements for llama vision.
+    bash examples/models/llama3_2_vision/install_requirements.sh
   fi
   # python3 -m examples.portable.scripts.export --model_name="llama2" should works too
   "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}" "${STRICT}"

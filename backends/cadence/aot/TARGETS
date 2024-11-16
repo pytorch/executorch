@@ -48,10 +48,11 @@ python_library(
     ],
 )
 
+
 python_library(
-    name = "passes",
+    name = "pass_utils",
     srcs = [
-        "_passes.py",
+        "pass_utils.py",
     ],
     deps = [
         ":utils",
@@ -64,9 +65,9 @@ python_library(
 )
 
 python_library(
-    name = "pass_utils",
+    name = "passes",
     srcs = [
-        "pass_utils.py",
+        "passes.py",
     ],
     deps = [
         ":utils",
@@ -85,6 +86,7 @@ python_library(
     ],
     deps = [
         "fbcode//caffe2:torch",
+        "fbcode//executorch/exir:scalar_type",
         "fbcode//executorch/backends/cadence/aot:utils",
     ],
 )
