@@ -21,17 +21,8 @@ Please check `generate_qnn_executorch_compiler_spec()` in
 - Snapdragon 8 Gen 2
 - Snapdragon 8 Gen 3
 
-### How to add more supported Chipset
-
-#### Step 1: Check SoC model of snapdragon device
-Get SoC model which would like to be supported from the document of Qualcomm AI Engine Direct SDK.
-
-#### Step 2: Update schema of compiler option and SoC information in serialization
-Add SoC model into QcomChipset enum in [schema](./serialization/schema.fbs) and [qnn_compile_spec_schema](./serialization/qnn_compile_spec_schema.py).
-Insert new SoC information into _soc_info_table in [qnn_compile_spec_schema](./serialization/qnn_compile_spec_schema.py).
-
-#### Step 3: Recompile the .pte file
-Follow [setup](../../docs/source/build-run-qualcomm-ai-engine-direct-backend.md) to setup environment and build runtime with new schema header.
+### Adding more supported Chipset
+Currently, users cannot add additional chipset models because the chipset ID is not accessible to community users. If you have specific chipset models you wish to add, please contact one of the authors in the `Code Reviews` section at the bottom of this page.
 
 ### Supported Inference Type
 - Quantized
@@ -46,7 +37,7 @@ backends/qualcomm
 |   └── python # Python interface for using QNN libraries.
 ├── builders # Codes for lowering each operators (AoT Part).
 ├── partition # QNN Partitioner (AoT Part).
-├── passes # Various passes helping lower models to QNN backend (AoT Part).
+├── _passes # Various private passes helping lower models to QNN backend (AoT Part).
 ├── python # Places to put pybind artifacts for accessing QNN APIs, structures, etc (AoT Part).
 ├── quantizer # QNN Quantizer
 ├── runtime # Here is QNN runtime responsbile for compiling a model on x64.

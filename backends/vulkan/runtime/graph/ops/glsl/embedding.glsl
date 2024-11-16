@@ -14,19 +14,24 @@
 
 layout(std430) buffer;
 
-#include "indexing_utils.h"
-
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "t_in", "int", STORAGE)}
 ${layout_declare_tensor(B, "r", "t_weight", DTYPE, STORAGE)}
 ${layout_declare_ubo(B, "ivec4", "sizes")}
-${layout_declare_ubo(B, "ivec4", "out_axis_map")}
-${layout_declare_ubo(B, "ivec4", "in_axis_map")}
-${layout_declare_ubo(B, "ivec4", "weight_axis_map")}
+
+#include "indexing_utils.h"
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int packed_dim = C_DIM;
+${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 out_axis_map = unhash_axis_map(out_layout);
+const lowp int packed_dim = unhash_packed_dim(out_layout);
+
+${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 in_axis_map = unhash_axis_map(in_layout);
+
+${layout_declare_spec_const(C, "int", "weight_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 weight_axis_map = unhash_axis_map(weight_layout);
 
 void main() {
   const ivec3 out_lpos = ivec3(gl_GlobalInvocationID);

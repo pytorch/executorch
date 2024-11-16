@@ -90,7 +90,7 @@ void add_slice_tensor_copy_node(
         static_cast<int32_t>(step),
     };
 
-    graph.execute_nodes().emplace_back(new ExecuteNode(
+    graph.execute_nodes().emplace_back(new DispatchNode(
         graph,
         VK_KERNEL_FROM_STR(kernel_name),
         graph.create_global_wg_size(out),
@@ -140,7 +140,7 @@ void add_slice_tensor_copy_node(
         static_cast<int32_t>(stride),
     };
 
-    graph.execute_nodes().emplace_back(new ExecuteNode(
+    graph.execute_nodes().emplace_back(new DispatchNode(
         graph,
         VK_KERNEL_FROM_STR(kernel_name),
         global_size,

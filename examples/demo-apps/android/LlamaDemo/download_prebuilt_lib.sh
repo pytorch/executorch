@@ -7,14 +7,13 @@
 
 set -eu
 
-AAR_URL="https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/0.3/executorch-llama.aar"
-AAR_SHASUM="f06cc1606e5e05f00fd0ae721f5d37d56124fd28"
-
+AAR_URL="https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/executorch-241002/executorch.aar"
+AAR_SHASUM_URL="https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/executorch-241002/executorch.aar.sha256sums"
 LIBS_PATH="$(dirname "$0")/app/libs"
-AAR_PATH="${LIBS_PATH}/executorch-llama.aar"
 
 mkdir -p "$LIBS_PATH"
 
-if [[ ! -f "${AAR_PATH}" || "${AAR_SHASUM}" != $(shasum "${AAR_PATH}" | awk '{print $1}') ]]; then
-  curl "${AAR_URL}" -o "${AAR_PATH}"
-fi
+pushd "$LIBS_PATH"
+curl -O "${AAR_SHASUM_URL}"
+shasum --check --status executorch.aar.sha256sums || curl "${AAR_URL}" -o executorch.aar
+popd

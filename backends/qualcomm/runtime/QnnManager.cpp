@@ -17,9 +17,11 @@
 #include <fstream>
 #include <string>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
 
 bool CompareExportedInput(
     const std::shared_ptr<TensorWrapper>& a,
@@ -284,6 +286,10 @@ Error QnnManager::Init() {
     ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_ != nullptr, Internal, "Failed to load Qnn backend.")
     ET_CHECK_OR_RETURN_ERROR(
+        backend_params_ptr_->qnn_backend_cache_ptr_->Configure() == Error::Ok,
+        Internal,
+        "Fail to configure Qnn backend cache");
+    ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_->qnn_backend_ptr_->Configure() == Error::Ok,
         Internal,
         "Fail to configure Qnn backend");
@@ -366,7 +372,7 @@ Error QnnManager::AllocateTensor(
 Error QnnManager::Execute(
     const std::vector<Qnn_Tensor_t>& input_tensor_structs,
     std::vector<Qnn_Tensor_t>& output_tensor_structs,
-    EventTracer* event_tracer) {
+    executorch::runtime::EventTracer* event_tracer) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
   error = backend_params_ptr_->qnn_graph_ptr_->GraphExecute(
@@ -383,7 +389,7 @@ Error QnnManager::Execute(
     for (std::size_t out_idx = 0; out_idx < output_tensor_structs.size();
          ++out_idx) {
       const Qnn_Tensor_t& output_tensor = output_tensor_structs[out_idx];
-      std::vector<exec_aten::SizesType> sizes(
+      std::vector<executorch::aten::SizesType> sizes(
           QNN_VER_PTR(output_tensor)->dimensions,
           QNN_VER_PTR(output_tensor)->dimensions +
               QNN_VER_PTR(output_tensor)->rank);
@@ -393,10 +399,12 @@ Error QnnManager::Execute(
           sizes,
           qnn_dtype_to_scalar_type_[QNN_VER_PTR(output_tensor)->dataType]);
 
-      torch::executor::event_tracer_log_output_delegate<exec_aten::Tensor>(
+      executorch::runtime::event_tracer_log_output_delegate<
+          executorch::aten::Tensor>(
           event_tracer,
           QNN_VER_PTR(output_tensor)->name,
-          /*delegate_debug_id=*/static_cast<torch::executor::DebugHandle>(-1),
+          /*delegate_debug_id=*/
+          static_cast<executorch::runtime::DebugHandle>(-1),
           *dump_tensor);
     }
   }
@@ -404,7 +412,8 @@ Error QnnManager::Execute(
   return Error::Ok;
 }
 
-Error QnnManager::ProfileExecuteData(EventTracer* event_tracer) {
+Error QnnManager::ProfileExecuteData(
+    executorch::runtime::EventTracer* event_tracer) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   if (options_->profile_level() != QnnExecuTorchProfileLevel::kProfileOff) {
     error =
@@ -526,26 +535,26 @@ Error QnnManager::Compile(
   return Error::Ok;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch
 void* QnnExecuTorchAllocCustomMem(size_t bytes, size_t alignment) {
   void* buffer_ptr =
-      torch::executor::qnn::SharedBuffer::GetSharedBufferManager().AllocMem(
-          bytes, alignment);
+      executorch::backends::qnn::SharedBuffer::GetSharedBufferManager()
+          .AllocMem(bytes, alignment);
   return buffer_ptr;
 }
 
 void QnnExecuTorchFreeCustomMem(void* buffer_ptr) {
-  torch::executor::qnn::SharedBuffer::GetSharedBufferManager().FreeMem(
+  executorch::backends::qnn::SharedBuffer::GetSharedBufferManager().FreeMem(
       buffer_ptr);
 }
 
 void QnnExecuTorchAddCustomMemTensorAddr(void* tensor_addr, void* custom_mem) {
-  torch::executor::qnn::SharedBuffer::GetSharedBufferManager()
+  executorch::backends::qnn::SharedBuffer::GetSharedBufferManager()
       .AddCusomMemTensorAddr(tensor_addr, custom_mem);
 }
 
 void QnnExecuTorchAddCustomMemTensorInfo(const CustomMemTensorInfo& info) {
-  torch::executor::qnn::SharedBuffer::GetSharedBufferManager()
+  executorch::backends::qnn::SharedBuffer::GetSharedBufferManager()
       .AddCusomMemTensorInfo(info);
 }

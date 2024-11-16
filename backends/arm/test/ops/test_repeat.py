@@ -47,7 +47,7 @@ class TestSimpleRepeat(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
             )
             .export()
             .check_count({"torch.ops.aten.repeat.default": 1})
@@ -65,7 +65,7 @@ class TestSimpleRepeat(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
             )
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
@@ -107,14 +107,12 @@ class TestSimpleRepeat(unittest.TestCase):
         self._test_repeat_tosa_BI_pipeline(self.Repeat(), (test_input, multiples))
 
     @parameterized.expand(Repeat.test_parameters)
-    @unittest.expectedFailure  # TODO: MLBEDSW-9386
     def test_repeat_u55_BI(self, test_input, multiples):
         self._test_repeat_ethosu_pipeline(
             common.get_u55_compile_spec(), self.Repeat(), (test_input, multiples)
         )
 
     @parameterized.expand(Repeat.test_parameters)
-    @unittest.expectedFailure  # TODO: MLBEDSW-9386
     def test_repeat_u85_BI(self, test_input, multiples):
         self._test_repeat_ethosu_pipeline(
             common.get_u85_compile_spec(), self.Repeat(), (test_input, multiples)

@@ -17,14 +17,15 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/result.h>
 
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::extension::from_blob;
 using executorch::extension::Module;
 using executorch::runtime::EValue;
 using executorch::runtime::Result;
 
 // The value of the gpt2 `<|endoftext|>` token.
-#define ENDOFTEXT 50256
+#define ENDOFTEXT_TOKEN 50256
 
 std::string generate(
     Module& llm_model,
@@ -33,15 +34,15 @@ std::string generate(
     BasicSampler& sampler,
     size_t max_input_length,
     size_t max_output_length) {
-  // Convert the input text into a list of integers (tokens) that represents
-  // it, using the string-to-token mapping that the model was trained on.
-  // Each token is an integer that represents a word or part of a word.
+  // Convert the input text into a list of integers (tokens) that represents it,
+  // using the string-to-token mapping that the model was trained on. Each token
+  // is an integer that represents a word or part of a word.
   std::vector<int64_t> input_tokens = tokenizer.encode(prompt);
   std::vector<int64_t> output_tokens;
 
   for (auto i = 0u; i < max_output_length; i++) {
-    // Convert the input_tokens from a vector of int64_t to EValue.
-    // EValue is a unified data type in the ExecuTorch runtime.
+    // Convert the input_tokens from a vector of int64_t to EValue. EValue is a
+    // unified data type in the ExecuTorch runtime.
     auto inputs = from_blob(
         input_tokens.data(),
         {1, static_cast<int>(input_tokens.size())},
@@ -50,8 +51,8 @@ std::string generate(
     // Run the model. It will return a tensor of logits (log-probabilities).
     auto logits_evalue = llm_model.forward(inputs);
 
-    // Convert the output logits from EValue to std::vector, which is what
-    // the sampler expects.
+    // Convert the output logits from EValue to std::vector, which is what the
+    // sampler expects.
     Tensor logits_tensor = logits_evalue.get()[0].toTensor();
     std::vector<float> logits(
         logits_tensor.data_ptr<float>(),
@@ -61,7 +62,7 @@ std::string generate(
     int64_t next_token = sampler.sample(logits);
 
     // Break if we reached the end of the text.
-    if (next_token == ENDOFTEXT) {
+    if (next_token == ENDOFTEXT_TOKEN) {
       break;
     }
 
@@ -85,11 +86,9 @@ std::string generate(
   return output_string;
 }
 
-// main.cpp
-
 int main() {
   // Set up the prompt. This provides the seed text for the model to elaborate.
-  std::cout << "Prompt: ";
+  std::cout << "Enter model prompt: ";
   std::string prompt;
   std::getline(std::cin, prompt);
 

@@ -11,15 +11,14 @@ from typing import final, List
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import torch  # noqa: F401
-from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
-from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
-from executorch.backends.qualcomm.passes.convert_to_linear import ConvertToLinear
-from executorch.backends.qualcomm.passes.fuse_consecutive_transpose import (
+from executorch.backends.qualcomm._passes.fuse_consecutive_transpose import (
     FuseConsecutiveTranspose,
 )
-from executorch.backends.qualcomm.passes.insert_io_qdq import InsertIOQDQ
-from executorch.backends.qualcomm.passes.insert_requantize import InsertRequantize
-from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
+from executorch.backends.qualcomm._passes.insert_io_qdq import InsertIOQDQ
+from executorch.backends.qualcomm._passes.insert_requantize import InsertRequantize
+from executorch.backends.qualcomm._passes.layout_transform import LayoutTransform
+from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
+from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.utils.utils import generate_qnn_executorch_option
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -49,7 +48,6 @@ class QnnBackend(BackendDetails):
         # QNN Delegate Specific Passes
         qnn_compiler_passes = PassManager(
             passes=[
-                ConvertToLinear(),
                 InsertRequantize(edge_program),
                 InsertIOQDQ(edge_program),
                 LayoutTransform(edge_program, insert_permute=True),

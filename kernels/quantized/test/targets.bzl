@@ -25,6 +25,7 @@ def define_common_targets():
         "//executorch/kernels/portable/cpu:op_embedding",
         "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
     ])
+    op_test("op_embedding2b_test", kernel_name = "quantized")
     op_test("op_embedding4b_test", kernel_name = "quantized")
     op_test("op_mixed_mm_test", kernel_name = "quantized", deps = [
         "//executorch/kernels/quantized/cpu:op_mixed_mm",

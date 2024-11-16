@@ -116,11 +116,11 @@ at::Tensor custom_sdpa_aten(
     const int64_t start_pos,
     // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const c10::optional<at::Tensor> attn_mask,
+    const std::optional<at::Tensor> attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const c10::optional<double> scale) {
+    const std::optional<double> scale) {
   auto output = at::empty_like(q);
   WRAP_TO_ATEN(custom_sdpa_out_no_context, 8)
   (q, k, v, start_pos, attn_mask, dropout_p, is_causal, scale, output);

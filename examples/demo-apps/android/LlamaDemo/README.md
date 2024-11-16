@@ -1,5 +1,7 @@
 # ExecuTorch Llama Android Demo App
 
+**[UPDATE - 10/24]** We have added support for running quantized Llama 3.2 1B/3B models in demo apps on the [XNNPACK backend](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/xnnpack_README.md). We currently support inference with SpinQuant and QAT+LoRA quantization methods.
+
 We’re excited to share that the newly revamped Android demo app is live and includes many new updates to provide a more intuitive and smoother user experience with a chat use case! The primary goal of this app is to showcase how easily ExecuTorch can be integrated into an Android demo app and how to exercise the many features ExecuTorch and Llama models have to offer.
 
 This app serves as a valuable resource to inspire your creativity and provide foundational code that you can customize and adapt for your particular use case.
@@ -17,7 +19,8 @@ The goal is for you to see the type of support ExecuTorch provides and feel comf
 
 ## Supporting Models
 As a whole, the models that this app supports are (varies by delegate):
-* Llama 3.2 1B/3B
+* Llama 3.2 Quantized 1B/3B
+* Llama 3.2 1B/3B in BF16
 * Llama Guard 3 1B
 * Llama 3.1 8B
 * Llama 3 8B
@@ -33,6 +36,7 @@ First it’s important to note that currently ExecuTorch provides support across
 | XNNPACK (CPU-based library)  | [link](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/xnnpack_README.md) |
 | QNN (Qualcomm AI Accelerators)  | [link](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/qualcomm_README.md) |
 | MediaTek (MediaTek AI Accelerators)  | [link](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/mediatek_README.md)  |
+
 
 ## How to Use the App
 

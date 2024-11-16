@@ -51,7 +51,7 @@ void add_unary_op_node(
   ubos.append(
       {graph.create_params_buffer(min), graph.create_params_buffer(max)});
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
@@ -129,6 +129,7 @@ DEFINE_ACTIVATION_FN(neg);
 DEFINE_ACTIVATION_FN(sigmoid);
 DEFINE_ACTIVATION_FN(sin);
 DEFINE_ACTIVATION_FN(sqrt);
+DEFINE_ACTIVATION_FN(rsqrt);
 DEFINE_ACTIVATION_FN(tanh);
 DEFINE_CLAMP_FN(clamp);
 DEFINE_CLAMP_FN(hardtanh);
@@ -149,6 +150,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.sigmoid.default, sigmoid);
   VK_REGISTER_OP(aten.sin.default, sin);
   VK_REGISTER_OP(aten.sqrt.default, sqrt);
+  VK_REGISTER_OP(aten.rsqrt.default, rsqrt);
   VK_REGISTER_OP(aten.tanh.default, tanh);
   VK_REGISTER_OP(aten.hardshrink.default, hardshrink);
   VK_REGISTER_OP(aten.hardswish.default, hardswish);
