@@ -95,6 +95,8 @@ class vTensorStorage final {
       const vkapi::ScalarType dtype,
       const bool allocate_memory = true);
 
+  vTensorStorage(Context* const context, const vkapi::VulkanImage& image);
+
  protected:
   /*
    * This allows for creation of tensors that use the same underlying storage
@@ -184,6 +186,11 @@ class vTensor final {
       const bool allocate_memory = true);
 
   vTensor(const vTensor& other) = delete;
+
+  explicit vTensor(
+      Context* context,
+      const vkapi::VulkanImage& image,
+      const utils::GPUMemoryLayout memory_layout = utils::kChannelsPacked);
 
   /*
    * This constructor allows for the creation of a vTensor that references the
@@ -301,7 +308,6 @@ class vTensor final {
   ParamsBuffer sizes_uniform_;
   ParamsBuffer strides_uniform_;
   ParamsBuffer numel_uniform_;
-  ParamsBuffer axis_map_uniform_;
   ParamsBuffer logical_limits_uniform_;
 
   vTensorStorage storage_;
@@ -423,6 +429,29 @@ class vTensor final {
     return axis_map_;
   }
 
+  /*
+   * Returns a single int32_t that contains the values of the axis map and the
+   * packed dimension packed into a single int32_t, such that it can be used as
+   * a specialization constant in a compute shader. This allows for the SPIR-V
+   * to bytecode compilation to perform compile-time unfolding on the axis map.
+   * Each element of the axis map and the value of the packed dimension take up
+   * 4 bits in the packed int32_t.
+   */
+  inline int32_t hashed_layout() const {
+    return axis_map_.at(0) + (axis_map_.at(1) << 4) + (axis_map_.at(2) << 8) +
+        (axis_map_.at(3) << 12) + (packed_dim_ << 16);
+  }
+
+  /*
+   * Return true if the tensor's axis map is {0, 1, 2, concat_dim}. This means
+   * that the width dim is mapped to the width axis of the texture, the height
+   * dim is mapped to the height axis of the texture, the channels dim is mapped
+   * to the depth axis of the texture.
+   */
+  inline bool has_standard_axis_map() const {
+    return axis_map_.at(0) == 0 && axis_map_.at(1) == 1 && axis_map_.at(2) == 2;
+  }
+
   inline const std::vector<int64_t>& strides() const {
     return strides_;
   }
@@ -445,12 +474,6 @@ class vTensor final {
    * have a stride equal to the stride of the "slowest moving" dimension.
    */
   const vkapi::BufferBindInfo strides_ubo();
-
-  /*
-   * Returns a GPU buffer containing the texture axis mapping for each dimension
-   * of the tensor, in WHCN dimension order.
-   */
-  const vkapi::BufferBindInfo axis_map_ubo();
 
   /*
    * Returns a GPU buffer containing the logical limits of the tensor. See the

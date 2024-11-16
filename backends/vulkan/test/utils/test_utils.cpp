@@ -70,7 +70,7 @@ void record_nchw_to_image_op(
     vkapi::VulkanBuffer& src_buffer,
     api::vTensor& v_dst) {
   vkapi::PipelineBarrier pipeline_barrier{};
-  vkapi::SpecVarList specialization_constants = {SV(v_dst.packed_dim())};
+  vkapi::SpecVarList specialization_constants = {v_dst.hashed_layout()};
 
   context->submit_compute_job(
       get_nchw_to_tensor_shader(
@@ -86,8 +86,7 @@ void record_nchw_to_image_op(
           vkapi::PipelineStage::COMPUTE,
           vkapi::MemoryAccessType::WRITE),
       src_buffer,
-      v_dst.sizes_ubo(),
-      v_dst.axis_map_ubo());
+      v_dst.sizes_ubo());
 }
 
 void record_image_to_nchw_op(
@@ -95,7 +94,7 @@ void record_image_to_nchw_op(
     api::vTensor& v_src,
     vkapi::VulkanBuffer& dst_buffer) {
   vkapi::PipelineBarrier pipeline_barrier{};
-  vkapi::SpecVarList specialization_constants = {SV(v_src.packed_dim())};
+  vkapi::SpecVarList specialization_constants = {v_src.hashed_layout()};
 
   context->submit_compute_job(
       get_tensor_to_nchw_shader(v_src),
@@ -107,29 +106,32 @@ void record_image_to_nchw_op(
       0,
       dst_buffer,
       v_src.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
-      v_src.sizes_ubo(),
-      v_src.axis_map_ubo());
+      v_src.sizes_ubo());
 }
 
-void record_int8_image_to_nchw_noint8_op(
+void record_bitw8_image_to_nchw_nobitw8buffer_op(
     api::Context* const context,
     api::vTensor& v_src,
     api::StagingBuffer& dst_buffer) {
   vkapi::PipelineBarrier pipeline_barrier{};
   uint32_t buffer_len = utils::safe_downcast<uint32_t>(dst_buffer.numel() / 4);
   utils::uvec3 global_wg_size = {buffer_len, 1, 1};
+
+  std::string kernel_name = "bitw8_image_to_nchw_nobitw8buffer";
+  add_storage_type_suffix(kernel_name, v_src);
+  add_dtype_suffix(kernel_name, v_src);
+
   context->submit_compute_job(
-      VK_KERNEL(int8_image_to_nchw_noint8),
+      VK_KERNEL_FROM_STR(kernel_name),
       pipeline_barrier,
       global_wg_size,
       adaptive_work_group_size(global_wg_size),
-      {v_src.packed_dim()},
+      {v_src.hashed_layout()},
       VK_NULL_HANDLE,
       0,
       dst_buffer.buffer(),
       v_src.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
       v_src.sizes_ubo(),
-      v_src.axis_map_ubo(),
       v_src.numel_ubo());
 }
 
@@ -332,7 +334,7 @@ void record_matmul_texture3d(
       pipeline_barrier,
       global_wg_size,
       {8, 8, 1},
-      {out.packed_dim(), mat1.packed_dim(), mat2.packed_dim()},
+      {out.hashed_layout(), mat1.hashed_layout(), mat2.hashed_layout()},
       VK_NULL_HANDLE,
       0,
       out.image(
@@ -343,11 +345,8 @@ void record_matmul_texture3d(
       mat2.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
       out.sizes_ubo(),
       out.logical_limits_ubo(),
-      out.axis_map_ubo(),
       mat1.sizes_ubo(),
-      mat1.axis_map_ubo(),
-      mat2.sizes_ubo(),
-      mat2.axis_map_ubo());
+      mat2.sizes_ubo());
 }
 
 //
@@ -358,7 +357,7 @@ void record_matmul_texture3d(
   _(uint8_t, Byte)                \
   _(int8_t, Char)                 \
   _(int32_t, Int)                 \
-  _(exec_aten::Half, Half)        \
+  _(executorch::aten::Half, Half) \
   _(float, Float)                 \
   _(int8_t, QInt8)
 

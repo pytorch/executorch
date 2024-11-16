@@ -98,21 +98,20 @@ If it worked, you should see the message "Model executed successfully" followed
 by the output values.
 
 ```
-I 00:00:00.002052 executorch:executor_runner.cpp:75] Model file add.pte is loaded.
-I 00:00:00.002086 executorch:executor_runner.cpp:85] Running method forward
-I 00:00:00.002092 executorch:executor_runner.cpp:140] Setting up non-const buffer 1, size 48.
-I 00:00:00.002149 executorch:executor_runner.cpp:181] Method loaded.
-I 00:00:00.002154 executorch:util.h:105] input already initialized, refilling.
-I 00:00:00.002157 executorch:util.h:105] input already initialized, refilling.
-I 00:00:00.002159 executorch:executor_runner.cpp:186] Inputs prepared.
-I 00:00:00.011684 executorch:executor_runner.cpp:195] Model executed successfully.
-I 00:00:00.011709 executorch:executor_runner.cpp:210] 8.000000
+I 00:00:00.000526 executorch:executor_runner.cpp:82] Model file add.pte is loaded.
+I 00:00:00.000595 executorch:executor_runner.cpp:91] Using method forward
+I 00:00:00.000612 executorch:executor_runner.cpp:138] Setting up planned buffer 0, size 48.
+I 00:00:00.000669 executorch:executor_runner.cpp:161] Method loaded.
+I 00:00:00.000685 executorch:executor_runner.cpp:171] Inputs prepared.
+I 00:00:00.000764 executorch:executor_runner.cpp:180] Model executed successfully.
+I 00:00:00.000770 executorch:executor_runner.cpp:184] 1 outputs: 
+Output 0: tensor(sizes=[1], [2.])
 ```
 
 
 ## Cross compilation
 
-Follwing are instruction on how to perform cross compilation for Android and iOS.
+Following are instruction on how to perform cross compilation for Android and iOS.
 
 ### Android
 - Prerequisite: [Android NDK](https://developer.android.com/ndk), choose one of the following:

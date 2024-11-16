@@ -94,7 +94,11 @@ def main() -> None:
             else:
                 labels = F.pad(labels, (0, max_seq_len - labels_size), value=0)
 
-            out = et_mod.forward((tokens, labels))
+            # Do not clone outputs, since we want the original weights to be returned
+            # for us to update with the gradients in-place.
+            # See https://github.com/pytorch/executorch/blob/main/extension/pybindings/pybindings.cpp#L736
+            # for more info.
+            out = et_mod.forward((tokens, labels), clone_outputs=False)
 
             loss = out[0]
             losses.append(loss.item())

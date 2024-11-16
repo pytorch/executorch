@@ -209,11 +209,6 @@ def get_qnn_quantizer(
         quantization_mode is None
     ), "Currently qnn backend only supports QnnQuantizer via pt2e flow"
     qnn_quantizer.add_custom_quant_annotations(custom_annotations)
-    qnn_quantizer.add_discard_ops(
-        [
-            torch.ops.aten.embedding.default,
-        ]
-    )
 
     return qnn_quantizer, quant_dtype
 
@@ -264,4 +259,23 @@ def get_coreml_quantizer(pt2e_quantize: str):
     else:
         raise ValueError(f"Unsupported Core ML quantizer specification {pt2e_quantize}")
 
+    return quantizer
+
+
+def get_vulkan_quantizer(pt2e_quantize: str):
+    from executorch.backends.vulkan.quantizer.vulkan_quantizer import (
+        get_weight_quantization_config,
+        VulkanQuantizer,
+    )
+
+    if pt2e_quantize == "vulkan_8w":
+        config = get_weight_quantization_config(
+            is_per_channel=True,
+            weight_qmin=-128,
+            weight_qmax=127,
+        )
+    else:
+        raise ValueError(f"Unsupported Vulkan quantizer specification {pt2e_quantize}")
+
+    quantizer = VulkanQuantizer().set_global(config)
     return quantizer

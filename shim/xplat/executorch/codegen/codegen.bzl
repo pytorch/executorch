@@ -1,4 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_default_executorch_platforms", "is_xplat", "runtime", "struct_to_json")
+load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 load("@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl", "portable_header_list", "portable_source_list")
 
 # Headers that declare the function signatures of the C++ functions that
@@ -261,8 +262,13 @@ def _prepare_custom_ops_genrule_and_lib(
             "headers": [],
             "srcs": custom_ops_sources,
         }
+        my_cmd = ""
+        for rule_substr in genrule_cmd:
+            if my_cmd != "":
+                my_cmd += " "
+            my_cmd += rule_substr
         genrules[genrule_name] = {
-            "cmd": " ".join(genrule_cmd),
+            "cmd": my_cmd,
             "outs": {out: [out] for out in CUSTOM_OPS_NATIVE_FUNCTION_HEADER + custom_ops_sources},
         }
     return genrules, libs
@@ -294,7 +300,7 @@ def exir_custom_ops_aot_lib(
     """
     genrules, libs = _prepare_custom_ops_genrule_and_lib(
         name = name,
-        custom_ops_yaml_path = "$(location {})".format(yaml_target),
+        custom_ops_yaml_path = selects.apply(yaml_target, lambda y: "$(location {})".format(y)),
         kernels = kernels,
         deps = deps,
     )
@@ -495,9 +501,8 @@ def executorch_generated_lib(
     # merge functions.yaml with fallback yaml
     if functions_yaml_target:
         merge_yaml_name = name + "_merge_yaml"
-        cmd = ("$(exe fbsource//xplat/executorch/codegen/tools:merge_yaml) " +
-               "--functions_yaml_path=$(location {}) ".format(functions_yaml_target) +
-               "--output_dir=$OUT ")
+        cmd = selects.apply(functions_yaml_target, lambda value: "$(exe fbsource//xplat/executorch/codegen/tools:merge_yaml) " +
+                                                                 "--functions_yaml_path=$(location {}) --output_dir=$OUT ".format(value))
         if fallback_yaml_target:
             cmd = cmd + "--fallback_yaml_path=$(location {}) ".format(fallback_yaml_target)
         runtime.genrule(
@@ -512,7 +517,7 @@ def executorch_generated_lib(
     else:
         functions_yaml_path = None
     if custom_ops_yaml_target:
-        custom_ops_yaml_path = "$(location {})".format(custom_ops_yaml_target)
+        custom_ops_yaml_path = selects.apply(custom_ops_yaml_target, lambda value: "$(location {})".format(value))
     else:
         custom_ops_yaml_path = None
 
@@ -559,9 +564,14 @@ def executorch_generated_lib(
         genrules[genrule_name]["cmd"].append(
             "--op_selection_yaml_path=$(location :{}[selected_operators.yaml])".format(oplist_dir_name),
         )
+        my_cmd = ""
+        for rule_substr in genrules[genrule_name]["cmd"]:
+            if my_cmd != "":
+                my_cmd += " "
+            my_cmd += rule_substr
         runtime.genrule(
             name = genrule_name,
-            cmd = " ".join(genrules[genrule_name]["cmd"]),
+            cmd = my_cmd,
             outs = {f: [f] for f in genrules[genrule_name]["outs"]},
             default_outs = ["."],
             platforms = platforms,
@@ -620,7 +630,10 @@ def executorch_generated_lib(
             link_whole = True,
             visibility = visibility,
             # Operator Registration is done through static tables
-            compiler_flags = ["-Wno-global-constructors"] + compiler_flags,
+            compiler_flags = select({
+                "DEFAULT": ["-Wno-global-constructors"],
+                "ovr_config//os:windows": [],
+            }) + compiler_flags,
             deps = [
                 "//executorch/runtime/kernel:operator_registry",
                 "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,

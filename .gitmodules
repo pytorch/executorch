@@ -28,9 +28,6 @@
 [submodule "backends/xnnpack/third-party/pthreadpool"]
 	path = backends/xnnpack/third-party/pthreadpool
 	url = https://github.com/Maratyszcza/pthreadpool.git
-[submodule "examples/third-party/fbjni"]
-	path = examples/third-party/fbjni
-	url = https://github.com/facebookincubator/fbjni.git
 [submodule "extension/llm/third-party/abseil-cpp"]
 	path = extension/llm/third-party/abseil-cpp
 	url = https://github.com/abseil/abseil-cpp.git
@@ -67,3 +64,6 @@
 [submodule "third-party/pybind11"]
 	path = third-party/pybind11
 	url = https://github.com/pybind/pybind11.git
+[submodule "third-party/ao"]
+	path = third-party/ao
+	url = https://github.com/pytorch/ao.git

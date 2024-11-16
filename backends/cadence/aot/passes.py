@@ -6,21 +6,74 @@
 
 # pyre-strict
 
-from typing import Any, cast, Dict, Sequence, Tuple
+from typing import Any, cast, Dict, List, Optional, Sequence, Tuple, Type
 
 import torch
+import torch.fx
+import torch.utils._pytree as pytree
+from executorch.backends.cadence.aot.pass_utils import (
+    CadencePassAttribute,
+    create_cadence_pass_filter,
+    register_cadence_pass,
+)
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
+from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, NodeMetadata, PassResult, ProxyValue
+from executorch.exir.pass_manager import PassManager, PassType
 from executorch.exir.passes import dead_code_elimination_pass
+from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from torch._subclasses import FakeTensor
 from torch.utils._pytree import tree_map_only
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class RemoveCloneOpsTransformImported(ExportPass):
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        finalize_passes: List[PassType] = [
+            RemoveCloneOpsTransform(),
+        ]
+        result = PassManager(passes=finalize_passes)(graph_module)
+        dead_code_elimination_pass(result.graph_module)
+        return result
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class InitializePipeline(ExportPass):
+    """
+    Initialize the Jarvis pipeline. This should invariably be the first pass to
+    run.
+    """
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        dead_code_elimination_pass(graph_module)
+        result = SpecPropPass()(graph_module)
+        assert result is not None
+        return result
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class FinalizePipeline(ExportPass):
+    """
+    The final cleanup pass after running the Jarvis pipeline.
+    """
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        finalize_passes: List[PassType] = [
+            ScalarToTensorPass(),
+            SpecPropPass(),
+        ]
+        result = PassManager(passes=finalize_passes)(graph_module)
+        dead_code_elimination_pass(result.graph_module)
+        return result
+
 
 # Similar to what's done in executorch/exir/pass_base.py
 Argument = Any  # pyre-ignore
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplacePT2QuantWithCadenceQuantPass(ExportPass):
     """
     Replace the pt2 quantization ops with custom cadence quantization ops.
@@ -44,6 +97,7 @@ class ReplacePT2QuantWithCadenceQuantPass(ExportPass):
         )
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplacePT2DequantWithCadenceDequantPass(ExportPass):
     """
     Replace the pt2 dequantization ops with custom cadence dequantization ops.
@@ -67,6 +121,7 @@ class ReplacePT2DequantWithCadenceDequantPass(ExportPass):
         )
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceScalarTensorWithFullPass(ExportPass):
     """
     aten.scalar_tensor can be replaced by aten.full with a shape of [1].
@@ -96,6 +151,7 @@ class ReplaceScalarTensorWithFullPass(ExportPass):
         )
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceSqueezeAndUnsqueezeWithViewPass(ExportPass):
     """
     When the shape is static, replace squeeze_copy and unsqueeze_copy ops with
@@ -131,7 +187,8 @@ class ReplaceSqueezeAndUnsqueezeWithViewPass(ExportPass):
         )
 
 
-class RemoveZeroSizedCatArgsPass(ExportPass):
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class RemoveZeroSizedCatArgsPass(ExportPass):  # is this the latest?
     def call_operator(
         self,
         op,  # pyre-ignore
@@ -176,6 +233,7 @@ class RemoveZeroSizedCatArgsPass(ExportPass):
         return super().call_operator(op, args, kwargs, meta)
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveNopExpandOpPass(ExportPass):
     """
     For an expand op, if the operator shape matches the expand shape, then the
@@ -205,6 +263,7 @@ class RemoveNopExpandOpPass(ExportPass):
         return super().call_operator(op, args, kwargs, meta)
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceLogicalNotBooleanWhereWithWherePass(ExportPass):
     """
     A where op with a logical_not and a boolean tensor can be replaced
@@ -255,20 +314,8 @@ class ReplaceLogicalNotBooleanWhereWithWherePass(ExportPass):
         return result
 
 
-class InitializePipeline(ExportPass):
-    """
-    Initialize the Jarvis pipeline. This should invariably be the first pass to
-    run.
-    """
-
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        dead_code_elimination_pass(graph_module)
-        result = SpecPropPass()(graph_module)
-        assert result is not None
-        return result
-
-
-class ReplaceSafeSoftmaxWithSoftmax(ExportPass):
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class ReplaceSafeSoftmaxWithSoftmax(ExportPass):  # keep
     """
     Replace _safe_softmax with _softmax
     """
@@ -292,3 +339,33 @@ class ReplaceSafeSoftmaxWithSoftmax(ExportPass):
             kwargs,
             meta,
         )
+
+
+def get_passes_in_default_order() -> List[Type[PassType]]:
+    passes = [
+        InitializePipeline,
+        RemoveZeroSizedCatArgsPass,
+        ReplaceLogicalNotBooleanWhereWithWherePass,
+        ReplaceScalarTensorWithFullPass,
+        RemoveCloneOpsTransformImported,
+        RemoveNopExpandOpPass,
+        ReplaceSqueezeAndUnsqueezeWithViewPass,
+        ReplacePT2QuantWithCadenceQuantPass,
+        ReplacePT2DequantWithCadenceDequantPass,
+        # TODO: add the rest of the passes here.
+    ]
+    return pytree.tree_flatten(passes)[0]
+
+
+def get_cadence_passes(
+    opt_level: int,
+) -> List[Optional[PassResult]]:
+    passes = get_passes_in_default_order()
+    pass_filter = create_cadence_pass_filter(opt_level)
+    filtered_passes = [
+        # pyre-fixme[20]: Call `torch.fx.passes.infra.pass_base.PassBase.__call__` expects argument `graph_module`.
+        filtered_pass()
+        # pyre-fixme[6]: In call `filter.__new__` ... got `List[Type[typing.Callable[[GraphModule], Optional[PassResult]]]]`.
+        for filtered_pass in list(filter(pass_filter, passes))
+    ]
+    return filtered_passes

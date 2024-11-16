@@ -8,8 +8,6 @@
 
 #include <executorch/backends/vulkan/runtime/api/Context.h>
 
-#include <executorch/backends/vulkan/runtime/vk_api/VkUtils.h>
-
 #ifndef VULKAN_DESCRIPTOR_POOL_SIZE
 #define VULKAN_DESCRIPTOR_POOL_SIZE 1024u
 #endif
@@ -143,6 +141,14 @@ void Context::register_shader_dispatch(
   cmd_.insert_barrier(pipeline_barrier);
 
   cmd_.dispatch(effective_global_wg);
+}
+
+void Context::register_blit(
+    vkapi::PipelineBarrier& pipeline_barrier,
+    vkapi::VulkanImage& src,
+    vkapi::VulkanImage& dst) {
+  cmd_.insert_barrier(pipeline_barrier);
+  cmd_.blit(src, dst);
 }
 
 void Context::submit_cmd_to_gpu(VkFence fence_handle, const bool final_use) {

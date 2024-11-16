@@ -11,7 +11,6 @@ package org.pytorch.executorch;
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
-import java.util.Map;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**
@@ -29,11 +28,10 @@ class NativePeer {
   private final HybridData mHybridData;
 
   @DoNotStrip
-  private static native HybridData initHybrid(
-      String moduleAbsolutePath, Map<String, String> extraFiles, int loadMode);
+  private static native HybridData initHybrid(String moduleAbsolutePath, int loadMode);
 
-  NativePeer(String moduleAbsolutePath, Map<String, String> extraFiles, int loadMode) {
-    mHybridData = initHybrid(moduleAbsolutePath, extraFiles, loadMode);
+  NativePeer(String moduleAbsolutePath, int loadMode) {
+    mHybridData = initHybrid(moduleAbsolutePath, loadMode);
   }
 
   /** Clean up the native resources associated with this instance */
@@ -56,4 +54,8 @@ class NativePeer {
    */
   @DoNotStrip
   public native int loadMethod(String methodName);
+
+  /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
+  @DoNotStrip
+  public native String[] readLogBuffer();
 }

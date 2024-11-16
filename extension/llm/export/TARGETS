@@ -31,6 +31,7 @@ runtime.python_library(
         "//executorch/backends/qualcomm/quantizer:quantizer",
         "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
         "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/vulkan/quantizer:vulkan_quantizer",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/exir:lib",
         "//executorch/exir/backend:backend_details",

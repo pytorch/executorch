@@ -89,6 +89,10 @@ table ValueList {
   items:[int];
 }
 
+table SymInt {
+  value:int;
+}
+
 union GraphTypes {
   Null,
   Int,
@@ -100,6 +104,7 @@ union GraphTypes {
   BoolList,
   ValueList,
   String,
+  SymInt,
 }
 
 table VkValue {

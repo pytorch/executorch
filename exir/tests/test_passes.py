@@ -33,7 +33,10 @@ from executorch.exir.passes import (
     ToOutVarPass,
 )
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
-from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGeneratorPass
+from executorch.exir.passes.debug_handle_generator_pass import (
+    DebugHandleGeneratorPass,
+    generate_missing_debug_handles,
+)
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
@@ -949,12 +952,27 @@ class TestPasses(unittest.TestCase):
             .exported_program()
             .graph_module
         )
-        DebugHandleGeneratorPass()(graph_module)
         for node in graph_module.graph.nodes:
             self.assertIn("debug_handle", node.meta)
         ScalarToTensorPass()(graph_module)
         for node in graph_module.graph.nodes:
             self.assertIn("debug_handle", node.meta)
+
+    def test_generate_missing_debug_handles(self) -> None:
+        eager_model = MLP(2, output_size=4)
+        inputs = eager_model.get_random_inputs()
+
+        ep = to_edge(
+            export(
+                eager_model,
+                inputs,
+            )
+        ).exported_program()
+
+        list(ep.graph.nodes)[0].meta.pop("debug_handle")
+        self.assertTrue(list(ep.graph.nodes)[0].meta.get("debug_handle") is None)
+        generate_missing_debug_handles(ep)
+        self.assertTrue(list(ep.graph.nodes)[0].meta.get("debug_handle") is not None)
 
     def test_debug_handle_generator_pass_with_control_flow(self) -> None:
         def true_nested(y: torch.Tensor) -> torch.Tensor:
@@ -1000,16 +1018,13 @@ class TestPasses(unittest.TestCase):
             torch.ones(2, 2),
         )
 
-        graph_module = (
-            to_edge(
-                export(
-                    f,
-                    inputs,
-                )
+        ep = to_edge(
+            export(
+                f,
+                inputs,
             )
-            .exported_program()
-            .graph_module
-        )
+        ).exported_program()
+        graph_module = ep.graph_module
 
         def check_debug_handle_metadata(graph_module: torch.fx.GraphModule) -> None:
             queue = [graph_module]
@@ -1027,6 +1042,7 @@ class TestPasses(unittest.TestCase):
 
         DebugHandleGeneratorPass()(graph_module)
         check_debug_handle_metadata(graph_module)
+        generate_missing_debug_handles(ep)
 
         # Check debug handle still preserved after ScalarToTensorPass
         ScalarToTensorPass()(graph_module)
@@ -1413,10 +1429,10 @@ class TestPasses(unittest.TestCase):
             m_eager: torch.nn.Module, example_inputs: Tuple[torch.Tensor]
         ) -> Tuple[EdgeProgramManager, int, int]:
             # program capture
-            m = torch._export.capture_pre_autograd_graph(
+            m = torch.export.export_for_training(
                 m_eager,
                 example_inputs,
-            )
+            ).module()
 
             quantizer = XNNPACKQuantizer()
             quantization_config = get_symmetric_quantization_config()
@@ -1719,7 +1735,7 @@ class TestPasses(unittest.TestCase):
         ep = export(
             m,
             (input,),
-        )
+        ).run_decompositions({})
         _do_checks(
             ep.graph_module.code,
             aten_op_str,

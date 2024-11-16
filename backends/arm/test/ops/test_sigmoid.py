@@ -71,7 +71,7 @@ class TestSigmoid(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
             )
             .export()
             .check(["torch.ops.aten.sigmoid.default"])
@@ -89,7 +89,7 @@ class TestSigmoid(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
             )
             .quantize()
             .export()
@@ -152,11 +152,22 @@ class TestSigmoid(unittest.TestCase):
     def test_sigmoid_tosa_BI(self, test_name: str, test_data: torch.Tensor):
         self._test_sigmoid_tosa_BI_pipeline(self.Sigmoid(), (test_data,))
 
+    def test_add_sigmoid_tosa_MI(self):
+        self._test_sigmoid_tosa_MI_pipeline(self.AddSigmoid(), (test_data_suite[0][1],))
+
     def test_add_sigmoid_tosa_BI(self):
-        self._test_sigmoid_tosa_BI_pipeline(self.AddSigmoid(), (test_data_suite[0][1],))
+        self._test_sigmoid_tosa_BI_pipeline(self.AddSigmoid(), (test_data_suite[5][1],))
+
+    def test_sigmoid_add_tosa_MI(self):
+        self._test_sigmoid_tosa_MI_pipeline(self.SigmoidAdd(), (test_data_suite[0][1],))
 
     def test_sigmoid_add_tosa_BI(self):
         self._test_sigmoid_tosa_BI_pipeline(self.SigmoidAdd(), (test_data_suite[0][1],))
+
+    def test_sigmoid_add_sigmoid_tosa_MI(self):
+        self._test_sigmoid_tosa_MI_pipeline(
+            self.SigmoidAddSigmoid(), (test_data_suite[4][1], test_data_suite[3][1])
+        )
 
     def test_sigmoid_add_sigmoid_tosa_BI(self):
         self._test_sigmoid_tosa_BI_pipeline(

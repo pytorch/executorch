@@ -5,7 +5,6 @@ oncall("executorch")
 runtime.python_library(
     name = "vulkan_partitioner",
     srcs = [
-        "supported_ops.py",
         "vulkan_partitioner.py",
     ],
     visibility = [
@@ -13,6 +12,8 @@ runtime.python_library(
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
+        "//executorch/backends/vulkan:op_registry",
+        "//executorch/backends/vulkan:utils_lib",
         "//executorch/backends/vulkan:vulkan_preprocess",
         "//executorch/exir:delegate",
         "//executorch/exir:lib",

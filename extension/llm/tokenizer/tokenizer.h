@@ -9,20 +9,19 @@
 #pragma once
 
 #include <cinttypes>
-// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <string>
-// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <vector>
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
+#include <executorch/runtime/platform/compiler.h>
 
 namespace executorch {
 namespace extension {
 namespace llm {
 
 // A tokenizer interface.
-class Tokenizer {
+class ET_EXPERIMENTAL Tokenizer {
  public:
   explicit Tokenizer() {}
   virtual ~Tokenizer() {}

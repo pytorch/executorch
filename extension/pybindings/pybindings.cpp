@@ -168,13 +168,15 @@ class Module final {
   explicit Module(
       std::unique_ptr<DataLoader> loader,
       std::unique_ptr<ETDumpGen> tracer = nullptr,
-      size_t debug_buffer_size = 0)
+      size_t debug_buffer_size = 0,
+      Program::Verification program_verification =
+          Program::Verification::InternalConsistency)
       : loader_(std::move(loader)),
         event_tracer_(std::move(tracer)),
         debug_buffer_size_(debug_buffer_size) {
     ::executorch::runtime::runtime_init();
-    Result<Program> program = Program::load(
-        loader_.get(), Program::Verification::InternalConsistency);
+    Result<Program> program =
+        Program::load(loader_.get(), program_verification);
     THROW_IF_ERROR(
         program.error(),
         "loading program failed with error: 0x%" PRIx32,
@@ -309,6 +311,15 @@ class Module final {
     return *methods_[method_name].get();
   }
 
+  /// Returns the names of all methods in the program.
+  std::vector<std::string> method_names() const {
+    std::vector<std::string> names;
+    for (const auto& method : methods_) {
+      names.push_back(method.first);
+    }
+    return names;
+  }
+
   bool has_etdump() {
     return static_cast<bool>(event_tracer_);
   }
@@ -388,19 +399,22 @@ inline std::unique_ptr<Module> load_module_from_buffer(
     const void* ptr,
     size_t ptr_len,
     bool enable_etdump,
-    size_t debug_buffer_size) {
+    size_t debug_buffer_size,
+    Program::Verification program_verification) {
   EXECUTORCH_SCOPE_PROF("load_module_from_buffer");
   auto loader = std::make_unique<BufferDataLoader>(ptr, ptr_len);
   return std::make_unique<Module>(
       std::move(loader),
       enable_etdump ? std::make_unique<torch::executor::ETDumpGen>() : nullptr,
-      debug_buffer_size);
+      debug_buffer_size,
+      program_verification);
 }
 
 inline std::unique_ptr<Module> load_module_from_file(
     const std::string& path,
     bool enable_etdump,
-    size_t debug_buffer_size) {
+    size_t debug_buffer_size,
+    Program::Verification program_verification) {
   EXECUTORCH_SCOPE_PROF("load_module_from_file");
 
   Result<MmapDataLoader> res = MmapDataLoader::from(
@@ -415,7 +429,8 @@ inline std::unique_ptr<Module> load_module_from_file(
   return std::make_unique<Module>(
       std::move(loader),
       enable_etdump ? std::make_unique<torch::executor::ETDumpGen>() : nullptr,
-      debug_buffer_size);
+      debug_buffer_size,
+      program_verification);
 }
 
 static constexpr size_t kDEFAULT_BUNDLED_INPUT_POOL_SIZE = 16 * 1024U;
@@ -578,30 +593,41 @@ struct PyModule final {
   explicit PyModule(
       const py::bytes& buffer,
       bool enable_etdump,
-      size_t debug_buffer_size = 0)
+      size_t debug_buffer_size = 0,
+      Program::Verification program_verification =
+          Program::Verification::InternalConsistency)
       : module_(load_module_from_buffer(
             buffer.cast<std::string_view>().data(),
             py::len(buffer),
             enable_etdump,
-            debug_buffer_size)) {}
+            debug_buffer_size,
+            program_verification)) {}
 
   explicit PyModule(
       const void* ptr,
       size_t ptr_len,
       bool enable_etdump,
-      size_t debug_buffer_size = 0)
+      size_t debug_buffer_size = 0,
+      Program::Verification program_verification =
+          Program::Verification::InternalConsistency)
       : module_(load_module_from_buffer(
             ptr,
             ptr_len,
             enable_etdump,
-            debug_buffer_size)) {}
+            debug_buffer_size,
+            program_verification)) {}
 
   explicit PyModule(
       const std::string& path,
       bool enable_etdump,
-      size_t debug_buffer_size = 0)
-      : module_(load_module_from_file(path, enable_etdump, debug_buffer_size)) {
-  }
+      size_t debug_buffer_size = 0,
+      Program::Verification program_verification =
+          Program::Verification::InternalConsistency)
+      : module_(load_module_from_file(
+            path,
+            enable_etdump,
+            debug_buffer_size,
+            program_verification)) {}
 
   PyModule(const PyModule&) = delete;
   PyModule& operator=(const PyModule&) = delete;
@@ -612,14 +638,20 @@ struct PyModule final {
   static std::unique_ptr<PyModule> load_from_buffer(
       const py::bytes& buffer,
       bool enable_etdump,
-      size_t debug_buffer_size = 0) {
-    return std::make_unique<PyModule>(buffer, enable_etdump, debug_buffer_size);
+      size_t debug_buffer_size = 0,
+      Program::Verification program_verification =
+          Program::Verification::InternalConsistency) {
+    return std::make_unique<PyModule>(
+        buffer, enable_etdump, debug_buffer_size, program_verification);
   }
   static std::unique_ptr<PyModule> load_from_file(
       const std::string& path,
       bool enable_etdump,
-      size_t debug_buffer_size = 0) {
-    return std::make_unique<PyModule>(path, enable_etdump, debug_buffer_size);
+      size_t debug_buffer_size = 0,
+      Program::Verification program_verification =
+          Program::Verification::InternalConsistency) {
+    return std::make_unique<PyModule>(
+        path, enable_etdump, debug_buffer_size, program_verification);
   }
 
   static std::unique_ptr<PyModule> load_from_bundled_program(
@@ -713,8 +745,7 @@ struct PyModule final {
       } else if (py::isinstance<py::int_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
       } else {
-        // Unsupported pytype
-        ET_ASSERT_UNREACHABLE_MSG(type_str.c_str());
+        ET_ASSERT_UNREACHABLE_MSG("Unsupported pytype: %s", type_str.c_str());
       }
     }
 
@@ -882,6 +913,10 @@ struct PyModule final {
     return std::make_unique<PyMethodMeta>(module_, method.method_meta());
   }
 
+  std::vector<std::string> method_names() {
+    return module_->method_names();
+  }
+
  private:
   std::shared_ptr<Module> module_;
   // Need to keep-alive output storages until they can be compared in case of
@@ -944,12 +979,20 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   // Redirects cout and cerr for function calls this guards to the python env.
   auto call_guard = py::
       call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>();
+
+  // Bind the verification enum to python.
+  py::enum_<Program::Verification>(m, "Verification")
+      .value("Minimal", Program::Verification::Minimal)
+      .value("InternalConsistency", Program::Verification::InternalConsistency);
+
   m.def(
       "_load_for_executorch",
       PyModule::load_from_file,
       py::arg("path"),
       py::arg("enable_etdump") = false,
       py::arg("debug_buffer_size") = 0,
+      py::arg("program_verification") =
+          Program::Verification::InternalConsistency,
       call_guard);
   m.def(
       "_load_for_executorch_from_buffer",
@@ -957,6 +1000,8 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       py::arg("buffer"),
       py::arg("enable_etdump") = false,
       py::arg("debug_buffer_size") = 0,
+      py::arg("program_verification") =
+          Program::Verification::InternalConsistency,
       call_guard);
   m.def(
       "_load_for_executorch_from_bundled_program",
@@ -1010,6 +1055,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           &PyModule::method_meta,
           py::arg("method_name"),
           call_guard)
+      .def("method_names", &PyModule::method_names, call_guard)
       .def(
           "run_method",
           &PyModule::run_method,

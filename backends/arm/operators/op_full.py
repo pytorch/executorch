@@ -14,7 +14,10 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import get_quant_node_args
+from executorch.backends.arm.tosa_quant_utils import (
+    get_quant_arg_downstream,
+    quantize_value,
+)
 from executorch.backends.arm.tosa_utils import tosa_shape
 from torch.fx import Node
 
@@ -39,10 +42,8 @@ class FullVisitor(NodeVisitor):
 
         value = inputs[1].number
         if is_quant_node:
-            qargs = get_quant_node_args(list(node.users)[0])
-            qvalue = np.clip(
-                np.round(value / qargs.scale) + qargs.zp, qargs.qmin, qargs.qmax
-            )
+            qargs = get_quant_arg_downstream(list(node.users)[0])
+            qvalue = quantize_value(value, qargs)
             dtype = ts.DType.INT8
             data = np.full(shape, qvalue, dtype=np.int8)
         else:
@@ -52,5 +53,7 @@ class FullVisitor(NodeVisitor):
             dtype = ts.DType.FP32
             data = np.full(shape, value, dtype=np.float32)
 
-        tosa_graph.addConst(shape, dtype, data, "full-const")
-        tosa_graph.addOperator(ts.TosaOp.Op.IDENTITY, ["full-const"], [output.name])
+        tosa_graph.addConst(shape, dtype, data, node.name + "full-const")
+        tosa_graph.addOperator(
+            ts.TosaOp.Op.IDENTITY, [node.name + "full-const"], [output.name]
+        )

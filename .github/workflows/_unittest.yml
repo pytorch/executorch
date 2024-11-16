@@ -37,6 +37,9 @@ jobs:
         CMAKE_ARGS="-DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
         .ci/scripts/setup-linux.sh cmake
 
+        # Install llama3_2_vision dependencies.
+        PYTHON_EXECUTABLE=python ./examples/models/llama3_2_vision/install_requirements.sh
+
         # Run pytest with coverage
         pytest -n auto --cov=./ --cov-report=xml
         # Run gtest
@@ -66,6 +69,10 @@ jobs:
         CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
         ${CONDA_RUN} --no-capture-output \
         .ci/scripts/setup-macos.sh cmake
+
+        # Install llama3_2_vision dependencies.
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+        ./examples/models/llama3_2_vision/install_requirements.sh
 
         # Run pytest with coverage
         ${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml

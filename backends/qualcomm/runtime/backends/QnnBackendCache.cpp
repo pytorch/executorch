@@ -7,9 +7,12 @@
  */
 #include <executorch/backends/qualcomm/aot/ir/qcir_utils.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCache.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
+
 Error QnnBackendCache::GetQnnGraphInfoFromBinary() {
   const QnnSystemInterface& qnn_sys_interface =
       qnn_sys_impl_.GetQnnSystemInterface();
@@ -28,10 +31,17 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary() {
 
   if (error != QNN_SUCCESS) {
     QNN_EXECUTORCH_LOG_WARN(
-        "Failed to interpret QNN Context "
+        "Failed to interpret QNN context "
         "binary. Error code %d. "
         "Try verifying binary with online-prepare format.",
         QNN_GET_ERROR_CODE(error));
+    return Error::Internal;
+  }
+
+  Error status = RetrieveBackendBinaryInfo(binaryinfo);
+  if (status == Error::Internal) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Failed to retrieve backend binary info from QNN context binary.");
     return Error::Internal;
   }
 
@@ -81,20 +91,18 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary() {
   return Error::Ok;
 }
 
-QnnBackendCache::QnnBackendCache(
-    const QnnExecuTorchContextBinary& qnn_context_blob)
-    : qnn_context_blob_(qnn_context_blob) {
+Error QnnBackendCache::Configure() {
   if (qnn_context_blob_.buffer == nullptr) {
     state_ = SERIALIZE;
     QNN_EXECUTORCH_LOG_INFO("Caching: Caching is in SAVE MODE.");
-    return;
+    return Error::Ok;
   }
 
   if (qnn_sys_impl_.Load() != Error::Ok) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Failed to Load QnnSystem "
         "APIs. Caching mechanism is being disabled.");
-    return;
+    return Error::Internal;
   }
 
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
@@ -109,7 +117,7 @@ QnnBackendCache::QnnBackendCache(
         "Failed to create Qnn "
         "SystemContext. Caching mechanism will be disabled. Error code %d",
         QNN_GET_ERROR_CODE(error));
-    return;
+    return Error::Internal;
   }
 
   // DO DESERIALIZE
@@ -125,7 +133,7 @@ QnnBackendCache::QnnBackendCache(
 
     if (qcir::VerifyGraphBuffer(verifier)) {
       state_ = ONLINE_PREPARE;
-      return;
+      return Error::Ok;
     }
 
     QNN_EXECUTORCH_LOG_ERROR(
@@ -133,8 +141,8 @@ QnnBackendCache::QnnBackendCache(
         "might be broken. Please consider to re-generate the "
         "cache.");
     InvalidateCache();
-    return;
   }
+  return Error::Ok;
 }
 
 QnnBackendCache::~QnnBackendCache() {
@@ -165,5 +173,5 @@ std::vector<Qnn_Tensor_t> QnnBackendCache::GetGraphOutputs() {
   return output_tensor_structs_;
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

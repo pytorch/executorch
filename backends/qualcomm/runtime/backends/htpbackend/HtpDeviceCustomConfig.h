@@ -13,8 +13,8 @@
 #include <vector>
 
 #include "HTP/QnnHtpDevice.h"
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 using namespace qnn_delegate;
 class HtpDeviceCustomConfig {
@@ -37,5 +37,5 @@ class HtpDeviceCustomConfig {
   std::vector<std::unique_ptr<QnnHtpDevice_CustomConfig_t>> htp_device_config_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

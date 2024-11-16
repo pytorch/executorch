@@ -60,6 +60,10 @@ void test_dtype() {
 TEST(OpDequantizeOutTest, AllDtypesSupported) {
   et_pal_init();
   test_dtype<ScalarType::Byte>();
+  test_dtype<ScalarType::Char>();
+  test_dtype<ScalarType::Short>();
+  test_dtype<ScalarType::Bits16>();
+  test_dtype<ScalarType::Int>();
 }
 
 TEST(OpDequantizeOutTest, NonWholeNumbers) {

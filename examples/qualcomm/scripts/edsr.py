@@ -7,7 +7,6 @@
 import json
 import os
 import re
-import sys
 from multiprocessing.connection import Client
 
 import numpy as np
@@ -108,7 +107,7 @@ def main(args):
     )
 
     inputs, targets, input_list = dataset.lr, dataset.hr, dataset.get_input_list()
-    pte_filename = "edsr_qnn"
+    pte_filename = "edsr_qnn_q8"
     instance = EdsrModel()
 
     build_executorch_binary(
@@ -124,7 +123,7 @@ def main(args):
     )
 
     if args.compile_only:
-        sys.exit(0)
+        return
 
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),

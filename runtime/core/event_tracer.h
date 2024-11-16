@@ -68,6 +68,18 @@ enum class EventTracerDebugLogLevel {
 };
 
 /**
+ * Indicates the level of profiling that should be enabled. Profiling
+ * events will be logged in increasing order of verbosity as we go down the
+ * enum list. Thus it is important to keep the enum values in the right order.
+ */
+enum class EventTracerProfilingLevel {
+  /// No operator profiling.
+  kProfileMethodOnly,
+  /// All profiling events enabled.
+  kProfileAllEvents,
+};
+
+/**
  * This is the struct which should be returned when a profiling event is
  * started. This is used to uniquely identify that profiling event and will be
  * required to be passed into the end_profiling call to signal that the event
@@ -275,7 +287,7 @@ class EventTracer {
   virtual void log_intermediate_output_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
-      const exec_aten::Tensor& output) = 0;
+      const executorch::aten::Tensor& output) = 0;
 
   /**
    * Log an intermediate tensor array output from a delegate.
@@ -295,7 +307,7 @@ class EventTracer {
   virtual void log_intermediate_output_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
-      const ArrayRef<exec_aten::Tensor> output) = 0;
+      const ArrayRef<executorch::aten::Tensor> output) = 0;
 
   /**
    * Log an intermediate int output from a delegate.
@@ -424,6 +436,21 @@ class EventTracer {
   }
 
   /**
+   * Set the level of event tracer profiling that is desired.
+   */
+  void set_event_tracer_profiling_level(
+      EventTracerProfilingLevel profiling_level) {
+    event_tracer_profiling_level_ = profiling_level;
+  }
+
+  /**
+   * Return the current level of event tracer profiling.
+   */
+  EventTracerProfilingLevel event_tracer_profiling_level() {
+    return event_tracer_profiling_level_;
+  }
+
+  /**
    * Return the current status of intermediate outputs logging mode.
    */
   bool intermediate_outputs_logging_status() {
@@ -458,6 +485,8 @@ class EventTracer {
   int bundled_input_index_ = kUnsetBundledInputIndex;
   EventTracerDebugLogLevel event_tracer_debug_level_ =
       EventTracerDebugLogLevel::kNoLogging;
+  EventTracerProfilingLevel event_tracer_profiling_level_ =
+      EventTracerProfilingLevel::kProfileAllEvents;
 };
 
 } // namespace runtime
