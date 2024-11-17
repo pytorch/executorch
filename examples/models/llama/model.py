@@ -206,13 +206,18 @@ the checkpoint format to avoid generating faulty models.
 
             attention_sink_params = self.args.use_attention_sink.split(",")
             assert len(attention_sink_params) == 3
+            sink_size = int(attention_sink_params[0])
+            window_size = int(attention_sink_params[1])
+            eviction_batch_size = int(attention_sink_params[2])
+
+            assert self.args.max_seq_length == sink_size + window_size
 
             self.model_ = enable_attention_sink(
                 module=self.model_,
                 params=model_args,
-                sink_size=int(attention_sink_params[0]),
-                window_size=int(attention_sink_params[1]),
-                eviction_batch_size=int(attention_sink_params[2]),
+                sink_size=sink_size,
+                window_size=window_size,
+                eviction_batch_size=eviction_batch_size,
             )
 
         # assign=True: load params/buffers by assignment instead of performing an in-place copy.

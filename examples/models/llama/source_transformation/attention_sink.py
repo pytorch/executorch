@@ -219,42 +219,41 @@ def _replace_rope(
     _replace_with_custom_fn_if_matches_filter(module, replacement_fn, filter_fn)
 
 
-def _replace_kv_cache(
+def _replace_attention(
     module: torch.nn.Module,
     rope_with_attention_sink: RopeWithAttentionSink,
     sink_size: int,
     window_size: int,
     eviction_batch_size: int,
 ):
-    def filter_fn(child: torch.nn.Module, cur_fqn: str) -> bool:
-        return isinstance(child, KVCache)
-
-    def replacement_fn(child: torch.nn.Module) -> torch.nn.Module:
-        kv_cache_with_attention_sink = KVCacheWithAttentionSink(
-            n_heads=child.n_heads,
-            head_dim=child.head_dim,
-            transpose_cache=child.transpose_cache,
-            enable_dynamic_shape=child.enable_dynamic_shape,
-            rope=rope_with_attention_sink,
-            max_batch_size=child.max_batch_size,
-            window_size=window_size,
-            sink_size=sink_size,
-            eviction_batch_size=eviction_batch_size,
-            dtype=child.k_cache.dtype,
-        )
-        return kv_cache_with_attention_sink
-
-    _replace_with_custom_fn_if_matches_filter(module, replacement_fn, filter_fn)
-
-
-def _replace_attention_forward(module: torch.nn.Module):
-    for name, child_module in module._modules.items():
+    for _, child_module in module._modules.items():
         if len(list(child_module.children())) > 0:  # pyre-ignore [16]
-            _replace_attention_forward(child_module)  # pyre-ignore [6]
+            _replace_attention(
+                module=child_module,
+                rope_with_attention_sink=rope_with_attention_sink,
+                sink_size=sink_size,
+                window_size=window_size,
+                eviction_batch_size=eviction_batch_size,
+            )
 
         if isinstance(child_module, Attention):
-            module._modules[name].forward = types.MethodType(  # pyre-ignore
-                attention_sink_forward, module._modules[name]
+            kv_cache = child_module.kv_cache
+            kv_cache_with_attention_sink = KVCacheWithAttentionSink(
+                n_heads=kv_cache.n_heads,
+                head_dim=kv_cache.head_dim,
+                transpose_cache=kv_cache.transpose_cache,
+                enable_dynamic_shape=kv_cache.enable_dynamic_shape,
+                rope=rope_with_attention_sink,
+                max_batch_size=kv_cache.max_batch_size,
+                window_size=window_size,
+                sink_size=sink_size,
+                eviction_batch_size=eviction_batch_size,
+                dtype=kv_cache.k_cache.dtype,
+            )
+            child_module.kv_cache = kv_cache_with_attention_sink
+            child_module.SDPA.kv_cache = kv_cache_with_attention_sink
+            child_module.forward = types.MethodType(  # pyre-ignore
+                attention_sink_forward, child_module
             )
 
 
@@ -269,13 +268,15 @@ def enable_attention_sink(
     Transform the model to be able to run inference with Attention Sink.
     There mainly three steps:
     - Replace Rope with RopeWithAttentionSink
-    - Replace KVCache with KVCacheWithAttentionSink
-    - Replace Attention's forward with attention_sink_forward
+    - Replace Attention's KVCache with KVCacheWithAttentionSink, forward with attention_sink_forward
     """
     rope_with_attention_sink = RopeWithAttentionSink(params=params)
     _replace_rope(module, rope_with_attention_sink)
-    _replace_kv_cache(
-        module, rope_with_attention_sink, sink_size, window_size, eviction_batch_size
+    _replace_attention(
+        module=module,
+        rope_with_attention_sink=rope_with_attention_sink,
+        sink_size=sink_size,
+        window_size=window_size,
+        eviction_batch_size=eviction_batch_size,
     )
-    _replace_attention_forward(module)
     return module
