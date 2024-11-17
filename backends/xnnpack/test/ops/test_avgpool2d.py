@@ -7,6 +7,8 @@
 import unittest
 
 import torch
+
+from executorch.backends.xnnpack.test import tester
 from executorch.backends.xnnpack.test.tester import Tester
 
 
@@ -29,17 +31,22 @@ class TestAvgPool2d(unittest.TestCase):
             return self.avgPool(x)
 
     def _test_argpool2d(self, inputs):
-        (
-            Tester(self.AvgPool2d(), inputs)
-            .export()
-            .check_count({"torch.ops.aten.avg_pool2d.default": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(self.AvgPool2d(), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.avg_pool2d.default": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
+                ["executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"]
+            )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_fp16_avgpool2d(self):
         inputs = (torch.randn(1, 1, 10, 10).to(torch.float16),)
@@ -54,36 +61,45 @@ class TestAvgPool2d(unittest.TestCase):
         The XNNPACK backend does not support ceil mode.
         """
         inputs = (torch.randn(1, 1, 10, 10),)
-        (
-            Tester(self.AvgPool2d(ceil_mode=True), inputs)
-            .export()
-            .check_count({"torch.ops.aten.avg_pool2d.default": 1})
-            .to_edge_transform_and_lower()
-            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
-        )
+        for legacy in (True, False):
+            tester = Tester(self.AvgPool2d(ceil_mode=True), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.avg_pool2d.default": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_not(["torch.ops.higher_order.executorch_call_delegate"])
 
     def test_fp32_avgpool2d_count_include_pad_unsupported(self):
         """
         The XNNPACK backend does not support count_include_pad=True.
         """
         inputs = (torch.randn(1, 1, 10, 10),)
-        (
-            Tester(self.AvgPool2d(count_include_pad=True), inputs)
-            .export()
-            .check_count({"torch.ops.aten.avg_pool2d.default": 1})
-            .to_edge_transform_and_lower()
-            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
-        )
+        for legacy in (True, False):
+            tester = Tester(self.AvgPool2d(count_include_pad=True), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.avg_pool2d.default": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_not(["torch.ops.higher_order.executorch_call_delegate"])
 
     def test_fp32_avgpool2d_divisor_override(self):
         """
         The XNNPACK backend does not support divisor overrides not equal to the pooling region.
         """
         inputs = (torch.randn(1, 1, 10, 10),)
-        (
-            Tester(self.AvgPool2d(divisor_override=5), inputs)
-            .export()
-            .check_count({"torch.ops.aten.avg_pool2d.default": 1})
-            .to_edge_transform_and_lower()
-            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
-        )
+        for legacy in (True, False):
+            tester = Tester(self.AvgPool2d(divisor_override=5), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.avg_pool2d.default": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_not(["torch.ops.higher_order.executorch_call_delegate"])

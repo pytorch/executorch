@@ -7,6 +7,8 @@
 import unittest
 
 import torch
+
+from executorch.backends.xnnpack.test import tester
 from executorch.backends.xnnpack.test.tester import Tester
 
 
@@ -19,17 +21,22 @@ class TestMinimum(unittest.TestCase):
             return torch.minimum(x, y)
 
     def _test_minimum(self, inputs):
-        (
-            Tester(self.Minimum(), inputs)
-            .export()
-            .check_count({"torch.ops.aten.minimum.default": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_minimum_default"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(self.Minimum(), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.minimum.default": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
+                ["executorch_exir_dialects_edge__ops_aten_minimum_default"]
+            )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_fp16_minimum(self):
         inputs = (

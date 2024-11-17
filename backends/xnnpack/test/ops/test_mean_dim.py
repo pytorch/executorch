@@ -7,6 +7,8 @@
 import unittest
 
 import torch
+
+from executorch.backends.xnnpack.test import tester
 from executorch.backends.xnnpack.test.tester import Tester
 
 
@@ -22,17 +24,20 @@ class TestMeanDim(unittest.TestCase):
             return z
 
     def _test_mean_dim(self, inputs):
-        (
-            Tester(self.MeanDim((-1, -2)), inputs)
-            .export()
-            .check_count({"torch.ops.aten.mean.dim": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_mean_dim"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(self.MeanDim((-1, -2)), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.mean.dim": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(["executorch_exir_dialects_edge__ops_aten_mean_dim"])
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_fp16_mean_dim(self):
         inputs = (torch.randn(1, 5, 4, 4).to(torch.float16),)
@@ -48,48 +53,53 @@ class TestMeanDim(unittest.TestCase):
         we expect it to fail to partition when dim=(3).
         """
         inputs = (torch.randn(1, 5, 4, 4),)
-        (
-            Tester(self.MeanDim((3)), inputs)
-            .export()
-            .check_count({"torch.ops.aten.mean.dim": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
-        )
+        for legacy in (True, False):
+            tester = Tester(self.MeanDim((3)), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.mean.dim": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
 
     def test_fp32_mean_dim_unsupported_3d(self):
         """
         XNNPack mean.dim implementation only supports 4D tensors.
         """
         inputs = (torch.randn(1, 5, 4),)
-        (
-            Tester(self.MeanDim((-1, -2)), inputs)
-            .export()
-            .check_count({"torch.ops.aten.mean.dim": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
-        )
+        for legacy in (True, False):
+            tester = Tester(self.MeanDim((-1, -2)), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.mean.dim": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
 
     def test_qs8_mean_dim(self):
         inputs = (torch.randn(1, 5, 4, 4),)
-        (
-            Tester(self.MeanDim((-1, -2)), inputs)
-            .quantize()
-            .export()
-            .check_node_count(
+        for legacy in (True, False):
+            tester = Tester(self.MeanDim((-1, -2)), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_node_count(
                 {
                     torch.ops.aten.mean.dim: 1,
                     torch.ops.quantized_decomposed.quantize_per_tensor.default: 3,
                 }
             )
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+            tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_mean_dim",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs(qtol=1)
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs(qtol=1)

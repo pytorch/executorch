@@ -7,6 +7,8 @@
 import unittest
 
 import torch
+
+from executorch.backends.xnnpack.test import tester
 from executorch.backends.xnnpack.test.tester import Tester
 
 
@@ -28,17 +30,20 @@ class TestSub(unittest.TestCase):
             return z
 
     def _test_sub(self, inputs):
-        (
-            Tester(self.Sub(), inputs)
-            .export()
-            .check_count({"torch.ops.aten.sub.Tensor": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_sub_Tensor"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(self.Sub(), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.sub.Tensor": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(["executorch_exir_dialects_edge__ops_aten_sub_Tensor"])
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_fp16_sub(self):
         inputs = (
@@ -54,68 +59,77 @@ class TestSub(unittest.TestCase):
     @unittest.skip("T171957656 - Quantized sub not implemented.")
     def _test_qs8_sub(self):
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
-        (
-            Tester(self.Sub(), inputs)
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.sub.Tensor": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(self.Sub(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count({"torch.ops.aten.sub.Tensor": 1})
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_sub_Tensor",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     @unittest.skip("T171957656 - Quantized sub not implemented.")
     def _test_qs8_sub2(self):
         inputs = (torch.randn(1, 1, 4, 4),)
-        (
-            Tester(self.Sub2(), inputs)
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.sub.Tensor": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(self.Sub2(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count({"torch.ops.aten.sub.Tensor": 1})
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_sub_Tensor",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     @unittest.skip("T171957656 - Quantized sub not implemented.")
     def _test_qs8_sub3(self):
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1))
-        (
-            Tester(self.Sub(), inputs)
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.sub.Tensor": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(self.Sub(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count({"torch.ops.aten.sub.Tensor": 1})
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_sub_Tensor",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     @unittest.skip("T171957656 - Quantized sub not implemented.")
     def _test_qs8_sub_relu(self):
@@ -125,27 +139,30 @@ class TestSub(unittest.TestCase):
                 return torch.nn.functional.relu(z)
 
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
-        (
-            Tester(self.Sub(), inputs)
-            .quantize()
-            .export()
-            .check_count(
+        for legacy in (True, False):
+            tester = Tester(self.Sub(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count(
                 {
                     "torch.ops.aten.sub.Tensor": 1,
                     "torch.ops.aten.relu.default": 1,
                 }
             )
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_sub_Tensor",
                     "executorch_exir_dialects_edge__ops_aten_relu_default",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()

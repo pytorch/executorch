@@ -7,6 +7,8 @@
 import unittest
 
 import torch
+
+from executorch.backends.xnnpack.test import tester
 from executorch.backends.xnnpack.test.tester import Tester
 
 
@@ -21,19 +23,22 @@ class TestPrelu(unittest.TestCase):
             return a
 
     def _test_prelu(self, module, inputs):
-        (
-            Tester(module, inputs)
-            .export()
-            .check_count({"torch.ops.aten.prelu.default": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(module, inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.prelu.default": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 ["executorch_exir_dialects_edge__ops_aten__prelu_kernel_default"]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     @unittest.skip("XNNPACK Expects FP16 inputs but FP32 weights")
     def _test_fp16_prelu(self):

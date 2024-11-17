@@ -7,6 +7,8 @@
 import unittest
 
 import torch
+
+from executorch.backends.xnnpack.test import tester
 from executorch.backends.xnnpack.test.tester import Tester
 
 
@@ -21,17 +23,18 @@ class TestPow(unittest.TestCase):
             return z
 
     def _test_pow2(self, inputs):
-        (
-            Tester(self.Pow(2), inputs)
-            .export()
-            .check_count({"torch.ops.aten.pow.Tensor_Scalar": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(self.Pow(2), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.pow.Tensor_Scalar": 1})
+            tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
+                ["executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar"]
+            )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_fp16_pow2(self):
         inputs = (torch.randn(20).to(torch.float16),)
@@ -50,10 +53,13 @@ class TestPow(unittest.TestCase):
         """
 
         inputs = (torch.randn(5),)
-        (
-            Tester(self.Pow(3), inputs)
-            .export()
-            .check_count({"torch.ops.aten.pow.Tensor_Scalar": 1})
-            .to_edge_transform_and_lower()
-            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
-        )
+        for legacy in (True, False):
+            tester = Tester(self.Pow(3), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.pow.Tensor_Scalar": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_not(["torch.ops.higher_order.executorch_call_delegate"])
