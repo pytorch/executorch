@@ -54,6 +54,7 @@ TEST(OpQuantizeOutTest, AllDtypesSupported) {
   test_dtype<ScalarType::Char>();
   test_dtype<ScalarType::Short>();
   test_dtype<ScalarType::Bits16>();
+  test_dtype<ScalarType::UInt16>();
   test_dtype<ScalarType::Int>();
 }
 

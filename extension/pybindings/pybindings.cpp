@@ -745,8 +745,7 @@ struct PyModule final {
       } else if (py::isinstance<py::int_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
       } else {
-        // Unsupported pytype
-        ET_ASSERT_UNREACHABLE_MSG(type_str.c_str());
+        ET_ASSERT_UNREACHABLE_MSG("Unsupported pytype: %s", type_str.c_str());
       }
     }
 
