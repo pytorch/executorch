@@ -131,7 +131,11 @@ class TestSliceCopy(unittest.TestCase):
                 dynamic_shapes=({2: torch.export.Dim("dim_2", min=4, max=100)},),
             )
             tester.export()
-            tester.to_edge_transform_and_lower()
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
             tester.check_not(["torch.ops.higher_order.executorch_call_delegate"])
 
     # Note: Slice ends up as slice_copy later in the process, but during quantization,
