@@ -790,6 +790,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_masked_select",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+        ],
+    ),
+    op_target(
         name = "op_max",
         deps = [
             "//executorch/kernels/portable/cpu/util:reduce_util",

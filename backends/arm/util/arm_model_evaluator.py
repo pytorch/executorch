@@ -7,9 +7,24 @@
 import os
 import tempfile
 import zipfile
-from typing import Optional, Tuple, Union
+from collections import defaultdict
+from typing import Optional, Tuple
 
 import torch
+
+
+def flatten_args(args) -> tuple | list:
+    flattened_args: list = []
+    if isinstance(args, torch.Tensor):
+        return [args]
+
+    for arg in args:
+        if isinstance(arg, (tuple, list)):
+            flattened_args.extend(arg)
+        else:
+            flattened_args.append(arg)
+
+    return tuple(flattened_args)
 
 
 class GenericModelEvaluator:
@@ -32,26 +47,34 @@ class GenericModelEvaluator:
         else:
             self.tosa_output_path = None
 
-    def get_model_error(self) -> Union[float, float, float, float]:
+    def get_model_error(self) -> defaultdict:
         """
-        Returns the following metrics between the outputs of the FP32 and INT8 model:
+        Returns a dict containing the following metrics between the outputs of the FP32 and INT8 model:
         - Maximum error
         - Maximum absolute error
         - Maximum percentage error
         - Mean absolute error
         """
-        fp32_output = self.fp32_model(*self.example_input)
-        int8_output = self.int8_model(*self.example_input)
+        fp32_outputs = flatten_args(self.fp32_model(*self.example_input))
+        int8_outputs = flatten_args(self.int8_model(*self.example_input))
 
-        difference = fp32_output - int8_output
-        percentage_error = torch.div(difference, fp32_output) * 100
+        model_error_dict = defaultdict(list)
 
-        max_error = torch.max(difference).item()
-        max_absolute_error = torch.max(torch.abs(difference)).item()
-        max_percentage_error = torch.max(percentage_error).item()
-        mean_absolute_error = torch.mean(torch.abs(difference).float()).item()
+        for fp32_output, int8_output in zip(fp32_outputs, int8_outputs):
+            difference = fp32_output - int8_output
+            percentage_error = torch.div(difference, fp32_output) * 100
+            model_error_dict["max_error"].append(torch.max(difference).item())
+            model_error_dict["max_absolute_error"].append(
+                torch.max(torch.abs(difference)).item()
+            )
+            model_error_dict["max_percentage_error"].append(
+                torch.max(percentage_error).item()
+            )
+            model_error_dict["mean_absolute_error"].append(
+                torch.mean(torch.abs(difference).float()).item()
+            )
 
-        return max_error, max_absolute_error, max_percentage_error, mean_absolute_error
+        return model_error_dict
 
     def get_compression_ratio(self) -> float:
         """Compute the compression ratio of the outputted TOSA flatbuffer."""
@@ -68,20 +91,13 @@ class GenericModelEvaluator:
         return compression_ratio
 
     def evaluate(self) -> dict[any]:
-        max_error, max_absolute_error, max_percent_error, mean_absolute_error = (
-            self.get_model_error()
-        )
-        output_metrics = {
-            "name": self.model_name,
-            "metrics": {
-                "max_error": max_error,
-                "max_absolute_error": max_absolute_error,
-                "max_percentage_error": max_percent_error,
-                "mean_absolute_error": mean_absolute_error,
-            },
-        }
+        model_error_dict = self.get_model_error()
+
+        output_metrics = {"name": self.model_name, "metrics": dict(model_error_dict)}
 
         if self.tosa_output_path:
+            # We know output_metrics["metrics"] is list since we just defined it, safe to ignore.
+            # pyre-ignore[16]
             output_metrics["metrics"][
                 "compression_ratio"
             ] = self.get_compression_ratio()

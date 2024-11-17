@@ -170,7 +170,11 @@ struct promote_types_is_valid
            (!executorch::runtime::is_qint_type<T1>::value &&
             !executorch::runtime::is_qint_type<T2>::value &&
             !executorch::runtime::is_bits_type<T1>::value &&
-            !executorch::runtime::is_bits_type<T2>::value))> {};
+            !executorch::runtime::is_bits_type<T2>::value &&
+            !executorch::runtime::is_float8_type<T1>::value &&
+            !executorch::runtime::is_float8_type<T2>::value &&
+            !executorch::runtime::is_barebones_unsigned_type<T1>::value &&
+            !executorch::runtime::is_barebones_unsigned_type<T2>::value))> {};
 
 template <typename T1, bool half_to_float>
 struct CompileTimePromoteTypesTestCase {

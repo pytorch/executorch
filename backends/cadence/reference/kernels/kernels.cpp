@@ -65,6 +65,7 @@ void dequantize(
 typed_quantize_val(int8_t);
 typed_quantize_val(uint8_t);
 typed_quantize_val(int16_t);
+typed_quantize_val(uint16_t);
 typed_quantize_val(int32_t);
 #undef typed_quantize_val
 
@@ -78,6 +79,7 @@ typed_quantize_val(int32_t);
 typed_quantize_vec(int8_t);
 typed_quantize_vec(uint8_t);
 typed_quantize_vec(int16_t);
+typed_quantize_vec(uint16_t);
 typed_quantize_vec(int32_t);
 #undef typed_quantize_vec
 
@@ -86,6 +88,7 @@ typed_quantize_vec(int32_t);
 typed_dequantize_val(int8_t);
 typed_dequantize_val(uint8_t);
 typed_dequantize_val(int16_t);
+typed_dequantize_val(uint16_t);
 typed_dequantize_val(int32_t);
 #undef typed_dequantize_val
 
@@ -99,6 +102,7 @@ typed_dequantize_val(int32_t);
 typed_dequantize_vec(int8_t);
 typed_dequantize_vec(uint8_t);
 typed_dequantize_vec(int16_t);
+typed_dequantize_vec(uint16_t);
 typed_dequantize_vec(int32_t);
 #undef typed_dequantize_vec
 

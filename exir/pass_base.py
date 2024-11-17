@@ -318,7 +318,11 @@ class _ExportPassBase(PassBase):
             if target == operator.getitem:
                 value, key = args
                 return self.callback.call_getitem(value, key, meta)
-            elif getattr(target, "__module__", None) in {"_operator", "math"}:
+            elif getattr(target, "__module__", None) in {
+                "_operator",
+                "builtins",
+                "math",
+            }:
                 assert callable(target)
                 return self.callback.call_sym(target, args, meta)
             elif target in _TORCH_SYM_OPS:
@@ -722,7 +726,6 @@ def map_args(
         args[key] = fn(args[key], schema)
 
     for i, schema in enumerate(op._schema.arguments):
-        assert isinstance(schema, ArgSchema)
         if schema.name in kwargs:
             update(schema.name, kwargs, schema)
         elif not schema.kwarg_only and i < len(args):

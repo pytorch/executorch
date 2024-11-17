@@ -6,11 +6,14 @@
 from typing import Sequence
 
 import torch
-from executorch.backends.qualcomm.quantizer.annotators import QUANT_ANNOTATION_KEY
 from executorch.backends.qualcomm.quantizer.quantizer import (
     get_16a8w_qnn_ptq_config,
-    get_8a8w_qnn_ptq_config,
+    get_default_8bit_qnn_ptq_config,
     QuantizationConfig,
+)
+from executorch.backends.qualcomm.quantizer.utils import (
+    get_ptq_per_channel_quant_config,
+    QUANT_ANNOTATION_KEY,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.ao.quantization.quantizer import (
@@ -110,7 +113,7 @@ def custom_annotate_llama_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noq
     # Annotate 16a8w for matmul op to get better performance
     quantization_config_16a8w = get_16a8w_qnn_ptq_config()
     # Annotate 8a8w for second input of matmul until past_kv_cache
-    quantization_config_8a8w = get_8a8w_qnn_ptq_config(act_symmetric=True)
+    quantization_config_8a8w = get_default_8bit_qnn_ptq_config(act_symmetric=True)
     for node in gm.graph.nodes:
         if node.op == "call_function" and node.target == torch.ops.aten.matmul.default:
             if "nn_module_stack" in node.meta:
@@ -119,6 +122,36 @@ def custom_annotate_llama_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noq
                 if "SDPA" in full_qualified_name:
                     annotate_matmul(node, quantization_config_16a8w)
                     annotate_matmul_input1(node.args[1], quantization_config_8a8w)
+
+
+def custom_annotate_llama_last_conv_16a8w(gm: torch.fx.GraphModule) -> None:
+    def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None:
+        input_qspec_map = {}
+        input_act = node.args[0]
+        input_spec = quantization_config.input_activation
+        input_qspec_map[input_act] = input_spec
+
+        weight = node.args[1]
+        input_qspec_map[weight] = quantization_config.weight
+
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=quantization_config.output_activation,
+            _annotated=True,
+        )
+
+    quantization_config_16a8w_per_channel = get_ptq_per_channel_quant_config(
+        torch.uint16, weight_dtype=torch.int8
+    )
+    for node in gm.graph.nodes:
+        if node.op == "call_function" and node.target == torch.ops.aten.conv2d.default:
+            if "nn_module_stack" in node.meta:
+                module_values_list = list(node.meta["nn_module_stack"].values())
+                full_qualified_name = module_values_list[0][0]
+                if full_qualified_name == "L['self'].llama.output":
+                    annotate_conv2d(
+                        node, quantization_config=quantization_config_16a8w_per_channel
+                    )
 
 
 def custom_annotate_matmul_16a8w(gm: torch.fx.GraphModule):

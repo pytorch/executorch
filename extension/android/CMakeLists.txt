@@ -64,7 +64,7 @@ set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
 target_link_options_shared_lib(executorch)
 
-add_library(executorch_jni SHARED jni/jni_layer.cpp)
+add_library(executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp)
 
 set(link_libraries)
 list(
@@ -146,7 +146,7 @@ if(EXECUTORCH_JNI_CUSTOM_LIBRARY)
 endif()
 
 if(EXECUTORCH_BUILD_LLAMA_JNI)
-  target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp)
+  target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp jni/log.cpp)
   list(APPEND link_libraries llama_runner llava_runner)
   target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_LLAMA_JNI=1)
   add_subdirectory(
