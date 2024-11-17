@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
@@ -16,6 +16,7 @@ source "$BASEDIR"/../../build/build_android_llm_demo.sh
 build_native_library() {
   ANDROID_ABI="$1"
   CMAKE_OUT="cmake-out-android-${ANDROID_ABI}"
+  ANDROID_NDK="${ANDROID_NDK:-/opt/ndk}"
   EXECUTORCH_CMAKE_BUILD_TYPE="${EXECUTORCH_CMAKE_BUILD_TYPE:-Release}"
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
@@ -52,6 +53,7 @@ build_jar
 build_native_library "arm64-v8a"
 build_native_library "x86_64"
 build_aar
+bash examples/models/llama/install_requirements.sh
 source ".ci/scripts/test_llama.sh" stories110M cmake fp16 portable ${BUILD_AAR_DIR}
 popd
 mkdir -p "$BASEDIR"/src/libs

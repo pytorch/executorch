@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+# pyre-unsafe
 
 import unittest
 
@@ -30,8 +31,8 @@ try:
     from torchao.quantization.quant_api import (
         int8_dynamic_activation_int4_weight,
         quantize_,
-        unwrap_tensor_subclass,
     )
+    from torchao.utils import unwrap_tensor_subclass
 
     torchao_installed = True
 except:

@@ -328,9 +328,11 @@ def get_args():
     )
     args = parser.parse_args()
 
-    if args.evaluate and (args.quantize is None or args.intermediates is None):
+    if args.evaluate and (
+        args.quantize is None or args.intermediates is None or (not args.delegate)
+    ):
         raise RuntimeError(
-            "--evaluate requires --quantize and --intermediates to be enabled."
+            "--evaluate requires --quantize, --intermediates and --delegate to be enabled."
         )
 
     if args.debug:
@@ -377,6 +379,9 @@ if __name__ == "__main__":
         model_int8 = model
         # Wrap quantized model back into an exported_program
         exported_program = torch.export.export_for_training(model, example_inputs)
+
+    if args.intermediates:
+        os.makedirs(args.intermediates, exist_ok=True)
 
     if args.delegate:
         # As we can target multiple output encodings from ArmBackend, one must
