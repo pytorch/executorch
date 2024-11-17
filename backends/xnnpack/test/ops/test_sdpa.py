@@ -64,9 +64,13 @@ class TestSDPA(unittest.TestCase):
         for legacy in (True, False):
             tester = Tester(module, inputs)
             tester.export()
-            tester.to_edge_transform_and_lower(
-                ToEdgeTransformAndLower([XnnpackPartitioner(configs=[SDPAConfig])])
-            )
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower(
+                    ToEdgeTransformAndLower([XnnpackPartitioner(configs=[SDPAConfig])])
+                )
             tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             tester.check_not(
                 ["executorch_exir_dialects_edge__ops_aten_bmm_default"],
