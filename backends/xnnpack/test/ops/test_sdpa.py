@@ -10,8 +10,6 @@ from typing import Optional
 import torch
 from executorch.backends.xnnpack.partition.config.generic_node_configs import SDPAConfig
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-
-from executorch.backends.xnnpack.test import tester
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.backends.xnnpack.test.tester.tester import ToEdgeTransformAndLower
 

@@ -7,8 +7,6 @@
 import unittest
 
 import torch
-
-from executorch.backends.xnnpack.test import tester
 from executorch.backends.xnnpack.test.tester import Tester
 
 
@@ -92,7 +90,11 @@ class TestMeanDim(unittest.TestCase):
                     torch.ops.quantized_decomposed.quantize_per_tensor.default: 3,
                 }
             )
-            tester.to_edge_transform_and_lower()
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
             tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             tester.check_not(
                 [

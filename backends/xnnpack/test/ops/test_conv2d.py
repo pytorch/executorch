@@ -10,7 +10,6 @@ from typing import Optional
 
 import torch
 
-from executorch.backends.xnnpack.test import tester
 from executorch.backends.xnnpack.test.test_xnnpack_utils import randomize_bn
 from executorch.backends.xnnpack.test.tester import Quantize, Tester
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (

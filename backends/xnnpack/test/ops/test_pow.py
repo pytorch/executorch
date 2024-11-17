@@ -7,8 +7,6 @@
 import unittest
 
 import torch
-
-from executorch.backends.xnnpack.test import tester
 from executorch.backends.xnnpack.test.tester import Tester
 
 
@@ -27,7 +25,11 @@ class TestPow(unittest.TestCase):
             tester = Tester(self.Pow(2), inputs)
             tester.export()
             tester.check_count({"torch.ops.aten.pow.Tensor_Scalar": 1})
-            tester.to_edge_transform_and_lower()
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
             tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             tester.check_not(
                 ["executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar"]

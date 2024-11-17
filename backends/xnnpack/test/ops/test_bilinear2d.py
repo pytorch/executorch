@@ -106,19 +106,17 @@ class TestUpsampleBilinear2d(unittest.TestCase):
     @unittest.skip('Expected to not find "aten_index_Tensor"')
     def test_fp32_static_resize_bilinear2d_with_align_corners_legacy(self):
         example_inputs = (torch.randn(2, 3, 4, 5),)
-        for legacy in (True, False):
-            tester = Tester(
-                self.StaticResizeBilinear2dModuleWithAlignCorners(), example_inputs
-            )
-            tester.export()
-            tester.to_edge()
-            tester.partition()
-            tester.to_edge_transform_and_lower()
-            tester.check_not(self.ops)
-            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            tester.to_executorch()
-            tester.serialize()
-            tester.run_method_and_compare_outputs()
+        tester = Tester(
+            self.StaticResizeBilinear2dModuleWithAlignCorners(), example_inputs
+        )
+        tester.export()
+        tester.to_edge()
+        tester.partition()
+        tester.check_not(self.ops)
+        tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+        tester.to_executorch()
+        tester.serialize()
+        tester.run_method_and_compare_outputs()
 
     def test_fp32_static_resize_bilinear2d_with_align_corners(self):
         example_inputs = (torch.randn(2, 3, 4, 5),)

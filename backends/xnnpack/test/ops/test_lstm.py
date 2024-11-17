@@ -24,7 +24,7 @@ class TestLSTM(unittest.TestCase):
             self.linear2 = torch.nn.Linear(hidden_size, out_size)
 
         def forward(self, x):
-            x, hs = self.lstm(x)
+            x, _ = self.lstm(x)
             x = self.linear(x[:, -1, :])
             x = self.linear2(x)
             return torch.nn.functional.log_softmax(x, dim=1)
