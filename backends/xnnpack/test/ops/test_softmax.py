@@ -25,17 +25,24 @@ class TestSoftmax(unittest.TestCase):
         valid_dims = [len(inputs[0]) - 1, -1]
 
         for dim in valid_dims:
-            (
-                Tester(self.Softmax(dim), inputs)
-                .export()
-                .check_count({"torch.ops.aten.softmax": 1})
-                .to_edge_transform_and_lower()
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-                .check_not(["executorch_exir_dialects_edge__ops_aten__softmax_default"])
-                .to_executorch()
-                .serialize()
-                .run_method_and_compare_outputs()
-            )
+            for legacy in (True, False):
+                tester = Tester(self.Softmax(dim), inputs)
+                tester.export()
+                tester.check_count({"torch.ops.aten.softmax": 1})
+                if legacy:
+                    tester.to_edge()
+                    tester.partition()
+                else:
+                    tester.to_edge_transform_and_lower()
+                tester.check_count(
+                    {"torch.ops.higher_order.executorch_call_delegate": 1}
+                )
+                tester.check_not(
+                    ["executorch_exir_dialects_edge__ops_aten__softmax_default"]
+                )
+                tester.to_executorch()
+                tester.serialize()
+                tester.run_method_and_compare_outputs()
 
     def test_fp16_softmax(self):
         inputs = (torch.rand((3, 5, 7)).to(torch.float16),)
@@ -55,11 +62,16 @@ class TestSoftmax(unittest.TestCase):
         invalid_dims = range(len(inputs) - 1)
 
         for dim in invalid_dims:
-            (
-                Tester(self.Softmax(dim), inputs)
-                .export()
-                .check_count({"torch.ops.aten.softmax": 1})
-                .to_edge_transform_and_lower()
+            for legacy in (True, False):
+                tester = Tester(self.Softmax(dim), inputs)
+                tester.export()
+                tester.check_count({"torch.ops.aten.softmax": 1})
+                if legacy:
+                    tester.to_edge()
+                    tester.partition()
+                else:
+                    tester.to_edge_transform_and_lower()
                 # Should not be delegated
-                .check(["executorch_exir_dialects_edge__ops_aten__softmax_default"])
-            )
+                tester.check(
+                    ["executorch_exir_dialects_edge__ops_aten__softmax_default"]
+                )

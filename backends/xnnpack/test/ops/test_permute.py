@@ -32,17 +32,22 @@ class TestPermute(unittest.TestCase):
             return z
 
     def _test_permute(self, inputs):
-        (
-            Tester(self.Permute([0, 2, 3, 1]), inputs)
-            .export()
-            .check_count({"torch.ops.aten.permute.default": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_permute_copy_default"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(self.Permute([0, 2, 3, 1]), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.permute.default": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
+                ["executorch_exir_dialects_edge__ops_aten_permute_copy_default"]
+            )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_fp16_permute(self):
         inputs = (torch.randn(1, 1, 4, 4).to(torch.float16),)
@@ -54,64 +59,75 @@ class TestPermute(unittest.TestCase):
 
     def test_fp32_permute_copy(self):
         inputs = (torch.randn(1, 1, 4, 4),)
-        (
-            Tester(self.PermuteCopy([0, 2, 3, 1]), inputs)
-            .export()
-            .check_count({"torch.ops.aten.permute_copy.default": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_permute_copy_default"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(self.PermuteCopy([0, 2, 3, 1]), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.permute_copy.default": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
+                ["executorch_exir_dialects_edge__ops_aten_permute_copy_default"]
+            )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_qs8_permute(self):
         inputs = (torch.randn(1, 1, 4, 4),)
-        (
-            Tester(self.Permute([0, 2, 3, 1]), inputs)
-            .quantize()
-            .export()
-            .check_node_count(
+        for legacy in (True, False):
+            tester = Tester(self.Permute([0, 2, 3, 1]), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_node_count(
                 {
                     torch.ops.aten.permute.default: 1,
                     torch.ops.quantized_decomposed.quantize_per_tensor.default: 3,
                 }
             )
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_permute_copy_default",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_qs8_permute_copy(self):
         inputs = (torch.randn(1, 1, 4, 4),)
-        (
-            Tester(self.PermuteCopy([0, 2, 3, 1]), inputs)
-            .quantize()
-            .export()
-            .check_node_count(
+        for legacy in (True, False):
+            tester = Tester(self.PermuteCopy([0, 2, 3, 1]), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_node_count(
                 {
                     torch.ops.aten.permute_copy.default: 1,
                     torch.ops.quantized_decomposed.quantize_per_tensor.default: 3,
                 }
             )
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_permute_copy_default",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()

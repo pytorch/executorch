@@ -84,19 +84,22 @@ class TestStaticConstantPad(unittest.TestCase):
             return z
 
     def _test_static_constant_pad_functional(self, inputs):
-        (
-            Tester(self.StaticConstantPadFunctional(), inputs)
-            .export()
-            .check_count({"torch.ops.aten.pad.default": 8})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(self.StaticConstantPadFunctional(), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.pad.default": 8})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 ["executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default"]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_fp16_static_constant_pad_functional(self):
         inputs = (
@@ -129,42 +132,48 @@ class TestStaticConstantPad(unittest.TestCase):
                 return z + z
 
         inputs = (torch.randn(size=(1, 2)),)
-        (
-            Tester(Pad(), inputs)
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.pad.default": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(Pad(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count({"torch.ops.aten.pad.default": 1})
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default"
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_qs8_static_constant_pad_2d(self):
         inputs = (torch.randn(size=(5, 4, 3, 2)),)
-        (
-            Tester(self.StaticConstantPad2d(), inputs)
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.pad.default": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(self.StaticConstantPad2d(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count({"torch.ops.aten.pad.default": 1})
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()

@@ -24,21 +24,24 @@ class TestElu(unittest.TestCase):
             return torch.nn.functional.elu(x, alpha=1.2)
 
     def _test_elu(self, inputs):
-        (
-            Tester(self.ELU(), inputs)
-            .export()
-            .check_count({"torch.ops.aten.elu.default": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(self.ELU(), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.elu.default": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_elu_default",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     @unittest.skip("PyTorch Pin Update Required")
     def _test_fp16_elu(self):
@@ -53,43 +56,49 @@ class TestElu(unittest.TestCase):
     @unittest.skip("Update Quantizer to quantize Elu")
     def _test_qs8_elu(self):
         inputs = (torch.randn(1, 3, 4, 4),)
-        (
-            Tester(self.ELU(), inputs)
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.elu.default": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(self.ELU(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count({"torch.ops.aten.elu.default": 1})
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_elu_default",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     @unittest.skip("Update Quantizer to quantize Elu")
     def _test_qs8_elu_functional(self):
         inputs = (torch.randn(1, 3, 4, 4),)
-        (
-            Tester(self.ELU(), inputs)
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.elu.default": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(self.ELU(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count({"torch.ops.aten.elu.default": 1})
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_elu_default",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
