@@ -204,7 +204,9 @@ def check_weights_exist(weight_dir):
             f"No weight files found in {weight_dir}! Weight files should be either .bin or .safetensors file types."
         )
     safetensors_l = [f for f in os.listdir(weight_dir) if f.endswith(".safetensors")]
-    bin_l = [f for f in os.listdir(weight_dir) if f.endswith(".bin")]
+    bin_l = [
+        f for f in os.listdir(weight_dir) if f.endswith(".bin") and "embedding" not in f
+    ]
     if len(safetensors_l) & len(bin_l):
         raise RuntimeError(
             "Weights should only be in either .bin or .safetensors format, not both."

@@ -1,0 +1,26 @@
+COMMON_LDFLAGS = $(inherited) \
+-lc++
+
+OTHER_LDFLAGS[sdk=iphonesimulator*] = $(COMMON_LDFLAGS) \
+-force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml-simulator-debug.a \
+-force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps-simulator-debug.a \
+-force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-simulator-debug.a \
+-force_load $(BUILT_PRODUCTS_DIR)/libkernels_custom-simulator-debug.a \
+-force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized-simulator-debug.a \
+-force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized-simulator-debug.a
+
+OTHER_LDFLAGS[sdk=iphoneos*] = $(COMMON_LDFLAGS) \
+-force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml-ios-debug.a \
+-force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps-ios-debug.a \
+-force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-ios-debug.a \
+-force_load $(BUILT_PRODUCTS_DIR)/libkernels_custom-ios-debug.a \
+-force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized-ios-debug.a \
+-force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized-ios-debug.a
+
+OTHER_LDFLAGS[sdk=macos*] = $(COMMON_LDFLAGS) \
+-force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml-macos-debug.a \
+-force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps-macos-debug.a \
+-force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-macos-debug.a \
+-force_load $(BUILT_PRODUCTS_DIR)/libkernels_custom-macos-debug.a \
+-force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized-macos-debug.a \
+-force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized-macos-debug.a

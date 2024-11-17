@@ -86,6 +86,7 @@ python_library(
     ],
     deps = [
         "fbcode//caffe2:torch",
+        "fbcode//executorch/exir:scalar_type",
         "fbcode//executorch/backends/cadence/aot:utils",
     ],
 )

@@ -7,22 +7,18 @@
 
 import logging
 import os
-from typing import Any, cast, Dict
+from typing import Any, cast
 
 import numpy as np
 import serializer.tosa_serializer as ts
 import torch
-from executorch.backends.arm.operators.node_visitor import NodeVisitor
-from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
+from executorch.backends.arm.tosa_mapping import TosaArg
 
 from executorch.backends.arm.tosa_quant_utils import (
     get_quant_arg_downstream,
     get_quant_arg_upstream,
-    get_quantized_node_output_dtype,
-    is_node_quantized,
     q_op,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
@@ -231,44 +227,6 @@ def get_two_inputs(node: Node, check: bool = False) -> tuple[Node, Node]:
 
 def tosa_shape(shape, dim_order):
     return tuple([shape[dim] for dim in dim_order])
-
-
-def process_call_function(
-    node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
-    node_visitors: Dict[str, NodeVisitor],
-    tosa_spec: TosaSpecification,
-):
-    # Unpack arguments and convert
-    inputs = getNodeArgs(node)
-
-    # Convert output (this node itself)
-    output = TosaArg(node)
-
-    is_quant_node = is_node_quantized(node)
-    if is_quant_node:
-        output_dtype = map_dtype(get_quantized_node_output_dtype(node))
-    else:
-        output_dtype = output.dtype
-    tosa_graph.currRegion.currBasicBlock.addTensor(
-        output.name,
-        (tosa_shape(output.shape, output.dim_order)),
-        output_dtype,
-    )
-
-    # Visiting each Node
-    # pyre-ignore[16]: Undefined attribute.
-    if node.target.__name__ in node_visitors:
-        # pyre-ignore[16]: Undefined attribute.
-        node_visitors[node.target.__name__].define_node(
-            node,
-            tosa_graph,
-            inputs,
-            output,
-            is_quant_node,
-        )
-    else:
-        raise RuntimeError(f"Unknown operator {node.target} for TOSA : {tosa_spec}")
 
 
 def expand_dims(
