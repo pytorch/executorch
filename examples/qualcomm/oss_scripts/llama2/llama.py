@@ -56,12 +56,12 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:
     This function is specific for matmul op 16a8w.
     """
 
-    from executorch.backends.qualcomm.quantizer.annotators import QUANT_ANNOTATION_KEY
     from executorch.backends.qualcomm.quantizer.quantizer import (
         get_16a8w_qnn_ptq_config,
-        get_8a8w_qnn_ptq_config,
+        get_default_8bit_qnn_ptq_config,
         QuantizationConfig,
     )
+    from executorch.backends.qualcomm.quantizer.utils import QUANT_ANNOTATION_KEY
     from torch.ao.quantization.quantizer import (
         QuantizationAnnotation,
         SharedQuantizationSpec,
@@ -119,7 +119,7 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:
         )
 
     def annotate_matmul_input1(node: Node):
-        quantization_config_8a8w = get_8a8w_qnn_ptq_config(act_symmetric=True)
+        quantization_config_8a8w = get_default_8bit_qnn_ptq_config(act_symmetric=True)
         while isinstance(node, Node) and node.op == "call_function":
             if node.target in [
                 torch.ops.aten.permute.default,
@@ -142,11 +142,11 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:
 
 
 def annotate_linear_16a8w_in_affine_layer(gm: torch.fx.GraphModule) -> None:
-    from executorch.backends.qualcomm.quantizer.annotators import QUANT_ANNOTATION_KEY
     from executorch.backends.qualcomm.quantizer.quantizer import (
         get_ptq_per_channel_quant_config,
         QuantizationConfig,
     )
+    from executorch.backends.qualcomm.quantizer.utils import QUANT_ANNOTATION_KEY
     from torch.ao.quantization.quantizer import QuantizationAnnotation
     from torch.fx import Node
 
@@ -332,9 +332,6 @@ class SingleLlama:
 
     def get_example_inputs(self):
         return self.llama_model.get_example_inputs()
-
-    def get_export_inputs(self):
-        return self.llama_model.get_export_inputs()
 
 
 def compile(args):
