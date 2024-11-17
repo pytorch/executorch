@@ -7,6 +7,8 @@
 import unittest
 
 import torch
+
+from executorch.backends.xnnpack.test import tester
 from executorch.backends.xnnpack.test.tester import Tester
 
 
@@ -24,17 +26,22 @@ class TestSquare(unittest.TestCase):
         Note that torch.square maps to aten.pow.Tensor_Scalar. The pow visitor has logic
         to emit the appropriate XNNPACK square op when the exponent is 2.
         """
-        (
-            Tester(self.Square(), inputs)
-            .export()
-            .check_count({"torch.ops.aten.square.default": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(self.Square(), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.square.default": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
+                ["executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar"]
+            )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_fp16_square(self):
         inputs = (torch.randn(20).to(torch.float16),)

@@ -7,6 +7,8 @@
 import unittest
 
 import torch
+
+from executorch.backends.xnnpack.test import tester
 from executorch.backends.xnnpack.test.tester import Tester
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -21,20 +23,23 @@ class TestQuantizePerTensor(unittest.TestCase):
                 )
 
         inputs = (torch.randn(1, 1, 4, 4),)
-        (
-            Tester(Quant(), inputs)
-            .export()
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(Quant(), inputs)
+            tester.export()
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default"
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_qs8_dequantize_per_tenstor(self):
         class Dequant(torch.nn.Module):
@@ -51,17 +56,20 @@ class TestQuantizePerTensor(unittest.TestCase):
             ),
         )
 
-        (
-            Tester(Dequant(), inputs)
-            .export()
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(Dequant(), inputs)
+            tester.export()
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default"
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()

@@ -26,21 +26,24 @@ class TestLeakyRelu(unittest.TestCase):
             return torch.nn.functional.leaky_relu(x)
 
     def _test_leaky_relu(self, module, inputs):
-        (
-            Tester(module, inputs)
-            .export()
-            .check_count({"torch.ops.aten.leaky_relu.default": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(module, inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.leaky_relu.default": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_leaky_relu_default",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_fp16_leaky_relu(self):
         inputs = (torch.randn(1, 3, 3).to(torch.float16),)
@@ -54,21 +57,24 @@ class TestLeakyRelu(unittest.TestCase):
 
     def test_fp32_leaky_relu_functional(self):
         inputs = (torch.randn(1, 3, 3),)
-        (
-            Tester(self.LeakyReLUFunctional(), inputs)
-            .export()
-            .check_count({"torch.ops.aten.leaky_relu.default": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(self.LeakyReLUFunctional(), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.leaky_relu.default": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_leaky_relu_default",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     @unittest.skip("T172863987 - Missing quantizer support.")
     def _test_qs8_leaky_relu(self):

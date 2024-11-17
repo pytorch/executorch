@@ -7,6 +7,8 @@
 import unittest
 
 import torch
+
+from executorch.backends.xnnpack.test import tester
 from executorch.backends.xnnpack.test.tester import Tester
 
 
@@ -25,56 +27,75 @@ class TestHardTanh(unittest.TestCase):
     def test_fp32_hardtanh(self):
         inputs_sets = [torch.randn(2, 3, 4), torch.randn(7, 5, 2), torch.randn(2, 9)]
         for input in inputs_sets:
-            (
-                Tester(self.HardTanh(), (input,))
-                .export()
-                .check_count({"torch.ops.aten.hardtanh.default": 1})
-                .to_edge_transform_and_lower()
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-                .check_not(["executorch_exir_dialects_edge__ops_aten_hardtanh_default"])
-                .to_executorch()
-                .serialize()
-                .run_method_and_compare_outputs()
-            )
+            for legacy in (True, False):
+                tester = Tester(self.HardTanh(), (input,))
+                tester.export()
+                tester.check_count({"torch.ops.aten.hardtanh.default": 1})
+                if legacy:
+                    tester.to_edge()
+                    tester.partition()
+                else:
+                    tester.to_edge_transform_and_lower()
+                tester.check_count(
+                    {"torch.ops.higher_order.executorch_call_delegate": 1}
+                )
+                tester.check_not(
+                    ["executorch_exir_dialects_edge__ops_aten_hardtanh_default"]
+                )
+                tester.to_executorch()
+                tester.serialize()
+                tester.run_method_and_compare_outputs()
 
     def test_fp32_hardtanh_bound(self):
         inputs_sets = [torch.randn(2, 3, 4), torch.randn(7, 5, 2), torch.randn(2, 9)]
         for input in inputs_sets:
-            (
-                Tester(self.HardTanh(-2.0, 2.0), (input,))
-                .export()
-                .check_count({"torch.ops.aten.hardtanh.default": 1})
-                .to_edge_transform_and_lower()
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-                .check_not(["executorch_exir_dialects_edge__ops_aten_hardtanh_default"])
-                .to_executorch()
-                .serialize()
-                .run_method_and_compare_outputs()
-            )
+            for legacy in (True, False):
+                tester = Tester(self.HardTanh(-2.0, 2.0), (input,))
+                tester.export()
+                tester.check_count({"torch.ops.aten.hardtanh.default": 1})
+                if legacy:
+                    tester.to_edge()
+                    tester.partition()
+                else:
+                    tester.to_edge_transform_and_lower()
+                tester.check_count(
+                    {"torch.ops.higher_order.executorch_call_delegate": 1}
+                )
+                tester.check_not(
+                    ["executorch_exir_dialects_edge__ops_aten_hardtanh_default"]
+                )
+                tester.to_executorch()
+                tester.serialize()
+                tester.run_method_and_compare_outputs()
 
     def test_qs8_hardtanh(self):
         inputs_sets = [torch.randn(2, 3, 2), torch.randn(2, 1, 2), torch.randn(2, 3)]
         for input in inputs_sets:
-            (
-                Tester(self.HardTanh(), (input,))
-                .quantize()
-                .export()
-                .check_node_count(
+            for legacy in (True, False):
+                tester = Tester(self.HardTanh(), (input,))
+                tester.quantize()
+                tester.export()
+                tester.check_node_count(
                     {
                         # Expect three quantize ops - one for input, hardtanh, and add.
                         torch.ops.quantized_decomposed.quantize_per_tensor.default: 3,
                         torch.ops.aten.hardtanh.default: 1,
                     }
                 )
-                .to_edge_transform_and_lower()
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-                .check_not(
+                if legacy:
+                    tester.to_edge()
+                    tester.partition()
+                else:
+                    tester.to_edge_transform_and_lower()
+                tester.check_count(
+                    {"torch.ops.higher_order.executorch_call_delegate": 1}
+                )
+                tester.check_not(
                     [
                         "executorch_exir_dialects_edge__ops_aten_hardtanh_default",
                         "torch.ops.quantized_decomposed",
                     ]
                 )
-                .to_executorch()
-                .serialize()
-                .run_method_and_compare_outputs()
-            )
+                tester.to_executorch()
+                tester.serialize()
+                tester.run_method_and_compare_outputs()

@@ -12,23 +12,27 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 class TestSliceCopy(unittest.TestCase):
     def _test_slice_copy(self, module, inputs, copy_count=1, edge_copy_count=1):
-        (
-            Tester(module, inputs)
-            .export()
-            .check_count({"torch.ops.aten.slice.Tensor": copy_count})
-            .to_edge()
-            .check_count(
-                {
-                    "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor": edge_copy_count
-                }
+        for legacy in (True, False):
+            tester = Tester(module, inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.slice.Tensor": copy_count})
+            if legacy:
+                tester.to_edge()
+                tester.check_count(
+                    {
+                        "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor": edge_copy_count
+                    }
+                )
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
+                ["executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor"]
             )
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_fp16_slice_copy(self):
         class SliceCopy(torch.nn.Module):
@@ -77,13 +81,16 @@ class TestSliceCopy(unittest.TestCase):
 
         module = Slice()
         inputs = (torch.randn(5, 5, 5),)
-        (
-            Tester(module, inputs)
-            .export()
-            .check_count({"torch.ops.aten.slice.Tensor": 3})
-            .to_edge_transform_and_lower()
-            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
-        )
+        for legacy in (True, False):
+            tester = Tester(module, inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.slice.Tensor": 3})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_not(["torch.ops.higher_order.executorch_call_delegate"])
 
     def test_fp32_slice_copy_dim_0(self):
         """
@@ -96,13 +103,16 @@ class TestSliceCopy(unittest.TestCase):
 
         module = Slice()
         inputs = (torch.randn(5, 5, 5),)
-        (
-            Tester(module, inputs)
-            .export()
-            .check_count({"torch.ops.aten.slice.Tensor": 3})
-            .to_edge_transform_and_lower()
-            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
-        )
+        for legacy in (True, False):
+            tester = Tester(module, inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.slice.Tensor": 3})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_not(["torch.ops.higher_order.executorch_call_delegate"])
 
     def test_fp32_static_slice_with_dynamic_dim(self):
         """
@@ -114,16 +124,15 @@ class TestSliceCopy(unittest.TestCase):
                 return x[1:3, -2:, :-1]
 
         inputs = (torch.randn(5, 5, 5),)
-        (
-            Tester(
+        for legacy in (True, False):
+            tester = Tester(
                 SliceCopy(),
                 inputs,
                 dynamic_shapes=({2: torch.export.Dim("dim_2", min=4, max=100)},),
             )
-            .export()
-            .to_edge_transform_and_lower()
-            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
-        )
+            tester.export()
+            tester.to_edge_transform_and_lower()
+            tester.check_not(["torch.ops.higher_order.executorch_call_delegate"])
 
     # Note: Slice ends up as slice_copy later in the process, but during quantization,
     # it's still slice, which isn't supported by the XNNPACK quantizer.
@@ -136,20 +145,25 @@ class TestSliceCopy(unittest.TestCase):
                 return z
 
         inputs = (torch.randn(5, 5, 5),)
-        (
-            Tester(SliceCopy(), inputs)
-            .quantize()
-            .export()
-            .check_node_count(
+        for legacy in (True, False):
+            tester = Tester(SliceCopy(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_node_count(
                 {
                     "aten::slice.Tensor": 3,
                     "quantized_decomposed::quantize_per_tensor": 3,
                 }
             )
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
+                ["executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor"]
+            )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
