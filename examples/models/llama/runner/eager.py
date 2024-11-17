@@ -84,7 +84,11 @@ def execute_runner(runner_class: Type[LlamaRunner]) -> None:
     with torch.no_grad():
         runner = runner_class(args)  # pyre-ignore: Missing argument [20]
         generated_tokens = (
-            runner.chat_completion(temperature=args.temperature)
+            runner.chat_completion(
+                max_seq_len=1000000 if args.use_attention_sink else args.max_seq_length,
+                temperature=args.temperature,
+                show_progress=args.show_tokens,
+            )
             if args.chat
             else runner.text_completion(
                 prompt=args.prompt,
