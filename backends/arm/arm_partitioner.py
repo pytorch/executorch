@@ -6,13 +6,16 @@
 # pyre-unsafe
 
 import logging
-import operator
 import os
-from typing import cast, final, List
+from typing import Callable, final, List, Optional, Tuple
 
 import torch
 from executorch.backends.arm.arm_backend import ArmBackend  # usort: skip
 from executorch.backends.arm._passes.tag_io_quant_pass import TagIOQuantPass
+from executorch.backends.arm.operator_support.tosa_supported_operators import (
+    TOSASupportedOperators,
+)
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -20,12 +23,9 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data
-from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes import PassManager
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
-
-from torch.fx.passes.operator_support import OperatorSupportBase
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
@@ -33,69 +33,6 @@ TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
 if TOSA_DBG_VERBOSE:
     logging.basicConfig(level=logging.INFO)
     logger.setLevel(logging.INFO)
-
-
-class TOSASupportedOperators(OperatorSupportBase):
-    def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
-        supported = node.op == "call_function" and node.target in [
-            exir_ops.edge.aten.add.Tensor,
-            exir_ops.edge.aten.addmm.default,
-            exir_ops.edge.aten.expand_copy.default,
-            exir_ops.edge.aten.cat.default,
-            exir_ops.edge.aten.bmm.default,
-            exir_ops.edge.aten.permute_copy.default,
-            exir_ops.edge.aten.hardtanh.default,
-            exir_ops.edge.aten.convolution.default,
-            exir_ops.edge.aten.div.Tensor,
-            exir_ops.edge.aten.exp.default,
-            exir_ops.edge.aten.log.default,
-            exir_ops.edge.aten.split_with_sizes_copy.default,
-            exir_ops.edge.aten.full.default,
-            exir_ops.edge.aten.mul.Tensor,
-            exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-            exir_ops.edge.aten.native_layer_norm.default,
-            exir_ops.edge.aten.avg_pool2d.default,
-            exir_ops.edge.aten.sigmoid.default,
-            exir_ops.edge.aten.mm.default,
-            exir_ops.edge.aten.repeat.default,
-            exir_ops.edge.aten.reciprocal.default,
-            exir_ops.edge.aten.relu.default,
-            exir_ops.edge.aten.rsqrt.default,
-            exir_ops.edge.aten._softmax.default,
-            exir_ops.edge.aten.select_copy.int,
-            exir_ops.edge.aten._log_softmax.default,
-            exir_ops.edge.aten.slice_copy.Tensor,
-            exir_ops.edge.aten.sub.Tensor,
-            exir_ops.edge.aten.sum.dim_IntList,
-            exir_ops.edge.aten.tanh.default,
-            exir_ops.edge.aten.view_copy.default,
-            exir_ops.edge.aten.clone.default,
-            exir_ops.edge.aten.mean.dim,
-            exir_ops.edge.aten.var.correction,
-            exir_ops.edge.aten.unsqueeze_copy.default,
-            exir_ops.edge.aten.squeeze_copy.dims,
-            operator.getitem,
-            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        ]
-
-        supported &= self.is_node_supported_custom(node)
-
-        # Override partitioning based on pre partition passes
-        if "arm_override_partition" in node.meta:
-            supported = supported & node.meta["arm_override_partition"]
-            node.meta.pop("arm_override_partition")
-
-        return supported
-
-    def is_node_supported_custom(self, node: torch.fx.Node) -> bool:
-        if node.target == exir_ops.edge.aten.mean.dim:
-            keep_dim = node.args[2] if len(node.args) > 2 else False
-            return cast(bool, keep_dim)
-        if node.target == exir_ops.edge.aten.var.correction:
-            keep_dim = node.kwargs.get("keepdim", False)
-            return cast(bool, keep_dim)
-        return True
 
 
 @final
@@ -109,6 +46,12 @@ class ArmPartitioner(Partitioner):
         logger.info("ArmPartitioner::partition")
         partition_tags = {}
 
+        tosa_spec = TosaSpecification.create_from_compilespecs(
+            self.delegation_spec.compile_specs
+        )
+
+        logger.info(f"Partitioning for {tosa_spec}")
+
         for spec in self.delegation_spec.compile_specs:
             if spec.key == "quantize_io" and spec.value.decode() == "True":
                 # Exclude IO quantization from the partition
@@ -121,7 +64,7 @@ class ArmPartitioner(Partitioner):
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            TOSASupportedOperators(),
+            TOSASupportedOperators(tosa_spec),
             allows_single_node_partition=True,
         )
         partition_list = capability_partitioner.propose_partitions()
@@ -136,3 +79,13 @@ class ArmPartitioner(Partitioner):
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )
+
+    def ops_to_not_decompose(
+        self,
+        ep: ExportedProgram,
+    ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        ops_to_not_decompose = [
+            torch.ops.aten.linear.default,
+            torch.ops.aten.upsample_nearest2d.vec,
+        ]
+        return (ops_to_not_decompose, None)

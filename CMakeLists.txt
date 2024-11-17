@@ -324,6 +324,19 @@ message(STATUS "Using python executable '${PYTHON_EXECUTABLE}'")
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".
+# TODO(#6475): This requires/assumes that the repo lives in a directory named
+# exactly `executorch`. Check the assumption first. Remove this check once we
+# stop relying on the assumption.
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR FILENAME _repo_dir_name)
+if(NOT "${_repo_dir_name}" STREQUAL "executorch")
+  message(
+    FATAL_ERROR
+      "The ExecuTorch repo must be cloned into a directory named exactly "
+      "`executorch`; found `${_repo_dir_name}`. See "
+      "https://github.com/pytorch/executorch/issues/6475 for progress on a "
+      "fix for this restriction."
+  )
+endif()
 set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 #
@@ -721,10 +734,15 @@ if(EXECUTORCH_BUILD_PYBIND)
       -fPIC
       -frtti
       -fexceptions
-      # libtorch is built with the old ABI, so we need to do the same for any
-      # .cpp files that include torch, c10, or ATen targets.
-      -D_GLIBCXX_USE_CXX11_ABI=0
   )
+  if(EXECUTORCH_DO_NOT_USE_CXX11_ABI)
+      # libtorch is built with the old ABI, so we need to do the same for any
+      # .cpp files that include torch, c10, or ATen targets. Note that PyTorch
+      # nightly binary is built with _GLIBCXX_USE_CXX11_ABI set to 0 while its
+      # CI build sets this to 1 (default)
+    list(APPEND _pybind_compile_options -D_GLIBCXX_USE_CXX11_ABI=0)
+  endif()
+
   # util lib
   add_library(
     util ${CMAKE_CURRENT_SOURCE_DIR}/extension/evalue_util/print_evalue.cpp

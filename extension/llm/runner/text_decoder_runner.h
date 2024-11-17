@@ -14,7 +14,6 @@
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/compiler.h>
-// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <functional>
 
 namespace executorch {
