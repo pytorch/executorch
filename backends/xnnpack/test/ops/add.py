@@ -211,7 +211,9 @@ class TestAdd(unittest.TestCase):
                 tester.partition()
             else:
                 tester.to_edge_transform_and_lower()
-                tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                tester.check_count(
+                    {"torch.ops.higher_order.executorch_call_delegate": 1}
+                )
                 tester.to_executorch()
                 tester.serialize()
                 tester.run_method_and_compare_outputs()
@@ -261,4 +263,3 @@ class TestAdd(unittest.TestCase):
             tester.to_executorch()
             tester.serialize()
             tester.run_method_and_compare_outputs()
-        
