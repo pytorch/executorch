@@ -39,6 +39,7 @@ void check_dequantize_per_tensor_args(
       input.scalar_type() == ScalarType::Byte ||
           input.scalar_type() == ScalarType::Char ||
           input.scalar_type() == ScalarType::Bits16 ||
+          input.scalar_type() == ScalarType::UInt16 ||
           input.scalar_type() == ScalarType::Short ||
           input.scalar_type() == ScalarType::Int,
       "input.scalar_type() %" PRId8 " is not supported:",
@@ -120,6 +121,7 @@ Tensor& dequantize_per_tensor_out(
   switch (input.scalar_type()) {
     ET_FORALL_INT_TYPES(CALCULATE_INT_TYPE);
     CALCULATE_INT_TYPE(uint16_t, Bits16);
+    CALCULATE_INT_TYPE(uint16_t, UInt16);
     default:
       ET_CHECK_MSG(
           false,
@@ -315,6 +317,7 @@ Tensor& dequantize_per_channel_out(
   switch (input.scalar_type()) {
     ET_FORALL_INT_TYPES(CALCULATE_FLOAT_TYPE);
     CALCULATE_INT_TYPE(uint16_t, Bits16);
+    CALCULATE_INT_TYPE(uint16_t, UInt16);
     default:
       ET_CHECK_MSG(
           false,

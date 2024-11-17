@@ -37,6 +37,16 @@ void dequantize_per_tensor_out(
     const int8_t* input_data = input.const_data_ptr<int8_t>();
     impl::reference::kernels::dequantize<int8_t>(
         out_data, input_data, scale, zero_point, numel);
+  } else if (
+      input.scalar_type() == ScalarType::Bits16 ||
+      input.scalar_type() == ScalarType::UInt16) {
+    const uint16_t* input_data = input.const_data_ptr<uint16_t>();
+    impl::reference::kernels::dequantize<uint16_t>(
+        out_data, input_data, scale, zero_point, numel);
+  } else if (input.scalar_type() == ScalarType::Short) {
+    const int16_t* input_data = input.const_data_ptr<int16_t>();
+    impl::reference::kernels::dequantize<int16_t>(
+        out_data, input_data, scale, zero_point, numel);
   } else if (input.scalar_type() == ScalarType::Int) {
     const int32_t* input_data = input.const_data_ptr<int32_t>();
     impl::reference::kernels::dequantize<int32_t>(

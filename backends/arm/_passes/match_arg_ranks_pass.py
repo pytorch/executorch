@@ -5,6 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from typing import cast
 
 from executorch.backends.arm._passes.arm_pass_utils import (
@@ -113,14 +115,3 @@ class MatchArgRanksPass(ExportPass):
         graph_module.recompile()
         graph_module = super().call(graph_module).graph_module
         return PassResult(graph_module, True)
-
-    def ensures(self, graph_module):
-        for node in graph_module.graph.nodes:
-            if node.op != "call_function" or node.target not in self.targeted_ops:
-                continue
-            arg0_rank = node.args[0].meta["val"].dim()
-            arg1_rank = node.args[1].meta["val"].dim()
-            if arg0_rank != arg1_rank:
-                raise ValueError(
-                    "Arguments of arithmetic operators need to have the same rank!"
-                )

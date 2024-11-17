@@ -124,6 +124,19 @@ class KVCacheWithAttentionSinkTest(unittest.TestCase):
             dtype=self.dtype,
         )
 
+    def _init_cache_without_sink_token(self):
+        self.kv_cache = KVCacheWithAttentionSink(
+            n_heads=self.params.n_heads,
+            head_dim=self.params.dim // self.params.n_heads,
+            transpose_cache=False,
+            enable_dynamic_shape=self.params.enable_dynamic_shape,
+            rope=self.rope_with_attention_sink,
+            max_batch_size=self.max_batch_size,
+            window_size=self.window_size + self.sink_size,
+            sink_size=0,
+            dtype=self.dtype,
+        )
+
     def _init_cache_with_batch_size(self):
         self.kv_cache = KVCacheWithAttentionSink(
             n_heads=self.params.n_heads,
@@ -300,6 +313,126 @@ class KVCacheWithAttentionSinkTest(unittest.TestCase):
             [
                 v[:, :4, :, :],
                 v1[:, 5:, :, :],
+                zero_v,
+            ],
+            dim=1,
+        )
+
+        torch.testing.assert_close(self.kv_cache.k_cache, expected_k)
+        torch.testing.assert_close(self.kv_cache.v_cache, expected_v)
+
+    def test_evict_empty_cache_for_sliding_window(self):
+        self._init_cache_without_sink_token()
+
+        # KV cache is empty, evict does nothing
+        input_pos = torch.tensor([0], dtype=torch.int32)
+        assert self.kv_cache.evict_tokens(input_pos, 1) == 0
+
+        expected_k, expected_v = self._zero_kv_with_length(
+            self.window_size + self.sink_size
+        )
+
+        torch.testing.assert_close(self.kv_cache.k_cache, expected_k)
+        torch.testing.assert_close(self.kv_cache.v_cache, expected_v)
+
+    def test_evict_without_shift_for_sliding_window(self):
+        self._init_cache_without_sink_token()
+
+        # KV cache has enough spaces for new tokens, no shift
+        input_pos = torch.tensor([0], dtype=torch.int32)
+        k, v = self._rand_kv_with_length(10)
+
+        self.kv_cache.update(input_pos, k, v)
+
+        input_pos = torch.tensor([10], dtype=torch.int32)
+        assert self.kv_cache.evict_tokens(input_pos, 1) == 0
+
+        zero_k, zero_v = self._zero_kv_with_length(22)
+
+        expected_k = torch.cat(
+            [
+                k,
+                zero_k,
+            ],
+            dim=1,
+        )
+        expected_v = torch.cat(
+            [
+                v,
+                zero_v,
+            ],
+            dim=1,
+        )
+
+        torch.testing.assert_close(self.kv_cache.k_cache, expected_k)
+        torch.testing.assert_close(self.kv_cache.v_cache, expected_v)
+
+    def test_evict_with_some_shift_for_sliding_window(self):
+        self._init_cache_without_sink_token()
+
+        # KV cache has some spaces for new tokens but not all, shift some tokens
+        input_pos = torch.tensor([0], dtype=torch.int32)
+        k, v = self._rand_kv_with_length(5)
+
+        self.kv_cache.update(input_pos, k, v)
+
+        input_pos = torch.tensor([5], dtype=torch.int32)
+        k1, v1 = self._rand_kv_with_length(5)
+
+        self.kv_cache.update(input_pos, k1, v1)
+
+        input_pos = torch.tensor([10], dtype=torch.int32)
+        assert self.kv_cache.evict_tokens(input_pos, 24) == -2
+
+        zero_k, zero_v = self._zero_kv_with_length(24)
+        expected_k = torch.cat(
+            [
+                self.rope_with_attention_sink.rerotate_k(k[:, 2:, :, :], 2, 0),
+                self.rope_with_attention_sink.rerotate_k(k1, 5, 3),
+                zero_k,
+            ],
+            dim=1,
+        )
+        expected_v = torch.cat(
+            [
+                v[:, 2:, :, :],
+                v1,
+                zero_v,
+            ],
+            dim=1,
+        )
+
+        torch.testing.assert_close(self.kv_cache.k_cache, expected_k)
+        torch.testing.assert_close(self.kv_cache.v_cache, expected_v)
+
+    def test_evict_with_all_shift_for_sliding_window(self):
+        self._init_cache_without_sink_token()
+
+        # KV cache has no spaces for new tokens, shift all tokens
+        input_pos = torch.tensor([0], dtype=torch.int32)
+        k, v = self._rand_kv_with_length(5)
+
+        self.kv_cache.update(input_pos, k, v)
+
+        input_pos = torch.tensor([5], dtype=torch.int32)
+        k1, v1 = self._rand_kv_with_length(27)
+
+        self.kv_cache.update(input_pos, k1, v1)
+
+        input_pos = torch.tensor([32], dtype=torch.int32)
+        assert self.kv_cache.evict_tokens(input_pos, 6) == -6
+
+        zero_k, zero_v = self._zero_kv_with_length(6)
+        expected_k = torch.cat(
+            [
+                self.rope_with_attention_sink.rerotate_k(k1[:, 1:, :, :], 6, 0),
+                zero_k,
+            ],
+            dim=1,
+        )
+        expected_v = torch.cat(
+            [
+                v1[:, 1:, :, :],
                 zero_v,
             ],
             dim=1,
