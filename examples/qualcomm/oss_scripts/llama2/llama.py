@@ -333,9 +333,6 @@ class SingleLlama:
     def get_example_inputs(self):
         return self.llama_model.get_example_inputs()
 
-    def get_export_inputs(self):
-        return self.llama_model.get_export_inputs()
-
 
 def compile(args):
     os.makedirs(args.artifact, exist_ok=True)

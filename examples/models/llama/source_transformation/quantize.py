@@ -157,7 +157,17 @@ def quantize(  # noqa C901
         model = gptq_quantizer.quantize(model, inputs)
         return model
     elif qmode == "vulkan_4w":
-        model = VkInt4WeightOnlyQuantizer().quantize(model)
+        q_group_size = 256 if group_size is None else group_size
+        model = VkInt4WeightOnlyQuantizer(groupsize=q_group_size).quantize(model)
+
+        # Apply additional quantizer for linear layers that aren't lowered to Vulkan
+        # at the moment
+        from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
+
+        model = Int8DynActInt4WeightQuantizer(
+            precision=torch_dtype, groupsize=q_group_size
+        ).quantize(model)
+
         return model
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")
