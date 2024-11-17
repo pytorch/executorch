@@ -7,8 +7,6 @@
 import unittest
 
 import torch
-
-from executorch.backends.xnnpack.test import tester
 from executorch.backends.xnnpack.test.tester import Tester
 
 from executorch.exir.dialects._ops import ops as exir_ops
