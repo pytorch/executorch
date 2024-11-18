@@ -24,8 +24,6 @@ from executorch.exir.pass_manager import PassManager, PassType
 from executorch.exir.passes import dead_code_elimination_pass
 from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
-from torch._subclasses import FakeTensor
-from torch.utils._pytree import tree_map_only
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
@@ -76,7 +74,9 @@ Argument = Any  # pyre-ignore
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplacePT2QuantWithCadenceQuantPass(ExportPass):
     """
-    Replace the pt2 quantization ops with custom cadence quantization ops.
+    Replace the pt2 quantization ops with cadence quantization ops.
+    We do not link kernels to the PT2 quantization ops, so we need to
+    replace them with cadence ops at all optimization levels.
     """
 
     def call_operator(
@@ -100,7 +100,9 @@ class ReplacePT2QuantWithCadenceQuantPass(ExportPass):
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplacePT2DequantWithCadenceDequantPass(ExportPass):
     """
-    Replace the pt2 dequantization ops with custom cadence dequantization ops.
+    Replace the pt2 dequantization ops with cadence dequantization ops.
+    We do not link kernels to the PT2 quantization ops, so we need to
+    replace them with cadence ops at all optimization levels.
     """
 
     def call_operator(
@@ -188,49 +190,44 @@ class ReplaceSqueezeAndUnsqueezeWithViewPass(ExportPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
-class RemoveZeroSizedCatArgsPass(ExportPass):  # is this the latest?
+class RemoveZeroSizedCatArgsPass(ExportPass):
     def call_operator(
         self,
         op,  # pyre-ignore
-        args: Tuple[Argument, ...],
-        kwargs: Dict[str, Argument],
+        args: tuple[Argument, ...],
+        kwargs: dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
         if op != exir_ops.edge.aten.cat.default:
             return super().call_operator(op, args, kwargs, meta)
 
         # Remove any zero-sized tensor arg to form a new args list.
-        new_args = []
-        for arg in args[0]:
-            arg_tensor = arg.to_tensor() if isinstance(arg, ProxyValue) else arg
-            if arg_tensor.numel() > 0:
-                new_args.append(arg)
+        cat_inputs: list[ProxyValue] = []
+        for arg in cast(Sequence[ProxyValue], args[0]):
+            if arg.to_tensor().numel() > 0:
+                cat_inputs.append(arg)
 
         # If all the tensors were empty, we just return an empty tensor with
         # the right shape.
-        if not new_args:
-            args_data, kwargs_data = tree_map_only(
-                ProxyValue, lambda x: x.data, (args, kwargs)
+        if not cat_inputs:
+            empty_shape = meta["val"].shape
+            dtype = meta["val"].dtype
+            return super().call_operator(
+                exir_ops.edge.aten.full.default,
+                (tuple(empty_shape), 0),
+                {"dtype": dtype},
+                meta,
             )
-            result = op(*args_data, **kwargs_data)
-            # When tracing with PT2, the FakeTensor mode requires the constant
-            # argument to be set to itself.
-            # TODO(matthiascremon): confirm this is the best way to do this.
-            if isinstance(result, FakeTensor):
-                result.constant = result
-            # pyre-ignore[7]: Incompatible return type.
-            return torch.empty_like(result)
 
-        # If there was only one tensor in the new_args list,
+        # If there was only one tensor in the cat_inputs list,
         # we can safely erase this cat op.
-        if len(new_args) == 1:
-            return new_args[0]
+        if len(cat_inputs) == 1:
+            return cat_inputs[0]
 
-        # Otherwise, we replace args[0] with new_args.
-        init_args = list(args)
-        init_args[0] = new_args
-        args = tuple(args)
-        return super().call_operator(op, args, kwargs, meta)
+        # Otherwise, we replace args[0] with cat_inputs.
+        new_args = list(args)
+        new_args[0] = cat_inputs
+        return super().call_operator(op, tuple(new_args), kwargs, meta)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
