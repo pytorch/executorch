@@ -273,10 +273,9 @@ for basics.
    - The goal of the reviewer is to ensure that the code in the `main` branch of
      the repo is consistent, maintainable, and of high quality.
 1. Once the PR has been approved,
-   - If you have the "write permission" in this repo, and see the "Squash and
-     merge" button is green and all CI signals are passing, you can merge it
-     yourself by pushing the "Squash and merge" button, and then type the final
-     commit message in the text box.
+   - If you have the "write permission" in this repo, you can merge it yourself
+     by clicking the "Squash and merge" button once it is green and all CI
+     signals are passing.
    - If you don't have "write permission" in this repo, the reviewer will take
      care of the PR. The reviewer may import the PR into Meta's internal system
      to validate it against internal CI.
