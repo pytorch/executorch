@@ -6,10 +6,12 @@
 
 # pyre-strict
 
+import enum
 import logging
 import operator
 import os
-from typing import Dict, List, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
 import torch
 
@@ -227,3 +229,27 @@ def save_bpte_program(
         logging.info(f"Saved exported program to {filename}")
     except Exception as e:
         logging.error(f"Error while saving to {output_dir}: {e}")
+
+
+@dataclass
+class MemoryConfig:
+    memory_sizes: List[int]
+
+    # Optional fields for logs
+    memory_names: Optional[List[str]] = None
+    base_addrs: Optional[List[int]] = None
+    memory_xml_path: Optional[str] = None
+    MemorySpace: Optional[enum.Enum] = None
+
+    # get num memories indexed from 1..N, compatible with EXIR's spec.mem_id
+    def get_num_memories(self) -> int:
+        return len(self.memory_sizes) + 1
+
+    # memory_space module provides num_memories indexed 0..num_memories-1.
+    def get_size(self, exir_id: int) -> int:
+        return self.memory_sizes[exir_id - 1]
+
+
+# Return default memory config for the backend
+def get_default_memory_config() -> MemoryConfig:
+    return MemoryConfig(memory_sizes=[0x1000000000])
