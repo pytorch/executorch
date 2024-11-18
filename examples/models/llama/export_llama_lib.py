@@ -41,6 +41,7 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_qnn_quantizer,
     get_vulkan_quantizer,
 )
+from executorch.extension.llm.modules import replace_mha_with_inference_mha
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
 from ..model_factory import EagerModelFactory
@@ -536,7 +537,7 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
     else:
         dtype_override = None
 
-    return (
+    model_manager = (
         _load_llama_model(
             args.model,
             checkpoint=checkpoint_path,
@@ -563,6 +564,15 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
         .set_output_dir(output_dir_path)
         .source_transform(_get_source_transforms(args.model, dtype_override, args))
     )
+    if args.model in TORCHTUNE_DEFINED_MODELS:
+        if args.use_kv_cache:
+            print("Setting up the KV cache...")
+            model_manager.model.setup_caches(
+                batch_size=1,
+                dtype=dtype_override.to_torch_dtype(),
+                decoder_max_seq_len=args.max_seq_length,
+            )
+    return model_manager
 
 
 def get_quantizer_and_quant_params(args):
@@ -974,6 +984,10 @@ def _get_source_transforms(  # noqa
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
     transforms = []
 
+    is_torchtune = modelname in TORCHTUNE_DEFINED_MODELS
+    if is_torchtune:
+        transforms.append(replace_mha_with_inference_mha)
+
     if args.use_spin_quant:
         if args.use_spin_quant == "cuda":
             from .source_transformation.spin_quant import (
@@ -1074,5 +1088,7 @@ def _get_source_transforms(  # noqa
 
     if args.vulkan:
         transforms.append(replace_with_vulkan_rotary_emb)
+
+    print(f"Source transformations: {[t.__name__ for t in transforms]}")
 
     return transforms

@@ -23,23 +23,20 @@ class SDPACustom(torch.nn.Module):
     def __init__(
         self,
         kv_cache: Union[KVCache, QuantizedKVCache],
-        dim: int,
     ):
         super().__init__()
         # Custom op only supports float32 currently. Converting to/from float32 is
         # faster than not having the op.
         self.kv_cache = kv_cache
-        if not isinstance(kv_cache, QuantizedKVCache):
-            self.kv_cache = kv_cache.to(torch.float)
-        else:
-            assert (
-                kv_cache.cache_fp_type == torch.float32
-            ), "Only float32 is supported for custom SDPA"
-        self.dim = dim
+        # if not isinstance(kv_cache, QuantizedKVCache):
+        #     self.kv_cache = kv_cache.to(torch.float)
+        # else:
+        #     assert (
+        #         kv_cache.cache_fp_type == torch.float32
+        #     ), "Only float32 is supported for custom SDPA"
 
     def forward(
         self,
-        input_pos: torch.Tensor,
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
@@ -60,12 +57,12 @@ class SDPACustom(torch.nn.Module):
             # updated quantize cache, scale and zero points
             # returns dequantized kv cache
             # Not most optimal. Optimizations to follow next
-            k_cache, v_cache = self.kv_cache.update(input_pos, k, v)
+            k_cache, v_cache = self.kv_cache.update(self.kv_cache.cache_pos, k, v)
             output = torch.ops.llama.custom_sdpa(
                 q,
                 k_cache,
                 v_cache,
-                input_pos[0].item(),
+                self.kv_cache.cache_pos[0].item(),
                 None,  # Attention mask
                 0,  # dropout probability. Ignored by the code
                 True,  # is_causal
@@ -77,13 +74,13 @@ class SDPACustom(torch.nn.Module):
                 v,
                 k_cache,
                 v_cache,
-                input_pos[0].item(),
+                self.kv_cache.cache_pos[0].item(),
                 seqlen,
                 None,  # Attention mask
                 0,  # dropout probability. Ignored by the code
                 True,  # is_causal
             )
-        return output.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
+        return output.view(bsz, seqlen, -1).to(dtype=input_dtype)
 
 
 def _replace_sdpa_with_custom_op(module: torch.nn.Module):
@@ -106,7 +103,6 @@ def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
 
 
 class SDPASimple(torch.nn.Module):
-
     def __init__(
         self,
         kv_cache: KVCache,
@@ -122,7 +118,6 @@ class SDPASimple(torch.nn.Module):
 
     def forward(
         self,
-        input_pos: torch.Tensor,
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
@@ -134,8 +129,8 @@ class SDPASimple(torch.nn.Module):
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
-        k, v = self.kv_cache.update(input_pos, k, v)
-        attn_mask = mask[None, None, input_pos]
+        k, v = self.kv_cache.update(k, v)
+        attn_mask = mask[None, None, self.kv_cache.cache_pos]
 
         k = k.repeat_interleave(self.n_rep, dim=1)
         v = v.repeat_interleave(self.n_rep, dim=1)

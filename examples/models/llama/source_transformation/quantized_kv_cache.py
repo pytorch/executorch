@@ -39,6 +39,11 @@ class QuantizedKVCache(nn.Module):
         enable_dynamic_shape=False,
     ):
         super().__init__()
+        self.max_batch_size = max_batch_size
+        self.max_seq_length = max_seq_length
+        self.n_heads = n_heads
+        self.head_dim = head_dim
+        self.cache_type = cache_type
         if cache_type not in (
             QuantizedCacheType.AffineSymmetric,
             QuantizedCacheType.AffineAsymmetric,
@@ -64,6 +69,9 @@ class QuantizedKVCache(nn.Module):
         )
         self.register_buffer(
             "v_cache", torch.zeros(cache_shape, dtype=self.quantized_cache_dtype)
+        )
+        self.register_buffer(
+            "cache_pos", torch.arange(0, max_seq_length), persistent=False
         )
         self.register_buffer(
             "k_cache_scales", torch.ones(scale_shape, dtype=torch.float64)
@@ -95,7 +103,7 @@ class QuantizedKVCache(nn.Module):
         )
         return quantized_value, scales, zero_points
 
-    def update(self, input_pos, k_val, v_val):
+    def update(self, k_val, v_val):
         # quantize current k_val and store it in the cache
         quantized_k_val, k_scales, k_zero_points = self._quantize(k_val)
 
@@ -110,7 +118,7 @@ class QuantizedKVCache(nn.Module):
             # for lowering pains of backends that work better
             # with index_put op.
             if self.enable_dynamic_shape:
-                start_pos = input_pos[0].item()
+                start_pos = self.cache_pos[0].item()
                 torch._check_is_size(start_pos)
                 dim_to_slice = 2 if self.is_transposed else 1
                 torch._check(start_pos < self.k_cache.size(dim_to_slice))
@@ -136,12 +144,12 @@ class QuantizedKVCache(nn.Module):
                 narrowed_v_scales.copy_(v_scales)
                 narrowed_v_zp.copy_(v_zero_points)
             else:
-                self.k_cache[:, :, input_pos] = quantized_k_val
-                self.k_cache_scales[:, :, input_pos] = k_scales
-                self.k_cache_zero_points[:, :, input_pos] = k_zero_points
-                self.v_cache[:, :, input_pos] = quantized_v_val
-                self.v_cache_scales[:, :, input_pos] = v_scales
-                self.v_cache_zero_points[:, :, input_pos] = v_zero_points
+                self.k_cache[:, :, self.cache_pos] = quantized_k_val
+                self.k_cache_scales[:, :, self.cache_pos] = k_scales
+                self.k_cache_zero_points[:, :, self.cache_pos] = k_zero_points
+                self.v_cache[:, :, self.cache_pos] = quantized_v_val
+                self.v_cache_scales[:, :, self.cache_pos] = v_scales
+                self.v_cache_zero_points[:, :, self.cache_pos] = v_zero_points
         else:
             # Right now using custom ops on this path.
             # In future we can update custom op to handle transposed cache
@@ -150,7 +158,7 @@ class QuantizedKVCache(nn.Module):
             # backends such as QNN want to use quantized cache, with dynamic shape,
             # instead of quantizing on their own.
             # But until this opting for code simplicity
-            start_pos = input_pos[0].item()
+            start_pos = self.cache_pos[0].item()
             _ = torch.ops.llama.update_quantized_cache(
                 quantized_k_val, self.k_cache, start_pos
             )
@@ -206,6 +214,31 @@ class QuantizedKVCache(nn.Module):
             kv_cache.is_transposed,
             kv_cache.enable_dynamic_shape,
         )
+
+    def clone(self) -> "QuantizedKVCache":
+        """Create a clone of the KVCache."""
+        if self.is_transposed:
+            num_kv_heads = self.k_cache.shape[1]
+        else:
+            num_kv_heads = self.k_cache.shape[2]
+        clone = QuantizedKVCache(
+            max_batch_size=self.max_batch_size,
+            max_seq_length=self.max_seq_length,
+            n_heads=num_kv_heads,
+            head_dim=self.k_cache.shape[3],
+            cache_type=self.cache_type,
+            tranposed=self.is_transposed,
+            enable_dynamic_shape=self.enable_dynamic_shape,
+        )
+        clone.k_cache.copy_(self.k_cache)
+        clone.v_cache.copy_(self.v_cache)
+        clone.cache_pos.copy_(self.cache_pos)
+        clone.k_cache_scales.copy_(self.k_cache_scales)
+        clone.v_cache_scales.copy_(self.v_cache_scales)
+        if clone.cache_type == QuantizedCacheType.AffineAsymmetric:
+            clone.k_cache_zero_points.copy_(self.k_cache_zero_points)
+            clone.v_cache_zero_points.copy_(self.v_cache_zero_points)
+        return clone
 
 
 def replace_kv_cache_with_quantized_kv_cache(module):
