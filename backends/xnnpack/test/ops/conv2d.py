@@ -155,6 +155,8 @@ class TestConv2d(unittest.TestCase):
         conv_count=1,
         dtype: torch.dtype = torch.float,
     ):
+        # pyre-fixme[29]: `Union[torch._tensor.Tensor,
+        #  torch.nn.modules.module.Module]` is not a function.
         tester = Tester(m.eval(), m.get_inputs())
 
         if quant_config is not None:
