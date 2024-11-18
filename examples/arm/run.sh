@@ -229,7 +229,6 @@ function run_fvp() {
     if [[ ${target} == *"ethos-u55"*  ]]; then
         echo "Running ${elf} for ${target} run with FVP:${fvp_model} num_macs:${num_macs}"
         ${fvp_model}                                            \
-            -C cpu0.CFGITCMSZ=11                                \
             -C ethosu.num_macs=${num_macs}                      \
             -C mps3_board.visualisation.disable-visualisation=1 \
             -C mps3_board.telnetterminal0.start_telnet=0        \
@@ -241,7 +240,6 @@ function run_fvp() {
     elif [[ ${target} == *"ethos-u85"*  ]]; then
         echo "Running ${elf} for ${target} run with FVP:${fvp_model} num_macs:${num_macs}"
     	${fvp_model}                                            \
-            -C mps4_board.subsystem.cpu0.CFGITCMSZ=11           \
             -C mps4_board.subsystem.ethosu.num_macs=${num_macs} \
             -C mps4_board.visualisation.disable-visualisation=1 \
             -C vis_hdlcd.disable_visualisation=1                \
