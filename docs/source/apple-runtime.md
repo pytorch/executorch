@@ -38,7 +38,7 @@ The prebuilt ExecuTorch runtime, backend, and kernels are available as a [Swift 
 
 #### Xcode
 
-In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version, e.g., "0.4.0", or just use the "latest" branch name for the latest stable build.
+In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format "swiftpm-<version>", (e.g. "swiftpm-0.4.0"), or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-0.4.0-20241114") for a nightly build on a specific date.
 
 ![](_static/img/swiftpm_xcode1.png)
 
@@ -66,7 +66,7 @@ let package = Package(
     .library(name: "YourPackageName", targets: ["YourTargetName"]),
   ],
   dependencies: [
-    // Use "latest" branch name for the latest stable build.
+    // Use "swiftpm-0.4.0.<year_month_day>" branch name for a nightly build.
     .package(url: "https://github.com/pytorch/executorch.git", .branch("0.4.0"))
   ],
   targets: [

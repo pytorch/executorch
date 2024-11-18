@@ -44,7 +44,7 @@ class EagerModelFactory:
             model = model_class(**kwargs)
             example_kwarg_inputs = None
             dynamic_shapes = None
-            if hasattr(model, "get_example_kwarg_inputs()"):
+            if hasattr(model, "get_example_kwarg_inputs"):
                 example_kwarg_inputs = model.get_example_kwarg_inputs()
             if hasattr(model, "get_dynamic_shapes"):
                 dynamic_shapes = model.get_dynamic_shapes()
