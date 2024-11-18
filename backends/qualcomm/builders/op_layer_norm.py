@@ -34,10 +34,10 @@ class LayerNormVisitor(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
         normalized_shapes = node.args[1]
@@ -57,20 +57,20 @@ class LayerNormVisitor(NodeVisitor):
         weight_tensor = get_parameter(weight_node, self.edge_program)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
+            node,
             weight_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         bias_node = node.args[3]
         bias_tensor = get_parameter(bias_node, self.edge_program)
         bias_tensor_wrapper = self.define_tensor(
             bias_node,
+            node,
             bias_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         epsilon = node.args[4]
@@ -78,10 +78,10 @@ class LayerNormVisitor(NodeVisitor):
         output_tensor = self.get_tensor(node, node, 0)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         layer_norm_op = PyQnnWrapper.PyQnnOpWrapper(

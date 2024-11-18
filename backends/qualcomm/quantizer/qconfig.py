@@ -249,6 +249,7 @@ def get_ptq_per_channel_quant_config(
         act_quantization_spec = QuantizationSpec(
             dtype=torch.int32 if act_dtype == torch.uint16 else act_dtype,
             qscheme=torch.per_tensor_symmetric,
+            ch_axis=0,
             observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
         )
     else:

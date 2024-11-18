@@ -45,11 +45,12 @@ class To(NodeVisitor):
             return True
 
         input_tensor = self.get_tensor(input_node, node)
-        _, inp_qconfs = self.get_quant_encoding_conf(input_node, False)
+        # Get real quant conf of input node
+        _, inp_qconfs = self.get_quant_encoding_conf(input_node, input_node)
         inp_dtype = self.get_data_type(input_tensor, inp_qconfs)
 
         output_tensor = self.get_tensor(node, node)
-        _, out_qconfs = self.get_quant_encoding_conf(node, False)
+        _, out_qconfs = self.get_quant_encoding_conf(node, node)
         out_dtype = self.get_data_type(output_tensor, out_qconfs)
         is_qparam_castable = (
             lambda o1, o2, s1, s2, diff: abs(s1 - s2) < self.epsilon
@@ -84,20 +85,20 @@ class To(NodeVisitor):
 
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
         output_tensor = self.get_tensor(node, node)
 
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         qnn_op = OpCast if self.is_cast_node(node) else OpConvert

@@ -41,11 +41,15 @@ std::string statsToJsonString(const Runner::Stats& stats);
 Runner::Runner(
     const std::vector<std::string>& models_path,
     const std::string& tokenizer_path,
+    const float logits_scale,
+    const int32_t logits_offset,
     const float temperature,
     const int eval_mode)
     : n_bos_(1),
       n_eos_(1),
       tokenizer_path_(tokenizer_path),
+      logits_scale_(logits_scale),
+      logits_offset_(logits_offset),
       temperature_(temperature),
       eval_mode_(eval_mode) {
   for (size_t i = 0; i < models_path.size(); ++i) {
@@ -136,13 +140,23 @@ T Runner::getMetadataHelper(std::string method_name, T default_val) {
   return res;
 }
 
-template <typename T>
-int32_t Runner::logitsToToken(const Tensor& logits_tensor) {
-  T* logits = logits_tensor.mutable_data_ptr<T>();
-
+int32_t Runner::logitsToToken(const Tensor& logits_tensor, int64_t pos) {
+  static std::vector<float> logits_f(vocab_size_);
+  const uint16_t* logits = logits_tensor.data_ptr<uint16_t>();
   // Since the logits are for all tokens, get the last token probabilities
-  T* logits_last = logits;
-  return sampler_->sample(logits_last);
+  auto* logits_last = logits;
+
+  // offset to the meaningful logit we want.
+  if (logits_tensor.sizes().data()[1] > 1) {
+    auto vocab_size = logits_tensor.size(2);
+    logits_last += pos * vocab_size;
+  }
+
+  // dequantize
+  for (int i = 0; i < vocab_size_; i++) {
+    logits_f[i] = (logits_last[i] - logits_offset_) * logits_scale_;
+  }
+  return sampler_->sample(logits_f.data());
 }
 
 void Runner::run_model_step(std::vector<std::vector<EValue>>& inputs) {
@@ -187,12 +201,12 @@ Error Runner::generate(
     post_process_prompt.append(
         "<|start_header_id|>system<|end_header_id|>\n\n");
     post_process_prompt.append(system_prompt);
-    post_process_prompt.append("<|eot_id|>\n");
+    post_process_prompt.append("<|eot_id|>");
   }
   post_process_prompt.append("<|start_header_id|>user<|end_header_id|>\n\n");
   post_process_prompt.append(prompt);
   post_process_prompt.append(
-      "<|eot_id|><|start_header_id|>assistant<|end_header_id|>");
+      "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n");
   token_callback("<|begin_of_text|>");
 
   stats_.inference_start_ms = time_in_ms();
@@ -219,30 +233,42 @@ Error Runner::generate(
   if (eval_mode_ == EvalMode::kBatchPrefill) {
     for (int i = 0; i < num_prompt_tokens; i++) {
       ptr->prefill_input_toks[i] = static_cast<int32_t>(prompt_tokens[i]);
-      auto piece_res = tokenizer_->decode(prompt_tokens[i], prompt_tokens[i]);
-      token_callback(piece_res.get());
     }
-    // inference
-    run_model_step(inputs);
-    Tensor& logits_tensor = output_tensors.back()[0];
-    // offset to the meaningful logit we want.
-    float* logits = logits_tensor.mutable_data_ptr<float>() +
-        (num_prompt_tokens - 1) * vocab_size_;
-    prev_token = prompt_tokens[num_prompt_tokens - 1];
-    cur_token = sampler_->sample(logits);
-    stats_.first_token_ms = time_in_ms();
-    stats_.prompt_eval_end_ms = time_in_ms();
-    long sample_start_time_ms = time_in_ms();
-    stats_.aggregate_sampling_time_ms += time_in_ms() - sample_start_time_ms;
-    auto piece_res = tokenizer_->decode(prev_token, cur_token);
-    ET_CHECK(piece_res.ok());
     if (token_callback) {
-      token_callback(piece_res.get().c_str());
+      token_callback(post_process_prompt);
     }
-    pos += num_prompt_tokens;
+
+    pos = num_prompt_tokens - 1;
+    cur_token = prompt_tokens[pos];
+    while (pos < seq_len - 1) {
+      // inference
+      run_model_step(inputs);
+      Tensor& logits_tensor = output_tensors.back()[0];
+      long sample_start_time_ms = time_in_ms();
+      prev_token = cur_token;
+      cur_token = logitsToToken(logits_tensor, pos);
+      stats_.aggregate_sampling_time_ms += time_in_ms() - sample_start_time_ms;
+
+      ptr->prefill_input_toks[++pos] = static_cast<int32_t>(cur_token);
+      auto piece_res = tokenizer_->decode(prev_token, cur_token);
+      ET_CHECK(piece_res.ok());
+      if (token_callback) {
+        token_callback(piece_res.get().c_str());
+      }
+
+      if (pos == num_prompt_tokens) {
+        stats_.first_token_ms = time_in_ms();
+        stats_.prompt_eval_end_ms = time_in_ms();
+      }
+
+      if (pos >= num_prompt_tokens && eos_id_.count(cur_token) > 0) {
+        ET_LOG(Info, "\nReached to the end of generation");
+        break;
+      }
+    }
   } else {
     ptr->input_tok = static_cast<int32_t>(cur_token);
-    ptr->attention_mask[max_seq_len_ - 1] = 0;
+    ptr->attention_mask[max_seq_len_ - 1] = 65535;
     while (pos < seq_len - 1) {
       // inference
       run_model_step(inputs);
@@ -256,7 +282,7 @@ Error Runner::generate(
 
       long sample_start_time_ms = time_in_ms();
       prev_token = cur_token;
-      cur_token = logitsToToken<float>(logits_tensor);
+      cur_token = logitsToToken(logits_tensor, pos);
       stats_.aggregate_sampling_time_ms += time_in_ms() - sample_start_time_ms;
 
       if (pos < num_prompt_tokens - 1) {

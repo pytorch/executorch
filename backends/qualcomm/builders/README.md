@@ -206,21 +206,21 @@ Now, we can start to fill in function body step by step:
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
     ```
     Through the information in [Check Operator Spec](#check-operator-spec) section, we could easily extract the desired nodes.<br/>
     The `get_tensor` method is responsible for retrieving torch tensor in correct axis order if `layout_transform` pass happened to apply.<br/>
     The `define_tensor` method is for generating tensor object for QNN API and will be memorized by aforementioned `node_to_wrappers`.<br/>
     And yet, there are arguments worth for addressing more:
-    - **node**: current graph node
+    - **tensor_source_node**: current graph source node of the tensor
+    - **target_build_node**: current node to build, which is important for fixed point mixed-precision to work properly
     - **tensor**: torch tensor emitted by node
     - **tensor_type**: type compatible with QNN SDK, oftenly use `QNN_TENSOR_TYPE_NATIVE` for intermediate outputs and `QNN_TENSOR_TYPE_STATIC` for constant parameters
     - **nodes_to_wrappers**: dictionary of graph node and its output tensor (note: the tensor here is not a torch tensor but a wrapped object for QNN)
-    - **is_input_tensor**: flag to tell if current tensor is input activation or parameter, which is important for fixed point mixed-precision to work properly
     - **node_name**: (optional) tensor name for user to specify
     - **wrapper_idx**: (optional) defaults to zero if node is not a tuple, otherwise it acts as an indexer to output tensors. e.g. when slicing input tensor into multiple outputs, `wrapper_idx` is necessary for getting correct wrapped tensor object
 
@@ -230,23 +230,24 @@ Now, we can start to fill in function body step by step:
         weight_tensor = get_parameter(weight_node, self.edge_program)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
+            node,
             weight_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         bias_node = node.args[3]
         bias_tensor = get_parameter(bias_node, self.edge_program)
         bias_tensor_wrapper = self.define_tensor(
             bias_node,
+            node,
             bias_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
     ```
-    The logic should be similar and straightforward. Please carefully set arguments `tensor_type`, `is_input_tensor` according to tensors' property.
+    The logic should be similar and straightforward. Please carefully set arguments `tensor_type` 
+    according to tensors' property.
 
 3. Define parameters:
     ```python
@@ -267,10 +268,10 @@ Now, we can start to fill in function body step by step:
         output_tensor = self.get_tensor(node, node, 0)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
     ```
     Althought the input / output activations might map to the graph IOs (a.k.a. user inputs / outputs) with corresponding type   `QNN_TENSOR_TYPE_APP_READ` / `QNN_TENSOR_TYPE_APP_WRITE`. Users are still expected to have `QNN_TENSOR_TYPE_NATIVE` for all nodes' IOs and leave the  detection logic handled inside `define_tensor` method.

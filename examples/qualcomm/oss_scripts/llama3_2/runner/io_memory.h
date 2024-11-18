@@ -73,14 +73,14 @@ class HybridMemory : public Memory {
   struct IO {
     int32_t input_tok;
     int32_t input_pos;
-    std::vector<float> attention_mask;
+    std::vector<uint16_t> attention_mask;
     std::vector<std::vector<std::vector<uint8_t>>> k_cache;
     std::vector<std::vector<uint8_t>> v_cache;
     std::vector<std::vector<uint8_t>> k_cache_out;
-    std::vector<float> logits;
+    std::vector<uint16_t> logits;
     std::vector<int32_t> prefill_input_toks;
-    std::vector<float> prefill_atten_mask;
-    std::vector<float> prefill_logits;
+    std::vector<uint16_t> prefill_atten_mask;
+    std::vector<uint16_t> prefill_logits;
   };
 
  private:
