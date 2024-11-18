@@ -305,7 +305,7 @@ class Attention(nn.Module):
             )
             self.SDPA = SDPA(
                 kv_cache=self.kv_cache,
-                dim=self.dim,
+                dim=self.n_local_heads * self.head_dim,
                 head_dim=self.head_dim,
                 n_rep=self.n_rep,
                 max_seq_len=self.max_seq_len,
@@ -426,7 +426,7 @@ class TransformerBlock(nn.Module):
         self.use_kv_cache = args.use_kv_cache
         self.n_heads = args.n_heads
         self.dim = args.dim
-        self.head_dim = args.dim // args.n_heads
+        self.head_dim = args.dim // args.n_heads if args.head_dim is None else args.head_dim
         self.attention = Attention(args, layer_id)
         if args.moe:
             self.block_sparse_moe = MOEFeedForward(args)
@@ -473,7 +473,7 @@ class Transformer(nn.Module):
                 precompute_freqs_cis, use_scaled=params.use_scaled_rope
             )
         freqs_cos, freqs_sin = self.precompute_freqs_cis(
-            params.dim // params.n_heads,
+            params.dim // params.n_heads if params.head_dim is None else params.head_dim,
             (
                 params.max_seq_len  # Normal llama2.
                 if params.ffn_dim_multiplier is None

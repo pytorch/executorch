@@ -10,17 +10,21 @@ from typing import Optional
 
 import torch
 
-from examples.models.llama.llama_transformer import ModelArgs
+from executorch.examples.models.llama.export_llama_lib import (
+    EXECUTORCH_DEFINED_MODELS,
+    TORCHTUNE_DEFINED_MODELS,
+)
+
 from executorch.extension.pybindings.portable_lib import _load_for_executorch
 
 # Load custom ops and quantized ops.
 from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
 
+from executorch.examples.models.llama.runner.generation import LlamaRunner
+
 # Note: import this after portable_lib
 from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa # usort: skip
 from executorch.kernels import quantized  # noqa
-
-from .generation import LlamaRunner
 
 
 class NativeLlamaRunner(LlamaRunner):
@@ -31,13 +35,13 @@ class NativeLlamaRunner(LlamaRunner):
     def __init__(self, args):
         with open(args.params, "r") as f:
             params = json.loads(f.read())
-        model_args: ModelArgs = ModelArgs(
+        super().__init__(
+            tokenizer_path=args.tokenizer,
             max_seq_len=args.max_len,
             max_batch_size=1,
             use_kv_cache=args.kv_cache,
-            **params,
+            vocab_size=params["vocab_size"],
         )
-        super().__init__(tokenizer_path=args.tokenizer, model_args=model_args)
         self.model = _load_for_executorch(args.pte)
 
     def forward(
@@ -53,7 +57,14 @@ class NativeLlamaRunner(LlamaRunner):
 
 
 def build_args_parser() -> argparse.ArgumentParser:
+    # TODO: merge these with build_args_parser from export_llama_lib.
     parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--model",
+        default="llama3",
+        choices=EXECUTORCH_DEFINED_MODELS + TORCHTUNE_DEFINED_MODELS,
+    )
 
     parser.add_argument(
         "-f",
@@ -89,7 +100,6 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-kv",
         "--kv_cache",
-        default=True,
         action="store_true",
     )
 

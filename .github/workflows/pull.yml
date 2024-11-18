@@ -72,10 +72,6 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         MODEL_NAME=${{ matrix.model }}
-        # Install requirements for llama vision
-        if [[ "$MODEL_NAME" == "llama3_2_vision_encoder" ]]; then
-          bash examples/models/llama3_2_vision/install_requirements.sh
-        fi
         BUILD_TOOL=${{ matrix.build-tool }}
         BACKEND=${{ matrix.backend }}
         DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
