@@ -41,8 +41,8 @@ jobs:
         with:
           fetch-depth: 0
       - uses: actions/setup-python@v4
-	with:
-	  python-version: '3.10'
+        with:
+          python-version: '3.10'
       # Not the direct dependencies but the script uses trymerge
       - run: pip install pyyaml==6.0 rockset==1.0.3
       - name: Check labels
