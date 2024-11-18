@@ -194,6 +194,10 @@ class LLMEdgeManager:
                     strict=True,
                 )
             else:
+                logging.info("Exporting with:")
+                logging.info(f"inputs: {self.example_inputs}")
+                logging.info(f"kwargs: {self.example_kwarg_inputs}")
+                logging.info(f"dynamic shapes: {dynamic_shape}")
                 exported_module = export_for_training(
                     self.model,
                     self.example_inputs,
