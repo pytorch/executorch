@@ -14,8 +14,8 @@
 #include <xnnpack.h>
 #include <vector>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace xnnpack {
 namespace delegate {
 namespace profiling {
@@ -30,24 +30,25 @@ class XNNProfiler {
    * Initialize the profiler. This must be called after model is
    * compiled and before calling begin_execution.
    */
-  Error initialize(xnn_runtime_t runtime);
+  executorch::runtime::Error initialize(xnn_runtime_t runtime);
 
   /**
    * Start a new profiling session. This is typically invoked
    * immediately before invoking the XNNPACK runtime as part
    * of a forward pass.
    */
-  Error start(EventTracer* event_tracer);
+  executorch::runtime::Error start(
+      executorch::runtime::EventTracer* event_tracer);
 
   /**
    * End a profiling session. This is typically invoked immediately
    * after the XNNPACK runtime invocation completes.
    */
-  Error end();
+  executorch::runtime::Error end();
 
  private:
 #if defined(ET_EVENT_TRACER_ENABLED) || defined(ENABLE_XNNPACK_PROFILING)
-  EventTracer* event_tracer_;
+  executorch::runtime::EventTracer* event_tracer_;
   xnn_runtime_t runtime_;
   XNNProfilerState state_;
 
@@ -64,9 +65,9 @@ class XNNProfiler {
   std::vector<uint64_t> op_timings_sum_;
 #endif
 
-  Error get_runtime_operator_names();
-  Error get_runtime_num_operators();
-  Error get_runtime_operator_timings();
+  executorch::runtime::Error get_runtime_operator_names();
+  executorch::runtime::Error get_runtime_num_operators();
+  executorch::runtime::Error get_runtime_operator_timings();
 
   void log_operator_timings();
 
@@ -80,5 +81,5 @@ class XNNProfiler {
 } // namespace profiling
 } // namespace delegate
 } // namespace xnnpack
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

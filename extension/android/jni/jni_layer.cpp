@@ -17,6 +17,7 @@
 
 #include "jni_layer_constants.h"
 
+#include <executorch/extension/android/jni/log.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/extension/tensor/tensor.h>
@@ -25,35 +26,13 @@
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
 
+#ifdef ET_USE_THREADPOOL
+#include <cpuinfo.h>
+#include <executorch/extension/threadpool/threadpool.h>
+#endif
+
 #include <fbjni/ByteBuffer.h>
 #include <fbjni/fbjni.h>
-
-#ifdef __ANDROID__
-#include <android/log.h>
-
-// For Android, write to logcat
-void et_pal_emit_log_message(
-    et_timestamp_t timestamp,
-    et_pal_log_level_t level,
-    const char* filename,
-    const char* function,
-    size_t line,
-    const char* message,
-    size_t length) {
-  int android_log_level = ANDROID_LOG_UNKNOWN;
-  if (level == 'D') {
-    android_log_level = ANDROID_LOG_DEBUG;
-  } else if (level == 'I') {
-    android_log_level = ANDROID_LOG_INFO;
-  } else if (level == 'E') {
-    android_log_level = ANDROID_LOG_ERROR;
-  } else if (level == 'F') {
-    android_log_level = ANDROID_LOG_FATAL;
-  }
-
-  __android_log_print(android_log_level, "ExecuTorch", "%s", message);
-}
-#endif
 
 using namespace executorch::extension;
 using namespace torch::executor;
@@ -243,19 +222,11 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
       facebook::jni::alias_ref<jstring> modelPath,
-      facebook::jni::alias_ref<
-          facebook::jni::JMap<facebook::jni::JString, facebook::jni::JString>>
-          extraFiles,
       jint loadMode) {
-    return makeCxxInstance(modelPath, extraFiles, loadMode);
+    return makeCxxInstance(modelPath, loadMode);
   }
 
-  ExecuTorchJni(
-      facebook::jni::alias_ref<jstring> modelPath,
-      facebook::jni::alias_ref<
-          facebook::jni::JMap<facebook::jni::JString, facebook::jni::JString>>
-          extraFiles,
-      jint loadMode) {
+  ExecuTorchJni(facebook::jni::alias_ref<jstring> modelPath, jint loadMode) {
     Module::LoadMode load_mode = Module::LoadMode::Mmap;
     if (loadMode == 0) {
       load_mode = Module::LoadMode::File;
@@ -268,6 +239,25 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     }
 
     module_ = std::make_unique<Module>(modelPath->toStdString(), load_mode);
+
+#ifdef ET_USE_THREADPOOL
+    // Default to using cores/2 threadpool threads. The long-term plan is to
+    // improve performant core detection in CPUInfo, but for now we can use
+    // cores/2 as a sane default.
+    //
+    // Based on testing, this is almost universally faster than using all
+    // cores, as efficiency cores can be quite slow. In extreme cases, using
+    // all cores can be 10x slower than using cores/2.
+    //
+    // TODO Allow overriding this default from Java.
+    auto threadpool = executorch::extension::threadpool::get_threadpool();
+    if (threadpool) {
+      int thread_count = cpuinfo_get_processors_count() / 2;
+      if (thread_count > 0) {
+        threadpool->_unsafe_reset_threadpool(thread_count);
+      }
+    }
+#endif
   }
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> forward(
@@ -294,6 +284,29 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       facebook::jni::alias_ref<
           facebook::jni::JArrayClass<JEValue::javaobject>::javaobject>
           jinputs) {
+    // If no inputs is given, it will run with sample inputs (ones)
+    if (jinputs->size() == 0) {
+      if (module_->load_method(method) != Error::Ok) {
+        return {};
+      }
+      auto&& underlying_method = module_->methods_[method].method;
+      auto&& buf = prepare_input_tensors(*underlying_method);
+      auto result = underlying_method->execute();
+      if (result != Error::Ok) {
+        return {};
+      }
+      facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> jresult =
+          facebook::jni::JArrayClass<JEValue>::newArray(
+              underlying_method->outputs_size());
+
+      for (int i = 0; i < underlying_method->outputs_size(); i++) {
+        auto jevalue =
+            JEValue::newJEValueFromEValue(underlying_method->get_output(i));
+        jresult->setElement(i, *jevalue);
+      }
+      return jresult;
+    }
+
     std::vector<EValue> evalues;
     std::vector<TensorPtr> tensors;
 
@@ -352,11 +365,34 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     return jresult;
   }
 
-  jint forward_ones() {
-    auto&& load_result = module_->load_method("forward");
-    auto&& buf = prepare_input_tensors(*(module_->methods_["forward"].method));
-    auto&& result = module_->methods_["forward"].method->execute();
-    return (jint)result;
+  facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>>
+  readLogBuffer() {
+#ifdef __ANDROID__
+
+    facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> ret;
+
+    access_log_buffer([&](std::vector<log_entry>& buffer) {
+      const auto size = buffer.size();
+      ret = facebook::jni::JArrayClass<jstring>::newArray(size);
+      for (auto i = 0u; i < size; i++) {
+        const auto& entry = buffer[i];
+        // Format the log entry as "[TIMESTAMP FUNCTION FILE:LINE] LEVEL
+        // MESSAGE".
+        std::stringstream ss;
+        ss << "[" << entry.timestamp << " " << entry.function << " "
+           << entry.filename << ":" << entry.line << "] "
+           << static_cast<char>(entry.level) << " " << entry.message;
+
+        facebook::jni::local_ref<facebook::jni::JString> jstr_message =
+            facebook::jni::make_jstring(ss.str().c_str());
+        (*ret)[i] = jstr_message;
+      }
+    });
+
+    return ret;
+#else
+    return facebook::jni::JArrayClass<String>::newArray(0);
+#endif
   }
 
   static void registerNatives() {
@@ -365,13 +401,21 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         makeNativeMethod("forward", ExecuTorchJni::forward),
         makeNativeMethod("execute", ExecuTorchJni::execute),
         makeNativeMethod("loadMethod", ExecuTorchJni::load_method),
-        makeNativeMethod("forwardOnes", ExecuTorchJni::forward_ones),
+        makeNativeMethod("readLogBuffer", ExecuTorchJni::readLogBuffer),
     });
   }
 };
 } // namespace executorch::extension
 
+#ifdef EXECUTORCH_BUILD_LLAMA_JNI
+extern void register_natives_for_llama();
+#else
+// No op if we don't build llama
+void register_natives_for_llama() {}
+#endif
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
-  return facebook::jni::initialize(
-      vm, [] { executorch::extension::ExecuTorchJni::registerNatives(); });
+  return facebook::jni::initialize(vm, [] {
+    executorch::extension::ExecuTorchJni::registerNatives();
+    register_natives_for_llama();
+  });
 }

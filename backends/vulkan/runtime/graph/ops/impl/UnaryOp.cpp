@@ -46,12 +46,12 @@ void add_unary_op_node(
   if (graph.is_buffer_storage(out)) {
     ubos.append({graph.numel_ubo(out)});
   } else {
-    ubos.append({graph.texture_limits_ubo(out)});
+    ubos.append({graph.logical_limits_ubo(out)});
   }
   ubos.append(
       {graph.create_params_buffer(min), graph.create_params_buffer(max)});
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
@@ -114,12 +114,6 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
         "hardshrink");                                                   \
   }
 
-#define DEFINE_HARDSWISH_FN(op_name)                                     \
-  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
-    return add_unary_op_node(                                            \
-        graph, args[0], kDummyFloat, kDummyFloat, args[1], #op_name);    \
-  }
-
 void gelu(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // args[1] is the `approximate` string
   // https://fburl.com/code/9omngmyo
@@ -135,12 +129,14 @@ DEFINE_ACTIVATION_FN(neg);
 DEFINE_ACTIVATION_FN(sigmoid);
 DEFINE_ACTIVATION_FN(sin);
 DEFINE_ACTIVATION_FN(sqrt);
+DEFINE_ACTIVATION_FN(rsqrt);
 DEFINE_ACTIVATION_FN(tanh);
 DEFINE_CLAMP_FN(clamp);
 DEFINE_CLAMP_FN(hardtanh);
 DEFINE_RELU_FN(relu);
 DEFINE_HARDSHRINK_FN(hardshrink);
-DEFINE_HARDSWISH_FN(hardswish);
+DEFINE_ACTIVATION_FN(hardswish);
+DEFINE_ACTIVATION_FN(hardsigmoid);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
@@ -154,9 +150,11 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.sigmoid.default, sigmoid);
   VK_REGISTER_OP(aten.sin.default, sin);
   VK_REGISTER_OP(aten.sqrt.default, sqrt);
+  VK_REGISTER_OP(aten.rsqrt.default, rsqrt);
   VK_REGISTER_OP(aten.tanh.default, tanh);
   VK_REGISTER_OP(aten.hardshrink.default, hardshrink);
   VK_REGISTER_OP(aten.hardswish.default, hardswish);
+  VK_REGISTER_OP(aten.hardsigmoid.default, hardsigmoid);
 }
 
 } // namespace vkcompute

@@ -24,7 +24,8 @@ extern "C" void sgemm_(char *transa, char *transb, int *m, int *n, int *k, float
 namespace executorch {
 namespace cpublas {
 
-// using Half = exec_aten::Half;
+using exec_aten::BFloat16;
+using exec_aten::Half;
 
 #ifdef ET_BUILD_WITH_BLAS
 #ifdef ET_BUILD_FOR_APPLE
@@ -162,6 +163,29 @@ void gemm(
   normalize_last_dims(transa, transb, m, n, k, &lda, &ldb, &ldc);
 
   using acc_type = utils::compute_dtype<Half>;
+  gemm_impl(
+      transa, transb,
+      m, n, k,
+      static_cast<const acc_type>(alpha),
+      a, lda,
+      b, ldb,
+      static_cast<const acc_type>(beta),
+      c, ldc);
+}
+// clang-format on
+
+// clang-format off
+void gemm(
+    TransposeType transa, TransposeType transb,
+    int64_t m, int64_t n, int64_t k,
+    const BFloat16 alpha,
+    const BFloat16 *a, int64_t lda,
+    const BFloat16 *b, int64_t ldb,
+    const BFloat16 beta,
+    BFloat16 *c, int64_t ldc) {
+  normalize_last_dims(transa, transb, m, n, k, &lda, &ldb, &ldc);
+
+  using acc_type = utils::compute_dtype<BFloat16>;
   gemm_impl(
       transa, transb,
       m, n, k,

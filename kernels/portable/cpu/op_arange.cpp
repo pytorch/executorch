@@ -19,7 +19,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-Tensor& arange_out(RuntimeContext& ctx, const Scalar& end, Tensor& out) {
+Tensor& arange_out(KernelRuntimeContext& ctx, const Scalar& end, Tensor& out) {
   double end_val = 0;
   ET_KERNEL_CHECK(
       ctx, utils::extract_scalar(end, &end_val), InvalidArgument, out);
@@ -50,7 +50,7 @@ Tensor& arange_out(RuntimeContext& ctx, const Scalar& end, Tensor& out) {
 }
 
 Tensor& arange_start_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Scalar& start,
     const Scalar& end,
     const Scalar& step,

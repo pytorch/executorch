@@ -11,6 +11,8 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <gmock/gmock.h> // For MATCHER_P
 
+#include <optional>
+
 namespace executorch {
 namespace runtime {
 namespace testing {
@@ -18,6 +20,14 @@ namespace testing {
 namespace internal {
 constexpr double kDefaultRtol = 1e-5;
 constexpr double kDefaultAtol = 1e-8;
+// Per
+// https://en.wikipedia.org/wiki/Half-precision_floating-point_format,
+// float16 has about 3.3 digits of precision.
+constexpr double kDefaultHalfAtol = 1e-3;
+
+// Following similar reasoning to float16, BFloat16 has
+// math.log10(2**8) = 2.4 digits of precision.
+constexpr double kDefaultBFloat16Atol = 1e-2;
 } // namespace internal
 
 /**
@@ -58,10 +68,10 @@ constexpr double kDefaultAtol = 1e-8;
  *     outside of the specified tolerance of each other.
  */
 bool tensors_are_close(
-    const exec_aten::Tensor& a,
-    const exec_aten::Tensor& b,
+    const executorch::aten::Tensor& a,
+    const executorch::aten::Tensor& b,
     double rtol = internal::kDefaultRtol,
-    double atol = internal::kDefaultAtol);
+    std::optional<double> opt_atol = std::nullopt);
 
 /**
  * Returns true if the tensors are of the same numel and dtype, and if all
@@ -89,10 +99,10 @@ bool tensors_are_close(
  *     outside of the specified tolerance of each other.
  */
 bool tensor_data_is_close(
-    const exec_aten::Tensor& a,
-    const exec_aten::Tensor& b,
+    const executorch::aten::Tensor& a,
+    const executorch::aten::Tensor& b,
     double rtol = internal::kDefaultRtol,
-    double atol = internal::kDefaultAtol);
+    std::optional<double> opt_atol = std::nullopt);
 
 /**
  * Returns true if the two lists are of the same length, and
@@ -100,12 +110,12 @@ bool tensor_data_is_close(
  * i.
  */
 bool tensor_lists_are_close(
-    const exec_aten::Tensor* tensors_a,
+    const executorch::aten::Tensor* tensors_a,
     size_t num_tensors_a,
-    const exec_aten::Tensor* tensors_b,
+    const executorch::aten::Tensor* tensors_b,
     size_t num_tensors_b,
     double rtol = internal::kDefaultRtol,
-    double atol = internal::kDefaultAtol);
+    std::optional<double> opt_atol = std::nullopt);
 
 /**
  * Lets gtest users write `EXPECT_THAT(tensor1, IsCloseTo(tensor2))` or
@@ -325,23 +335,25 @@ MATCHER_P(IsListEqualTo, other, "") {
  * These functions must be declared in the original namespaces of their
  * associated types so that C++ can find them.
  */
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 /**
  * Prints the ScalarType to the stream as a human-readable string.
  *
  * See also executorch::runtime::toString(ScalarType t) in ScalarTypeUtil.h.
  */
-std::ostream& operator<<(std::ostream& os, const exec_aten::ScalarType& t);
+std::ostream& operator<<(std::ostream& os, const ScalarType& t);
 
 /**
  * Prints the Tensor to the stream as a human-readable string.
  */
-std::ostream& operator<<(std::ostream& os, const exec_aten::Tensor& t);
+std::ostream& operator<<(std::ostream& os, const Tensor& t);
 
-} // namespace executor
-} // namespace torch
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch
 
 #endif // !USE_ATEN_LIB
 

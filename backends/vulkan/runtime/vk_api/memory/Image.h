@@ -22,6 +22,12 @@
 #include <unordered_map>
 
 namespace vkcompute {
+
+// Forward declare vTensor classes such that they can be set as friend classes
+namespace api {
+class vTensorStorage;
+} // namespace api
+
 namespace vkapi {
 
 class ImageSampler final {
@@ -68,6 +74,7 @@ class VulkanImage final {
     VkImageType image_type;
     VkFormat image_format;
     VkExtent3D image_extents;
+    VkImageTiling image_tiling;
     VkImageUsageFlags image_usage;
   };
 
@@ -87,16 +94,41 @@ class VulkanImage final {
   explicit VulkanImage();
 
   explicit VulkanImage(
+      VkDevice,
       const VmaAllocator,
       const VmaAllocationCreateInfo&,
       const ImageProperties&,
       const ViewProperties&,
       const SamplerProperties&,
-      const VkImageLayout layout,
       VkSampler,
+      const VkImageLayout,
       const bool allocate_memory = true);
 
-  VulkanImage(const VulkanImage&) = delete;
+  explicit VulkanImage(
+      VkDevice,
+      const ImageProperties&,
+      VkImage,
+      VkImageView,
+      VkSampler,
+      const VkImageLayout);
+
+ protected:
+  /*
+   * The Copy constructor allows for creation of a class instance that are
+   * "aliases" of another class instance. The resulting class instance will not
+   * have ownership of the underlying VkImage.
+   *
+   * This behaviour is analogous to creating a copy of a pointer, thus it is
+   * unsafe, as the original class instance may be destroyed before the copy.
+   * These constructors are therefore marked protected so that they may be used
+   * only in situations where the lifetime of the original class instance is
+   * guaranteed to exceed, or at least be the same as, the lifetime of the
+   * copied class instance.
+   */
+  VulkanImage(const VulkanImage& other) noexcept;
+
+ public:
+  // To discourage creating copies, the assignment operator is still deleted.
   VulkanImage& operator=(const VulkanImage&) = delete;
 
   VulkanImage(VulkanImage&&) noexcept;
@@ -114,6 +146,7 @@ class VulkanImage final {
   friend struct ImageMemoryBarrier;
 
  private:
+  VkDevice device_;
   ImageProperties image_properties_;
   ViewProperties view_properties_;
   SamplerProperties sampler_properties_;
@@ -123,6 +156,12 @@ class VulkanImage final {
   Allocation memory_;
   // Indicates whether the underlying memory is owned by this resource
   bool owns_memory_;
+  // In some cases, a VulkanImage may be a copy of another VulkanImage but still
+  // own a unique view of the VkImage.
+  bool owns_view_;
+  // Indicates whether this VulkanImage was copied from another VulkanImage,
+  // thus it does not have ownership of the underlying VKBuffer
+  bool is_copy_;
   Handles handles_;
   // Layout
   VkImageLayout layout_;
@@ -131,9 +170,7 @@ class VulkanImage final {
   void create_image_view();
 
   inline VkDevice device() const {
-    VmaAllocatorInfo allocator_info{};
-    vmaGetAllocatorInfo(allocator_, &allocator_info);
-    return allocator_info.device;
+    return device_;
   }
 
   inline VmaAllocator vma_allocator() const {
@@ -144,8 +181,8 @@ class VulkanImage final {
     return memory_.allocation;
   }
 
-  inline VmaAllocationCreateInfo allocation_create_info() const {
-    return VmaAllocationCreateInfo(memory_.create_info);
+  inline VkImageType type() const {
+    return image_properties_.image_type;
   }
 
   inline VkFormat format() const {
@@ -193,20 +230,37 @@ class VulkanImage final {
     return owns_memory_;
   }
 
+  inline bool is_copy() const {
+    return is_copy_;
+  }
+
   inline operator bool() const {
     return (handles_.image != VK_NULL_HANDLE);
   }
 
+  inline bool is_copy_of(const VulkanImage& other) const {
+    return (handles_.image == other.handles_.image) && is_copy_;
+  }
+
   inline void bind_allocation(const Allocation& memory) {
     VK_CHECK_COND(!memory_, "Cannot bind an already bound allocation!");
-    VK_CHECK(vmaBindImageMemory(allocator_, memory.allocation, handles_.image));
+    // To prevent multiple instances of binding the same VkImage to a memory
+    // block, do not actually bind memory if this VulkanImage is a copy. Assume
+    // that the original VulkanImage is responsible for binding the image.
+    if (!is_copy_) {
+      VK_CHECK(
+          vmaBindImageMemory(allocator_, memory.allocation, handles_.image));
+    }
     memory_.allocation = memory.allocation;
 
     // Only create the image view if the image has been bound to memory
+    owns_view_ = true;
     create_image_view();
   }
 
   VkMemoryRequirements get_memory_requirements() const;
+
+  friend class api::vTensorStorage;
 };
 
 struct ImageMemoryBarrier final {

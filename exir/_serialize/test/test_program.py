@@ -272,6 +272,15 @@ class TestProgram(unittest.TestCase):
             f"{segment_table}",
         )
 
+        # Convert back.
+        program2 = deserialize_pte_binary(pte_data)
+        # Programs are the same besides constant_buffer, as deserialization
+        # does not preserve constant segment; padding may be added
+        # during serialization.
+        self.assertEqual(program2.execution_plan, program.execution_plan)
+        # Number of constant tensors should be the same.
+        self.assertEqual(len(program2.constant_buffer), len(program.constant_buffer))
+
     def test_canonicalize_delegate_indices(self) -> None:
         def make_execution_plan(
             name: str, delegates: List[BackendDelegate]
@@ -462,7 +471,6 @@ class TestProgram(unittest.TestCase):
         assert len(ret) == size
         return ret
 
-    @unittest.skip("TODO(T181362263): Update restore segments to restore cords")
     def test_round_trip_with_segments(self) -> None:
         # Create a program with some delegate data blobs.
         program = get_test_program()
@@ -582,6 +590,33 @@ class TestProgram(unittest.TestCase):
         # truncated or corrupted.
         program2 = deserialize_pte_binary(pte_data)
         self.assert_programs_equal(program, program2)
+
+    def test_no_constants(self) -> None:
+        program = get_test_program()
+        # Insert placeholder for non-const tensors.
+        add_constant_data(program, [b""])
+
+        pte_data = bytes(
+            serialize_pte_binary(
+                program,
+                extract_delegate_segments=True,
+                segment_alignment=SEGMENT_ALIGNMENT,
+                constant_tensor_alignment=CONSTANT_TENSOR_ALIGNMENT,
+            )
+        )
+        # The input Program should not be modified.
+        self.assertEqual(program.segments, [])
+
+        # Peek inside the actual flatbuffer data to see the segments.
+        flatbuffer_program = _json_to_program(_program_flatbuffer_to_json(pte_data))
+
+        # Constant buffer should be empty.
+        self.assertEqual(len(flatbuffer_program.constant_buffer), 0)
+
+        # Constant segment should contain the placeholder.
+        self.assertEqual(flatbuffer_program.constant_segment.segment_index, 0)
+        self.assertEqual(len(flatbuffer_program.constant_segment.offsets), 1)
+        self.assertEqual(flatbuffer_program.constant_segment.offsets[0], 0)
 
     def test_unused_inline_delegate_blobs_with_segments(self) -> None:
         # Create a program with some delegate data blobs.
@@ -775,6 +810,15 @@ class TestProgram(unittest.TestCase):
             # Start of segment[2].
             + b"\x40\x44\x44",
         )
+
+        # Convert back.
+        program2 = deserialize_pte_binary(pte_data)
+        # Programs are the same besides constant_buffer, as deserialization
+        # does not preserve constant segment; padding may be added
+        # during serialization.
+        self.assertEqual(program2.execution_plan, program.execution_plan)
+        # Number of constant tensors should be the same.
+        self.assertEqual(len(program2.constant_buffer), len(program.constant_buffer))
 
 
 # Common data for extended header tests. The two example values should produce

@@ -19,7 +19,7 @@ using ScalarType = exec_aten::ScalarType;
 using Tensor = exec_aten::Tensor;
 
 Tensor& fill_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {
@@ -61,7 +61,7 @@ Tensor& fill_scalar_out(
 }
 
 Tensor& fill_tensor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {

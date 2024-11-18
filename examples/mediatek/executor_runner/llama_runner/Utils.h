@@ -18,7 +18,7 @@
 #include <string_view>
 #include <vector>
 
-namespace torch::executor {
+namespace example {
 namespace utils {
 
 class Timer {
@@ -113,4 +113,4 @@ static std::string to_string(const std::vector<T> vec) {
 }
 
 } // namespace utils
-} // namespace torch::executor
+} // namespace example

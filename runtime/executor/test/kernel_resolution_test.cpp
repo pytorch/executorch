@@ -34,7 +34,7 @@ using executorch::runtime::KernelKey;
 using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::Method;
 using executorch::runtime::Program;
-using executorch::runtime::register_kernels;
+using executorch::runtime::register_kernel;
 using executorch::runtime::Result;
 using executorch::runtime::TensorMeta;
 using executorch::runtime::testing::ManagedMemoryManager;
@@ -77,7 +77,7 @@ TEST_F(KernelResolutionTest, InitExecutionPlanSuccess) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });
-  auto s1 = register_kernels({kernel_1});
+  auto s1 = register_kernel(kernel_1);
   EXPECT_EQ(s1, executorch::runtime::Error::Ok);
 
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
@@ -109,7 +109,7 @@ TEST_F(KernelResolutionTest, ResolveKernelKeySuccess) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });
-  auto s1 = register_kernels({kernel_1});
+  auto s1 = register_kernel(kernel_1);
   EXPECT_EQ(s1, executorch::runtime::Error::Ok);
 
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);

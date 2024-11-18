@@ -8,8 +8,6 @@
 
 #include <executorch/backends/vulkan/runtime/api/Context.h>
 
-#include <executorch/backends/vulkan/runtime/vk_api/VkUtils.h>
-
 #ifndef VULKAN_DESCRIPTOR_POOL_SIZE
 #define VULKAN_DESCRIPTOR_POOL_SIZE 1024u
 #endif
@@ -41,7 +39,12 @@ Context::Context(size_t adapter_i, const ContextConfig& config)
       buffer_clearlist_mutex_{},
       buffers_to_clear_{},
       image_clearlist_mutex_{},
-      images_to_clear_{} {}
+      images_to_clear_{},
+      preferred_image_tiling_{VK_IMAGE_TILING_OPTIMAL} {
+  if (adapter_p_->linear_tiling_3d_enabled()) {
+    preferred_image_tiling_ = VK_IMAGE_TILING_LINEAR;
+  }
+}
 
 Context::~Context() {
   try {
@@ -143,6 +146,14 @@ void Context::register_shader_dispatch(
   cmd_.insert_barrier(pipeline_barrier);
 
   cmd_.dispatch(effective_global_wg);
+}
+
+void Context::register_blit(
+    vkapi::PipelineBarrier& pipeline_barrier,
+    vkapi::VulkanImage& src,
+    vkapi::VulkanImage& dst) {
+  cmd_.insert_barrier(pipeline_barrier);
+  cmd_.blit(src, dst);
 }
 
 void Context::submit_cmd_to_gpu(VkFence fence_handle, const bool final_use) {

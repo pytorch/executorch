@@ -16,26 +16,24 @@ import numpy as np
 
 import torch
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
-from executorch.backends.qualcomm.quantizer.quantizer import (
-    get_16a4w_qnn_ptq_config,
-    get_default_16bit_qnn_ptq_config,
-    QnnQuantizer,
-    QuantDtype,
-)
-from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
-    QcomChipset,
-)
+from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
+    get_soc_to_arch_map,
 )
-from executorch.exir import EdgeCompileConfig, EdgeProgramManager
+from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torch.ao.quantization.observer import MovingAverageMinMaxObserver
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.ao.quantization.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 
 
 class SimpleADB:
@@ -66,6 +64,7 @@ class SimpleADB:
         host_id=None,
         error_only=False,
         shared_buffer=False,
+        dump_intermediate_outputs=False,
         runner="examples/qualcomm/executor_runner/qnn_executor_runner",
     ):
         self.qnn_sdk = qnn_sdk
@@ -77,14 +76,10 @@ class SimpleADB:
         self.working_dir = Path(self.pte_path[0]).parent.absolute()
         self.input_list_filename = "input_list.txt"
         self.etdump_path = f"{self.workspace}/etdump.etdp"
+        self.dump_intermediate_outputs = dump_intermediate_outputs
+        self.debug_output_path = f"{self.workspace}/debug_output.bin"
         self.output_folder = f"{self.workspace}/outputs"
-        self.arch_table = {
-            "SM8650": "75",
-            "SM8550": "73",
-            "SM8475": "69",
-            "SM8450": "69",
-        }
-        self.soc_model = self.arch_table[soc_model]
+        self.htp_arch = get_soc_to_arch_map()[soc_model]
         self.error_only = error_only
         self.shared_buffer = shared_buffer
         self.runner = runner
@@ -109,12 +104,12 @@ class SimpleADB:
             *self.pte_path,
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtp.so",
             (
-                f"{self.qnn_sdk}/lib/hexagon-v{self.soc_model}/"
-                f"unsigned/libQnnHtpV{self.soc_model}Skel.so"
+                f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
+                f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
             ),
             (
                 f"{self.qnn_sdk}/lib/aarch64-android/"
-                f"libQnnHtpV{self.soc_model}Stub.so"
+                f"libQnnHtpV{self.htp_arch}Stub.so"
             ),
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpPrepare.so",
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
@@ -141,7 +136,7 @@ class SimpleADB:
             for file_name in files:
                 self._adb(["push", file_name, self.workspace])
 
-    def execute(self, custom_runner_cmd=None):
+    def execute(self, custom_runner_cmd=None, method_index=0):
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
         if custom_runner_cmd is None:
@@ -152,13 +147,18 @@ class SimpleADB:
                     f"--input_list_path {self.input_list_filename}",
                     f"--etdump_path {self.etdump_path}",
                     "--shared_buffer" if self.shared_buffer else "",
+                    f"--debug_output_path {self.debug_output_path}",
+                    (
+                        "--dump_intermediate_outputs"
+                        if self.dump_intermediate_outputs
+                        else ""
+                    ),
+                    f"--method_index {method_index}",
                 ]
             )
             qnn_executor_runner_cmds = " ".join(
                 [
                     f"cd {self.workspace} &&",
-                    "export ADSP_LIBRARY_PATH=. &&",
-                    "export LD_LIBRARY_PATH=. &&",
                     f"./qnn_executor_runner {qnn_executor_runner_args}",
                 ]
             )
@@ -177,6 +177,67 @@ class SimpleADB:
         if callback:
             callback()
 
+    def pull_debug_output(self, etdump_path, debug_ouput_path, callback=None):
+        self._adb(["pull", self.etdump_path, etdump_path])
+        self._adb(["pull", self.debug_output_path, debug_ouput_path])
+        if callback:
+            callback()
+
+
+def ptq_calibrate(captured_model, quantizer, dataset):
+    annotated_model = prepare_pt2e(captured_model, quantizer)
+    print("Quantizing(PTQ) the model...")
+    # calibration
+    if callable(dataset):
+        dataset(annotated_model)
+    else:
+        for data in dataset:
+            annotated_model(*data)
+    return annotated_model
+
+
+def qat_train(ori_model, captured_model, quantizer, dataset):
+    data, targets = dataset
+    annotated_model = torch.ao.quantization.move_exported_model_to_train(
+        prepare_qat_pt2e(captured_model, quantizer)
+    )
+    optimizer = torch.optim.SGD(annotated_model.parameters(), lr=0.00001)
+    criterion = torch.nn.CrossEntropyLoss()
+    for i, d in enumerate(data):
+        print(f"Epoch {i}")
+        if i > 3:
+            # Freeze quantizer parameters
+            annotated_model.apply(torch.ao.quantization.disable_observer)
+        if i > 2:
+            # Freeze batch norm mean and variance estimates
+            annotated_model.apply(torch.nn.intrinsic.qat.freeze_bn_stats)
+
+        output = annotated_model(*d)
+        loss = criterion(output, targets[i])
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+    return torch.ao.quantization.quantize_pt2e.convert_pt2e(
+        torch.ao.quantization.move_exported_model_to_eval(annotated_model)
+    )
+
+
+def make_quantizer(
+    quant_dtype: Optional[QuantDtype] = QuantDtype.use_8a8w,
+    custom_annotations=(),
+    per_channel_conv=True,
+    per_channel_linear=False,
+    act_observer=MovingAverageMinMaxObserver,
+    is_qat=False,
+):
+    quantizer = QnnQuantizer()
+    quantizer.add_custom_quant_annotations(custom_annotations)
+    quantizer.set_per_channel_conv_quant(per_channel_conv)
+    quantizer.set_per_channel_linear_quant(per_channel_linear)
+    quantizer.set_quant_config(quant_dtype, is_qat, act_observer)
+    return quantizer
+
 
 # TODO: refactor to support different backends
 def build_executorch_binary(
@@ -185,69 +246,45 @@ def build_executorch_binary(
     soc_model,
     file_name,
     dataset: List[torch.Tensor] | Callable[[torch.fx.GraphModule], None],
-    custom_annotations=(),
     skip_node_id_set=None,
     skip_node_op_set=None,
     quant_dtype: Optional[QuantDtype] = None,
-    per_channel_linear=False,  # TODO: remove this once QNN fully supports linear
+    custom_quantizer=None,
     shared_buffer=False,
     metadata=None,
-    act_observer=MovingAverageMinMaxObserver,
+    dump_intermediate_outputs=False,
+    custom_pass_config=frozenset(),
+    qat_training_data=None,
 ):
     if quant_dtype is not None:
-        quantizer = QnnQuantizer()
-        quantizer.add_custom_quant_annotations(custom_annotations)
-        quantizer.set_per_channel_linear_quant(per_channel_linear)
-        quantizer.set_per_channel_conv_quant(True)
-
-        if quant_dtype == QuantDtype.use_8a8w:
-            pass  # default setting
-        elif quant_dtype == QuantDtype.use_16a16w:
-            quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
-            quantizer.set_bit16_op_quant_config(
-                get_default_16bit_qnn_ptq_config(act_observer=act_observer)
-            )
-        elif quant_dtype == QuantDtype.use_16a4w:
-            quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
-            quantizer.set_bit16_op_quant_config(
-                get_16a4w_qnn_ptq_config(act_observer=act_observer)
-            )
-            quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
-        else:
-            raise AssertionError(f"No support for QuantDtype {quant_dtype}.")
-
         captured_model = torch.export.export(model, inputs).module()
-        annotated_model = prepare_pt2e(captured_model, quantizer)
-        print("Quantizing the model...")
-        # calibration
-        if callable(dataset):
-            dataset(annotated_model)
+        if qat_training_data:
+            quantizer = custom_quantizer or make_quantizer(
+                quant_dtype=quant_dtype, is_qat=True
+            )
+            # qat training
+            annotated_model = qat_train(
+                model, captured_model, quantizer, qat_training_data
+            )
         else:
-            for data in dataset:
-                annotated_model(*data)
-        quantized_model = convert_pt2e(annotated_model)
-        edge_prog = capture_program(quantized_model, inputs)
-    else:
-        edge_prog = capture_program(model, inputs)
+            quantizer = custom_quantizer or make_quantizer(quant_dtype=quant_dtype)
+            # ptq calibration
+            annotated_model = ptq_calibrate(captured_model, quantizer, dataset)
 
-    arch_table = {
-        "SM8650": QcomChipset.SM8650,
-        "SM8550": QcomChipset.SM8550,
-        "SM8475": QcomChipset.SM8475,
-        "SM8450": QcomChipset.SM8450,
-    }
+        quantized_model = convert_pt2e(annotated_model)
+        edge_prog = capture_program(quantized_model, inputs, custom_pass_config)
+    else:
+        edge_prog = capture_program(model, inputs, custom_pass_config)
 
     backend_options = generate_htp_compiler_spec(
         use_fp16=False if quant_dtype else True
     )
     qnn_partitioner = QnnPartitioner(
         generate_qnn_executorch_compiler_spec(
-            soc_model=arch_table[soc_model],
+            soc_model=getattr(QcomChipset, soc_model),
             backend_options=backend_options,
-            debug=False,
-            saver=False,
             shared_buffer=shared_buffer,
-            profile=False,
+            dump_intermediate_outputs=dump_intermediate_outputs,
         ),
         skip_node_id_set,
         skip_node_op_set,
@@ -259,19 +296,15 @@ def build_executorch_binary(
         # Therefore, won't want to pre-allocate
         # by memory manager in runtime.
         memory_planning_pass=MemoryPlanningPass(
-            memory_planning_algo="greedy",
             alloc_graph_input=not shared_buffer,
             alloc_graph_output=not shared_buffer,
         ),
-        extract_delegate_segments=True,
     )
 
     if metadata is None:
-        edge_prog.exported_program = to_backend(
-            edge_prog.exported_program, qnn_partitioner
-        )
-        edge_prog.exported_program.graph_module.graph.print_tabular()
-        exec_prog = edge_prog.to_executorch(config=executorch_config)
+        exported_program = to_backend(edge_prog.exported_program, qnn_partitioner)
+        exported_program.graph_module.graph.print_tabular()
+        exec_prog = to_edge(exported_program).to_executorch(config=executorch_config)
         with open(f"{file_name}.pte", "wb") as file:
             file.write(exec_prog.buffer)
     else:
@@ -336,6 +369,42 @@ def segmentation_metrics(predictions, targets, classes):
     miou = np.mean(iou)
     cls_iou = dict(zip(classes, iou))
     return (pa, mpa, miou, cls_iou)
+
+
+def get_imagenet_dataset(
+    dataset_path, data_size, image_shape, crop_size=None, shuffle=True
+):
+    from torchvision import datasets, transforms
+
+    def get_data_loader():
+        preprocess = transforms.Compose(
+            [
+                transforms.Resize(image_shape),
+                transforms.CenterCrop(crop_size or image_shape[0]),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                ),
+            ]
+        )
+        imagenet_data = datasets.ImageFolder(dataset_path, transform=preprocess)
+        return torch.utils.data.DataLoader(
+            imagenet_data,
+            shuffle=shuffle,
+        )
+
+    # prepare input data
+    inputs, targets, input_list = [], [], ""
+    data_loader = get_data_loader()
+    for index, data in enumerate(data_loader):
+        if index >= data_size:
+            break
+        feature, target = data
+        inputs.append((feature,))
+        targets.append(target)
+        input_list += f"input_{index}_0.raw\n"
+
+    return inputs, targets, input_list
 
 
 def setup_common_args_and_variables():
@@ -424,19 +493,18 @@ def setup_common_args_and_variables():
         default=False,
     )
 
+    parser.add_argument(
+        "--dump_intermediate_outputs",
+        help="If specified, enable dump intermediate outputs",
+        action="store_true",
+        default=False,
+    )
+
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
     # So maybe it's fine to just use the environment.
     if "QNN_SDK_ROOT" not in os.environ:
         raise RuntimeError("Environment variable QNN_SDK_ROOT must be set")
     print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
-
-    if "LD_LIBRARY_PATH" not in os.environ:
-        print(
-            "[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
-            "not found happen, please follow setup.md to set environment."
-        )
-    else:
-        print(f"LD_LIBRARY_PATH={os.getenv('LD_LIBRARY_PATH')}")
 
     return parser
 

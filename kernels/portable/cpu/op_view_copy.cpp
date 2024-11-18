@@ -20,7 +20,7 @@ using Tensor = exec_aten::Tensor;
 
 // view_copy.out(Tensor self, int[] size, *, Tensor(a!) out) -> Tensor(a!)
 Tensor& view_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     exec_aten::ArrayRef<int64_t> size_int64_t,
     Tensor& out) {
@@ -43,6 +43,11 @@ Tensor& view_copy_out(
       InvalidArgument,
       out,
       "Failed to resize output tensor.");
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(self), InvalidArgument, out);
 
   ET_KERNEL_CHECK(
       ctx, check_view_copy_args(self, size_int64_t, out), InvalidArgument, out);

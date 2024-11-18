@@ -31,14 +31,12 @@ __attribute__((objc_subclassing_restricted))
 
 /// Constructs an `ETCoreMLModelProfiler` instance.
 ///
-/// @param compiledModelAsset The compiled model asset (mlmodelc).
-/// @param outputNames The model output names.
+/// @param model The model.
 /// @param configuration The model configuration.
 /// @param error   On failure, error is filled with the failure information.
-- (nullable instancetype)initWithCompiledModelAsset:(ETCoreMLAsset*)compiledModelAsset
-                                        outputNames:(NSOrderedSet<NSString*>*)outputNames
-                                      configuration:(MLModelConfiguration*)configuration
-                                              error:(NSError* __autoreleasing*)error NS_DESIGNATED_INITIALIZER;
+- (nullable instancetype)initWithModel:(ETCoreMLModel*)model
+                         configuration:(MLModelConfiguration*)configuration
+                                 error:(NSError* __autoreleasing*)error NS_DESIGNATED_INITIALIZER;
 
 /// Returns profiling info of operations at the specified paths.
 ///

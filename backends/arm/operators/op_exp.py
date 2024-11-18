@@ -2,6 +2,8 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
 from typing import List
 
 import numpy as np
@@ -15,7 +17,8 @@ from executorch.backends.arm.tosa_mapping import TosaArg
 
 from executorch.backends.arm.tosa_quant_utils import (
     dequantize_value,
-    get_quant_node_args,
+    get_quant_arg_downstream,
+    get_quant_arg_upstream,
     QuantArgs,
     quantize_value,
 )
@@ -40,16 +43,15 @@ class ExpVisitor(NodeVisitor):
     ) -> None:
 
         assert len(node.all_input_nodes) == 1
-        assert len(node.users) == 1
 
         if is_quant_node:
             # Assume quantized input is 8 bit.
 
             # Create attribute for 8 bit table lookup.
             input_node = node.all_input_nodes[0]
-            in_quantargs = get_quant_node_args(input_node)
+            in_quantargs = get_quant_arg_upstream(input_node)
             output_node = list(node.users)[0]
-            out_quantargs = get_quant_node_args(output_node)
+            out_quantargs = get_quant_arg_downstream(output_node)
 
             table = exp_table_8bit(in_quantargs, out_quantargs)
             table_attr = ts.TosaSerializerAttribute()

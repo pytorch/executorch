@@ -178,7 +178,7 @@ void perform_topk(
   }
 }
 
-void* allocate_temp_memory(RuntimeContext& ctx, size_t size) {
+void* allocate_temp_memory(KernelRuntimeContext& ctx, size_t size) {
   Result<void*> temp_mem_res = ctx.allocate_temp(size);
   return temp_mem_res.ok() ? temp_mem_res.get() : nullptr;
 }
@@ -186,7 +186,7 @@ void* allocate_temp_memory(RuntimeContext& ctx, size_t size) {
 } // namespace
 
 std::tuple<Tensor&, Tensor&> topk_values(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t k,
     int64_t dim,

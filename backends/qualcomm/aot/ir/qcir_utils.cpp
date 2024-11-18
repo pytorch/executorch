@@ -11,8 +11,8 @@
 
 #include <unordered_map>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 
 qcir::TensorType ToTensorType(Qnn_TensorType_t type) {
@@ -161,9 +161,7 @@ flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
       }
     } break;
     default:
-      QNN_EXECUTORCH_LOG_WARN(
-          "QNN_QUANTIZATION_ENCODING_UNDEFINED detected: %s",
-          QNN_VER_PTR(tensor)->name);
+      // encodings are not required if lowering with floating point precision
       break;
   }
   return CreateQuantizeParamDirect(
@@ -229,9 +227,7 @@ Qnn_QuantizeParams_t ToQuantizeParam(const tensor_type& tensor) {
           const_cast<int32_t*>(param->offsets()->data());
     } break;
     default:
-      QNN_EXECUTORCH_LOG_WARN(
-          "qcir::QuantizeType::UNDEFINED detected: %s",
-          tensor->name()->c_str());
+      // encodings are not required if lowering with floating point precision
       break;
   }
   return p;
@@ -278,5 +274,5 @@ Qnn_Tensor_t ToTensor(const tensor_type& tensor) {
 }
 
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

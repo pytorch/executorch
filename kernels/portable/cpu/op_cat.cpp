@@ -18,7 +18,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& cat_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     exec_aten::ArrayRef<Tensor> tensors,
     int64_t dim,
     Tensor& out) {

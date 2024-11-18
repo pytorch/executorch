@@ -68,11 +68,11 @@ class ET_EXPERIMENTAL TrainingModule final : executorch::extension::Module {
    * parameters for.
    *
    * @returns A Result object containing a map of the fully qualified name to
-   * parameter tensor, or an error if the method is not a joint graph or has not
-   * been executed yet.
+   * parameter tensor, or an error if the method is not a joint graph.
    */
   ET_EXPERIMENTAL
-  runtime::Result<const std::map<exec_aten::string_view, exec_aten::Tensor>>
+  runtime::Result<
+      const std::map<executorch::aten::string_view, executorch::aten::Tensor>>
   named_parameters(const std::string& method_name);
 
   /**
@@ -87,13 +87,14 @@ class ET_EXPERIMENTAL TrainingModule final : executorch::extension::Module {
    * or has not been executed yet.
    */
   ET_EXPERIMENTAL
-  runtime::Result<const std::map<exec_aten::string_view, exec_aten::Tensor>>
+  runtime::Result<
+      const std::map<executorch::aten::string_view, executorch::aten::Tensor>>
   named_gradients(const std::string& method_name);
 
  private:
   std::unordered_map<
       std::string,
-      std::map<exec_aten::string_view, exec_aten::Tensor>>
+      std::map<executorch::aten::string_view, executorch::aten::Tensor>>
       method_named_gradients_;
 };
 

@@ -26,9 +26,9 @@ template <
     typename CTYPE_IN,
     typename CTYPE_OUT,
     typename std::enable_if<
-        std::is_same<CTYPE_IN, CTYPE_OUT>::value &&
-            !std::is_same<CTYPE_IN, torch::executor::Half>::value &&
-            !std::is_same<CTYPE_OUT, torch::executor::Half>::value,
+        std::is_same_v<CTYPE_IN, CTYPE_OUT> &&
+            !std::is_same_v<CTYPE_IN, exec_aten::Half> &&
+            !std::is_same_v<CTYPE_OUT, exec_aten::BFloat16>,
         int>::type = 0>
 void exp_data(
     const CTYPE_IN* in_data,
@@ -46,9 +46,11 @@ template <
     typename CTYPE_IN,
     typename CTYPE_OUT,
     typename std::enable_if<
-        !std::is_same<CTYPE_IN, CTYPE_OUT>::value ||
-            std::is_same<CTYPE_IN, torch::executor::Half>::value ||
-            std::is_same<CTYPE_OUT, torch::executor::Half>::value,
+        !std::is_same_v<CTYPE_IN, CTYPE_OUT> ||
+            std::is_same_v<CTYPE_IN, exec_aten::Half> ||
+            std::is_same_v<CTYPE_IN, exec_aten::BFloat16> ||
+            std::is_same_v<CTYPE_OUT, exec_aten::Half> ||
+            std::is_same_v<CTYPE_OUT, exec_aten::BFloat16>,
         int>::type = 0>
 void exp_data(
     const CTYPE_IN* in_data,
@@ -62,7 +64,7 @@ void exp_data(
 
 } // namespace
 
-Tensor& opt_exp_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& opt_exp_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape
@@ -76,13 +78,14 @@ Tensor& opt_exp_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   ET_KERNEL_CHECK(ctx, tensor_is_floating_type(out), InvalidArgument, out);
 
-  ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, "exp.out", CTYPE_IN, [&] {
-    ET_SWITCH_FLOATH_TYPES(out.scalar_type(), ctx, "exp.out", CTYPE_OUT, [&] {
-      exp_data<CTYPE_IN, CTYPE_OUT>(
-          in.const_data_ptr<CTYPE_IN>(),
-          in.numel(),
-          out.mutable_data_ptr<CTYPE_OUT>());
-    });
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "exp.out", CTYPE_IN, [&] {
+    ET_SWITCH_FLOATHBF16_TYPES(
+        out.scalar_type(), ctx, "exp.out", CTYPE_OUT, [&] {
+          exp_data<CTYPE_IN, CTYPE_OUT>(
+              in.const_data_ptr<CTYPE_IN>(),
+              in.numel(),
+              out.mutable_data_ptr<CTYPE_OUT>());
+        });
   });
 
   return out;

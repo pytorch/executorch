@@ -16,9 +16,14 @@ struct promote_type_with_scalar_type_is_valid
           (std::is_same<T2, torch::executor::internal::B1>::value ||
            std::is_same<T2, torch::executor::internal::I8>::value ||
            std::is_same<T2, torch::executor::internal::F8>::value) &&
-              !std::is_same<T1, torch::executor::BFloat16>::value &&
+              !std::is_same<T1, exec_aten::BFloat16>::value &&
               !torch::executor::is_qint_type<T1>::value &&
-              !torch::executor::is_bits_type<T1>::value> {};
+              !torch::executor::is_bits_type<T1>::value &&
+              !executorch::runtime::is_bits_type<T2>::value &&
+              !executorch::runtime::is_float8_type<T1>::value &&
+              !executorch::runtime::is_float8_type<T2>::value &&
+              !executorch::runtime::is_barebones_unsigned_type<T1>::value &&
+              !executorch::runtime::is_barebones_unsigned_type<T2>::value> {};
 
 template <typename T1, bool half_to_float>
 struct CompileTimePromoteTypeWithScalarTypeTestCase {

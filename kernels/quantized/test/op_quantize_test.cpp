@@ -35,14 +35,14 @@ void test_dtype() {
   Tensor input = tf.full({3, 5}, 4);
   double scale = 0.5;
 
-  int64_t zero_point = 127;
+  int64_t zero_point = 108;
   int64_t quant_min = 0;
-  int64_t quant_max = 255;
+  int64_t quant_max = 127;
 
   TensorFactory<DTYPE> tfo;
   Tensor out = tfo.zeros({3, 5});
   // 4 / 0.5 + 127
-  Tensor expected = tfo.full({3, 5}, 135);
+  Tensor expected = tfo.full({3, 5}, 116);
   quantize_per_tensor_out(
       input, scale, zero_point, quant_min, quant_max, DTYPE, out);
 
@@ -51,6 +51,11 @@ void test_dtype() {
 
 TEST(OpQuantizeOutTest, AllDtypesSupported) {
   test_dtype<ScalarType::Byte>();
+  test_dtype<ScalarType::Char>();
+  test_dtype<ScalarType::Short>();
+  test_dtype<ScalarType::Bits16>();
+  test_dtype<ScalarType::UInt16>();
+  test_dtype<ScalarType::Int>();
 }
 
 TEST(OpQuantizeOutTest, TensorArgOverload) {

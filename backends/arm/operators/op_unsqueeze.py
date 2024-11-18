@@ -5,6 +5,8 @@
 #
 #  Follows this specification: https://pytorch.org/docs/stable/generated/torch.unsqueeze.html
 
+# pyre-unsafe
+
 import serializer.tosa_serializer as ts
 import torch.fx
 from executorch.backends.arm.operators.node_visitor import (

@@ -13,11 +13,11 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 
 Tensor& full_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const IntArrayRef sizes,
     const Scalar& fill_value,
     Tensor& out) {

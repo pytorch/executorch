@@ -123,7 +123,8 @@ class Program final {
    *
    * @param[in] method_name The name of the method to load.
    * @param[in] memory_manager The allocators to use during initialization and
-   *     execution of the loaded method.
+   *     execution of the loaded method. If `memory_manager.temp_allocator()` is
+   *     null, the runtime will allocate temp memory using `et_pal_allocate()`.
    * @param[in] event_tracer The event tracer to use for this method run.
    *
    * @returns The loaded method on success, or an error on failure.

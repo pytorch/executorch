@@ -10,14 +10,17 @@ package com.example.executorchllamademo;
 
 import android.app.AlertDialog;
 import android.content.DialogInterface;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -30,6 +33,7 @@ public class SettingsActivity extends AppCompatActivity {
 
   private String mModelFilePath = "";
   private String mTokenizerFilePath = "";
+  private TextView mBackendTextView;
   private TextView mModelTextView;
   private TextView mTokenizerTextView;
   private TextView mModelTypeTextView;
@@ -39,16 +43,21 @@ public class SettingsActivity extends AppCompatActivity {
   private double mSetTemperature;
   private String mSystemPrompt;
   private String mUserPrompt;
+  private BackendType mBackendType;
   private ModelType mModelType;
   public SettingsFields mSettingsFields;
 
   private DemoSharedPreferences mDemoSharedPreferences;
-  public static double TEMPERATURE_MIN_VALUE = 0.1;
+  public static double TEMPERATURE_MIN_VALUE = 0.0;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_settings);
+    if (Build.VERSION.SDK_INT >= 21) {
+      getWindow().setStatusBarColor(ContextCompat.getColor(this, R.color.status_bar));
+      getWindow().setNavigationBarColor(ContextCompat.getColor(this, R.color.nav_bar));
+    }
     ViewCompat.setOnApplyWindowInsetsListener(
         requireViewById(R.id.main),
         (v, insets) -> {
@@ -62,9 +71,11 @@ public class SettingsActivity extends AppCompatActivity {
   }
 
   private void setupSettings() {
+    mBackendTextView = requireViewById(R.id.backendTextView);
     mModelTextView = requireViewById(R.id.modelTextView);
     mTokenizerTextView = requireViewById(R.id.tokenizerTextView);
     mModelTypeTextView = requireViewById(R.id.modelTypeTextView);
+    ImageButton backendImageButton = requireViewById(R.id.backendImageButton);
     ImageButton modelImageButton = requireViewById(R.id.modelImageButton);
     ImageButton tokenizerImageButton = requireViewById(R.id.tokenizerImageButton);
     ImageButton modelTypeImageButton = requireViewById(R.id.modelTypeImageButton);
@@ -73,6 +84,10 @@ public class SettingsActivity extends AppCompatActivity {
     loadSettings();
 
     // TODO: The two setOnClickListeners will be removed after file path issue is resolved
+    backendImageButton.setOnClickListener(
+        view -> {
+          setupBackendSelectorDialog();
+        });
     modelImageButton.setOnClickListener(
         view -> {
           setupModelSelectorDialog();
@@ -98,6 +113,12 @@ public class SettingsActivity extends AppCompatActivity {
     if (mModelType != null) {
       mModelTypeTextView.setText(mModelType.toString());
     }
+    mBackendType = mSettingsFields.getBackendType();
+    ETLogging.getInstance().log("mBackendType from settings " + mBackendType);
+    if (mBackendType != null) {
+      mBackendTextView.setText(mBackendType.toString());
+      setBackendSettingMode();
+    }
 
     setupParameterSettings();
     setupPromptSettings();
@@ -120,6 +141,7 @@ public class SettingsActivity extends AppCompatActivity {
                     public void onClick(DialogInterface dialog, int whichButton) {
                       mSettingsFields.saveLoadModelAction(true);
                       mLoadModelButton.setEnabled(false);
+                      onBackPressed();
                     }
                   })
               .setNegativeButton(android.R.string.no, null)
@@ -208,8 +230,7 @@ public class SettingsActivity extends AppCompatActivity {
                   new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface dialog, int whichButton) {
                       // Clear the messageAdapter and sharedPreference
-                      mSystemPromptEditText.setText(
-                          PromptFormat.getSystemPromptTemplate(mModelType));
+                      mSystemPromptEditText.setText(PromptFormat.DEFAULT_SYSTEM_PROMPT);
                     }
                   })
               .setNegativeButton(android.R.string.no, null)
@@ -279,6 +300,29 @@ public class SettingsActivity extends AppCompatActivity {
         .show();
   }
 
+  private void setupBackendSelectorDialog() {
+    // Convert enum to list
+    List<String> backendTypesList = new ArrayList<>();
+    for (BackendType backendType : BackendType.values()) {
+      backendTypesList.add(backendType.toString());
+    }
+    // Alert dialog builder takes in arr of string instead of list
+    String[] backendTypes = backendTypesList.toArray(new String[0]);
+    AlertDialog.Builder backendTypeBuilder = new AlertDialog.Builder(this);
+    backendTypeBuilder.setTitle("Select backend type");
+    backendTypeBuilder.setSingleChoiceItems(
+        backendTypes,
+        -1,
+        (dialog, item) -> {
+          mBackendTextView.setText(backendTypes[item]);
+          mBackendType = BackendType.valueOf(backendTypes[item]);
+          setBackendSettingMode();
+          dialog.dismiss();
+        });
+
+    backendTypeBuilder.create().show();
+  }
+
   private void setupModelSelectorDialog() {
     String[] pteFiles = listLocalFile("/data/local/tmp/llama/", ".pte");
     AlertDialog.Builder modelPathBuilder = new AlertDialog.Builder(this);
@@ -309,7 +353,7 @@ public class SettingsActivity extends AppCompatActivity {
       }
       return result;
     }
-    return null;
+    return new String[] {};
   }
 
   private void setupModelTypeSelectorDialog() {
@@ -337,8 +381,10 @@ public class SettingsActivity extends AppCompatActivity {
 
   private void setupTokenizerSelectorDialog() {
     String[] binFiles = listLocalFile("/data/local/tmp/llama/", ".bin");
-    String[] tokenizerFiles = new String[binFiles.length];
+    String[] modelFiles = listLocalFile("/data/local/tmp/llama/", ".model");
+    String[] tokenizerFiles = new String[binFiles.length + modelFiles.length];
     System.arraycopy(binFiles, 0, tokenizerFiles, 0, binFiles.length);
+    System.arraycopy(modelFiles, 0, tokenizerFiles, binFiles.length, modelFiles.length);
     AlertDialog.Builder tokenizerPathBuilder = new AlertDialog.Builder(this);
     tokenizerPathBuilder.setTitle("Select tokenizer path");
     tokenizerPathBuilder.setSingleChoiceItems(
@@ -362,6 +408,32 @@ public class SettingsActivity extends AppCompatActivity {
     return "";
   }
 
+  private void setBackendSettingMode() {
+    if (mBackendType.equals(BackendType.XNNPACK) || mBackendType.equals(BackendType.QUALCOMM)) {
+      setXNNPACKSettingMode();
+    } else if (mBackendType.equals(BackendType.MEDIATEK)) {
+      setMediaTekSettingMode();
+    }
+  }
+
+  private void setXNNPACKSettingMode() {
+    requireViewById(R.id.modelLayout).setVisibility(View.VISIBLE);
+    requireViewById(R.id.tokenizerLayout).setVisibility(View.VISIBLE);
+    requireViewById(R.id.parametersView).setVisibility(View.VISIBLE);
+    requireViewById(R.id.temperatureLayout).setVisibility(View.VISIBLE);
+    mModelFilePath = "";
+    mTokenizerFilePath = "";
+  }
+
+  private void setMediaTekSettingMode() {
+    requireViewById(R.id.modelLayout).setVisibility(View.GONE);
+    requireViewById(R.id.tokenizerLayout).setVisibility(View.GONE);
+    requireViewById(R.id.parametersView).setVisibility(View.GONE);
+    requireViewById(R.id.temperatureLayout).setVisibility(View.GONE);
+    mModelFilePath = "/in/mtk/llama/runner";
+    mTokenizerFilePath = "/in/mtk/llama/runner";
+  }
+
   private void loadSettings() {
     Gson gson = new Gson();
     String settingsFieldsJSON = mDemoSharedPreferences.getSettings();
@@ -376,6 +448,7 @@ public class SettingsActivity extends AppCompatActivity {
     mSettingsFields.saveParameters(mSetTemperature);
     mSettingsFields.savePrompts(mSystemPrompt, mUserPrompt);
     mSettingsFields.saveModelType(mModelType);
+    mSettingsFields.saveBackendType(mBackendType);
     mDemoSharedPreferences.addSettings(mSettingsFields);
   }
 

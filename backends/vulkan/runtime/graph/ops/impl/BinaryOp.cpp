@@ -21,7 +21,7 @@ void check_binary_op_args(
     const api::vTensor& self,
     const api::vTensor& other,
     const api::vTensor& out) {
-  VK_CHECK_COND(check_same_memory_layout(self, other, out));
+  VK_CHECK_COND(check_same_packed_dim(self, other, out));
   std::vector<int64_t> broadcasted_sizes =
       calculate_broadcasted_output_size(self, other);
   VK_CHECK_COND(out.sizes() == broadcasted_sizes);
@@ -51,9 +51,8 @@ void add_binary_op_node(
     const ValueRef alpha,
     const ValueRef out,
     const std::string& op_name) {
-  ValueRef arg1 = prepack_if_tensor_ref(graph, in1);
-  ValueRef arg2 =
-      prepack_if_tensor_ref(graph, in2, graph.memory_layout_of(arg1));
+  ValueRef arg1 = prepack_standard_like(graph, in1, out, true);
+  ValueRef arg2 = prepack_standard_like(graph, in2, out, true);
 
   vTensorPtr t_in1 = graph.get_tensor(arg1);
   vTensorPtr t_in2 = graph.get_tensor(arg2);
@@ -75,7 +74,7 @@ void add_binary_op_node(
   kernel_name += op_name;
   add_dtype_suffix(kernel_name, *t_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
@@ -90,7 +89,7 @@ void add_binary_op_node(
        graph.create_params_buffer(broadcast_params),
        graph.create_params_buffer(alpha_val)},
       // Specialization Constants
-      {SV(t_out->packed_dim_whcn_idx())},
+      {t_out->hashed_layout(), t_in1->hashed_layout(), t_in2->hashed_layout()},
       // Resizing Logic
       resize_binary_op_node,
       {}));

@@ -260,7 +260,7 @@ class OpClampTensorOutTest : public OperatorTest {
       const optional<Tensor>& min,
       const optional<Tensor>& max,
       Tensor& out) {
-    exec_aten::RuntimeContext context{};
+    executorch::runtime::KernelRuntimeContext context{};
     return torch::executor::aten::clamp_outf(context, self, min, max, out);
   }
 };
@@ -480,6 +480,54 @@ TEST_F(OpClampTensorOutTest, SmokeTest) {
   Tensor max = tf_max.make({2, 1}, {2, 5});
   Tensor out = tf_out.zeros({2, 3});
   Tensor expected = tf_out.make({2, 3}, {2, 2, 2, 3, 3, 4});
+
+  op_clamp_tensor_out(in, min, max, out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpClampTensorOutTest, DowncastingSmokeTest) {
+  TensorFactory<ScalarType::Byte> tf_in;
+  TensorFactory<ScalarType::Short> tf_min;
+  TensorFactory<ScalarType::Int> tf_max;
+  TensorFactory<ScalarType::Char> tf_out;
+
+  Tensor in = tf_in.make({}, {5});
+  Tensor min = tf_min.make({}, {-129});
+  Tensor max = tf_max.make({}, {300});
+  Tensor out = tf_out.zeros({});
+  Tensor expected = tf_out.make({}, {5});
+
+  op_clamp_tensor_out(in, min, max, out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpClampTensorOutTest, DowncastingSmokeTest2) {
+  TensorFactory<ScalarType::Short> tf_in;
+  TensorFactory<ScalarType::Short> tf_min;
+  TensorFactory<ScalarType::Int> tf_max;
+  TensorFactory<ScalarType::Char> tf_out;
+
+  Tensor in = tf_in.make({}, {301});
+  Tensor min = tf_min.make({}, {-129});
+  Tensor max = tf_max.make({}, {300});
+  Tensor out = tf_out.zeros({});
+  Tensor expected = tf_out.make({}, {44});
+
+  op_clamp_tensor_out(in, min, max, out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpClampTensorOutTest, DowncastingSmokeTest3) {
+  TensorFactory<ScalarType::Short> tf_in;
+  TensorFactory<ScalarType::Short> tf_min;
+  TensorFactory<ScalarType::Int> tf_max;
+  TensorFactory<ScalarType::Char> tf_out;
+
+  Tensor in = tf_in.make({}, {45});
+  Tensor min = tf_min.make({}, {-129});
+  Tensor max = tf_max.make({}, {300});
+  Tensor out = tf_out.zeros({});
+  Tensor expected = tf_out.make({}, {45});
 
   op_clamp_tensor_out(in, min, max, out);
   EXPECT_TENSOR_EQ(out, expected);

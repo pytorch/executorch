@@ -62,7 +62,7 @@ void diagonal_copy_impl(
 } // namespace
 
 Tensor& diagonal_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t offset,
     int64_t dim1,

@@ -20,17 +20,12 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:paddingLeft="10dp"
+            android:paddingLeft="20dp"
             android:paddingTop="20dp"
             android:text="Chat with Llama"
             android:textColor="@android:color/white"
-            android:textSize="20sp"
+            android:textSize="16sp"
             android:textStyle="bold" />
-
-        <View
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
 
         <TextView
             android:id="@+id/ram_usage_live"
@@ -38,20 +33,19 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:fontFamily="sans-serif-black"
+            android:paddingLeft="5dp"
             android:text="0 MB"
             android:textAlignment="viewEnd"
             android:textColor="#FFFFFF"
-            android:textSize="16sp"
-            android:paddingLeft="5dp"/>
+            android:textSize="14sp" />
 
         <ImageButton
             android:id="@+id/showLogsButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:paddingTop="20dp"
             android:backgroundTint="@android:color/transparent"
-            android:src="@drawable/baseline_article_24"
-            />
+            android:paddingTop="20dp"
+            android:src="@drawable/baseline_article_24" />
 
         <ImageButton
             android:id="@+id/settings"
@@ -74,7 +68,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_weight="2"
-            android:background="#DCD7D7"
+            android:background="@drawable/chat_background"
             android:divider="#fff"
             android:stackFromBottom="true"
             android:transcriptMode="alwaysScroll" />
@@ -83,7 +77,7 @@
             android:id="@+id/mediaPreviewConstraintLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#edf0ee"
+            android:background="#16293D"
             android:visibility="gone">
 
             <HorizontalScrollView
@@ -143,7 +137,7 @@
                         android:id="@+id/addMoreImageButton"
                         android:layout_width="80dp"
                         android:layout_height="80dp"
-                        android:background="#ebebeb"
+                        android:background="#16293D"
                         android:padding="5dp"
                         android:src="@drawable/outline_add_box_48" />
 
@@ -169,7 +163,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#F4F4F4"
+            android:background="#16293D"
             android:orientation="horizontal">
 
             <ImageButton
@@ -182,15 +176,17 @@
 
             <EditText
                 android:id="@+id/editTextMessage"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_width="match_parent"
+                android:layout_height="35dp"
                 android:layout_weight="2"
                 android:background="@drawable/input_text_shape"
-                android:ems="10"
-                android:hint="Text message"
+                android:ems="8"
                 android:inputType="text"
                 android:paddingHorizontal="10dp"
-                android:text="" />
+                android:text=""
+                android:textColor="#ffffff"
+                android:textColorHint="#ffffff"
+                android:translationY="5dp" />
 
             <ImageButton
                 android:id="@+id/sendButton"
@@ -205,7 +201,7 @@
             android:id="@+id/addMediaLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#E9EFEC"
+            android:background="#16293D"
             android:orientation="vertical">
 
             <LinearLayout

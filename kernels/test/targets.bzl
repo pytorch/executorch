@@ -15,7 +15,11 @@ def make_example_generated_op_test_target():
     Makes a test for kernels/test/util generated_op_test() helper
     Here we use portable kernel. Try with `buck test xplat/executorch/kernels/test:op_<>_test`
     """
-    op_test_cpp_files = native.glob(["op_*_test.cpp"])
+    op_test_cpp_files = native.glob(
+        ["op_*_test.cpp"],
+        # linear has no portable op.
+        exclude = ["op_linear_test.cpp"],
+    )
 
     # The op name is from the beginning to the part without `_test.cpp` (:-9)
     op_to_test = [f[:-9] for f in op_test_cpp_files]
@@ -39,23 +43,34 @@ def define_common_targets():
         aten_suffix = "_aten" if aten_kernel else ""
         runtime.cxx_library(
             name = "test_util" + aten_suffix,
+            srcs = [
+                "BinaryLogicalOpTest.cpp",
+                "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp",
+            ],
             exported_headers = [
+                "BinaryLogicalOpTest.h",
                 "TestUtil.h",
+                "UnaryUfuncRealHBBF16ToFloatHBF16Test.h",
             ],
             visibility = [
                 "//executorch/kernels/...",
                 "@EXECUTORCH_CLIENTS",
             ],
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_kernel else [],
+            exported_deps = [
+                ":supported_features_header",
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
+                "//executorch/runtime/kernel:kernel_includes",
+                "//executorch/test/utils:utils" + aten_suffix,
+            ],
             fbcode_exported_deps = [
                 "//common/init:init",
                 "//common/gtest:gtest",
-                "//executorch/runtime/kernel:kernel_includes",
             ],
             xplat_exported_deps = [
                 "//xplat/folly:init_init",
                 "//third-party/googletest:gtest_main",
-                "//executorch/runtime/kernel:kernel_includes",
             ],
         )
 
@@ -226,6 +241,7 @@ def define_common_targets():
     _common_op_test("op_le_test", ["aten", "portable", "optimized"])
     _common_op_test("op_leaky_relu_test", ["aten", "portable"])
     _common_op_test("op_lift_fresh_copy_test", ["aten", "portable"])
+    _common_op_test("op_linear_test", ["aten", "optimized"])
     _common_op_test("op_log_softmax_test", ["aten", "portable", "optimized"])
     _common_op_test("op_log_test", ["aten", "portable"])
     _common_op_test("op_log10_test", ["aten", "portable"])
@@ -238,13 +254,15 @@ def define_common_targets():
     _common_op_test("op_logit_test", ["aten", "portable"])
     _common_op_test("op_lt_test", ["aten", "portable"])
     _common_op_test("op_masked_fill_test", ["aten", "portable"])
+    _common_op_test("op_masked_scatter_test", ["aten", "portable"])
+    _common_op_test("op_masked_select_test", ["aten", "portable"])
     _common_op_test("op_max_test", ["aten", "portable"])
     _common_op_test("op_max_pool2d_with_indices_test", ["aten", "portable"])
     _common_op_test("op_maximum_test", ["aten", "portable"])
     _common_op_test("op_mean_test", ["aten", "portable"])
     _common_op_test("op_min_test", ["aten", "portable"])
     _common_op_test("op_minimum_test", ["aten", "portable"])
-    _common_op_test("op_mm_test", ["aten", "portable"])
+    _common_op_test("op_mm_test", ["aten", "portable", "optimized"])
     _common_op_test("op_mul_test", ["aten", "portable", "optimized"])
     _common_op_test("op_narrow_copy_test", ["aten", "portable"])
     _common_op_test("op_native_batch_norm_test", ["aten", "portable"])
@@ -279,7 +297,7 @@ def define_common_targets():
     _common_op_test("op_scatter_add_test", ["aten", "portable"])
     _common_op_test("op_select_scatter_test", ["aten", "portable"])
     _common_op_test("op_select_copy_test", ["aten", "portable"])
-    _common_op_test("op_sigmoid_test", ["aten", "portable"])
+    _common_op_test("op_sigmoid_test", ["aten", "portable", "optimized"])
     _common_op_test("op_sign_test", ["aten", "portable"])
     _common_op_test("op_sin_test", ["aten", "portable"])
     _common_op_test("op_sinh_test", ["aten", "portable"])

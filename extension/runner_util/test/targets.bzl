@@ -30,15 +30,3 @@ def define_common_targets(is_fbcode = False):
                     "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
                 },
             )
-
-    runtime.cxx_test(
-        name = "managed_tensor_test",
-        srcs = [
-            "managed_tensor_test.cpp",
-        ],
-        deps = [
-            "//executorch/extension/runner_util:managed_tensor",
-            "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
-        ],
-    )

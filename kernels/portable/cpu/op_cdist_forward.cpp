@@ -116,7 +116,7 @@ void cdist(const Tensor& x1, const Tensor& x2, Tensor& out, double p) {
 } // namespace
 
 Tensor& _cdist_forward_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& x1,
     const Tensor& x2,
     double p,

@@ -8,6 +8,7 @@
 
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/span.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/profiler.h>
 #include "${fn_header}" // Generated Function import headers
@@ -21,7 +22,8 @@
 // JIT op registry instead of c10 dispatcher. JIT op registry only takes boxed
 // kernels, so we are calling unboxing functions in UnboxingFunctions.h to cast
 // arguments into C++ types (instead of IValue) and delegate to unboxed kernels.
-using KernelArrayRef = ::torch::executor::ArrayRef<::torch::executor::Kernel>;
+using KernelSpan =
+    ::executorch::runtime::Span<const ::executorch::runtime::Kernel>;
 namespace torch {
 namespace executor {
 namespace function {
@@ -31,15 +33,15 @@ static Kernel kernels_to_register[] = {
     ${unboxed_kernels} // Generated kernels
 };
 
-// Explicitly convert to ArrayRef, so that the API can take an empty C array of
+// Explicitly convert to Span, so that the API can take an empty C array of
 // Kernels.
-static KernelArrayRef kernel_array_ref(
+static KernelSpan kernel_span(
     kernels_to_register,
     kernels_to_register + sizeof(kernels_to_register) / sizeof(Kernel));
 
 // Return value not used. Keep the static variable assignment to register
 // kernels in static initialization time.
-static auto success_with_kernel_reg = register_kernels(kernel_array_ref);
+static auto success_with_kernel_reg = register_kernels(kernel_span);
 } // namespace
 } // namespace function
 } // namespace executor

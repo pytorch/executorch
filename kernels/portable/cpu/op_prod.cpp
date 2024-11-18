@@ -17,7 +17,7 @@ using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
 Tensor& prod_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     optional<ScalarType> dtype,
     Tensor& out) {
@@ -48,7 +48,7 @@ Tensor& prod_out(
 }
 
 Tensor& prod_int_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     bool keepdim,

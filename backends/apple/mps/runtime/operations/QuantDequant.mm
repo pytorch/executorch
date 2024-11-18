@@ -5,8 +5,8 @@
 
 #include <executorch/backends/apple/mps/runtime/MPSGraphBuilder.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
 
@@ -30,21 +30,23 @@ MPSGraphBuilder::mpsDequantizePerChannelGroupOp(NodePtr nodePtr) {
 
   MPSGraphTensor* inputTensor = getMPSGraphTensor(graphNode->input1_id());
   MPSGraphTensor* scalesTensor = getMPSGraphTensor(graphNode->scales_id());
-
-  MPSGraphTensor *zpTensor = [_mpsGraph constantWithScalar:0
+  if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, *)) {
+    MPSGraphTensor *zpTensor = [_mpsGraph constantWithScalar:0
                                                   dataType:MPSDataTypeInt4];
+    MPSGraphTensor *wDqTensor = [_mpsGraph dequantizeTensor:inputTensor
+                                                scaleTensor:scalesTensor
+                                            zeroPointTensor:zpTensor
+                                                  dataType:MPSDataTypeFloat16
+                                                      name:nil];
+    _idToMPSGraphTensor[graphNode->output_id()] = wDqTensor;
+  } else {
+    _idToMPSGraphTensor[graphNode->output_id()] = nil;
+  }
 
-  MPSGraphTensor *wDqTensor = [_mpsGraph dequantizeTensor:inputTensor
-                                              scaleTensor:scalesTensor
-                                          zeroPointTensor:zpTensor
-                                                dataType:MPSDataTypeFloat16
-                                                    name:nil];
-
-  _idToMPSGraphTensor[graphNode->output_id()] = wDqTensor;
   return Error::Ok;
 }
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

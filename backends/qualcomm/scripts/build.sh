@@ -79,7 +79,7 @@ if [ "$BUILD_AARCH64" = true ]; then
         -DCMAKE_INSTALL_PREFIX=$BUILD_ROOT \
         -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
         -DEXECUTORCH_BUILD_QNN=ON \
-        -DEXECUTORCH_BUILD_SDK=ON \
+        -DEXECUTORCH_BUILD_DEVTOOLS=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
@@ -123,7 +123,7 @@ if [ "$BUILD_X86_64" = true ]; then
         -DCMAKE_INSTALL_PREFIX=$BUILD_ROOT \
         -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
         -DEXECUTORCH_BUILD_QNN=ON \
-        -DEXECUTORCH_BUILD_SDK=ON \
+        -DEXECUTORCH_BUILD_DEVTOOLS=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
@@ -135,6 +135,8 @@ if [ "$BUILD_X86_64" = true ]; then
 
     rm -f $PRJ_ROOT/backends/qualcomm/python/*
     cp -fv $BUILD_ROOT/backends/qualcomm/Py* "$PRJ_ROOT/backends/qualcomm/python"
+    cp -fv "$PRJ_ROOT/schema/program.fbs" "$PRJ_ROOT/exir/_serialize/program.fbs"
+    cp -fv "$PRJ_ROOT/schema/scalar_type.fbs" "$PRJ_ROOT/exir/_serialize/scalar_type.fbs"
 
    EXAMPLE_ROOT=examples/qualcomm
    CMAKE_PREFIX_PATH="${BUILD_ROOT}/lib/cmake/ExecuTorch;${BUILD_ROOT}/third-party/gflags;"

@@ -6,7 +6,7 @@
 
 import logging
 import warnings
-from typing import Optional
+from typing import Callable, List, Optional
 
 import torch
 from executorch.exir.error import internal_assert
@@ -14,8 +14,8 @@ from executorch.exir.memory import alloc
 from executorch.exir.memory_planning import (
     _is_out_var_node,
     apply_algo,
-    get_algo,
     get_node_tensor_specs,
+    greedy,
     Verifier,
 )
 from executorch.exir.operator.convert import get_out_args_from_opoverload
@@ -27,7 +27,7 @@ from torch.export.exported_program import ExportGraphSignature
 class MemoryPlanningPass(PassBase):
     def __init__(
         self,
-        memory_planning_algo: str = "greedy",
+        memory_planning_algo: Callable[..., List[int]] = greedy,
         allow_lifetime_and_storage_overlap: bool = False,
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
@@ -96,14 +96,13 @@ class MemoryPlanningPass(PassBase):
         memory_planning_algo
         """
         self._set_alloc_node_spec(graph_module)
-        algo = get_algo(self.memory_planning_algo)
         # TODO(shunting) if people have concern of adding a field to GraphModule
         # directly, we should define a GraphModule subclass that we can add our
         # customized fields. Using the graph_module object to convey information across
         # passes/stages is quite natural and avoid yet another 'context' data structure
         # to do the job.
         _ = apply_algo(
-            algo,
+            self.memory_planning_algo,
             graph_module,
             self.alignment,
             graph_signature,
@@ -125,7 +124,7 @@ class MemoryPlanningPass(PassBase):
                 self.allow_lifetime_and_storage_overlap
             )
             logging.debug(
-                f"The {self.memory_planning_algo} algorithm reuses storage for {num_reuse_pairs} pair of tensors"
+                f"The {getattr(self.memory_planning_algo, '__name__', repr(self.memory_planning_algo))} algorithm reuses storage for {num_reuse_pairs} pair of tensors"
             )
         verifier.verify_graph_input_output()
         return PassResult(graph_module, True)

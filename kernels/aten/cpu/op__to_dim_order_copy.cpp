@@ -92,7 +92,7 @@ bool check__to_dim_order_copy_args(
 // _to_dim_order_copy.out(Tensor self, *, bool non_blocking=False, int[]?
 // dim_order=None, Tensor(a!) out) -> Tensor(a!)
 Tensor& _to_dim_order_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     bool non_blocking,
     OptionalArrayRef<int64_t> dim_order,
@@ -115,7 +115,7 @@ Tensor& _to_dim_order_copy_out(
     bool non_blocking,
     OptionalArrayRef<int64_t> dim_order,
     Tensor& out) {
-  exec_aten::RuntimeContext ctx{};
+  executorch::runtime::KernelRuntimeContext ctx{};
   return _to_dim_order_copy_out(ctx, self, non_blocking, dim_order, out);
 }
 

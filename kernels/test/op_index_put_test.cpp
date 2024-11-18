@@ -34,7 +34,7 @@ class OpIndexPutOutTest : public OperatorTest {
       const bool accumulate,
       Tensor& out) {
 #ifdef USE_ATEN_LIB
-    c10::List<c10::optional<at::Tensor>> indices_list(indices);
+    c10::List<std::optional<at::Tensor>> indices_list(indices);
     return torch::executor::aten::index_put_outf(
         context_, input, indices_list, values, accumulate, out);
 #else
@@ -707,7 +707,7 @@ TEST_F(OpIndexPutOutTest, AllDtypesSupportedForInput) {
 #define TEST_ENTRY(ctype, dtype) \
   test_dtype<ScalarType::dtype, ScalarType::Long>();
 
-  ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+  ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY);
 
 #undef TEST_ENTRY
 }

@@ -17,10 +17,10 @@
 #include <executorch/runtime/core/portable_type/scalar_type.h>
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
-namespace {
 /**
  * Compute the number of elements based on the sizes of a tensor.
  */
@@ -39,7 +39,6 @@ ssize_t compute_numel(const TensorImpl::SizesType* sizes, ssize_t dim) {
   }
   return numel;
 }
-} // namespace
 
 TensorImpl::TensorImpl(
     ScalarType type,
@@ -111,8 +110,11 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
           numel_bound_);
 
       if (strides_ && dim_order_) {
-        ET_CHECK_OK_OR_RETURN_ERROR(
-            dim_order_to_stride(new_sizes.data(), dim_order_, dim_, strides_));
+        auto error =
+            dim_order_to_stride(new_sizes.data(), dim_order_, dim_, strides_);
+        if (error != Error::Ok) {
+          return error;
+        }
       }
       numel_ = new_numel;
       std::copy(new_sizes.begin(), new_sizes.end(), sizes_);
@@ -121,5 +123,6 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
   return Error::Ok;
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch

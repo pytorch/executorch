@@ -8,14 +8,17 @@
 
 #pragma once
 
+#include <executorch/runtime/core/portable_type/bfloat16.h>
+#include <executorch/runtime/core/portable_type/half.h>
 #include <executorch/runtime/core/tag.h>
 #include <executorch/runtime/platform/assert.h>
 
 #include <cstdint>
 #include <type_traits>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 /**
  * Represents a scalar value.
@@ -39,6 +42,8 @@ class Scalar {
   /*implicit*/ Scalar(double val) : tag(Tag::Double) {
     v.as_double = val;
   }
+  /*implicit*/ Scalar(BFloat16 val) : Scalar((double)(float)val) {}
+  /*implicit*/ Scalar(Half val) : Scalar((double)(float)val) {}
 
   /// Returns the concrete scalar value stored within.
   template <typename T>
@@ -105,5 +110,14 @@ ET_DEFINE_SCALAR_TO_METHOD(int64_t, Int)
 ET_DEFINE_SCALAR_TO_METHOD(bool, Bool)
 #undef ET_DEFINE_SCALAR_TO_METHOD
 
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::etensor::Scalar;
 } // namespace executor
 } // namespace torch

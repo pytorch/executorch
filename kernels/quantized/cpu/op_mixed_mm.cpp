@@ -19,7 +19,7 @@ bool check_quantized_mixed_mm_args(
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
+    const exec_aten::optional<Tensor>& opt_weight_zero_points,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(in, 2));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(weight, 2));
@@ -55,7 +55,7 @@ Tensor& quantized_mixed_mm_out(
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
+    const exec_aten::optional<Tensor>& opt_weight_zero_points,
     Tensor& out) {
   ET_CHECK(check_quantized_mixed_mm_args(
       in, weight, weight_scales, opt_weight_zero_points, out));
@@ -88,11 +88,11 @@ Tensor& quantized_mixed_mm_out(
 }
 
 Tensor& quantized_mixed_mm_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
+    const exec_aten::optional<Tensor>& opt_weight_zero_points,
     Tensor& out) {
   // TODO(mcandales): Remove the need for this wrapper
   (void)ctx;

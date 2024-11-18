@@ -21,9 +21,9 @@ void check_embedding_args(
     const api::vTensor& weight,
     const api::vTensor& in,
     const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(weight, utils::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
+  VK_CHECK_COND(check_packed_dim_is(weight, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
 }
 
 void add_embedding_node(
@@ -41,20 +41,24 @@ void add_embedding_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
-      {{out, vkapi::MemoryAccessType::WRITE},
-       {{in, weight}, vkapi::MemoryAccessType::READ}},
-      {t_out->sizes_ubo()}));
+      {{out, vkapi::kWrite}, {{in, weight}, vkapi::kRead}},
+      {
+          t_out->sizes_ubo(),
+      },
+      {t_out->hashed_layout(),
+       t_in->hashed_layout(),
+       t_weight->hashed_layout()}));
 }
 
 void embedding(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  ValueRef weight = prepack_if_tensor_ref(graph, args[0]);
-  ValueRef in = prepack_if_tensor_ref(graph, args[1]);
+  ValueRef in = args[1];
   ValueRef out = args[5];
+  ValueRef weight = prepack_standard_like(graph, args[0], out);
 
   add_embedding_node(graph, weight, in, out);
 }

@@ -19,8 +19,8 @@ bool check_quantized_mixed_linear_args(
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
-    const optional<ScalarType> dtype,
+    const exec_aten::optional<Tensor>& opt_weight_zero_points,
+    const exec_aten::optional<ScalarType> dtype,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(in, 2));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(weight, 2));
@@ -64,8 +64,8 @@ Tensor& quantized_mixed_linear_out(
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
-    const optional<ScalarType> dtype,
+    const exec_aten::optional<Tensor>& opt_weight_zero_points,
+    const exec_aten::optional<ScalarType> dtype,
     Tensor& out) {
   // TODO (gjcomer) Replace with ET_KERNEL_CHECK when context is available.
   ET_CHECK(check_quantized_mixed_linear_args(
@@ -113,12 +113,12 @@ Tensor& quantized_mixed_linear_out(
 }
 
 Tensor& quantized_mixed_linear_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
-    const optional<ScalarType> dtype,
+    const exec_aten::optional<Tensor>& opt_weight_zero_points,
+    const exec_aten::optional<ScalarType> dtype,
     Tensor& out) {
   // TODO(mcandales): Remove the need for this wrapper
   // TODO(mkg): add support for dtype

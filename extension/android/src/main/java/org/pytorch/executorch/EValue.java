@@ -11,6 +11,7 @@ package org.pytorch.executorch;
 import com.facebook.jni.annotations.DoNotStrip;
 import java.util.Locale;
 import java.util.Optional;
+import org.pytorch.executorch.annotations.Experimental;
 
 /**
  * Java representation of an ExecuTorch value, which is implemented as tagged union that can be one
@@ -30,6 +31,7 @@ import java.util.Optional;
  *
  * <p>Warning: These APIs are experimental and subject to change without notice
  */
+@Experimental
 @DoNotStrip
 public class EValue {
   private static final int TYPE_CODE_NONE = 0;
@@ -59,7 +61,7 @@ public class EValue {
     "ListInt",
     "ListTensor",
     "ListScalar",
-    "ListOptionalScalar",
+    "ListOptionalTensor",
   };
 
   @DoNotStrip private final int mTypeCode;
@@ -263,6 +265,12 @@ public class EValue {
   public Tensor[] toTensorList() {
     preconditionType(TYPE_CODE_LIST_TENSOR, mTypeCode);
     return (Tensor[]) mData;
+  }
+
+  @DoNotStrip
+  public Optional<Tensor>[] toOptionalTensorList() {
+    preconditionType(TYPE_CODE_LIST_OPTIONAL_TENSOR, mTypeCode);
+    return (Optional<Tensor>[]) mData;
   }
 
   private void preconditionType(int typeCodeExpected, int typeCode) {

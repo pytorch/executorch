@@ -107,6 +107,10 @@ TrainingModule::named_parameters(const std::string& method_name) {
 
   uint64_t param_start = param_res.get()[0].toInt();
 
+  auto e = executorch::extension::Module::load_method(method_name);
+  if (e != runtime::Error::Ok) {
+    return e;
+  }
   auto& method = methods_.at(method_name).method;
 
   // create dict

@@ -121,7 +121,6 @@ class ModuleDynamicCatUnallocatedIO(nn.Module):
 
     def get_memory_planning_pass(self):
         return MemoryPlanningPass(
-            memory_planning_algo="greedy",
             alloc_graph_input=False,
             alloc_graph_output=False,
         )
@@ -190,7 +189,6 @@ class ModuleSimpleTrain(torch.nn.Module):
 
 def export_module_to_program(
     module_class: Type[nn.Module],
-    extract_constant_segment: bool,
     skip_type_promotion: bool,
 ):
     """Exports the module and returns the serialized program data."""
@@ -211,7 +209,6 @@ def export_module_to_program(
     module = ExportedModule.export(
         module_class,
         methods,
-        extract_constant_segment=extract_constant_segment,
         skip_type_promotion=skip_type_promotion,
         export_joint_graph=export_joint,
         **export_kwargs,
@@ -259,18 +256,15 @@ def main() -> None:
             # Skip type promotion to keep the model in fp16.
             # Type promotion will convert to fp32.
             skip_type_promotion = True
-        for extract_constant_segment in (True, False):
-            suffix = "" if extract_constant_segment else "-no-constant-segment"
-            outfile = os.path.join(args.outdir, f"{module_name}{suffix}.pte")
-            with open(outfile, "wb") as fp:
-                fp.write(
-                    export_module_to_program(
-                        module_class,
-                        extract_constant_segment=extract_constant_segment,
-                        skip_type_promotion=skip_type_promotion,
-                    )
+        outfile = os.path.join(args.outdir, f"{module_name}.pte")
+        with open(outfile, "wb") as fp:
+            fp.write(
+                export_module_to_program(
+                    module_class,
+                    skip_type_promotion=skip_type_promotion,
                 )
-            print(f"Exported {module_name} and wrote program data to {outfile}")
+            )
+        print(f"Exported {module_name} and wrote program data to {outfile}")
 
 
 if __name__ == "__main__":

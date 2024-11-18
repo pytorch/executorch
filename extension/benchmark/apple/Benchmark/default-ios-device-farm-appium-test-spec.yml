@@ -1,0 +1,33 @@
+version: 0.1
+
+# Phases are collection of commands that get executed on Device Farm.
+phases:
+  # The install phase includes commands that install dependencies that your tests use.
+  # Default dependencies for testing frameworks supported on Device Farm are already installed.
+  install:
+    commands:
+
+  # The pre-test phase includes commands that setup your test environment.
+  pre_test:
+    commands:
+      - mkdir $DEVICEFARM_TEST_PACKAGE_PATH/Debug-iphoneos
+      - mkdir $DEVICEFARM_TEST_PACKAGE_PATH/Release-iphoneos
+      - unzip $DEVICEFARM_APP_PATH -d /tmp
+      - cp -r /tmp/Payload/*.app $DEVICEFARM_TEST_PACKAGE_PATH/Debug-iphoneos/
+      - cp -r /tmp/Payload/*.app $DEVICEFARM_TEST_PACKAGE_PATH/Release-iphoneos/
+
+  # The test phase includes commands that run your test suite execution.
+  test:
+    commands:
+      - xcodebuild test-without-building -destination id=$DEVICEFARM_DEVICE_UDID -xctestrun $DEVICEFARM_TEST_PACKAGE_PATH/*.xctestrun -derivedDataPath $DEVICEFARM_LOG_DIR
+
+  # The post test phase includes are commands that are run after your tests are executed.
+  post_test:
+    commands:
+
+# The artifacts phase lets you specify the location where your tests logs, device logs will be stored.
+# And also let you specify the location of your test logs and artifacts which you want to be collected by Device Farm.
+# These logs and artifacts will be available through ListArtifacts API in Device Farm.
+artifacts:
+  # By default, Device Farm will collect your artifacts from following directories
+  - $DEVICEFARM_LOG_DIR

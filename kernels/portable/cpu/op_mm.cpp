@@ -16,8 +16,11 @@ namespace native {
 
 using Tensor = exec_aten::Tensor;
 
-Tensor&
-mm_out(RuntimeContext& ctx, const Tensor& in, const Tensor& mat2, Tensor& out) {
+Tensor& mm_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& in,
+    const Tensor& mat2,
+    Tensor& out) {
   ET_KERNEL_CHECK(ctx, check_mm_args(in, mat2, out), InvalidArgument, out);
 
   size_t output_ndim = 0;
@@ -34,19 +37,20 @@ mm_out(RuntimeContext& ctx, const Tensor& in, const Tensor& mat2, Tensor& out) {
 
   ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES_AND(Half, in.scalar_type(), ctx, "mm.out", CTYPE, [&]() {
-    size_t m = in.size(0);
-    size_t n = in.size(1);
-    size_t p = mat2.size(1);
+  ET_SWITCH_REAL_TYPES_AND2(
+      Half, BFloat16, in.scalar_type(), ctx, "mm.out", CTYPE, [&]() {
+        size_t m = in.size(0);
+        size_t n = in.size(1);
+        size_t p = mat2.size(1);
 
-    vec_matmul<CTYPE>(
-        out.mutable_data_ptr<CTYPE>(),
-        in.const_data_ptr<CTYPE>(),
-        mat2.const_data_ptr<CTYPE>(),
-        m,
-        n,
-        p);
-  });
+        vec_matmul<CTYPE>(
+            out.mutable_data_ptr<CTYPE>(),
+            in.const_data_ptr<CTYPE>(),
+            mat2.const_data_ptr<CTYPE>(),
+            m,
+            n,
+            p);
+      });
 
   return out;
 }

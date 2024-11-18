@@ -25,6 +25,7 @@ _OPTIMIZED_ATEN_OPS = (
         ],
     ),
     op_target(name = "op_exp"),
+    op_target(name = "op_sigmoid"),
     op_target(
         name = "op_gelu",
         deps = select({
@@ -41,6 +42,13 @@ _OPTIMIZED_ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_linear",
+        deps = [
+            "//executorch/kernels/optimized:libblas",
+            "//executorch/kernels/portable/cpu/util:matmul_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_log_softmax",
         deps = select({
             "DEFAULT": [
@@ -53,11 +61,19 @@ _OPTIMIZED_ATEN_OPS = (
         }),
     ),
     op_target(
+        name = "op_mm",
+        deps = [
+            "//executorch/kernels/optimized:libblas",
+            "//executorch/kernels/portable/cpu/util:matmul_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_mul",
         deps = [
             ":binary_ops",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
     op_target(

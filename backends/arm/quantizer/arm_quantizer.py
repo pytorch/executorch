@@ -5,6 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 #
 # Quantizer for Arm backend
 #
@@ -17,10 +19,10 @@ from typing import Any, Callable, Dict, List, Optional, Set
 
 import torch
 import torch.nn.functional as F
+from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 
 from executorch.backends.arm.quantizer import arm_quantizer_utils
 from executorch.backends.arm.quantizer.arm_quantizer_utils import (
-    convert_scalars_to_attrs,
     mark_nodes_as_annotated,
     propagate_annotation,
 )
@@ -73,7 +75,7 @@ def _supported_symmetric_quantized_operators() -> Dict[str, List[OperatorPattern
             [torch.nn.AdaptiveAvgPool2d],
             [F.adaptive_avg_pool2d],
         ],
-        "mul": [torch.mul],
+        "mul": [[torch.mul]],
         "sub": [[torch.sub]],
     }
     return copy.deepcopy(supported_operators)
@@ -265,10 +267,10 @@ class ArmQuantizer(Quantizer):
         "add",
         "sub",
         "mul",
-        "sigmoid",
         "mm",
-        "cat",
         "one_to_one",
+        "generic",
+        "upsample_nearest2d",
     ]
 
     def __init__(self) -> None:
@@ -315,7 +317,8 @@ class ArmQuantizer(Quantizer):
         """An initial pass for transforming the graph to prepare it for annotation.
         Currently transforms scalar values to tensor attributes.
         """
-        return convert_scalars_to_attrs(model)
+
+        return ArmPassManager().transform_for_annotation_pipeline(graph_module=model)
 
     def annotate(self, model: GraphModule) -> GraphModule:
         """Performs the quantization annotation on the graph.

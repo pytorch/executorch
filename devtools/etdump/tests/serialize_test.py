@@ -83,6 +83,7 @@ def get_sample_etdump_flatcc() -> flatcc.ETDumpFlatCC:
                         profile_event=None,
                         allocation_event=None,
                         debug_event=flatcc.DebugEvent(
+                            name="test_debug_event",
                             chain_index=1,
                             instruction_id=0,
                             delegate_debug_id_str="56",

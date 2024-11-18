@@ -125,13 +125,13 @@ class OpCopyInplaceTest : public OperatorTest {
 // regular test for copy.out
 TEST_F(OpCopyTest, AllRealDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
 TEST_F(OpCopyTest, EmptyInputSupported) {
 #define TEST_ENTRY(ctype, dtype) test_empty_input<ctype, ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

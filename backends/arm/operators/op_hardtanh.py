@@ -2,6 +2,8 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
 from typing import List
 
 import serializer.tosa_serializer as ts
@@ -12,7 +14,10 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 
-from executorch.backends.arm.tosa_quant_utils import get_quant_node_args
+from executorch.backends.arm.tosa_quant_utils import (
+    get_quant_arg_upstream,
+    quantize_value,
+)
 from serializer.tosa_serializer import TosaOp
 
 
@@ -35,12 +40,10 @@ class HardTanhVisitor(NodeVisitor):
 
         if is_quant_node:
             # Get quant parameters
-            scale, zp, qmin, qmax = get_quant_node_args(node.all_input_nodes[0])
+            qargs = get_quant_arg_upstream(node.all_input_nodes[0])
             # Convert to quantized representation
-            clamp_min_qs = round((inputs[1].number / scale) + zp)
-            clamp_min_qs = max(clamp_min_qs, qmin)
-            clamp_max_qs = round((inputs[2].number / scale) + zp)
-            clamp_max_qs = min(clamp_max_qs, qmax)
+            clamp_min_qs = quantize_value(inputs[1].number, qargs)
+            clamp_max_qs = quantize_value(inputs[2].number, qargs)
             # Set fp values to 0.0 since they are not used
             clamp_min_fp = 0.0
             clamp_max_fp = 0.0

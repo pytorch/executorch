@@ -97,7 +97,7 @@ void layer_norm(
 // As a reference, there's math_native_layer_norm in ATen:
 // https://www.internalfb.com/code/fbsource/[2da5b17b086554c6cd0c3ab08a35aeec2a8bad8c]/xplat/caffe2/aten/src/ATen/native/layer_norm.cpp?lines=188
 std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     IntArrayRef normalized_shape,
     const exec_aten::optional<Tensor>& weight,

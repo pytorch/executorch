@@ -19,7 +19,7 @@ using Tensor = exec_aten::Tensor;
 // clone.out(Tensor self, *, MemoryFormat? memory_format=None, Tensor(a!) out)
 // -> Tensor(a!)
 Tensor& clone_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& self,
     exec_aten::optional<exec_aten::MemoryFormat> memory_format,
     Tensor& out) {

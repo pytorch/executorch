@@ -24,8 +24,9 @@ class TensorResizerFriend;
 } // namespace runtime
 } // namespace executorch
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 /**
  * Manages the storage behind an ETensor (torch::executor::Tensor).
@@ -148,6 +149,10 @@ class TensorImpl {
     return type_;
   }
 
+  inline ScalarType dtype() const {
+    return scalar_type();
+  }
+
   /// Returns the size in bytes of one element of the tensor.
   ssize_t element_size() const;
 
@@ -164,6 +169,11 @@ class TensorImpl {
   /// Returns the strides of the tensor at each dimension.
   const ArrayRef<StridesType> strides() const {
     return ArrayRef<StridesType>{strides_, static_cast<size_t>(dim_)};
+  }
+
+  /// Returns the mutability of the shape of the tensor.
+  TensorShapeDynamism shape_dynamism() const {
+    return shape_dynamism_;
   }
 
   /// Returns a pointer of type T to the constant underlying data blob.
@@ -253,5 +263,22 @@ class TensorImpl {
   const TensorShapeDynamism shape_dynamism_;
 };
 
+/**
+ * Compute the number of elements based on the sizes of a tensor.
+ */
+ssize_t compute_numel(
+    const ::executorch::runtime::etensor::TensorImpl::SizesType* sizes,
+    ssize_t dim);
+
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::etensor::compute_numel;
+using ::executorch::runtime::etensor::TensorImpl;
 } // namespace executor
 } // namespace torch

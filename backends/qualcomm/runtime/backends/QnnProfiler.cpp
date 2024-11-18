@@ -7,10 +7,9 @@
  */
 
 #include <executorch/backends/qualcomm/runtime/backends/QnnProfiler.h>
-#include <iostream>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 
 QnnProfile::QnnProfile(
@@ -20,8 +19,21 @@ QnnProfile::QnnProfile(
     : handle_(nullptr), implementation_(implementation), backend_(backend) {
   if (profile_level != QnnExecuTorchProfileLevel::kProfileOff) {
     const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+
+    QnnProfile_Level_t qnnProfileLevel = 0;
+    if (profile_level == QnnExecuTorchProfileLevel::kProfileBasic) {
+      qnnProfileLevel = QNN_PROFILE_LEVEL_BASIC;
+    } else if (
+        profile_level == QnnExecuTorchProfileLevel::kProfileDetailed ||
+        profile_level == QnnExecuTorchProfileLevel::kProfileOptrace) {
+      qnnProfileLevel = QNN_PROFILE_LEVEL_DETAILED;
+    } else {
+      QNN_EXECUTORCH_LOG_WARN("Invalid profile level");
+      return;
+    }
+
     Qnn_ErrorHandle_t error = qnn_interface.qnn_profile_create(
-        backend_->GetHandle(), static_cast<int>(profile_level), &handle_);
+        backend_->GetHandle(), qnnProfileLevel, &handle_);
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_WARN(
           "Failed to create profile_handle for backend "
@@ -32,10 +44,34 @@ QnnProfile::QnnProfile(
       // ignore error and continue to create backend handle...
       handle_ = nullptr;
     }
+
+    if (profile_level == QnnExecuTorchProfileLevel::kProfileOptrace) {
+      if (handle_ == nullptr) {
+        QNN_EXECUTORCH_LOG_WARN(
+            "Prfoile handle is null, cannot enable optrace");
+        return;
+      }
+
+      QnnProfile_Config_t qnnProfileConfig = QNN_PROFILE_CONFIG_INIT;
+      qnnProfileConfig.option = QNN_PROFILE_CONFIG_OPTION_ENABLE_OPTRACE;
+      std::array<const QnnProfile_Config_t*, 2> profileConfigs = {
+          &qnnProfileConfig, nullptr};
+      error =
+          qnn_interface.qnn_profile_set_config(handle_, profileConfigs.data());
+
+      if (error != QNN_SUCCESS) {
+        QNN_EXECUTORCH_LOG_WARN(
+            "Failed to set optrace for backend "
+            " %u, error=%d",
+            qnn_interface.GetBackendId(),
+            QNN_GET_ERROR_CODE(error));
+      }
+    }
   }
 }
 
-Qnn_ErrorHandle_t QnnProfile::ProfileData(EventTracer* event_tracer) {
+Qnn_ErrorHandle_t QnnProfile::ProfileData(
+    executorch::runtime::EventTracer* event_tracer) {
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
   const QnnProfile_EventId_t* events_ptr = nullptr;
   const QnnProfile_EventId_t* sub_events_ptr = nullptr;
@@ -89,11 +125,11 @@ Qnn_ErrorHandle_t QnnProfile::ProfileData(EventTracer* event_tracer) {
         if (sub_event_data.type == QNN_PROFILE_EVENTTYPE_NODE &&
             (sub_event_data.unit == QNN_PROFILE_EVENTUNIT_MICROSEC ||
              sub_event_data.unit == QNN_PROFILE_EVENTUNIT_CYCLES)) {
-          torch::executor::event_tracer_log_profiling_delegate(
+          executorch::runtime::event_tracer_log_profiling_delegate(
               event_tracer,
               sub_event_data.identifier,
               /*delegate_debug_id=*/
-              static_cast<torch::executor::DebugHandle>(-1),
+              static_cast<executorch::runtime::DebugHandle>(-1),
               0,
               sub_event_data.value);
         }
@@ -118,5 +154,5 @@ QnnProfile::~QnnProfile() {
   }
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

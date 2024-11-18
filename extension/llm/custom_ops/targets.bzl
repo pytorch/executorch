@@ -1,4 +1,13 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(
+    "@fbsource//xplat/executorch/kernels/optimized:lib_defs.bzl",
+    "get_vec_preprocessor_flags",
+    "get_vec_deps",
+)
+load(
+    "@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl",
+    "get_compiler_optimization_flags",
+)
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -9,8 +18,19 @@ def define_common_targets():
     for mkl_dep in ["", "_mkl_noomp"]:
         runtime.cxx_library(
             name = "custom_ops" + mkl_dep,
-            srcs = ["op_sdpa.cpp", "op_fallback.cpp"],
-            exported_headers = ["op_sdpa.h", "op_fallback.h"],
+            srcs = [
+                "op_fallback.cpp",
+                "op_fast_hadamard_transform.cpp",
+                "op_sdpa.cpp",
+                "op_update_quantized_cache.cpp",
+            ],
+            exported_headers = [
+                "op_fallback.h",
+                "op_fast_hadamard_transform.h",
+                "op_sdpa.h",
+                "op_update_quantized_cache.h",
+            ],
+            preprocessor_flags = get_vec_preprocessor_flags(),
             exported_deps = [
                 "//executorch/runtime/kernel:kernel_includes",
                 "//executorch/kernels/portable/cpu:scalar_utils",
@@ -20,7 +40,11 @@ def define_common_targets():
                 "//executorch/extension/parallel:thread_parallel",
                 "//executorch/extension/threadpool:threadpool",
             ],
-            compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"],
+            deps = [
+                "//executorch/kernels/portable/cpu/util:reduce_util",
+                "//executorch/extension/llm/custom_ops/spinquant:fast_hadamard_transform",
+            ] + get_vec_deps(),
+            compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"] + get_compiler_optimization_flags(),
             visibility = [
                 "//executorch/...",
                 "//executorch/extension/llm/custom_ops/...",
@@ -34,8 +58,13 @@ def define_common_targets():
         runtime.cxx_library(
             name = "custom_ops_aot_lib" + mkl_dep,
             srcs = [
+                "op_fast_hadamard_transform_aten.cpp",
                 "op_sdpa_aot.cpp",
+                "op_tile_crop.cpp",
+                "op_tile_crop_aot.cpp",
             ],
+            headers = ["op_tile_crop.h"],
+            compiler_flags = ["-Wno-global-constructors"],
             visibility = [
                 "//executorch/...",
                 "@EXECUTORCH_CLIENTS",
@@ -96,6 +125,20 @@ def define_common_targets():
         name = "preprocess_custom_ops_py",
         srcs = [
             "preprocess_custom_ops.py",
+        ],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        deps = [
+            "//caffe2:torch",
+        ],
+    )
+
+    runtime.python_library(
+        name = "model_sharding_py",
+        srcs = [
+            "model_sharding.py",
         ],
         visibility = [
             "//executorch/...",

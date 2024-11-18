@@ -44,7 +44,7 @@ struct CustomMemTensorInfo {
   size_t tensor_bytes;
   uint32_t* shape;
   uint32_t rank;
-  torch::executor::ScalarType dtype;
+  executorch::aten::ScalarType dtype;
 };
 
 /// Allocate specific tensors (usually graph inputs and outputs) on shared

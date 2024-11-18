@@ -38,7 +38,7 @@ bool check_sizes(
  *
  * zeros.out(SymInt[] size, *, Tensor(a!) out) -> Tensor(a!)
  */
-Tensor& zeros_out(RuntimeContext& ctx, IntArrayRef size, Tensor& out) {
+Tensor& zeros_out(KernelRuntimeContext& ctx, IntArrayRef size, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape

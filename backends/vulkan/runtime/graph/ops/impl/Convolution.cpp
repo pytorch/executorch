@@ -108,7 +108,7 @@ ValueRef prepack_biases(
       v,
       {t->sizes_ubo()},
       // Specialization constants
-      {SV(t->packed_dim_whcn_idx())}));
+      {t->hashed_layout()}));
 
   return v;
 }
@@ -216,14 +216,14 @@ ValueRef prepack_weights(
        graph.create_params_buffer(
            utils::make_ivec4(original_sizes, /*reverse = */ true))},
       // Specialization constants
-      {SV(t->packed_dim_whcn_idx())}));
+      {SV(t->packed_dim())}));
 
   return v;
 }
 
 void check_conv_args(const api::vTensor& in, const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
+  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
 }
 
 struct Conv2dParams final {
@@ -291,7 +291,7 @@ utils::uvec3 create_conv2d_global_wg_size(
     const Conv2dMethod method,
     const ValueRef out) {
   if (method == Conv2dMethod::Pointwise) {
-    const utils::uvec3 image_extents = graph.image_extents_of(out);
+    const utils::uvec3 image_extents = graph.logical_limits_of(out);
     return {
         utils::div_up(image_extents[0u], 2u),
         utils::div_up(image_extents[1u], 2u),
@@ -304,7 +304,7 @@ utils::uvec3 create_conv2d_global_wg_size(
 void add_conv2d_node(
     ComputeGraph& graph,
     const ValueRef in,
-    const ValueRef weight,
+    const ValueRef weight_data,
     const ValueRef bias,
     const ValueRef stride,
     const ValueRef padding,
@@ -330,19 +330,18 @@ void add_conv2d_node(
   const int64_t groups_val = graph.get_int(groups);
 
   const Conv2dMethod method =
-      get_conv2d_method(graph, weight, groups_val, transposed_val);
+      get_conv2d_method(graph, weight_data, groups_val, transposed_val);
 
-  ValueRef arg_in = prepack_if_tensor_ref(graph, in);
-  ValueRef arg_weight = prepack_weights(graph, weight, method);
+  ValueRef arg_weight = prepack_weights(graph, weight_data, method);
   ValueRef arg_bias = prepack_biases(
       graph,
       bias,
-      weight,
+      weight_data,
       transposed_val,
       /* storage_type = */ utils::kTexture2D,
       /* memory_layout = */ utils::kWidthPacked);
 
-  vTensorPtr t_in = graph.get_tensor(arg_in);
+  vTensorPtr t_in = graph.get_tensor(in);
   vTensorPtr t_out = graph.get_tensor(out);
   if (t_in->sizes().at(0) > 1) {
     VK_THROW("conv2d: input batch size > 1 is not supported yet!");
@@ -351,32 +350,37 @@ void add_conv2d_node(
 
   Kernel2dParams kernel_params = create_kernel2d_params(
       graph,
-      weight,
+      weight_data,
       /*kernel_size_only = */ false,
       stride,
       padding,
       dilation);
   Conv2dParams extra_params =
-      create_conv2d_params(graph, weight, kernel_params, transposed_val);
+      create_conv2d_params(graph, weight_data, kernel_params, transposed_val);
 
   OutputParams out_params = {out_min_val, out_max_val};
 
   check_conv2d_params(kernel_params, transposed_val);
 
   vkapi::ShaderInfo shader = get_conv2d_shader(
-      graph, *t_out, /*prepack_weights = */ false, method, weight, clamp_out);
+      graph,
+      *t_out,
+      /*prepack_weights = */ false,
+      method,
+      weight_data,
+      clamp_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       shader,
       create_conv2d_global_wg_size(graph, method, out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
-       {{arg_in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
+       {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {
-          t_out->texture_limits_ubo(),
+          t_out->logical_limits_ubo(),
           t_in->sizes_ubo(),
           graph.create_params_buffer(kernel_params),
           graph.create_params_buffer(extra_params),
@@ -386,7 +390,7 @@ void add_conv2d_node(
       {},
       // Resizing Logic
       resize_conv2d_node,
-      {weight, stride, padding, dilation, transposed, output_padding}));
+      {weight_data, stride, padding, dilation, transposed, output_padding}));
 }
 
 void add_conv1d_node(
@@ -402,9 +406,8 @@ void add_conv1d_node(
     const ValueRef out_max,
     const ValueRef out,
     const bool clamp_out) {
-  ValueRef arg_in = prepack_if_tensor_ref(graph, in);
-  ValueRef arg_weight =
-      prepack_if_tensor_ref(graph, weight, utils::kWidthPacked);
+  ValueRef arg_weight = prepack_standard(
+      graph, weight, graph.storage_type_of(out), utils::kWidthPacked);
   ValueRef arg_bias = prepack_biases(
       graph,
       bias,
@@ -422,7 +425,7 @@ void add_conv1d_node(
     out_max_val = graph.extract_scalar<float>(out_max);
   }
 
-  vTensorPtr t_in = graph.get_tensor(arg_in);
+  vTensorPtr t_in = graph.get_tensor(in);
   vTensorPtr t_weight = graph.get_tensor(arg_weight);
   vTensorPtr t_bias = graph.get_tensor(arg_bias);
   vTensorPtr t_out = graph.get_tensor(out);
@@ -444,7 +447,7 @@ void add_conv1d_node(
   int32_t out_group_size = static_cast<int64_t>(out_channels / groups_val);
 
   utils::uvec3 global_size = {1, static_cast<uint32_t>(out_channels), 1};
-  utils::uvec3 local_size = {1, 1, 1};
+  utils::uvec3 local_size = {1, 64, 1};
 
   Kernel1dParams kernel_params = {
       kernel_size,
@@ -464,23 +467,26 @@ void add_conv1d_node(
 
   add_dtype_suffix(kernel_name, *t_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
-       {{arg_in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
+       {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {
-          t_out->texture_limits_ubo(),
+          t_out->logical_limits_ubo(),
           t_in->sizes_ubo(),
           graph.create_params_buffer(kernel_params),
           graph.create_params_buffer(out_params),
       },
       // Specialization Constants
-      {},
+      {t_out->hashed_layout(),
+       t_in->hashed_layout(),
+       t_weight->hashed_layout(),
+       t_bias->hashed_layout()},
       // Resizing Logic
       resize_conv1d_node,
       {weight, stride, padding, dilation}));

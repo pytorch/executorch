@@ -6,10 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/reference/kernels/kernels.h>
-#include "xa_nnlib_common.h"
-#include "xa_nnlib_common_macros.h"
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
+#include <xa_nnlib_common.h>
+#include <xa_nnlib_common_macros.h>
 
+namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace kernels {
@@ -164,6 +165,7 @@ void requantize(
 typed_quantize_val(int8_t);
 typed_quantize_val(uint8_t);
 typed_quantize_val(int16_t);
+typed_quantize_val(uint16_t);
 #undef typed_quantize_val
 
 #define typed_quantize_vec(dtype)  \
@@ -176,6 +178,7 @@ typed_quantize_val(int16_t);
 typed_quantize_vec(int8_t);
 typed_quantize_vec(uint8_t);
 typed_quantize_vec(int16_t);
+typed_quantize_vec(uint16_t);
 typed_quantize_vec(int32_t);
 #undef typed_quantize_vec
 
@@ -185,6 +188,7 @@ typed_quantize_vec(int32_t);
 typed_dequantize_val(int8_t);
 typed_dequantize_val(uint8_t);
 typed_dequantize_val(int16_t);
+typed_dequantize_val(uint16_t);
 #undef typed_dequantize_val
 
 #define typed_dequantize_vec(dtype) \
@@ -197,6 +201,7 @@ typed_dequantize_val(int16_t);
 typed_dequantize_vec(int8_t);
 typed_dequantize_vec(uint8_t);
 typed_dequantize_vec(int16_t);
+typed_dequantize_vec(uint16_t);
 typed_dequantize_vec(int32_t);
 #undef typed_dequantize_vec
 
@@ -231,3 +236,4 @@ typed_requantize_vec(uint8_t, int8_t);
 }; // namespace kernels
 }; // namespace HiFi
 }; // namespace impl
+}; // namespace cadence

@@ -18,7 +18,7 @@ NS_SWIFT_NAME(Runner)
 
 - (instancetype)initWithModelPath:(NSString*)filePath
                     tokenizerPath:(NSString*)tokenizerPath;
-- (BOOL)isloaded;
+- (BOOL)isLoaded;
 - (BOOL)loadWithError:(NSError**)error;
 - (BOOL)generate:(NSString*)prompt
        sequenceLength:(NSInteger)seq_len
@@ -36,9 +36,11 @@ NS_SWIFT_NAME(LLaVARunner)
 
 - (instancetype)initWithModelPath:(NSString*)filePath
                     tokenizerPath:(NSString*)tokenizerPath;
-- (BOOL)isloaded;
+- (BOOL)isLoaded;
 - (BOOL)loadWithError:(NSError**)error;
-- (BOOL)generate:(NSArray<UIImage*>*)images
+- (BOOL)generate:(void*)imageBuffer
+                width:(CGFloat)width
+               height:(CGFloat)height
                prompt:(NSString*)prompt
        sequenceLength:(NSInteger)seq_len
     withTokenCallback:(nullable void (^)(NSString*))callback

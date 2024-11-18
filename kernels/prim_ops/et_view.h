@@ -15,7 +15,7 @@ namespace torch {
 namespace executor {
 namespace function {
 
-void et_view(RuntimeContext& context, EValue** stack);
+void et_view(KernelRuntimeContext& context, EValue** stack);
 
 } // namespace function
 } // namespace executor

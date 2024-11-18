@@ -204,6 +204,16 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(add_module, sample_inputs)
 
+        sample_inputs = (
+            torch.rand(size=(4, 5, 2, 3), dtype=torch.float32),
+            torch.rand(size=(4, 5, 2, 3), dtype=torch.float32),
+            torch.rand(
+                size=(2, 3), dtype=torch.float32
+            ),  # test broadcasting on packed dim
+        )
+
+        self.lower_module_and_test_output(add_module, sample_inputs)
+
     def test_vulkan_backend_add_int(self):
         class AddIntModule(torch.nn.Module):
             def __init__(self):
@@ -241,11 +251,11 @@ class TestBackends(unittest.TestCase):
                 self.weight = torch.rand(size=(2, 3), dtype=torch.float32)
 
             def forward(self, x, y):
-                z = torch.add(x, y, alpha=2)
-                z = torch.add(x, y, alpha=3.14)
-                z = z + x
-                z = z + self.weight
-                return z
+                inter1 = torch.add(x, y, alpha=2)
+                inter2 = torch.add(x, y, alpha=3.14)
+                inter3 = inter1 * self.weight
+                inter4 = inter2 * self.weight
+                return inter4 - inter3
 
         internal_data_module = InternalDataModule()
         sample_inputs = (
@@ -715,6 +725,9 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(module, sample_inputs)
 
+    @unittest.skip(
+        "Reduce shader does not support multiple reduction axes at the moment"
+    )
     def test_vulkan_backend_sum_dim_list(self):
         class SumModule(torch.nn.Module):
             def __init__(self):
@@ -734,6 +747,9 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    @unittest.skip(
+        "Reduce shader does not support multiple reduction axes at the moment"
+    )
     def test_vulkan_backend_sum(self):
         class SumModule(torch.nn.Module):
             def __init__(self):
@@ -940,11 +956,10 @@ class TestBackends(unittest.TestCase):
         class NativeLayerNormModule(torch.nn.Module):
             def __init__(self):
                 super().__init__()
+                self.layer_norm = torch.nn.LayerNorm(5)
 
             def forward(self, x):
-                return torch.native_layer_norm(
-                    x, [5], torch.ones(5), torch.zeros(5), 1e-5
-                )
+                return self.layer_norm(x)
 
         sample_inputs = (torch.randn(size=(3, 4, 5), dtype=torch.float32),)
 
@@ -1377,6 +1392,9 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    @unittest.skip(
+        "Softmax shader with shared memory does not work with swiftshader due to potential swiftshader bug"
+    )
     def test_vulkan_backend_softmax(self):
         class SoftmaxModule(torch.nn.Module):
             def __init__(self):
@@ -1396,6 +1414,9 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    @unittest.skip(
+        "Softmax shader with shared memory does not work with swiftshader due to potential swiftshader bug"
+    )
     def test_vulkan_backend_logsoftmax(self):
         class LogSoftmaxModule(torch.nn.Module):
             def __init__(self):
@@ -1426,6 +1447,9 @@ class TestBackends(unittest.TestCase):
 
         self.lower_unary_module_and_test_output(GeluModule())
 
+    @unittest.skip(
+        "Reduce shader does not support multiple reduction axes at the moment"
+    )
     def test_vulkan_backend_mean(self):
         class MeanModule(torch.nn.Module):
             def __init__(self, dims, keepdim=True):
@@ -1630,6 +1654,20 @@ class TestBackends(unittest.TestCase):
         self.lower_module_and_test_output(
             EmbeddingModule(torch.nn.Embedding(5, 4)),
             (torch.tensor([[[0, 1], [0, 1]], [[4, 2], [3, 3]]]),),
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_flip(self):
+        class FlipModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.flip(x, [0, 1, 2, 3])
+
+        self.lower_module_and_test_output(
+            FlipModule(),
+            (torch.arange(48).reshape(2, 3, 4, 2),),
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 

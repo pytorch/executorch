@@ -21,6 +21,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 from executorch.backends.xnnpack.test.tester.tester import Quantize
+from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
 
 
@@ -45,7 +46,7 @@ class TestSimpleExpand(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
             )
             .export()
             .check_count({"torch.ops.aten.expand.default": 1})
@@ -63,7 +64,7 @@ class TestSimpleExpand(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
             )
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
@@ -76,13 +77,15 @@ class TestSimpleExpand(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
-    def _test_expand_tosa_u55_pipeline(self, module: torch.nn.Module, test_data: Tuple):
+    def _test_expand_ethosu_BI_pipeline(
+        self, compile_spec: CompileSpec, module: torch.nn.Module, test_data: Tuple
+    ):
         quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(),
+                compile_spec=compile_spec,
             )
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
@@ -102,8 +105,14 @@ class TestSimpleExpand(unittest.TestCase):
     def test_expand_tosa_BI(self, test_input, multiples):
         self._test_expand_tosa_BI_pipeline(self.Expand(), (test_input, multiples))
 
-    # Expected failure since tosa.TILE is unsupported by Vela.
     @parameterized.expand(Expand.test_parameters)
-    @unittest.expectedFailure
     def test_expand_u55_BI(self, test_input, multiples):
-        self._test_expand_tosa_u55_pipeline(self.Expand(), (test_input, multiples))
+        self._test_expand_ethosu_BI_pipeline(
+            common.get_u55_compile_spec(), self.Expand(), (test_input, multiples)
+        )
+
+    @parameterized.expand(Expand.test_parameters)
+    def test_expand_u85_BI(self, test_input, multiples):
+        self._test_expand_ethosu_BI_pipeline(
+            common.get_u85_compile_spec(), self.Expand(), (test_input, multiples)
+        )

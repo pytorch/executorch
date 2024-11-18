@@ -8,14 +8,14 @@
 #pragma once
 #include <executorch/backends/qualcomm/runtime/backends/QnnContextCommon.h>
 
-#include <executorch/backends/qualcomm/schema_generated.h>
+#include <executorch/backends/qualcomm/qc_compiler_spec_generated.h>
 
 #include <memory>
 #include <vector>
 
 #include "HTP/QnnHtpGraph.h"
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 using namespace qnn_delegate;
 class HtpGraphCustomConfig {
@@ -35,11 +35,14 @@ class HtpGraphCustomConfig {
     htp_graph_config_.back()->option = QNN_HTP_GRAPH_CONFIG_OPTION_UNKNOWN;
     return htp_graph_config_.back().get();
   }
+  std::vector<QnnGraph_CustomConfig_t> CreateGraphCustomConfigCommon(
+      const SocInfo* qcom_target_soc_info,
+      float opt_level);
 
   [[maybe_unused]] const QnnExecuTorchHtpBackendOptions* htp_options_;
   std::vector<std::unique_ptr<QnnHtpGraph_CustomConfig_t>> htp_graph_config_;
   const QnnContext* context_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -6,8 +6,9 @@
 
 import sys
 
+import executorch.backends.vulkan.custom_ops_lib  # noqa
+
 import torch
-from executorch.backends.vulkan.passes.custom_ops_defs import conv_with_clamp_op  # noqa
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -63,7 +64,7 @@ class FuseClampPass(ExportPass):
                         with graph_module.graph.inserting_before(preceding_op):
                             conv_activation_node = graph_module.graph.create_node(
                                 "call_function",
-                                torch.ops.et_vk.conv_with_clamp.default,
+                                exir_ops.edge.et_vk.conv_with_clamp.default,
                                 new_args,
                             )
 

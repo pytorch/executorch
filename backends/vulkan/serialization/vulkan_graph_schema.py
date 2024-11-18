@@ -37,12 +37,18 @@ class VkStorageType(IntEnum):
     TEXTURE_2D = 2
     DEFAULT_STORAGE = 255
 
+    def __str__(self) -> str:
+        return self.name
+
 
 class VkMemoryLayout(IntEnum):
     TENSOR_WIDTH_PACKED = 0
     TENSOR_HEIGHT_PACKED = 1
     TENSOR_CHANNELS_PACKED = 2
     DEFAULT_LAYOUT = 255
+
+    def __str__(self) -> str:
+        return self.name
 
 
 @dataclass
@@ -100,6 +106,11 @@ class String:
     string_val: str
 
 
+@dataclass
+class SymInt:
+    value: int
+
+
 GraphTypes = Union[
     Null,
     Int,
@@ -111,6 +122,7 @@ GraphTypes = Union[
     DoubleList,
     ValueList,
     String,
+    SymInt,
 ]
 
 

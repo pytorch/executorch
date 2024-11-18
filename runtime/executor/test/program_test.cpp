@@ -379,11 +379,32 @@ TEST_F(ProgramTest, DEPRECATEDLoad) {
   EXPECT_EQ(program_res.error(), Error::Ok);
 }
 
+TEST_F(ProgramTest, LoadConstantSegmentWithNoConstantSegment) {
+  Result<Program> program =
+      Program::load(add_loader_.get(), kDefaultVerification);
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Load constant segment data should fail.
+  const auto segment_info = DataLoader::SegmentInfo(
+      DataLoader::SegmentInfo::Type::Constant,
+      /*segment_index=*/0);
+  Result<FreeableBuffer> segment =
+      ProgramTestFriend::LoadSegment(&program.get(), segment_info);
+  EXPECT_NE(segment.error(), Error::Ok);
+
+  const executorch_flatbuffer::Program* flatbuffer_program =
+      ProgramTestFriend::GetInternalProgram(&program.get());
+
+  // The constant buffer should be empty.
+  EXPECT_EQ(flatbuffer_program->constant_buffer()->size(), 0);
+
+  // Expect 1 constant segment, placeholder for non-const tensors.
+  EXPECT_EQ(flatbuffer_program->segments()->size(), 1);
+}
+
 TEST_F(ProgramTest, LoadConstantSegment) {
-  // Load the serialized ModuleLinear data, with constants in the segment and no
-  // constants in the flatbuffer.
-  const char* linear_path =
-      std::getenv("ET_MODULE_LINEAR_CONSTANT_SEGMENT_PATH");
+  // Load the serialized ModuleLinear data, with constants in the segment.
+  const char* linear_path = std::getenv("ET_MODULE_LINEAR_PATH");
   Result<FileDataLoader> linear_loader = FileDataLoader::from(linear_path);
   ASSERT_EQ(linear_loader.error(), Error::Ok);
 
@@ -424,11 +445,11 @@ TEST_F(ProgramTest, LoadConstantSegment) {
   EXPECT_GE(flatbuffer_program->constant_segment()->offsets()->size(), 1);
 }
 
-TEST_F(ProgramTest, LoadConstantSegmentWithNoConstantSegment) {
+TEST_F(ProgramTest, LoadConstantSegmentWhenConstantBufferExists) {
   // Load the serialized ModuleLinear data, with constants in the flatbuffer and
   // no constants in the segment.
   const char* linear_path =
-      std::getenv("ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");
+      std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");
   Result<FileDataLoader> linear_loader = FileDataLoader::from(linear_path);
   ASSERT_EQ(linear_loader.error(), Error::Ok);
 
@@ -505,8 +526,8 @@ TEST_F(ProgramTest, LoadFromMutableSegment) {
   const executorch_flatbuffer::Program* flatbuffer_program =
       ProgramTestFriend::GetInternalProgram(&program.get());
 
-  // Expect 1 segment. 1 mutable segment and no constant segment.
-  EXPECT_EQ(flatbuffer_program->segments()->size(), 1);
+  // Expect 2 segments. 1 mutable segment and 1 constant segment.
+  EXPECT_EQ(flatbuffer_program->segments()->size(), 2);
 
   // Expect a mutable data segment.
   EXPECT_EQ(flatbuffer_program->mutable_data_segments()->size(), 1);

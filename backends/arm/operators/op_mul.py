@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from typing import cast, List
 
 import executorch.backends.arm.tosa_quant_utils as tqutils
@@ -35,10 +37,10 @@ class MulVisitor(NodeVisitor):
         if is_quant_node:
             input_A = inputs[0]
             input_B = inputs[1]
-            input_A_qargs = tqutils.get_quant_node_args(
+            input_A_qargs = tqutils.get_quant_arg_upstream(
                 cast(torch.fx.Node, node.args[0])
             )
-            input_B_qargs = tqutils.get_quant_node_args(
+            input_B_qargs = tqutils.get_quant_arg_upstream(
                 cast(torch.fx.Node, node.args[1])
             )
 

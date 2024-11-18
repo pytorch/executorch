@@ -26,7 +26,7 @@ The goal of ATen dialect is to capture users’ programs as faithfully as possib
 
 ## ATen mode
 
-ATen mode uses the ATen implementation of Tensor (`at::Tensor`) and related types, such as `ScalarType`, from the PyTorch core. This is in contrast to portable mode, which uses ExecuTorch’s smaller implementation of tensor (`torch::executor::Tensor`) and related types, such as `torch::executor::ScalarType`.
+ATen mode uses the ATen implementation of Tensor (`at::Tensor`) and related types, such as `ScalarType`, from the PyTorch core. This is in contrast to ETensor mode, which uses ExecuTorch’s smaller implementation of tensor (`executorch::runtime::etensor::Tensor`) and related types, such as `executorch::runtime::etensor::ScalarType`.
 - ATen kernels that rely on the full `at::Tensor` API are usable in this configuration.
 - ATen kernels tend to do dynamic memory allocation and often have extra flexibility (and thus overhead) to handle cases not needed by mobile/embedded clients. e.g.,  CUDA support, sparse tensor support, and dtype promotion.
 - Note: ATen mode is currently a WIP.
@@ -244,10 +244,10 @@ Kernels that support a subset of tensor dtypes and/or dim orders.
 
 Parts of a model may be delegated to run on an optimized backend. The partitioner splits the graph into the appropriate sub-networks and tags them for delegation.
 
-## Portable mode (lean mode)
+## ETensor mode
 
-Portable mode uses ExecuTorch’s smaller implementation of tensor (`torch::executor::Tensor`) along with related types (`torch::executor::ScalarType`, etc.). This is in contrast to ATen mode, which uses the ATen implementation of Tensor (`at::Tensor`) and related types (`ScalarType`, etc.)
-- `torch::executor::Tensor`, also known as ETensor, is a source-compatible subset of `at::Tensor`. Code written against ETensor can build against `at::Tensor`.
+ETensor mode uses ExecuTorch’s smaller implementation of tensor (`executorch::runtime::etensor::Tensor`) along with related types (`executorch::runtime::etensor::ScalarType`, etc.). This is in contrast to ATen mode, which uses the ATen implementation of Tensor (`at::Tensor`) and related types (`ScalarType`, etc.)
+- `executorch::runtime::etensor::Tensor`, also known as ETensor, is a source-compatible subset of `at::Tensor`. Code written against ETensor can build against `at::Tensor`.
 - ETensor does not own or allocate memory on its own. To support dynamic shapes, kernels can allocate Tensor data using the MemoryAllocator provided by the client.
 
 ## Portable kernels
@@ -283,9 +283,9 @@ Techniques for performing computations and memory accesses on tensors with lower
 
 The ExecuTorch runtime executes models on edge devices. It is responsible for program initialization, program execution and, optionally, destruction (releasing backend owned resources).
 
-## [SDK](./sdk-overview.md)
+## [Developer Tools](./devtools-overview.md)
 
-Software Development Kit. The tooling users need to profile, debug and visualize programs that are running with ExecuTorch.
+A collection of tools users need to profile, debug and visualize programs that are running with ExecuTorch.
 
 ## [Selective build](./kernel-library-selective-build.md)
 

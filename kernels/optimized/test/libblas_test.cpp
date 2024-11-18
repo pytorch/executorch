@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 
 #include <vector>
 
@@ -17,7 +18,8 @@
   _<float, N>();                           \
   _<int64_t, N>();                         \
   _<uint8_t, N>();                         \
-  _<int32_t, N>();
+  _<int32_t, N>();                         \
+  _<exec_aten::BFloat16, N>();
 
 namespace {
 

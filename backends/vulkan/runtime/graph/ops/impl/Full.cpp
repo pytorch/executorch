@@ -44,7 +44,7 @@ void add_full_node(
 
   add_dtype_suffix(kernel_name, *t_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
@@ -54,7 +54,7 @@ void add_full_node(
       // Shader params buffers
       {t_out->sizes_ubo(), graph.create_params_buffer(fill_value_val)},
       // Specialization Constants
-      {SV(t_out->packed_dim_whcn_idx())},
+      {SV(t_out->packed_dim())},
       // Resizing Logic
       resize_full_node,
       {size_or_in}));

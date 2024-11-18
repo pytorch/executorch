@@ -8,9 +8,7 @@
 
 #pragma once
 
-namespace torch {
-namespace executorch {
-namespace threadpool {
+namespace executorch::extension::threadpool {
 
 // A RAII, thread local (!) guard that enables or disables guard upon
 // construction, and sets it back to the original value upon destruction.
@@ -29,6 +27,11 @@ struct NoThreadPoolGuard {
   const bool prev_mode_;
 };
 
-} // namespace threadpool
-} // namespace executorch
-} // namespace torch
+} // namespace executorch::extension::threadpool
+
+namespace torch::executorch::threadpool { // DEPRECATED
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces. Note that threadpool incorrectly used
+// the namespace `torch::executorch` instead of `torch::executor`.
+using ::executorch::extension::threadpool::NoThreadPoolGuard; // DEPRECATED
+} // namespace torch::executorch::threadpool

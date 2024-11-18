@@ -2,10 +2,6 @@
 
 This is a high-level overview of the ExecuTorch XNNPACK backend delegate. This high performance delegate is aimed to reduce CPU inference latency for ExecuTorch models. We will provide a brief introduction to the XNNPACK library and explore the delegate’s overall architecture and intended use cases.
 
-::::{note}
-XNNPACK delegate is currently under active development, and may change in the future
-::::
-
 ## What is XNNPACK?
 XNNPACK is a library of highly-optimized neural network operators for ARM, x86, and WebAssembly architectures in Android, iOS, Windows, Linux, and macOS environments. It is an open source project, you can find more information about it on [github](https://github.com/google/XNNPACK).
 
@@ -25,22 +21,22 @@ The partitioner is implemented by backend delegates to mark nodes suitable for l
 
 ##### Module-based partitioning
 
-`source_fn` is embedded in the node’s metadata and gives information on where these nodes come from. For example, modules like `torch.nn.Linear` when captured and exported `to_edge` generate groups of nodes for their computation. The group of nodes associated with computing the linear module then has a `source_fn` of `torch.nn.Linear. Partitioning based on `source_fn` allows us to identify groups of nodes which are lowerable via XNNPACK.
+`source_fn_stack` is embedded in the node’s metadata and gives information on where these nodes come from. For example, modules like `torch.nn.Linear` when captured and exported `to_edge` generate groups of nodes for their computation. The group of nodes associated with computing the linear module then has a `source_fn_stack` of `torch.nn.Linear. Partitioning based on `source_fn_stack` allows us to identify groups of nodes which are lowerable via XNNPACK.
 
 For example after capturing `torch.nn.Linear` you would find the following key in the metadata for the addmm node associated with linear:
 ```python
->>> print(linear_node.meta["source_fn"])
-'source_fn': ('fn', <class 'torch.nn.modules.linear.Linear'>)
+>>> print(linear_node.meta["source_fn_stack"])
+'source_fn_stack': ('fn', <class 'torch.nn.modules.linear.Linear'>)
 ```
 
 
 ##### Op-based partitioning
 
-The `XnnpackPartitioner` also partitions using op targets. It traverses the graph and identifies individual nodes which are lowerable to XNNPACK. A drawback to module-based partitioning is that operators which come from [decompositions](https://github.com/pytorch/pytorch/blob/main/torch/_decomp/decompositions.py) may be skipped. For example, an operator like `torch.nn.Hardsigmoid` is decomposed into add, muls, divs, and clamps. While hardsigmoid is not lowerable, we can lower the decomposed ops. Relying on `source_fn` metadata would skip these lowerables because they belong to a non-lowerable module, so in order to improve model performance, we greedily lower operators based on the op targets as well as the `source_fn`.
+The `XnnpackPartitioner` also partitions using op targets. It traverses the graph and identifies individual nodes which are lowerable to XNNPACK. A drawback to module-based partitioning is that operators which come from [decompositions](https://github.com/pytorch/pytorch/blob/main/torch/_decomp/decompositions.py) may be skipped. For example, an operator like `torch.nn.Hardsigmoid` is decomposed into add, muls, divs, and clamps. While hardsigmoid is not lowerable, we can lower the decomposed ops. Relying on `source_fn_stack` metadata would skip these lowerables because they belong to a non-lowerable module, so in order to improve model performance, we greedily lower operators based on the op targets as well as the `source_fn_stack`.
 
 ##### Passes
 
-Before any serialization, we apply passes on the subgraphs to prepare the graph. These passes are essentially graph transformations that help improve the performance of the delegate. We give an overview of the most significant passes and their function below. For a description of all passes see [here](https://github.com/pytorch/executorch/tree/main/backends/xnnpack/passes):
+Before any serialization, we apply passes on the subgraphs to prepare the graph. These passes are essentially graph transformations that help improve the performance of the delegate. We give an overview of the most significant passes and their function below. For a description of all passes see [here](https://github.com/pytorch/executorch/tree/main/backends/xnnpack/_passes):
 
 * Channels Last Reshape
     * ExecuTorch tensors tend to be contiguous before passing them into delegates, while XNNPACK only accepts channels-last memory layout. This pass minimizes the number of permutation operators inserted to pass in channels-last memory format.
@@ -74,7 +70,7 @@ Since weight packing creates an extra copy of the weights inside XNNPACK, We fre
 When executing the XNNPACK subgraphs, we prepare the tensor inputs and outputs and feed them to the XNNPACK runtime graph. After executing the runtime graph, the output pointers are filled with the computed tensors.
 
 #### **Profiling**
-We have enabled basic profiling for XNNPACK delegate that can be enabled with the following compiler flag `-DENABLE_XNNPACK_PROFILING`. With ExecuTorch's SDK integration, you can also now use the SDK tools to profile the model. You can follow the steps in [Using the ExecuTorch SDK to Profile a Model](./tutorials/sdk-integration-tutorial) on how to profile ExecuTorch models and use SDK's Inspector API to view XNNPACK's internal profiling information.
+We have enabled basic profiling for XNNPACK delegate that can be enabled with the following compiler flag `-DENABLE_XNNPACK_PROFILING`. With ExecuTorch's Developer Tools integration, you can also now use the Developer Tools to profile the model. You can follow the steps in [Using the ExecuTorch Developer Tools to Profile a Model](./tutorials/devtools-integration-tutorial) on how to profile ExecuTorch models and use Developer Tools' Inspector API to view XNNPACK's internal profiling information.
 
 
 [comment]: <> (TODO: Refactor quantizer to a more official quantization doc)
@@ -110,9 +106,9 @@ quantizer.set_global(quantization_config)
 ### Quantizing your model with the XNNPACKQuantizer
 After configuring our quantizer, we are now ready to quantize our model
 ```python
-from torch._export import capture_pre_autograd_graph
+from torch.export import export_for_training
 
-exported_model = capture_pre_autograd_graph(model_to_quantize, example_inputs)
+exported_model = export_for_training(model_to_quantize, example_inputs).module()
 prepared_model = prepare_pt2e(exported_model, quantizer)
 print(prepared_model.graph)
 ```

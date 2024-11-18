@@ -21,7 +21,7 @@ using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 Tensor& op_maximum_out(const Tensor& self, const Tensor& other, Tensor& out) {
-  exec_aten::RuntimeContext context{};
+  executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::aten::maximum_outf(context, self, other, out);
 }
 

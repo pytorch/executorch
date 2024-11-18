@@ -7,33 +7,26 @@
  */
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
-#include <executorch/kernels/test/TestUtil.h>
-#include <executorch/kernels/test/supported_features.h>
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
-#include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
+#include <executorch/kernels/test/UnaryUfuncRealHBBF16ToFloatHBF16Test.h>
 
 #include <gtest/gtest.h>
 
-using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
+#include <cmath>
+
 using exec_aten::Tensor;
-using torch::executor::testing::SupportedFeatures;
-using torch::executor::testing::TensorFactory;
+class OpLog1pOutTest
+    : public torch::executor::testing::UnaryUfuncRealHBBF16ToFloatHBF16Test {
+ protected:
+  Tensor& op_out(const Tensor& self, Tensor& out) override {
+    return torch::executor::aten::log1p_outf(context_, self, out);
+  }
 
-Tensor& op_log1p_out(const Tensor& a, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::log1p_outf(context, a, out);
-}
+  double op_reference(double x) const override {
+    return std::log1p(x);
+  }
 
-TEST(OpLog1pOutTest, SmokeTest) {
-  TensorFactory<ScalarType::Char> tfChar;
-  TensorFactory<ScalarType::Double> tfDouble;
+  torch::executor::testing::SupportedFeatures* get_supported_features()
+      const override;
+};
 
-  Tensor self = tfChar.full({}, 13);
-  Tensor out = tfDouble.zeros({});
-  Tensor out_expected = tfDouble.full({}, 2.6390573978424072);
-  op_log1p_out(self, out);
-  EXPECT_TENSOR_CLOSE(out, out_expected);
-}
+IMPLEMENT_UNARY_UFUNC_REALHB_TO_FLOATH_TEST(OpLog1pOutTest)

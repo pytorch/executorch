@@ -254,7 +254,7 @@ class ComputeGraph final {
 #undef GET_AND_CHECK_VAL_AS_TYPE_FNS
 
   inline bool val_is_none(const ValueRef idx) {
-    return values_.at(idx).isNone();
+    return idx == kDummyValueRef ? true : values_.at(idx).isNone();
   }
 
   inline TypeTag get_val_type(const ValueRef idx) {
@@ -282,10 +282,16 @@ class ComputeGraph final {
     VK_THROW("Could not get sizes of value with type ", val.type());
   }
 
+  int64_t dim_of(const ValueRef idx) const;
+
+  std::vector<int64_t> dim_order_of(const ValueRef idx) const;
+
+  std::vector<int64_t> strides_of(const ValueRef idx) const;
+
   vkapi::ScalarType dtype_of(const ValueRef idx) const;
 
-  inline utils::uvec3 image_extents_of(const ValueRef idx) const {
-    return values_.at(idx).toConstTensor().image_extents();
+  inline const utils::ivec3& logical_limits_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().logical_limits();
   }
 
   inline int32_t numel_of(const ValueRef idx) const {
@@ -307,12 +313,21 @@ class ComputeGraph final {
         .is_view_of(values_.at(base).toConstTensor());
   }
 
-  inline utils::GPUMemoryLayout memory_layout_of(const ValueRef idx) const {
-    return values_.at(idx).toConstTensor().gpu_memory_layout();
+  inline utils::GPUMemoryLayout estimate_memory_layout_of(
+      const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().estimate_memory_layout();
   }
 
-  inline int32_t packed_dim_whcn_idx_of(const ValueRef idx) const {
-    return values_.at(idx).toConstTensor().packed_dim_whcn_idx();
+  inline int32_t hashed_layout_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().hashed_layout();
+  }
+
+  inline int32_t packed_dim_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().packed_dim();
+  }
+
+  inline int32_t concat_dim_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().concat_dim();
   }
 
   inline vkapi::BufferBindInfo sizes_ubo(const ValueRef idx) {
@@ -327,8 +342,12 @@ class ComputeGraph final {
     return values_.at(idx).toTensor().numel_ubo();
   }
 
-  inline vkapi::BufferBindInfo texture_limits_ubo(const ValueRef idx) {
-    return values_.at(idx).toTensor().texture_limits_ubo();
+  inline bool has_standard_axis_map(const ValueRef idx) {
+    return values_.at(idx).toTensor().has_standard_axis_map();
+  }
+
+  inline vkapi::BufferBindInfo logical_limits_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().logical_limits_ubo();
   }
 
   //
@@ -361,6 +380,19 @@ class ComputeGraph final {
 
   std::string extract_string(const ValueRef idx) {
     return values_.at(idx).toString();
+  }
+
+  template <
+      typename T,
+      typename std::enable_if<
+          std::is_integral<T>::value && std::is_signed<T>::value,
+          int>::type = 0>
+  T extract_whcn_dim(const ValueRef idx, const int64_t ndim) {
+    T dim = extract_scalar<T>(idx);
+    // Normalize dim to account for negative indexing
+    dim = (dim % ndim + ndim) % ndim;
+    // Assume original value is NCHW ordering, obtain the WHCN ordering
+    return ndim - 1 - dim;
   }
 
   //
@@ -437,6 +469,11 @@ class ComputeGraph final {
       const std::vector<int64_t>& sizes,
       const vkapi::ScalarType dtype,
       const int64_t shared_object_idx = -1);
+
+  /*
+   * Add a `api::vTensor` value to the graph with the specified image.
+   */
+  ValueRef add_tensor(const vkapi::VulkanImage& image);
 
   /*
    * Add a `api::vTensor` value to the graph with the properties of `vref`.
@@ -525,6 +562,16 @@ class ComputeGraph final {
 
   void set_symint(const ValueRef idx, const int32_t val);
 
+  int32_t read_symint(const ValueRef idx);
+
+  inline void set_val_as_input(const ValueRef idx) {
+    inputs_.push_back({idx, kDummyValueRef});
+  }
+
+  inline void set_val_as_output(const ValueRef idx) {
+    outputs_.push_back({idx, kDummyValueRef});
+  }
+
   /*
    * Convenience function to add an input tensor along with its staging buffer
    */
@@ -561,6 +608,22 @@ class ComputeGraph final {
       const utils::StorageType storage_type,
       const int64_t shared_object_idx = -1) {
     ValueRef t = add_tensor(sizes, dtype, storage_type, shared_object_idx);
+    ValueRef staging = set_input_tensor(t);
+    return {t, staging};
+  }
+
+  /*
+   * Add an input tensor with the specified properties along with its staging
+   * buffer.
+   */
+  inline IOValueRef add_input_tensor(
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::StorageType storage_type,
+      const utils::GPUMemoryLayout memory_layout,
+      const int64_t shared_object_idx = -1) {
+    ValueRef t = add_tensor(
+        sizes, dtype, storage_type, memory_layout, shared_object_idx);
     ValueRef staging = set_input_tensor(t);
     return {t, staging};
   }
@@ -646,6 +709,10 @@ class ComputeGraph final {
   //
   // Miscellaneous Utilities
   //
+
+  inline bool int16_shader_types_enabled() const {
+    return context_->adapter_ptr()->supports_int16_shader_types();
+  }
 
   /*
    * Check whether the GPU supports 8 bit buffers.

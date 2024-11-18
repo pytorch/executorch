@@ -63,10 +63,8 @@ void add_upsample_nearest2d_node(
         "Invalid input, must provide ONLY one of output_sizes or scale_factors");
   }
 
-  ValueRef arg_in = prepack_if_tensor_ref(graph, in);
-
   vTensorPtr t_in = graph.get_tensor(in);
-  utils::uvec3 input_sizes = t_in->image_extents();
+  utils::uvec3 input_sizes = t_in->logical_limits();
 
   utils::ivec2 input_size = {
       utils::safe_downcast<int32_t>(input_sizes[0]),
@@ -96,16 +94,16 @@ void add_upsample_nearest2d_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
-       {arg_in, vkapi::MemoryAccessType::READ}},
+       {in, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->texture_limits_ubo(),
+      {t_out->logical_limits_ubo(),
        graph.create_params_buffer(input_size),
        graph.create_params_buffer(rev_scales)},
       // Specialization Constants

@@ -20,7 +20,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& squeeze_copy_dim_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     Tensor& out) {
@@ -28,6 +28,11 @@ Tensor& squeeze_copy_dim_out(
 
   ET_KERNEL_CHECK(
       ctx, check_squeeze_copy_dim_args(in, dim, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   if (dim < 0) {
     dim += nonzero_dim(in);
@@ -53,7 +58,7 @@ Tensor& squeeze_copy_dim_out(
 }
 
 Tensor& squeeze_copy_dims_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     exec_aten::ArrayRef<int64_t> dims,
     Tensor& out) {
@@ -61,6 +66,11 @@ Tensor& squeeze_copy_dims_out(
 
   ET_KERNEL_CHECK(
       ctx, check_squeeze_copy_dims_args(in, dims, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   Tensor::SizesType expected_out_size[kTensorDimensionLimit];
   size_t expected_out_dim = 0;

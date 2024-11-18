@@ -202,7 +202,7 @@ class NodeVisitor:
 
         dtype = quant_configs[QCOM_DTYPE]
 
-        tensor = tensor.div(scale + 1e-6).add(zero_point).round().to(dtype)
+        tensor = tensor.div(scale).add(zero_point).round().to(dtype)
         # Make the backends access data correctly
         if quant_configs.get(QCOM_BITWIDTH) == 4:
             mask = torch.full(tensor.size(), 0x0F, dtype=torch.int8)
@@ -228,9 +228,11 @@ class NodeVisitor:
 
         if is_parameter(node, self.edge_program):
             return PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
-
-        # dump all tensor, set to app read
-        if self.enable_tensor_dump:
+        # dump all tensor, set to app read, and we only dump native tensors
+        if (
+            self.enable_tensor_dump
+            and tensor_type == PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
+        ):
             return PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_READ
         return tensor_type
 

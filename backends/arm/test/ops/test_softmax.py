@@ -12,19 +12,20 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
 
 test_data_suite = [
     # (test_name, test_data, dim)
-    ("zeros", torch.zeros(10, 10, 10, 10), 0),
-    ("zeros_neg_dim", torch.zeros(10, 10, 10, 10), -4),
-    ("ones", torch.ones(10, 10, 10, 10), 1),
-    ("ones_neg_dim", torch.ones(10, 10, 10, 10), -1),
-    ("rand", torch.rand(10, 10, 10, 10), 2),
-    ("rand_neg_dim", torch.rand(10, 10, 10, 10), -2),
+    ("zeros", torch.zeros(10, 8, 5, 2), 0),
+    ("zeros_neg_dim", torch.zeros(10, 7, 8, 9), -4),
+    ("ones", torch.ones(10, 10), 1),
+    ("ones_neg_dim", torch.ones(10, 3, 4), -1),
+    ("rand", torch.rand(1, 2, 5, 8), 2),
+    ("rand_neg_dim", torch.rand(2, 10, 8, 10), -2),
     ("randn", torch.randn(10, 10, 10, 10), 3),
-    ("randn_neg_dim", torch.randn(10, 10, 10, 10), -3),
+    ("randn_neg_dim", torch.randn(10, 5, 8, 7), -3),
 ]
 
 
@@ -46,7 +47,7 @@ class TestSoftmax(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
             )
             .export()
             .check(["torch.ops.aten.softmax.int"])
@@ -66,38 +67,55 @@ class TestSoftmax(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
             )
             .quantize()
             .export()
-            .check_count({"torch.ops.aten.softmax.int": 1})
-            .check(["torch.ops.quantized_decomposed"])
+            .check_not(["torch.ops.aten.softmax.int"])
+            .check(["torch.ops.quantized_decomposed", "torch.ops.aten.mul.Tensor"])
             .to_edge()
             .partition()
             .check_not(["executorch_exir_dialects_edge__ops_aten__softmax_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
+            .run_method_and_compare_outputs(inputs=test_data)
         )
 
-    def _test_softmax_tosa_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
+    def _test_softmax_tosa_ethos_BI_pipeline(
+        self,
+        compile_spec: list[CompileSpec],
+        module: torch.nn.Module,
+        test_data: Tuple[torch.tensor],
     ):
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(),
+                compile_spec=compile_spec,
             )
             .quantize()
             .export()
-            .check_count({"torch.ops.aten.softmax.int": 1})
-            .check(["torch.ops.quantized_decomposed"])
+            .check_not(["torch.ops.aten.softmax.int"])
+            .check(["torch.ops.quantized_decomposed", "torch.ops.aten.mul.Tensor"])
             .to_edge()
             .partition()
             .check_not(["executorch_exir_dialects_edge__ops_aten__softmax_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+        )
+
+    def _test_softmax_tosa_u55_BI_pipeline(
+        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
+    ):
+        self._test_softmax_tosa_ethos_BI_pipeline(
+            common.get_u55_compile_spec(), module, test_data
+        )
+
+    def _test_softmax_tosa_u85_BI_pipeline(
+        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
+    ):
+        self._test_softmax_tosa_ethos_BI_pipeline(
+            common.get_u85_compile_spec(), module, test_data
         )
 
     @parameterized.expand(test_data_suite)
@@ -109,10 +127,7 @@ class TestSoftmax(unittest.TestCase):
     ):
         self._test_softmax_tosa_MI_pipeline(self.Softmax(dim=dim), (test_data,))
 
-    # Expected to fail since ArmQuantizer cannot quantize a SoftMax operator
-    # TODO(MLETORCH-92)
     @parameterized.expand(test_data_suite)
-    @unittest.expectedFailure
     def test_softmax_tosa_BI(
         self,
         test_name: str,
@@ -121,10 +136,7 @@ class TestSoftmax(unittest.TestCase):
     ):
         self._test_softmax_tosa_BI_pipeline(self.Softmax(dim=dim), (test_data,))
 
-    # Expected to fail since ArmQuantizer cannot quantize a SoftMax layer
-    # TODO(MLETORCH-92)
     @parameterized.expand(test_data_suite)
-    @unittest.expectedFailure
     def test_softmax_tosa_u55_BI(
         self,
         test_name: str,
@@ -132,3 +144,12 @@ class TestSoftmax(unittest.TestCase):
         dim: int,
     ):
         self._test_softmax_tosa_u55_BI_pipeline(self.Softmax(dim=dim), (test_data,))
+
+    @parameterized.expand(test_data_suite)
+    def test_softmax_tosa_u85_BI(
+        self,
+        test_name: str,
+        test_data: torch.Tensor,
+        dim: int,
+    ):
+        self._test_softmax_tosa_u85_BI_pipeline(self.Softmax(dim=dim), (test_data,))

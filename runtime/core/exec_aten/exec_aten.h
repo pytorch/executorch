@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/runtime/core/tensor_shape_dynamism.h> // @manual
+#include <executorch/runtime/platform/compiler.h>
 #ifdef USE_ATEN_LIB
 #include <ATen/Tensor.h> // @manual
 #include <c10/core/Device.h>
@@ -46,9 +47,10 @@
 
 #endif
 
-namespace exec_aten {
+namespace executorch {
+namespace aten {
 
-using TensorShapeDynamism = torch::executor::TensorShapeDynamism;
+using TensorShapeDynamism = executorch::runtime::TensorShapeDynamism;
 
 #ifdef USE_ATEN_LIB
 
@@ -59,9 +61,9 @@ using string_view = c10::string_view;
 template <typename T>
 using ArrayRef = c10::ArrayRef<T>;
 template <typename T>
-using optional = c10::optional<T>;
-using nullopt_t = c10::nullopt_t;
-using c10::nullopt;
+using optional = std::optional<T>;
+using nullopt_t = std::nullopt_t;
+using std::nullopt;
 using ScalarType = at::ScalarType;
 using Scalar = c10::Scalar;
 using MemoryFormat = c10::MemoryFormat;
@@ -86,6 +88,12 @@ using IntArrayRef = at::IntArrayRef;
 
 template <typename T>
 using OptionalArrayRef = c10::OptionalArrayRef<T>;
+using OptionalIntArrayRef = OptionalArrayRef<int64_t>;
+
+inline ssize_t compute_numel(const SizesType* sizes, ssize_t dim) {
+  return static_cast<ssize_t>(
+      c10::multiply_integers(c10::ArrayRef<SizesType>(sizes, dim)));
+}
 
 #else // Use executor types
 
@@ -126,13 +134,21 @@ using IntArrayRef = torch::executor::IntArrayRef;
 template <typename T>
 using OptionalArrayRef =
     torch::executor::optional<torch::executor::ArrayRef<T>>;
+using OptionalIntArrayRef = OptionalArrayRef<int64_t>;
 
-#endif // Use executor types
+using torch::executor::compute_numel;
 
-} // namespace exec_aten
+#endif // Use ExecuTorch types
+
+} // namespace aten
+} // namespace executorch
+
+// DEPRECATED: The exec_aten:: namespace is deprecated. Use executorch::aten::
+// instead.
+namespace exec_aten = executorch::aten;
+
 namespace torch {
 namespace executor {
 using TensorList = exec_aten::TensorList;
-
 } // namespace executor
 } // namespace torch

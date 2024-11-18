@@ -8,7 +8,11 @@
 
 #include <executorch/examples/models/llava/runner/llava_runner.h>
 #include <gflags/gflags.h>
+#ifndef LLAVA_NO_TORCH_DUMMY_IMAGE
 #include <torch/torch.h>
+#else
+#include <algorithm> // std::fill
+#endif
 
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
@@ -44,6 +48,8 @@ DEFINE_int32(
     -1,
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
+using executorch::extension::llm::Image;
+
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -66,20 +72,29 @@ int32_t main(int32_t argc, char** argv) {
 
 #if defined(ET_USE_THREADPOOL)
   uint32_t num_performant_cores = cpu_threads == -1
-      ? torch::executorch::cpuinfo::get_num_performant_cores()
+      ? ::executorch::extension::cpuinfo::get_num_performant_cores()
       : static_cast<uint32_t>(cpu_threads);
   ET_LOG(
       Info, "Resetting threadpool with num threads = %d", num_performant_cores);
   if (num_performant_cores > 0) {
-    torch::executorch::threadpool::get_threadpool()->_unsafe_reset_threadpool(
-        num_performant_cores);
+    ::executorch::extension::threadpool::get_threadpool()
+        ->_unsafe_reset_threadpool(num_performant_cores);
   }
 #endif
   // create llama runner
-  torch::executor::LlavaRunner runner(model_path, tokenizer_path, temperature);
+  example::LlavaRunner runner(model_path, tokenizer_path, temperature);
 
   // read image and resize the longest edge to 336
   std::vector<uint8_t> image_data;
+
+#ifdef LLAVA_NO_TORCH_DUMMY_IMAGE
+  // Work without torch using a random data
+  image_data.resize(3 * 240 * 336);
+  std::fill(image_data.begin(), image_data.end(), 0); // black
+  std::array<int32_t, 3> image_shape = {3, 240, 336};
+  std::vector<Image> images = {
+      {.data = image_data, .width = image_shape[2], .height = image_shape[1]}};
+#else //  LLAVA_NO_TORCH_DUMMY_IMAGE
   //   cv::Mat image = cv::imread(image_path, cv::IMREAD_COLOR);
   //   int longest_edge = std::max(image.rows, image.cols);
   //   float scale_factor = 336.0f / longest_edge;
@@ -98,10 +113,12 @@ int32_t main(int32_t argc, char** argv) {
   image_data.assign(
       image_tensor.data_ptr<uint8_t>(),
       image_tensor.data_ptr<uint8_t>() + image_tensor.numel());
-  std::vector<torch::executor::Image> images = {
+  std::vector<Image> images = {
       {.data = image_data,
        .width = static_cast<int32_t>(image_tensor.size(2)),
        .height = static_cast<int32_t>(image_tensor.size(1))}};
+#endif // LLAVA_NO_TORCH_DUMMY_IMAGE
+
   // generate
   runner.generate(std::move(images), prompt, seq_len);
   return 0;

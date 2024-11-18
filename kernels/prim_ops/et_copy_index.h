@@ -15,7 +15,7 @@ namespace torch {
 namespace executor {
 namespace function {
 
-void et_copy_index(RuntimeContext& context, EValue** stack);
+void et_copy_index(KernelRuntimeContext& context, EValue** stack);
 
 } // namespace function
 } // namespace executor

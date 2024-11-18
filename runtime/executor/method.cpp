@@ -17,6 +17,7 @@
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/memory_manager.h>
+#include <executorch/runtime/executor/platform_memory_allocator.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/executor/tensor_parser.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
@@ -28,6 +29,8 @@
 
 namespace executorch {
 namespace runtime {
+
+using internal::PlatformMemoryAllocator;
 
 /**
  * Runtime state for a backend delegate.
@@ -141,10 +144,12 @@ class BackendDelegate final {
       CompileSpec** out_spec) {
     auto number_of_compile_specs = compile_specs_in_program->size();
 
-    CompileSpec* compile_specs_list = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        backend_init_context.get_runtime_allocator(),
-        CompileSpec,
-        number_of_compile_specs);
+    CompileSpec* compile_specs_list =
+        backend_init_context.get_runtime_allocator()->allocateList<CompileSpec>(
+            number_of_compile_specs);
+    if (compile_specs_list == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
 
     // Initialize the spec list for each method spec
     for (size_t j = 0; j < number_of_compile_specs; j++) {
@@ -223,8 +228,10 @@ Result<InstructionArgs> gen_instruction_arguments(
     EValue* values,
     size_t num_args,
     const int32_t* arg_idxs) {
-  EValue** arg_list =
-      ET_ALLOCATE_LIST_OR_RETURN_ERROR(method_allocator, EValue*, num_args);
+  EValue** arg_list = method_allocator->allocateList<EValue*>(num_args);
+  if (arg_list == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
   for (size_t i = 0; i < num_args; ++i) {
     int32_t arg_idx = arg_idxs[i];
     ET_CHECK_OR_RETURN_ERROR(
@@ -284,8 +291,10 @@ Error Method::parse_values() {
   ET_CHECK_OR_RETURN_ERROR(
       flatbuffer_values != nullptr, InvalidProgram, "Missing values");
   size_t n_value = flatbuffer_values->size();
-  values_ = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-      memory_manager_->method_allocator(), EValue, n_value);
+  values_ = memory_manager_->method_allocator()->allocateList<EValue>(n_value);
+  if (values_ == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
 
   // n_value_ counts the number of successfully-initialized values for ~Method()
   // to clean up, and is incremented at the bottom of the loop. This makes it
@@ -507,8 +516,11 @@ Error Method::resolve_operator(
 
   // resolve tensor meta
   auto method_allocator = memory_manager_->method_allocator();
-  TensorMeta* meta =
-      ET_ALLOCATE_LIST_OR_RETURN_ERROR(method_allocator, TensorMeta, n_args);
+  TensorMeta* meta = method_allocator->allocateList<TensorMeta>(n_args);
+  if (meta == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
+
   size_t count = 0;
   for (size_t i = 0; i < n_args; i++) {
     EValue* eval = args[i];
@@ -516,8 +528,11 @@ Error Method::resolve_operator(
     if (eval->isTensor()) {
       auto tensor = eval->toTensor();
       meta[count].dtype_ = tensor.scalar_type();
-      exec_aten::DimOrderType* dim_order_ptr = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-          method_allocator, exec_aten::DimOrderType, tensor.dim());
+      exec_aten::DimOrderType* dim_order_ptr =
+          method_allocator->allocateList<exec_aten::DimOrderType>(tensor.dim());
+      if (dim_order_ptr == nullptr) {
+        return Error::MemoryAllocationFailed;
+      }
       size_t size = tensor.dim();
       err = get_dim_order(tensor, dim_order_ptr, size);
       ET_CHECK_OR_RETURN_ERROR(
@@ -527,19 +542,20 @@ Error Method::resolve_operator(
           i,
           static_cast<uint32_t>(err));
       meta[count].dim_order_ =
-          ArrayRef<exec_aten::DimOrderType>(dim_order_ptr, size);
+          Span<exec_aten::DimOrderType>(dim_order_ptr, size);
       count++;
     }
   }
-  // search kernel
-  if (hasOpsFn(operator_name, ArrayRef<TensorMeta>(meta, count))) {
-    kernels[kernel_index] =
-        getOpsFn(operator_name, ArrayRef<TensorMeta>(meta, count));
-    return Error::Ok;
-  } else {
+
+  // Find a kernel with the matching name and tensor meta.
+  Result<OpFunction> op_function =
+      get_op_function_from_registry(operator_name, {meta, count});
+  if (!op_function.ok()) {
     ET_LOG(Error, "Missing operator: [%d] %s", op_index, operator_name);
-    return Error::OperatorMissing;
+    return op_function.error();
   }
+  kernels[kernel_index] = op_function.get();
+  return Error::Ok;
 }
 
 Result<Method> Method::load(
@@ -547,7 +563,19 @@ Result<Method> Method::load(
     const Program* program,
     MemoryManager* memory_manager,
     EventTracer* event_tracer) {
-  Method method(program, memory_manager, event_tracer);
+  MemoryAllocator* temp_allocator = memory_manager->temp_allocator();
+  if (temp_allocator == nullptr) {
+    PlatformMemoryAllocator* platform_allocator =
+        memory_manager->method_allocator()
+            ->allocateInstance<PlatformMemoryAllocator>();
+    if (platform_allocator == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+    new (platform_allocator) PlatformMemoryAllocator();
+    temp_allocator = platform_allocator;
+  }
+  Method method(program, memory_manager, event_tracer, temp_allocator);
+
   Error err = method.init(s_plan);
   if (err != Error::Ok) {
     return err;
@@ -559,8 +587,8 @@ Result<Method> Method::load(
 
 Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
   EXECUTORCH_SCOPE_PROF("Method::init");
-  internal::EventTracerProfileScope event_tracer_profile_scope =
-      internal::EventTracerProfileScope(event_tracer_, "Method::init");
+  internal::EventTracerProfileMethodScope event_tracer_profile_scope =
+      internal::EventTracerProfileMethodScope(event_tracer_, "Method::init");
   ET_CHECK_OR_RETURN_ERROR(
       // Don't use !initialized() here because we also want to fail on the
       // InitializationFailed state.
@@ -586,8 +614,10 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
     ET_CHECK_OR_RETURN_ERROR(
         delegates != nullptr, InvalidProgram, "Missing delegates field");
     size_t n_delegate = delegates->size();
-    delegates_ = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        method_allocator, BackendDelegate, n_delegate);
+    delegates_ = method_allocator->allocateList<BackendDelegate>(n_delegate);
+    if (delegates_ == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
 
     // n_delegate_ counts the number of successfully-initialized delegates for
     // ~Method() to clean up, and is incremented at the bottom of the loop. This
@@ -596,7 +626,9 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
 
     for (size_t i = 0; i < n_delegate; ++i) {
       const auto& delegate = *delegates->Get(i);
-      BackendInitContext backend_init_context(method_allocator);
+      BackendInitContext backend_init_context(
+          method_allocator,
+          /*method_name=*/serialization_plan_->name()->c_str());
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {
@@ -615,8 +647,10 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
     ET_CHECK_OR_RETURN_ERROR(
         chains != nullptr && chains->size() > 0, InvalidProgram, "No chains");
     n_chains_ = chains->size();
-    chains_ =
-        ET_ALLOCATE_LIST_OR_RETURN_ERROR(method_allocator, Chain, n_chains_);
+    chains_ = method_allocator->allocateList<Chain>(n_chains_);
+    if (chains_ == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
 
     // Try resolving all operators before failing, to make it easier to debug
     // multiple problems at once.
@@ -631,10 +665,16 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
           "Missing instructions in chain %zu",
           i);
       auto num_instructions = s_instructions->size();
-      auto chain_instruction_kernels = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-          method_allocator, OpFunction, num_instructions);
-      auto chain_instruction_arg_lists = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-          method_allocator, InstructionArgs, num_instructions);
+      auto chain_instruction_kernels =
+          method_allocator->allocateList<OpFunction>(num_instructions);
+      if (chain_instruction_kernels == nullptr) {
+        return Error::MemoryAllocationFailed;
+      }
+      auto chain_instruction_arg_lists =
+          method_allocator->allocateList<InstructionArgs>(num_instructions);
+      if (chain_instruction_arg_lists == nullptr) {
+        return Error::MemoryAllocationFailed;
+      }
 
       // Set up the argument lists ahead of time and store pointers to them to
       // use when the instructions are called
@@ -731,40 +771,6 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
     }
   }
 
-  // Validate input values and get tensor pre-allocation info.
-  pre_allocated_input_ = false;
-  for (int i = 0; i < inputs_size(); i++) {
-    // get_input() will panic if the index is invalid, so do this manually.
-    size_t index = get_input_index(i);
-    ET_CHECK_OR_RETURN_ERROR(
-        index < n_value_,
-        InvalidProgram,
-        "Input index %zu >= %zu",
-        index,
-        n_value_);
-    const EValue& input = values_[index];
-    if (input.isTensor()) {
-      pre_allocated_input_ |= input.toTensor().const_data_ptr() != nullptr;
-    }
-  }
-
-  // Validate output values and get tensor pre-allocation info.
-  pre_allocated_output_ = false;
-  for (int i = 0; i < outputs_size(); i++) {
-    // get_output() will panic if the index is invalid, so do this manually.
-    size_t index = get_output_index(i);
-    ET_CHECK_OR_RETURN_ERROR(
-        index < n_value_,
-        InvalidProgram,
-        "output index %zu >= %zu",
-        index,
-        n_value_);
-    const EValue& output = values_[index];
-    if (output.isTensor()) {
-      pre_allocated_output_ |= output.toTensor().const_data_ptr() != nullptr;
-    }
-  }
-
   step_state_ = StepState{0, 0};
 
   init_state_ = InitializationState::Initialized;
@@ -828,7 +834,8 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         input_idx,
         static_cast<uint32_t>(err));
     Error error;
-    if (pre_allocated_input_) {
+    auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
+    if (tensor_meta->is_memory_planned()) {
       error = internal::copy_tensor_data(t_dst, t_src);
     } else {
       error = internal::share_tensor_data(t_dst, t_src);
@@ -937,21 +944,11 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
       InvalidState,
       "Outputs can not be retrieved until method has been initialized.");
 
-  // ET_CHECK_OR_RETURN_ERROR(
-  //     !pre_allocated_output_,
-  //     InvalidState,
-  //     "Overriding output data pointer allocated by memory plan is not
-  //     allowed.");
-  // TODO(T188740925): for now, return error without logs.
-  if (pre_allocated_output_) {
-    return Error::InvalidState;
-  }
-
   // Check the args
   ET_CHECK_OR_RETURN_ERROR(
-      output_idx <= outputs_size(),
+      output_idx < outputs_size(),
       InvalidArgument,
-      "output_idx: %zu num_outputs: %zu",
+      "output_idx: %zu > num_outputs: %zu",
       output_idx,
       outputs_size());
 
@@ -961,6 +958,16 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
       InvalidArgument,
       "output type: %zu is not tensor",
       (size_t)output.tag);
+
+  auto tensor_meta = this->method_meta().output_tensor_meta(output_idx);
+  if (tensor_meta->is_memory_planned()) {
+    ET_LOG(
+        Error,
+        "Output %zu is memory planned, or is a constant. Cannot override \
+        the existing data pointer.",
+        output_idx);
+    return Error::InvalidState;
+  }
 
   auto& t = output.toTensor();
   ET_CHECK_OR_RETURN_ERROR(
@@ -1038,16 +1045,14 @@ Error Method::execute_instruction() {
   auto instruction = instructions->Get(step_state_.instr_idx);
   size_t next_instr_idx = step_state_.instr_idx + 1;
   Error err = Error::Ok;
+
   switch (instruction->instr_args_type()) {
     case executorch_flatbuffer::InstructionArguments::KernelCall: {
       EXECUTORCH_SCOPE_PROF("OPERATOR_CALL");
-      internal::EventTracerProfileScope event_tracer_scope =
-          internal::EventTracerProfileScope(event_tracer_, "OPERATOR_CALL");
+      internal::EventTracerProfileOpScope event_tracer_op_scope =
+          internal::EventTracerProfileOpScope(event_tracer_, "OPERATOR_CALL");
       // TODO(T147221312): Also expose tensor resizer via the context.
-      // The temp_allocator passed can be null, but calling allocate_temp will
-      // fail
-      KernelRuntimeContext context(
-          event_tracer_, memory_manager_->temp_allocator());
+      KernelRuntimeContext context(event_tracer_, temp_allocator_);
       auto args = chain.argument_lists_[step_state_.instr_idx];
       chain.kernels_[step_state_.instr_idx](context, args.data());
       // We reset the temp_allocator after the switch statement
@@ -1079,8 +1084,8 @@ Error Method::execute_instruction() {
     } break;
     case executorch_flatbuffer::InstructionArguments::DelegateCall: {
       EXECUTORCH_SCOPE_PROF("DELEGATE_CALL");
-      internal::EventTracerProfileScope event_tracer_profile_scope =
-          internal::EventTracerProfileScope(event_tracer_, "DELEGATE_CALL");
+      internal::EventTracerProfileOpScope event_tracer_op_scope =
+          internal::EventTracerProfileOpScope(event_tracer_, "DELEGATE_CALL");
       // We know that instr_args_as_DelegateCall is non-null because it was
       // checked at init time.
       auto delegate_idx =
@@ -1094,8 +1099,9 @@ Error Method::execute_instruction() {
           n_delegate_,
           step_state_.instr_idx);
       BackendExecutionContext backend_execution_context(
-          /*event_tracer*/ event_tracer_,
-          /*temp_allocator*/ memory_manager_->temp_allocator());
+          /*event_tracer=*/event_tracer_,
+          /*temp_allocator=*/temp_allocator_,
+          /*method_name=*/serialization_plan_->name()->c_str());
       err = delegates_[delegate_idx].Execute(
           backend_execution_context,
           chain.argument_lists_[step_state_.instr_idx].data());
@@ -1123,8 +1129,8 @@ Error Method::execute_instruction() {
     } break;
     case executorch_flatbuffer::InstructionArguments::JumpFalseCall: {
       EXECUTORCH_SCOPE_PROF("JF_CALL");
-      internal::EventTracerProfileScope event_tracer_profile_scope =
-          internal::EventTracerProfileScope(event_tracer_, "JF_CALL");
+      internal::EventTracerProfileOpScope event_tracer_op_scope =
+          internal::EventTracerProfileOpScope(event_tracer_, "JF_CALL");
       // We know that instr_args_as_JumpFalseCall is non-null because it was
       // checked at init time.
       auto jf_call = instruction->instr_args_as_JumpFalseCall();
@@ -1142,8 +1148,8 @@ Error Method::execute_instruction() {
     } break;
     case executorch_flatbuffer::InstructionArguments::MoveCall: {
       EXECUTORCH_SCOPE_PROF("MOVE_CALL");
-      internal::EventTracerProfileScope event_tracer_profile_scope =
-          internal::EventTracerProfileScope(event_tracer_, "MOVE_CALL");
+      internal::EventTracerProfileOpScope event_tracer_op_scope =
+          internal::EventTracerProfileOpScope(event_tracer_, "MOVE_CALL");
       // We know that instr_args_as_MoveCall is non-null because it was checked
       // at init time.
       auto move_call = instruction->instr_args_as_MoveCall();
@@ -1151,8 +1157,8 @@ Error Method::execute_instruction() {
     } break;
     case executorch_flatbuffer::InstructionArguments::FreeCall: {
       EXECUTORCH_SCOPE_PROF("FREE_CALL");
-      internal::EventTracerProfileScope event_tracer_profile_scope =
-          internal::EventTracerProfileScope(event_tracer_, "FREE_CALL");
+      internal::EventTracerProfileOpScope event_tracer_op_scope =
+          internal::EventTracerProfileOpScope(event_tracer_, "FREE_CALL");
       // We know that instr_args_as_FreeCall is non-null because it was checked
       // at init time.
       auto free_call = instruction->instr_args_as_FreeCall();
@@ -1167,8 +1173,8 @@ Error Method::execute_instruction() {
       err = Error::InvalidProgram;
   }
   // Reset the temp allocator for every instruction.
-  if (memory_manager_->temp_allocator() != nullptr) {
-    memory_manager_->temp_allocator()->reset();
+  if (temp_allocator_ != nullptr) {
+    temp_allocator_->reset();
   }
   if (err == Error::Ok) {
     step_state_.instr_idx = next_instr_idx;
@@ -1213,8 +1219,9 @@ Error Method::step() {
           static_cast<int32_t>(step_state_.chain_idx),
           static_cast<uint32_t>(step_state_.instr_idx));
   EXECUTORCH_SCOPE_PROF("Method::step");
-  internal::EventTracerProfileScope event_tracer_profile_scope =
-      internal::EventTracerProfileScope(event_tracer_, "Method::step");
+  EventTracerEntry event_tracer_entry =
+      internal::event_tracer_begin_profiling_event(
+          event_tracer_, "Method::step");
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
       InvalidState,
@@ -1240,6 +1247,7 @@ Error Method::step() {
     return status;
   }
 
+  internal::event_tracer_end_profiling_event(event_tracer_, event_tracer_entry);
   // end of the current chain, advance to the next chain
   if (step_state_.instr_idx == num_instructions) {
     step_state_.instr_idx = 0;
@@ -1255,8 +1263,9 @@ Error Method::experimental_step() {
 
 Error Method::execute() {
   internal::event_tracer_create_event_block(event_tracer_, "Execute");
-  internal::EventTracerProfileScope event_tracer_profile_scope =
-      internal::EventTracerProfileScope(event_tracer_, "Method::execute");
+  EventTracerEntry event_tracer_entry =
+      internal::event_tracer_begin_profiling_event(
+          event_tracer_, "Method::execute");
   EXECUTORCH_SCOPE_PROF("Method::execute");
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
@@ -1292,7 +1301,7 @@ Error Method::execute() {
       }
     }
   }
-
+  internal::event_tracer_end_profiling_event(event_tracer_, event_tracer_entry);
   log_outputs();
 
   // TODO(jakeszwe, dbort): Decide on calling execute back to back without

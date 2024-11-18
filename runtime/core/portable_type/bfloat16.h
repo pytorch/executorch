@@ -14,8 +14,9 @@
 #include <limits>
 #include <ostream>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 namespace internal {
 inline float f32_from_bits(uint16_t src) {
@@ -24,12 +25,6 @@ inline float f32_from_bits(uint16_t src) {
   tmp <<= 16;
   std::memcpy(&res, &tmp, sizeof(tmp));
   return res;
-}
-
-inline uint16_t bits_from_f32(float src) {
-  uint32_t res = 0;
-  std::memcpy(&res, &src, sizeof(res));
-  return res >> 16;
 }
 
 inline uint16_t round_to_nearest_even(float src) {
@@ -264,13 +259,22 @@ inline bool operator<(BFloat16& lhs, BFloat16& rhs) {
   return float(lhs) < float(rhs);
 }
 
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::etensor::BFloat16;
 } // namespace executor
 } // namespace torch
 
 namespace std {
 
 template <>
-class numeric_limits<torch::executor::BFloat16> {
+class numeric_limits<executorch::runtime::etensor::BFloat16> {
  public:
   static constexpr bool is_signed = true;
   static constexpr bool is_specialized = true;

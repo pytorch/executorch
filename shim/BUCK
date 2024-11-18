@@ -1,3 +1,4 @@
+load("@prelude//platforms:defs.bzl", "execution_platform")
 load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")
 load("@prelude//toolchains:genrule.bzl", "system_genrule_toolchain")
 load("@prelude//toolchains:go.bzl", "system_go_toolchain")
@@ -7,7 +8,7 @@ load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain", "sy
 load("@prelude//toolchains:remote_test_execution.bzl", "remote_test_execution_toolchain")
 load("@prelude//toolchains:rust.bzl", "system_rust_toolchain")
 
-oncall("open_source")
+oncall("executorch")
 
 system_cxx_toolchain(
     name = "cxx",
@@ -53,5 +54,23 @@ system_rust_toolchain(
 
 remote_test_execution_toolchain(
     name = "remote_test_execution",
+    visibility = ["PUBLIC"],
+)
+
+execution_platform(
+    name = "android-arm64",
+    cpu_configuration = "prelude//cpu:arm64",
+    os_configuration = "prelude//os:android",
+    # REVIEW: not sure if this is correct
+    use_windows_path_separators = host_info().os.is_windows,
+    visibility = ["PUBLIC"],
+)
+
+execution_platform(
+    name = "android-x86_64",
+    cpu_configuration = "prelude//cpu:x86_64",
+    os_configuration = "prelude//os:android",
+    # REVIEW: not sure if this is correct
+    use_windows_path_separators = host_info().os.is_windows,
     visibility = ["PUBLIC"],
 )

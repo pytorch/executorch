@@ -103,7 +103,7 @@ void scatter_value_helper(
 } // namespace
 
 Tensor& scatter_src_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& in,
     int64_t dim,
     const Tensor& index,
@@ -133,7 +133,7 @@ Tensor& scatter_src_out(
 }
 
 Tensor& scatter_value_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     const Tensor& index,

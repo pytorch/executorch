@@ -4,11 +4,16 @@ Welcome to the ExecuTorch Documentation
 =======================================
 
 .. important::
-   This is an alpha release; the ExecuTorch APIs and the ``.pte`` binary format
-   may change in incompatible ways before stabilizing in a future beta release.
-   When deploying models, we currently recommend using a version of the runtime
-   built from the same git revision that was used to generate the ``.pte`` file.
-   Once the format has stabilized, this will no longer be necessary.
+   v0.4.0 is a beta release of ExecuTorch. As of this release, the API will
+   follow the `API Lifecycle and Deprecation Policy <api-life-cycle.html>`__,
+   and the ``.pte`` binary format will comply with the `Runtime Compatibility
+   Policy
+   <https://github.com/pytorch/executorch/tree/main/runtime/COMPATIBILITY.md>`__.
+   This helps ensure that application developers can update to the latest
+   version of ExecuTorch without breaking existing integration code, in
+   accordance with these policies. If any issues arise or compatibility breaks
+   occur, please `report them in GitHub
+   <https://github.com/pytorch/executorch/issues/new/choose>`__.
 
    We welcome any feedback, suggestions, and bug reports from the community
    to help us improve the technology. Please use the `PyTorch Forums
@@ -55,13 +60,12 @@ Topics in this section will help you get started with ExecuTorch.
         ExecuTorch.
 
      .. grid-item-card:: :octicon:`file-code;1em`
-        ExecuTorch Intermediate Representation API
+        ExecuTorch Llama
         :img-top: _static/img/card-background.svg
-        :link: ir-exir.html
+        :link: llm/llama.html
         :link-type: url
 
-        Learn about EXIR, a graph-based intermediate
-        representation (IR) of PyTorch programs.
+        Learn about running Llama models via ExecuTorch
 
 .. toctree::
    :glob:
@@ -94,7 +98,8 @@ Topics in this section will help you get started with ExecuTorch.
    tutorials/export-to-executorch-tutorial
    running-a-model-cpp-tutorial
    extension-module
-   tutorials/sdk-integration-tutorial
+   extension-tensor
+   tutorials/devtools-integration-tutorial
    apple-runtime
    demo-apps-ios
    demo-apps-android
@@ -116,7 +121,11 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Working with LLMs
    :hidden:
 
-   llm/getting-started
+   Llama <llm/llama>
+   Llama on Android <llm/llama-demo-android>
+   Llama on iOS <llm/llama-demo-ios>
+   Llama on Android via Qualcomm backend <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
+   Intro to LLMs in Executorch <llm/getting-started>
 
 .. toctree::
    :glob:
@@ -126,6 +135,7 @@ Topics in this section will help you get started with ExecuTorch.
 
    export-to-executorch-api-reference
    executorch-runtime-api-reference
+   runtime-python-api-reference
    api-life-cycle
 
 .. toctree::
@@ -193,18 +203,19 @@ Topics in this section will help you get started with ExecuTorch.
 .. toctree::
    :glob:
    :maxdepth: 1
-   :caption: SDK
+   :caption: Developer Tools
    :hidden:
 
-   sdk-overview
-   sdk-bundled-io
-   sdk-etrecord
-   sdk-etdump
-   sdk-profiling
-   sdk-debugging
-   sdk-inspector
-   sdk-delegate-integration
-   sdk-tutorial
+   devtools-overview
+   bundled-io
+   etrecord
+   etdump
+   runtime-profiling
+   model-debugging
+   model-inspector
+   memory-planning-inspection
+   delegate-debugging
+   devtools-tutorial
 
 .. toctree::
    :glob:
@@ -244,11 +255,18 @@ ExecuTorch tutorials.
    :tags:
 
 .. customcarditem::
-   :header: Using the ExecuTorch SDK to Profile a Model
-   :card_description: A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.
+   :header: Managing Tensor Memory in C++ Tutorial
+   :card_description: A tutorial for managing the dynamic memory when working with tensors.
    :image: _static/img/generic-pytorch-logo.png
-   :link: tutorials/sdk-integration-tutorial.html
-   :tags: SDK
+   :link: extension-tensor.html
+   :tags:
+
+.. customcarditem::
+   :header: Using the ExecuTorch Developer Tools to Profile a Model
+   :card_description: A tutorial for using the ExecuTorch Developer Tools to profile and analyze a model with linkage back to source code.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: tutorials/devtools-integration-tutorial.html
+   :tags: devtools
 
 .. customcarditem::
    :header: Integrating and Running ExecuTorch on Apple Platforms

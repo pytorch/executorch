@@ -19,13 +19,26 @@ Link your binary with the ExecuTorch runtime and any backends or kernels used by
 
 ## Integration
 
+### Setup
+
+#### CMake
+
+Building the Xcode project requires CMake. Installing via homebrew does not
+typically work; instead, install the packaged application and commandline tools
+globally:
+
+1. Download the macOS `.dmg` installer from https://cmake.org/download
+2. Open the `.dmg`
+3. Drag the CMake app to the `/Applications` folder
+4. In a terminal, install the command line tools: `sudo /Applications/CMake.app/Contents/bin/cmake-gui --install`
+
 ### Swift Package Manager
 
 The prebuilt ExecuTorch runtime, backend, and kernels are available as a [Swift PM](https://www.swift.org/documentation/package-manager/) package.
 
 #### Xcode
 
-In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version, e.g., "0.3.0", or just use the "latest" branch name for the latest stable build.
+In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format "swiftpm-<version>", (e.g. "swiftpm-0.4.0"), or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-0.4.0-20241114") for a nightly build on a specific date.
 
 ![](_static/img/swiftpm_xcode1.png)
 
@@ -53,8 +66,8 @@ let package = Package(
     .library(name: "YourPackageName", targets: ["YourTargetName"]),
   ],
   dependencies: [
-    // Use "latest" branch name for the latest stable build.
-    .package(url: "https://github.com/pytorch/executorch.git", .branch("0.3.0"))
+    // Use "swiftpm-0.4.0.<year_month_day>" branch name for a nightly build.
+    .package(url: "https://github.com/pytorch/executorch.git", .branch("0.4.0"))
   ],
   targets: [
     .target(
@@ -108,19 +121,7 @@ source .venv/bin/activate
 pip install --upgrade cmake pip zstd
 ```
 
-5. Install a compatible version of [Buck2](https://buck.build):
-
-```bash
-BUCK2_RELEASE_DATE="2024-05-15"
-BUCK2_ARCHIVE="buck2-aarch64-apple-darwin.zst"
-BUCK2=".venv/bin/buck2"
-
-curl -LO "https://github.com/facebook/buck2/releases/download/$BUCK2_RELEASE_DATE/$BUCK2_ARCHIVE"
-zstd -cdq "$BUCK2_ARCHIVE" > "$BUCK2" && chmod +x "$BUCK2"
-rm "$BUCK2_ARCHIVE"
-```
-
-6. Install the required dependencies, including those needed for the backends like [Core ML](build-run-coreml.md) or [MPS](build-run-mps.md), if you plan to build them as well:
+5. Install the required dependencies, including those needed for the backends like [Core ML](build-run-coreml.md) or [MPS](build-run-mps.md), if you plan to build them as well:
 
 ```bash
 ./install_requirements.sh
@@ -132,7 +133,7 @@ rm "$BUCK2_ARCHIVE"
 ./backends/apple/mps/install_requirements.sh
 ```
 
-7. Use the provided script to build .xcframeworks:
+6. Use the provided script to build .xcframeworks:
 
 ```bash
 ./build/build_apple_frameworks.sh --help
@@ -141,7 +142,7 @@ rm "$BUCK2_ARCHIVE"
 For example, the following invocation will build the ExecuTorch Runtime and all currently available kernels and backends for the Apple platform:
 
 ```bash
-./build/build_apple_frameworks.sh --buck2="$(realpath $BUCK2)" --coreml --custom --mps --optimized --portable --quantized --xnnpack
+./build/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack
 ```
 
 After the build finishes successfully, the resulting frameworks can be found in the `cmake-out` directory.

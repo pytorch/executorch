@@ -33,7 +33,7 @@ The runtime is also responsible for:
   semantics of those operators.
 * Dispatching predetermined sections of the model to [backend
   delegates](compiler-delegate-and-partitioner.md) for acceleration.
-* Optionally gathering [profiling data](sdk-profiling.md) during load and
+* Optionally gathering [profiling data](runtime-profiling.md) during load and
   execution.
 
 ## Design Goals
@@ -96,7 +96,7 @@ can build it for a wide variety of target systems.
 
 #### C++ Language Considerations
 
-* The code is C++11-compatible to work with older toolchains.
+* The code is C++17-compatible to work with older toolchains.
 * The runtime does not use exceptions or RTTI, although it is not antagonistic
   to them.
 * The code is compatible with GCC and Clang, and has also been built with
@@ -159,7 +159,7 @@ For more details about the ExecuTorch runtime, please see:
 * [Simplified Runtime APIs Tutorial](extension-module.md)
 * [Runtime Build and Cross Compilation](runtime-build-and-cross-compilation.md)
 * [Runtime Platform Abstraction Layer](runtime-platform-abstraction-layer.md)
-* [Runtime Profiling](sdk-profiling.md)
+* [Runtime Profiling](runtime-profiling.md)
 * [Backends and Delegates](compiler-delegate-and-partitioner.md)
 * [Backend Delegate Implementation](runtime-backend-delegate-implementation-and-linking.md)
 * [Kernel Library Overview](kernel-library-overview.md)

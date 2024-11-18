@@ -31,6 +31,7 @@ Result<BufferCleanup> prepare_input_tensors(Method& method) {
   for (size_t i = 0; i < num_inputs; i++) {
     auto tag = method_meta.input_tag(i);
     if (!tag.ok()) {
+      BufferCleanup cleanup({inputs, num_allocated});
       return tag.error();
     }
     if (tag.get() != Tag::Tensor) {

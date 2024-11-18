@@ -6,8 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/util/broadcast_util.h>
-#include <executorch/kernels/portable/cpu/util/functional_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -15,47 +14,48 @@ namespace executor {
 namespace native {
 
 Tensor& where_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& cond,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
-  ScalarType cond_type = cond.scalar_type();
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = b.scalar_type();
-  ScalarType common_type = promoteTypes(a_type, b_type);
-  ScalarType out_type = out.scalar_type();
+  // Common Dtype
+  ScalarType common_type = promoteTypes(a.scalar_type(), b.scalar_type());
 
-  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
+  // Check Common Dtype
+  ET_KERNEL_CHECK(ctx, common_type == out.scalar_type(), InvalidArgument, out);
 
-  // Determine output size and resize for dynamic shapes
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(cond, a, b, out), InvalidArgument, out);
+
+  // Resize
   ET_KERNEL_CHECK(
       ctx,
       resize_to_broadcast_target_size(a, b, cond, out) == Error::Ok,
       InvalidArgument,
       out);
 
-  constexpr auto name = "where.self_out";
+  // Compute Dtype
+  ScalarType compute_type = utils::get_compute_type(common_type);
 
-  ET_CHECK_MSG(
-      cond_type == ScalarType::Bool || cond_type == ScalarType::Byte,
-      "Unhandled dtype %s for where.self_out",
-      torch::executor::toString(cond_type));
-  ET_SWITCH_REALHB_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
-    ET_SWITCH_REALHB_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
-      using CTYPE_OUT =
-          typename torch::executor::promote_types<CTYPE_A, CTYPE_B>::type;
-      apply_ternary_elementwise_fn<CTYPE_A, CTYPE_B, uint8_t, CTYPE_OUT>(
-          [](const CTYPE_A val_a, const CTYPE_B val_b, const uint8_t val_c) {
-            CTYPE_OUT a_casted = static_cast<CTYPE_OUT>(val_a);
-            CTYPE_OUT b_casted = static_cast<CTYPE_OUT>(val_b);
-            return val_c ? a_casted : b_casted;
-          },
-          a,
-          b,
-          cond,
-          out);
-    });
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "where.self_out";
+
+  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    utils::apply_tritensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [](const CTYPE_COMPUTE val_a,
+           const CTYPE_COMPUTE val_b,
+           const CTYPE_COMPUTE val_c) { return val_c ? val_a : val_b; },
+        ctx,
+        a,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        b,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        cond,
+        utils::SupportedTensorDtypes::BOOL_OR_BYTE,
+        out,
+        utils::SupportedTensorDtypes::SAME_AS_COMMON);
   });
 
   return out;

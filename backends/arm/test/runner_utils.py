@@ -6,10 +6,12 @@
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -65,7 +67,7 @@ def _get_input_names(program: ExportedProgram) -> list[str]:
 
 
 def _get_input_quantization_params(
-    program: ExportedProgram, input_names: list[str]
+    program: ExportedProgram,
 ) -> list[QuantizationParams]:
     """
     Get input QuantizationParams in a program, maximum one per input to the program.
@@ -78,6 +80,7 @@ def _get_input_quantization_params(
     """
 
     quant_params = []
+    input_names = _get_input_names(program)
     num_inputs = len(input_names)
     for node in program.graph.nodes:
         if (
@@ -98,7 +101,7 @@ def _get_input_quantization_params(
             ):  # break early if we have all the inputs quantized parameters
                 break
     if len(quant_params) == 0:
-        raise RuntimeError("No Quantization parameters not found in exported model.")
+        raise RuntimeError("No Quantization parameters found in exported model.")
     return quant_params
 
 
@@ -174,19 +177,29 @@ class RunnerUtil:
         self.qp_input: list[QuantizationParams] = None
         self.qp_output: QuantizationParams = None
         self.timeout = 120
+        self.target_board: str = None
 
         self._has_init_run = False
 
-    def init_run(self, exported_program: ExportedProgram, is_quantized: bool):
-        self.input_names = _get_input_names(exported_program)
+    def init_run(
+        self,
+        exported_program: ExportedProgram,
+        edge_program: ExportedProgram,
+        is_quantized: bool,
+        target_board: str,
+    ):
+
+        if target_board not in ["corstone-300", "corstone-320"]:
+            raise RuntimeError(f"Unknown target board: {target_board}")
+
+        self.input_names = _get_input_names(edge_program)
         self.output_node = _get_output_node(exported_program)
         self.output_name = self.output_node.name
         self.is_quantized = is_quantized
+        self.target_board = target_board
 
         if is_quantized:
-            self.qp_input = _get_input_quantization_params(
-                exported_program, self.input_names
-            )
+            self.qp_input = _get_input_quantization_params(exported_program)
             self.qp_output = _get_output_quantization_params(
                 exported_program, self.output_node
             )
@@ -199,7 +212,7 @@ class RunnerUtil:
     def set_timeout(self, timeout: int):
         self.timeout = timeout
 
-    def run_corstone300(
+    def run_corstone(
         self,
         inputs: Tuple[torch.Tensor],
     ) -> list[torch.Tensor]:
@@ -224,7 +237,9 @@ class RunnerUtil:
                 os.path.join(self.intermediate_path, f"{name}.bin"),
             )
         elf_path = os.path.join(
-            "cmake-out", "arm_semihosting_executor_runner", "arm_executor_runner"
+            "cmake-out",
+            f"arm_semihosting_executor_runner_{self.target_board}",
+            "arm_executor_runner",
         )
         assert os.path.exists(
             elf_path
@@ -234,39 +249,76 @@ class RunnerUtil:
         for input_path in input_paths:
             cmd_line += f" -i {input_path}"
 
-        command_args = [
-            "FVP_Corstone_SSE-300_Ethos-U55",
-            "-C",
-            "ethosu.num_macs=128",
-            "-C",
-            "mps3_board.visualisation.disable-visualisation=1",
-            "-C",
-            "mps3_board.telnetterminal0.start_telnet=0",
-            "-C",
-            "mps3_board.uart0.out_file='-'",
-            "-C",
-            "cpu0.CFGITCMSZ=11",
-            "-C",
-            "cpu0.semihosting-enable=1",
-            "-C",
-            "cpu0.semihosting-stack_base=0",
-            "-C",
-            "cpu0.semihosting-heap_limit=0",
-            "-C",
-            f"cpu0.semihosting-cmd_line='{cmd_line}'",
-            "-a",
-            elf_path,
-            "--timelimit",
-            f"{self.timeout}",
-        ]
-        result = _run_cmd(command_args, check=False)
-        result_stdout = result.stdout.decode()
-        if "Hard fault" in result_stdout or len(result.stderr) > 0:
+        command_args = {
+            "corstone-300": [
+                "FVP_Corstone_SSE-300_Ethos-U55",
+                "-C",
+                "ethosu.num_macs=128",
+                "-C",
+                "mps3_board.visualisation.disable-visualisation=1",
+                "-C",
+                "mps3_board.telnetterminal0.start_telnet=0",
+                "-C",
+                "mps3_board.uart0.out_file='-'",
+                "-C",
+                "cpu0.CFGITCMSZ=11",
+                "-C",
+                "cpu0.semihosting-enable=1",
+                "-C",
+                "cpu0.semihosting-stack_base=0",
+                "-C",
+                "cpu0.semihosting-heap_limit=0",
+                "-C",
+                f"cpu0.semihosting-cmd_line='{cmd_line}'",
+                "-a",
+                elf_path,
+                "--timelimit",
+                f"{self.timeout}",
+            ],
+            "corstone-320": [
+                "FVP_Corstone_SSE-320",
+                "-C",
+                "mps4_board.subsystem.ethosu.num_macs=128",
+                "-C",
+                "mps4_board.visualisation.disable-visualisation=1",
+                "-C",
+                "mps4_board.telnetterminal0.start_telnet=0",
+                "-C",
+                "mps4_board.uart0.out_file='-'",
+                "-C",
+                "mps4_board.uart0.unbuffered_output=1",
+                "-C",
+                "mps4_board.uart0.shutdown_on_eot=1",
+                "-C",
+                "mps4_board.subsystem.cpu0.semihosting-enable=1",
+                "-C",
+                "mps4_board.subsystem.cpu0.semihosting-stack_base=0",
+                "-C",
+                "mps4_board.subsystem.cpu0.semihosting-heap_limit=0",
+                "-C",
+                f"mps4_board.subsystem.cpu0.semihosting-cmd_line='{cmd_line}'",
+                "-a",
+                elf_path,
+                "--timelimit",
+                f"{self.timeout}",
+            ],
+        }
+
+        result = _run_cmd(command_args[self.target_board], check=False)
+        if result.returncode != 0:
             raise RuntimeError(
-                f"Corstone simulation failed, log: \n {result_stdout}\n{result.stderr.decode()}"
+                f"Failed to run {command_args[self.target_board]}\nError: {result.stderr.decode()}"
             )
-        elif "E [" in result_stdout:
-            logger.error(result_stdout)
+        result_stdout = result.stdout.decode()
+
+        error_regex = r"(^[EF][: ].*$)|(^.*Hard fault.*$)|(^.*Assertion.*$)"
+
+        # Check for errors in the output
+        # regex to check for error or fault messages in stdout from FVP
+        if re.compile(error_regex, re.MULTILINE).search(result_stdout):
+            raise RuntimeError(
+                f"Corstone simulation failed:\ncmd: {command_args[self.target_board]}\n, log: \n {result_stdout}\n{result.stderr.decode()}"
+            )
 
         tosa_ref_output = np.fromfile(out_path_with_suffix, dtype=np.float32)
         output_shape = self.output_node.args[0][0].meta["val"].shape
@@ -325,7 +377,18 @@ class RunnerUtil:
             self._has_init_run
         ), "RunnerUtil needs to be initialized using init_run() before running tosa reference."
 
-        desc_file_path = os.path.join(self.intermediate_path, "desc.json")
+        all_desc_file_paths = [
+            str(path) for path in Path(self.intermediate_path).glob("desc*.json")
+        ]
+        assert (
+            all_desc_file_paths
+        ), f"No TOSA description file found in '{self.intermediate_path}'."
+        if len(all_desc_file_paths) != 1:
+            raise NotImplementedError(
+                "Graphs with more than one partition are currently not supported."
+            )
+
+        desc_file_path = all_desc_file_paths[0]
         assert os.path.exists(
             desc_file_path
         ), f"desc_file_path: {desc_file_path} does not exist"
@@ -376,14 +439,20 @@ class RunnerUtil:
 
             if self.is_quantized:
                 # Need to dequant back to FP32 for comparison with torch output
+                # Convert to int32 prior to dequantize the output
+                if tosa_ref_output.dtype == np.int8:
+                    tosa_ref_output = tosa_ref_output.astype(np.int32)
                 quant_param = self.qp_output
                 assert (
                     quant_param is not None
                 ), "There are no quantization parameters, check output parameters"
                 tosa_ref_output = (tosa_ref_output - quant_param.zp) * quant_param.scale
 
+            if tosa_ref_output.dtype == np.double:
+                tosa_ref_output = tosa_ref_output.astype("float32")
+
             # tosa_output is a numpy array, convert to torch tensor for comparison
-            tosa_ref_outputs.append(torch.from_numpy(tosa_ref_output.astype("float32")))
+            tosa_ref_outputs.append(torch.from_numpy(tosa_ref_output))
 
         return tosa_ref_outputs
 
@@ -391,12 +460,15 @@ class RunnerUtil:
 def prep_data_for_save(
     data, is_quantized: bool, input_name: str, quant_param: QuantizationParams
 ):
-    data_np = data.detach().numpy().astype(np.float32)
+    data_np = np.array(data.detach(), order="C").astype(
+        f"{data.dtype}".replace("torch.", "")
+    )
 
     if is_quantized:
-        assert (
-            quant_param.node_name == input_name
-        ), "These quantization params do not match the input tensor name"
+        assert quant_param.node_name in input_name, (
+            f"The quantization params name '{quant_param.node_name}' does not "
+            f"match the input tensor name '{input_name}'."
+        )
         data_np = (
             ((data_np / np.float32(quant_param.scale)) + quant_param.zp)
             .round()
@@ -488,7 +560,10 @@ def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
     with open(tosa_input_file, "wb") as f:
         f.write(tosa_fb)
 
-    tosa_schema_file = "./backends/arm/third-party/serialization_lib/schema/tosa.fbs"
+    arm_backend_path = os.path.realpath(os.path.dirname(__file__) + "/..")
+    tosa_schema_file = os.path.join(
+        arm_backend_path, "third-party/serialization_lib/schema/tosa.fbs"
+    )
     assert os.path.exists(
         tosa_schema_file
     ), f"tosa_schema_file: {tosa_schema_file} does not exist"

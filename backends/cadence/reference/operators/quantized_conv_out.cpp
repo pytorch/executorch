@@ -9,15 +9,13 @@
 #include <executorch/backends/cadence/reference/kernels/kernels.h>
 
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <algorithm>
-#include <cmath>
 
 namespace impl {
 namespace reference {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using RuntimeContext = torch::executor::RuntimeContext;
+using executorch::aten::Tensor;
+using executorch::runtime::KernelRuntimeContext;
 
 // This implements a generic 2d conv kernel that operates on raw pointers.
 // The version handles both quantized and fp32 convolutions.
@@ -156,13 +154,13 @@ __attribute__((noinline)) void conv2d_nchw_core_generic(
 // quantized::conv1d or quantized::conv2d based on the dimensionality of
 // activation tensor.
 void quantized_conv_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
     const Tensor& bias,
-    exec_aten::IntArrayRef stride,
-    exec_aten::IntArrayRef padding,
-    exec_aten::IntArrayRef dilation,
+    executorch::aten::IntArrayRef stride,
+    executorch::aten::IntArrayRef padding,
+    executorch::aten::IntArrayRef dilation,
     int64_t groups,
     int64_t in_zero_point,
     const Tensor& weight_zero_point,
@@ -192,34 +190,70 @@ void quantized_conv_out(
   // per-channel
   bool per_tensor_quantized = bias_scale.numel() == 1;
 
-  conv2d_nchw_core_generic<uint8_t, uint8_t, int32_t, uint8_t, true>(
-      input.const_data_ptr<uint8_t>(),
-      weight.const_data_ptr<uint8_t>(),
-      bias.const_data_ptr<int32_t>(),
-      out.mutable_data_ptr<uint8_t>(),
-      n,
-      c,
-      h,
-      w,
-      oc,
-      wc,
-      wh,
-      ww,
-      oh,
-      ow,
-      stride[0],
-      stride[1],
-      padding[0],
-      padding[1],
-      dilation[0],
-      dilation[1],
-      groups,
-      in_zero_point,
-      weight_zero_point.const_data_ptr<int32_t>(),
-      bias_scale.const_data_ptr<float>(),
-      output_scale,
-      (uint8_t)output_zero_point,
-      per_tensor_quantized);
+  if (out.scalar_type() == exec_aten::ScalarType::Byte) {
+    conv2d_nchw_core_generic<uint8_t, uint8_t, int32_t, uint8_t, true>(
+        input.const_data_ptr<uint8_t>(),
+        weight.const_data_ptr<uint8_t>(),
+        bias.const_data_ptr<int32_t>(),
+        out.mutable_data_ptr<uint8_t>(),
+        n,
+        c,
+        h,
+        w,
+        oc,
+        wc,
+        wh,
+        ww,
+        oh,
+        ow,
+        stride[0],
+        stride[1],
+        padding[0],
+        padding[1],
+        dilation[0],
+        dilation[1],
+        groups,
+        in_zero_point,
+        weight_zero_point.const_data_ptr<int32_t>(),
+        bias_scale.const_data_ptr<float>(),
+        output_scale,
+        (uint8_t)output_zero_point,
+        per_tensor_quantized);
+  } else if (out.scalar_type() == exec_aten::ScalarType::Char) {
+    conv2d_nchw_core_generic<int8_t, int8_t, int32_t, int8_t, true>(
+        input.const_data_ptr<int8_t>(),
+        weight.const_data_ptr<int8_t>(),
+        bias.const_data_ptr<int32_t>(),
+        out.mutable_data_ptr<int8_t>(),
+        n,
+        c,
+        h,
+        w,
+        oc,
+        wc,
+        wh,
+        ww,
+        oh,
+        ow,
+        stride[0],
+        stride[1],
+        padding[0],
+        padding[1],
+        dilation[0],
+        dilation[1],
+        groups,
+        in_zero_point,
+        weight_zero_point.const_data_ptr<int32_t>(),
+        bias_scale.const_data_ptr<float>(),
+        output_scale,
+        (int8_t)output_zero_point,
+        per_tensor_quantized);
+  } else {
+    ET_CHECK_MSG(
+        false,
+        "Unhandled input dtype %hhd",
+        static_cast<int8_t>(input.scalar_type()));
+  }
 }
 
 }; // namespace native

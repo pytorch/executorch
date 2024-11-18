@@ -12,11 +12,11 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using RuntimeContext = torch::executor::RuntimeContext;
+using executorch::aten::Tensor;
+using executorch::runtime::KernelRuntimeContext;
 
 Tensor& view_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     const IntArrayRef size,
     Tensor& out) {

@@ -88,10 +88,9 @@ static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
                                                  eventLogger:(const executorchcoreml::ModelEventLogger *)eventLogger
                                                        error:(NSError * __autoreleasing *)error {
     if (self.profiler == nil) {
-        ETCoreMLModelProfiler *profiler = [[ETCoreMLModelProfiler alloc] initWithCompiledModelAsset:self.model.asset
-                                                                                        outputNames:self.model.orderedOutputNames
-                                                                                      configuration:self.configuration
-                                                                                              error:error];
+        ETCoreMLModelProfiler *profiler = [[ETCoreMLModelProfiler alloc] initWithModel:self.model
+                                                                         configuration:self.configuration
+                                                                                 error:error];
         self.profiler = profiler;
     }
        

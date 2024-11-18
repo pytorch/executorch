@@ -16,7 +16,7 @@ namespace native {
 
 using exec_aten::Tensor;
 
-Tensor& neg_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& neg_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape

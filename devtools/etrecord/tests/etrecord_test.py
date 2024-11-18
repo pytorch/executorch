@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import copy
 import json
 import tempfile
@@ -75,7 +77,7 @@ class TestETRecord(unittest.TestCase):
         return (aten_dialect, edge_program_copy, edge_program.to_executorch())
 
     # Serialized and deserialized graph modules are not completely the same, so we check
-    # that they are close enough and match especially on the parameters we care about in the SDK.
+    # that they are close enough and match especially on the parameters we care about in the Developer Tools.
     def check_graph_closeness(self, graph_a, graph_b):
         self.assertEqual(len(graph_a.graph.nodes), len(graph_b.graph.nodes))
         for node_a, node_b in zip(graph_a.graph.nodes, graph_b.graph.nodes):

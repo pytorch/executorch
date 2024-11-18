@@ -21,7 +21,7 @@ using ScalarType = exec_aten::ScalarType;
 using IntArrayRef = exec_aten::ArrayRef<int64_t>;
 
 Tensor& avg_pool2d_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     IntArrayRef kernel_size,
     IntArrayRef stride,

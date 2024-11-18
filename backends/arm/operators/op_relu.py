@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import executorch.backends.arm.tosa_quant_utils as tqutils
 import serializer.tosa_serializer as ts
 import torch.fx
@@ -36,7 +38,7 @@ class ReluVisitor(NodeVisitor):
         clamp_min_qs = 0
         clamp_max_qs = 0
         if is_quant_node:
-            out_qargs = tqutils.get_quant_node_args(list(node.users)[0])
+            out_qargs = tqutils.get_quant_arg_downstream(list(node.users)[0])
             clamp_min_qs = tqutils.quantize_value(0, out_qargs)
             clamp_max_qs = tqutils.quantize_value(float("inf"), out_qargs)
 

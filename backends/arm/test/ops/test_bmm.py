@@ -11,6 +11,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
 torch.manual_seed(1)
@@ -31,6 +32,12 @@ class TestBMM(unittest.TestCase):
         def forward(self, x, y):
             return torch.bmm(x, y)
 
+    class MatMul(torch.nn.Module):
+        test_parameters = [(torch.rand(2, 3, 5), torch.rand(2, 5, 2))]
+
+        def forward(self, x, y):
+            return torch.matmul(x, y)
+
     class BMMSingleInput(torch.nn.Module):
         test_parameters = [
             (torch.rand(20, 3, 3),),
@@ -49,12 +56,12 @@ class TestBMM(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
             )
             .export()
-            .check_count({"torch.ops.aten.bmm.default": 1})
             .check_not(["torch.ops.quantized_decomposed"])
             .to_edge()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_bmm_default": 1})
             .partition()
             .check_not(["executorch_exir_dialects_edge__ops_aten_bmm_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
@@ -69,13 +76,13 @@ class TestBMM(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
             )
             .quantize()
             .export()
-            .check_count({"torch.ops.aten.bmm.default": 1})
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_bmm_default": 1})
             .partition()
             .check_not(["executorch_exir_dialects_edge__ops_aten_bmm_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
@@ -83,14 +90,17 @@ class TestBMM(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data)
         )
 
-    def _test_bmm_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor, ...]
+    def _test_bmm_ethosu_BI_pipeline(
+        self,
+        module: torch.nn.Module,
+        compile_spec: CompileSpec,
+        test_data: Tuple[torch.Tensor, ...],
     ):
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(),
+                compile_spec=compile_spec,
             )
             .quantize()
             .export()
@@ -112,6 +122,16 @@ class TestBMM(unittest.TestCase):
         test_data = (operand1,)
         self._test_bmm_tosa_MI_pipeline(self.BMMSingleInput(), test_data)
 
+    @parameterized.expand(MatMul.test_parameters)
+    def test_matmul_tosa_MI(self, operand1: torch.Tensor, operand2: torch.Tensor):
+        test_data = (operand1, operand2)
+        self._test_bmm_tosa_MI_pipeline(self.MatMul(), test_data)
+
+    @parameterized.expand(MatMul.test_parameters)
+    def test_matmul_tosa_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
+        test_data = (operand1, operand2)
+        self._test_bmm_tosa_BI_pipeline(self.MatMul(), test_data)
+
     @parameterized.expand(BMM.test_parameters)
     def test_bmm_tosa_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
@@ -132,4 +152,13 @@ class TestBMM(unittest.TestCase):
     @unittest.expectedFailure
     def test_bmm_single_input_u55_BI(self, operand1: torch.Tensor):
         test_data = (operand1,)
-        self._test_bmm_u55_BI_pipeline(self.BMMSingleInput(), test_data)
+        self._test_bmm_ethosu_BI_pipeline(
+            self.BMMSingleInput(), common.get_u55_compile_spec(), test_data
+        )
+
+    @parameterized.expand(BMMSingleInput.test_parameters)
+    def test_bmm_single_input_u85_BI(self, operand1: torch.Tensor):
+        test_data = (operand1,)
+        self._test_bmm_ethosu_BI_pipeline(
+            self.BMMSingleInput(), common.get_u85_compile_spec(), test_data
+        )

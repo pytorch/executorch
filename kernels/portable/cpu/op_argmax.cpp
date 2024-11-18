@@ -21,7 +21,7 @@ using exec_aten::optional;
 using exec_aten::Tensor;
 
 Tensor& argmax_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     optional<int64_t> dim,
     bool keepdim,

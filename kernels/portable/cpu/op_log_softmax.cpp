@@ -20,7 +20,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor& log_softmax_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     bool half_to_float,

@@ -30,7 +30,7 @@ Once we have the model binary file, then let's run it with the ExecuTorch runtim
 # Build and install executorch
 cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
-          -DEXECUTORCH_BUILD_SDK=ON \
+          -DEXECUTORCH_BUILD_DEVTOOLS=ON \
           -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
           -DEXECUTORCH_BUILD_MPS=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \

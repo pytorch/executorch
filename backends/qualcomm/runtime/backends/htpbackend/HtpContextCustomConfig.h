@@ -8,16 +8,16 @@
 
 #pragma once
 
+#include <executorch/backends/qualcomm/qc_compiler_spec_generated.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnContextCommon.h>
-#include <executorch/backends/qualcomm/schema_generated.h>
 
 #include <memory>
 #include <vector>
 
 #include "HTP/QnnHtpContext.h"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 
 using namespace qnn_delegate;
@@ -46,5 +46,5 @@ class HtpContextCustomConfig {
 };
 
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

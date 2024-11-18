@@ -46,7 +46,7 @@ class TestExampleDelegate(unittest.TestCase):
         )
 
         m = model.eval()
-        m = torch._export.capture_pre_autograd_graph(m, copy.deepcopy(example_inputs))
+        m = torch.export.export_for_training(m, copy.deepcopy(example_inputs)).module()
         # print("original model:", m)
         quantizer = ExampleQuantizer()
         # quantizer = XNNPACKQuantizer()
@@ -82,7 +82,7 @@ class TestExampleDelegate(unittest.TestCase):
         )
 
         m = model.eval()
-        m = torch._export.capture_pre_autograd_graph(m, copy.deepcopy(example_inputs))
+        m = torch.export.export_for_training(m, copy.deepcopy(example_inputs)).module()
         quantizer = ExampleQuantizer()
 
         m = prepare_pt2e(m, quantizer)

@@ -24,11 +24,13 @@ using exec_aten::SizesType;
 using exec_aten::Tensor;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
-using executorch::runtime::getOpsFn;
-using executorch::runtime::hasOpsFn;
+using executorch::runtime::get_op_function_from_registry;
 using executorch::runtime::Kernel;
 using executorch::runtime::KernelRuntimeContext;
-using executorch::runtime::register_kernels;
+using executorch::runtime::OpFunction;
+using executorch::runtime::register_kernel;
+using executorch::runtime::registry_has_op_function;
+using executorch::runtime::Result;
 using executorch::runtime::testing::TensorFactory;
 
 namespace pytree = ::executorch::extension::pytree;
@@ -87,9 +89,9 @@ TEST_F(ExecutorTest, TensorHalf) {
 
 TEST_F(ExecutorTest, RegistryLookupAndCall) {
   const char* op_name = "aten::add.out";
-  ASSERT_TRUE(hasOpsFn(op_name));
-  auto func = getOpsFn(op_name);
-  ASSERT_TRUE(func);
+  Result<OpFunction> func = get_op_function_from_registry(op_name);
+  ASSERT_EQ(func.error(), Error::Ok);
+  ASSERT_NE(*func, nullptr);
 
   TensorFactory<ScalarType::Int> tf;
   constexpr size_t num_evalues = 4;
@@ -108,7 +110,7 @@ TEST_F(ExecutorTest, RegistryLookupAndCall) {
   kernel_args[4] = &evalues[3];
 
   KernelRuntimeContext context{};
-  func(context, kernel_args);
+  (*func)(context, kernel_args);
   auto c_ptr = evalues[3].toTensor().const_data_ptr<int32_t>();
   ASSERT_EQ(c_ptr[3], 12);
 }
@@ -166,15 +168,15 @@ TEST_F(ExecutorTest, EValueToScalar) {
 void test_op(KernelRuntimeContext& /*unused*/, EValue** /*unused*/) {}
 
 TEST_F(ExecutorTest, OpRegistration) {
-  auto s1 = register_kernels({Kernel("test", test_op)});
-  auto s2 = register_kernels({Kernel("test_2", test_op)});
+  auto s1 = register_kernel(Kernel("test", test_op));
+  auto s2 = register_kernel(Kernel("test_2", test_op));
   ASSERT_EQ(Error::Ok, s1);
   ASSERT_EQ(Error::Ok, s2);
   ET_EXPECT_DEATH(
-      []() { (void)register_kernels({Kernel("test", test_op)}); }(), "");
+      []() { (void)register_kernel(Kernel("test", test_op)); }(), "");
 
-  ASSERT_TRUE(hasOpsFn("test"));
-  ASSERT_TRUE(hasOpsFn("test_2"));
+  ASSERT_TRUE(registry_has_op_function("test"));
+  ASSERT_TRUE(registry_has_op_function("test_2"));
 }
 
 TEST_F(ExecutorTest, OpRegistrationWithContext) {
@@ -184,25 +186,27 @@ TEST_F(ExecutorTest, OpRegistrationWithContext) {
         (void)context;
         *(values[0]) = Scalar(100);
       });
-  auto s1 = register_kernels({op});
+  auto s1 = register_kernel(op);
   ASSERT_EQ(Error::Ok, s1);
-  ASSERT_TRUE(hasOpsFn("test_op_with_context"));
 
-  auto func = getOpsFn("test_op_with_context");
+  Result<OpFunction> func =
+      get_op_function_from_registry("test_op_with_context");
+  ASSERT_EQ(func.error(), Error::Ok);
+
   EValue values[1];
   values[0] = Scalar(0);
   EValue* kernels[1];
   kernels[0] = &values[0];
   KernelRuntimeContext context{};
-  func(context, kernels);
+  (*func)(context, kernels);
 
   auto val = values[0].toScalar().to<int64_t>();
   ASSERT_EQ(val, 100);
 }
 
 TEST_F(ExecutorTest, AddMulAlreadyRegistered) {
-  ASSERT_TRUE(hasOpsFn("aten::add.out"));
-  ASSERT_TRUE(hasOpsFn("aten::mul.out"));
+  ASSERT_TRUE(registry_has_op_function("aten::add.out"));
+  ASSERT_TRUE(registry_has_op_function("aten::mul.out"));
 }
 
 TEST(PyTreeEValue, List) {

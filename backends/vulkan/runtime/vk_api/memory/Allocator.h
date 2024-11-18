@@ -48,14 +48,18 @@ class Allocator final {
   VmaAllocator allocator_;
 
  public:
+  VmaAllocationCreateInfo gpuonly_resource_create_info();
+
   Allocation create_allocation(
       const VkMemoryRequirements& memory_requirements,
       const VmaAllocationCreateInfo& create_info);
 
   VulkanImage create_image(
+      const VkDevice,
       const VkExtent3D&,
       const VkFormat,
       const VkImageType,
+      const VkImageTiling,
       const VkImageViewType,
       const VulkanImage::SamplerProperties&,
       VkSampler,

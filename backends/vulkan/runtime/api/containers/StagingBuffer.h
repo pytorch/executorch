@@ -27,6 +27,8 @@ class StagingBuffer final {
   size_t nbytes_;
   vkapi::VulkanBuffer vulkan_buffer_;
 
+  void* mapped_data_;
+
  public:
   StagingBuffer(
       Context* context_p,
@@ -37,7 +39,8 @@ class StagingBuffer final {
         numel_(numel),
         nbytes_(element_size(dtype_) * numel_),
         vulkan_buffer_(
-            context_p_->adapter_ptr()->vma().create_staging_buffer(nbytes_)) {}
+            context_p_->adapter_ptr()->vma().create_staging_buffer(nbytes_)),
+        mapped_data_(nullptr) {}
 
   StagingBuffer(const StagingBuffer&) = delete;
   StagingBuffer& operator=(const StagingBuffer&) = delete;
@@ -58,7 +61,10 @@ class StagingBuffer final {
   }
 
   inline void* data() {
-    return vulkan_buffer_.allocation_info().pMappedData;
+    if (!mapped_data_) {
+      mapped_data_ = vulkan_buffer_.allocation_info().pMappedData;
+    }
+    return mapped_data_;
   }
 
   inline size_t numel() {

@@ -21,16 +21,16 @@ class ComputeGraph;
  * access permission.
  */
 struct ArgGroup {
-  ArgGroup(const ValueRef ref, const vkapi::MemoryAccessType access)
+  ArgGroup(const ValueRef ref, const vkapi::MemoryAccessFlags access)
       : refs{ref}, access(access) {}
 
   ArgGroup(
       const std::vector<ValueRef>& refs,
-      const vkapi::MemoryAccessType access)
+      const vkapi::MemoryAccessFlags access)
       : refs(refs), access(access) {}
 
   const std::vector<ValueRef> refs;
-  const vkapi::MemoryAccessType access;
+  const vkapi::MemoryAccessFlags access;
 };
 
 /*
@@ -39,7 +39,7 @@ struct ArgGroup {
  * encoding of the shader corresponding to the op into the command buffer of a
  * ComputeGraph.
  */
-class ExecuteNode final {
+class ExecuteNode {
   friend class ComputeGraph;
 
  public:
@@ -48,29 +48,22 @@ class ExecuteNode final {
       const std::vector<ArgGroup>&,
       const std::vector<ValueRef>&)>;
 
-  explicit ExecuteNode(
-      ComputeGraph& graph,
-      const vkapi::ShaderInfo& shader,
-      const utils::uvec3& global_workgroup_size,
-      const utils::uvec3& local_workgroup_size,
-      const std::vector<ArgGroup>& args,
-      const vkapi::ParamsBindList& params,
-      const vkapi::SpecVarList& spec_vars = {},
-      const ResizeFunction& resize_fn = nullptr,
-      const std::vector<ValueRef>& resize_args = {});
-
   /*
-   * This overload of the ExecuteNode constructor is used to register ops which
+   * This overload of the DispatchNode constructor is used to register ops which
    * update a tensor view. No shader is dispatched, but the node still needs to
    * update the view's sizes and strides after a resize.
    */
   explicit ExecuteNode(
       const ResizeFunction& resize_fn = nullptr,
-      const std::vector<ValueRef>& resize_args = {});
+      const std::vector<ValueRef>& resize_args = {},
+      const std::vector<ArgGroup>& args = {},
+      const std::string& name = "Graph Node");
 
-  ~ExecuteNode() = default;
+  virtual ~ExecuteNode() = default;
 
-  void encode(ComputeGraph* graph);
+  virtual void encode(ComputeGraph* graph) {
+    (void)graph;
+  }
 
   inline void trigger_resize(ComputeGraph* graph) {
     if (resize_fn_ != nullptr) {
@@ -82,21 +75,16 @@ class ExecuteNode final {
     node_id_ = node_id;
   }
 
+  inline const std::string& name() const {
+    return name_;
+  }
+
  protected:
   uint32_t node_id_;
-  const vkapi::ShaderInfo shader_;
-  const utils::uvec3 global_workgroup_size_;
-  const utils::uvec3 local_workgroup_size_;
-  const std::vector<ArgGroup> args_;
-  const vkapi::ParamsBindList params_;
-  const vkapi::SpecVarList spec_vars_;
   const ResizeFunction resize_fn_;
   const std::vector<ValueRef> resize_args_;
-
- public:
-  operator bool() const {
-    return shader_;
-  }
+  const std::vector<ArgGroup> args_;
+  const std::string name_;
 };
 
 } // namespace vkcompute

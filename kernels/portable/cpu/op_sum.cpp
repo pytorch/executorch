@@ -18,7 +18,7 @@ using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
 Tensor& sum_dim_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     optional<ArrayRef<int64_t>> dim_list,
     bool keepdim,
@@ -37,6 +37,11 @@ Tensor& sum_dim_out(
       resize_reduction_out(in, dim_list, keepdim, out) == Error::Ok,
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES_AND(
       Bool, in.scalar_type(), ctx, "sum.IntList_out", CTYPE_IN, [&] {

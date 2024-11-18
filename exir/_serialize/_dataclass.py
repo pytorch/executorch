@@ -129,6 +129,13 @@ def _json_to_dataclass(json_dict: Dict[str, Any], cls: Any = None) -> Any:
             data[key] = [_json_to_dataclass(e, T) for e in value]
             continue
 
+        # If T is a Union, then check which type in the Union it is and initialize.
+        # eg. Double type in schema.py
+        if get_origin(T) is Union:
+            res = [x for x in get_args(get_type_hints(cls)[key]) if x == type(value)]
+            data[key] = res[0](value)
+            continue
+
         # If T is an enum then lookup the value in the enum otherwise try to
         # cast value to whatever type is required
         if isinstance(T, enum.EnumMeta):

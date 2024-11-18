@@ -2,17 +2,25 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library", "executorch_generated_lib")
 load(":lib_defs.bzl", "define_libs")
 
-def define_common_targets():
+def define_common_targets(is_fbcode=False):
     """Defines targets that should be shared between fbcode and xplat.
 
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
 
-    define_libs()
+    define_libs(is_fbcode)
 
     runtime.export_file(
         name = "optimized.yaml",
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.export_file(
+        name = "optimized-oss.yaml",
         visibility = [
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",

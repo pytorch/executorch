@@ -3,18 +3,24 @@ load(
     "ANDROID",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-
+load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_verision")
 
 # Construct the input and output file names. All input and output files rely on scalar_type file.
-SCHEMA_NAME = "schema"
+SCHEMA_NAME = "qc_compiler_spec"
 
 INPUT_SCHEMA = "serialization/" + SCHEMA_NAME + ".fbs"
 
 OUTPUT_SCHEMA_HEADER = SCHEMA_NAME + "_generated.h"
 
-SCHEMA_GEN_RULE_NAME = "schema_generated"
+SCHEMA_GEN_RULE_NAME = "qc_compiler_spec_generated"
 
 SCHEMA_LIRRARY_NAME = SCHEMA_NAME
+
+QC_BINARY_INFO_SCHEMA = "qc_binary_info"
+QC_BINARY_INFO_INPUT_SCHEMA = "serialization/" + QC_BINARY_INFO_SCHEMA + ".fbs"
+QC_BINARY_INFO_SCHEMA_GEN_RULE_NAME = QC_BINARY_INFO_SCHEMA + "_generated"
+QC_BINARY_INFO_OUTPUT_SCHEMA_HEADER = QC_BINARY_INFO_SCHEMA_GEN_RULE_NAME + ".h"
+QC_BINARY_INFO_SCHEMA_LIRRARY_NAME = QC_BINARY_INFO_SCHEMA
 
 def generate_schema_header(rule_name, srcs, headers, default_header):
     """Generate header file given flatbuffer schema
@@ -55,6 +61,7 @@ def define_common_targets():
         [OUTPUT_SCHEMA_HEADER],
         OUTPUT_SCHEMA_HEADER,
     )
+
     # Header-only library target with the generate executorch program schema header.
     runtime.cxx_library(
         name = "schema",
@@ -76,6 +83,32 @@ def define_common_targets():
         platforms = [ANDROID],
     )
 
+    generate_schema_header(
+        QC_BINARY_INFO_SCHEMA_GEN_RULE_NAME,
+        [QC_BINARY_INFO_INPUT_SCHEMA],
+        [QC_BINARY_INFO_OUTPUT_SCHEMA_HEADER],
+        QC_BINARY_INFO_OUTPUT_SCHEMA_HEADER,
+    )
+
+    runtime.cxx_library(
+        name = "qc_binary_info_schema",
+        srcs = [],
+        visibility = [
+            # Lock this down as tightly as possible to ensure that flatbuffers
+            # are an implementation detail. Ideally this list would only include
+            # //executorch/runtime/executor/...
+            "//executorch/codegen/tools/...",
+            "//executorch/runtime/executor/...",
+            "//executorch/backends/qualcomm/...",
+            "//executorch/backends/qualcomm/runtime/...",
+        ],
+        exported_headers = {
+             QC_BINARY_INFO_OUTPUT_SCHEMA_HEADER: ":{}[{}]".format( QC_BINARY_INFO_SCHEMA_GEN_RULE_NAME,  QC_BINARY_INFO_OUTPUT_SCHEMA_HEADER),
+        },
+        exported_external_deps = ["flatbuffers-api"],
+        define_static_target = True,
+        platforms = [ANDROID],
+    )
 
     runtime.cxx_library(
         name = "qnn_executorch_backend",
@@ -84,7 +117,7 @@ def define_common_targets():
         define_static_target = True,
         visibility = ["@EXECUTORCH_CLIENTS"],
         deps = [
-            "fbsource//third-party/qualcomm/qnn:api",
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
             "//executorch/backends/qualcomm/runtime:runtime",

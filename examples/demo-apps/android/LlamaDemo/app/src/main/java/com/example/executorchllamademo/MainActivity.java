@@ -16,14 +16,17 @@ import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Process;
 import android.provider.MediaStore;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.util.Log;
 import android.view.View;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -44,6 +47,8 @@ import com.google.gson.reflect.TypeToken;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import org.pytorch.executorch.LlamaCallback;
 import org.pytorch.executorch.LlamaModule;
 
@@ -70,11 +75,25 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
   private SettingsFields mCurrentSettingsFields;
   private Handler mMemoryUpdateHandler;
   private Runnable memoryUpdater;
+  private int promptID = 0;
+  private long startPos = 0;
+  private static final int CONVERSATION_HISTORY_MESSAGE_LOOKBACK = 2;
+  private Executor executor;
 
   @Override
   public void onResult(String result) {
-    mResultMessage.appendText(result);
-    run();
+    if (result.equals(PromptFormat.getStopToken(mCurrentSettingsFields.getModelType()))) {
+      return;
+    }
+    if (result.equals("\n\n") || result.equals("\n")) {
+      if (!mResultMessage.getText().isEmpty()) {
+        mResultMessage.appendText(result);
+        run();
+      }
+    } else {
+      mResultMessage.appendText(result);
+      run();
+    }
   }
 
   @Override
@@ -89,10 +108,6 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
   }
 
   private void setLocalModel(String modelPath, String tokenizerPath, float temperature) {
-    if (mModule != null) {
-      mModule.resetNative();
-      mModule = null;
-    }
     Message modelLoadingMessage = new Message("Loading model...", false, MessageType.SYSTEM, 0);
     ETLogging.getInstance().log("Loading model " + modelPath + " with tokenizer " + tokenizerPath);
     runOnUiThread(
@@ -101,10 +116,17 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
           mMessageAdapter.add(modelLoadingMessage);
           mMessageAdapter.notifyDataSetChanged();
         });
+    if (mModule != null) {
+      ETLogging.getInstance().log("Start deallocating existing module instance");
+      mModule.resetNative();
+      mModule = null;
+      ETLogging.getInstance().log("Completed deallocating existing module instance");
+    }
     long runStartTime = System.currentTimeMillis();
     mModule =
         new LlamaModule(
-            ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType()),
+            ModelUtils.getModelCategory(
+                mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType()),
             modelPath,
             tokenizerPath,
             temperature);
@@ -137,6 +159,12 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
               + (float) loadDuration / 1000
               + " sec."
               + " You can send text or image for inference";
+
+      if (mCurrentSettingsFields.getModelType() == ModelType.LLAVA_1_5) {
+        ETLogging.getInstance().log("Llava start prefill prompt");
+        startPos = mModule.prefillPrompt(PromptFormat.getLlavaPresetPrompt(), 0, 1, 0);
+        ETLogging.getInstance().log("Llava completes prefill prompt");
+      }
     }
 
     Message modelLoadedMessage = new Message(modelInfo, false, MessageType.SYSTEM, 0);
@@ -147,6 +175,11 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
             + modelPath
             + "\nTokenizer path: "
             + tokenizerPath
+            + "\nBackend: "
+            + mCurrentSettingsFields.getBackendType().toString()
+            + "\nModelType: "
+            + ModelUtils.getModelCategory(
+                mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType())
             + "\nTemperature: "
             + temperature
             + "\nModel loaded time: "
@@ -185,13 +218,24 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     mMessageAdapter.notifyDataSetChanged();
   }
 
+  private int setPromptID() {
+
+    return mMessageAdapter.getMaxPromptID() + 1;
+  }
+
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_main);
 
+    if (Build.VERSION.SDK_INT >= 21) {
+      getWindow().setStatusBarColor(ContextCompat.getColor(this, R.color.status_bar));
+      getWindow().setNavigationBarColor(ContextCompat.getColor(this, R.color.nav_bar));
+    }
+
     try {
       Os.setenv("ADSP_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir, true);
+      Os.setenv("LD_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir, true);
     } catch (ErrnoException e) {
       finish();
     }
@@ -206,6 +250,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     String existingMsgJSON = mDemoSharedPreferences.getSavedMessages();
     if (!existingMsgJSON.isEmpty()) {
       populateExistingMessages(existingMsgJSON);
+      promptID = setPromptID();
     }
     mSettingsButton = requireViewById(R.id.settings);
     mSettingsButton.setOnClickListener(
@@ -222,6 +267,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     setupCameraRoll();
     startMemoryUpdate();
     setupShowLogsButton();
+    executor = Executors.newSingleThreadExecutor();
   }
 
   @Override
@@ -246,6 +292,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
       }
       boolean isUpdated = !mCurrentSettingsFields.equals(updatedSettingsFields);
       boolean isLoadModel = updatedSettingsFields.getIsLoadModel();
+      setBackendMode(updatedSettingsFields.getBackendType());
       if (isUpdated) {
         if (isLoadModel) {
           // If users change the model file, but not pressing loadModelButton, we won't load the new
@@ -254,6 +301,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
         } else {
           askUserToSelectModel();
         }
+
         checkForClearChatHistory(updatedSettingsFields);
         // Update current to point to the latest
         mCurrentSettingsFields = new SettingsFields(updatedSettingsFields);
@@ -261,6 +309,22 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     } else {
       askUserToSelectModel();
     }
+  }
+
+  private void setBackendMode(BackendType backendType) {
+    if (backendType.equals(BackendType.XNNPACK) || backendType.equals(BackendType.QUALCOMM)) {
+      setXNNPACKMode();
+    } else if (backendType.equals(BackendType.MEDIATEK)) {
+      setMediaTekMode();
+    }
+  }
+
+  private void setXNNPACKMode() {
+    requireViewById(R.id.addMediaButton).setVisibility(View.VISIBLE);
+  }
+
+  private void setMediaTekMode() {
+    requireViewById(R.id.addMediaButton).setVisibility(View.GONE);
   }
 
   private void checkForClearChatHistory(SettingsFields updatedSettingsFields) {
@@ -527,6 +591,32 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
       imageViews.get(i).setVisibility(View.VISIBLE);
       imageViews.get(i).setImageURI(mSelectedImageUri.get(i));
     }
+
+    // For LLava, we want to call prefill_image as soon as an image is selected
+    // Llava only support 1 image for now
+    if (mCurrentSettingsFields.getModelType() == ModelType.LLAVA_1_5) {
+      List<ETImage> processedImageList = getProcessedImagesForModel(mSelectedImageUri);
+      if (!processedImageList.isEmpty()) {
+        mMessageAdapter.add(
+            new Message("Llava - Starting image Prefill.", false, MessageType.SYSTEM, 0));
+        mMessageAdapter.notifyDataSetChanged();
+        Runnable runnable =
+            () -> {
+              Process.setThreadPriority(Process.THREAD_PRIORITY_MORE_FAVORABLE);
+              ETLogging.getInstance().log("Starting runnable prefill image");
+              ETImage img = processedImageList.get(0);
+              ETLogging.getInstance().log("Llava start prefill image");
+              startPos =
+                  mModule.prefillImages(
+                      img.getInts(),
+                      img.getWidth(),
+                      img.getHeight(),
+                      ModelUtils.VISION_MODEL_IMAGE_CHANNELS,
+                      startPos);
+            };
+        executor.execute(runnable);
+      }
+    }
   }
 
   private void addSelectedImagesToChatThread(List<Uri> selectedImageUri) {
@@ -540,6 +630,48 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
       mMessageAdapter.add(new Message(imageURI.toString(), true, MessageType.IMAGE, 0));
     }
     mMessageAdapter.notifyDataSetChanged();
+  }
+
+  private String getConversationHistory() {
+    String conversationHistory = "";
+
+    ArrayList<Message> conversations =
+        mMessageAdapter.getRecentSavedTextMessages(CONVERSATION_HISTORY_MESSAGE_LOOKBACK);
+    if (conversations.isEmpty()) {
+      return conversationHistory;
+    }
+
+    int prevPromptID = conversations.get(0).getPromptID();
+    String conversationFormat =
+        PromptFormat.getConversationFormat(mCurrentSettingsFields.getModelType());
+    String format = conversationFormat;
+    for (int i = 0; i < conversations.size(); i++) {
+      Message conversation = conversations.get(i);
+      int currentPromptID = conversation.getPromptID();
+      if (currentPromptID != prevPromptID) {
+        conversationHistory = conversationHistory + format;
+        format = conversationFormat;
+        prevPromptID = currentPromptID;
+      }
+      if (conversation.getIsSent()) {
+        format = format.replace(PromptFormat.USER_PLACEHOLDER, conversation.getText());
+      } else {
+        format = format.replace(PromptFormat.ASSISTANT_PLACEHOLDER, conversation.getText());
+      }
+    }
+    conversationHistory = conversationHistory + format;
+
+    return conversationHistory;
+  }
+
+  private String getTotalFormattedPrompt(String conversationHistory, String rawPrompt) {
+    if (conversationHistory.isEmpty()) {
+      return mCurrentSettingsFields.getFormattedSystemAndUserPrompt(rawPrompt);
+    }
+
+    return mCurrentSettingsFields.getFormattedSystemPrompt()
+        + conversationHistory
+        + mCurrentSettingsFields.getFormattedUserPrompt(rawPrompt);
   }
 
   private void onModelRunStarted() {
@@ -556,43 +688,41 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     mSendButton.setImageResource(R.drawable.baseline_send_24);
     mSendButton.setOnClickListener(
         view -> {
+          try {
+            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            imm.hideSoftInputFromWindow(getCurrentFocus().getWindowToken(), 0);
+          } catch (Exception e) {
+            ETLogging.getInstance().log("Keyboard dismissal error: " + e.getMessage());
+          }
           addSelectedImagesToChatThread(mSelectedImageUri);
-          List<ETImage> processedImageList = getProcessedImagesForModel(mSelectedImageUri);
-          processedImageList.forEach(
-              image -> {
-                ETLogging.getInstance()
-                    .log(
-                        "Image preprocessed:"
-                            + " uri = "
-                            + image.getUri().getLastPathSegment()
-                            + ","
-                            + " width = "
-                            + image.getWidth()
-                            + ","
-                            + " height = "
-                            + image.getHeight()
-                            + ","
-                            + " bytes size = "
-                            + image.getBytes().length);
-              });
+          String finalPrompt;
           String rawPrompt = mEditTextMessage.getText().toString();
-          String prompt = mCurrentSettingsFields.getFormattedSystemAndUserPrompt(rawPrompt);
+          if (ModelUtils.getModelCategory(
+                  mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType())
+              == ModelUtils.VISION_MODEL) {
+            finalPrompt = mCurrentSettingsFields.getFormattedSystemAndUserPrompt(rawPrompt);
+          } else {
+            finalPrompt = getTotalFormattedPrompt(getConversationHistory(), rawPrompt);
+          }
           // We store raw prompt into message adapter, because we don't want to show the extra
           // tokens from system prompt
-          mMessageAdapter.add(new Message(rawPrompt, true, MessageType.TEXT, 0));
+          mMessageAdapter.add(new Message(rawPrompt, true, MessageType.TEXT, promptID));
           mMessageAdapter.notifyDataSetChanged();
           mEditTextMessage.setText("");
-          mResultMessage = new Message("", false, MessageType.TEXT, 0);
+          mResultMessage = new Message("", false, MessageType.TEXT, promptID);
           mMessageAdapter.add(mResultMessage);
           // Scroll to bottom of the list
           mMessagesView.smoothScrollToPosition(mMessageAdapter.getCount() - 1);
           // After images are added to prompt and chat thread, we clear the imageURI list
           // Note: This has to be done after imageURIs are no longer needed by LlamaModule
           mSelectedImageUri = null;
+          promptID++;
           Runnable runnable =
               new Runnable() {
                 @Override
                 public void run() {
+                  Process.setThreadPriority(Process.THREAD_PRIORITY_MORE_FAVORABLE);
+                  ETLogging.getInstance().log("starting runnable generate()");
                   runOnUiThread(
                       new Runnable() {
                         @Override
@@ -600,34 +730,34 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
                           onModelRunStarted();
                         }
                       });
-                  ETLogging.getInstance().log("Running inference.. prompt=" + prompt);
                   long generateStartTime = System.currentTimeMillis();
-                  if (ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType())
+                  if (ModelUtils.getModelCategory(
+                          mCurrentSettingsFields.getModelType(),
+                          mCurrentSettingsFields.getBackendType())
                       == ModelUtils.VISION_MODEL) {
-                    if (!processedImageList.isEmpty()) {
-                      // For now, Llava only support 1 image.
-                      ETImage img = processedImageList.get(0);
-                      mModule.generate(
-                          processedImageList.get(0).getInts(),
-                          img.getWidth(),
-                          img.getHeight(),
-                          ModelUtils.VISION_MODEL_IMAGE_CHANNELS,
-                          prompt,
-                          ModelUtils.VISION_MODEL_SEQ_LEN,
-                          MainActivity.this);
-                    } else {
-                      // no image selected, we pass in empty int array
-                      mModule.generate(
-                          new int[0],
-                          0,
-                          0,
-                          ModelUtils.VISION_MODEL_IMAGE_CHANNELS,
-                          prompt,
-                          ModelUtils.VISION_MODEL_SEQ_LEN,
-                          MainActivity.this);
-                    }
+                    mModule.generateFromPos(
+                        finalPrompt,
+                        ModelUtils.VISION_MODEL_SEQ_LEN,
+                        startPos,
+                        MainActivity.this,
+                        false);
+                  } else if (mCurrentSettingsFields.getModelType() == ModelType.LLAMA_GUARD_3) {
+                    String llamaGuardPromptForClassification =
+                        PromptFormat.getFormattedLlamaGuardPrompt(rawPrompt);
+                    ETLogging.getInstance()
+                        .log("Running inference.. prompt=" + llamaGuardPromptForClassification);
+                    mModule.generate(
+                        llamaGuardPromptForClassification,
+                        llamaGuardPromptForClassification.length() + 64,
+                        MainActivity.this,
+                        false);
                   } else {
-                    mModule.generate(prompt, ModelUtils.TEXT_MODEL_SEQ_LEN, MainActivity.this);
+                    ETLogging.getInstance().log("Running inference.. prompt=" + finalPrompt);
+                    mModule.generate(
+                        finalPrompt,
+                        (int) (finalPrompt.length() * 0.75) + 64,
+                        MainActivity.this,
+                        false);
                   }
 
                   long generateDuration = System.currentTimeMillis() - generateStartTime;
@@ -642,7 +772,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
                   ETLogging.getInstance().log("Inference completed");
                 }
               };
-          new Thread(runnable).start();
+          executor.execute(runnable);
         });
     mMessageAdapter.notifyDataSetChanged();
   }
