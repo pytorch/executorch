@@ -4,6 +4,10 @@ from torch.ao.quantization.observer import UniformQuantizationObserverBase
 
 # TODO move to torch/ao/quantization/observer.py.
 class PerChannelParamObserver(UniformQuantizationObserverBase):
+    """
+    Minimize quantization loss caused by outlier via linear search. More details can be found at https://arxiv.org/pdf/2209.13325
+    """
+
     def __init__(
         self,
         ch_axis=0,
