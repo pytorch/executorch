@@ -143,6 +143,9 @@ class ModelArgs:
                 hidden_dim = int(self.ffn_dim_multiplier * hidden_dim)
             self.hidden_dim = find_multiple(hidden_dim, multiple_of)
 
+        if self.head_dim is None:
+            self.head_dim = self.dim // self.n_heads
+
 
 class KVCache(nn.Module):
     def __init__(
@@ -273,7 +276,7 @@ class Attention(nn.Module):
         self.n_local_heads = self.n_heads // model_parallel_size
         self.n_local_kv_heads = self.n_kv_heads // model_parallel_size
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
-        self.head_dim = args.dim // self.n_heads if args.head_dim is None else args.head_dim
+        self.head_dim = args.head_dim
         self.max_batch_size = args.max_batch_size
         self.max_seq_len = args.max_seq_len
         self.dim = args.dim
@@ -426,7 +429,7 @@ class TransformerBlock(nn.Module):
         self.use_kv_cache = args.use_kv_cache
         self.n_heads = args.n_heads
         self.dim = args.dim
-        self.head_dim = args.dim // args.n_heads if args.head_dim is None else args.head_dim
+        self.head_dim = args.head_dim
         self.attention = Attention(args, layer_id)
         if args.moe:
             self.block_sparse_moe = MOEFeedForward(args)
@@ -473,7 +476,7 @@ class Transformer(nn.Module):
                 precompute_freqs_cis, use_scaled=params.use_scaled_rope
             )
         freqs_cos, freqs_sin = self.precompute_freqs_cis(
-            params.dim // params.n_heads if params.head_dim is None else params.head_dim,
+            params.head_dim,
             (
                 params.max_seq_len  # Normal llama2.
                 if params.ffn_dim_multiplier is None
