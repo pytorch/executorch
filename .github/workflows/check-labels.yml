@@ -38,11 +38,11 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
-	with:
-	  fetch-depth: '0'
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v4
-	with:
-	  python-version: '3.10'
+        with:
+          python-version: '3.10'
       - name: Check labels
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
