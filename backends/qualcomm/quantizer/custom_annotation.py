@@ -10,6 +10,7 @@ from executorch.backends.qualcomm.quantizer.annotators import QUANT_ANNOTATION_K
 from executorch.backends.qualcomm.quantizer.quantizer import (
     get_16a8w_qnn_ptq_config,
     get_8a8w_qnn_ptq_config,
+    get_ptq_per_channel_quant_config,
     QuantizationConfig,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
