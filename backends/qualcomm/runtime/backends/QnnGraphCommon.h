@@ -26,44 +26,48 @@ class QnnGraph {
       const QnnImplementation& implementation,
       QnnBackend* backend,
       QnnContext* context,
-      const QnnExecuTorchProfileLevel& profile_level,
-      const std::string& graph_name)
-      : handle_(nullptr),
-        implementation_(implementation),
+      const QnnExecuTorchProfileLevel& profile_level)
+      : implementation_(implementation),
         backend_(backend),
         context_(context),
-        profile_level_(profile_level),
-        graph_name_(graph_name) {}
+        profile_level_(profile_level) {}
 
   virtual ~QnnGraph(){};
 
-  executorch::runtime::Error Configure();
+  executorch::runtime::Error Configure(const std::string& graph_name);
 
   Qnn_ErrorHandle_t GraphExecute(
+      const std::string& graph_name,
       const std::vector<Qnn_Tensor_t>& input_tensor_structs,
       std::vector<Qnn_Tensor_t>& output_tensor_structs);
 
-  Qnn_ErrorHandle_t GraphAddNode(const Qnn_OpConfig_t& op_config) {
+  Qnn_ErrorHandle_t GraphAddNode(
+      const std::string& graph_name,
+      const Qnn_OpConfig_t& op_config) {
     return implementation_.GetQnnInterface().qnn_graph_add_node(
-        handle_, op_config);
+        handle_[graph_name], op_config);
   };
   executorch::runtime::Error EnsureTensorInQnnGraph(
+      const std::string& graph_name,
       const std::shared_ptr<TensorWrapper>& tensor_wrapper);
 
-  Qnn_ErrorHandle_t GraphFinalize() {
+  Qnn_ErrorHandle_t GraphFinalize(const std::string& graph_name) {
     return implementation_.GetQnnInterface().qnn_graph_finalize(
-        handle_, profile_->GetHandle(), nullptr /* signal_handle */);
+        handle_[graph_name],
+        profile_[graph_name]->GetHandle(),
+        nullptr /* signal_handle */);
   };
   Qnn_ErrorHandle_t ProfileExecuteData(
+      const std::string& graph_name,
       executorch::runtime::EventTracer* event_tracer) {
-    return profile_->ProfileData(event_tracer);
+    return profile_[graph_name]->ProfileData(event_tracer);
   };
-  Qnn_GraphHandle_t GetHandle() {
-    return handle_;
+  Qnn_GraphHandle_t GetHandle(const std::string& graph_name) {
+    return handle_[graph_name];
   }
 
-  QnnProfile* GetProfile() {
-    return profile_.get();
+  QnnProfile* GetProfile(const std::string& graph_name) {
+    return profile_[graph_name].get();
   }
 
  protected:
@@ -73,13 +77,12 @@ class QnnGraph {
   };
 
  private:
-  Qnn_GraphHandle_t handle_;
+  std::unordered_map<std::string, Qnn_GraphHandle_t> handle_;
   const QnnImplementation& implementation_;
   QnnBackend* backend_;
   QnnContext* context_;
   QnnExecuTorchProfileLevel profile_level_;
-  std::string graph_name_;
-  std::unique_ptr<QnnProfile> profile_;
+  std::unordered_map<std::string, std::unique_ptr<QnnProfile>> profile_;
 };
 } // namespace qnn
 } // namespace backends
