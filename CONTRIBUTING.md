@@ -272,15 +272,16 @@ for basics.
    - If the reviewers have requests or questions, follow up with them.
    - The goal of the reviewer is to ensure that the code in the `main` branch of
      the repo is consistent, maintainable, and of high quality.
-1. Once approved, your reviewer will merge the PR.
-   - If you have the "write permission" to repo, and see the "Squash and merge"
-     button is green and all CI signals are good, you can merge it yourself. The
-     commit message in the text box when you click "Squash and merge" is the final
-     commit message in repo, so please make it meaningful.
-   - The reviewer may import the PR into Meta's internal system to validate it
-     against internal CI.
-   - If the PR is approved and not merged within a few business days, please
-     comment on the PR to ask about its status.
+1. Once the PR has been approved,
+   - If you have the "write permission" in this repo, and see the "Squash and
+     merge" button is green and all CI signals are passing, you can merge it
+     yourself by pushing the "Squash and merge" button, and then type the final
+     commit message in the text box.
+   - If you don't have "write permission" in this repo, the reviewer will take
+     care of the PR. The reviewer may import the PR into Meta's internal system
+     to validate it against internal CI.
+   - If the PR is approved but not merged within 5 business days, please comment
+     on the PR to ask about its status.
    - Note that if the `main` [CI](#continuous-integration) jobs are broken, we
      will only merge PRs that fix the broken jobs until all critical jobs are
      fixed.
