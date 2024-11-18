@@ -38,6 +38,7 @@ build_android_native_library() {
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
+    -DANDROID_PLATFORM=android-26 \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DEXECUTORCH_LOG_LEVEL=Info \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
@@ -66,6 +67,7 @@ build_android_native_library() {
   cmake extension/android \
     -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="${ANDROID_ABI}" \
+    -DANDROID_PLATFORM=android-26 \
     -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DEXECUTORCH_LOG_LEVEL=Info \
@@ -132,6 +134,11 @@ build_android_demo_apps() {
   pushd extension/benchmark/android/benchmark
   ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
   popd
+
+  pushd extension/android_test
+  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew testDebugUnitTest
+  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
+  popd
 }
 
 collect_artifacts_to_be_uploaded() {
@@ -156,6 +163,11 @@ collect_artifacts_to_be_uploaded() {
   mkdir -p "${MINIBENCH_APP_DIR}"
   cp extension/benchmark/android/benchmark/app/build/outputs/apk/debug/*.apk "${MINIBENCH_APP_DIR}"
   cp extension/benchmark/android/benchmark/app/build/outputs/apk/androidTest/debug/*.apk "${MINIBENCH_APP_DIR}"
+  # Collect Java library test
+  JAVA_LIBRARY_TEST_DIR="${ARTIFACTS_DIR_NAME}/library_test_dir"
+  mkdir -p "${JAVA_LIBRARY_TEST_DIR}"
+  cp extension/android_test/build/outputs/apk/debug/*.apk "${JAVA_LIBRARY_TEST_DIR}"
+  cp extension/android_test/build/outputs/apk/androidTest/debug/*.apk "${JAVA_LIBRARY_TEST_DIR}"
 }
 
 main() {

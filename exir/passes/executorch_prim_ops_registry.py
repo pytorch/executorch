@@ -4,8 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import builtins
+import math
 import operator
-from typing import Dict, Set, Union
+from typing import Any, Dict, Set, Union
 
 # necessary to ensure the ops are registered
 import torch
@@ -13,6 +15,8 @@ from executorch.exir.dialects._ops import bind_pattern_to_op, ops
 from torch import SymBool, SymFloat, SymInt
 from torch._ops import OpOverload
 from torch.library import Library
+
+# pyre-unsafe
 
 
 executorch_prims_lib = Library("executorch_prim", "DEF")
@@ -91,7 +95,25 @@ def neg(a: _SymScalar) -> _SymScalar:
     return -a  # pyre-ignore
 
 
-_PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS: Dict[OpOverload, OpOverload] = {
+@bind_pattern_to_op(executorch_prims_lib, "ceil.Scalar(Scalar a) -> Scalar")
+def ceil(a: _SymScalar) -> _SymScalar:
+    return math.ceil(a)  # pyre-ignore
+
+
+@bind_pattern_to_op(executorch_prims_lib, "round.Scalar(Scalar a) -> Scalar")
+def builtin_round(a: _SymScalar) -> _SymScalar:
+    return round(a)  # pyre-ignore
+
+
+@bind_pattern_to_op(executorch_prims_lib, "trunc.Scalar(Scalar a) -> Scalar")
+def trunc(a: _SymScalar) -> _SymScalar:
+    return math.trunc(a)  # pyre-ignore
+
+
+_PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS: Dict[Any, OpOverload] = {
+    builtins.round: ops.backend.executorch_prim.round.Scalar,
+    math.ceil: ops.backend.executorch_prim.ceil.Scalar,
+    math.trunc: ops.backend.executorch_prim.trunc.Scalar,
     operator.sub: ops.backend.executorch_prim.sub.Scalar,
     operator.mul: ops.backend.executorch_prim.mul.Scalar,
     operator.add: ops.backend.executorch_prim.add.Scalar,

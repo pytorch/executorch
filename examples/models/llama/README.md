@@ -136,6 +136,8 @@ Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
       </em>
 </p>
 
+[Please visit this section to try it on non-CPU backend, including CoreML, MPS, Qualcomm HTP or MediaTek](non_cpu_backends.md).
+
 # Instructions
 
 ## Tested on
@@ -237,10 +239,23 @@ You can export and run the original Llama 3 8B instruct model.
 
 2. Export model and generate `.pte` file
     ```
-    python -m examples.models.llama.export_llama --checkpoint <consolidated.00.pth> -p <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w  --group_size 128 -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --embedding-quantize 4,32 --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
+    python -m examples.models.llama.export_llama \
+	    --checkpoint <consolidated.00.pth> \
+		-p <params.json> \
+		-kv \
+		--use_sdpa_with_kv_cache \
+		-X \
+		-qmode 8da4w \
+		--group_size 128 \
+		-d fp32 \
+		--metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
+		--embedding-quantize 4,32 \
+		--output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
     ```
-
     Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `--embedding-quantize 4,32` as shown above to further reduce the model size.
+
+
+    If you're interested in deploying on non-CPU backends, [please refer the non-cpu-backend section](non_cpu_backends.md)
 
 ## Step 3: Run on your computer to validate
 
@@ -261,7 +276,7 @@ You can export and run the original Llama 3 8B instruct model.
 
     cmake --build cmake-out -j16 --target install --config Release
     ```
-Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the session of Common Issues and Mitigations below for solutions.
+Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the section of Common Issues and Mitigations below for solutions.
 
 2. Build llama runner.
     ```

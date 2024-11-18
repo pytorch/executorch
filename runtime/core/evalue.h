@@ -242,12 +242,13 @@ struct EValue {
   // Template constructor that allows construction from types that can be
   // dereferenced to produce a type that EValue can be implicitly constructed
   // from.
-  template <typename T>
-  /*implicit*/ EValue(
-      T&& value,
-      typename std::enable_if<std::is_convertible<
-          decltype(*std::forward<T>(value)),
-          EValue>::value>::type* = 0) {
+  template <
+      typename T,
+      typename = typename std::enable_if<std::is_convertible<
+          decltype(*std::forward<T>(std::declval<T>())), // declval to simulate
+                                                         // forwarding
+          EValue>::value>::type>
+  /*implicit*/ EValue(T&& value) {
     ET_CHECK_MSG(value != nullptr, "Pointer is null.");
     // Note that this ctor does not initialize this->tag directly; it is set by
     // moving in the new value.

@@ -318,6 +318,10 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().estimate_memory_layout();
   }
 
+  inline int32_t hashed_layout_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().hashed_layout();
+  }
+
   inline int32_t packed_dim_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().packed_dim();
   }
@@ -336,10 +340,6 @@ class ComputeGraph final {
 
   inline vkapi::BufferBindInfo numel_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().numel_ubo();
-  }
-
-  inline vkapi::BufferBindInfo axis_map_ubo(const ValueRef idx) {
-    return values_.at(idx).toTensor().axis_map_ubo();
   }
 
   inline bool has_standard_axis_map(const ValueRef idx) {
@@ -608,6 +608,22 @@ class ComputeGraph final {
       const utils::StorageType storage_type,
       const int64_t shared_object_idx = -1) {
     ValueRef t = add_tensor(sizes, dtype, storage_type, shared_object_idx);
+    ValueRef staging = set_input_tensor(t);
+    return {t, staging};
+  }
+
+  /*
+   * Add an input tensor with the specified properties along with its staging
+   * buffer.
+   */
+  inline IOValueRef add_input_tensor(
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::StorageType storage_type,
+      const utils::GPUMemoryLayout memory_layout,
+      const int64_t shared_object_idx = -1) {
+    ValueRef t = add_tensor(
+        sizes, dtype, storage_type, memory_layout, shared_object_idx);
     ValueRef staging = set_input_tensor(t);
     return {t, staging};
   }

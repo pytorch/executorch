@@ -654,7 +654,7 @@ Error Runner::mem_alloc(size_t alignment, size_t seq_len) {
   // Reset and re-init again to trigger registered function
   module_.reset();
   module_ = std::make_unique<Module>(
-      model_path_, Module::LoadMode::MmapUseMlockIgnoreErrors),
+      model_path_, Module::LoadMode::MmapUseMlockIgnoreErrors);
   ET_CHECK_MSG(load() == Error::Ok, "Runner failed to load method");
 
   return Error::Ok;

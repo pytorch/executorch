@@ -245,6 +245,7 @@ vkapi::VulkanImage allocate_image(
       vkapi::create_extent3d(image_extents),
       image_format,
       image_type,
+      context_ptr->preferred_image_tiling(),
       image_view_type,
       sampler_props,
       sampler,
@@ -454,7 +455,6 @@ vTensor::vTensor(
       sizes_uniform_(),
       strides_uniform_(),
       numel_uniform_(),
-      axis_map_uniform_(),
       logical_limits_uniform_(),
       // Construct Tensor storage
       storage_(
@@ -501,7 +501,6 @@ vTensor::vTensor(
       sizes_uniform_(),
       strides_uniform_(),
       numel_uniform_(),
-      axis_map_uniform_(),
       logical_limits_uniform_(),
       // Construct Tensor storage
       storage_(context, image) {
@@ -527,7 +526,6 @@ vTensor::vTensor(vTensor& other)
       sizes_uniform_(),
       strides_uniform_(),
       numel_uniform_(),
-      axis_map_uniform_(),
       logical_limits_uniform_(),
       // Copy Tensor storage
       storage_(other.storage_) {}
@@ -553,7 +551,6 @@ vTensor::vTensor(
       sizes_uniform_(),
       strides_uniform_(),
       numel_uniform_(),
-      axis_map_uniform_(),
       logical_limits_uniform_(),
       // Copy Tensor storage
       storage_(other.storage_, vkapi::element_size(dtype_) * offset_numel) {
@@ -630,14 +627,6 @@ const vkapi::BufferBindInfo vTensor::strides_ubo() {
   return vkapi::BufferBindInfo(strides_uniform_.buffer());
 }
 
-const vkapi::BufferBindInfo vTensor::axis_map_ubo() {
-  if (!axis_map_uniform_.buffer()) {
-    axis_map_uniform_ =
-        ParamsBuffer(storage_.context_, utils::make_ivec4(axis_map_));
-  }
-  return vkapi::BufferBindInfo(axis_map_uniform_.buffer());
-}
-
 const vkapi::BufferBindInfo vTensor::logical_limits_ubo() {
   if (!logical_limits_uniform_.buffer()) {
     logical_limits_uniform_ = ParamsBuffer(storage_.context_, logical_limits_);
@@ -709,9 +698,6 @@ void vTensor::update_metadata() {
   }
   if (numel_uniform_.buffer()) {
     numel_uniform_.update(numel_);
-  }
-  if (axis_map_uniform_.buffer()) {
-    axis_map_uniform_.update(utils::make_ivec4(axis_map_));
   }
   if (logical_limits_uniform_.buffer()) {
     logical_limits_uniform_.update(logical_limits_);

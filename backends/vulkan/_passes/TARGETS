@@ -12,19 +12,7 @@ runtime.python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/exir:pass_base",
-    ],
-)
-
-runtime.python_library(
-    name = "remove_local_scalar_dense",
-    srcs = ["remove_local_scalar_dense_ops.py"],
-    visibility = [
-        "//executorch/backends/...",
-    ],
-    deps = [
-        "//caffe2:torch",
-        "//executorch/exir:pass_base",
-        "//executorch/exir/dialects:lib",
+        "//executorch/backends/vulkan:utils_lib",
     ],
 )
 
@@ -43,6 +31,34 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "remove_local_scalar_dense",
+    srcs = ["remove_local_scalar_dense_ops.py"],
+    visibility = [
+        "//executorch/backends/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+runtime.python_library(
+    name = "tag_memory_meta_pass",
+    srcs = ["tag_memory_meta_pass.py"],
+    visibility = [
+        "//executorch/backends/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//executorch/backends/vulkan:utils_lib",
+        "//executorch/backends/vulkan/serialization:lib",
+    ],
+)
+
+runtime.python_library(
     name = "vulkan_passes",
     srcs = [
         "__init__.py",
@@ -55,5 +71,6 @@ runtime.python_library(
         ":insert_prepack_nodes",
         ":int4_weight_only_quantizer",
         ":remove_local_scalar_dense",
+        ":tag_memory_meta_pass"
     ]
 )

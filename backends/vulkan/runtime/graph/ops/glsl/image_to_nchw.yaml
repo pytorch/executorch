@@ -8,14 +8,16 @@ image_to_nchw:
   parameter_names_with_default_values:
     DTYPE: float
     STORAGE: texture3d
+    TO_STAGING: True
   generate_variant_forall:
     DTYPE:
       - VALUE: half
       - VALUE: float
       - VALUE: int
       - VALUE: int8
-    STORAGE:
-      - VALUE: texture3d
-      - VALUE: texture2d
   shader_variants:
-    - NAME: image_to_nchw
+    - NAME: image_to_nchw_texture3d
+    - NAME: image_to_nchw_texture2d
+      STORAGE: texture2d
+    - NAME: clone_image_to_buffer
+      TO_STAGING: False

@@ -1123,6 +1123,7 @@ TEST_F(VulkanComputeAPITest, test_tensor_creation_from_vulkan_image) {
       vkapi::create_extent3d(image_extents),
       image_format,
       image_type,
+      context()->preferred_image_tiling(),
       image_view_type,
       sampler_props,
       sampler,
@@ -1588,9 +1589,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       /*shared_object_idx = */ 4);
 
   // +2: t.sizes_ubo() for each staging shader
-  // +2: t.axis_map_ubo() for each staging shader
   // +2: staging buffer for each input tensor
-  expected_vma_allocation_count += 6;
+  expected_vma_allocation_count += 4;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   ValueRef c = graph.add_tensor(
@@ -1603,8 +1603,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
 
   // +2: alpha UBO, broadcast UBO for arithmetic shader
   // +1: t.sizes_ubo() for arithmetic shader output c
-  // +1: t.axis_map_ubo() for arithmetic shader output c
-  expected_vma_allocation_count += 4;
+  expected_vma_allocation_count += 3;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   IOValueRef d = graph.add_input_tensor(
@@ -1613,9 +1612,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       /*shared_object_idx = */ 2);
 
   // +1: t.sizes_ubo() uniform buffer for staging shader
-  // +1: t.axis_map_ubo() uniform buffer for staging shader
   // +1: staging buffer for the input tensor
-  expected_vma_allocation_count += 3;
+  expected_vma_allocation_count += 2;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   ValueRef e = graph.add_tensor(
@@ -1628,8 +1626,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
 
   // +2: alpha UBO, broadcast UBO for arithmetic shader
   // +1: t.sizes_ubo() for arithmetic shader output e
-  // +1: t.axis_map_ubo() for arithmetic shader output e
-  expected_vma_allocation_count += 4;
+  expected_vma_allocation_count += 3;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   IOValueRef out = {};
@@ -1903,6 +1900,61 @@ TEST(VulkanComputeGraphTest, test_large_graph) {
   ss << "[          ] Model Load:" << std::setw(10) << std::right
      << build_time.count() << " us" << std::endl;
   std::cout << ss.str();
+}
+
+void test_clone(
+    std::vector<int64_t> sizes,
+    utils::StorageType src_storage,
+    utils::GPUMemoryLayout src_layout,
+    utils::StorageType dst_storage,
+    utils::GPUMemoryLayout dst_layout) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  IOValueRef a =
+      graph.add_input_tensor(sizes, vkapi::kFloat, src_storage, src_layout);
+
+  IOValueRef out = {};
+  out.value = graph.add_tensor(sizes, vkapi::kFloat, dst_storage, dst_layout);
+
+  auto copyFn = VK_GET_OP_FN("aten.clone.default");
+  copyFn(graph, {a.value, kDummyValueRef, out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  fill_vtensor(graph, a, 0.0f, /*iota = */ true);
+
+  graph.propagate_resize();
+  graph.execute();
+
+  EXTRACT_TENSOR(out);
+  EXTRACT_TENSOR(a);
+
+  for (int i = 0; i < graph.numel_of(a.value); ++i) {
+    EXPECT_TRUE(data_out[i] == data_a[i]);
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_clone) {
+  std::vector<std::pair<utils::GPUMemoryLayout, utils::GPUMemoryLayout>> cases{
+      {utils::kWidthPacked, utils::kWidthPacked},
+      {utils::kWidthPacked, utils::kChannelsPacked},
+      {utils::kChannelsPacked, utils::kChannelsPacked},
+  };
+
+  for (std::vector<int64_t> sizes : standard_sizes_to_test) {
+    for (auto& [src_layout, dst_layout] : cases) {
+      test_clone(
+          sizes, utils::kTexture3D, src_layout, utils::kBuffer, dst_layout);
+      test_clone(
+          sizes, utils::kBuffer, src_layout, utils::kTexture3D, dst_layout);
+      test_clone(
+          sizes, utils::kTexture3D, src_layout, utils::kTexture3D, dst_layout);
+    }
+  }
 }
 
 TEST(VulkanComputeGraphTest, test_etvk_copy_offset_node) {

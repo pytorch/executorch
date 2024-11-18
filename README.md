@@ -43,6 +43,11 @@ We recommend using the latest release tag from the
 See [CONTRIBUTING.md](CONTRIBUTING.md) for details about issues, PRs, code
 style, CI jobs, and other development topics.
 
+To connect with us and other community members, we invite you to join PyTorch Slack community by filling out this [form](https://docs.google.com/forms/d/e/1FAIpQLSeADnUNW36fjKjYzyHDOzEB_abKQE9b6gqqW9NXse6O0MWh0A/viewform). Once you've joined, you can:
+* Head to the `#executorch-general` channel for general questions, discussion, and community support.
+* Join the `#executorch-contributors` channel if you're interested in contributing directly to project development.
+
+
 ## Directory Structure
 
 ```

@@ -698,6 +698,17 @@ class TestQNNQuantizedOperator(TestQNN):
                 )
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_16a4w_conv2d_qat(self):
+        modules = [Conv2dSingle(), Conv2dSingle(bias=False)]  # noqa: F405
+        sample_input = (torch.randn([1, 1, 3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                prepared = self.get_prepared_qat_module(module, sample_input)
+                converted = self.get_converted_sgd_trained_module(
+                    module, prepared, sample_input
+                )
+                self.lower_module_and_test_output(converted, sample_input)
+
     def test_qnn_backend_16a4w_layer_norm(self):
         module = LayerNorm()  # noqa: F405
         sample_input = (torch.randn(196, 768),)
@@ -1063,18 +1074,8 @@ class TestQNNQuantizedOperator(TestQNN):
         """
         module = Linear()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
-
-        module = self.get_prepared_qat_module(module, sample_input)
-
-        optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
-        criterion = torch.nn.CrossEntropyLoss()
-        output = module(*sample_input)
-        loss = criterion(output, module(*sample_input))
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        module = torch.ao.quantization.quantize_pt2e.convert_pt2e(module)
+        prepared = self.get_prepared_qat_module(module, sample_input)
+        module = self.get_converted_sgd_trained_module(module, prepared, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_log_softmax(self):
@@ -2917,6 +2918,44 @@ class TestExampleScript(TestQNN):
                 cpu, htp = msg["CPU"], msg["HTP"]
                 for k, v in cpu.items():
                     self.assertLessEqual(abs(v[0] - htp[k][0]), 5)
+
+    def test_wav2letter(self):
+        if not self.required_envs([self.pretrained_weight]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/wav2letter.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--pretrained_weight",
+            self.pretrained_weight,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertLessEqual(msg["wer"], 0.5)
+                self.assertLessEqual(msg["cer"], 0.25)
 
     def test_export_example(self):
         if not self.required_envs([self.model_name]):

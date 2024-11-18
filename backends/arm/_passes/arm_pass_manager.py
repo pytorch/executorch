@@ -12,6 +12,7 @@ from executorch.backends.arm._passes.annotate_channels_last_dim_order_pass impor
     AnnotateChannelsLastDimOrder,
 )
 from executorch.backends.arm._passes.cast_int64_pass import CastInt64ToInt32Pass
+from executorch.backends.arm._passes.conv1d_unsqueeze_pass import Conv1dUnsqueezePass
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
 )
@@ -22,6 +23,7 @@ from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
 from executorch.backends.arm._passes.decompose_layernorm_pass import (
     DecomposeLayerNormPass,
 )
+from executorch.backends.arm._passes.decompose_linear_pass import DecomposeLinearPass
 from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
 from executorch.backends.arm._passes.decompose_softmaxes_pass import (
     DecomposeSoftmaxesPass,
@@ -42,6 +44,7 @@ from executorch.backends.arm._passes.size_adjust_conv2d_pass import SizeAdjustCo
 from executorch.backends.arm._passes.unsqueeze_scalar_placeholders_pass import (
     UnsqueezeScalarPlaceholdersPass,
 )
+from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_manager import PassManager
@@ -57,6 +60,7 @@ class ArmPassManager(PassManager):
     ):
         """Apply passes before transforming program to backend"""
         self.add_pass(CastInt64ToInt32Pass(exported_program))
+        self.add_pass(RemoveGetItemPass())
         self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(RemoveClonePass())
@@ -69,7 +73,9 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeDivPass())
         self.add_pass(InsertSqueezeAfterSumPass())
         self.add_pass(ConvertSplitToSlicePass())
+        self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSoftmaxesPass())
+        self.add_pass(DecomposeLinearPass())
         for spec in compile_spec:
             if spec.key == "permute_memory_format":
                 memory_format = spec.value.decode()

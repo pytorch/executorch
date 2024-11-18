@@ -10,15 +10,19 @@ from multiprocessing.connection import Client
 
 import numpy as np
 import torch
-
-from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.quantizer.utils import (
-    _derived_bias_quant_spec,
-    MovingAverageMinMaxObserver,
-    ParamObserver,
+from executorch.backends.qualcomm.quantizer.annotators import (
     QuantizationConfig,
     QuantizationSpec,
 )
+from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
+    PerChannelParamObserver,
+)
+from executorch.backends.qualcomm.quantizer.qconfig import (
+    _derived_bias_quant_spec,
+    MovingAverageMinMaxObserver,
+)
+
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_EXPAND_BROADCAST_SHAPE,
 )
@@ -87,7 +91,7 @@ def main(args):
         quant_max=torch.iinfo(torch.int8).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=0,
-        observer_or_fake_quant_ctr=ParamObserver.with_args(
+        observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(
             **{"steps": 200, "use_mse": True}
         ),
     )

@@ -20,7 +20,6 @@ from executorch.extension.llm.tokenizer.tokenizer import (
     Tokenizer as SentencePieceTokenizer,
 )
 from executorch.extension.llm.tokenizer.utils import get_tokenizer
-from lm_eval.api.model import LM
 from lm_eval.evaluator import simple_evaluate
 
 from .evaluate.eager_eval import EagerEvalWrapper
@@ -159,7 +158,7 @@ class ETRunnerEvalWrapper(EagerEvalWrapper):
 def gen_eval_wrapper(
     model_name: str,
     args: argparse.ArgumentParser,
-) -> LM:
+):
     """
     Generates a wrapper interface around the provided model and tokenizer for
     the lm-evaluation-harness library.
@@ -191,7 +190,7 @@ def gen_eval_wrapper(
 
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
     # GPTFastEvalWrapper: Create a wrapper around a pre-exported model
-    manager: LLMEdgeManager = _prepare_for_llama_export(model_name, args)
+    manager: LLMEdgeManager = _prepare_for_llama_export(args)
 
     if len(quantizers) != 0:
         manager = manager.export().pt2e_quantize(quantizers)
