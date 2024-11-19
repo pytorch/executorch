@@ -458,7 +458,7 @@ void ComputePipelineCache::save_cache() {
   if (cache_data_path_.empty()) {
     return;
   }
-  
+
   // Return if file exists; the cache is already saved
   std::ifstream ifile(cache_data_path_);
   if (ifile.good()) {
