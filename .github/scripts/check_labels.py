@@ -42,6 +42,9 @@ def main() -> None:
     repo = GitRepo(get_git_repo_dir(), get_git_remote_name())
     org, project = repo.gh_owner_and_name()
     pr = GitHubPR(org, project, args.pr_num)
+    print(f"repo: {repo}")
+    print(f"org, project: {org}, {project}")
+    print(f"pr: {pr}")
 
     try:
         if not has_required_labels(pr):
@@ -50,11 +53,14 @@ def main() -> None:
             if args.exit_non_zero:
                 sys.exit(1)
         else:
+            print("pass")
             delete_all_label_err_comments(pr)
     except Exception as e:
+        print("general exception")
         if args.exit_non_zero:
             sys.exit(1)
 
+    print("success")
     sys.exit(0)
 
 
