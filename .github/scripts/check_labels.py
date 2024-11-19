@@ -12,7 +12,10 @@ from trymerge import GitHubPR
 
 def delete_all_label_err_comments(pr: "GitHubPR") -> None:
     for comment in pr.get_comments():
+        print(f"comment: {comment}")
         if is_label_err_comment(comment):
+            print("is label err comment")
+            print(f"comment.database_id: {comment.database_id}")
             gh_delete_comment(pr.org, pr.project, comment.database_id)
 
 
@@ -57,6 +60,7 @@ def main() -> None:
             delete_all_label_err_comments(pr)
     except Exception as e:
         print("general exception")
+        print(e)
         if args.exit_non_zero:
             sys.exit(1)
 
