@@ -695,6 +695,33 @@ inline constexpr auto c8 = ::executorch::aten::ScalarType::ComplexDouble;
 inline constexpr auto b1 = ::executorch::aten::ScalarType::Bool;
 inline constexpr auto bf = ::executorch::aten::ScalarType::BFloat16;
 
+using U1 =
+    typename ScalarTypeToCppType<::executorch::aten::ScalarType::Byte>::type;
+using I1 =
+    typename ScalarTypeToCppType<::executorch::aten::ScalarType::Char>::type;
+using I2 =
+    typename ScalarTypeToCppType<::executorch::aten::ScalarType::Short>::type;
+using I4 =
+    typename ScalarTypeToCppType<::executorch::aten::ScalarType::Int>::type;
+using I8 =
+    typename ScalarTypeToCppType<::executorch::aten::ScalarType::Long>::type;
+using F2 =
+    typename ScalarTypeToCppType<::executorch::aten::ScalarType::Half>::type;
+using F4 =
+    typename ScalarTypeToCppType<::executorch::aten::ScalarType::Float>::type;
+using F8 =
+    typename ScalarTypeToCppType<::executorch::aten::ScalarType::Double>::type;
+using C2 = typename ScalarTypeToCppType<
+    ::executorch::aten::ScalarType::ComplexHalf>::type;
+using C4 = typename ScalarTypeToCppType<
+    ::executorch::aten::ScalarType::ComplexFloat>::type;
+using C8 = typename ScalarTypeToCppType<
+    ::executorch::aten::ScalarType::ComplexDouble>::type;
+using B1 =
+    typename ScalarTypeToCppType<::executorch::aten::ScalarType::Bool>::type;
+using BF = typename ScalarTypeToCppType<
+    ::executorch::aten::ScalarType::BFloat16>::type;
+
 inline constexpr std::
     array<int, int(::executorch::aten::ScalarType::NumOptions)>
         dtype2index = {{
@@ -1293,5 +1320,19 @@ using ::executorch::runtime::toString;
 using ::executorch::runtime::is_floating_point;
 using ::executorch::runtime::is_reduced_floating_point;
 #endif
+namespace internal {
+using ::executorch::runtime::internal::B1;
+using ::executorch::runtime::internal::C2;
+using ::executorch::runtime::internal::C4;
+using ::executorch::runtime::internal::C8;
+using ::executorch::runtime::internal::F2;
+using ::executorch::runtime::internal::F4;
+using ::executorch::runtime::internal::F8;
+using ::executorch::runtime::internal::I1;
+using ::executorch::runtime::internal::I2;
+using ::executorch::runtime::internal::I4;
+using ::executorch::runtime::internal::I8;
+using ::executorch::runtime::internal::U1;
+} // namespace internal
 } // namespace executor
 } // namespace torch
