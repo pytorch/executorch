@@ -158,7 +158,7 @@ class TestLayerNorm(unittest.TestCase):
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
     # Skip tests that require transposes.
     @parameterized.expand(test_data_suite[:-2])
-    @common.expectedFailureOnFVP
+    @unittest.expectedFailure
     def test_layer_norm_u55_BI(
         self,
         test_name: str,

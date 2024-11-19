@@ -161,7 +161,7 @@ class TestBMM(unittest.TestCase):
         )
 
     @parameterized.expand(BMM.test_parameters[1:])
-    @unittest.expectedFailure
+    @common.expectedFailureOnFVP
     def test_bmm_u85_BI_xfails(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
         self._test_bmm_ethosu_BI_pipeline(
