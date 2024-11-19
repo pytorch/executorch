@@ -51,10 +51,10 @@ def main() -> None:
 
     try:
         if not has_required_labels(pr):
-            print(LABEL_ERR_MSG)
+            print(LABEL_ERR_MSG, flush=True)
             add_label_err_comment(pr)
             if args.exit_non_zero:
-                sys.exit(1)
+                raise RuntimeError("PR does not have required labels")
         else:
             print("pass")
             delete_all_label_err_comments(pr)
@@ -62,7 +62,7 @@ def main() -> None:
         print("general exception")
         print(e)
         if args.exit_non_zero:
-            sys.exit(1)
+            raise RuntimeError(f"Error checking labels: {e}") from e
 
     print("success")
     sys.exit(0)
