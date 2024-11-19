@@ -133,6 +133,18 @@ python_library(
 )
 
 python_library(
+    name = "graph_builder",
+    srcs = [
+        "graph_builder.py",
+    ],
+    typing = True,
+    deps = [
+        "fbcode//caffe2:torch",
+        "fbcode//executorch/exir:pass_base",
+    ],
+)
+
+python_library(
     name = "fuse_ops",
     srcs = [
         "fuse_ops.py",
