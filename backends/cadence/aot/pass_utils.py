@@ -89,3 +89,12 @@ def get_node_names_list_from_gm(
             continue
         graph_nodes.append(node.name)
     return graph_nodes
+
+
+def count_node(graph_module: torch.fx.GraphModule, target: torch.fx.node.Target) -> int:
+    """Count the number of nodes with target `target` in the graph."""
+    total = 0
+    for node in graph_module.graph.nodes:
+        if node.op == "call_function" and node.target == target:
+            total += 1
+    return total

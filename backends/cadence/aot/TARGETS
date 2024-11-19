@@ -133,6 +133,18 @@ python_library(
 )
 
 python_library(
+    name = "graph_builder",
+    srcs = [
+        "graph_builder.py",
+    ],
+    typing = True,
+    deps = [
+        "fbcode//caffe2:torch",
+        "fbcode//executorch/exir:pass_base",
+    ],
+)
+
+python_library(
     name = "fuse_ops",
     srcs = [
         "fuse_ops.py",
@@ -148,5 +160,22 @@ python_library(
         "//executorch/exir/dialects/edge:lib",
         "//executorch/exir/passes:lib",
         "//executorch/exir/passes:spec_prop_pass",
+    ],
+)
+
+python_unittest(
+    name = "test_graph_builder",
+    srcs = [
+        "tests/test_graph_builder.py",
+    ],
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:graph_builder",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//later:lib",
+        ":ops_registrations"
     ],
 )
