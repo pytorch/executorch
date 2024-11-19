@@ -1,16 +1,17 @@
 # (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
 
-import torch
 import executorch.backends.cadence.aot.ops_registrations  # noqa
+import torch
 from executorch.backends.cadence.aot.graph_builder import (
     GraphBuilder,
     single_op_builder,
 )
+from executorch.backends.cadence.aot.pass_utils import count_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from later.unittest import TestCase
-from executorch.backends.cadence.aot.pass_utils import count_node
+
 
 class TestGraphBuilder(TestCase):
     def test_graph_with_single_im2row(self) -> None:
