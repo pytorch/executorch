@@ -626,6 +626,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       // here.
       compute_graph->~ComputeGraph();
     }
+    api::context()->adapter_ptr()->compute_pipeline_cache().save_cache();
   }
 };
 
