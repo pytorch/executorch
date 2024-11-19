@@ -261,7 +261,7 @@ jobs:
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/models/llama/install_requirements.sh
         # Test llama2
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llama.sh stories110M cmake "${DTYPE}" "${MODE}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llama.sh -model stories110M -build_tool cmake -dtype "${DTYPE}" -mode "${MODE}"
 
   # # TODO(jackzhxng): Runner consistently runs out of memory before test finishes. Try to find a more powerful runner.
   # test-llava-runner-macos:
