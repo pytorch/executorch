@@ -32,7 +32,7 @@ Kryo CPU, Adreno GPU, and Hexagon processors. More details can be found [here](h
 Currently, this ExecuTorch Backend can delegate AI computations to Hexagon processors through Qualcomm AI Engine Direct APIs.
 
 
-## Prerequsites (Hardware and Software)
+## Prerequisites (Hardware and Software)
 
 ### Host OS
 
@@ -340,7 +340,7 @@ The `<device_serial>` can be found by `adb devices` command.
 
 After the above command, pre-processed inputs and outputs are put in `$EXECUTORCH_ROOT/deeplab_v3` and `$EXECUTORCH_ROOT/deeplab_v3/outputs` folder.
 
-The command-line arguents are written in [utils.py](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/utils.py#L127).
+The command-line arguments are written in [utils.py](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/utils.py#L139).
 The model, inputs, and output location are passed to `qnn_executorch_runner` by `--model_path`, `--input_list_path`, and `--output_folder_path`.
 
 
