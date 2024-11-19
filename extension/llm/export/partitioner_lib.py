@@ -191,5 +191,9 @@ def get_qnn_partitioner(
         ),
         skip_node_id_set={},
         skip_node_op_set=skip_node_op_set,
-        skip_mutable_buffer=False,
+        # TODO: For fp flow, the behavior of mutable buffer is unexpected
+        # It seems that delegated mutable buffer is not removed from the output.
+        # When I trace back, I found the mutable buffer doesn't exist in original_program.state_dict.
+        # So, it doesn't be added into output_specs_to_delete.
+        skip_mutable_buffer=use_fp16,
     )
