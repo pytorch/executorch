@@ -275,8 +275,6 @@ class TestConvCombos(unittest.TestCase):
             model.get_inputs(),
         )
 
-    # Numerical Issues on FVP, MLETORCH-520
-    @common.expectedFailureOnFVP
     def test_conv_meandim_u85_BI(self):
         model = ComboConv2dMeandim()
         self._test_conv_combo_ethos_BI_pipeline(

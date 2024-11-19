@@ -170,9 +170,8 @@ class TestLayerNorm(unittest.TestCase):
         )
 
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
-    @parameterized.expand(test_data_suite[:-1])
-    @common.expectedFailureOnFVP
-    def test_layer_norm_u85_BI_fvp_xfails(
+    @parameterized.expand(test_data_suite[:-2])
+    def test_layer_norm_u85_BI_fvp(
         self,
         test_name: str,
         test_data: torch.Tensor,
@@ -182,7 +181,7 @@ class TestLayerNorm(unittest.TestCase):
             self.LayerNorm(*model_params), common.get_u85_compile_spec(), (test_data,)
         )
 
-    @parameterized.expand(test_data_suite[-1:])
+    @parameterized.expand(test_data_suite[-2:])
     @unittest.skip  # Flaky
     def test_layer_norm_u85_BI(
         self,
