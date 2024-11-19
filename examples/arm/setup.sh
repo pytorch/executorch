@@ -89,7 +89,11 @@ ethos_u_base_rev="24.08"
 # tosa reference model
 tosa_reference_model_url="https://review.mlplatform.org/tosa/reference_model"
 tosa_reference_model_rev="f9ea4ab7da19318fe36b1c34d68a3e40fd6e56c5"
- 
+
+# vela
+vela_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u-vela"
+vela_rev="a08fc18780827b5fefc814dd0162ee6317ce0ae7"
+
 ########
 ### Mandatory user args
 ########
@@ -198,6 +202,7 @@ function setup_ethos_u() {
     cd ethos-u
     git reset --hard ${ethos_u_base_rev}
     python3 ./fetch_externals.py -c ${ethos_u_base_rev}.json fetch
+
     pip install pyelftools
     echo "[${FUNCNAME[0]}] Done @ $(git describe --all --long 3> /dev/null) in ${root_dir}/ethos-u dir."
 }
@@ -259,9 +264,9 @@ function setup_vela() {
     #
     cd "${root_dir}"
     if [[ ! -e ethos-u-vela ]]; then
-        git clone https://review.mlplatform.org/ml/ethos-u/ethos-u-vela
+        git clone ${vela_repo_url}
         repo_dir="${root_dir}/ethos-u-vela"
-        base_rev=57ce18c89ccc6f6309333dccb24ed30dc68b571f
+        base_rev=${vela_rev}
         patch_repo
     fi
     cd "${root_dir}/ethos-u-vela"
