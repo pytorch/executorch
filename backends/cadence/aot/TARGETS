@@ -150,3 +150,20 @@ python_library(
         "//executorch/exir/passes:spec_prop_pass",
     ],
 )
+
+python_unittest(
+    name = "test_graph_builder",
+    srcs = [
+        "tests/test_graph_builder.py",
+    ],
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:graph_builder",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//later:lib",
+        ":ops_registrations"
+    ],
+)
