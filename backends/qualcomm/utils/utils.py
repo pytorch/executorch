@@ -1058,7 +1058,9 @@ def generate_qnn_executorch_compiler_spec(
             SM8450 (Snapdragon 8 Gen 1)
             SM8475(Snapdragon 8 Gen 1+)
             SM8550(Snapdragon 8 Gen 2)
+            SM8635(Snapdragon 8s Gen 3)
             SM8650(Snapdragon 8 Gen 3)
+            SM8750(Snapdragon 8 Elite)
         backend_options: Options required by different backends.
         debug: Enable verbose logging. Disclaimer: this option must change in
             the near future.
@@ -1148,7 +1150,9 @@ def generate_qnn_executorch_compiler_spec(
 def get_soc_to_arch_map():
     return {
         "SSG2115P": HtpArch.V73,
+        "SM8750": HtpArch.V79,
         "SM8650": HtpArch.V75,
+        "SM8635": HtpArch.V68,
         "SM8550": HtpArch.V73,
         "SM8475": HtpArch.V69,
         "SM8450": HtpArch.V69,
@@ -1159,7 +1163,9 @@ def get_soc_to_arch_map():
 def get_soc_to_chipset_map():
     return {
         "SSG2115P": QcomChipset.SSG2115P,
+        "SM8750": QcomChipset.SM8750,
         "SM8650": QcomChipset.SM8650,
+        "SM8635": QcomChipset.SM8635,
         "SM8550": QcomChipset.SM8550,
         "SM8475": QcomChipset.SM8475,
         "SM8450": QcomChipset.SM8450,
