@@ -16,7 +16,7 @@ on:
   # a PR that targets a gh/**/base branch.
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
-    branches: [gh/**/base, main]
+    branches: [gh/**/base]
 
   workflow_dispatch:
     inputs:

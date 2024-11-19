@@ -66,19 +66,6 @@ def gh_fetch_url_and_headers(
         raise
 
 
-# def gh_fetch_url(
-#     url: str,
-#     *,
-#     headers: Optional[Dict[str, str]] = None,
-#     data: Union[Optional[Dict[str, Any]], str] = None,
-#     method: Optional[str] = None,
-#     reader: Callable[[Any], Any] = lambda x: x.read(),
-# ) -> Any:
-#     print(f"api return conent: {gh_fetch_url_and_headers(url, headers=headers, data=data, reader=json.load, method=method)}")
-#     return gh_fetch_url_and_headers(
-#         url, headers=headers, data=data, reader=json.load, method=method
-#     )[1]
-
 def gh_fetch_url(
     url: str,
     *,
@@ -179,12 +166,6 @@ def gh_post_commit_comment(
         dry_run,
     )
 
-
-# def gh_delete_comment(org: str, repo: str, comment_id: int) -> None:
-#     print("deleting comment")
-#     url = f"{GITHUB_API_URL}/repos/{org}/{repo}/issues/comments/{comment_id}"
-#     print(f"url: {url}")
-#     gh_fetch_url(url, method="DELETE")
 
 def gh_delete_comment(org: str, repo: str, comment_id: int) -> None:
     url = f"{GITHUB_API_URL}/repos/{org}/{repo}/issues/comments/{comment_id}"

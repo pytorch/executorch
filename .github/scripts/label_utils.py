@@ -64,7 +64,6 @@ def get_last_page_num_from_header(header: Any) -> int:
 @lru_cache
 def gh_get_labels(org: str, repo: str) -> List[str]:
     prefix = f"https://api.github.com/repos/{org}/{repo}/labels?per_page=100"
-    print(f"prefix: {prefix}")
     header, info = request_for_labels(prefix + "&page=1")
     labels: List[str] = []
     update_labels(labels, info)
@@ -76,8 +75,6 @@ def gh_get_labels(org: str, repo: str) -> List[str]:
     for page_number in range(2, last_page + 1):  # skip page 1
         _, info = request_for_labels(prefix + f"&page={page_number}")
         update_labels(labels, info)
-
-    print(f"all labels on gh: {labels}")
 
     return labels
 
@@ -115,15 +112,11 @@ def get_release_notes_labels(org: str, repo: str) -> List[str]:
 
 
 def has_required_labels(pr: "GitHubPR") -> bool:
-    print(f"pr: {pr}, pr.org: {pr.org}, pr.project: {pr.project}")
     pr_labels = pr.get_labels()
-    print(f"pr_labels: {pr_labels}")
     # Check if PR is not user facing
     is_not_user_facing_pr = any(
         label.strip() == "topic: not user facing" for label in pr_labels
     )
-    print(f"is_not_user_facing_pr: {is_not_user_facing_pr}")
-    print(f"release note labels: {get_release_notes_labels(pr.org, pr.project)}")
     return is_not_user_facing_pr or any(
         label.strip() in get_release_notes_labels(pr.org, pr.project)
         for label in pr_labels
