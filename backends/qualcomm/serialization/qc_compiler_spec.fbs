@@ -1,8 +1,10 @@
 //============================================================================
 //
-//  Copyright (c) 2023 Qualcomm Technologies, Inc.
-//  All Rights Reserved.
-//  Confidential and Proprietary - Qualcomm Technologies, Inc.
+// Copyright (c) Qualcomm Innovation Center, Inc.
+// All rights reserved
+//
+// This source code is licensed under the BSD-style license found in the
+// LICENSE file in the root directory of this source tree.
 //
 //============================================================================
 
@@ -118,6 +120,10 @@ table QnnExecuTorchHtpBackendOptions {
   /// pte, it is possible to reserve a single spill-fill allocation that
   /// could be re-used across all the splits.
   use_multi_contexts:bool;
+
+  /// When multiple graphs appear inside the same context,
+  /// weights could be reused across all graphs.
+  use_weight_sharing:bool;
 }
 
 /// Logging level of the delegate and QNN backend.
@@ -177,7 +183,10 @@ table QnnExecuTorchOptions {
   shared_buffer:bool;
 
   /// Is model from qnn context binary
-  is_from_context_binary: bool;
+  is_from_context_binary:bool;
+
+  /// True if there exists multiple graphs in one .pte file.
+  multiple_graphs:bool;
 }
 
 root_type QnnExecuTorchOptions;

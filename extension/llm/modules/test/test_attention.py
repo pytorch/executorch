@@ -156,7 +156,9 @@ class AttentionTest(unittest.TestCase):
 
         assert_close(et_res, tt_res)
 
-    @unittest.skip(reason="TODO(T207740932): test is flaky")
+    @unittest.skipIf(
+        int(os.getenv("RUN_SKIPPED", 0)) < 1, reason="TODO(T207740932): test is flaky"
+    )
     def test_attention_aoti(self):
         # Self attention.
 
@@ -168,7 +170,10 @@ class AttentionTest(unittest.TestCase):
                 self.et_mha,
                 args=(self.x, self.x),
                 kwargs={"input_pos": self.input_pos},
-                options={"aot_inductor.package": True},
+                options={
+                    "aot_inductor.package": True,
+                    "reorder_for_peak_memory": False,
+                },
                 dynamic_shapes=self.dynamic_shapes,
             )
         with tempfile.TemporaryDirectory() as tempdir:
