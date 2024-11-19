@@ -31,7 +31,12 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 from executorch.extension.llm.tokenizer.utils import get_tokenizer
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.ao.quantization.fake_quantize import (
+    disable_fake_quant,
+    disable_observer,
+    enable_fake_quant,
+)
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
 from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 from torch.export import export_for_training
@@ -305,7 +310,7 @@ class LLMEdgeManager:
                 assert (
                     self.pre_autograd_graph_module is not None
                 ), "Please run export() first"
-                m = prepare_pt2e(self.pre_autograd_graph_module, composed_quantizer)
+                m = prepare_qat_pt2e(self.pre_autograd_graph_module, composed_quantizer)
                 logging.info(
                     f"Calibrating with tasks: {self.calibration_tasks}, limit: {self.calibration_limit}, calibration_data: {self.calibration_data}, tokenizer_path: {self.tokenizer_path}, seq_length: {self.calibration_seq_length}"
                 )
@@ -329,11 +334,21 @@ class LLMEdgeManager:
                         tokenizer_path=self.tokenizer_path,
                     )
                 else:
-                    logging.info(
-                        "No calibration provided, using dummy input to calibrate..."
-                    )
-                    m(*self.example_inputs)
+                    m.apply(disable_fake_quant)
+                    logging.info("Calibrating model")
+                    generate(self.tokenizer_path, m)
+
+                    logging.info("Testing with fake-quant enabled")
+                    m.apply(disable_observer)
+                    m.apply(enable_fake_quant)
+                    generate(self.tokenizer_path, m)
+                    logging.info(f"Model after Calibration and Testing: {m}")
+                    m.apply(disable_fake_quant)
+
                 m = convert_pt2e(m)
+                logging.info("Running model after convert step")
+                generate(self.tokenizer_path, m)
+                logging.info(f"Model after convert step: {m}")
                 DuplicateDynamicQuantChainPass()(m)
                 self.pre_autograd_graph_module = m
             return self
@@ -438,3 +453,26 @@ class LLMEdgeManager:
         Return the filename of the most recenet saved .pte file. Return None if the model is not saved.
         """
         return self._saved_pte_filename
+
+def generate(tokenizer_path, m):
+    tokenizer = get_tokenizer(tokenizer_path)
+    calib_str = "Once upon a time, there was a little girl named Alice. She"
+    tokens = tokenizer.encode(calib_str, bos=False, eos=False)                
+    logging.info("Running model with the prompt: " + calib_str)
+    logging.info("Tokens: " + str(tokens))
+    generations = []
+    pred = 0
+    prompt_len = len(tokens)
+    for i, token in enumerate(tokens):
+        outputs = m(torch.tensor([[token]], dtype=torch.long), torch.tensor([i], dtype=torch.long))
+        pred = outputs[0].argmax().item()
+    generations.append(pred)
+    
+    for i in range(prompt_len, prompt_len + 30):
+        outputs = m(torch.tensor([[pred]], dtype=torch.long), torch.tensor([i], dtype=torch.long))
+        pred = outputs[0].argmax().item()
+        generations.append(pred)
+    
+    logging.info("Generated tokens: " + str(generations))
+    logging.info("Generated string: " + tokenizer.decode(generations))
+    return generations

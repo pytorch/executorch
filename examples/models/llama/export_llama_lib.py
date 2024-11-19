@@ -574,7 +574,7 @@ def get_quantizer_and_quant_params(args):
     if args.qnn and args.pt2e_quantize:
         assert len(quantizers) == 0, "Should not enable both xnnpack and qnn"
         qnn_quantizer, quant_dtype = get_qnn_quantizer(
-            args.pt2e_quantize, args.quantization_mode
+            args.pt2e_quantize, args.quantization_mode, is_qat=True
         )
         quantizers.append(qnn_quantizer)
     if args.coreml and args.pt2e_quantize:

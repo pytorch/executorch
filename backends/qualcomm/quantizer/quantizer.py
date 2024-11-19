@@ -19,6 +19,7 @@ from executorch.backends.transforms.decompose_sdpa import (
 )
 
 from torch._ops import OpOverload
+from torch.ao.quantization.observer import MinMaxObserver
 from torch.ao.quantization.quantizer import Quantizer
 from torch.fx import GraphModule
 
@@ -75,7 +76,7 @@ quant_config_dict = {
     ),
     (QuantDtype.use_16a4w, False): (
         get_16a4w_qnn_ptq_config,
-        get_ptq_per_channel_quant_config(torch.uint16, "int4"),
+        get_ptq_per_channel_quant_config(torch.uint16, "int4", act_observer=MinMaxObserver),
     ),
     (QuantDtype.use_8a8w, False): (
         get_8a8w_qnn_ptq_config,
@@ -84,7 +85,7 @@ quant_config_dict = {
     # QAT,
     (QuantDtype.use_16a4w, True): (
         get_16a4w_qnn_qat_config,
-        get_qat_per_channel_quant_config(torch.uint16, "int4"),
+        get_qat_per_channel_quant_config(torch.uint16, "int4", act_observer=MinMaxObserver),
     ),
     (QuantDtype.use_8a8w, True): (
         get_8a8w_qnn_qat_config,
