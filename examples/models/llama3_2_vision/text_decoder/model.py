@@ -58,7 +58,7 @@ class Llama3_2Decoder(EagerModelBase):
 
         ckpt_dir = get_default_model_resource_dir(__file__)
         # Single checkpoint file.
-        checkpoint_path = kwargs.get("checkpoint", ckpt_dir / "demo_rand_params.pth")
+        checkpoint_path = kwargs.get("checkpoint") if kwargs.get("checkpoint") else ckpt_dir / "demo_rand_params.pth"
         if os.path.isfile(checkpoint_path):
             self.use_checkpoint = True
 

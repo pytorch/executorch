@@ -31,15 +31,18 @@ def get_default_model_resource_dir(model_file_path: str) -> Path:
     """
 
     try:
+        import importlib
         import pkg_resources
 
         # 1st way: If we can import this path, we are running with buck2 and all resources can be accessed with pkg_resources.
         # pyre-ignore
+        model_name = Path(model_file_path).parent.name
         from executorch.examples.models.llama import params  # noqa
+        module = importlib.import_module(f"executorch.examples.models.{model_name}.params")
+        # params = module.params
 
         # Get the model name from the cwd, assuming that this module is called from a path such as
         # examples/models/<model_name>/model.py.
-        model_name = Path(model_file_path).parent.name
         resource_dir = Path(
             pkg_resources.resource_filename(
                 f"executorch.examples.models.{model_name}", "params"

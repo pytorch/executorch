@@ -175,7 +175,6 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-c",
         "--checkpoint",
-        default=f"{ckpt_dir}/params/demo_rand_params.pth",
         help="checkpoint path",
     )
 
@@ -874,9 +873,9 @@ def _load_llama_model(
         An instance of LLMEdgeManager which contains the eager mode model.
     """
 
-    assert (
-        checkpoint or checkpoint_dir
-    ) and params_path, "Both checkpoint/checkpoint_dir and params can't be empty"
+    # assert (
+    #     checkpoint or checkpoint_dir
+    # ) and params_path, "Both checkpoint/checkpoint_dir and params can't be empty"
     logging.info(
         f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}"
     )
