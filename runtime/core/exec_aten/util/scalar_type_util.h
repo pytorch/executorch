@@ -69,8 +69,8 @@ struct is_floating_point
     : std::integral_constant<
           bool,
           std::is_floating_point<T>::value ||
-              std::is_same<T, torch::executor::Half>::value ||
-              std::is_same<T, torch::executor::BFloat16>::value> {};
+              std::is_same_v<T, torch::executor::Half> ||
+              std::is_same_v<T, torch::executor::BFloat16>> {};
 
 // Util to figure out if the scalar type is one of the
 // reduced precision floating point types.
@@ -78,8 +78,8 @@ template <typename T>
 struct is_reduced_floating_point
     : std::integral_constant<
           bool,
-          std::is_same<T, torch::executor::Half>::value ||
-              std::is_same<T, torch::executor::BFloat16>::value> {};
+          std::is_same_v<T, torch::executor::Half> ||
+              std::is_same_v<T, torch::executor::BFloat16>> {};
 
 template <typename T>
 constexpr bool is_reduced_floating_point_v =
@@ -662,9 +662,9 @@ struct can_cast : std::integral_constant<
 template <
     typename To,
     typename From,
-    typename std::enable_if<
+    std::enable_if_t<
         (std::is_floating_point<From>::value && std::is_integral<To>::value),
-        int>::type = 0>
+        int> = 0>
 To convert(From val) {
   return static_cast<To>(static_cast<int64_t>(val));
 }
@@ -672,9 +672,9 @@ To convert(From val) {
 template <
     typename To,
     typename From,
-    typename std::enable_if<
+    std::enable_if_t<
         !(std::is_floating_point<From>::value && std::is_integral<To>::value),
-        int>::type = 0>
+        int> = 0>
 To convert(From val) {
   return static_cast<To>(val);
 }
@@ -834,19 +834,19 @@ template <typename T1, typename T2, bool half_to_float = false>
 struct promote_types {
  private:
   static_assert(
-      std::is_same<T1, T2>::value ||
+      std::is_same_v<T1, T2> ||
           (!is_qint_type<T1>::value && !is_qint_type<T2>::value),
       "promote_types not valid for quantized dtypes");
   static_assert(
-      std::is_same<T1, T2>::value ||
+      std::is_same_v<T1, T2> ||
           (!is_bits_type<T1>::value && !is_bits_type<T2>::value),
       "promote_types not valid for bits dtypes");
   static_assert(
-      std::is_same<T1, T2>::value ||
+      std::is_same_v<T1, T2> ||
           (!is_float8_type<T1>::value && !is_float8_type<T2>::value),
       "promote_types not valid for float8 dtypes");
   static_assert(
-      std::is_same<T1, T2>::value ||
+      std::is_same_v<T1, T2> ||
           (!is_barebones_unsigned_type<T1>::value &&
            !is_barebones_unsigned_type<T2>::value),
       "promote_types not valid for barebones unsigned dtypes");
@@ -857,18 +857,18 @@ struct promote_types {
           CppTypeToScalarType<T2>::value)>::type;
 
  public:
-  using type = typename std::conditional<
+  using type = std::conditional_t<
       half_to_float &&
-          (std::is_same<
+          (std::is_same_v<
                promoted_type_not_respecting_half_to_float,
                typename ScalarTypeToCppType<
-                   ::executorch::aten::ScalarType::Half>::type>::value ||
-           std::is_same<
+                   ::executorch::aten::ScalarType::Half>::type> ||
+           std::is_same_v<
                promoted_type_not_respecting_half_to_float,
                typename ScalarTypeToCppType<
-                   ::executorch::aten::ScalarType::BFloat16>::type>::value),
+                   ::executorch::aten::ScalarType::BFloat16>::type>),
       typename ScalarTypeToCppType<::executorch::aten::ScalarType::Float>::type,
-      promoted_type_not_respecting_half_to_float>::type;
+      promoted_type_not_respecting_half_to_float>;
 };
 
 //
