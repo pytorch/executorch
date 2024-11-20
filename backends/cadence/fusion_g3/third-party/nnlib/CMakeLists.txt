@@ -5,7 +5,7 @@ add_custom_target(
   nnlib_target ALL
   COMMAND
     make install_nnlib -f makefile -C
-    ${EXECUTORCH_ROOT}/backends/cadence/fusion_g3/third-party/nnlib/nnlib-FuG3/xa_nnlib/build
+    ${EXECUTORCH_ROOT}/backends/cadence/fusion_g3/third-party/nnlib/nnlib-FusionG3/xa_nnlib/build
     OBJDIR=${CMAKE_CURRENT_BINARY_DIR}/obj
     LIBDIR=${CMAKE_CURRENT_BINARY_DIR}/lib -j8
 )
