@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 from typing import Callable, cast, Optional
 
+import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 
 from executorch.backends.cadence.aot.passes import ReplaceSafeSoftmaxWithSoftmax
@@ -196,7 +197,26 @@ def export_to_edge(
 # Export the model and lower it to an EdgeProgramManager (in edge IR), and
 # apply passes specific to Cadence DSP execution. Return both to print the
 # differences.
-def export_to_cadence_edge_executorch(
+def export_to_cadence(
+    model: torch.nn.Module,
+    inputs: tuple[object, ...],
+    dump_graphs: bool = False,
+    output_dir: Optional[str] = None,
+    opt_level: int = 1,
+) -> EdgeProgramManager:
+    edge_prog_manager = export_to_edge(model, inputs)
+    cadence_passes = get_cadence_passes(opt_level)
+
+    # Run a couple required passes for quant/dequant ops
+    cadence_prog_manager = edge_prog_manager.transform(
+        cast(
+            list[Callable[[torch.fx.GraphModule], Optional[PassResult]]], cadence_passes
+        )
+    )
+    return cadence_prog_manager
+
+
+def export_to_executorch_gen_etrecord(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
