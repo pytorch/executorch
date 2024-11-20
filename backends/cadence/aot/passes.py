@@ -11,11 +11,13 @@ from typing import Any, cast, Dict, List, Optional, Sequence, Tuple, Type
 import torch
 import torch.fx
 import torch.utils._pytree as pytree
+from executorch.backends.cadence.aot.fuse_ops import CadenceFuseOpsInGraph
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
     create_cadence_pass_filter,
     register_cadence_pass,
 )
+from executorch.backends.cadence.aot.simplify_ops import CadenceSimplifyOpsInGraph
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -346,10 +348,23 @@ def get_passes_in_default_order() -> List[Type[PassType]]:
         ReplaceScalarTensorWithFullPass,
         RemoveCloneOpsTransformImported,
         RemoveNopExpandOpPass,
+        CadenceFuseOpsInGraph.passes,
         ReplaceSqueezeAndUnsqueezeWithViewPass,
         ReplacePT2QuantWithCadenceQuantPass,
         ReplacePT2DequantWithCadenceDequantPass,
+        CadenceSimplifyOpsInGraph.passes,
         # TODO: add the rest of the passes here.
+        # InitializePipeline,
+        # RemoveRedundantOps.passes,
+        # ReorderOpsInGraph.passes,
+        # RemoveJarvisNops.passes,
+        # CadenceFuseOpsInGraph.passes,
+        # ReplaceOpsInGraph.passes,
+        # SimplifyOpsInGraph.passes,
+        # FinalizePipeline,
+        # FuseFullThenReshapePass,
+        # FuseTransposeOpPairsPass,
+        # RemoveNopSliceOrViewOpPass,
     ]
     return pytree.tree_flatten(passes)[0]
 
