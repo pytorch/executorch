@@ -98,6 +98,22 @@ class FoldAndAnnotateQParamsPass(ExportPass):
             for i, arg in enumerate(n.args):
                 if not isinstance(arg, Node):
                     continue
+
+                # Make sure arg has requires_grad set to False
+                # For parameters that are not quantized, sometimes (i.e. convolution)
+                # the Parameter(FakeTensor(...)) has requires_grad set to True, which
+                # causes the retracing of the graph to fail with:
+                #
+                # E       RuntimeError: isDifferentiableType(variable.scalar_type()) INTERNAL ASSERT FAILED at "/Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/functions/utils.h":74, please report a bug to PyTorch.
+                # E
+                # E       While executing %aten_convolution_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%quantized_decomposed_quantize_per_tensor_default, %b__frozen_param0, %p__param_constant1, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+                # E       Original traceback:
+                # E         File "/Users/perast01/src/executorch/backends/arm/test/ops/test_conv2d.py", line 110, in forward
+                # E           x = conv(x)
+                #
+                if arg.op == "placeholder":
+                    arg.meta["val"].requires_grad = False
+
                 if arg.target != dq_op:
                     continue
 
