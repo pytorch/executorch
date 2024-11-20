@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 from typing import Callable, cast, Optional
 
+import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 
 from executorch.backends.cadence.aot.passes import ReplaceSafeSoftmaxWithSoftmax
