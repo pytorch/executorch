@@ -19,35 +19,35 @@ bool check_batch_norm_args(
     const Tensor& in,
     const exec_aten::optional<Tensor>& weight,
     const exec_aten::optional<Tensor>& bias,
-    const Tensor& running_mean,
-    const Tensor& running_var,
+    const exec_aten::optional<Tensor>& running_mean,
+    const exec_aten::optional<Tensor>& running_var,
     double momentum,
     double eps,
     Tensor& out,
     Tensor& mean_out,
     Tensor& var_out) {
   // All tensors must be the same dtype
-  ET_LOG_AND_RETURN_IF_FALSE(
-      tensors_have_same_dtype(in, running_mean, running_var));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, mean_out));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, var_out));
   if (weight.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight.value()));
   }
   if (bias.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, bias.value()));
   }
+  if (running_mean.has_value()) {
+    ET_LOG_AND_RETURN_IF_FALSE(
+        tensors_have_same_dtype(in, running_mean.value()));
+  }
+  if (running_mean.has_value()) {
+    ET_LOG_AND_RETURN_IF_FALSE(
+        tensors_have_same_dtype(in, running_var.value()));
+  }
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, mean_out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, var_out));
 
   size_t C_dim = in.dim() >= 1 ? 1 : 0;
   // All parameter tensors must be of dim 1 and have length equal to the
   // channels dim of in
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(running_mean, 1));
-  ET_LOG_AND_RETURN_IF_FALSE(
-      tensors_have_same_size_at_dims(running_mean, 0, in, C_dim));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(running_var, 1));
-  ET_LOG_AND_RETURN_IF_FALSE(
-      tensors_have_same_size_at_dims(running_var, 0, in, C_dim));
   if (weight.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(weight.value(), 1));
     ET_LOG_AND_RETURN_IF_FALSE(
@@ -57,6 +57,16 @@ bool check_batch_norm_args(
     ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(bias.value(), 1));
     ET_LOG_AND_RETURN_IF_FALSE(
         tensors_have_same_size_at_dims(bias.value(), 0, in, C_dim));
+  }
+  if (running_mean.has_value()) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(running_mean.value(), 1));
+    ET_LOG_AND_RETURN_IF_FALSE(
+        tensors_have_same_size_at_dims(running_mean.value(), 0, in, C_dim));
+  }
+  if (running_var.has_value()) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(running_var.value(), 1));
+    ET_LOG_AND_RETURN_IF_FALSE(
+        tensors_have_same_size_at_dims(running_var.value(), 0, in, C_dim));
   }
 
   return true;
