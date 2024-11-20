@@ -23,7 +23,7 @@ from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
 from executorch.examples.models.llama.runner.generation import LlamaRunner
 
 # Note: import this after portable_lib
-from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa # usort: skip
+import executorch.extension.llm.custom_ops  # noqa # usort: skip
 from executorch.kernels import quantized  # noqa
 
 
