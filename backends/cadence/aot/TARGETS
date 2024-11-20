@@ -180,6 +180,24 @@ python_library(
     ],
 )
 
+python_library(
+    name = "remove_ops",
+    srcs = [
+        "remove_ops.py",
+    ],
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/backends/cadence/aot:passes",
+        "//executorch/backends/cadence/aot:simplify_ops",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/edge:lib",
+        "//executorch/exir/passes:spec_prop_pass",
+    ],
+)
+
 python_unittest(
     name = "test_graph_builder",
     srcs = [
