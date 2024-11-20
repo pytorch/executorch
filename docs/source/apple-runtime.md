@@ -144,26 +144,26 @@ ExecuTorch initializes its backends and kernels (operators) during app startup b
 Here's an example of a Xcode configuration file (`.xcconfig`):
 
 ```
-OTHER_LDFLAGS[sdk=iphonesimulator*] = $(inherited) \
--force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-ios-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml-ios-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps-ios-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-ios-release.a
+ET_PLATFORM[sdk=iphonesimulator*] = simulator
+ET_PLATFORM[sdk=iphoneos*] = ios
+ET_PLATFORM[sdk=macos*] = macos
 
-OTHER_LDFLAGS[sdk=iphoneos*] = $(inherited) \
--force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-ios-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml-ios-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps-ios-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-ios-release.a
-
-OTHER_LDFLAGS[sdk=macos*] = $(inherited) \
--force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-ios-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml-ios-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps-ios-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-ios-release.a
+OTHER_LDFLAGS = $(inherited) \
+    -force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-$(ET_PLATFORM)-release.a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml-$(ET_PLATFORM)-release.a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps-$(ET_PLATFORM)-release.a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-$(ET_PLATFORM)-release.a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized-$(ET_PLATFORM)-release.a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized-$(ET_PLATFORM)-release.a
 ```
 
-Replace `release` with `debug` in library file names for a Debug mode config respectively. You can assign such `.xcconfig` file to your target in Xcode: add it to your project, navigate to the project's Info tab, and select it in the build configuration for Debug and Release modes.
+For a Debug build configuration, replace `release` with `debug` in the library file names. Remember to link against the ExecuTorch runtime (`libexecutorch`) in Debug mode even if other components are built for Release to preserve logs if needed.
+
+You can assign such a config file to your target in Xcode:
+
+1.	Add the `.xcconfig` file to your project.
+2.	Navigate to the project’s Info tab.
+3.	Select the configuration file in the build configurations for Release (or Debug) mode.
 
 ## Runtime API
 
