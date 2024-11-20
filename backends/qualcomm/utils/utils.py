@@ -279,14 +279,11 @@ def update_spill_fill_size(
         update_program(*get_program_info(exported_program))
 
 
-def get_preserve_ops() -> Tuple[torch._ops.OpOverload, ...]:
-    return (torch.ops.aten.adaptive_avg_pool2d.default,)
-
-
 def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
     source_decompositions = core_aten_decompositions()
     # The below super ops are supported by QNN
     skip_decompositions = [
+        torch.ops.aten.adaptive_avg_pool2d.default,
         torch.ops.aten.pixel_shuffle.default,
         torch.ops.aten.pixel_unshuffle.default,
         torch.ops.aten.hardsigmoid.default,
@@ -342,7 +339,7 @@ def capture_program(
     custom_pass_config: FrozenSet[str] = frozenset(),
 ) -> exir.ExirExportedProgram:
     ep = torch.export.export(module, inputs)
-    decomposed_ep = ep.run_decompositions(get_decomp_table(), get_preserve_ops())
+    decomposed_ep = ep.run_decompositions(get_decomp_table())
     # We choose call_operator by target in ConvertBinaryOpsWithScalar
     # because it is the same source_fn_stack for MultiheadAttention
     # TODO: Should modify the scalar op in the op builder instead of
