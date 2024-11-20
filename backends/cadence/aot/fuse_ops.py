@@ -1022,7 +1022,7 @@ class FuseFullThenReshapePass(ExportPass):
         return PassResult(graph_module, True)
 
 
-class FuseOpsInGraph:
+class CadenceFuseOpsInGraph:
     passes = [
         FuseMMWithAdd,
         FuseBatchNormWithConv,
