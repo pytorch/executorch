@@ -7,6 +7,8 @@
 import logging
 from enum import Enum
 
+import executorch.extension.llm.custom_ops  # noqa: F401
+
 import torch
 import torch.nn as nn
 from executorch.examples.models.llama.llama_transformer import KVCache

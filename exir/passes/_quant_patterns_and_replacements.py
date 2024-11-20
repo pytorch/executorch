@@ -192,6 +192,19 @@ quantized_decomposed_lib.define(
     "int weight_quant_min, int weight_quant_max, Tensor indices, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
 )
 
+# TODO: move these registrations to pytorch core
+quantized_decomposed_lib.define(
+    "quantize_per_token.out(Tensor input, Tensor scales, Tensor zero_points, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)",
+)
+
+quantized_decomposed_lib.define(
+    "dequantize_per_token.out(Tensor input, Tensor scales, Tensor zero_points, int quant_min, int quant_max, ScalarType dtype, ScalarType output_dtype, *, Tensor(a!) out) -> Tensor(a!)",
+)
+
+quantized_decomposed_lib.define(
+    "choose_qparams_per_token_asymmetric.out(Tensor input, ScalarType dtype, *, Tensor(a!) scale_out, Tensor(b!) zero_point_out) -> (Tensor(a!), Tensor(b!))",
+)
+
 
 @impl(quantized_decomposed_lib, "embedding_2bit", "CompositeExplicitAutograd")
 def embedding_2bit(
