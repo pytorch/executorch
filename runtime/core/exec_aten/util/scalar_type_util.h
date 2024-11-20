@@ -722,13 +722,32 @@ using B1 =
 using BF = typename ScalarTypeToCppType<
     ::executorch::aten::ScalarType::BFloat16>::type;
 
-inline constexpr std::
-    array<int, int(::executorch::aten::ScalarType::NumOptions)>
-        dtype2index = {{
-            0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11,
-            -1, -1, -1, 12, -1, -1, -1, -1, -1, -1, -1, -1,
-        }};
+inline constexpr std::array<::executorch::aten::ScalarType, 13> index2dtype = {
+    {u1, i1, i2, i4, i8, f2, f4, f8, c2, c4, c8, b1, bf}};
+
+constexpr std::array<
+    int64_t,
+    static_cast<size_t>(::executorch::aten::ScalarType::NumOptions)>
+calculate_dtype2index() {
+  std::array<
+      int64_t,
+      static_cast<size_t>(::executorch::aten::ScalarType::NumOptions)>
+      inverse = {};
+  for (int64_t i = 0;
+       i < static_cast<int64_t>(::executorch::aten::ScalarType::NumOptions);
+       i++) {
+    inverse[i] = -1;
+  }
+  for (int64_t i = 0; i < static_cast<int64_t>(index2dtype.size()); i++) {
+    inverse[static_cast<int64_t>(index2dtype[i])] = i;
+  }
+  return inverse;
+}
+
+inline constexpr auto dtype2index = calculate_dtype2index();
 inline constexpr int NUM_PROMOTE_TYPES = 13;
+// Should match _promoteTypesLookup in c10/core/ScalarType.cpp so that
+// we match PyTorch core type promotion semantics.
 inline constexpr ::executorch::aten::ScalarType
     promoteTypesLookup[NUM_PROMOTE_TYPES][NUM_PROMOTE_TYPES] = {
         /*        u1  i1  i2  i4  i8  f2  f4  f8  c2  c4  c8  b1  bf*/
