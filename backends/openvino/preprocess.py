@@ -22,6 +22,7 @@ class OpenvinoBackend(BackendDetails):
     def preprocess(
         cls, edge_program: ExportedProgram, module_compile_spec: List[CompileSpec]
     ) -> PreprocessResult:
+
         name_to_node_mappings = {node.name: node for node in edge_program.graph.nodes}
         input_names = edge_program.graph_signature.user_inputs
         output_names = edge_program.graph_signature.user_outputs
@@ -33,7 +34,11 @@ class OpenvinoBackend(BackendDetails):
         input_shapes = []
         output_shapes = []
 
-        compiled = openvino_compile(edge_program.module(), *args)
+        compile_options = {}
+        for spec in module_compile_spec:
+            compile_options[spec.key] = spec.value.decode()
+
+        compiled = openvino_compile(edge_program.module(), *args, options=compile_options)
         model_bytes = compiled.export_model()
 
         return PreprocessResult(processed_bytes=model_bytes)
