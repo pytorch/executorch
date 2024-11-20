@@ -17,7 +17,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <unistd.h>
+#include <executorch/runtime/platform/unistd.h>
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
@@ -26,9 +26,9 @@
 // Some platforms (e.g. Xtensa) do not support pread() that we use to read the
 // file at different offsets simultaneously from multiple threads not affecting
 // each other. We list them below and use a workaround for them.
-#if defined(__xtensa__)
+#if defined(__xtensa__) || defined(_WIN64)
 #define ET_HAVE_PREAD 0
-#endif // defined(__xtensa__)
+#endif // defined(__xtensa__) || defined(_WIN64)
 
 #ifndef ET_HAVE_PREAD
 #define ET_HAVE_PREAD 1
@@ -71,6 +71,9 @@ FileDataLoader::~FileDataLoader() {
   std::free(const_cast<char*>(file_name_));
   // fd_ can be -1 if this instance was moved from, but closing a negative fd is
   // safe (though it will return an error).
+  if (fd_ == -1) {
+    return;
+  }
   ::close(fd_);
 }
 
