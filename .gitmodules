@@ -1,9 +1,9 @@
 [submodule "backends/arm/third-party/ethos-u-core-driver"]
 	path = backends/arm/third-party/ethos-u-core-driver
-	url = https://git.mlplatform.org/ml/ethos-u/ethos-u-core-driver.git/
+	url = https://github.com/pytorch-labs/ethos-u-core-driver-mirror
 [submodule "backends/arm/third-party/serialization_lib"]
 	path = backends/arm/third-party/serialization_lib
-	url = https://git.mlplatform.org/tosa/serialization_lib.git/
+	url = https://github.com/pytorch-labs/tosa_serialization_lib-mirror
 [submodule "backends/vulkan/third-party/Vulkan-Headers"]
 	path = backends/vulkan/third-party/Vulkan-Headers
 	url = https://github.com/KhronosGroup/Vulkan-Headers
