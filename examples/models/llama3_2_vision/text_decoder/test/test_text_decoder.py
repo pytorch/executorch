@@ -12,12 +12,14 @@ import tempfile
 import unittest
 
 import torch
+
+from executorch.examples.models.llama3_2_vision.text_decoder.model import (
+    Llama3_2Decoder,
+)
 from torch.testing import assert_close
 
-from ..model import Llama3_2Decoder
-
 params = {
-    "dim": 4096,
+    "dim": 2048,
     "ffn_dim_multiplier": 1.3,
     "fusion_interval": 4,
     "intermediate_dim": 14336,
@@ -31,7 +33,7 @@ params = {
     "use_scaled_rope": True,
     "vision_chunk_size": 560,
     "vision_max_num_chunks": 4,
-    "vocab_size": 128256,
+    "vocab_size": 21008,
     "vision_num_cross_attention_layers": 1,
 }
 
