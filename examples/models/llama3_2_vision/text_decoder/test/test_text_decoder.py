@@ -21,12 +21,12 @@ from torch.testing import assert_close
 params = {
     "dim": 2048,
     "ffn_dim_multiplier": 1.3,
-    "fusion_interval": 4,
+    "fusion_interval": 2,
     "intermediate_dim": 14336,
     "multiple_of": 1024,
     "n_heads": 32,
     "n_kv_heads": 8,
-    "n_layers": 4,
+    "n_layers": 2,
     "n_special_tokens": 8,
     "norm_eps": 1e-05,
     "rope_theta": 500000.0,
@@ -48,11 +48,10 @@ class TextDecoderTest(unittest.TestCase):
         for child in model.children():
             self._set_requires_grad_false(child)
 
-    def test_llama3_2_text_decoder(self) -> None:
+    def test_llama3_2_text_decoder_aoti(self) -> None:
         with tempfile.NamedTemporaryFile(mode="w") as param_file:
             json.dump(params, param_file, indent=2)
             param_file.flush()
-            print(param_file.name)
             model = Llama3_2Decoder(
                 encoder_max_seq_len=6404,
                 generate_full_logits=True,
@@ -79,7 +78,6 @@ class TextDecoderTest(unittest.TestCase):
                 kwargs=model.get_example_kwarg_inputs(),
                 package_path=os.path.join(tmpdir, "text_decoder.pt2"),
             )
-            print(path)
             encoder_aoti = torch._inductor.aoti_load_package(path)
 
             y = encoder_aoti(
