@@ -31,21 +31,26 @@ class ET_EXPERIMENTAL LlavaRunner
       : MultimodalRunner(model_path, tokenizer_path, temperature){};
 
   bool is_loaded() override;
-  Error load() override;
-  Error generate(
+
+  ::executorch::runtime::Error load() override;
+
+  ::executorch::runtime::Error generate(
       std::vector<Image> images,
       const std::string& prompt,
       int32_t seq_len = 1024,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const ::executorch::extension::llm::Stats&)>
           stats_callback = {}) override;
-  Error prefill_images(std::vector<Image>& images, int64_t& start_pos) override;
-  Result<uint64_t> prefill_prompt(
+
+  ::executorch::runtime::Error prefill_images(std::vector<Image>& images, int64_t& start_pos) override;
+
+  ::executorch::runtime::Result<uint64_t> prefill_prompt(
       const std::string& prompt,
       int64_t& start_pos,
       int8_t bos = 0,
       int8_t eos = 0) override;
-  Error generate_from_pos(
+
+  ::executorch::runtime::Error generate_from_pos(
       const std::string& prompt,
       int32_t seq_len = 1024,
       int64_t start_pos = 0,
