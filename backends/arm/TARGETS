@@ -110,3 +110,14 @@ python_library(
         "//executorch/backends/arm/operators:node_visitor",
     ],
 )
+
+python_library(
+    name = "arm_model_evaluator",
+    src = [
+        "util/arm_model_evaluator.py",
+    ],
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+    ]
+)
