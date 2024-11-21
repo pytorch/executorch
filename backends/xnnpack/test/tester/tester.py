@@ -409,6 +409,8 @@ class Serialize(Stage):
 
 
 class Tester:
+    __test__ = False
+
     def __init__(
         self,
         module: torch.nn.Module,
