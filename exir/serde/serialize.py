@@ -286,6 +286,8 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
 
 
 class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
+    # TODO(angelayi): Match signature of export serializer
+    # pyre-ignore
     def serialize(
         self, exported_program: ep.ExportedProgram
     ) -> export_serialize._SerializedProgram:
@@ -567,6 +569,8 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
 
 
 class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
+    # TODO(angelayi): Match signature of export serializer
+    # pyre-ignore
     def deserialize(
         self,
         exported_program: export_serialize.ExportedProgram,
