@@ -265,7 +265,7 @@ std::unique_ptr<Runtime> init_global_vulkan_runtime() {
   };
 
   try {
-    return std::make_unique<Runtime>(Runtime(default_config));
+    return std::make_unique<Runtime>(default_config);
   } catch (...) {
   }
 
@@ -321,16 +321,6 @@ Runtime::~Runtime() {
 
   vkDestroyInstance(instance_, nullptr);
   instance_ = VK_NULL_HANDLE;
-}
-
-Runtime::Runtime(Runtime&& other) noexcept
-    : config_(other.config_),
-      instance_(other.instance_),
-      adapters_(std::move(other.adapters_)),
-      default_adapter_i_(other.default_adapter_i_),
-      debug_report_callback_(other.debug_report_callback_) {
-  other.instance_ = VK_NULL_HANDLE;
-  other.debug_report_callback_ = {};
 }
 
 uint32_t Runtime::create_adapter(const Selector& selector) {
