@@ -6,21 +6,100 @@
 from typing import Sequence
 
 import torch
+from executorch.backends.qualcomm.quantizer.annotators import QUANT_ANNOTATION_KEY
 from executorch.backends.qualcomm.quantizer.quantizer import (
     get_16a8w_qnn_ptq_config,
-    get_default_8bit_qnn_ptq_config,
+    get_8a8w_qnn_ptq_config,
+    get_ptq_per_channel_quant_config,
     QuantizationConfig,
 )
-from executorch.backends.qualcomm.quantizer.utils import (
-    get_ptq_per_channel_quant_config,
-    QUANT_ANNOTATION_KEY,
-)
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch.ao.quantization.observer import MinMaxObserver
 from torch.ao.quantization.quantizer import (
     QuantizationAnnotation,
     SharedQuantizationSpec,
 )
 from torch.fx import Node
+
+
+def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:
+    """
+    This function is specific for matmul op 16a8w.
+    """
+
+    def annotate_matmul(node: Node, quantization_config: QuantizationConfig):
+        input_qspec_map = {}
+        input_act = node.args[0]
+        input_spec = quantization_config.input_activation
+        input_qspec_map[input_act] = input_spec
+
+        input_act1 = node.args[1]
+        input_spec1 = quantization_config.weight
+        input_qspec_map[input_act1] = input_spec1
+
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=quantization_config.output_activation,
+            _annotated=True,
+        )
+
+    def annotate_cat(node: Node, quantization_config: QuantizationConfig):
+        input_nodes = node.args[0]
+
+        first_input_node = input_nodes[0]
+        input_qspec_map = {}
+        input_qspec_map[first_input_node] = quantization_config.input_activation
+        share_qparams_with_input_act0_qspec = SharedQuantizationSpec(
+            (first_input_node, node)
+        )
+
+        for input_node in input_nodes[1:]:
+            if input_node not in input_qspec_map:
+                input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
+
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=share_qparams_with_input_act0_qspec,
+            _annotated=True,
+        )
+
+    def annotate_single_in_single_out(
+        node: Node, quantization_config: QuantizationConfig
+    ) -> None:
+
+        input_qspec_map = {}
+        input_act = node.args[0]
+        input_qspec_map[input_act] = quantization_config.input_activation
+
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=quantization_config.output_activation,
+            _annotated=True,
+        )
+
+    def annotate_matmul_input1(node: Node):
+        quantization_config_8a8w = get_8a8w_qnn_ptq_config(
+            act_symmetric=True, act_observer=MinMaxObserver
+        )
+        while isinstance(node, Node) and node.op == "call_function":
+            if node.target in [
+                torch.ops.aten.permute.default,
+                torch.ops.aten.transpose.int,
+            ]:
+                annotate_single_in_single_out(node, quantization_config_8a8w)
+                node = node.args[0]
+            elif node.target == torch.ops.aten.cat.default:
+                annotate_cat(node, quantization_config_8a8w)
+                node = node.args[0][0]
+            else:
+                node = node.args[0]
+
+    quantization_config_16a8w = get_16a8w_qnn_ptq_config(act_observer=MinMaxObserver)
+
+    for node in gm.graph.nodes:
+        if node.op == "call_function" and node.target == torch.ops.aten.matmul.default:
+            annotate_matmul(node, quantization_config_16a8w)
+            annotate_matmul_input1(node.args[1])
 
 
 def custom_annotate_llama_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
@@ -113,7 +192,7 @@ def custom_annotate_llama_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noq
     # Annotate 16a8w for matmul op to get better performance
     quantization_config_16a8w = get_16a8w_qnn_ptq_config()
     # Annotate 8a8w for second input of matmul until past_kv_cache
-    quantization_config_8a8w = get_default_8bit_qnn_ptq_config(act_symmetric=True)
+    quantization_config_8a8w = get_8a8w_qnn_ptq_config(act_symmetric=True)
     for node in gm.graph.nodes:
         if node.op == "call_function" and node.target == torch.ops.aten.matmul.default:
             if "nn_module_stack" in node.meta:
