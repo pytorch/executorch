@@ -90,7 +90,8 @@ static Kernel prim_ops[] = {
           EValue& self = *stack[0];
           EValue& out = *stack[1];
           exec_aten::Tensor self_tensor = self.to<exec_aten::Tensor>();
-          ET_SWITCH_REAL_TYPES(
+          ET_SWITCH_REAL_TYPES_AND(
+              Bool,
               self_tensor.scalar_type(),
               context,
               "_local_scalar_dense",

@@ -7,7 +7,7 @@
  */
 #pragma once
 
-#include <executorch/backends/qualcomm/schema_generated.h>
+#include <executorch/backends/qualcomm/qc_compiler_spec_generated.h>
 
 #include <memory>
 #include <vector>
