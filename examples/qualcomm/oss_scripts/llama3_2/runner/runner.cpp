@@ -43,12 +43,12 @@ Runner::Runner(
     const std::vector<std::string>& models_path,
     const std::string& tokenizer_path,
     const float temperature)
-    : tokenizer_path_(tokenizer_path),
-      temperature_(temperature),
-      n_bos_(1),
+    : n_bos_(1),
       n_eos_(1),
       vocab_size_(QNN_LLAMA3_2_LOGITS),
       max_seq_len_(QNN_LLAMA3_2_SEQLEN),
+      tokenizer_path_(tokenizer_path),
+      temperature_(temperature),
       stats_({}) {
   for (size_t i = 0; i < models_path.size(); ++i) {
     modules_.push_back(std::make_shared<Module>(
@@ -58,7 +58,9 @@ Runner::Runner(
   ET_LOG(Info, "creating runner: tokenizer_path=%s", tokenizer_path_.c_str());
 
   tokenizer_ = example::get_tiktoken_for_llama();
-  tokenizer_->load(tokenizer_path_);
+  Error err = tokenizer_->load(tokenizer_path_);
+  ET_CHECK_MSG(
+      err == Error::Ok, "failed to load tokenizer %s", tokenizer_path_.c_str());
   eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
   bos_id_ = tokenizer_->bos_tok();
   eos_id_.insert(tokenizer_->eos_tok());
