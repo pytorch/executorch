@@ -9,6 +9,13 @@ from typing import Optional
 
 import torch
 import torchtune.modules.attention as TorchTuneAttention
+from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
+    QuantizedKVCache,
+)
+from executorch.examples.models.llama.source_transformation.sdpa import (
+    SDPACustom,
+    SDPASimple,
+)
 from executorch.extension.llm.modules.kv_cache import KVCache as InferenceKVCache
 from torch import nn
 from torchtune.modules.attention_utils import _MaskType, _sdpa_or_flex_attention
@@ -145,15 +152,26 @@ class MultiHeadAttention(nn.Module):
 
         # Use flex attention if supported and we are sample packing
         self._attention_call = _sdpa_or_flex_attention()
-        self._sdpa = SDPA(
-            num_kv_heads=self.num_kv_heads,
-            num_heads=self.num_heads,
-            head_dim=self.head_dim,
-            attn_dropout=self.attn_dropout if self.training else 0.0,
-            is_causal=self.is_causal,
-            attention_fn=self._attention_call,
+        # self._sdpa = SDPA(
+        #     num_kv_heads=self.num_kv_heads,
+        #     num_heads=self.num_heads,
+        #     head_dim=self.head_dim,
+        #     attn_dropout=self.attn_dropout if self.training else 0.0,
+        #     is_causal=self.is_causal,
+        #     attention_fn=self._attention_call,
+        #     kv_cache=self.kv_cache,
+        # )
+
+        self._sdpa = SDPACustom(
             kv_cache=self.kv_cache,
         )
+
+        # self._sdpa = SDPASimple(
+        #     kv_cache=self.kv_cache,
+        #     dim=self.embed_dim,
+        #     head_dim=self.head_dim,
+        #     n_rep=self.num_heads // self.num_kv_heads
+        # )
 
         # this flag indicates whether to update the kv-cache during forward
         # passes. when disabled, we can have the cache setup but still
@@ -177,13 +195,20 @@ class MultiHeadAttention(nn.Module):
                 "Key value caches are already setup. You cannot call ``setup_caches()`` twice. Skipping."
             )
         else:
-            self.kv_cache = InferenceKVCache(
-                batch_size=batch_size,
-                max_seq_len=max_seq_len,
-                num_kv_heads=self.num_kv_heads,
+            # self.kv_cache = InferenceKVCache(
+            #     batch_size=batch_size,
+            #     max_seq_len=max_seq_len,
+            #     num_kv_heads=self.num_kv_heads,
+            #     head_dim=self.head_dim,
+            #     dtype=dtype,
+            #     transpose_cache=False,
+            # )
+            self.kv_cache = QuantizedKVCache(
+                max_batch_size=batch_size,
+                max_seq_length=max_seq_len,
+                n_heads=self.num_kv_heads,
                 head_dim=self.head_dim,
-                dtype=dtype,
-                transpose_cache=False,
+                # dtype needs to be float32 atm,
             )
             self._sdpa.kv_cache = self.kv_cache
             self.cache_enabled = True

@@ -142,13 +142,13 @@ class Llama3_2Decoder(EagerModelBase):
 
             self.model_ = prune_output_vocab(self.model_, output_prune_map)
 
-        if self.use_kv_cache:
-            print("Setting up KV cache on the model...")
-            self.model_.setup_caches(
-                batch_size=1,
-                dtype=self.dtype,
-                decoder_max_seq_len=self.max_seq_len,
-            )
+        # if self.use_kv_cache:
+        #     print("Setting up KV cache on the model...")
+        #     self.model_.setup_caches(
+        #         batch_size=1,
+        #         dtype=self.dtype,
+        #         decoder_max_seq_len=self.max_seq_len,
+        #     )
 
     def get_eager_model(self) -> torch.nn.Module:
         if self.dtype:
