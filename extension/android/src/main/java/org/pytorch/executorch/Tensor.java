@@ -53,9 +53,10 @@ public abstract class Tensor {
 
   @DoNotStrip final long[] shape;
 
+  private static final int BYTE_SIZE_BYTES = 1;
   private static final int INT_SIZE_BYTES = 4;
-  private static final int FLOAT_SIZE_BYTES = 4;
   private static final int LONG_SIZE_BYTES = 8;
+  private static final int FLOAT_SIZE_BYTES = 4;
   private static final int DOUBLE_SIZE_BYTES = 8;
 
   /**
@@ -690,38 +691,38 @@ public abstract class Tensor {
   public byte[] toByteArray() {
     int dtypeSize = 0;
     byte[] tensorAsByteArray = null;
-    if (dtype() == DType.FLOAT) {
-      dtypeSize = 4;
-      tensorAsByteArray = new byte[(int) numel() * dtypeSize];
-      Tensor_float32 thiz = (Tensor_float32) this;
-      ByteBuffer.wrap(tensorAsByteArray).asFloatBuffer().put(thiz.getDataAsFloatArray());
-    } else if (dtype() == DType.DOUBLE) {
-      dtypeSize = 8;
-      tensorAsByteArray = new byte[(int) numel() * dtypeSize];
-      Tensor_float64 thiz = (Tensor_float64) this;
-      ByteBuffer.wrap(tensorAsByteArray).asDoubleBuffer().put(thiz.getDataAsDoubleArray());
-    } else if (dtype() == DType.UINT8) {
-      dtypeSize = 1;
+    if (dtype() == DType.UINT8) {
+      dtypeSize = BYTE_SIZE_BYTES;
       tensorAsByteArray = new byte[(int) numel()];
       Tensor_uint8 thiz = (Tensor_uint8) this;
       ByteBuffer.wrap(tensorAsByteArray).put(thiz.getDataAsUnsignedByteArray());
     } else if (dtype() == DType.INT8) {
-      dtypeSize = 1;
+      dtypeSize = BYTE_SIZE_BYTES;
       tensorAsByteArray = new byte[(int) numel()];
       Tensor_int8 thiz = (Tensor_int8) this;
       ByteBuffer.wrap(tensorAsByteArray).put(thiz.getDataAsByteArray());
     } else if (dtype() == DType.INT16) {
       throw new IllegalArgumentException("DType.INT16 is not supported in Java so far");
     } else if (dtype() == DType.INT32) {
-      dtypeSize = 4;
+      dtypeSize = INT_SIZE_BYTES;
       tensorAsByteArray = new byte[(int) numel() * dtypeSize];
       Tensor_int32 thiz = (Tensor_int32) this;
       ByteBuffer.wrap(tensorAsByteArray).asIntBuffer().put(thiz.getDataAsIntArray());
     } else if (dtype() == DType.INT64) {
-      dtypeSize = 8;
+      dtypeSize = LONG_SIZE_BYTES;
       tensorAsByteArray = new byte[(int) numel() * dtypeSize];
       Tensor_int64 thiz = (Tensor_int64) this;
       ByteBuffer.wrap(tensorAsByteArray).asLongBuffer().put(thiz.getDataAsLongArray());
+    } else if (dtype() == DType.FLOAT) {
+      dtypeSize = FLOAT_SIZE_BYTES;
+      tensorAsByteArray = new byte[(int) numel() * dtypeSize];
+      Tensor_float32 thiz = (Tensor_float32) this;
+      ByteBuffer.wrap(tensorAsByteArray).asFloatBuffer().put(thiz.getDataAsFloatArray());
+    } else if (dtype() == DType.DOUBLE) {
+      dtypeSize = DOUBLE_SIZE_BYTES;
+      tensorAsByteArray = new byte[(int) numel() * dtypeSize];
+      Tensor_float64 thiz = (Tensor_float64) this;
+      ByteBuffer.wrap(tensorAsByteArray).asDoubleBuffer().put(thiz.getDataAsDoubleArray());
     } else {
       throw new IllegalArgumentException("Unknown Tensor dtype");
     }
@@ -752,11 +753,11 @@ public abstract class Tensor {
     if (!buffer.hasRemaining()) {
       throw new IllegalArgumentException("invalid buffer");
     }
-    byte scalarType = buffer.get();
-    byte numberOfDimensions = buffer.get();
-    long[] shape = new long[(int) numberOfDimensions];
+    byte dtype = buffer.get();
+    byte shapeLength = buffer.get();
+    long[] shape = new long[(int) shapeLength];
     long numel = 1;
-    for (int i = 0; i < numberOfDimensions; i++) {
+    for (int i = 0; i < shapeLength; i++) {
       int dim = buffer.getInt();
       if (dim < 0) {
         throw new IllegalArgumentException("invalid shape");
@@ -764,18 +765,18 @@ public abstract class Tensor {
       shape[i] = dim;
       numel *= dim;
     }
-    if (scalarType == DType.FLOAT.jniCode) {
-      return new Tensor_float32(buffer.asFloatBuffer(), shape);
-    } else if (scalarType == DType.DOUBLE.jniCode) {
-      return new Tensor_float64(buffer.asDoubleBuffer(), shape);
-    } else if (scalarType == DType.UINT8.jniCode) {
+    if (dtype == DType.UINT8.jniCode) {
       return new Tensor_uint8(buffer, shape);
-    } else if (scalarType == DType.INT8.jniCode) {
+    } else if (dtype == DType.INT8.jniCode) {
       return new Tensor_int8(buffer, shape);
-    } else if (scalarType == DType.INT16.jniCode) {
+    } else if (dtype == DType.INT32.jniCode) {
       return new Tensor_int32(buffer.asIntBuffer(), shape);
-    } else if (scalarType == DType.INT64.jniCode) {
+    } else if (dtype == DType.INT64.jniCode) {
       return new Tensor_int64(buffer.asLongBuffer(), shape);
+    } else if (dtype == DType.FLOAT.jniCode) {
+      return new Tensor_float32(buffer.asFloatBuffer(), shape);
+    } else if (dtype == DType.DOUBLE.jniCode) {
+      return new Tensor_float64(buffer.asDoubleBuffer(), shape);
     } else {
       throw new IllegalArgumentException("Unknown Tensor dtype");
     }

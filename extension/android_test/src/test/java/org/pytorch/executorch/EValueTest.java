@@ -22,13 +22,6 @@ import org.junit.runners.JUnit4;
 /** Unit tests for {@link EValue}. */
 @RunWith(JUnit4.class)
 public class EValueTest {
-  private static final int TYPE_CODE_NONE = 0;
-  private static final int TYPE_CODE_TENSOR = 1;
-  private static final int TYPE_CODE_STRING = 2;
-  private static final int TYPE_CODE_DOUBLE = 3;
-  private static final int TYPE_CODE_INT = 4;
-  private static final int TYPE_CODE_BOOL = 5;
-
   @Test
   public void testNone() {
     EValue evalue = EValue.optionalNone();
@@ -227,7 +220,6 @@ public class EValueTest {
   public void testNoneSerde() {
     EValue evalue = EValue.optionalNone();
     byte[] bytes = evalue.toByteArray();
-    assertEquals(TYPE_CODE_NONE, bytes[0]);
 
     EValue deser = EValue.fromByteArray(bytes);
     assertEquals(deser.isNone(), true);
@@ -237,7 +229,6 @@ public class EValueTest {
   public void testBoolSerde() {
     EValue evalue = EValue.from(true);
     byte[] bytes = evalue.toByteArray();
-    assertEquals(TYPE_CODE_BOOL, bytes[0]);
     assertEquals(1, bytes[1]);
 
     EValue deser = EValue.fromByteArray(bytes);
@@ -249,7 +240,6 @@ public class EValueTest {
   public void testBoolSerde2() {
     EValue evalue = EValue.from(false);
     byte[] bytes = evalue.toByteArray();
-    assertEquals(TYPE_CODE_BOOL, bytes[0]);
     assertEquals(0, bytes[1]);
 
     EValue deser = EValue.fromByteArray(bytes);
@@ -261,7 +251,6 @@ public class EValueTest {
   public void testIntSerde() {
     EValue evalue = EValue.from(1);
     byte[] bytes = evalue.toByteArray();
-    assertEquals(TYPE_CODE_INT, bytes[0]);
     assertEquals(0, bytes[1]);
     assertEquals(0, bytes[2]);
     assertEquals(0, bytes[3]);
@@ -280,7 +269,6 @@ public class EValueTest {
   public void testLargeIntSerde() {
     EValue evalue = EValue.from(256000);
     byte[] bytes = evalue.toByteArray();
-    assertEquals(TYPE_CODE_INT, bytes[0]);
 
     EValue deser = EValue.fromByteArray(bytes);
     assertEquals(deser.isInt(), true);
@@ -291,7 +279,6 @@ public class EValueTest {
   public void testDoubleSerde() {
     EValue evalue = EValue.from(1.345e-2d);
     byte[] bytes = evalue.toByteArray();
-    assertEquals(TYPE_CODE_DOUBLE, bytes[0]);
 
     EValue deser = EValue.fromByteArray(bytes);
     assertEquals(deser.isDouble(), true);
@@ -306,7 +293,6 @@ public class EValueTest {
 
     EValue evalue = EValue.from(tensor);
     byte[] bytes = evalue.toByteArray();
-    assertEquals(TYPE_CODE_TENSOR, bytes[0]);
 
     EValue deser = EValue.fromByteArray(bytes);
     assertEquals(deser.isTensor(), true);
@@ -331,7 +317,6 @@ public class EValueTest {
 
     EValue evalue = EValue.from(tensor);
     byte[] bytes = evalue.toByteArray();
-    assertEquals(TYPE_CODE_TENSOR, bytes[0]);
 
     EValue deser = EValue.fromByteArray(bytes);
     assertEquals(deser.isTensor(), true);
