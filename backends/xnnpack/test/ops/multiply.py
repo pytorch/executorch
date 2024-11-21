@@ -32,17 +32,20 @@ class TestMul(unittest.TestCase):
             return torch.nn.functional.relu(z)
 
     def _test_mul(self, inputs):
-        (
-            Tester(self.Mul(), inputs)
-            .export()
-            .check_count({"torch.ops.aten.mul.Tensor": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_mul_Tensor"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(self.Mul(), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.mul.Tensor": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(["executorch_exir_dialects_edge__ops_aten_mul_Tensor"])
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_fp16_mul(self):
         inputs = (
@@ -57,90 +60,102 @@ class TestMul(unittest.TestCase):
 
     def test_qs8_mul(self):
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1))
-        (
-            Tester(self.Mul(), inputs)
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.mul.Tensor": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(self.Mul(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count({"torch.ops.aten.mul.Tensor": 1})
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_qs8_mul2(self):
         inputs = (torch.randn(1, 1, 4, 4),)
-        (
-            Tester(self.Mul2(), inputs)
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.mul.Tensor": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(self.Mul2(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count({"torch.ops.aten.mul.Tensor": 1})
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_qs8_mul_functional(self):
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
-        (
-            Tester(self.MulFunctional(), inputs)
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.mul.Tensor": 3})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(self.MulFunctional(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count({"torch.ops.aten.mul.Tensor": 3})
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_qs8_mul_relu(self):
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
-        (
-            Tester(self.MulRelu(), inputs)
-            .quantize()
-            .export()
-            .check_count(
+        for legacy in (True, False):
+            tester = Tester(self.MulRelu(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count(
                 {
                     "torch.ops.aten.mul.Tensor": 1,
                     "torch.ops.aten.relu.default": 1,
                 }
             )
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
                     "executorch_exir_dialects_edge__ops_aten_relu_default",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()

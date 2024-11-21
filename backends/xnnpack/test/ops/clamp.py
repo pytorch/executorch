@@ -22,17 +22,20 @@ class TestClamp(unittest.TestCase):
             return z + z
 
     def _test_clamp(self, module, inputs):
-        (
-            Tester(module, inputs)
-            .export()
-            .check_count({"torch.ops.aten.clamp.default": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_clamp_default"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(module, inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.clamp.default": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(["executorch_exir_dialects_edge__ops_aten_clamp_default"])
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_fp16_clamp(self):
         inputs = (torch.randn(1, 4, 122, 122).to(torch.float16) * 2,)
@@ -56,21 +59,24 @@ class TestClamp(unittest.TestCase):
 
     def test_qs8_clamp(self):
         inputs = (torch.randn(1, 4, 122, 122),)
-        (
-            Tester(self.Clamp(min_val=-1, max_val=1), inputs)
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.clamp.default": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(self.Clamp(min_val=-1, max_val=1), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count({"torch.ops.aten.clamp.default": 1})
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_clamp_default",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
