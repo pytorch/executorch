@@ -62,11 +62,26 @@
     - arg_meta: null
       kernel_name: torch::executor::full_out
 
+- op: gelu.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::gelu_out
+
+- op: hardtanh.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::hardtanh_out
+
+- op: max_pool2d_with_indices.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::max_pool2d_with_indices_out
+
 - op: mean.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::mean_dim_out   
-      
+      kernel_name: cadence::impl::HiFi::mean_dim_out
+
 - op: mul.out
   kernels:
     - arg_meta: null
