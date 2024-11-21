@@ -33,7 +33,7 @@ struct BufferBindInfo final {
   VkDeviceSize range;
 
   BufferBindInfo();
-  BufferBindInfo(const VulkanBuffer& buffer_p);
+  BufferBindInfo(const VulkanBuffer& buffer_p, const uint32_t offset_p = 0u);
 };
 
 struct ParamsBindList final {

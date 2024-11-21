@@ -23,9 +23,11 @@ namespace vkapi {
 BufferBindInfo::BufferBindInfo()
     : handle(VK_NULL_HANDLE), offset(0u), range(0u) {}
 
-BufferBindInfo::BufferBindInfo(const VulkanBuffer& buffer_p)
+BufferBindInfo::BufferBindInfo(
+    const VulkanBuffer& buffer_p,
+    const uint32_t offset_p)
     : handle(buffer_p.handle()),
-      offset(buffer_p.mem_offset()),
+      offset(buffer_p.mem_offset() + offset_p),
       range(buffer_p.mem_range()) {}
 
 //
