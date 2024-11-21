@@ -39,6 +39,8 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_cat.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_clone.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_div.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_hardtanh.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_max_pool2d_with_indices.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_mean.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_mul.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_permute_copy.cpp"
