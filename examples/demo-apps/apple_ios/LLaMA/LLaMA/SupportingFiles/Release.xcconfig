@@ -2,8 +2,10 @@ ET_PLATFORM[sdk=iphonesimulator*] = simulator
 ET_PLATFORM[sdk=iphoneos*] = ios
 ET_PLATFORM[sdk=macos*] = macos
 
+// Link the Debug version of ExecuTorch runtime to keep the logs.
+// Switch to Release for better performance if logs are not needed.
 OTHER_LDFLAGS = $(inherited) \
-    -force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-$(ET_PLATFORM)-release.a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-$(ET_PLATFORM)-debug.a \
     -force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml-$(ET_PLATFORM)-release.a \
     -force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps-$(ET_PLATFORM)-release.a \
     -force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-$(ET_PLATFORM)-release.a \

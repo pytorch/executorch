@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-VERSION="0.4.0.20241115"
+VERSION="0.4.0.20241120"
 FRAMEWORKS=(
   "backend_coreml"
   "backend_mps"
