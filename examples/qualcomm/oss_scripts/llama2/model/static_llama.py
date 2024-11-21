@@ -13,7 +13,6 @@ from executorch.examples.models.llama.llama_transformer import (
     FeedForward,
     ModelArgs,
     precompute_freqs_cis,
-    RMSNorm,
 )
 
 
@@ -191,8 +190,8 @@ class LlamaDecoderLayer(nn.Module):
             config=config, output_new_cache_only=output_new_cache_only
         )
         self.feed_forward = FeedForward(config)
-        self.attention_norm = RMSNorm(config.dim, eps=config.norm_eps)
-        self.ffn_norm = RMSNorm(config.dim, eps=config.norm_eps)
+        self.attention_norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
+        self.ffn_norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
 
     def forward(
         self,
@@ -236,7 +235,7 @@ class LlamaModel(nn.Module):
                 for _ in range(config.n_layers)
             ]
         )
-        self.norm = RMSNorm(config.dim, eps=config.norm_eps)
+        self.norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
         self.output = nn.Linear(config.dim, config.vocab_size, bias=False)
         self.tok_embeddings = nn.Embedding(config.vocab_size, config.dim)
         freqs_cos, freqs_sin = precompute_freqs_cis(

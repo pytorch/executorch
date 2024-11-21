@@ -115,7 +115,8 @@ Error Runner::load() {
     return Error::Ok;
   }
   for (std::shared_ptr<Module>& module : modules_) {
-    ET_CHECK_OK_OR_RETURN_ERROR(module->load_method("forward"));
+    method_names_.emplace_back(*module->method_names()->begin());
+    ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(method_names_.back()));
   }
 
   // create sampler
@@ -160,7 +161,8 @@ int32_t Runner::logitsToToken(const Tensor& logits_tensor) {
 
 void Runner::run_model_step(std::vector<std::vector<EValue>>& inputs) {
   for (size_t i = 0, num_modules = modules_.size(); i < num_modules; ++i) {
-    Result<std::vector<EValue>> outputs_res = modules_[i]->forward(inputs[i]);
+    Result<std::vector<EValue>> outputs_res =
+        modules_[i]->execute(method_names_[i], inputs[i]);
     ET_CHECK_MSG(
         outputs_res.error() == Error::Ok, "shard %zu inference failed", i);
   }
@@ -185,7 +187,8 @@ Error Runner::generate(
       output_tensors.emplace_back(io_mem_->get_output_tensors(i));
       for (size_t j = 0; j < output_tensors[i].size(); ++j) {
         ET_CHECK_MSG(
-            modules_[i]->set_output(output_tensors[i][j], j) == Error::Ok,
+            modules_[i]->set_output(
+                method_names_[i], output_tensors[i][j], j) == Error::Ok,
             "failed to set output tensor for module %d's %zu'th output",
             i,
             j);
@@ -407,8 +410,8 @@ std::string statsToJsonString(const Runner::Stats& stats) {
 std::vector<Result<MethodMeta>> Runner::get_methods_meta() {
   std::vector<Result<MethodMeta>> methods_meta;
   methods_meta.reserve(modules_.size());
-  for (std::shared_ptr<Module>& module : modules_) {
-    methods_meta.emplace_back(module->method_meta("forward"));
+  for (size_t i = 0; i < modules_.size(); ++i) {
+    methods_meta.emplace_back(modules_[i]->method_meta(method_names_[i]));
   }
   return methods_meta;
 }
