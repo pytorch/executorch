@@ -33,6 +33,11 @@
 
 #include <fbjni/ByteBuffer.h>
 #include <fbjni/fbjni.h>
+#if ET_USE_THREADPOOL == 1
+#include <cpuinfo.h>
+#include <executorch/extension/threadpool/threadpool.h>
+#include <pthreadpool.h>
+#endif
 
 using namespace executorch::extension;
 using namespace torch::executor;
@@ -215,6 +220,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
  private:
   friend HybridBase;
   std::unique_ptr<Module> module_;
+  int num_threads_;
 
  public:
   constexpr static auto kJavaDescriptor = "Lorg/pytorch/executorch/NativePeer;";
@@ -222,11 +228,15 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
       facebook::jni::alias_ref<jstring> modelPath,
-      jint loadMode) {
-    return makeCxxInstance(modelPath, loadMode);
+      jint loadMode,
+      jint numThreads) {
+    return makeCxxInstance(modelPath, loadMode, numThreads);
   }
 
-  ExecuTorchJni(facebook::jni::alias_ref<jstring> modelPath, jint loadMode) {
+  ExecuTorchJni(
+      facebook::jni::alias_ref<jstring> modelPath,
+      jint loadMode,
+      jint numThreads) {
     Module::LoadMode load_mode = Module::LoadMode::Mmap;
     if (loadMode == 0) {
       load_mode = Module::LoadMode::File;
@@ -239,6 +249,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     }
 
     module_ = std::make_unique<Module>(modelPath->toStdString(), load_mode);
+    num_threads_ = numThreads;
 
 #ifdef ET_USE_THREADPOOL
     // Default to using cores/2 threadpool threads. The long-term plan is to
@@ -252,9 +263,9 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     // TODO Allow overriding this default from Java.
     auto threadpool = executorch::extension::threadpool::get_threadpool();
     if (threadpool) {
-      int thread_count = cpuinfo_get_processors_count() / 2;
-      if (thread_count > 0) {
-        threadpool->_unsafe_reset_threadpool(thread_count);
+      int default_thread_count = cpuinfo_get_processors_count() / 2;
+      if (num_threads_ == 0 && default_thread_count > 0) {
+        num_threads_ = default_thread_count;
       }
     }
 #endif
@@ -341,8 +352,16 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     ET_LOG(Debug, "Execution time: %lld ms.", duration);
 
 #else
+#if ET_USE_THREADPOOL == 1
+    pthreadpool_t pool = torch::executorch::threadpool::get_pthreadpool();
+    bool set_num_threads = pool && 0 < num_threads_ &&
+        num_threads_ <=
+            torch::executorch::threadpool::get_threadpool()->get_thread_count();
+    if (set_num_threads) {
+      pool->_unsafe_reset_threadpool(num_threads_);
+    }
+#endif
     auto result = module_->execute(method, evalues);
-
 #endif
 
     if (!result.ok()) {
