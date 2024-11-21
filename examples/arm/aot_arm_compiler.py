@@ -13,7 +13,7 @@ import logging
 import os
 
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
@@ -22,8 +22,11 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
-from executorch.backends.arm.util.arm_model_evaluator import GenericModelEvaluator
 
+from executorch.backends.arm.util.arm_model_evaluator import (
+    GenericModelEvaluator,
+    MobileNetV2Evaluator,
+)
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.exir import (
     EdgeCompileConfig,
@@ -35,6 +38,7 @@ from tabulate import tabulate
 
 # Quantize model if required using the standard export quantizaion flow.
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.utils.data import DataLoader
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
@@ -43,7 +47,7 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.WARNING, format=FORMAT)
 
 
-def get_model_and_inputs_from_name(model_name: str):
+def get_model_and_inputs_from_name(model_name: str) -> Tuple[torch.nn.Module, Any]:
     """Given the name of an example pytorch model, return it and example inputs.
 
     Raises RuntimeError if there is no example model corresponding to the given name.
@@ -81,20 +85,37 @@ def get_model_and_inputs_from_name(model_name: str):
     return model, example_inputs
 
 
-def quantize(model, example_inputs):
+def quantize(
+    model: torch.nn.Module,
+    model_name: str,
+    example_inputs: Tuple[torch.Tensor],
+    evaluator_name: str | None,
+    evaluator_config: Dict[str, Any] | None,
+) -> torch.nn.Module:
     """This is the official recommended flow for quantization in pytorch 2.0 export"""
     logging.info("Quantizing Model...")
     logging.debug(f"Original model: {model}")
     quantizer = ArmQuantizer()
+
     # if we set is_per_channel to True, we also need to add out_variant of quantize_per_channel/dequantize_per_channel
     operator_config = get_symmetric_quantization_config(is_per_channel=False)
     quantizer.set_global(operator_config)
     m = prepare_pt2e(model, quantizer)
-    # calibration
-    m(*example_inputs)
+
+    dataset = get_calibration_data(
+        model_name, example_inputs, evaluator_name, evaluator_config
+    )
+
+    # The dataset could be a tuple of tensors or a DataLoader
+    # These two cases need to be accounted for
+    if isinstance(dataset, DataLoader):
+        for sample, _ in dataset:
+            m(sample)
+    else:
+        m(*dataset)
+
     m = convert_pt2e(m)
     logging.debug(f"Quantized model: {m}")
-    # make sure we can export to flat buffer
     return m
 
 
@@ -158,7 +179,23 @@ models = {
     "softmax": SoftmaxModule,
 }
 
-evaluators = {}
+calibration_data = {
+    "add": (torch.randn(1, 5),),
+    "add2": (
+        torch.randn(1, 5),
+        torch.randn(1, 5),
+    ),
+    "add3": (
+        torch.randn(32, 5),
+        torch.randn(32, 5),
+    ),
+    "softmax": (torch.randn(32, 2, 2),),
+}
+
+evaluators = {
+    "generic": GenericModelEvaluator,
+    "mv2": MobileNetV2Evaluator,
+}
 
 targets = [
     "ethos-u55-32",
@@ -172,6 +209,39 @@ targets = [
     "ethos-u85-2048",
     "TOSA",
 ]
+
+
+def get_calibration_data(
+    model_name: str,
+    example_inputs: Tuple[torch.Tensor],
+    evaluator_name: str | None,
+    evaluator_config: str | None,
+):
+    # Firstly, if the model is being evaluated, take the evaluators calibration function if it has one
+    if evaluator_name is not None:
+        evaluator = evaluators[evaluator_name]
+
+        if hasattr(evaluator, "get_calibrator"):
+            assert evaluator_config is not None
+
+            config_path = Path(evaluator_config)
+            with config_path.open() as f:
+                config = json.load(f)
+
+            if evaluator_name == "mv2":
+                return evaluator.get_calibrator(
+                    training_dataset_path=config["training_dataset_path"]
+                )
+            else:
+                raise RuntimeError(f"Unknown evaluator: {evaluator_name}")
+
+    # If the model is in the calibration_data dictionary, get the data from there
+    # This is used for the simple model examples provided
+    if model_name in calibration_data:
+        return calibration_data[model_name]
+
+    # As a last resort, fallback to the scripts previous behavior and return the example inputs
+    return example_inputs
 
 
 def get_compile_spec(
@@ -215,29 +285,44 @@ def get_compile_spec(
     return spec_builder.build()
 
 
-def get_evaluator(model_name: str) -> GenericModelEvaluator:
-    if model_name not in evaluators:
-        return GenericModelEvaluator
-    else:
-        return evaluators[model_name]
-
-
 def evaluate_model(
     model_name: str,
     intermediates: str,
     model_fp32: torch.nn.Module,
     model_int8: torch.nn.Module,
     example_inputs: Tuple[torch.Tensor],
-):
-    evaluator = get_evaluator(model_name)
+    evaluator_name: str,
+    evaluator_config: str | None,
+) -> None:
+    evaluator = evaluators[evaluator_name]
 
     # Get the path of the TOSA flatbuffer that is dumped
     intermediates_path = Path(intermediates)
     tosa_paths = list(intermediates_path.glob("*.tosa"))
 
-    init_evaluator = evaluator(
-        model_name, model_fp32, model_int8, example_inputs, str(tosa_paths[0])
-    )
+    if evaluator.REQUIRES_CONFIG:
+        assert evaluator_config is not None
+
+        config_path = Path(evaluator_config)
+        with config_path.open() as f:
+            config = json.load(f)
+
+        if evaluator_name == "mv2":
+            init_evaluator = evaluator(
+                model_name,
+                model_fp32,
+                model_int8,
+                example_inputs,
+                str(tosa_paths[0]),
+                config["batch_size"],
+                config["validation_dataset_path"],
+            )
+        else:
+            raise RuntimeError(f"Unknown evaluator {evaluator_name}")
+    else:
+        init_evaluator = evaluator(
+            model_name, model_fp32, model_int8, example_inputs, str(tosa_paths[0])
+        )
 
     quant_metrics = init_evaluator.evaluate()
     output_json_path = intermediates_path / "quant_metrics.json"
@@ -289,10 +374,18 @@ def get_args():
     parser.add_argument(
         "-e",
         "--evaluate",
-        action="store_true",
         required=False,
-        default=False,
+        nargs="?",
+        const="generic",
+        choices=["generic", "mv2"],
         help="Flag for running evaluation of the model.",
+    )
+    parser.add_argument(
+        "-c",
+        "--evaluate_config",
+        required=False,
+        default=None,
+        help="Provide path to evaluator config, if it is required.",
     )
     parser.add_argument(
         "-q",
@@ -375,7 +468,9 @@ if __name__ == "__main__":
     # Quantize if required
     model_int8 = None
     if args.quantize:
-        model = quantize(model, example_inputs)
+        model = quantize(
+            model, args.model_name, example_inputs, args.evaluate, args.evaluate_config
+        )
         model_int8 = model
         # Wrap quantized model back into an exported_program
         exported_program = torch.export.export_for_training(model, example_inputs)
@@ -433,5 +528,11 @@ if __name__ == "__main__":
 
     if args.evaluate:
         evaluate_model(
-            args.model_name, args.intermediates, model_fp32, model_int8, example_inputs
+            args.model_name,
+            args.intermediates,
+            model_fp32,
+            model_int8,
+            example_inputs,
+            args.evaluate,
+            args.evaluate_config,
         )
