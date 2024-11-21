@@ -35,12 +35,13 @@ class ET_EXPERIMENTAL LlavaRunner
   ::executorch::runtime::Error load() override;
 
   ::executorch::runtime::Error generate(
-      std::vector<Image> images,
+      std::vector<::executorch::extension::llm::Image> images,
       const std::string& prompt,
       int32_t seq_len = 1024,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const ::executorch::extension::llm::Stats&)>
-          stats_callback = {}) override;
+          stats_callback = {},
+      bool echo = true) override;
 
   ::executorch::runtime::Error prefill_images(
       std::vector<Image>& images,
@@ -58,7 +59,8 @@ class ET_EXPERIMENTAL LlavaRunner
       int64_t start_pos = 0,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const ::executorch::extension::llm::Stats&)>
-          stats_callback = {}) override;
+          stats_callback = {},
+      bool echo = true) override;
 
  private:
   inline static const std::string kPresetPrompt =
