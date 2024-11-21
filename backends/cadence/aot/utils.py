@@ -124,29 +124,29 @@ def get_ops_count(graph_module: torch.fx.GraphModule) -> Dict[str, int]:
 
 
 # Print the ops and how many times they occur multiple graph modules:
-# from export, from to_edge, and from Jarvis. Print the available
+# from export, from to_edge, and from final. Print the available
 # implementations for each op, and error out if the op is not supported.
 def print_ops_info(
     to_edge_gm: torch.fx.GraphModule,
-    jarvis_gm: torch.fx.GraphModule,
+    final_gm: torch.fx.GraphModule,
 ) -> None:
     to_edge_ops_count = get_ops_count(to_edge_gm)
-    jarvis_ops_count = get_ops_count(jarvis_gm)
+    final_ops_count = get_ops_count(final_gm)
 
     removed_ops = []
     # Get the counts of the ops that are removed from the final graph
     for k in to_edge_ops_count:
-        if k not in jarvis_ops_count:
+        if k not in final_ops_count:
             removed_ops.append(k)
 
     # Create a dict of ops and their counts to pass to tabulate
     ops_count = [
         [
             op,
-            jarvis_ops_count[op],
+            final_ops_count[op],
             to_edge_ops_count[op] if op in to_edge_ops_count else 0,
         ]
-        for op in jarvis_ops_count
+        for op in final_ops_count
     ]
     sorted_ops_count = sorted(ops_count, key=lambda x: x[1], reverse=True)
 
@@ -166,7 +166,7 @@ def print_ops_info(
             sorted_ops_count,
             headers=[
                 "Final Operators                                    ",  # one character longer than the longest op name
-                "Jarvis (Final) Graph",
+                "Final Graph",
                 "To_edge Graph",
                 "Export Graph",
             ],
@@ -181,7 +181,7 @@ def print_ops_info(
                 removed_ops_count,
                 headers=[
                     "Deleted Operators                                  ",  # one character longer than the longest op name
-                    "Jarvis (Final) Graph",
+                    "Final Graph",
                     "To_edge Graph",
                     "Export Graph",
                 ],
