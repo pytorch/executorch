@@ -112,6 +112,7 @@ class Runner {
  private:
   Stats stats_;
   std::vector<std::unique_ptr<executorch::extension::Module>> modules_;
+  std::vector<std::string> method_names_;
   std::vector<std::vector<uint16_t>> time_emb_list_;
   std::unordered_map<std::string, int32_t> vocab_to_token_map_;
 

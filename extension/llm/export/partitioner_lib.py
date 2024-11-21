@@ -160,10 +160,8 @@ def get_qnn_partitioner(
             QnnPartitioner,
         )
 
-        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.serialization.qnn_compile_spec_schema`
-        from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
-            QcomChipset,
-        )
+        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.serialization.qc_schema`
+        from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
         from executorch.backends.qualcomm.utils.utils import (
