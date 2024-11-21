@@ -29,7 +29,7 @@ MODEL_NAME_TO_OPTIONS = {
     "vit": XNNPACKOptions(True, True),
     "w2l": XNNPACKOptions(True, True),
     "edsr": XNNPACKOptions(True, True),
-    "mobilebert": XNNPACKOptions(True, True),
+    "mobilebert": XNNPACKOptions(False, True), # T170286473
     "llama2": XNNPACKOptions(False, True),
     "emformer_join": XNNPACKOptions(True, True),
     "emformer_predict": XNNPACKOptions(True, True),
