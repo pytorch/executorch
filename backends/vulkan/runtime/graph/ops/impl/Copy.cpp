@@ -135,7 +135,7 @@ void add_copy_channel_offset_node(
         utils::safe_downcast<uint32_t>(dim_at<kWidth4D>(in_sizes)),
         utils::safe_downcast<uint32_t>(dim_at<kHeight4D>(in_sizes)),
         utils::safe_downcast<uint32_t>(dst_last_z - dst_first_z + 1)};
-    uvec3 local_size = adaptive_work_group_size(global_size);
+    uvec3 local_size = graph.create_local_wg_size(global_size);
 
     const struct Block final {
       ivec3 range;
