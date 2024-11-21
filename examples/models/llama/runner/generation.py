@@ -199,15 +199,14 @@ class LlamaRunner(ABC):
                 temperature=temperature,
                 top_p=top_p,
                 echo=True,
-                pos_base=len(tokens),
+                pos_base=len(tokens) - 1 if len(tokens) > 0 else 0,
             )
             tokens.extend(new_tokens)
             prompt = input("Me: ")
         return tokens
 
     def _format_prompt(self, prompt: str) -> str:
-        return f"""
-<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+        return f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 
 You are a helpful assistant<|eot_id|><|start_header_id|>user<|end_header_id|>
 
