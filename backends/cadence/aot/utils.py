@@ -6,10 +6,12 @@
 
 # pyre-strict
 
+import enum
 import logging
 import operator
 import os
-from typing import Dict, List, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
 import torch
 
@@ -122,29 +124,29 @@ def get_ops_count(graph_module: torch.fx.GraphModule) -> Dict[str, int]:
 
 
 # Print the ops and how many times they occur multiple graph modules:
-# from export, from to_edge, and from Jarvis. Print the available
+# from export, from to_edge, and from final. Print the available
 # implementations for each op, and error out if the op is not supported.
 def print_ops_info(
     to_edge_gm: torch.fx.GraphModule,
-    jarvis_gm: torch.fx.GraphModule,
+    final_gm: torch.fx.GraphModule,
 ) -> None:
     to_edge_ops_count = get_ops_count(to_edge_gm)
-    jarvis_ops_count = get_ops_count(jarvis_gm)
+    final_ops_count = get_ops_count(final_gm)
 
     removed_ops = []
     # Get the counts of the ops that are removed from the final graph
     for k in to_edge_ops_count:
-        if k not in jarvis_ops_count:
+        if k not in final_ops_count:
             removed_ops.append(k)
 
     # Create a dict of ops and their counts to pass to tabulate
     ops_count = [
         [
             op,
-            jarvis_ops_count[op],
+            final_ops_count[op],
             to_edge_ops_count[op] if op in to_edge_ops_count else 0,
         ]
-        for op in jarvis_ops_count
+        for op in final_ops_count
     ]
     sorted_ops_count = sorted(ops_count, key=lambda x: x[1], reverse=True)
 
@@ -164,7 +166,7 @@ def print_ops_info(
             sorted_ops_count,
             headers=[
                 "Final Operators                                    ",  # one character longer than the longest op name
-                "Jarvis (Final) Graph",
+                "Final Graph",
                 "To_edge Graph",
                 "Export Graph",
             ],
@@ -179,7 +181,7 @@ def print_ops_info(
                 removed_ops_count,
                 headers=[
                     "Deleted Operators                                  ",  # one character longer than the longest op name
-                    "Jarvis (Final) Graph",
+                    "Final Graph",
                     "To_edge Graph",
                     "Export Graph",
                 ],
@@ -227,3 +229,27 @@ def save_bpte_program(
         logging.info(f"Saved exported program to {filename}")
     except Exception as e:
         logging.error(f"Error while saving to {output_dir}: {e}")
+
+
+@dataclass
+class MemoryConfig:
+    memory_sizes: List[int]
+
+    # Optional fields for logs
+    memory_names: Optional[List[str]] = None
+    base_addrs: Optional[List[int]] = None
+    memory_xml_path: Optional[str] = None
+    MemorySpace: Optional[enum.Enum] = None
+
+    # get num memories indexed from 1..N, compatible with EXIR's spec.mem_id
+    def get_num_memories(self) -> int:
+        return len(self.memory_sizes) + 1
+
+    # memory_space module provides num_memories indexed 0..num_memories-1.
+    def get_size(self, exir_id: int) -> int:
+        return self.memory_sizes[exir_id - 1]
+
+
+# Return default memory config for the backend
+def get_default_memory_config() -> MemoryConfig:
+    return MemoryConfig(memory_sizes=[0x1000000000])

@@ -650,6 +650,13 @@ struct ScalarTypeToCppTypeWrapper<torch::executor::ScalarType::Bits16> {
   using ctype = uint16_t;
 };
 
+// Use a C type of `uint16_t` instead of `UInt16` to simplify code reuse when
+// testing multiple integer types.
+template <>
+struct ScalarTypeToCppTypeWrapper<torch::executor::ScalarType::UInt16> {
+  using ctype = uint16_t;
+};
+
 // To allow implicit conversion between simple types to `ctype`
 #define SPECIALIZE_ScalarTypeToCppTypeWrapper(CTYPE, DTYPE)               \
   template <>                                                             \

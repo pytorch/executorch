@@ -6,8 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// codegen-nosub
-
 #version 450 core
 
 #define PRECISION ${PRECISION}
