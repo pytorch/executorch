@@ -406,8 +406,6 @@ ComputePipelineCache::~ComputePipelineCache() {
     return;
   }
 
-  save_cache();
-
   vkDestroyPipelineCache(device_, pipeline_cache_, nullptr);
   pipeline_cache_ = VK_NULL_HANDLE;
 }
