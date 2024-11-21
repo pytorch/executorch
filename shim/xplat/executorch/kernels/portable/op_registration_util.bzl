@@ -790,6 +790,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_masked_select",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+        ],
+    ),
+    op_target(
         name = "op_max",
         deps = [
             "//executorch/kernels/portable/cpu/util:reduce_util",
@@ -1074,6 +1080,9 @@ ATEN_OPS = (
         name = "op_sigmoid",
         deps = [
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
         ],
     ),
     op_target(

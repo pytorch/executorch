@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+# pyre-unsafe
 
 import unittest
 
@@ -30,8 +31,8 @@ try:
     from torchao.quantization.quant_api import (
         int8_dynamic_activation_int4_weight,
         quantize_,
-        unwrap_tensor_subclass,
     )
+    from torchao.utils import unwrap_tensor_subclass
 
     torchao_installed = True
 except:
@@ -496,6 +497,7 @@ class TestLinear(unittest.TestCase):
         which ares then transformed into aten.linear.default by the ConvertToLinear pass.
         """
         for i, _ in enumerate(in_sizes):
+            torch._dynamo.reset()
             in_size = int(in_sizes[i])
             input_size = int(input_sizes[i])
             output_size = int(output_sizes[i])

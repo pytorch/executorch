@@ -127,11 +127,9 @@ While we recommended using the latest prebuilt package pre-configured with the X
 
 Go to Project Navigator, click on LLaMA. `Project --> LLaMA --> Package Dependencies`, and update the package dependencies to any of the available options below:
 
-- Branch --> latest
+- Branch --> swiftpm-0.4.0.20241120 (amend to match the latest nightly build)
 - Branch --> 0.4.0
 - Branch --> 0.3.0
-- Commit --> (Specify the commit hash, for example: `e19893740c76195d6c4e6b44648725a46cee244e`. Full list [here](https://github.com/pytorch/executorch/commits/latest/))
-
 
 ### 2.2 Manually build the package locally and link them
 

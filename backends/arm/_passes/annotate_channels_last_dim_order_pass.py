@@ -14,7 +14,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_first_fake_tensor,
     insert_q_dq_pair,
 )
-from executorch.backends.arm.tosa_quant_utils import dq_op, q_op
+from executorch.backends.arm.tosa_quant_utils import dq_op, q_op, register_passable_op
 from executorch.backends.arm.tosa_utils import is_consumer_node_depthwise_conv2d
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -40,6 +40,9 @@ def _transpose_impl(*args, **kwargs):
     assert len(dim) <= 4
     # Pass-through in edge-IR
     return args[0]
+
+
+register_passable_op(torch.ops.passthrough_to_tosa._transpose)
 
 
 class AnnotateChannelsLastDimOrder(ExportPass):
