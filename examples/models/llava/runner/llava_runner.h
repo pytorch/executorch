@@ -42,7 +42,9 @@ class ET_EXPERIMENTAL LlavaRunner
       std::function<void(const ::executorch::extension::llm::Stats&)>
           stats_callback = {}) override;
 
-  ::executorch::runtime::Error prefill_images(std::vector<Image>& images, int64_t& start_pos) override;
+  ::executorch::runtime::Error prefill_images(
+      std::vector<Image>& images,
+      int64_t& start_pos) override;
 
   ::executorch::runtime::Result<uint64_t> prefill_prompt(
       const std::string& prompt,
