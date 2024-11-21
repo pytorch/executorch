@@ -19,14 +19,12 @@ from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 
 from executorch.backends.qualcomm.quantizer.custom_annotation import (
+    annotate_matmul_16a8w,
     custom_annotate_llama_last_conv_16a8w,
-    custom_annotate_llama_matmul_16a8w,
 )
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
-    QcomChipset,
-)
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.constants import QCOM_QUANTIZED_IO
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
@@ -78,7 +76,7 @@ def calibrate(
     token_list = sp_model.encode(user_prompts, bos=True, eos=False)
 
     with torch.no_grad():
-        while token_list[-1] != sp_model.eos_id and pos < 512:
+        while token_list[-1] != sp_model.eos_id and pos < 511:
             logits, new_k_caches, new_v_caches = module(
                 torch.full((1, 1), token_list[pos], dtype=torch.int32),
                 torch.full((1, 1), pos),
@@ -297,7 +295,7 @@ def compile(args):
             quant_dtype,
             custom_annotations=(
                 custom_annotate_llama_last_conv_16a8w,
-                custom_annotate_llama_matmul_16a8w,
+                annotate_matmul_16a8w,
             ),
         )
         end_quantize_ts = time.time()

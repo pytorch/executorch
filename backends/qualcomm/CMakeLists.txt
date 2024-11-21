@@ -74,7 +74,10 @@ include_directories(
   ${EXECUTORCH_SOURCE_DIR}/third-party/flatbuffers/include
 )
 
-set(_qnn_schema__srcs backends/qualcomm/serialization/schema.fbs)
+set(_qnn_schema__srcs
+  backends/qualcomm/serialization/qc_compiler_spec.fbs
+  backends/qualcomm/serialization/qc_binary_info.fbs
+)
 set(_qnn_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
 # Paths to headers generated from the .fbs files.
 set(_qnn_schema__outputs)

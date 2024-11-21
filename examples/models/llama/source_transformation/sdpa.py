@@ -99,7 +99,7 @@ def _replace_sdpa_with_custom_op(module: torch.nn.Module):
 
 
 def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
-    import executorch.extension.llm.custom_ops  # noqa
+    from executorch.extension.llm.custom_ops import custom_ops  # noqa
 
     _replace_sdpa_with_custom_op(module)
     return module
