@@ -29,6 +29,8 @@ class arm_test_options(Enum):
     corstone300 = auto()
     dump_path = auto()
     date_format = auto()
+    model_explorer_host = auto()
+    model_explorer_port = auto()
 
 
 _test_options: dict[arm_test_options, Any] = {}
@@ -41,6 +43,18 @@ def pytest_addoption(parser):
     parser.addoption("--arm_run_corstone300", action="store_true")
     parser.addoption("--default_dump_path", default=None)
     parser.addoption("--date_format", default="%d-%b-%H:%M:%S")
+    parser.addoption(
+        "--model_explorer_host",
+        action="store",
+        default=None,
+        help="If set, tries to connect to existing model-explorer server rather than starting a new one.",
+    )
+    parser.addoption(
+        "--model_explorer_port",
+        action="store",
+        default=None,
+        help="Set the port of the model explorer server. If not set, tries ports between 8080 and 8099.",
+    )
 
 
 def pytest_configure(config):
@@ -62,7 +76,19 @@ def pytest_configure(config):
             raise RuntimeError(
                 f"Supplied argument 'default_dump_path={dump_path}' that does not exist or is not a directory."
             )
+    if config.option.model_explorer_port:
+        if not str.isdecimal(config.option.model_explorer_port):
+            raise RuntimeError(
+                f"--model_explorer_port needs to be an integer, got '{config.option.model_explorer_port}'."
+            )
+        else:
+            _test_options[arm_test_options.model_explorer_port] = int(
+                config.option.model_explorer_port
+            )
     _test_options[arm_test_options.date_format] = config.option.date_format
+    _test_options[arm_test_options.model_explorer_host] = (
+        config.option.model_explorer_host
+    )
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 
