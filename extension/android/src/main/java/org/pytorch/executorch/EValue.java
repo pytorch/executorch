@@ -12,7 +12,6 @@ import com.facebook.jni.annotations.DoNotStrip;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Locale;
-import java.util.Optional;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**
@@ -44,26 +43,8 @@ public class EValue {
   private static final int TYPE_CODE_INT = 4;
   private static final int TYPE_CODE_BOOL = 5;
 
-  private static final int TYPE_CODE_LIST_BOOL = 6;
-  private static final int TYPE_CODE_LIST_DOUBLE = 7;
-  private static final int TYPE_CODE_LIST_INT = 8;
-  private static final int TYPE_CODE_LIST_TENSOR = 9;
-  private static final int TYPE_CODE_LIST_SCALAR = 10;
-  private static final int TYPE_CODE_LIST_OPTIONAL_TENSOR = 11;
-
   private String[] TYPE_NAMES = {
-    "None",
-    "Tensor",
-    "String",
-    "Double",
-    "Int",
-    "Bool",
-    "ListBool",
-    "ListDouble",
-    "ListInt",
-    "ListTensor",
-    "ListScalar",
-    "ListOptionalTensor",
+    "None", "Tensor", "String", "Double", "Int", "Bool",
   };
 
   @DoNotStrip private final int mTypeCode;
@@ -102,31 +83,6 @@ public class EValue {
   @DoNotStrip
   public boolean isString() {
     return TYPE_CODE_STRING == this.mTypeCode;
-  }
-
-  @DoNotStrip
-  public boolean isBoolList() {
-    return TYPE_CODE_LIST_BOOL == this.mTypeCode;
-  }
-
-  @DoNotStrip
-  public boolean isIntList() {
-    return TYPE_CODE_LIST_INT == this.mTypeCode;
-  }
-
-  @DoNotStrip
-  public boolean isDoubleList() {
-    return TYPE_CODE_LIST_DOUBLE == this.mTypeCode;
-  }
-
-  @DoNotStrip
-  public boolean isTensorList() {
-    return TYPE_CODE_LIST_TENSOR == this.mTypeCode;
-  }
-
-  @DoNotStrip
-  public boolean isOptionalTensorList() {
-    return TYPE_CODE_LIST_OPTIONAL_TENSOR == this.mTypeCode;
   }
 
   /** Creates a new {@code EValue} of type {@code Optional} that contains no value. */
@@ -175,46 +131,6 @@ public class EValue {
     return iv;
   }
 
-  /** Creates a new {@code EValue} of type {@code List[bool]}. */
-  @DoNotStrip
-  public static EValue listFrom(boolean... list) {
-    final EValue iv = new EValue(TYPE_CODE_LIST_BOOL);
-    iv.mData = list;
-    return iv;
-  }
-
-  /** Creates a new {@code EValue} of type {@code List[int]}. */
-  @DoNotStrip
-  public static EValue listFrom(long... list) {
-    final EValue iv = new EValue(TYPE_CODE_LIST_INT);
-    iv.mData = list;
-    return iv;
-  }
-
-  /** Creates a new {@code EValue} of type {@code List[double]}. */
-  @DoNotStrip
-  public static EValue listFrom(double... list) {
-    final EValue iv = new EValue(TYPE_CODE_LIST_DOUBLE);
-    iv.mData = list;
-    return iv;
-  }
-
-  /** Creates a new {@code EValue} of type {@code List[Tensor]}. */
-  @DoNotStrip
-  public static EValue listFrom(Tensor... list) {
-    final EValue iv = new EValue(TYPE_CODE_LIST_TENSOR);
-    iv.mData = list;
-    return iv;
-  }
-
-  /** Creates a new {@code EValue} of type {@code List[Optional[Tensor]]}. */
-  @DoNotStrip
-  public static EValue listFrom(Optional<Tensor>... list) {
-    final EValue iv = new EValue(TYPE_CODE_LIST_OPTIONAL_TENSOR);
-    iv.mData = list;
-    return iv;
-  }
-
   @DoNotStrip
   public Tensor toTensor() {
     preconditionType(TYPE_CODE_TENSOR, mTypeCode);
@@ -245,36 +161,6 @@ public class EValue {
     return (String) mData;
   }
 
-  @DoNotStrip
-  public boolean[] toBoolList() {
-    preconditionType(TYPE_CODE_LIST_BOOL, mTypeCode);
-    return (boolean[]) mData;
-  }
-
-  @DoNotStrip
-  public long[] toIntList() {
-    preconditionType(TYPE_CODE_LIST_INT, mTypeCode);
-    return (long[]) mData;
-  }
-
-  @DoNotStrip
-  public double[] toDoubleList() {
-    preconditionType(TYPE_CODE_LIST_DOUBLE, mTypeCode);
-    return (double[]) mData;
-  }
-
-  @DoNotStrip
-  public Tensor[] toTensorList() {
-    preconditionType(TYPE_CODE_LIST_TENSOR, mTypeCode);
-    return (Tensor[]) mData;
-  }
-
-  @DoNotStrip
-  public Optional<Tensor>[] toOptionalTensorList() {
-    preconditionType(TYPE_CODE_LIST_OPTIONAL_TENSOR, mTypeCode);
-    return (Optional<Tensor>[]) mData;
-  }
-
   private void preconditionType(int typeCodeExpected, int typeCode) {
     if (typeCode != typeCodeExpected) {
       throw new IllegalStateException(
@@ -294,8 +180,7 @@ public class EValue {
    * Serializes an {@code EValue} into a byte array.
    *
    * @return The serialized byte array.
-   * @apiNote This method is experimental and subject to change without notice. This does NOT
-   *     supoprt list type.
+   * @apiNote This method is experimental and subject to change without notice.
    */
   public byte[] toByteArray() {
     if (isNone()) {
@@ -331,8 +216,7 @@ public class EValue {
    *
    * @param bytes The byte array to deserialize from.
    * @return The deserialized {@code EValue}.
-   * @apiNote This method is experimental and subject to change without notice. This does NOT list
-   *     type.
+   * @apiNote This method is experimental and subject to change without notice.
    */
   public static EValue fromByteArray(byte[] bytes) {
     ByteBuffer buffer = ByteBuffer.wrap(bytes);
