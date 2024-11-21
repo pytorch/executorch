@@ -12,10 +12,10 @@ from typing import Callable, cast, Optional
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
-
-from executorch.backends.cadence.aot.passes import ReplaceSafeSoftmaxWithSoftmax
 from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
 from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
+
+from executorch.backends.cadence.aot.replace_ops import ReplaceSafeSoftmaxWithSoftmax
 from executorch.backends.cadence.aot.utils import model_gm_has_SDPA, model_is_quantized
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
@@ -194,9 +194,6 @@ def export_to_edge(
     return edge_prog_manager
 
 
-# Export the model and lower it to an EdgeProgramManager (in edge IR), and
-# apply passes specific to Cadence DSP execution. Return both to print the
-# differences.
 def export_to_cadence(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
@@ -216,6 +213,25 @@ def export_to_cadence(
     return cadence_prog_manager
 
 
+def quantize_and_export_to_cadence(
+    model: torch.nn.Module,
+    inputs: tuple[object, ...],
+    dump_graphs: bool = False,
+    opt_level: int = 1,
+) -> EdgeProgramManager:
+    quantized_model = quantize_pt2(model, inputs)
+
+    return export_to_cadence(
+        quantized_model,
+        inputs,
+        opt_level=opt_level,
+        dump_graphs=dump_graphs,
+    )
+
+
+# Export the model and lower it to an EdgeProgramManager (in edge IR), and
+# apply passes specific to Cadence DSP execution. Return both to print the
+# differences.
 def export_to_executorch_gen_etrecord(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
