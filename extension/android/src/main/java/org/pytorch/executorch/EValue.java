@@ -12,7 +12,6 @@ import com.facebook.jni.annotations.DoNotStrip;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Locale;
-import java.util.Optional;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**
@@ -45,12 +44,7 @@ public class EValue {
   private static final int TYPE_CODE_BOOL = 5;
 
   private String[] TYPE_NAMES = {
-    "None",
-    "Tensor",
-    "String",
-    "Double",
-    "Int",
-    "Bool",
+    "None", "Tensor", "String", "Double", "Int", "Bool",
   };
 
   @DoNotStrip private final int mTypeCode;
