@@ -44,7 +44,7 @@ class ET_EXPERIMENTAL LlavaRunner
       bool echo = true) override;
 
   ::executorch::runtime::Error prefill_images(
-      std::vector<Image>& images,
+      std::vector<::executorch::extension::llm::Image>& images,
       int64_t& start_pos) override;
 
   ::executorch::runtime::Result<uint64_t> prefill_prompt(
