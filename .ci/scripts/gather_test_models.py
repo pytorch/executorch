@@ -25,7 +25,7 @@ CUSTOM_RUNNERS = {
         "resnet50": "linux.12xlarge",
         "llava": "linux.12xlarge",
         "llama3_2_vision_encoder": "linux.12xlarge",
-        "llama3_2_text_decoder": "linux.12xlarge",
+        # "llama3_2_text_decoder": "linux.12xlarge",  # TODO: re-enable test when Huy's change is in / model gets smaller.
         # This one causes timeout on smaller runner, the root cause is unclear (T161064121)
         "dl3": "linux.12xlarge",
         "emformer_join": "linux.12xlarge",

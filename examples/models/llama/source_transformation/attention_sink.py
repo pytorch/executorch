@@ -43,6 +43,8 @@ class RopeWithAttentionSink(Rope):
          sin(delta), cos(delta))
          where delta = new_position * theta - original_position * theta
 
+         The shape of k is (batch_size, seq_len, n_local_heads, head_dim)
+
          Based on https://github.com/huggingface/transformers/blame/main/src/transformers/cache_utils.py#L961
         """
         seq_len = k.shape[1]

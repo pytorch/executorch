@@ -2,7 +2,7 @@
 
 ## Supported DSPs (in progress)
 - HiFi Audio
-- ...
+- Fusion G3
 
 ## Tutorial
 

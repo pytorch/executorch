@@ -52,6 +52,7 @@ class Memory {
   std::vector<std::vector<executorch::aten::TensorImpl*>> output_tensors_;
   std::vector<std::string> pos_embs_path_;
   std::vector<std::shared_ptr<executorch::extension::Module>> modules_;
+  std::vector<std::string> method_names_;
 };
 
 class BertMemory : public Memory {

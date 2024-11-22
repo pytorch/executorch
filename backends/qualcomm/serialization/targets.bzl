@@ -6,10 +6,10 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
-    
+
     export_file(
-        name = "qnn_schema",
-        src = "schema.fbs",
+        name = "qc_compiler_spec_schema",
+        src = "qc_compiler_spec.fbs",
         visibility = ["//executorch/backends/qualcomm/serialization/..."],
     )
 
@@ -19,7 +19,7 @@ def define_common_targets():
             "*.py",
         ]),
         resources = {
-            ":qnn_schema": "schema.fbs",
+            ":qc_compiler_spec_schema": "qc_compiler_spec.fbs",
         },
         visibility = [
             "@EXECUTORCH_CLIENTS",

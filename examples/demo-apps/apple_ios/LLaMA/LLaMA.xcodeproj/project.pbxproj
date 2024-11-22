@@ -17,22 +17,6 @@
 		0324D6922BAACB6900DEF36F /* ResourceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324D6872BAACB6900DEF36F /* ResourceManager.swift */; };
 		0324D6932BAACB6900DEF36F /* ResourceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324D6882BAACB6900DEF36F /* ResourceMonitor.swift */; };
 		0324D6962BAACB7000DEF36F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0324D6942BAACB7000DEF36F /* Assets.xcassets */; };
-		03312C192BBFC940002106EF /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C182BBFC940002106EF /* backend_coreml */; };
-		03312C1B2BBFC940002106EF /* backend_coreml_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C1A2BBFC940002106EF /* backend_coreml_debug */; settings = {ATTRIBUTES = (Required, ); }; };
-		03312C1D2BBFC940002106EF /* kernels_custom in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C1C2BBFC940002106EF /* kernels_custom */; settings = {ATTRIBUTES = (Required, ); }; };
-		03312C1F2BBFC940002106EF /* kernels_custom_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C1E2BBFC940002106EF /* kernels_custom_debug */; settings = {ATTRIBUTES = (Required, ); }; };
-		03312C252BBFC940002106EF /* backend_mps in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C242BBFC940002106EF /* backend_mps */; };
-		03312C272BBFC940002106EF /* backend_mps_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C262BBFC940002106EF /* backend_mps_debug */; settings = {ATTRIBUTES = (Required, ); }; };
-		03312C292BBFC940002106EF /* kernels_optimized in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C282BBFC940002106EF /* kernels_optimized */; };
-		03312C2B2BBFC940002106EF /* kernels_optimized_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C2A2BBFC940002106EF /* kernels_optimized_debug */; settings = {ATTRIBUTES = (Required, ); }; };
-		03312C2D2BBFC940002106EF /* kernels_portable in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C2C2BBFC940002106EF /* kernels_portable */; settings = {ATTRIBUTES = (Required, ); }; };
-		03312C2F2BBFC940002106EF /* kernels_portable_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C2E2BBFC940002106EF /* kernels_portable_debug */; settings = {ATTRIBUTES = (Required, ); }; };
-		03312C312BBFC940002106EF /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C302BBFC940002106EF /* kernels_quantized */; };
-		03312C332BBFC940002106EF /* kernels_quantized_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C322BBFC940002106EF /* kernels_quantized_debug */; settings = {ATTRIBUTES = (Required, ); }; };
-		03312C352BBFC940002106EF /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C342BBFC940002106EF /* backend_xnnpack */; };
-		03312C372BBFC940002106EF /* backend_xnnpack_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C362BBFC940002106EF /* backend_xnnpack_debug */; settings = {ATTRIBUTES = (Required, ); }; };
-		03312C3E2BBFD076002106EF /* executorch_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C3D2BBFD076002106EF /* executorch_debug */; };
-		03729EDB2BB1F8DE00152F2E /* LLaMARunner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */; };
 		03729EDC2BB1F8DE00152F2E /* LLaMARunner.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		03729EE12BB1F93800152F2E /* LLaMARunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0324D69A2BAACB7C00DEF36F /* LLaMARunner.mm */; };
 		03729EE22BB1F93E00152F2E /* LLaMARunner.h in Headers */ = {isa = PBXBuildFile; fileRef = 0324D6992BAACB7C00DEF36F /* LLaMARunner.h */; settings = {ATTRIBUTES = (Public, ); }; };
@@ -50,6 +34,21 @@
 		03BADE202BD2E88600DDFDC2 /* bpe_tokenizer.h in Headers */ = {isa = PBXBuildFile; fileRef = 03BADE1F2BD2E88600DDFDC2 /* bpe_tokenizer.h */; };
 		03BADE232BD2EB6700DDFDC2 /* tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03BADE212BD2EB6600DDFDC2 /* tiktoken.cpp */; };
 		03BADE242BD2EB6700DDFDC2 /* tiktoken.h in Headers */ = {isa = PBXBuildFile; fileRef = 03BADE222BD2EB6700DDFDC2 /* tiktoken.h */; };
+		03CF43962CEC5CEC00C7113B /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43952CEC5CEC00C7113B /* backend_coreml */; };
+		03CF43982CEC5CEC00C7113B /* backend_coreml_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43972CEC5CEC00C7113B /* backend_coreml_debug */; };
+		03CF439A2CEC5CEC00C7113B /* backend_mps in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43992CEC5CEC00C7113B /* backend_mps */; };
+		03CF439C2CEC5CEC00C7113B /* backend_mps_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF439B2CEC5CEC00C7113B /* backend_mps_debug */; };
+		03CF439E2CEC5CEC00C7113B /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF439D2CEC5CEC00C7113B /* backend_xnnpack */; };
+		03CF43A02CEC5CEC00C7113B /* backend_xnnpack_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF439F2CEC5CEC00C7113B /* backend_xnnpack_debug */; };
+		03CF43A22CEC5CEC00C7113B /* executorch_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A12CEC5CEC00C7113B /* executorch_debug */; };
+		03CF43A42CEC5CEC00C7113B /* kernels_custom in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A32CEC5CEC00C7113B /* kernels_custom */; };
+		03CF43A62CEC5CEC00C7113B /* kernels_custom_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A52CEC5CEC00C7113B /* kernels_custom_debug */; };
+		03CF43A82CEC5CEC00C7113B /* kernels_optimized in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A72CEC5CEC00C7113B /* kernels_optimized */; };
+		03CF43AA2CEC5CEC00C7113B /* kernels_optimized_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A92CEC5CEC00C7113B /* kernels_optimized_debug */; };
+		03CF43AC2CEC5CEC00C7113B /* kernels_portable in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43AB2CEC5CEC00C7113B /* kernels_portable */; };
+		03CF43AE2CEC5CEC00C7113B /* kernels_portable_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43AD2CEC5CEC00C7113B /* kernels_portable_debug */; };
+		03CF43B02CEC5CEC00C7113B /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43AF2CEC5CEC00C7113B /* kernels_quantized */; };
+		03CF43B22CEC5CEC00C7113B /* kernels_quantized_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43B12CEC5CEC00C7113B /* kernels_quantized_debug */; };
 		03D03DA72C7823620088D6A7 /* text_prefiller.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D03DA52C7823620088D6A7 /* text_prefiller.cpp */; };
 		03D03DA82C7823620088D6A7 /* text_prefiller.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D03DA62C7823620088D6A7 /* text_prefiller.h */; };
 		03D03DAB2C7823830088D6A7 /* text_decoder_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D03DA92C7823830088D6A7 /* text_decoder_runner.cpp */; };
@@ -113,10 +112,8 @@
 		03BADE1F2BD2E88600DDFDC2 /* bpe_tokenizer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = bpe_tokenizer.h; path = ../../../../extension/llm/tokenizer/bpe_tokenizer.h; sourceTree = "<group>"; };
 		03BADE212BD2EB6600DDFDC2 /* tiktoken.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = tiktoken.cpp; path = ../../../../extension/llm/tokenizer/tiktoken.cpp; sourceTree = "<group>"; };
 		03BADE222BD2EB6700DDFDC2 /* tiktoken.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = tiktoken.h; path = ../../../../extension/llm/tokenizer/tiktoken.h; sourceTree = "<group>"; };
-		03C5F51A2CE7D32400D6CE3F /* LLaMA-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "LLaMA-Release.xcconfig"; sourceTree = "<group>"; };
-		03C5F51B2CE7D33B00D6CE3F /* LLaMA-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "LLaMA-Debug.xcconfig"; sourceTree = "<group>"; };
-		03C5F51C2CE7D35C00D6CE3F /* LLaMARunner-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "LLaMARunner-Release.xcconfig"; sourceTree = "<group>"; };
-		03C5F51D2CE7D37100D6CE3F /* LLaMARunner-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "LLaMARunner-Debug.xcconfig"; sourceTree = "<group>"; };
+		03C5F51C2CE7D35C00D6CE3F /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		03C5F51D2CE7D37100D6CE3F /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		03D03DA52C7823620088D6A7 /* text_prefiller.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = text_prefiller.cpp; sourceTree = "<group>"; };
 		03D03DA62C7823620088D6A7 /* text_prefiller.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = text_prefiller.h; sourceTree = "<group>"; };
 		03D03DA92C7823830088D6A7 /* text_decoder_runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = text_decoder_runner.cpp; sourceTree = "<group>"; };
@@ -130,21 +127,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				03312C272BBFC940002106EF /* backend_mps_debug in Frameworks */,
-				03312C312BBFC940002106EF /* kernels_quantized in Frameworks */,
-				03312C252BBFC940002106EF /* backend_mps in Frameworks */,
-				03312C2D2BBFC940002106EF /* kernels_portable in Frameworks */,
-				03312C1D2BBFC940002106EF /* kernels_custom in Frameworks */,
-				03312C352BBFC940002106EF /* backend_xnnpack in Frameworks */,
-				03312C372BBFC940002106EF /* backend_xnnpack_debug in Frameworks */,
-				03312C1B2BBFC940002106EF /* backend_coreml_debug in Frameworks */,
-				03312C2B2BBFC940002106EF /* kernels_optimized_debug in Frameworks */,
-				03312C2F2BBFC940002106EF /* kernels_portable_debug in Frameworks */,
-				03312C292BBFC940002106EF /* kernels_optimized in Frameworks */,
-				03312C192BBFC940002106EF /* backend_coreml in Frameworks */,
-				03312C332BBFC940002106EF /* kernels_quantized_debug in Frameworks */,
-				03312C1F2BBFC940002106EF /* kernels_custom_debug in Frameworks */,
-				03729EDB2BB1F8DE00152F2E /* LLaMARunner.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -152,7 +134,21 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				03312C3E2BBFD076002106EF /* executorch_debug in Frameworks */,
+				03CF43962CEC5CEC00C7113B /* backend_coreml in Frameworks */,
+				03CF43982CEC5CEC00C7113B /* backend_coreml_debug in Frameworks */,
+				03CF439A2CEC5CEC00C7113B /* backend_mps in Frameworks */,
+				03CF439C2CEC5CEC00C7113B /* backend_mps_debug in Frameworks */,
+				03CF439E2CEC5CEC00C7113B /* backend_xnnpack in Frameworks */,
+				03CF43A02CEC5CEC00C7113B /* backend_xnnpack_debug in Frameworks */,
+				03CF43A22CEC5CEC00C7113B /* executorch_debug in Frameworks */,
+				03CF43A42CEC5CEC00C7113B /* kernels_custom in Frameworks */,
+				03CF43A62CEC5CEC00C7113B /* kernels_custom_debug in Frameworks */,
+				03CF43A82CEC5CEC00C7113B /* kernels_optimized in Frameworks */,
+				03CF43AA2CEC5CEC00C7113B /* kernels_optimized_debug in Frameworks */,
+				03CF43AC2CEC5CEC00C7113B /* kernels_portable in Frameworks */,
+				03CF43AE2CEC5CEC00C7113B /* kernels_portable_debug in Frameworks */,
+				03CF43B02CEC5CEC00C7113B /* kernels_quantized in Frameworks */,
+				03CF43B22CEC5CEC00C7113B /* kernels_quantized_debug in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -163,10 +159,8 @@
 			isa = PBXGroup;
 			children = (
 				0320439D2BB4AC6600050211 /* LLaMA-Info.plist */,
-				03C5F51B2CE7D33B00D6CE3F /* LLaMA-Debug.xcconfig */,
-				03C5F51A2CE7D32400D6CE3F /* LLaMA-Release.xcconfig */,
-				03C5F51D2CE7D37100D6CE3F /* LLaMARunner-Debug.xcconfig */,
-				03C5F51C2CE7D35C00D6CE3F /* LLaMARunner-Release.xcconfig */,
+				03C5F51D2CE7D37100D6CE3F /* Debug.xcconfig */,
+				03C5F51C2CE7D35C00D6CE3F /* Release.xcconfig */,
 			);
 			path = SupportingFiles;
 			sourceTree = "<group>";
@@ -337,20 +331,6 @@
 			);
 			name = LLaMA;
 			packageProductDependencies = (
-				03312C182BBFC940002106EF /* backend_coreml */,
-				03312C1A2BBFC940002106EF /* backend_coreml_debug */,
-				03312C1C2BBFC940002106EF /* kernels_custom */,
-				03312C1E2BBFC940002106EF /* kernels_custom_debug */,
-				03312C242BBFC940002106EF /* backend_mps */,
-				03312C262BBFC940002106EF /* backend_mps_debug */,
-				03312C282BBFC940002106EF /* kernels_optimized */,
-				03312C2A2BBFC940002106EF /* kernels_optimized_debug */,
-				03312C2C2BBFC940002106EF /* kernels_portable */,
-				03312C2E2BBFC940002106EF /* kernels_portable_debug */,
-				03312C302BBFC940002106EF /* kernels_quantized */,
-				03312C322BBFC940002106EF /* kernels_quantized_debug */,
-				03312C342BBFC940002106EF /* backend_xnnpack */,
-				03312C362BBFC940002106EF /* backend_xnnpack_debug */,
 			);
 			productName = LLaMA;
 			productReference = 036CAF9D2BB1444500D6C2D5 /* LLaMA.app */;
@@ -372,7 +352,21 @@
 			);
 			name = LLaMARunner;
 			packageProductDependencies = (
-				03312C3D2BBFD076002106EF /* executorch_debug */,
+				03CF43952CEC5CEC00C7113B /* backend_coreml */,
+				03CF43972CEC5CEC00C7113B /* backend_coreml_debug */,
+				03CF43992CEC5CEC00C7113B /* backend_mps */,
+				03CF439B2CEC5CEC00C7113B /* backend_mps_debug */,
+				03CF439D2CEC5CEC00C7113B /* backend_xnnpack */,
+				03CF439F2CEC5CEC00C7113B /* backend_xnnpack_debug */,
+				03CF43A12CEC5CEC00C7113B /* executorch_debug */,
+				03CF43A32CEC5CEC00C7113B /* kernels_custom */,
+				03CF43A52CEC5CEC00C7113B /* kernels_custom_debug */,
+				03CF43A72CEC5CEC00C7113B /* kernels_optimized */,
+				03CF43A92CEC5CEC00C7113B /* kernels_optimized_debug */,
+				03CF43AB2CEC5CEC00C7113B /* kernels_portable */,
+				03CF43AD2CEC5CEC00C7113B /* kernels_portable_debug */,
+				03CF43AF2CEC5CEC00C7113B /* kernels_quantized */,
+				03CF43B12CEC5CEC00C7113B /* kernels_quantized_debug */,
 			);
 			productName = LLaMARunner;
 			productReference = 03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */;
@@ -406,7 +400,7 @@
 			);
 			mainGroup = 032C01662AC228E5002955E1;
 			packageReferences = (
-				03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */,
+				03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */,
 			);
 			productRefGroup = 032C01662AC228E5002955E1;
 			projectDirPath = "";
@@ -638,7 +632,6 @@
 		};
 		032C017E2AC228E7002955E1 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 03C5F51B2CE7D33B00D6CE3F /* LLaMA-Debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = LLaMAEntitlements/LLaMA.entitlements;
@@ -672,7 +665,6 @@
 		};
 		032C017F2AC228E7002955E1 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 03C5F51A2CE7D32400D6CE3F /* LLaMA-Release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = LLaMAEntitlements/LLaMA.entitlements;
@@ -706,9 +698,8 @@
 		};
 		03729EDE2BB1F8DE00152F2E /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 03C5F51D2CE7D37100D6CE3F /* LLaMARunner-Debug.xcconfig */;
+			baseConfigurationReference = 03C5F51D2CE7D37100D6CE3F /* Debug.xcconfig */;
 			buildSettings = {
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -746,9 +737,8 @@
 		};
 		03729EDF2BB1F8DE00152F2E /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 03C5F51C2CE7D35C00D6CE3F /* LLaMARunner-Release.xcconfig */;
+			baseConfigurationReference = 03C5F51C2CE7D35C00D6CE3F /* Release.xcconfig */;
 			buildSettings = {
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -814,91 +804,91 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */ = {
+		03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
+				branch = "swiftpm-0.4.0.20241120";
 				kind = branch;
-				branch = "swiftpm-0.4.0.20241114";
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		03312C182BBFC940002106EF /* backend_coreml */ = {
+		03CF43952CEC5CEC00C7113B /* backend_coreml */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = backend_coreml;
 		};
-		03312C1A2BBFC940002106EF /* backend_coreml_debug */ = {
+		03CF43972CEC5CEC00C7113B /* backend_coreml_debug */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = backend_coreml_debug;
 		};
-		03312C1C2BBFC940002106EF /* kernels_custom */ = {
+		03CF43992CEC5CEC00C7113B /* backend_mps */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = kernels_custom;
-		};
-		03312C1E2BBFC940002106EF /* kernels_custom_debug */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = kernels_custom_debug;
-		};
-		03312C242BBFC940002106EF /* backend_mps */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = backend_mps;
 		};
-		03312C262BBFC940002106EF /* backend_mps_debug */ = {
+		03CF439B2CEC5CEC00C7113B /* backend_mps_debug */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = backend_mps_debug;
 		};
-		03312C282BBFC940002106EF /* kernels_optimized */ = {
+		03CF439D2CEC5CEC00C7113B /* backend_xnnpack */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = kernels_optimized;
-		};
-		03312C2A2BBFC940002106EF /* kernels_optimized_debug */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = kernels_optimized_debug;
-		};
-		03312C2C2BBFC940002106EF /* kernels_portable */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = kernels_portable;
-		};
-		03312C2E2BBFC940002106EF /* kernels_portable_debug */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = kernels_portable_debug;
-		};
-		03312C302BBFC940002106EF /* kernels_quantized */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = kernels_quantized;
-		};
-		03312C322BBFC940002106EF /* kernels_quantized_debug */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = kernels_quantized_debug;
-		};
-		03312C342BBFC940002106EF /* backend_xnnpack */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = backend_xnnpack;
 		};
-		03312C362BBFC940002106EF /* backend_xnnpack_debug */ = {
+		03CF439F2CEC5CEC00C7113B /* backend_xnnpack_debug */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = backend_xnnpack_debug;
 		};
-		03312C3D2BBFD076002106EF /* executorch_debug */ = {
+		03CF43A12CEC5CEC00C7113B /* executorch_debug */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = executorch_debug;
+		};
+		03CF43A32CEC5CEC00C7113B /* kernels_custom */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_custom;
+		};
+		03CF43A52CEC5CEC00C7113B /* kernels_custom_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_custom_debug;
+		};
+		03CF43A72CEC5CEC00C7113B /* kernels_optimized */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_optimized;
+		};
+		03CF43A92CEC5CEC00C7113B /* kernels_optimized_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_optimized_debug;
+		};
+		03CF43AB2CEC5CEC00C7113B /* kernels_portable */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_portable;
+		};
+		03CF43AD2CEC5CEC00C7113B /* kernels_portable_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_portable_debug;
+		};
+		03CF43AF2CEC5CEC00C7113B /* kernels_quantized */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_quantized;
+		};
+		03CF43B12CEC5CEC00C7113B /* kernels_quantized_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_quantized_debug;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
