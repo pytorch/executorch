@@ -1173,6 +1173,33 @@ class Inspector:
 
         display_or_print_df(filtered_column_df, file)
 
+
+    def save_data_to_csv(
+        self,
+        file: IO[str],
+    ) -> None:
+        """
+        Stores the underlying EventBlocks in a csv format with tab separator, to facilitate copy-paste into spreadsheets.
+
+        Args:
+            file: Which IO stream to print to. Do not use stdout, as tab separator is not preserved.
+
+        Returns:
+            None
+        """
+        combined_df = self.to_dataframe()
+
+        # Filter out some columns and rows for better readability when printing
+        filtered_column_df = combined_df.drop(columns=EXCLUDED_COLUMNS_WHEN_PRINTING)
+        for filter_name in EXCLUDED_EVENTS_WHEN_PRINTING:
+            filtered_column_df = filtered_column_df[
+                ~filtered_column_df["event_name"].str.contains(filter_name)
+            ]
+        filtered_column_df.reset_index(drop=True, inplace=True)
+
+        filtered_column_df.to_csv(file, sep="\t")
+
+
     # TODO: write unit test
     def find_total_for_module(self, module_name: str) -> float:
         """
