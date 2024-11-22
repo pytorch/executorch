@@ -426,6 +426,9 @@ class FuseQuantizedBatchNormWithConv(ExportPass):
         # Note: there is a quantized.conv2d.new operator in the resulting graph
         # that takes a torch.classes.quantized.Conv2dPackedParamsBase as one of the input
         # this prevents us to directly call graph_module.recompile().
+        # pyre-fixme[16]: `GraphModule` has no attribute `_code`.
+        # pyre-fixme[16]: Item `Tensor` of `Tensor | Module` has no attribute
+        #  `python_code`.
         graph_module._code = graph_module._graph.python_code(root_module="self").src
 
     def __init__(self):
