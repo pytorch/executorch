@@ -1635,7 +1635,8 @@ class _TopLevelEmitter(_Emitter):
             # empty list.
             non_const_buffer_sizes=typing.cast(
                 # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorB...
-                List[int], self.module.meta["non_const_buffer_sizes"]
+                List[int],
+                self.module.meta["non_const_buffer_sizes"],
             ),
             container_meta_type=self.container_meta_type,
         )
