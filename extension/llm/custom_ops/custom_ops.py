@@ -31,7 +31,7 @@ except:
     logging.info(f"Looking for libcustom_ops_aot_lib.so in {executorch_package_path }")
     libs = list(
         glob.glob(
-            f"{executorch_package_path}/**/libquantized_ops_aot_lib.*", recursive=True
+            f"{executorch_package_path}/**/libcustom_ops_aot_lib.*", recursive=True
         )
     )
     assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
