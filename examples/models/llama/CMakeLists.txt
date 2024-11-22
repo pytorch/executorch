@@ -38,6 +38,7 @@ cmake_dependent_option(
 )
 
 option(EXECUTORCH_BUILD_TORCHAO "Build the torchao kernels" OFF)
+option(EXECUTORCH_BUILD_TORCHAO_MPS "Build the torchao mps kernels" OFF)
 
 if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
@@ -128,6 +129,13 @@ if(EXECUTORCH_BUILD_TORCHAO)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental)
   target_link_options_shared_lib(torchao_ops_executorch)
   list(APPEND link_libraries torchao_ops_executorch)
+endif()
+
+if(EXECUTORCH_BUILD_TORCHAO_MPS)
+  set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental/ops/mps ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental/ops/mps)
+  target_link_options_shared_lib(torchao_ops_mps_executorch)
+  list(APPEND link_libraries torchao_ops_mps_executorch)
 endif()
 
 set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)
