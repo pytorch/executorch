@@ -6,6 +6,7 @@
 
 
 import argparse
+import copy
 
 from typing import Optional, Union
 
@@ -166,11 +167,13 @@ class AttentionSinkEvalWrapper(EagerEvalWrapper):
         tokenizer: Union[SentencePieceTokenizer, Tiktoken],
         sink_size: int,
         window_size: int,
+        eviction_batch_size: int,
         max_seq_length: Optional[int] = None,
         use_kv_cache: bool = False,
     ):
         super().__init__(model, tokenizer, max_seq_length, use_kv_cache)
         self.cache_size = sink_size + window_size
+        self.eviction_batch_size = eviction_batch_size
         assert self._use_kv_cache, "Attention sink only works with kv cache."
 
     def _model_call(self, inps):
@@ -179,17 +182,18 @@ class AttentionSinkEvalWrapper(EagerEvalWrapper):
         # Example:
         # inps: Tensor of shape (1, N)
         # logits: Tensor of shape (1, N, vocab_size)
+        model = copy.deepcopy(self._model)
         _, seq_len = inps.shape
-        result = self._model(
+        result = model(
             inps[:, : min(seq_len, self.cache_size)],
             torch.tensor([0], dtype=torch.int64, device=self.device),
         )
-        for pos in range(min(seq_len, self.cache_size), seq_len):
-            logits = self._model(
-                inps[:, pos : pos + 1],
+        for pos in range(min(seq_len, self.cache_size), seq_len, self.eviction_batch_size):
+            logits = model(
+                inps[:, pos : pos + self.eviction_batch_size],
                 torch.tensor([pos], dtype=torch.int64, device=self.device),
             )
-            result = torch.cat(result, logits[:, -1, :], dim=1)
+            result = torch.cat((result, logits[:, -self.eviction_batch_size:, :]), dim=1)
         return result
 
 
@@ -270,6 +274,7 @@ def gen_eval_wrapper(
             assert len(attention_sink_params) == 3
             sink_size = int(attention_sink_params[0])
             window_size = int(attention_sink_params[1])
+            eviction_batch_size = int(attention_sink_params[2])
 
             assert args.max_seq_length == sink_size + window_size
 
