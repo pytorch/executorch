@@ -190,7 +190,6 @@ class QuantizedKVCache(nn.Module):
                 seq_length = k_val.size(dim_to_slice)
                 narrowed_k = k_out.narrow(dim_to_slice, start_pos, seq_length)
                 narrowed_k.copy_(k_val)
-                # pyre-ignore: Incompatible parameter type [6]
                 narrowed_v = v_out.narrow(dim_to_slice, start_pos, seq_length)
                 narrowed_v.copy_(v_val)
             else:
