@@ -80,7 +80,7 @@
 - op: maximum.out
   kernels:
     - arg_meta: null
-      kernel_name: impl::HiFi::maximum_out
+      kernel_name: cadence::impl::HiFi::maximum_out
 
 - op: mean.out
   kernels:
@@ -90,7 +90,7 @@
 - op: minimum.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::mean_dim_out
+      kernel_name: cadence::impl::HiFi::minimum_out
 
 - op: mul.out
   kernels:
@@ -105,22 +105,22 @@
 - op: pow.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: impl::HiFi::pow_Scalar_out
+      kernel_name: cadence::impl::HiFi::pow_Scalar_out
 
 - op: pow.Tensor_Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: impl::HiFi::pow_Tensor_Scalar_out
+      kernel_name: cadence::impl::HiFi::pow_Tensor_Scalar_out
 
 - op: pow.Tensor_Tensor_out
   kernels:
     - arg_meta: null
-      kernel_name: impl::HiFi::pow_Tensor_Tensor_out
+      kernel_name: cadence::impl::HiFi::pow_Tensor_Tensor_out
 
 - op: rsqrt.out
   kernels:
     - arg_meta: null
-      kernel_name: impl::HiFi::rsqrt_out
+      kernel_name: cadence::impl::HiFi::rsqrt_out
 
 - op: sigmoid.out
   kernels:
