@@ -19,7 +19,7 @@ from executorch.backends.qualcomm._passes.insert_requantize import InsertRequant
 from executorch.backends.qualcomm._passes.layout_transform import LayoutTransform
 from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
-from executorch.backends.qualcomm.utils.utils import generate_qnn_executorch_option
+from executorch.backends.qualcomm.partition.utils import generate_qnn_executorch_option
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     CompileSpec,
@@ -83,7 +83,7 @@ class QnnBackend(BackendDetails):
                     )
                     try:
                         context_loader_target = eval(
-                            f"torch.ops.{OpContextLoader.namespace}.{node.name}.default",
+                            f"torch.ops.{OpContextLoader.namespace}.{node.target.__name__}",
                             globals().update(torch.__dict__),
                         )
                         assert node.target == context_loader_target, err_msg
@@ -104,11 +104,13 @@ class QnnBackend(BackendDetails):
             else:
                 raise RuntimeError(f"{node.op} is not supported in Qnn")
         qnn_context_binary = qnn_manager.Compile(
-            [py_op_wrapper.GetOpWrapper() for py_op_wrapper in py_op_wrapper_list]
+            qnn_manager.GetGraphNames()[0],
+            [py_op_wrapper.GetOpWrapper() for py_op_wrapper in py_op_wrapper_list],
         )
         assert len(qnn_context_binary) != 0, "Failed to generate Qnn context binary."
         qnn_manager.Destroy()
         # For now, debug_handle_map is not used by QNN ExecuTorch
         return PreprocessResult(
-            processed_bytes=bytes(qnn_context_binary), debug_handle_map={}
+            processed_bytes=bytes(qnn_context_binary),
+            debug_handle_map={},
         )

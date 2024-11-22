@@ -497,6 +497,7 @@ class TestLinear(unittest.TestCase):
         which ares then transformed into aten.linear.default by the ConvertToLinear pass.
         """
         for i, _ in enumerate(in_sizes):
+            torch._dynamo.reset()
             in_size = int(in_sizes[i])
             input_size = int(input_sizes[i])
             output_size = int(output_sizes[i])
