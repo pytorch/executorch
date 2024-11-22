@@ -14,10 +14,10 @@
 #include <cstring>
 #include <limits>
 
+#include <executorch/runtime/platform/unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <executorch/runtime/platform/unistd.h>
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>

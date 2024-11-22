@@ -13,7 +13,8 @@
 #pragma once
 
 #if defined(_WIN32) && !defined(_WIN64)
-#error "You're trying to build ExecuTorch with a too old version of Windows. We need Windows 64-bit."
+#error \
+    "You're trying to build ExecuTorch with a too old version of Windows. We need Windows 64-bit."
 #endif
 
 #if !defined(_WIN64)
