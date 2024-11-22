@@ -4,27 +4,34 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from pathlib import Path
 import logging
 from enum import Enum
-
-from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 
 import torch
 import torch.nn as nn
 from executorch.examples.models.llama.llama_transformer import KVCache
+
+from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noqa: F401
 
 
 try:
-    op = torch.ops.quantized_decomposed.quantize_per_token
+    op = torch.ops.quantized_decomposed.quantize_per_token.out
     assert op is not None
 except:
-    libs = list(Path(__file__).parent.resolve().glob("libquantized_ops_aot_lib.*"))
+    import executorch
+    import glob
+
+    executorch_package_path = executorch.__path__[0]
+    libs = list(
+        glob.glob(
+            f"{executorch_package_path}/**/libquantized_ops_aot_lib.*", recursive=True
+        )
+    )
     assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
     logging.info(f"Loading custom ops library: {libs[0]}")
     torch.ops.load_library(libs[0])
-    op = torch.ops.quantized_decomposed.quantize_per_token
+    op = torch.ops.quantized_decomposed.quantize_per_token.out
     assert op is not None
 
 """
@@ -204,7 +211,6 @@ class QuantizedKVCache(nn.Module):
                 seq_length = k_val.size(dim_to_slice)
                 narrowed_k = k_out.narrow(dim_to_slice, start_pos, seq_length)
                 narrowed_k.copy_(k_val)
-                # pyre-ignore: Incompatible parameter type [6]
                 narrowed_v = v_out.narrow(dim_to_slice, start_pos, seq_length)
                 narrowed_v.copy_(v_val)
             else:
