@@ -4,16 +4,28 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from pathlib import Path
 import logging
 from enum import Enum
 
-import executorch.extension.llm.custom_ops  # noqa: F401
+from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 
 import torch
 import torch.nn as nn
 from executorch.examples.models.llama.llama_transformer import KVCache
 from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noqa: F401
 
+
+try:
+    op = torch.ops.quantized_decomposed.quantize_per_token
+    assert op is not None
+except:
+    libs = list(Path(__file__).parent.resolve().glob("libquantized_ops_aot_lib.*"))
+    assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
+    logging.info(f"Loading custom ops library: {libs[0]}")
+    torch.ops.load_library(libs[0])
+    op = torch.ops.quantized_decomposed.quantize_per_token
+    assert op is not None
 
 """
  Heavily "inspired" by AO's implementation of the same in torchao/_models/llama/model.py
