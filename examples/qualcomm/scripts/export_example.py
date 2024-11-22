@@ -4,13 +4,8 @@ import copy
 
 import torch
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
-from executorch.backends.qualcomm.quantizer.quantizer import (
-    get_default_8bit_qnn_ptq_config,
-    QnnQuantizer,
-)
-from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
-    QcomChipset,
-)
+from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     generate_htp_compiler_spec,
@@ -64,8 +59,6 @@ def main() -> None:
 
     # Get quantizer
     quantizer = QnnQuantizer()
-    quant_config = get_default_8bit_qnn_ptq_config()
-    quantizer.set_bit8_op_quant_config(quant_config)
 
     # Typical pytorch 2.0 quantization flow
     m = torch.export.export(model.eval(), example_inputs).module()

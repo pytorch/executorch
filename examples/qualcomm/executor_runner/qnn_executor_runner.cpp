@@ -50,6 +50,7 @@ DEFINE_bool(
     shared_buffer,
     false,
     "Specifies to use shared buffers for zero-copy usecase between the application and device/co-processor associated with the backend.");
+DEFINE_uint32(method_index, 0, "Index of methods to be specified.");
 
 DEFINE_string(
     etdump_path,
@@ -145,7 +146,9 @@ int main(int argc, char** argv) {
   const char* model_path = FLAGS_model_path.c_str();
   Result<FileDataLoader> loader = FileDataLoader::from(model_path);
   ET_CHECK_MSG(
-      loader.ok(), "FileDataLoader::from() failed: 0x%" PRIx32, loader.error());
+      loader.ok(),
+      "FileDataLoader::from() failed: 0x%" PRIx32,
+      (int)loader.error());
 
   // Parse the program file. This is immutable, and can also be reused between
   // multiple execution invocations across multiple threads.
@@ -156,10 +159,11 @@ int main(int argc, char** argv) {
   }
   ET_LOG(Info, "Model file %s is loaded.", model_path);
 
-  // Use the first method in the program.
+  // Use the designated method in the program, default to the first one
   const char* method_name = nullptr;
   {
-    const auto method_name_result = program->get_method_name(0);
+    const auto method_name_result =
+        program->get_method_name(FLAGS_method_index);
     ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
     method_name = *method_name_result;
   }
@@ -233,7 +237,7 @@ int main(int argc, char** argv) {
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
       method_name,
-      method.error());
+      (int)method.error());
   ET_LOG(Info, "Method loaded.");
 
   void* debug_buffer;
@@ -272,7 +276,7 @@ int main(int argc, char** argv) {
         custom_mem_ptr->GetPtr(),
         const_cast<TensorImpl::DimOrderType*>(tensor_meta->dim_order().data()));
     Error ret = method->set_input(Tensor(&impl), input_index);
-    ET_CHECK_MSG(ret == Error::Ok, "Failed to set input tensor: %d", ret);
+    ET_CHECK_MSG(ret == Error::Ok, "Failed to set input tensor: %d", (int)ret);
   }
   for (int output_index = 0; output_index < method->outputs_size();
        ++output_index) {
@@ -292,7 +296,9 @@ int main(int argc, char** argv) {
       // This can error if the outputs are already pre-allocated. Ignore
       // this error because it doesn't affect correctness, but log it.
       ET_LOG(
-          Info, "ignoring error from set_output_data_ptr(): 0x%" PRIx32, ret);
+          Info,
+          "ignoring error from set_output_data_ptr(): 0x%" PRIx32,
+          (int)ret);
     }
   }
   ET_LOG(Info, "Inputs prepared.");
@@ -364,7 +370,8 @@ int main(int argc, char** argv) {
             const_cast<TensorImpl::DimOrderType*>(
                 tensor_meta->dim_order().data()));
         Error ret = method->set_input(Tensor(&impl), input_index);
-        ET_CHECK_MSG(ret == Error::Ok, "Failed to set input tensor: %d", ret);
+        ET_CHECK_MSG(
+            ret == Error::Ok, "Failed to set input tensor: %d", (int)ret);
       }
 
       Error status = Error::Ok;
@@ -398,7 +405,7 @@ int main(int argc, char** argv) {
           status == Error::Ok,
           "Execution of method %s failed with status 0x%" PRIx32,
           method_name,
-          status);
+          (int)status);
 
       std::vector<EValue> outputs(method->outputs_size());
       status = method->get_outputs(outputs.data(), method->outputs_size());
@@ -443,7 +450,7 @@ int main(int argc, char** argv) {
         status == Error::Ok,
         "Execution of method %s failed with status 0x%" PRIx32,
         method_name,
-        status);
+        (int)status);
     ET_LOG(Info, "Model executed successfully.");
   }
 

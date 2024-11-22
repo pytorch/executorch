@@ -51,7 +51,7 @@ class Runtime final {
   Runtime(const Runtime&) = delete;
   Runtime& operator=(const Runtime&) = delete;
 
-  Runtime(Runtime&&) noexcept;
+  Runtime(Runtime&&) = delete;
   Runtime& operator=(Runtime&&) = delete;
 
   ~Runtime();
