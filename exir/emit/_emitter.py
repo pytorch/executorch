@@ -1634,7 +1634,9 @@ class _TopLevelEmitter(_Emitter):
             # missing in scenarios like unit test that does not enable memory planning, assume an
             # empty list.
             non_const_buffer_sizes=typing.cast(
-                List[int], self.module.meta["non_const_buffer_sizes"]
+                # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorB...
+                List[int],
+                self.module.meta["non_const_buffer_sizes"],
             ),
             container_meta_type=self.container_meta_type,
         )
