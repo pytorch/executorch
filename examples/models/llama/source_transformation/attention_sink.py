@@ -100,7 +100,6 @@ class KVCacheWithAttentionSink(KVCache):
         self.sink_size = sink_size
         self.eviction_batch_size = eviction_batch_size
         self.position_shift = 0
-        assert not transpose_cache
 
     def evict_tokens(self, input_pos: torch.Tensor, seq_len: int) -> int:
         """
@@ -134,16 +133,26 @@ class KVCacheWithAttentionSink(KVCache):
                 self.sink_size + num_to_evict,  # pyre-ignore [6]
                 num_to_keep,  # pyre-ignore [6]
             )
+            if self.transpose_cache:
+                k_to_keep = self.rope.rerotate_k(
+                    k=k_to_keep.transpose(1, 2),
+                    original_position=(  # pyre-ignore [6]
+                        self.sink_size + num_to_evict
+                    ),
+                    new_position=self.sink_size,
+                ).transpose(1, 2)
+            else:
+                k_to_keep = self.rope.rerotate_k(
+                    k=k_to_keep,
+                    original_position=(  # pyre-ignore [6]
+                        self.sink_size + num_to_evict
+                    ),
+                    new_position=self.sink_size,
+                )
             self.k_cache = torch.cat(
                 [
                     self.k_cache.narrow(dim_to_slice, 0, self.sink_size),
-                    self.rope.rerotate_k(
-                        k=k_to_keep,
-                        original_position=(  # pyre-ignore [6]
-                            self.sink_size + num_to_evict
-                        ),
-                        new_position=self.sink_size,
-                    ),
+                    k_to_keep,
                     torch.zeros_like(
                         self.k_cache.narrow(
                             dim_to_slice, 0, num_empty_space  # pyre-ignore [6]
