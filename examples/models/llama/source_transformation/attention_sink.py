@@ -43,6 +43,8 @@ class RopeWithAttentionSink(Rope):
          sin(delta), cos(delta))
          where delta = new_position * theta - original_position * theta
 
+         The shape of k is (batch_size, seq_len, n_local_heads, head_dim)
+
          Based on https://github.com/huggingface/transformers/blame/main/src/transformers/cache_utils.py#L961
         """
         seq_len = k.shape[1]
@@ -98,6 +100,7 @@ class KVCacheWithAttentionSink(KVCache):
         self.sink_size = sink_size
         self.eviction_batch_size = eviction_batch_size
         self.position_shift = 0
+        assert not transpose_cache
 
     def evict_tokens(self, input_pos: torch.Tensor, seq_len: int) -> int:
         """

@@ -297,7 +297,7 @@ def define_common_targets():
     _common_op_test("op_scatter_add_test", ["aten", "portable"])
     _common_op_test("op_select_scatter_test", ["aten", "portable"])
     _common_op_test("op_select_copy_test", ["aten", "portable"])
-    _common_op_test("op_sigmoid_test", ["aten", "portable"])
+    _common_op_test("op_sigmoid_test", ["aten", "portable", "optimized"])
     _common_op_test("op_sign_test", ["aten", "portable"])
     _common_op_test("op_sin_test", ["aten", "portable"])
     _common_op_test("op_sinh_test", ["aten", "portable"])
