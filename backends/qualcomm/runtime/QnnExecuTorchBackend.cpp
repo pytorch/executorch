@@ -6,14 +6,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/qualcomm/aot/ir/qcir_utils.h>
 #include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
+#include <executorch/backends/qualcomm/qc_compiler_spec_generated.h>
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
-#include <executorch/backends/qualcomm/schema_generated.h>
+
 namespace executorch {
 namespace backends {
 namespace qnn {
+
 using namespace qnn_delegate;
 using executorch::runtime::ArrayRef;
 using executorch::runtime::BackendExecutionContext;
@@ -24,6 +25,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
+
 // ========== Public method implementations =========================
 constexpr const char* QNN_COMPILE_SPEC = "qnn_compile_spec";
 Result<DelegateHandle*> QnnExecuTorchBackend::init(
@@ -45,6 +47,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
     else
       QNN_EXECUTORCH_LOG_WARN("unknown argument: %s", compile_spec.key);
   }
+
   // Create QnnManager
   MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
   QnnManager* qnn_manager =
@@ -54,130 +57,39 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
   // destructible, we must call the destructor manually in destroy().
   new (qnn_manager) QnnManager(qnn_executorch_options, qnn_context_blob);
 
+  // TODO: this is a temporal solution for multi-graph support, will be
+  //       removed once framework starts to accept runtime configuration
+  // ---
+  // check if current context binary has already been initialized
+  // return cached one for reducing memory footprint
+  std::string signature = qnn_manager->GetBinarySignature();
+  auto iter = delegate_map_.find(signature);
+  if (iter != delegate_map_.end()) {
+    QNN_EXECUTORCH_LOG_INFO(
+        "Use cached delegate handle for current method: %s",
+        context.get_method_name());
+    return iter->second;
+  }
+
   ET_CHECK_OR_RETURN_ERROR(
       qnn_manager->Init() == Error::Ok,
       Internal,
       "Fail to initialize Qnn Manager");
 
   if (qnn_manager->IsOnlinePrepare()) {
-    auto graph = qcir::GetGraph(qnn_context_blob.buffer);
-    // qcir tensors to TensorWrapper
-    std::vector<std::shared_ptr<TensorWrapper>> tensors, graph_inputs,
-        graph_outputs;
-    for (const auto& tensor : *graph->tensors()) {
-      tensors.emplace_back(CreateTensorWrapper(ToTensor(tensor)));
-      if (tensor->type() == qcir::TensorType::WRITE) {
-        graph_inputs.push_back(tensors.back());
-      } else if (tensor->type() == qcir::TensorType::READ) {
-        graph_outputs.push_back(tensors.back());
-      }
-    }
-
-    std::vector<std::shared_ptr<OpWrapper>> op_wrappers;
-    // qcir graph node to OpWrapper
-    for (const auto& node : *graph->nodes()) {
-      std::shared_ptr<OpWrapper> op = std::make_shared<OpWrapper>(
-          node->name()->str(),
-          node->package_name()->str(),
-          node->type_name()->str());
-
-      // qcir input tensors to OpWrapper input tensors
-      std::vector<std::shared_ptr<TensorWrapper>> inputs;
-      for (uint32_t index : *node->inputs()) {
-        inputs.push_back(tensors[index]);
-      }
-      op->AddInputTensors(inputs);
-
-      // qcir output tensors to OpWrapper output tensors
-      std::vector<std::shared_ptr<TensorWrapper>> outputs;
-      for (uint32_t index : *node->outputs()) {
-        outputs.push_back(tensors[index]);
-      }
-      op->AddOutputTensors(outputs);
-
-      // qcir operator param to OpWrapper param
-      for (uint32_t index : *node->params()) {
-        const auto& tensor = graph->tensors()->Get(index);
-        std::string name = tensor->name()->str();
-        Qnn_DataType_t dtype = ToDataType(tensor->dtype());
-        if (tensor->shape()->size() != 0) {
-          // add tensor param
-          op->AddTensorParam(
-              name,
-              dtype,
-              tensor->shape()->size(),
-              tensor->shape()->data(),
-              tensor->data()->data());
-        } else {
-          // add scalar param
-          switch (dtype) {
-            case Qnn_DataType_t::QNN_DATATYPE_INT_32:
-              op->AddScalarParam(
-                  name,
-                  dtype,
-                  *reinterpret_cast<const int32_t*>(tensor->data()->Data()));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_INT_16:
-              op->AddScalarParam(
-                  name,
-                  dtype,
-                  *reinterpret_cast<const int16_t*>(tensor->data()->Data()));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_INT_8:
-              op->AddScalarParam(
-                  name, dtype, static_cast<int8_t>(*tensor->data()->Data()));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_UINT_32:
-              op->AddScalarParam(
-                  name,
-                  dtype,
-                  *reinterpret_cast<const uint32_t*>(tensor->data()->Data()));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_UINT_16:
-              op->AddScalarParam(
-                  name,
-                  dtype,
-                  *reinterpret_cast<const uint16_t*>(tensor->data()->Data()));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_UINT_8:
-              op->AddScalarParam(name, dtype, *tensor->data()->Data());
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_FLOAT_32:
-            case Qnn_DataType_t::QNN_DATATYPE_FLOAT_16:
-              op->AddScalarParam(
-                  name,
-                  dtype,
-                  *reinterpret_cast<const float*>(tensor->data()->Data()));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_BOOL_8:
-              op->AddScalarParam(name, dtype, *tensor->data()->Data());
-              break;
-            default:
-              QNN_EXECUTORCH_LOG_ERROR(
-                  "Invalid scalar type: %s", tensor->name()->c_str());
-              break;
-          }
-        }
-      }
-      op_wrappers.push_back(std::move(op));
-    }
-
-    QnnExecuTorchContextBinary context_binary;
     ET_CHECK_OR_RETURN_ERROR(
-        qnn_manager->Compile(op_wrappers, context_binary) == Error::Ok,
+        qnn_manager->CompileQcir() == Error::Ok,
         Internal,
-        "Fail to compile graph in online prepare stage");
-
-    ET_CHECK_OR_RETURN_ERROR(
-        qnn_manager->AllocateTensor(graph_inputs, graph_outputs) == Error::Ok,
-        Internal,
-        "Fail to allocate tensor in online prepare stage");
+        "Fail to compile binary in qcir format");
   } else {
-    ET_CHECK_OR_RETURN_ERROR(
-        qnn_manager->AllocateTensor() == Error::Ok,
-        Internal,
-        "Fail to allocate tensor");
+    for (const std::string& graph_name : qnn_manager->GetGraphNames()) {
+      ET_CHECK_OR_RETURN_ERROR(
+          qnn_manager->AllocateTensor(graph_name) == Error::Ok,
+          Internal,
+          "Fail to allocate tensor");
+    }
   }
+  add_cached_delegate(signature, qnn_manager);
   return qnn_manager;
 }
 
@@ -185,12 +97,17 @@ Error QnnExecuTorchBackend::execute(
     BackendExecutionContext& context,
     DelegateHandle* handle,
     EValue** args) const {
+  ET_CHECK_OR_RETURN_ERROR(
+      delegate_map_rev_.count(handle) != 0,
+      Internal,
+      "DelegateHandle has been deleted");
   QnnManager* qnn_manager = static_cast<QnnManager*>(handle);
 
+  std::string method_name = context.get_method_name();
   std::vector<std::shared_ptr<TensorWrapper>> input_tensors =
-      qnn_manager->GetGraphInputs();
+      qnn_manager->GetGraphInputs(method_name);
   std::vector<std::shared_ptr<TensorWrapper>> output_tensors =
-      qnn_manager->GetGraphOutputs();
+      qnn_manager->GetGraphOutputs(method_name);
   std::vector<Qnn_Tensor_t> input_tensor_structs;
   std::vector<Qnn_Tensor_t> output_tensor_structs;
 
@@ -223,13 +140,15 @@ Error QnnExecuTorchBackend::execute(
 
   ET_CHECK_OR_RETURN_ERROR(
       qnn_manager->Execute(
+          method_name,
           input_tensor_structs,
           output_tensor_structs,
           context.event_tracer()) == Error::Ok,
       Internal,
       "Fail to execute graph");
   ET_CHECK_OR_RETURN_ERROR(
-      qnn_manager->ProfileExecuteData(context.event_tracer()) == Error::Ok,
+      qnn_manager->ProfileExecuteData(method_name, context.event_tracer()) ==
+          Error::Ok,
       Internal,
       "Fail to profile graph");
 
@@ -237,14 +156,34 @@ Error QnnExecuTorchBackend::execute(
 }
 
 void QnnExecuTorchBackend::destroy(DelegateHandle* handle) const {
-  if (handle != nullptr) {
+  if (handle != nullptr && delegate_map_rev_.count(handle)) {
     QnnManager* qnn_manager = static_cast<QnnManager*>(handle);
     qnn_manager->Destroy();
+    erase_cached_delegate(handle);
   }
 }
 
 bool QnnExecuTorchBackend::is_available() const {
   return true;
+}
+
+void QnnExecuTorchBackend::add_cached_delegate(
+    const std::string& signature,
+    executorch::runtime::DelegateHandle* handle) const {
+  std::lock_guard<std::mutex> guard(mutex_);
+  delegate_map_[signature] = handle;
+  delegate_map_rev_[handle] = signature;
+}
+
+void QnnExecuTorchBackend::erase_cached_delegate(
+    executorch::runtime::DelegateHandle* handle) const {
+  std::lock_guard<std::mutex> guard(mutex_);
+  auto iter = delegate_map_rev_.find(handle);
+  if (iter == delegate_map_rev_.end()) {
+    return;
+  }
+  delegate_map_.erase(iter->second);
+  delegate_map_rev_.erase(handle);
 }
 
 namespace {
