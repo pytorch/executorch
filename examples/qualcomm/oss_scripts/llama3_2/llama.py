@@ -8,9 +8,9 @@ import getpass
 import json
 import logging
 import os
-
 import sys
 import time
+from functools import partial
 from multiprocessing.connection import Client
 
 import torch
@@ -319,8 +319,10 @@ def compile(args):
 
     if args.model_mode == "kv":
         use_kv_cache = output_new_cache_only = True
+        matmul_annotate_func = partial(annotate_matmul_16a8w, traverse_input1=True)
     elif args.model_mode == "batch_prefill":
         use_kv_cache = output_new_cache_only = False
+        matmul_annotate_func = partial(annotate_matmul_16a8w, traverse_input1=False)
     elif args.model_mode == "hybrid":
         raise NotImplementedError(
             f"model_mode {args.model_mode} is not implemented yet."
@@ -385,7 +387,10 @@ def compile(args):
         start_quantize_ts = time.time()
         single_llama.quantize(
             quant_dtype,
-            custom_annotations=(annotate_matmul_16a8w,),
+            custom_annotations=(
+                custom_annotate_llama_last_conv_16a8w,
+                matmul_annotate_func,
+            ),
         )
         end_quantize_ts = time.time()
         logging.info(f"Time for quantizing: {end_quantize_ts - start_quantize_ts}")
