@@ -12,8 +12,9 @@ namespace executorch {
 namespace backends {
 namespace qnn {
 std::vector<QnnGraph_CustomConfig_t>
-HtpGraphCustomConfig::CreateGraphCustomConfig(
-    const SocInfo* qcom_target_soc_info) {
+HtpGraphCustomConfig::CreateGraphCustomConfigCommon(
+    const SocInfo* qcom_target_soc_info,
+    float opt_level) {
   std::vector<QnnGraph_CustomConfig_t> ret;
   QnnHtpGraph_CustomConfig_t* p_custom_config = nullptr;
 
@@ -45,8 +46,6 @@ HtpGraphCustomConfig::CreateGraphCustomConfig(
       break;
   }
 
-  float opt_level =
-      context_->GetCacheState() == QnnBackendCache::ONLINE_PREPARE ? 1 : 3;
   QNN_EXECUTORCH_LOG_INFO(
       "Running level=%d optimization.", static_cast<int>(opt_level));
 

@@ -12,6 +12,12 @@ from dataclasses import dataclass
 from enum import IntEnum, unique
 
 
+@dataclass
+class BinaryInfo:
+    signature: str = ""
+    data: bytes = None
+
+
 @unique
 class HtpArch(IntEnum):
     NONE = 0
@@ -98,6 +104,7 @@ class QnnExecuTorchHtpBackendOptions:
     use_dlbc: bool = False
     use_fold_relu: bool = True
     use_multi_contexts: bool = False
+    use_weight_sharing: bool = False
 
 
 @unique
@@ -136,3 +143,4 @@ class QnnExecuTorchOptions:
     profile_level: QnnExecuTorchProfileLevel = QnnExecuTorchProfileLevel.kProfileOff
     shared_buffer: bool = False
     is_from_context_binary: bool = False
+    multiple_graphs: bool = False

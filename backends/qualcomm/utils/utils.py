@@ -7,7 +7,7 @@
 import operator
 import warnings
 from collections import OrderedDict
-from typing import Callable, Dict, FrozenSet, List, Set, Tuple
+from typing import Callable, Dict, FrozenSet, List, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 
@@ -50,7 +50,11 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     QNN_TENSOR_TYPE_MAP,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
-from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
+from executorch.backends.qualcomm.partition.qnn_partitioner import (
+    generate_qnn_executorch_option,
+    QnnPartitioner,
+)
+from executorch.backends.qualcomm.serialization.qc_schema import (
     _soc_info_table,
     HtpArch,
     QcomChipset,
@@ -63,9 +67,9 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QnnExecuTorchOptions,
     QnnExecuTorchProfileLevel,
 )
-from executorch.backends.qualcomm.serialization.qnn_compile_spec_serialize import (
-    convert_to_flatbuffer,
-    convert_to_option,
+from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+    flatbuffer_to_option,
+    option_to_flatbuffer,
 )
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_EXPAND_BROADCAST_SHAPE,
@@ -74,8 +78,14 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_QUANTIZED_IO,
 )
 
-from executorch.exir import ExirExportedProgram
+from executorch.exir import (
+    EdgeCompileConfig,
+    ExecutorchProgramManager,
+    ExirExportedProgram,
+    to_edge,
+)
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.capture import ExecutorchBackendConfig
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.program._program import _get_updated_graph_signature
 from torch._decomp import core_aten_decompositions as torch_core_aten_decompositions
@@ -202,9 +212,8 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
     return replace_linear(module)
 
 
-def canonicalize_program(
+def update_spill_fill_size(
     exported_program: ExportedProgram | List[LoweredBackendModule],
-    custom_buffer_size=None,
 ):
     # check if user specifies to use multi_contexts
     # this is a generic approach in case there exists multiple backends
@@ -213,7 +222,7 @@ def canonicalize_program(
             max_sf_buf_size, module_map = 0, {}
             for _, m in prog.graph_module._modules.items():
                 # currently only 1 compile spec is expected in each partition
-                options = convert_to_option(m.compile_specs[0].value)
+                options = flatbuffer_to_option(m.compile_specs[0].value)
                 if (
                     options.backend_options.backend_type
                     == QnnExecuTorchBackendType.kHtpBackend
@@ -235,14 +244,10 @@ def canonicalize_program(
                 module.compile_specs[0].value, module.processed_bytes
             )
             assert qnn_mgr.Init().value == 0, "failed to load context binary"
-            spill_fill_size = (
-                qnn_mgr.GetSpillFillBufferSize()
-                if custom_buffer_size is None
-                else custom_buffer_size
-            )
+            spill_fill_size = qnn_mgr.GetSpillFillBufferSize()
             qnn_mgr.Destroy()
             return spill_fill_size, {
-                module: convert_to_option(module.compile_specs[0].value)
+                module: flatbuffer_to_option(module.compile_specs[0].value)
             }
 
         dispatch = {
@@ -253,7 +258,7 @@ def canonicalize_program(
 
     def update_program(max_sf_buf_size, module_map):
         def set_spec(module, options):
-            spec = CompileSpec(QCOM_QNN_COMPILE_SPEC, convert_to_flatbuffer(options))
+            spec = CompileSpec(QCOM_QNN_COMPILE_SPEC, option_to_flatbuffer(options))
             if isinstance(module, ExportedProgram):
                 module.compile_specs[0] = spec
             else:
@@ -331,11 +336,10 @@ def _transform(
 def capture_program(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
-    custom_pass_config: Set[str] = frozenset(),
+    custom_pass_config: FrozenSet[str] = frozenset(),
 ) -> exir.ExirExportedProgram:
     ep = torch.export.export(module, inputs)
     decomposed_ep = ep.run_decompositions(get_decomp_table())
-
     # We choose call_operator by target in ConvertBinaryOpsWithScalar
     # because it is the same source_fn_stack for MultiheadAttention
     # TODO: Should modify the scalar op in the op builder instead of
@@ -529,11 +533,11 @@ def skip_annotation(
     Returns:
         exported_programs: List of programs lowered to QnnBackend (quantized graphs only).
     """
-    from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
+    from executorch.backends.qualcomm.serialization.qc_schema import (
         QnnExecuTorchHtpPrecision,
     )
-    from executorch.backends.qualcomm.serialization.qnn_compile_spec_serialize import (
-        convert_to_option,
+    from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+        flatbuffer_to_option,
     )
     from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
     from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
@@ -585,14 +589,14 @@ def skip_annotation(
             qnn_option = generate_qnn_executorch_option(
                 partitioner.compiler_specs_snapshot
             )
-            compile_option = convert_to_option(qnn_option)
+            compile_option = flatbuffer_to_option(qnn_option)
             htp_options = compile_option.backend_options.htp_options
             htp_options.precision = QnnExecuTorchHtpPrecision.kHtpFp16
             partitioner.delegation_spec = DelegationSpec(
                 "QnnBackend",
                 [
                     CompileSpec(
-                        QCOM_QNN_COMPILE_SPEC, convert_to_flatbuffer(compile_option)
+                        QCOM_QNN_COMPILE_SPEC, option_to_flatbuffer(compile_option)
                     )
                 ],
             )
@@ -626,9 +630,14 @@ def skip_annotation(
     return graph_module, exported_progs
 
 
-def from_context_binary(
-    ctx_path: str, op_name: str, soc_model: QcomChipset = QcomChipset.SM8650
+def from_context_binary(  # noqa: C901
+    ctx_path: str | bytes,
+    op_name: str,
+    soc_model: QcomChipset = QcomChipset.SM8650,
+    custom_info: Dict = None,
 ):
+    from pathlib import Path
+
     def implement_op(custom_op, op_name, outputs):
         @torch.library.impl(
             custom_op, str(op_name), dispatch_key="CompositeExplicitAutograd"
@@ -661,7 +670,7 @@ def from_context_binary(
         return {
             "custom_op": custom_op,
             "custom_module": model,
-            "edge_program": prog,
+            "exported_program": prog,
         }
 
     def build_tensor(tensors, dtype_map):
@@ -674,8 +683,12 @@ def from_context_binary(
 
         return ret
 
-    with open(ctx_path, "rb") as f:
-        ctx_bin = f.read()
+    def preprocess_binary(ctx_bin, compiler_specs):
+        qnn_mgr = PyQnnManagerAdaptor.QnnManager(
+            generate_qnn_executorch_option(compiler_specs),
+        )
+        return bytes(qnn_mgr.MakeBinaryInfo(ctx_bin))
+
     # dummy compiler spec would be fine, since we're not compiling
     backend_options = generate_htp_compiler_spec(use_fp16=False)
     compiler_specs = generate_qnn_executorch_compiler_spec(
@@ -683,26 +696,57 @@ def from_context_binary(
         backend_options=backend_options,
         is_from_context_binary=True,
     )
-    # get context-binary io tensor info through qnn manager
-    qnn_mgr = PyQnnManagerAdaptor.QnnManager(
-        generate_qnn_executorch_option(compiler_specs), ctx_bin
+
+    ctx_bin = (
+        ctx_path
+        if not isinstance(ctx_path, str)
+        else preprocess_binary(Path(f"{ctx_path}").read_bytes(), compiler_specs)
     )
-    assert qnn_mgr.Init().value == 0, "failed to load context binary"
-    qnn_mgr.AllocateTensor()
+
     dtype_map = {}
     for type_map in (QNN_QUANT_TYPE_MAP, QNN_TENSOR_TYPE_MAP):
         for k, v in type_map.items():
             dtype_map.setdefault(v, k)
-    inputs = build_tensor(qnn_mgr.GetGraphInputs(), dtype_map)
-    outputs = build_tensor(qnn_mgr.GetGraphOutputs(), dtype_map)
-    qnn_mgr.Destroy()
+
+    if custom_info is not None:
+        # since some context binaries might fail to open on host
+        # if they are compiled with special flags:
+        # e.g. weight sharing
+        # use custom information here instead
+        inputs = build_tensor(custom_info["graph_inputs"], dtype_map)
+        outputs = build_tensor(custom_info["graph_outputs"], dtype_map)
+        graph_name = custom_info["graph_name"]
+    else:
+        # get context-binary io tensor info through qnn manager
+        qnn_mgr = PyQnnManagerAdaptor.QnnManager(
+            generate_qnn_executorch_option(compiler_specs),
+            ctx_bin,
+        )
+        assert qnn_mgr.Init().value == 0, "failed to load context binary"
+        # assume we only have one graph in current context
+        graph_name = qnn_mgr.GetGraphNames()[0]
+        qnn_mgr.AllocateTensor(graph_name)
+        inputs = build_tensor(qnn_mgr.GetGraphInputs(graph_name), dtype_map)
+        outputs = build_tensor(qnn_mgr.GetGraphOutputs(graph_name), dtype_map)
+        qnn_mgr.Destroy()
+
     # generate graph specific for loading context
     bundle_prog = build_graph(inputs, outputs)
     bundle_prog.update({"inputs": inputs, "outputs": outputs})
-    for n in bundle_prog["edge_program"].graph_module.graph.nodes:
-        if op_name in n.name:
+    edge_prog_mgr = to_edge(
+        programs={graph_name: bundle_prog["exported_program"]},
+        # do not alter name for custom op
+        compile_config=EdgeCompileConfig(_use_edge_ops=False),
+    )
+    # update meta with context binary
+    for n in edge_prog_mgr._edge_programs[graph_name].graph.nodes:
+        if n.op == "call_function" and OpContextLoader.namespace in str(n.target):
             n.meta[OpContextLoader.meta_ctx_bin] = ctx_bin
             break
+
+    bundle_prog["edge_program_manager"] = edge_prog_mgr.to_backend(
+        QnnPartitioner(compiler_specs)
+    )
     return bundle_prog
 
 
@@ -712,15 +756,59 @@ def draw_graph(title, path, graph_module: torch.fx.GraphModule):
         f.write(graph.get_dot_graph().create_svg())
 
 
-def generate_qnn_executorch_option(
+def generate_multi_graph_program(
     compiler_specs: List[CompileSpec],
-) -> bytes:
-    for compiler_spec in compiler_specs:
-        if compiler_spec.key == QCOM_QNN_COMPILE_SPEC:
-            qnn_compile_spec_buffer = compiler_spec.value
-        else:
-            raise ValueError(f"unknown compiler spec key value: {compiler_spec.key}")
-    return qnn_compile_spec_buffer
+    processed_bytes: List[bytes],
+    backend_config: ExecutorchBackendConfig = None,
+) -> ExecutorchProgramManager:
+    # compile multiple graphs in qcir into single context binary
+    graph_inputs, graph_outputs = {}, {}
+    qnn_mgr = PyQnnManagerAdaptor.QnnManager(
+        generate_qnn_executorch_option(compiler_specs), processed_bytes
+    )
+    assert qnn_mgr.Init().value == 0, "failed to load processed bytes"
+    binary_info = bytes(qnn_mgr.Compile())
+    assert len(binary_info) != 0, "failed to generate QNN context binary"
+    graph_names = qnn_mgr.GetGraphNames()
+    for graph_name in graph_names:
+        graph_inputs[graph_name] = qnn_mgr.GetGraphInputs(graph_name)
+        graph_outputs[graph_name] = qnn_mgr.GetGraphOutputs(graph_name)
+    qnn_mgr.Destroy()
+
+    # build custom ops with different graph signatures
+    compiler_options = flatbuffer_to_option(compiler_specs[0].value)
+    bundle_progs = [
+        from_context_binary(
+            ctx_path=binary_info,
+            op_name=f"loader_{graph_name}",
+            soc_model=compiler_options.soc_info.soc_model,
+            custom_info={
+                "graph_inputs": graph_inputs[graph_name],
+                "graph_outputs": graph_outputs[graph_name],
+                "graph_name": graph_name,
+            },
+        )
+        for graph_name in graph_names
+    ]
+    # leverage ExecutorchProgramManager for generating pte with multi-methods
+    edge_prog_mgr = to_edge(
+        programs={
+            graph_name: bundle_prog["exported_program"]
+            for graph_name, bundle_prog in zip(graph_names, bundle_progs)
+        },
+        # do not alter name for custom op
+        compile_config=EdgeCompileConfig(_use_edge_ops=False),
+    )
+    # restore meta losed in generating EdgeProgramManager
+    for graph_name in graph_names:
+        for n in edge_prog_mgr._edge_programs[graph_name].graph.nodes:
+            if graph_name in n.name:
+                n.meta[OpContextLoader.meta_ctx_bin] = binary_info
+                break
+
+    return edge_prog_mgr.to_backend(QnnPartitioner(compiler_specs)).to_executorch(
+        config=backend_config or ExecutorchBackendConfig()
+    )
 
 
 def generate_htp_compiler_spec(
@@ -773,6 +861,8 @@ def generate_qnn_executorch_compiler_spec(
     optrace: bool = False,
     shared_buffer: bool = False,
     is_from_context_binary: bool = False,
+    multiple_graphs: bool = False,
+    graph_name: str = "forward",
 ) -> List[CompileSpec]:
     """
     Helper function generating compiler specs for Qualcomm AI Engine Direct
@@ -798,6 +888,10 @@ def generate_qnn_executorch_compiler_spec(
             profile the performance of each operator with cycle unit.
         shared_buffer: Enables usage of shared buffer between application
             and backend for graph I/O.
+        is_from_context_binary: True if current graph comes from pre-built context binary.
+        multiple_graphs: True if multiple methods are expected to have in single .pte file.
+            Please see test cases for post-processing example.
+        graph_name: Assign unique graph name if 'multiple_graphs' is used.
 
     Returns:
         List[CompileSpec]: Compiler specs for Qualcomm AI Engine Direct.
@@ -820,7 +914,7 @@ def generate_qnn_executorch_compiler_spec(
     qnn_executorch_options = QnnExecuTorchOptions(
         _soc_info_table[soc_model], backend_options
     )
-    qnn_executorch_options.graph_name = "executorch"
+    qnn_executorch_options.graph_name = graph_name
     qnn_executorch_options.log_level = (
         QnnExecuTorchLogLevel.kLogLevelDebug
         if debug
@@ -854,11 +948,15 @@ def generate_qnn_executorch_compiler_spec(
     qnn_executorch_options.shared_buffer = shared_buffer
     qnn_executorch_options.online_prepare = online_prepare
     qnn_executorch_options.is_from_context_binary = is_from_context_binary
+    qnn_executorch_options.multiple_graphs = multiple_graphs
+
+    if multiple_graphs:
+        # enable weight sharing mechanism if multiple graphs appear
+        if backend_options.backend_type == QnnExecuTorchBackendType.kHtpBackend:
+            backend_options.htp_options.use_weight_sharing = True
 
     return [
-        CompileSpec(
-            QCOM_QNN_COMPILE_SPEC, convert_to_flatbuffer(qnn_executorch_options)
-        )
+        CompileSpec(QCOM_QNN_COMPILE_SPEC, option_to_flatbuffer(qnn_executorch_options))
     ]
 
 
