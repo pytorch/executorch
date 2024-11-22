@@ -561,6 +561,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         exir_ops.edge.aten.mul.Tensor,
         exir_ops.edge.aten.mean.dim,
         exir_ops.edge.aten.cat.default,
+        exir_ops.edge.aten.hardtanh.default,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
     }
