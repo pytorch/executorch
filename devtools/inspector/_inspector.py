@@ -1174,12 +1174,12 @@ class Inspector:
         display_or_print_df(filtered_column_df, file)
 
 
-    def save_data_to_csv(
+    def save_data_to_tsv(
         self,
         file: IO[str],
     ) -> None:
         """
-        Stores the underlying EventBlocks in a csv format with tab separator, to facilitate copy-paste into spreadsheets.
+        Stores the underlying EventBlocks in tsv format to facilitate copy-paste into spreadsheets.
 
         Args:
             file: Which IO stream to print to. Do not use stdout, as tab separator is not preserved.

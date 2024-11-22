@@ -44,9 +44,9 @@ def main() -> None:
         help="Provide an optional buffer file path.",
     )
     parser.add_argument(  
-        "--csv_path",
+        "--tsv_path",
         required=False,
-        help="Provide an optional csv file path.",
+        help="Provide an optional tsv file path.",
     )
     parser.add_argument("--compare_results", action="store_true")
 
@@ -60,8 +60,8 @@ def main() -> None:
         target_time_scale=TimeScale(args.target_time_scale),
     )
     inspector.print_data_tabular()
-    if args.csv_path:
-        inspector.save_data_to_csv(args.csv_path)
+    if args.tsv_path:
+        inspector.save_data_to_tsv(args.tsv_path)
     if args.compare_results:
         for event_block in inspector.event_blocks:
             if event_block.name == "Execute":
