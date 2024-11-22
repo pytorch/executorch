@@ -45,8 +45,6 @@ Runner::Runner(
     const int eval_mode)
     : n_bos_(1),
       n_eos_(1),
-      vocab_size_(QNN_LLAMA3_2_LOGITS),
-      max_seq_len_(QNN_LLAMA3_2_SEQLEN),
       tokenizer_path_(tokenizer_path),
       temperature_(temperature),
       eval_mode_(eval_mode),

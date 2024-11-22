@@ -203,7 +203,7 @@ def _kv_calibrate(
         return probs_indices.gather(dim=-1, index=next_token)
 
     with torch.no_grad():
-        while token_list[-1] != sp_model.eos_id() and pos < max_seq_len:
+        while token_list[-1] != sp_model.eos_id() and pos < max_seq_len - 1:
             logits, new_k_caches, new_v_caches = module(
                 torch.full((1, 1), token_list[pos]),
                 atten_mask,
@@ -248,7 +248,7 @@ def _bert_calibrate(
         token_list = torch.cat(
             [
                 token_list,
-                torch.zeros((1, max_cache_len - last_prompt_pos), dtype=torch.int64),
+                torch.zeros((1, max_cache_len - last_prompt_pos), dtype=torch.int32),
             ],
             dim=1,
         )

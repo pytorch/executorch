@@ -122,7 +122,7 @@ def _bert_calibrate(
         token_list = torch.cat(
             [
                 token_list,
-                torch.zeros((1, max_cache_len - last_prompt_pos), dtype=torch.int64),
+                torch.zeros((1, max_cache_len - last_prompt_pos), dtype=torch.int32),
             ],
             dim=1,
         )
