@@ -21,8 +21,14 @@
 #include <executorch/runtime/platform/runtime.h>
 
 #include "arm_perf_monitor.h"
+#if defined(ET_EVENT_TRACER_ENABLED)
+#include <executorch/devtools/etdump/etdump_flatcc.h>
+#if !defined(SEMIHOSTING)
+#include <executorch/third-party/flatcc/include/flatcc/portable/pbase64.h>
+#endif
+#endif
 
-#ifdef SEMIHOSTING
+#if defined(SEMIHOSTING)
 
 /**
  * The input_file_allocation_pool should be large enough to fit the various
@@ -75,7 +81,10 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::Tag;
 using executorch::runtime::TensorInfo;
-
+#if defined(ET_EVENT_TRACER_ENABLED)
+using executorch::etdump::ETDumpGen;
+using executorch::etdump::ETDumpResult;
+#endif
 /**
  * The method_allocation_pool should be large enough to fit the setup, input
  * used and other data used like the planned memory pool (e.g. memory-planned
@@ -84,8 +93,8 @@ using executorch::runtime::TensorInfo;
  * large models if you run on HW this should be lowered to fit into your
  * availible memory.
  */
-#ifndef ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE
-#define ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE (20 * 1024 * 1024)
+#if !defined(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE)
+#define ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE (60 * 1024 * 1024)
 #endif
 const size_t method_allocation_pool_size =
     ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE;
@@ -99,7 +108,7 @@ unsigned char __attribute__((
  * Currently a MemoryAllocator is used but a PlatformMemoryAllocator is probably
  * a better fit
  */
-#ifndef ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE
+#if !defined(ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE)
 #define ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE (1 * 1024 * 1024)
 #endif
 const size_t temp_allocation_pool_size =
@@ -108,14 +117,38 @@ unsigned char __attribute__((
     section("input_data_sec"),
     aligned(16))) temp_allocation_pool[temp_allocation_pool_size];
 
-void et_pal_init(void) {}
+void et_pal_init(void) {
+  // Enable ARM PMU Clock
+  ARM_PMU_Enable();
+  DCB->DEMCR |= DCB_DEMCR_TRCENA_Msk; // Trace enable
+  ARM_PMU_CYCCNT_Reset();
+  ARM_PMU_CNTR_Enable(PMU_CNTENSET_CCNTR_ENABLE_Msk);
+}
+
+/**
+ * Implementation of the et_pal_<funcs>()
+ *
+ * This functions are hardware adaption type of functions for things like
+ * time/logging/memory allocation that could call your RTOS or need to to
+ * be implemnted in some way.
+ */
 
 ET_NORETURN void et_pal_abort(void) {
-#ifndef SEMIHOSTING
+#if !defined(SEMIHOSTING)
   __builtin_trap();
 #else
   _exit(-1);
 #endif
+}
+
+et_timestamp_t et_pal_current_ticks(void) {
+  return ARM_PMU_Get_CCNTR();
+}
+
+et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
+  // Since we don't know the CPU freq for your target and justs cycles in the
+  // FVP for et_pal_current_ticks() we return a conversion ratio of 1
+  return {1, 1};
 }
 
 /**
@@ -132,6 +165,18 @@ void et_pal_emit_log_message(
   fprintf(
       stderr, "%c [executorch:%s:%zu] %s\n", level, filename, line, message);
 }
+
+/**
+ * Dynamic memory allocators intended to be used by temp_allocator
+ * to implement malloc()/free() type of allocations.
+ * Currenyly not used.
+ */
+
+void* et_pal_allocate(ET_UNUSED size_t size) {
+  return nullptr;
+}
+
+void et_pal_free(ET_UNUSED void* ptr) {}
 
 namespace {
 
@@ -181,7 +226,7 @@ Result<BufferCleanup> prepare_input_tensors(
   size_t num_inputs = method_meta.num_inputs();
   size_t num_allocated = 0;
 
-#ifdef SEMIHOSTING
+#if defined(SEMIHOSTING)
   ET_CHECK_OR_RETURN_ERROR(
       input_buffers.size() > 0 && num_inputs == input_buffers.size(),
       InvalidArgument,
@@ -267,7 +312,7 @@ Result<BufferCleanup> prepare_input_tensors(
   return BufferCleanup({inputs, num_allocated});
 }
 
-#ifdef SEMIHOSTING
+#if defined(SEMIHOSTING)
 
 std::pair<char*, size_t> read_binary_file(
     const char* filename,
@@ -304,7 +349,7 @@ std::pair<char*, size_t> read_binary_file(
 } // namespace
 
 int main(int argc, const char* argv[]) {
-#ifdef SEMIHOSTING
+#if defined(SEMIHOSTING)
   ET_LOG(Info, "Running executor with parameter:");
   if (argc < 7) {
     ET_LOG(Fatal, "Not right number of parameters!");
@@ -327,7 +372,7 @@ int main(int argc, const char* argv[]) {
   std::vector<std::pair<char*, size_t>> input_buffers;
   size_t pte_size = sizeof(model_pte);
 
-#ifdef SEMIHOSTING
+#if defined(SEMIHOSTING)
   const char* output_basename = nullptr;
   ArmMemoryAllocator input_file_allocator(
       input_file_allocation_pool_size, input_file_allocation_pool);
@@ -432,7 +477,16 @@ int main(int argc, const char* argv[]) {
 
   size_t method_loaded_membase = method_allocator.used_size();
 
-  Result<Method> method = program->load_method(method_name, &memory_manager);
+  executorch::runtime::EventTracer* event_tracer_ptr = nullptr;
+
+#if defined(ET_EVENT_TRACER_ENABLED)
+  torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();
+  event_tracer_ptr = &etdump_gen;
+#endif
+
+  Result<Method> method =
+      program->load_method(method_name, &memory_manager, event_tracer_ptr);
+
   if (!method.ok()) {
     ET_LOG(
         Info,
@@ -468,7 +522,7 @@ int main(int argc, const char* argv[]) {
   size_t executor_memsize = method_allocator.used_size() - executor_membase;
 
   ET_LOG(Info, "model_pte_loaded_size:     %lu bytes.", pte_size);
-#ifdef SEMIHOSTING
+#if defined(SEMIHOSTING)
   if (input_file_allocator.size() > 0) {
     ET_LOG(
         Info,
@@ -520,7 +574,7 @@ int main(int argc, const char* argv[]) {
   ET_CHECK(status == Error::Ok);
   for (int i = 0; i < outputs.size(); ++i) {
     Tensor t = outputs[i].toTensor();
-#ifndef SEMIHOSTING
+#if !defined(SEMIHOSTING)
     // The output might be collected and parsed so printf() is used instead
     // of ET_LOG() here
     for (int j = 0; j < outputs[i].toTensor().numel(); ++j) {
@@ -538,6 +592,25 @@ int main(int argc, const char* argv[]) {
             outputs[i].toTensor().const_data_ptr<float>()[j]);
       }
     }
+#if defined(ET_EVENT_TRACER_ENABLED)
+    ETDumpResult result = etdump_gen.get_etdump_data();
+    if (result.buf != nullptr && result.size > 0) {
+      // On a device with no file system we can't just write it out
+      // to the file-system so we base64 encode it and dump it on the log.
+      int mode = 0;
+      size_t len = result.size;
+      size_t encoded_len = base64_encoded_size(result.size, mode);
+      uint8_t* encoded_buf = reinterpret_cast<uint8_t*>(
+          method_allocator.allocate(encoded_len + 1));
+      int ret = base64_encode(
+          encoded_buf, (uint8_t*)result.buf, &encoded_len, &len, mode);
+      encoded_buf[encoded_len] = 0x00; // Ensure null termination
+      ET_LOG(Info, "Writing etdump.bin [base64]");
+      printf(
+          "#---\nbase64 -i -d <<<\"\\\n%s\\\n\" >etdump.bin\npython3 -m devtools.inspector.inspector_cli --etdump_path etdump.bin  --source_time_scale cycles --target_time_scale cycles\n#---\n",
+          encoded_buf);
+    }
+#endif
 #else
     char out_filename[255];
     snprintf(out_filename, 255, "%s-%d.bin", output_basename, i);
@@ -549,11 +622,24 @@ int main(int argc, const char* argv[]) {
         outputs[i].toTensor().nbytes(),
         out_file);
     fclose(out_file);
+#if defined(ET_EVENT_TRACER_ENABLED)
+    etdump_result result = etdump_gen.get_etdump_data();
+    if (result.buf != nullptr && result.size > 0) {
+      // On a device with a file system we can just write it out
+      // to the file-system.
+      char etdump_filename = "etdump.bin";
+      ET_LOG(Info, "Writing etdump to file: %s", etdump_filename);
+      FILE* f = fopen(etdump_filename, "w+");
+      fwrite((uint8_t*)result.buf, 1, result.size, f);
+      fclose(f);
+      free(result.buf);
+    }
+#endif
 #endif
   }
 out:
   ET_LOG(Info, "Program complete, exiting.");
-#ifdef SEMIHOSTING
+#if defined(SEMIHOSTING)
   _exit(0);
 #endif
   ET_LOG(Info, "\04");
