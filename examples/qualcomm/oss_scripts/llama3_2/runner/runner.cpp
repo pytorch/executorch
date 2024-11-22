@@ -47,8 +47,7 @@ Runner::Runner(
       n_eos_(1),
       tokenizer_path_(tokenizer_path),
       temperature_(temperature),
-      eval_mode_(eval_mode),
-      stats_({}) {
+      eval_mode_(eval_mode) {
   for (size_t i = 0; i < models_path.size(); ++i) {
     modules_.push_back(std::make_shared<Module>(
         models_path[i], Module::LoadMode::MmapUseMlockIgnoreErrors));
