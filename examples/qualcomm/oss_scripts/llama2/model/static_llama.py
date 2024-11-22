@@ -21,7 +21,7 @@ def apply_rotary_emb_single(
 ) -> torch.Tensor:
     x_r, x_i = x[..., ::2], x[..., 1::2]
 
-    # brodcast for bert mode input x
+    # brodcast for batch_prefill mode input x
     if x.dim() == 4:
         freqs_cos = freqs_cos[None, :, None, :]
         freqs_sin = freqs_sin[None, :, None, :]
@@ -111,7 +111,7 @@ class LlamaAttention(nn.Module):
             for i, _ in enumerate(k_caches):
                 kh.append(torch.cat([k_caches[i], k[i]], dim=-1))
                 vh.append(torch.cat([v_caches[i], v[i]], dim=1))
-        # bert/prefill mode
+        # batch_prefill mode
         else:
             kh = k
             vh = v
@@ -131,7 +131,7 @@ class LlamaAttention(nn.Module):
         if self.output_new_cache_only:
             if k_caches and v_caches:
                 return y, k, v
-            # bert mode. Consider to remove, it's not really used
+            # batch_prefill mode. Consider to remove, it's not really used
             return y, k[-1], v[-1]
 
         return y, kh, vh
@@ -172,7 +172,7 @@ class LlamaAttention(nn.Module):
 
                 output_y.append(y)
 
-        # bert/prefill mode
+        # batch_prefill mode
         else:
             kh = k
             vh = v

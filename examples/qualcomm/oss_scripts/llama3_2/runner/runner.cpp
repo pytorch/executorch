@@ -107,7 +107,7 @@ Error Runner::load() {
 
   // prepare io
   auto methods_meta = get_methods_meta();
-  if (eval_mode_ == EvalMode::kBert) {
+  if (eval_mode_ == EvalMode::kBatchPrefill) {
     io_mem_->prepare_prefill_io(methods_meta);
   } else {
     io_mem_->prepare_kv_io(methods_meta);
@@ -217,7 +217,7 @@ Error Runner::generate(
   HybridMemory::IO* ptr =
       static_cast<HybridMemory::IO*>(io_mem_->get_mutable_ptr());
 
-  if (eval_mode_ == EvalMode::kBert) {
+  if (eval_mode_ == EvalMode::kBatchPrefill) {
     for (int i = 0; i < num_prompt_tokens; i++) {
       ptr->prefill_input_toks[i] = static_cast<int32_t>(prompt_tokens[i]);
       auto piece_res = tokenizer_->decode(prompt_tokens[i], prompt_tokens[i]);

@@ -72,7 +72,7 @@ class Runner {
 
  private:
   enum EvalMode {
-    kBert = 0,
+    kBatchPrefill = 0,
     kKVCached,
     kUnsupported,
   };

@@ -46,7 +46,7 @@ DEFINE_int32(
 DEFINE_int32(
     eval_mode,
     0,
-    "0: PromptProcessor(bert) / 1: TokenGenerator(kv) / 2: HybridMode (TBD)");
+    "0: PromptProcessor(batch_prefill) / 1: TokenGenerator(kv) / 2: HybridMode (TBD)");
 
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);

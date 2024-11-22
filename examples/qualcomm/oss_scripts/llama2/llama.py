@@ -229,7 +229,7 @@ def _kv_calibrate(
     print(f"calibration data:\n{sp_model.decode(token_list)}")
 
 
-def _bert_calibrate(
+def _batch_prefill_calibrate(
     example_inputs,
     user_prompts,
     module: torch.fx.GraphModule,
@@ -273,7 +273,7 @@ def calibrate(
     max_seq_len=512,
 ):
     if len(example_inputs) == 2:
-        _bert_calibrate(
+        _batch_prefill_calibrate(
             example_inputs,
             user_prompts,
             module,
@@ -332,7 +332,7 @@ class SingleLlama:
                         == self.llama_meta["get_head_dim"]
                     ):
                         a.meta[QCOM_QUANTIZED_IO] = kv_type
-                    # single head, bert mode
+                    # single head, batch_prefill mode
                     elif a.meta["val"].flatten().size()[0] == self.llama_meta[
                         "get_head_dim"
                     ] * (self.llama_meta["get_max_seq_len"] - 1):
@@ -416,7 +416,7 @@ def compile(args):
 
     if args.model_mode == "kv":
         use_kv_cache = output_new_cache_only = True
-    elif args.model_mode == "bert" or args.model_mode == "hybrid":
+    elif args.model_mode == "batch_prefill" or args.model_mode == "hybrid":
         raise NotImplementedError(
             f"model_mode {args.model_mode} is not implemented yet."
         )
@@ -653,9 +653,9 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--model_mode",
-        help="Export and inference bert mode, kv mode or hybrid(TBD) mode",
+        help="Export and inference batch_prefill mode, kv mode or hybrid(TBD) mode",
         default="kv",
-        choices=["bert", "kv", "hybrid"],
+        choices=["batch_prefill", "kv", "hybrid"],
         type=str,
     )
 
