@@ -75,6 +75,23 @@ def is_graph_input(
     return tensor.op == "placeholder" and not is_parameter(tensor, edge_program)
 
 
+def is_mutable_buffer_input(
+    tensor: torch.fx.Node, edge_program: torch.export.ExportedProgram
+) -> bool:
+    """
+    Check if the given tensor is a mutable buffer input
+
+    Args:
+        tensor: EdgeIR Tensor that is being checked for mutable buffer input
+    """
+    if tensor.op == "placeholder" and is_buffer(edge_program, tensor):
+        fqn = edge_program.graph_signature.inputs_to_buffers[tensor.target]
+        # if the buffer is mutated then record that
+        if fqn in edge_program.graph_signature.buffers_to_mutate.values():
+            return True
+    return False
+
+
 def is_graph_output(tensor: torch.fx.Node) -> bool:
     """
     Check if the given tensor is used as a graph output
@@ -88,6 +105,26 @@ def is_graph_output(tensor: torch.fx.Node) -> bool:
             user.target.__name__ == "getitem" and is_graph_output(user)
         ):
             return True
+    return False
+
+
+def is_mutable_buffer_output(
+    tensor: torch.fx.Node, edge_program: torch.export.ExportedProgram
+) -> bool:
+    """
+    Check if the given tensor is a mutable buffer output
+
+    Args:
+        tensor: EdgeIR Tensor that is being checked for mutable buffer output
+    """
+    for user in tensor.users.keys():
+        # getitem node is skiped, check the op_skip_ops.py
+        if user.op == "output" or (
+            user.target.__name__ == "getitem" and is_graph_output(user)
+        ):
+            # if the buffer is mutated then record that
+            if tensor.name in edge_program.graph_signature.buffers_to_mutate.keys():
+                return True
     return False
 
 

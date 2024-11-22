@@ -64,6 +64,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.prelu.default,
         exir_ops.edge.aten.relu.default,
         exir_ops.edge.aten._softmax.default,  # TODO: Need to find a new solution to do "axis_order" to transform axis.
+        exir_ops.edge.aten.sigmoid.default,
         exir_ops.edge.aten.sqrt.default,
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.sum.dim_IntList,

@@ -13,7 +13,7 @@ not_supported_operator = [
     exir_ops.edge.aten.clone.default,
     exir_ops.edge.aten.full.default,
     exir_ops.edge.aten.slice_scatter.default,
-    exir_ops.edge.aten.copy.default,
+    exir_ops.edge.quantized_decomposed.embedding_4bit.dtype,
 ]
 
 to_be_implemented_operator = [
