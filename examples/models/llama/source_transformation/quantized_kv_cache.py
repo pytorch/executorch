@@ -19,8 +19,9 @@ try:
     op = torch.ops.quantized_decomposed.quantize_per_token.out
     assert op is not None
 except:
-    import executorch
     import glob
+
+    import executorch
 
     executorch_package_path = executorch.__path__[0]
     libs = list(
