@@ -43,15 +43,6 @@ build_executorch() {
   cmake --build cmake-out -j9 --target install
 }
 
-build_gtest() {
-  mkdir -p third-party/googletest/build
-  pushd third-party/googletest/build
-  cmake .. -DCMAKE_INSTALL_PREFIX=.
-  make -j4
-  make install
-  popd
-}
-
 export_test_model() {
   python3 -m test.models.export_program --modules "ModuleAdd,ModuleAddHalf,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleLinear,ModuleMultipleEntry,ModuleSimpleTrain" --outdir "cmake-out" 2> /dev/null
   python3 -m test.models.export_delegated_program --modules "ModuleAddMul" --backend_id "StubBackend" --outdir "cmake-out" || true
@@ -82,13 +73,6 @@ export_test_model() {
 
 build_and_run_test() {
   local test_dir=$1
-  cmake "${test_dir}" \
-    -DCMAKE_BUILD_TYPE=Debug \
-    -DCMAKE_INSTALL_PREFIX=cmake-out \
-    -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
-    -DCMAKE_PREFIX_PATH="$(pwd)/third-party/googletest/build" \
-    -Bcmake-out/"${test_dir}"
-  cmake --build cmake-out/"${test_dir}" -j9
 
   if [[ "$test_dir" =~ .*examples/models/llama/tokenizer.* ]]; then
     RESOURCES_PATH=$(realpath examples/models/llama/tokenizer/test/resources)
@@ -133,7 +117,6 @@ probe_tests() {
 }
 
 build_executorch
-build_gtest
 export_test_model
 
 if [ -z "$1" ]; then

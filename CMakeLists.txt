@@ -200,8 +200,6 @@ option(EXECUTORCH_BUILD_EXTENSION_TENSOR "Build the Tensor extension" OFF)
 
 option(EXECUTORCH_BUILD_EXTENSION_TRAINING "Build the training extension" OFF)
 
-option(EXECUTORCH_BUILD_GTESTS "Build googletest based test binaries" OFF)
-
 option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
 
 option(EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" OFF)
@@ -215,6 +213,8 @@ option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 option(EXECUTORCH_BUILD_KERNELS_QUANTIZED "Build the quantized kernels" OFF)
 
 option(EXECUTORCH_BUILD_DEVTOOLS "Build the ExecuTorch Developer Tools")
+
+option(EXECUTORCH_BUILD_TESTS "Build CMake-based unit tests" ON)
 
 option(EXECUTORCH_NNLIB_OPT "Build Cadence backend Hifi nnlib kernel" OFF)
 
@@ -328,6 +328,10 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   set(CMAKE_POSITION_INDEPENDENT_CODE
       ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
   )
+endif()
+
+if(EXECUTORCH_BUILD_TESTS)
+  include(CTest)
 endif()
 
 if(NOT PYTHON_EXECUTABLE)
@@ -625,7 +629,7 @@ cmake_dependent_option(
 )
 
 # Add googletest if any test targets should be built
-if(EXECUTORCH_BUILD_GTESTS)
+if(BUILD_TESTING)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/googletest)
 endif()
 
@@ -827,6 +831,27 @@ endif()
 
 if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
+endif()
+
+if(BUILD_TESTING)
+  # This contains the list of tests which are always built
+  add_subdirectory(extension/evalue_util/test)
+  add_subdirectory(extension/kernel_util/test)
+  add_subdirectory(extension/memory_allocator/test)
+  add_subdirectory(extension/parallel/test)
+  add_subdirectory(extension/pytree/test)
+  add_subdirectory(kernels/portable/test)
+  add_subdirectory(kernels/portable/cpu/util/test)
+  add_subdirectory(kernels/prim_ops/test)
+  add_subdirectory(kernels/test)
+  add_subdirectory(runtime/core/exec_aten/testing_util/test)
+  add_subdirectory(runtime/core/exec_aten/util/test)
+  add_subdirectory(runtime/core/portable_type/test)
+  add_subdirectory(runtime/core/test)
+  add_subdirectory(runtime/executor/test)
+  add_subdirectory(runtime/kernel/test)
+  add_subdirectory(runtime/platform/test)
+  add_subdirectory(test/utils)
 endif()
 
 # Print all summary
