@@ -1143,6 +1143,32 @@ class Inspector:
         ]
         return pd.concat(df_list, ignore_index=True)
 
+    def _prepare_dataframe(
+        self,
+        include_units: bool = True,
+        include_delegate_debug_data: bool = False,
+    ) -> pd.DataFrame:
+        """
+        Args:
+            include_units: Whether headers should include units (default true)
+            include_delegate_debug_data: Whether to include delegate debug metadata (default false)
+
+        Returns:
+            Returns a pandas DataFrame of the Events in each EventBlock in the inspector, with additional filtering.
+        """
+        combined_df = self.to_dataframe(include_units, include_delegate_debug_data)
+
+        # Filter out some columns and rows for better readability when printing
+        filtered_column_df = combined_df.drop(columns=EXCLUDED_COLUMNS_WHEN_PRINTING)
+        for filter_name in EXCLUDED_EVENTS_WHEN_PRINTING:
+            filtered_column_df = filtered_column_df[
+                ~filtered_column_df["event_name"].str.contains(filter_name)
+            ]
+        filtered_column_df.reset_index(drop=True, inplace=True)
+
+        return filtered_column_df
+
+    
     def print_data_tabular(
         self,
         file: IO[str] = sys.stdout,
@@ -1161,17 +1187,8 @@ class Inspector:
         Returns:
             None
         """
-        combined_df = self.to_dataframe(include_units, include_delegate_debug_data)
-
-        # Filter out some columns and rows for better readability when printing
-        filtered_column_df = combined_df.drop(columns=EXCLUDED_COLUMNS_WHEN_PRINTING)
-        for filter_name in EXCLUDED_EVENTS_WHEN_PRINTING:
-            filtered_column_df = filtered_column_df[
-                ~filtered_column_df["event_name"].str.contains(filter_name)
-            ]
-        filtered_column_df.reset_index(drop=True, inplace=True)
-
-        display_or_print_df(filtered_column_df, file)
+        df = self._prepare_dataframe(include_units, include_delegate_debug_data)
+        display_or_print_df(df, file)
 
 
     def save_data_to_tsv(
@@ -1187,17 +1204,8 @@ class Inspector:
         Returns:
             None
         """
-        combined_df = self.to_dataframe()
-
-        # Filter out some columns and rows for better readability when printing
-        filtered_column_df = combined_df.drop(columns=EXCLUDED_COLUMNS_WHEN_PRINTING)
-        for filter_name in EXCLUDED_EVENTS_WHEN_PRINTING:
-            filtered_column_df = filtered_column_df[
-                ~filtered_column_df["event_name"].str.contains(filter_name)
-            ]
-        filtered_column_df.reset_index(drop=True, inplace=True)
-
-        filtered_column_df.to_csv(file, sep="\t")
+        df = self._prepare_dataframe()
+        df.to_csv(file, sep="\t")
 
 
     # TODO: write unit test
