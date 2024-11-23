@@ -13,6 +13,7 @@
 
 #include <cmath>
 
+#include <ATen/native/cpu/Gelu.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
@@ -46,48 +47,26 @@ void gelu(
   CTYPE* out_data = output.mutable_data_ptr<CTYPE>();
   size_t lim = input.numel();
 
-  // TODO: Add fast path for tanh using sleef's tanh
   if (approximate == "tanh") {
-    // 0.5 * x * (1 + Tanh(sqrt(2 / pi) * (x + 0.044715 * x^3))
-    for (size_t i = 0; i < lim; ++i) {
-      const CTYPE x = in_data[i];
-      const CTYPE kBeta = M_SQRT2 * M_2_SQRTPI * 0.5;
-      const CTYPE kKappa = 0.044715;
-      auto x_cube = x * x * x;
-      auto inner = kBeta * (x + kKappa * x_cube);
-      out_data[i] = CTYPE(0.5) * x * (CTYPE(1) + std::tanh(inner));
-    }
-  } else if (approximate == "none") { // dont appx
-    // GELU(x) = x * Φ(x) where Φ(x) is the is the Cumulative Distribution
-    // Function for Gaussian Distribution.
-
-#ifndef __aarch64__
-    for (size_t i = 0; i < lim; ++i) {
-      const CTYPE x = in_data[i];
-      out_data[i] = CTYPE(0.5) * x * (CTYPE(1) + std::erf(x * M_SQRT1_2));
-    }
-#else
-    size_t i = 0;
-    if (std::is_same<CTYPE, float>::value) {
-      for (; i + 4 < lim; i += 4) {
-        const float32x4_t in =
-            vld1q_f32(static_cast<const float*>(&in_data[i]));
-        const float32x4_t m_sqrt1_2x4 = {
-            M_SQRT1_2, M_SQRT1_2, M_SQRT1_2, M_SQRT1_2};
-        const float32x4_t ones = vmovq_n_f32(1.0);
-        const float32x4_t halves = vmovq_n_f32(0.5);
-        float32x4_t out = Sleef_erff4_u10(vmulq_f32(in, m_sqrt1_2x4));
-        vst1q_f32(
-            static_cast<float*>(&out_data[i]),
-            vmulq_f32(vmulq_f32(vaddq_f32(out, ones), in), halves));
-      }
+    using Vec = at::vec::Vectorized<CTYPE>;
+    int i = 0;
+    for (; i < lim - (lim % Vec::size()); i += Vec::size()) {
+      Vec x = Vec::loadu(in_data + i);
+      at::native::vectorized_gelu_approximated_with_tanh(x).store(out_data + i);
     }
     for (; i < lim; ++i) {
-      const CTYPE x = in_data[i];
-      out_data[i] = CTYPE(0.5) * x * (CTYPE(1) + std::erf(x * M_SQRT1_2));
+      out_data[i] = at::native::scalar_gelu_approximated_with_tanh(in_data[i]);
     }
-#endif // __aarch64__
-
+  } else if (approximate == "none") {
+    using Vec = at::vec::Vectorized<CTYPE>;
+    int i = 0;
+    for (; i < lim - (lim % Vec::size()); i += Vec::size()) {
+      Vec x = Vec::loadu(in_data + i);
+      at::native::vectorized_gelu(x).store(out_data + i);
+    }
+    for (; i < lim; ++i) {
+      out_data[i] = at::native::scalar_gelu(in_data[i]);
+    }
   } else {
     ET_KERNEL_CHECK_MSG(
         context,

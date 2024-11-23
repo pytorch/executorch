@@ -60,6 +60,8 @@ message("Generated files ${gen_command_sources}")
 
 list(TRANSFORM _optimized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(optimized_kernels ${_optimized_kernels__srcs})
+find_package(Torch CONFIG REQUIRED)
+target_include_directories(optimized_kernels PRIVATE ${TORCH_INCLUDE_DIRS})
 target_link_libraries(
   optimized_kernels PRIVATE executorch_core cpublas extension_threadpool
 )
