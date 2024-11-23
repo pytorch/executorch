@@ -6,9 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <ATen/cpu/vec/functional.h>
+#include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/cpu/binary_ops.h>
 #include <executorch/kernels/optimized/vec/functional.h>
-#include <executorch/kernels/optimized/vec/vec.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h> // IWYU pragma: export
@@ -95,7 +96,7 @@ Tensor& handle_last_dim_broadcast(
   const size_t outer_size = getLeadingDims(out, out.dim() - 1);
   const auto broadcast_size = out.size(out.dim() - 1);
   ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
-    using Vec = executorch::vec::Vectorized<CTYPE>;
+    using Vec = at::vec::Vectorized<CTYPE>;
     executorch::vec::broadcasting_map_broadcast_last_dim<CTYPE>(
         [](Vec x, Vec y) { return x * y; },
         out.mutable_data_ptr<CTYPE>(),
@@ -164,7 +165,7 @@ Tensor& handle_broadcast_mul(
     inner_size = lhs->sizes()[lhs->dim() - 1];
   }
   ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
-    using Vec = executorch::vec::Vectorized<CTYPE>;
+    using Vec = at::vec::Vectorized<CTYPE>;
     executorch::vec::broadcasting_map_3d_and_unsqueezed_3d<CTYPE>(
         [](Vec x, Vec y) { return x * y; },
         out.mutable_data_ptr<CTYPE>(),
@@ -203,8 +204,8 @@ Tensor& opt_mul_out(
           CTYPE_B b_val = *b.const_data_ptr<CTYPE_B>();
           CTYPE b_casted = static_cast<CTYPE>(b_val);
 
-          using Vec = executorch::vec::Vectorized<CTYPE>;
-          executorch::vec::map<CTYPE>(
+          using Vec = at::vec::Vectorized<CTYPE>;
+          at::vec::map<CTYPE>(
               [b_casted](Vec x) { return x * Vec(b_casted); },
               out.mutable_data_ptr<CTYPE>(),
               a.const_data_ptr<CTYPE>(),
@@ -229,8 +230,8 @@ Tensor& opt_mul_out(
         "Failed to resize output tensor.");
 
     ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
-      using Vec = executorch::vec::Vectorized<CTYPE>;
-      executorch::vec::map2<CTYPE>(
+      using Vec = at::vec::Vectorized<CTYPE>;
+      at::vec::map2<CTYPE>(
           [](Vec x, Vec y) { return x * y; },
           out.mutable_data_ptr<CTYPE>(),
           a.const_data_ptr<CTYPE>(),
@@ -306,8 +307,8 @@ Tensor& opt_mul_scalar_out(
         ET_EXTRACT_SCALAR(b, b_val);
         CTYPE b_casted = static_cast<CTYPE>(b_val);
 
-        using Vec = executorch::vec::Vectorized<CTYPE>;
-        executorch::vec::map<CTYPE>(
+        using Vec = at::vec::Vectorized<CTYPE>;
+        at::vec::map<CTYPE>(
             [b_casted](Vec x) { return x * Vec(b_casted); },
             out.mutable_data_ptr<CTYPE>(),
             a.const_data_ptr<CTYPE>(),

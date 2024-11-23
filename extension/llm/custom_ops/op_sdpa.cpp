@@ -8,9 +8,10 @@
 
 #include <executorch/extension/llm/custom_ops/op_sdpa.h>
 
+#include <ATen/cpu/vec/functional.h>
+#include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
 #include <executorch/kernels/optimized/vec/functional.h>
-#include <executorch/kernels/optimized/vec/vec.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 // @lint-ignore CLANGTIDY facebook-unused-include-check
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -34,17 +35,9 @@ namespace util {
 constexpr size_t kKVDim = 4;
 
 template <typename T>
-inline void _store(T* dst, ::executorch::vec::Vectorized<T> src) {
+inline void _store(T* dst, ::at::vec::Vectorized<T> src) {
   src.store(dst);
 }
-
-/*
-inline void _store(::Half* dst, at::vec::Vectorized<float> src) {
-  //fp16_ieee_to_fp32_value
-  auto res = at::vec::convert_float_half(src, src);
-  res.store(dst, at::vec::Vectorized<float>::size());
-}
-*/
 
 template <typename T>
 inline T data_index_init(T offset) {
@@ -78,7 +71,7 @@ inline double calculate_scale(const Tensor& query, optional<double> scale) {
 }
 
 } // namespace util
-namespace vec = ::executorch::vec;
+namespace vec = ::at::vec;
 using Tensor = exec_aten::Tensor;
 
 namespace {

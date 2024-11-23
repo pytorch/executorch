@@ -6,8 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <ATen/cpu/vec/functional.h>
+#include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/vec/functional.h>
-#include <executorch/kernels/optimized/vec/vec.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -27,8 +28,8 @@ Tensor& opt_neg_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
       "Failed to resize output tensor.");
 
   ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "neg.out", CTYPE, [&] {
-    using Vec = executorch::vec::Vectorized<CTYPE>;
-    executorch::vec::map<CTYPE>(
+    using Vec = at::vec::Vectorized<CTYPE>;
+    at::vec::map<CTYPE>(
         [](Vec x) { return x.neg(); },
         out.mutable_data_ptr<CTYPE>(),
         in.const_data_ptr<CTYPE>(),
