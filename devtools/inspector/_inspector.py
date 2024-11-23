@@ -1168,7 +1168,6 @@ class Inspector:
 
         return filtered_column_df
 
-    
     def print_data_tabular(
         self,
         file: IO[str] = sys.stdout,
@@ -1190,7 +1189,6 @@ class Inspector:
         df = self._prepare_dataframe(include_units, include_delegate_debug_data)
         display_or_print_df(df, file)
 
-
     def save_data_to_tsv(
         self,
         file: IO[str],
@@ -1206,7 +1204,6 @@ class Inspector:
         """
         df = self._prepare_dataframe()
         df.to_csv(file, sep="\t")
-
 
     # TODO: write unit test
     def find_total_for_module(self, module_name: str) -> float:
