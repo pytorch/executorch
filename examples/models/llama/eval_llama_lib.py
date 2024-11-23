@@ -283,6 +283,7 @@ def gen_eval_wrapper(
                 tokenizer=tokenizer,
                 sink_size=sink_size,
                 window_size=window_size,
+                eviction_batch_size=eviction_batch_size,
                 max_seq_length=attention_sink_eval_length,
                 use_kv_cache=args.use_kv_cache,
             )
