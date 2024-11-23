@@ -43,7 +43,7 @@ def main() -> None:
         required=False,
         help="Provide an optional buffer file path.",
     )
-    parser.add_argument(  
+    parser.add_argument(
         "--tsv_path",
         required=False,
         help="Provide an optional tsv file path.",
