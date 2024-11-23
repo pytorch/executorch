@@ -17,7 +17,6 @@ import torch
 
 from torch.library import impl
 
-# TODO rename this file to custom_ops_meta_registration.py
 try:
     op = torch.ops.llama.sdpa_with_kv_cache.default
     assert op is not None

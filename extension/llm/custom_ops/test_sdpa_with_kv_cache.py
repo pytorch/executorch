@@ -11,7 +11,7 @@ import unittest
 import torch
 import torch.nn.functional as F
 
-from .sdpa_with_kv_cache import custom_ops_lib  # noqa
+from .custom_ops import custom_ops_lib  # noqa
 
 
 def _sdpa_with_kv_cache_ref(q, k, v, k_cache, v_cache, attn_mask, start_pos, seq_len):

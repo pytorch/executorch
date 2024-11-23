@@ -18,7 +18,7 @@ from executorch.examples.models.llava.model import LlavaModel
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
-from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa # usort: skip
+from executorch.extension.llm.custom_ops import custom_ops  # noqa # usort: skip
 from executorch.kernels import quantized  # noqa # usort: skip
 
 logging.basicConfig(level=logging.INFO)
