@@ -12,8 +12,9 @@ build_qnn_backend() {
   echo "Start building qnn backend."
   export ANDROID_NDK_ROOT=/opt/ndk
   export QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728
-  export EXECUTORCH_ROOT="$(python -c 'import executorch; print(executorch.__path__[0])')"
-  if [ "$EXECUTORCH_ROOT" == "" ]; then
+  export EXECUTORCH_SRC_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+  export EXECUTORCH_INSTALL_ROOT="$(python -c 'import executorch; print(executorch.__path__[0])')"
+  if [ "$EXECUTORCH_INSTALL_ROOT" == "" ]; then
     echo "Failed to find where executorch package is installed."
     echo "import executorch failed"
     exit -1
@@ -23,7 +24,7 @@ build_qnn_backend() {
 }
 
 set_up_aot() {
-  cd $EXECUTORCH_ROOT
+  cd $EXECUTORCH_SRC_ROOT
   if [ ! -d "cmake-out" ]; then
       mkdir cmake-out
   fi
@@ -41,8 +42,8 @@ set_up_aot() {
   cmake --build $PWD --target "PyQnnManagerAdaptor" "PyQnnWrapperAdaptor" -j$(nproc)
   # install Python APIs to correct import path
   # The filename might vary depending on your Python and host version.
-  cp -f backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so $EXECUTORCH_ROOT/backends/qualcomm/python
-  cp -f backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so $EXECUTORCH_ROOT/backends/qualcomm/python
+  cp -f backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so $EXECUTORCH_INSTALL_ROOT/backends/qualcomm/python
+  cp -f backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so $EXECUTORCH_INSTALL_ROOT/backends/qualcomm/python
   popd
 
   # Workaround for fbs files in exir/_serialize
