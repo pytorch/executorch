@@ -12,7 +12,12 @@ build_qnn_backend() {
   echo "Start building qnn backend."
   export ANDROID_NDK_ROOT=/opt/ndk
   export QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728
-  export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+  export EXECUTORCH_ROOT="$(python -c 'import executorch; print(executorch.__path__[0])')"
+  if [ "$EXECUTORCH_ROOT" == "" ]; then
+    echo "Failed to find where executorch package is installed."
+    echo "import executorch failed"
+    exit -1
+  fi
 
   bash backends/qualcomm/scripts/build.sh --skip_aarch64 --job_number 2 --release
 }
