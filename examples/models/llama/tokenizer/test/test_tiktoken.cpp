@@ -14,6 +14,10 @@
 
 #include <gtest/gtest.h>
 
+#ifdef EXECUTORCH_FB_BUCK
+#include <TestResourceUtils/TestResourceUtils.h>
+#endif
+
 using namespace ::testing;
 
 using ::example::Version;
@@ -26,8 +30,13 @@ class MultimodalTiktokenV5ExtensionTest : public Test {
   void SetUp() override {
     executorch::runtime::runtime_init();
     tokenizer_ = get_tiktoken_for_llama(Version::Multimodal);
+#ifdef EXECUTORCH_FB_BUCK
+    modelPath_ =
+        facebook::xplat::testing::getPathForTestResource("resources/test_tiktoken_tokenizer.model");
+#else
     modelPath_ = std::getenv("RESOURCES_PATH") +
         std::string("/test_tiktoken_tokenizer.model");
+#endif
   }
 
   std::unique_ptr<Tokenizer> tokenizer_;
