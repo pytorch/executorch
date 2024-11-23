@@ -43,12 +43,14 @@ def define_common_targets():
         name = "scalar_type",
         exported_headers = [
             "bfloat16.h",
-            "bfloat16_math.h",
             "complex.h",
             "half.h",
             "scalar_type.h",
             "qint_types.h",
             "bits_types.h",
+        ],
+        exported_deps = [
+            "//executorch/runtime/core/portable_type/c10:c10",
         ],
         visibility = [
             "//executorch/extension/...",
