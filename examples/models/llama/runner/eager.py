@@ -80,18 +80,20 @@ def build_args_parser() -> argparse.ArgumentParser:
 def execute_runner(runner_class: Type[LlamaRunner]) -> None:
     parser = build_args_parser()
     args = parser.parse_args()
-    runner = runner_class(args)  # pyre-ignore: Missing argument [20]
-    generated_tokens = (
-        runner.chat_completion(temperature=args.temperature)
-        if args.chat
-        else runner.text_completion(
-            prompt=args.prompt,
-            temperature=args.temperature,
-            echo=True,
+
+    with torch.no_grad():
+        runner = runner_class(args)  # pyre-ignore: Missing argument [20]
+        generated_tokens = (
+            runner.chat_completion(temperature=args.temperature)
+            if args.chat
+            else runner.text_completion(
+                prompt=args.prompt,
+                temperature=args.temperature,
+                echo=True,
+            )
         )
-    )
-    if args.show_tokens:
-        print(f"Generated {len(generated_tokens)} tokens: {generated_tokens}")
+        if args.show_tokens:
+            print(f"Generated {len(generated_tokens)} tokens: {generated_tokens}")
 
 
 def main() -> None:

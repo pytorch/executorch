@@ -29,6 +29,7 @@ class arm_test_options(Enum):
     corstone300 = auto()
     dump_path = auto()
     date_format = auto()
+    fast_fvp = auto()
 
 
 _test_options: dict[arm_test_options, Any] = {}
@@ -41,6 +42,7 @@ def pytest_addoption(parser):
     parser.addoption("--arm_run_corstone300", action="store_true")
     parser.addoption("--default_dump_path", default=None)
     parser.addoption("--date_format", default="%d-%b-%H:%M:%S")
+    parser.addoption("--fast_fvp", action="store_true")
 
 
 def pytest_configure(config):
@@ -63,6 +65,7 @@ def pytest_configure(config):
                 f"Supplied argument 'default_dump_path={dump_path}' that does not exist or is not a directory."
             )
     _test_options[arm_test_options.date_format] = config.option.date_format
+    _test_options[arm_test_options.fast_fvp] = config.option.fast_fvp
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 

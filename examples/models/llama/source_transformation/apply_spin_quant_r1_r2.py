@@ -101,6 +101,8 @@ def apply_spin_quant_r1_r2(model: torch.nn.Module, optimized_rotation_path: str)
     optimized_rotation = torch.load(optimized_rotation_path, weights_only=True)
     R1 = optimized_rotation["R1"].to(torch.float32)
     config = model.params
+    # pyre-fixme[16]: Item `Tensor` of `Union[Tensor, Module]` has no attribute
+    #  `n_heads`.
     num_heads = config.n_heads
     head_dim = config.dim // num_heads
 
@@ -108,6 +110,8 @@ def apply_spin_quant_r1_r2(model: torch.nn.Module, optimized_rotation_path: str)
     rotate_head(model, R1)
     cleanup_memory()
 
+    # pyre-fixme[6]: For 1st argument expected `Iterable[Variable[_T]]` but got
+    #  `Union[Tensor, Module]`.
     for idx, layer in enumerate(model.layers):
         key = f"model.layers.{idx}.self_attn.R2"
         R2 = optimized_rotation[key].to(torch.float32)
@@ -130,6 +134,8 @@ def fuse_ln_linear(
 
         # Calculating new weight and bias
         W_ = linear.weight.data.to(dtype=torch.float32)
+        # pyre-fixme[58]: `*` is not supported for operand types `Tensor` and
+        #  `Union[torch._tensor.Tensor, torch.nn.modules.module.Module]`.
         linear.weight.data = (W_ * layernorm.weight.to(dtype=torch.float32)).to(
             linear_dtype
         )
@@ -140,7 +146,10 @@ def fuse_ln_linear(
                     torch.zeros(linear.out_features, dtype=torch.float32)
                 )
             linear.bias.data = linear.bias.data.to(dtype=torch.float32) + torch.matmul(
-                W_, layernorm.bias.to(dtype=torch.float32)
+                # pyre-fixme[6]: For 2nd argument expected `Tensor` but got
+                #  `Union[Tensor, Module]`.
+                W_,
+                layernorm.bias.to(dtype=torch.float32),
             )
             linear.bias.data = linear.bias.data.to(linear_dtype)
 
@@ -148,10 +157,18 @@ def fuse_ln_linear(
 def fuse_layer_norms(model: torch.nn.Module):
     # Embedding fusion
     for W in [model.tok_embeddings]:
+        # pyre-fixme[16]: Item `Tensor` of `Union[Tensor, Module]` has no attribute
+        #  `weight`.
         W_ = W.weight.data.to(dtype=torch.float32)
+        # pyre-fixme[16]: Item `Tensor` of `Union[Tensor, Module]` has no attribute
+        #  `weight`.
         W.weight.data = (W_ - W_.mean(dim=-1, keepdim=True)).to(W.weight.data.dtype)
 
     # Fuse the linear operations in Layernorm into the adjacent linear blocks.
+    # pyre-fixme[29]:
+    #  `Union[BoundMethod[typing.Callable(torch._tensor.Tensor.__iter__)[[Named(self,
+    #  torch._tensor.Tensor)], typing.Any], torch._tensor.Tensor],
+    #  torch._tensor.Tensor, torch.nn.modules.module.Module]` is not a function.
     for layer in model.layers:
         # fuse the input layernorms into the linear layers
         fuse_ln_linear(layer.ffn_norm, [layer.feed_forward.w3, layer.feed_forward.w1])
@@ -170,9 +187,15 @@ def fuse_layer_norms(model: torch.nn.Module):
         layer.attention_norm.weight.data = torch.ones_like(W_norm, dtype=torch.float32)
 
     fuse_ln_linear(
+        # pyre-fixme[6]: For 1st argument expected `Module` but got `Union[Tensor,
+        #  Module]`.
         model.norm,
+        # pyre-fixme[6]: For 2nd argument expected `Iterable[Linear]` but got
+        #  `Iterable[Union[Tensor, Module]]`.
         [model.output],
     )
+    # pyre-fixme[16]: Item `Tensor` of `Union[Tensor, Module]` has no attribute
+    #  `weight`.
     W_norm = model.norm.weight.data
     model.norm.weight.data = torch.ones_like(W_norm, dtype=torch.float32)
 

@@ -85,7 +85,7 @@ class ModelArgs:
     n_kv_heads: Optional[int] = None
     vocab_size: int = -1  # defined later by tokenizer
     hidden_dim: Optional[int] = None
-    head_dim: Optional[int] = None # Optional customized head_dim
+    head_dim: Optional[int] = None  # Optional customized head_dim
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
     ffn_dim_multiplier: Optional[float] = None
     norm_eps: float = 1e-5

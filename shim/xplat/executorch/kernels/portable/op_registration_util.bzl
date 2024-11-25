@@ -867,6 +867,7 @@ ATEN_OPS = (
     op_target(
         name = "op_native_batch_norm",
         deps = [
+            ":vec_ops",
             "//executorch/kernels/portable/cpu/util:normalization_ops_util",
         ],
     ),
@@ -1080,6 +1081,9 @@ ATEN_OPS = (
         name = "op_sigmoid",
         deps = [
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
         ],
     ),
     op_target(
