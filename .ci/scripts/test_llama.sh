@@ -51,7 +51,9 @@ UPLOAD_DIR="${UPLOAD_DIR:-}"
 # Default PT2E_QUANTIZE to empty string if not set
 PT2E_QUANTIZE="${PT2E_QUANTIZE:-}"
 
+# Default CMAKE_BUILD_TYPE to release mode
 CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release}
+
 if [[ $# -lt 4 ]]; then # Assuming 4 mandatory args
     echo "Expecting atleast 4 positional arguments"
     echo "Usage: [...]"
