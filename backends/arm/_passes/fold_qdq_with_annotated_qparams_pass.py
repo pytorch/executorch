@@ -15,6 +15,9 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 
+q_op = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+dq_op = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
+
 
 def get_input_qparams(node: Node) -> dict[int, QuantArgs]:
     """
@@ -77,8 +80,6 @@ class FoldAndAnnotateQParamsPass(ExportPass):
         self.targeted_ops = targeted_ops
 
     def call(self, graph_module: GraphModule) -> PassResult:
-        q_op = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
-        dq_op = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
 
         # Loop over the graph nodes and find any node in the 'targeted_ops' list.
         for n in graph_module.graph.nodes:
@@ -145,3 +146,36 @@ class FoldAndAnnotateQParamsPass(ExportPass):
 
         graph_module.recompile()
         return PassResult(graph_module, True)
+
+
+class QuantizeFullArgument(ExportPass):
+    """
+    Make sure the fill_value for full.default is quantized. This pass needs to be run before
+    the folding pass above to make sure that the retraced output of the full.default op is
+    the right dtype.
+    """
+
+    def call(self, graph_module: GraphModule) -> PassResult:
+        modified = False
+        # Loop over the graph nodes and find any node in the 'targeted_ops' list.
+        for n in graph_module.graph.nodes:
+            n = cast(Node, n)
+            if n.target != exir_ops.edge.aten.full.default:
+                continue
+
+            # Make sure we have a quantized operator
+            user = list(n.users)[0]
+            if user.target != q_op:
+                continue
+
+            qargs = QuantArgs.from_operator(user.target, user.args)
+            if "dtype" not in n.kwargs.keys() or n.kwargs["dtype"] != qargs.dtype:
+                # replace the node arg with a quantized dito and also set dtype
+                # to get the right output according to the Edge IR specification:
+                # exir/dialects/edge/edge.yaml:3596
+                quantized_full_value = qargs.quantize_value(n.args[1]).item()
+                n.update_arg(1, quantized_full_value)
+                n.update_kwarg("dtype", qargs.dtype)
+                modified = True
+
+        return PassResult(graph_module, modified)
