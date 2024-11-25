@@ -13,14 +13,14 @@ import piq
 import torch
 from diffusers import EulerDiscreteScheduler, UNet2DConditionModel
 from diffusers.models.embeddings import get_timestep_embedding
-from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
-    QcomChipset,
-)
 
 from executorch.backends.qualcomm.utils.utils import (
+    ExecutorchBackendConfig,
     from_context_binary,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
+    get_soc_to_chipset_map,
+    QcomChipset,
 )
 
 from executorch.examples.qualcomm.qaihub_scripts.stable_diffusion.stable_diffusion_lib import (
@@ -34,6 +34,7 @@ from executorch.examples.qualcomm.utils import (
     setup_common_args_and_variables,
     SimpleADB,
 )
+from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from PIL import Image
 from torchvision.transforms import ToTensor
 
@@ -353,7 +354,6 @@ def inference(args, compiler_specs, pte_files):
 
 def main(args):
     os.makedirs(args.artifact, exist_ok=True)
-
     # common part for compile & inference
     backend_options = generate_htp_compiler_spec(
         use_fp16=False,
@@ -367,14 +367,24 @@ def main(args):
 
     if args.pre_gen_pte is None:
         # Create custom operators as context loader
+        soc_model = get_soc_to_chipset_map()[args.model]
         bundle_programs = [
-            from_context_binary(args.text_encoder_bin, "ctx_loader_0"),
-            from_context_binary(args.unet_bin, "ctx_loader_1"),
-            from_context_binary(args.vae_bin, "ctx_loader_2"),
+            from_context_binary(args.text_encoder_bin, "ctx_loader_0", soc_model),
+            from_context_binary(args.unet_bin, "ctx_loader_1", soc_model),
+            from_context_binary(args.vae_bin, "ctx_loader_2", soc_model),
         ]
         pte_names = [f"{args.pte_prefix}_{target_name}" for target_name in target_names]
+        memory_planning_pass = MemoryPlanningPass(
+            alloc_graph_input=False,
+            alloc_graph_output=False,
+        )
         pte_files = gen_pte_from_ctx_bin(
-            args.artifact, pte_names, compiler_specs, bundle_programs
+            artifact=args.artifact,
+            pte_names=pte_names,
+            bundle_programs=bundle_programs,
+            backend_config=ExecutorchBackendConfig(
+                memory_planning_pass=memory_planning_pass
+            ),
         )
         assert (
             len(pte_files) == 3

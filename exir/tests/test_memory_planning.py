@@ -234,6 +234,8 @@ def maketest(
                 f"algo {getattr(algo, '__name__', repr(algo))}, expect_reuse {expect_reuse}"
             )
             eager_module = module_cls().eval()
+            # pyre-fixme[29]: `Union[nn.modules.module.Module,
+            #  torch._tensor.Tensor]` is not a function.
             inputs = eager_module.get_random_inputs()
             graph_module = (
                 to_edge(

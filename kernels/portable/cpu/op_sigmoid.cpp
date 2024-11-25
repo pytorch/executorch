@@ -8,6 +8,7 @@
 
 #include <cmath>
 
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -35,21 +36,26 @@ Tensor& sigmoid_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
       out,
       "Failed to resize output tensor.");
 
-  ScalarType in_type = in.scalar_type();
-  ScalarType out_type = out.scalar_type();
-  ET_SWITCH_REALHB_TYPES(in_type, ctx, "sigmoid.out", CTYPE_IN, [&]() {
-    ET_SWITCH_FLOATH_TYPES(out_type, ctx, "sigmoid.out", CTYPE_OUT, [&]() {
-      apply_unary_map_fn(
-          [](const CTYPE_IN val_in) {
-            // perform math in double to preserve precision
-            double in_casted = static_cast<double>(val_in);
-            double out_val = 1.0 / (1.0 + exp(-in_casted));
-            return static_cast<CTYPE_OUT>(out_val);
-          },
-          in.const_data_ptr<CTYPE_IN>(),
-          out.mutable_data_ptr<CTYPE_OUT>(),
-          in.numel());
-    });
+  ScalarType compute_type =
+      executorch::runtime::isFloatingType(in.scalar_type()) ? in.scalar_type()
+                                                            : ScalarType::Float;
+  compute_type = utils::get_compute_type(compute_type);
+
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "sigmoid.out";
+
+  ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [](const CTYPE_COMPUTE val_in) {
+          CTYPE_COMPUTE out_val = static_cast<CTYPE_COMPUTE>(1.0) /
+              (static_cast<CTYPE_COMPUTE>(1.0) + exp(-val_in));
+          return out_val;
+        },
+        ctx,
+        in,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        out,
+        utils::SupportedTensorDtypes::FLOATHBF16);
   });
 
   return out;

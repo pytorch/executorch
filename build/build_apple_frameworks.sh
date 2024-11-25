@@ -154,6 +154,8 @@ cmake_build() {
         -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
         -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD="c++17" \
         -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY="libc++" \
+        -DCMAKE_C_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
+        -DCMAKE_CXX_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
         -DPYTHON_EXECUTABLE="$PYTHON" \
         -DFLATC_EXECUTABLE="$FLATC" \
         -DEXECUTORCH_BUILD_COREML=$COREML \

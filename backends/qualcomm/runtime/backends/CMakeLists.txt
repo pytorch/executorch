@@ -91,6 +91,7 @@ target_sources(
           ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpGraph.cpp
           ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpGraphCustomConfig.h
           ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpGraphCustomConfig.cpp
+          ${HOST_ARCHITECTURE}/HtpGraphCustomConfig.cpp
 )
 
 # qnn_backend

@@ -581,7 +581,10 @@ def greedy(
         for mem_id in shared_objects:
             input_total_size = 0
             if bufsizes := getattr(graph_module, "input_mem_buffer_sizes", None):
+                # pyre-fixme[6]: For 1st argument expected
+                #  `pyre_extensions.ReadOnly[Sized]` but got `Union[Tensor, Module]`.
                 if len(bufsizes) > mem_id:
+                    # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.Ten...
                     input_total_size = bufsizes[mem_id]
             total_sizes[mem_id] = materialize_buffer(
                 shared_objects[mem_id], input_total_size
