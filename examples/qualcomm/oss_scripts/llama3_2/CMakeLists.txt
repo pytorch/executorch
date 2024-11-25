@@ -65,4 +65,3 @@ target_compile_options(
 set_target_properties(
   qnn_llama3_2_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
 )
-
