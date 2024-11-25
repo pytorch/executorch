@@ -41,6 +41,8 @@ def convert_to_flatbuffer(vk_graph: VkGraph) -> bytes:
 
 
 def flatbuffer_to_vk_graph(flatbuffers: bytes) -> VkGraph:
+    # Following similar (de)serialization logic on other backends:
+    # https://github.com/pytorch/executorch/blob/main/backends/qualcomm/serialization/qc_schema_serialize.py#L33
     with tempfile.TemporaryDirectory() as d:
         schema_path = os.path.join(d, "schema.fbs")
         with open(schema_path, "wb") as schema_file:
