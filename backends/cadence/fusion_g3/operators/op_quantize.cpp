@@ -12,6 +12,7 @@
 
 #include <xa_nnlib_kernels_api.h>
 
+<<<<<<< HEAD
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -21,13 +22,28 @@ using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
+=======
+using exec_aten::Scalar;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
+using torch::executor::Error;
+using torch::executor::KernelRuntimeContext;
+>>>>>>> 92b58ef81 (Resolved Linter errors)
 
 /* ScalarType in Executorch do not have support for below data types.
  * So, creating a placeholder for these data types. Once, ScalarTypes is
  * updated to have support for below data types, these can be removed and
  * operator need to be updated accordingly
  */
+<<<<<<< HEAD
 enum datatype { Ushort = 20, Bits4u = 21, Bits4 = 22 };
+=======
+ enum datatype {
+ Ushort = 20,
+ Bits4u = 21,
+ Bits4 = 22
+ };
+>>>>>>> 92b58ef81 (Resolved Linter errors)
 
 /**
  * For an input tensor, use the scale and zero_point arguments to quantize it.

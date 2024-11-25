@@ -763,7 +763,8 @@ Tensor& dequantize_per_token_out(
     int64_t quant_max,
     ScalarType dtype,
     ScalarType out_dtype,
-    Tensor& out) {
+    Tensor& out) 
+{
   (void)context;
   return dequantize_per_token_out(
       input, scale, zero_points, quant_min, quant_max, dtype, out_dtype, out);

@@ -17,12 +17,12 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
-using ::executorch::aten::Scalar;
-using ::executorch::aten::ScalarType;
-using ::executorch::aten::Tensor;
-using ::executorch::runtime::canCast;
-using ::executorch::runtime::Error;
-using ::executorch::runtime::KernelRuntimeContext;
+using exec_aten::Scalar;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
+using executorch::runtime::canCast;
+using torch::executor::Error;
+using torch::executor::KernelRuntimeContext;
 
 namespace cadence {
 namespace impl {
@@ -344,7 +344,6 @@ Tensor& add_scalar_out(
                   SAME_AS_COMMON);
     });
   }
-
   return out;
 }
 
