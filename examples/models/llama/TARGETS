@@ -150,6 +150,8 @@ runtime.python_library(
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
+        "fbsource//third-party/pypi/tqdm:tqdm",
+        "fbsource//third-party/pypi/datasets:datasets",
         "fbsource//third-party/pypi/lm-eval:lm-eval",
         "fbsource//third-party/pypi/tiktoken:tiktoken",
         ":export_library",
