@@ -16,8 +16,8 @@
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
-using torch::executor::KernelRuntimeContext;
 using torch::executor::Error;
+using torch::executor::KernelRuntimeContext;
 
 /* ScalarType in Executorch do not have support for below data types.
  * So, creating a placeholder for these data types. Once, ScalarTypes is
@@ -29,7 +29,6 @@ using torch::executor::Error;
  Bits4u = 21,
  Bits4 = 22
  };
-
 
 /**
  * For an input tensor, use the scale and zero_point arguments to quantize it.

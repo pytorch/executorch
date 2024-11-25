@@ -16,8 +16,8 @@
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
-using torch::executor::KernelRuntimeContext;
 using torch::executor::Error;
+using torch::executor::KernelRuntimeContext;
 
 template <typename T>
 using optional = exec_aten::optional<T>;
@@ -797,7 +797,8 @@ Tensor& dequantize_per_token_out(
     int64_t quant_max,
     ScalarType dtype,
     ScalarType out_dtype,
-    Tensor& out) {
+    Tensor& out) 
+{
   (void)context;
   return dequantize_per_token_out(
       input, scale, zero_points, quant_min, quant_max, dtype, out_dtype, out);

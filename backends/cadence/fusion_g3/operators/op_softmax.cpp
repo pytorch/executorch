@@ -7,7 +7,6 @@
  */
 
 #include <cmath>
-
 #include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
@@ -17,8 +16,8 @@
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
-using torch::executor::KernelRuntimeContext;
 using torch::executor::Error;
+using torch::executor::KernelRuntimeContext;
 
 namespace cadence {
 namespace impl {
