@@ -19,9 +19,9 @@ from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkBytes,
     VkGraph,
 )
-from executorch.exir._serialize._dataclass import _DataclassEncoder
+from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
 
-from executorch.exir._serialize._flatbuffer import _flatc_compile
+from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
 
 
 def convert_to_flatbuffer(vk_graph: VkGraph) -> bytes:
@@ -38,6 +38,23 @@ def convert_to_flatbuffer(vk_graph: VkGraph) -> bytes:
         output_path = os.path.join(d, "schema.bin")
         with open(output_path, "rb") as output_file:
             return output_file.read()
+
+
+def flatbuffer_to_vk_graph(flatbuffers: bytes) -> VkGraph:
+    with tempfile.TemporaryDirectory() as d:
+        schema_path = os.path.join(d, "schema.fbs")
+        with open(schema_path, "wb") as schema_file:
+            schema_file.write(pkg_resources.resource_string(__name__, "schema.fbs"))
+
+        bin_path = os.path.join(d, "schema.bin")
+        with open(bin_path, "wb") as bin_file:
+            bin_file.write(flatbuffers)
+
+        _flatc_decompile(d, schema_path, bin_path, ["--raw-binary"])
+
+        json_path = os.path.join(d, "schema.json")
+        with open(json_path, "rb") as output_file:
+            return _json_to_dataclass(json.load(output_file), VkGraph)
 
 
 @dataclass
