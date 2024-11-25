@@ -48,6 +48,9 @@ MODE=${MODE:-"xnnpack+custom"}
 # Default UPLOAD_DIR to empty string if not set
 UPLOAD_DIR="${UPLOAD_DIR:-}"
 
+# Default PT2E_QUANTIZE to empty string if not set
+PT2E_QUANTIZE="${PT2E_QUANTIZE:-}"
+
 if [[ $# -lt 4 ]]; then # Assuming 4 mandatory args
     echo "Expecting atleast 4 positional arguments"
     echo "Usage: [...]"
