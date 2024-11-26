@@ -9,10 +9,10 @@ phases:
   pre_test:
     commands:
       # Download the model from S3
-      - aws s3 cp {{ model_path }} model.zip
+      - curl -s --fail '{{ model_path }}' -o model.zip
       - unzip model.zip && ls -la
 
-      # Copy the extracted model to sdcard
+      # Copy the model to sdcard
       - adb -s $DEVICEFARM_DEVICE_UDID push *.bin /sdcard
       - adb -s $DEVICEFARM_DEVICE_UDID push *.pte /sdcard
 
