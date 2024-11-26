@@ -1,36 +1,22 @@
+ET_PLATFORM[sdk=iphonesimulator*] = simulator
+ET_PLATFORM[sdk=iphoneos*] = ios
+ET_PLATFORM[sdk=macos*] = macos
+
+OTHER_LDFLAGS = $(inherited) \
+    -force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-$(ET_PLATFORM)-release.a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml-$(ET_PLATFORM)-release.a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps-$(ET_PLATFORM)-release.a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-$(ET_PLATFORM)-release.a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libkernels_custom-$(ET_PLATFORM)-release.a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized-$(ET_PLATFORM)-release.a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized-$(ET_PLATFORM)-release.a \
+    @$(TEMP_DIR)/cmake/linker_flags
+
+// LLaMARunner requires additional dependencies built with CMake in a custom run script phase.
+// Include headers and libraries from $(TEMP_DIR)/cmake for it.
 HEADER_SEARCH_PATHS = $(inherited) \
-$(SRCROOT)/../../../../.. \
-$(TEMP_DIR)/cmake/include
+    $(SRCROOT)/../../../../.. \
+    $(TEMP_DIR)/cmake/include
 
 LIBRARY_SEARCH_PATHS = $(inherited) \
-$(TEMP_DIR)/cmake/lib
-
-COMMON_LDFLAGS = $(inherited) \
-@$(TEMP_DIR)/cmake/linker_flags
-
-OTHER_LDFLAGS[sdk=iphonesimulator*] = $(COMMON_LDFLAGS) \
--force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-simulator-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml-simulator-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps-simulator-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-simulator-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libkernels_custom-simulator-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized-simulator-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized-simulator-release.a
-
-OTHER_LDFLAGS[sdk=iphoneos*] = $(COMMON_LDFLAGS) \
--force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-ios-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml-ios-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps-ios-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-ios-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libkernels_custom-ios-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized-ios-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized-ios-release.a
-
-OTHER_LDFLAGS[sdk=macos*] = $(COMMON_LDFLAGS) \
--force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-macos-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml-macos-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps-macos-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-macos-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libkernels_custom-macos-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized-macos-release.a \
--force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized-macos-release.a
+    $(TEMP_DIR)/cmake/lib

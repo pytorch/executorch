@@ -17,6 +17,8 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
+from executorch.backends.arm.test.common import arm_test_options, is_option_enabled
+
 from torch.export import ExportedProgram
 from torch.fx.node import Node
 
@@ -249,6 +251,10 @@ class RunnerUtil:
         for input_path in input_paths:
             cmd_line += f" -i {input_path}"
 
+        ethos_u_extra_args = ""
+        if is_option_enabled(arm_test_options.fast_fvp):
+            ethos_u_extra_args = ethos_u_extra_args + "--fast"
+
         command_args = {
             "corstone-300": [
                 "FVP_Corstone_SSE-300_Ethos-U55",
@@ -267,6 +273,8 @@ class RunnerUtil:
                 "-C",
                 "cpu0.semihosting-stack_base=0",
                 "-C",
+                f"ethosu.extra_args='{ethos_u_extra_args}'",
+                "-C",
                 "cpu0.semihosting-heap_limit=0",
                 "-C",
                 f"cpu0.semihosting-cmd_line='{cmd_line}'",
@@ -282,6 +290,8 @@ class RunnerUtil:
                 "-C",
                 "mps4_board.visualisation.disable-visualisation=1",
                 "-C",
+                "vis_hdlcd.disable_visualisation=1",
+                "-C",
                 "mps4_board.telnetterminal0.start_telnet=0",
                 "-C",
                 "mps4_board.uart0.out_file='-'",
@@ -295,6 +305,8 @@ class RunnerUtil:
                 "mps4_board.subsystem.cpu0.semihosting-stack_base=0",
                 "-C",
                 "mps4_board.subsystem.cpu0.semihosting-heap_limit=0",
+                "-C",
+                f"mps4_board.subsystem.ethosu.extra_args='{ethos_u_extra_args}'",
                 "-C",
                 f"mps4_board.subsystem.cpu0.semihosting-cmd_line='{cmd_line}'",
                 "-a",
