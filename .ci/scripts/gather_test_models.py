@@ -25,7 +25,7 @@ CUSTOM_RUNNERS = {
         "resnet50": "linux.4xlarge.memory",
         "llava": "linux.4xlarge.memory",
         "llama3_2_vision_encoder": "linux.4xlarge.memory",
-        "llama3_2_text_decoder": "linux.8xlarge.memory",
+        "llama3_2_text_decoder": "linux.4xlarge.memory",
         # This one causes timeout on smaller runner, the root cause is unclear (T161064121)
         "dl3": "linux.4xlarge.memory",
         "emformer_join": "linux.4xlarge.memory",
@@ -39,10 +39,12 @@ CUSTOM_TIMEOUT = {
     "linux": {
         "mobilebert": 90,
         "emformer_predict": 360,
+        "llama3_2_text_decoder": 360,
     },
     "macos": {
         "mobilebert": 90,
         "emformer_predict": 360,
+        "llama3_2_text_decoder": 360,
     },
 }
 
