@@ -338,8 +338,6 @@ if(NOT "${_repo_dir_name}" STREQUAL "executorch")
   )
 endif()
 set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type)
-# We don't need any of C10's CMake macros.
-add_definitions(-DC10_USING_CUSTOM_GENERATED_MACROS)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -522,6 +520,7 @@ endif()
 target_include_directories(
   executorch_core PUBLIC ${_common_include_directories}
 )
+target_compile_definitions(executorch_core PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 target_compile_options(executorch_core PUBLIC ${_common_compile_options})
 if(MAX_KERNEL_NUM)
   target_compile_definitions(
@@ -542,6 +541,7 @@ if(EXECUTORCH_BUILD_PYBIND AND APPLE)
   target_include_directories(
     executorch_core_shared PUBLIC ${_common_include_directories}
   )
+  target_compile_definitions(executorch_core_shared PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
   target_compile_options(
     executorch_core_shared PUBLIC ${_common_compile_options}
   )
@@ -562,6 +562,7 @@ endif()
 add_library(executorch ${_executorch__srcs})
 target_link_libraries(executorch PRIVATE executorch_core)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
+target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 target_compile_options(executorch PUBLIC ${_common_compile_options})
 target_link_options_shared_lib(executorch)
 
@@ -753,6 +754,8 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_include_directories(
     util PUBLIC ${_common_include_directories} ${TORCH_INCLUDE_DIRS}
   )
+  target_compile_definitions(util PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
+
   target_compile_options(util PUBLIC ${_pybind_compile_options})
   target_link_libraries(util PRIVATE torch c10 executorch extension_tensor)
 
