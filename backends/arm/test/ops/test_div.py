@@ -11,7 +11,7 @@ import unittest
 from typing import Optional, Tuple, Union
 
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from parameterized import parameterized
 
@@ -157,7 +157,7 @@ class TestDiv(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(test_data_suite)
@@ -198,7 +198,7 @@ class TestDiv(unittest.TestCase):
 
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
     @parameterized.expand(test_data_suite[2:])
-    @common.expectedFailureOnFVP
+    @conftest.expectedFailureOnFVP
     def test_div_u55_BI_xfails(
         self,
         test_name: str,
@@ -226,7 +226,7 @@ class TestDiv(unittest.TestCase):
 
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
     @parameterized.expand(test_data_suite[2:])
-    @common.expectedFailureOnFVP
+    @conftest.expectedFailureOnFVP
     def test_div_u85_BI_xfails(
         self,
         test_name: str,
