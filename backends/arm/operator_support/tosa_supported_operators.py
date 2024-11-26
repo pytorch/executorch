@@ -6,6 +6,7 @@
 # pyre-unsafe
 
 import operator
+from typing import Type
 
 import torch.fx as fx
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -31,7 +32,9 @@ class SupportedTOSAOperatorCheck:
 
 
 # container for all SupportedTosaOperatorCheck classes
-_tosa_spec_dicts: dict[TosaSpecification, dict[str, SupportedTOSAOperatorCheck]] = {
+_tosa_spec_dicts: dict[
+    TosaSpecification, dict[str, Type[SupportedTOSAOperatorCheck]]
+] = {
     TosaSpecification.create_from_string("TOSA-0.80.0+BI"): {},
     TosaSpecification.create_from_string("TOSA-0.80.0+MI"): {},
 }

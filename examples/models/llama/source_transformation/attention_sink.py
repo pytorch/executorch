@@ -16,28 +16,73 @@ from executorch.examples.models.llama.llama_transformer import (
     Attention,
     KVCache,
     ModelArgs,
-    Rope,
+    Transformer,
 )
 from executorch.examples.models.llama.rope import (
     apply_rotary_emb_to_k,
+    hf_apply_rotary_emb,
     hf_apply_rotary_emb_to_k,
+    RotaryEmbedding,
 )
-from torchao.quantization.quant_api import _replace_with_custom_fn_if_matches_filter
 
 
-class RopeWithAttentionSink(Rope):
+class RopeWithAttentionSink(torch.nn.Module):
     """
     Rope that helps adjust position encoding when tokens are shifted in KVCache.
     For AttentionSink, when tokens are shifted in KVCache, we need to use positions
     in KVCache instead of positions in the actual text.
     """
 
-    def __init__(self, params: ModelArgs):
-        super().__init__(params)
+    def __init__(self, params: ModelArgs, freqs_cos, freqs_sin):
+        super().__init__()
+        self.params = params
+        self.freqs_cos = freqs_cos
+        self.freqs_sin = freqs_sin
         if self.params.use_hf_rope:
+            self.apply_rotary_emb = hf_apply_rotary_emb
             self.apply_rotary_emb_to_k = hf_apply_rotary_emb_to_k
         else:
+            self.apply_rotary_emb = RotaryEmbedding()
             self.apply_rotary_emb_to_k = apply_rotary_emb_to_k
+
+    def forward(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        input_pos: Optional[torch.Tensor] = None,
+    ):
+        seq_len = q.shape[1]
+        if self.params.use_kv_cache:
+            assert (
+                input_pos is not None
+            ), "input_pos must be provided when use_kv_cache is True"
+
+            if self.params.enable_dynamic_shape:
+                # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
+                input_pos_item = input_pos[-1].item()
+                torch._check_is_size(input_pos_item)
+                torch._check(input_pos_item < self.params.max_seq_len)
+                # pyre-ignore: Incompatible parameter type [6]: torch.narrow does expect int or Tensor
+                freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seq_len)
+                # pyre-ignore: Incompatible parameter type [6]
+                freqs_sin = self.freqs_sin.narrow(0, input_pos_item, seq_len)
+            else:
+                # When not using dynamic shape, use of the .item results in
+                # symints, due to querying the data from tensor.
+                # this path avoids that for mps backend, although probably mps backend
+                # can support dynamic shape?
+                assert (
+                    seq_len == 1
+                ), "Expected seq_len to be 1 when using kv_cache without dynamic shape"
+                freqs_cos = self.freqs_cos[input_pos]
+                freqs_sin = self.freqs_sin[input_pos]
+
+        else:
+            assert input_pos is None, "input_pos is unused when use_kv_cache is False"
+            freqs_cos = self.freqs_cos[:seq_len]
+            freqs_sin = self.freqs_sin[:seq_len]
+        q, k = self.apply_rotary_emb(q, k, freqs_cos, freqs_sin)
+        return q, k
 
     def rerotate_k(
         self,
@@ -51,6 +96,8 @@ class RopeWithAttentionSink(Rope):
         (cos(delta), -sin(delta)
          sin(delta), cos(delta))
          where delta = new_position * theta - original_position * theta
+
+         The shape of k is (batch_size, seq_len, n_local_heads, head_dim)
 
          Based on https://github.com/huggingface/transformers/blame/main/src/transformers/cache_utils.py#L961
         """
@@ -140,16 +187,26 @@ class KVCacheWithAttentionSink(KVCache):
                 self.sink_size + num_to_evict,  # pyre-ignore [6]
                 num_to_keep,  # pyre-ignore [6]
             )
+            if self.transpose_cache:
+                k_to_keep = self.rope.rerotate_k(
+                    k=k_to_keep.transpose(1, 2),
+                    original_position=(  # pyre-ignore [6]
+                        self.sink_size + num_to_evict
+                    ),
+                    new_position=self.sink_size,
+                ).transpose(1, 2)
+            else:
+                k_to_keep = self.rope.rerotate_k(
+                    k=k_to_keep,
+                    original_position=(  # pyre-ignore [6]
+                        self.sink_size + num_to_evict
+                    ),
+                    new_position=self.sink_size,
+                )
             self.k_cache = torch.cat(
                 [
                     self.k_cache.narrow(dim_to_slice, 0, self.sink_size),
-                    self.rope.rerotate_k(
-                        k=k_to_keep,
-                        original_position=(  # pyre-ignore [6]
-                            self.sink_size + num_to_evict
-                        ),
-                        new_position=self.sink_size,
-                    ),
+                    k_to_keep,
                     torch.zeros_like(
                         self.k_cache.narrow(
                             dim_to_slice, 0, num_empty_space  # pyre-ignore [6]
@@ -181,6 +238,8 @@ class KVCacheWithAttentionSink(KVCache):
 def attention_sink_forward(
     self,
     x: torch.Tensor,
+    freqs_cos: torch.Tensor,
+    freqs_sin: torch.Tensor,
     input_pos: Optional[torch.Tensor] = None,
 ):
     assert self.use_kv_cache
@@ -201,22 +260,10 @@ def attention_sink_forward(
     shifted_position = input_pos + position_shift
 
     # RoPE relative positional embeddings with shifted position in KV cache
-    q, k = self.rope.forward(q, k, shifted_position)
+    q, k = self.kv_cache.rope.forward(q, k, shifted_position)
 
     output = self.SDPA(shifted_position, q, k, v, bsz, seqlen, self.mask)
     return self.wo(output)
-
-
-def _replace_rope(
-    module: torch.nn.Module, rope_with_attention_sink: RopeWithAttentionSink
-):
-    def filter_fn(child: torch.nn.Module, cur_fqn: str) -> bool:
-        return isinstance(child, Rope)
-
-    def replacement_fn(child: torch.nn.Module) -> torch.nn.Module:
-        return rope_with_attention_sink
-
-    _replace_with_custom_fn_if_matches_filter(module, replacement_fn, filter_fn)
 
 
 def _replace_attention(
@@ -267,11 +314,12 @@ def enable_attention_sink(
     """
     Transform the model to be able to run inference with Attention Sink.
     There mainly three steps:
-    - Replace Rope with RopeWithAttentionSink
     - Replace Attention's KVCache with KVCacheWithAttentionSink, forward with attention_sink_forward
     """
-    rope_with_attention_sink = RopeWithAttentionSink(params=params)
-    _replace_rope(module, rope_with_attention_sink)
+    assert isinstance(module, Transformer)
+    rope_with_attention_sink = RopeWithAttentionSink(
+        params=params, freqs_cos=module.freqs_cos, freqs_sin=module.freqs_sin
+    )
     _replace_attention(
         module=module,
         rope_with_attention_sink=rope_with_attention_sink,

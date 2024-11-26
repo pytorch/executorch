@@ -9,10 +9,10 @@
 
 #include <executorch/backends/qualcomm/aot/wrappers/OpWrapper.h>
 #include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
+#include <executorch/backends/qualcomm/qc_compiler_spec_generated.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendFactory.h>
-#include <executorch/backends/qualcomm/schema_generated.h>
 #include <executorch/runtime/core/error.h>
 
 #include <memory>
@@ -30,17 +30,20 @@ class QnnManager {
 
   ~QnnManager();
   executorch::runtime::Error Init();
-  executorch::runtime::Error AllocateTensor();
+  executorch::runtime::Error AllocateTensor(const std::string& graph_name);
   executorch::runtime::Error AllocateTensor(
+      const std::string& graph_name,
       std::vector<std::shared_ptr<TensorWrapper>>& inputs,
       std::vector<std::shared_ptr<TensorWrapper>>& outputs);
 
   executorch::runtime::Error Execute(
+      const std::string& graph_name,
       const std::vector<Qnn_Tensor_t>& input_tensor_structs,
       std::vector<Qnn_Tensor_t>& output_tensor_structs,
       executorch::runtime::EventTracer* event_tracer);
 
   executorch::runtime::Error ProfileExecuteData(
+      const std::string& graph_name,
       executorch::runtime::EventTracer* event_tracer);
 
   void Destroy();
@@ -53,6 +56,10 @@ class QnnManager {
     return options_->online_prepare();
   }
 
+  bool IsMultipleGraphs() {
+    return options_->multiple_graphs();
+  }
+
   bool IsTensorDump() {
     return options_->dump_intermediate_outputs();
   }
@@ -60,9 +67,14 @@ class QnnManager {
   bool IsNodeSupportedByBackend(
       std::vector<std::shared_ptr<OpWrapper>>& op_wrappers);
 
-  executorch::runtime::Error Compile(
-      std::vector<std::shared_ptr<OpWrapper>>& op_wrappers,
+  executorch::runtime::Error GetContextBinary(
       QnnExecuTorchContextBinary& qnn_executorch_context_binary);
+
+  executorch::runtime::Error CompileQcir();
+
+  executorch::runtime::Error Compile(
+      const std::string& graph_name,
+      std::vector<std::shared_ptr<OpWrapper>>& op_wrappers);
 
   executorch::runtime::Error RegisterMem(
       void* data_ptr,
@@ -77,12 +89,25 @@ class QnnManager {
     return htp_backend_cache_ptr->GetSpillFillBufferSize();
   }
 
-  std::vector<std::shared_ptr<TensorWrapper>> GetGraphInputs() {
-    return input_tensors_;
+  std::vector<std::shared_ptr<TensorWrapper>> GetGraphInputs(
+      const std::string& graph_name) {
+    return !input_tensors_.count(graph_name)
+        ? std::vector<std::shared_ptr<TensorWrapper>>()
+        : input_tensors_[graph_name];
   }
-  std::vector<std::shared_ptr<TensorWrapper>> GetGraphOutputs() {
-    return output_tensors_;
+
+  std::vector<std::shared_ptr<TensorWrapper>> GetGraphOutputs(
+      const std::string& graph_name) {
+    return !output_tensors_.count(graph_name)
+        ? std::vector<std::shared_ptr<TensorWrapper>>()
+        : output_tensors_[graph_name];
   }
+
+  std::vector<std::string> GetGraphNames() {
+    return backend_params_ptr_->qnn_context_ptr_->GetGraphNames();
+  }
+
+  std::string GetBinarySignature();
 
  private:
   executorch::runtime::Error LoadQnnLibrary();
@@ -96,8 +121,10 @@ class QnnManager {
   QnnImplementation qnn_loaded_backend_;
   std::unique_ptr<QnnLogger> logger_;
   const QnnExecuTorchOptions* options_;
-  std::vector<std::shared_ptr<TensorWrapper>> input_tensors_;
-  std::vector<std::shared_ptr<TensorWrapper>> output_tensors_;
+  std::unordered_map<std::string, std::vector<std::shared_ptr<TensorWrapper>>>
+      input_tensors_;
+  std::unordered_map<std::string, std::vector<std::shared_ptr<TensorWrapper>>>
+      output_tensors_;
   executorch::runtime::Error RegisterIonMem(
       void* data_ptr,
       const std::shared_ptr<TensorWrapper>& tensor_wrapper);

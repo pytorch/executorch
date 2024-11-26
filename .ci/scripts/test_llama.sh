@@ -9,11 +9,41 @@ set -exu
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-MODEL_NAME=$1 # stories110M
-BUILD_TOOL=$2 # buck2 or cmake
-DTYPE=$3 # fp16, bf16, or fp32
-MODE=${4:-"xnnpack+custom"} # portable or xnnpack+custom or xnnpack+custom+qe
-UPLOAD_DIR=${5:-}
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -model)
+      MODEL_NAME="$2" # stories110M
+      shift 2
+      ;;
+    -build_tool)
+      BUILD_TOOL="$2" # buck2 or cmake
+      shift 2
+      ;;
+    -dtype)
+      DTYPE="$2" # fp16, bf16, or fp32
+      shift 2
+      ;;
+    -mode)
+      MODE="$2" # portable or xnnpack+custom or xnnpack+custom+qe
+      shift 2
+      ;;
+    -upload)
+      UPLOAD_DIR="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1"
+      usage
+      ;;
+  esac
+done
+
+# Default mode to xnnpack+custom if not set
+MODE=${MODE:-"xnnpack+custom"}
+
+# Default UPLOAD_DIR to empty string if not set
+UPLOAD_DIR="${UPLOAD_DIR:-}"
+
 if [[ $# -lt 4 ]]; then # Assuming 4 mandatory args
     echo "Expecting atleast 4 positional arguments"
     echo "Usage: [...]"
@@ -150,7 +180,7 @@ cleanup_files() {
 }
 
 prepare_artifacts_upload() {
-  if [ -n "$UPLOAD_DIR" ]; then
+  if [ -n "${UPLOAD_DIR}" ]; then
     echo "Preparing for uploading generated artifacs"
     zip -j model.zip "${EXPORTED_MODEL_NAME}" tokenizer.bin
     mkdir -p "${UPLOAD_DIR}"
