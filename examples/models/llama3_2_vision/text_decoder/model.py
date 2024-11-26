@@ -108,6 +108,7 @@ class Llama3_2Decoder(EagerModelBase):
             rope_base=params["rope_theta"],
             intermediate_dim=params["intermediate_dim"],
         )
+        self.model_.requires_grad_(False)
 
         # Source transformation for MultiHeadAttention
         self.model_ = replace_mha_with_inference_mha(self.model_)
