@@ -148,6 +148,7 @@ def define_common_targets():
                 "-DHAVE_AVX2_CPU_DEFINITION",
             ] + get_sleef_preprocessor_flags(),
             "ovr_config//cpu:arm64": get_sleef_preprocessor_flags(),
+            "DEFAULT": [],
         }) + ["-DSTANDALONE_TORCH_HEADER"],
     )
 
