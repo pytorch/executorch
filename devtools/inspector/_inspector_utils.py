@@ -113,6 +113,7 @@ def _parse_tensor_value(
             ScalarType.CHAR: (torch.int8, 1),
             ScalarType.BOOL: (torch.bool, 1),
             ScalarType.BITS16: (torch.uint16, 2),
+            ScalarType.UINT16: (torch.uint16, 2),
             ScalarType.SHORT: (torch.int16, 2),
             ScalarType.HALF: (torch.float16, 2),
             ScalarType.INT: (torch.int, 4),

@@ -428,7 +428,7 @@ static inline void xa_nn_reduce_sum_4D_f32_f32(const FLOAT32 * __restrict__ p_in
               p_wsrc2 = (xtfloatx2 *)(p_scr_in + (itr_n * plane_size) + (itr_h * wc_plane_size) + (itr_w * temp_inp_c));
               p_dst = (xtfloatx2 *)(p_scratch + (itr_n * hw_plane_size) + (itr_h * temp_inp_w) + itr_w);
               align_src = AE_LA64_PP(p_wsrc2);
-              xtfloatx2 i1 = AE_MOVXTFLOATX2_FROMF32X2(AE_MOVDA32(0));
+              xtfloatx2 i1 = XT_AE_MOVXTFLOATX2_FROMF32X2(AE_MOVDA32(0));
               for(itr_c = 0; itr_c < (temp_inp_c >> 2); itr_c++)
               {
                 xtfloatx2 j1, j2;
