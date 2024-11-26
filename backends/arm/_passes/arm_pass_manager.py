@@ -37,6 +37,9 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
     QuantizeFullArgument,
     RetraceFoldedDtypesPass,
 )
+from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
+    FuseQuantizedActivationPass,
+)
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.keep_dims_false_to_squeeze_pass import (
     KeepDimsFalseToSqueezePass,
@@ -72,6 +75,7 @@ class ArmPassManager(PassManager):
         self, exported_program: ExportedProgram, compile_spec: list[CompileSpec]
     ):
         """Apply passes before transforming program to backend"""
+        self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(DecomposeLinearPass())
         self.add_pass(RemoveGetItemPass())
         self.add_pass(DecomposeLayerNormPass())
