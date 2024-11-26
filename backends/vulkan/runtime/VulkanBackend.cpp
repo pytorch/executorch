@@ -621,6 +621,10 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
   void destroy(DelegateHandle* handle) const override {
     if (handle != nullptr) {
       ComputeGraph* compute_graph = static_cast<ComputeGraph*>(handle);
+      compute_graph->context()
+          ->adapter_ptr()
+          ->compute_pipeline_cache()
+          .save_cache();
       // ComputeGraph is not trivially destructible. Since
       // this was constructed manually in init(), we must destroy it manually
       // here.

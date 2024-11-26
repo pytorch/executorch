@@ -98,6 +98,7 @@ class Runner {
   const int32_t max_seq_len_;
   int32_t eval_mode_;
   std::vector<std::shared_ptr<executorch::extension::Module>> modules_;
+  std::vector<std::string> method_names_;
   std::string tokenizer_path_;
   float temperature_;
   std::unique_ptr<executorch::extension::llm::Tokenizer> tokenizer_;
