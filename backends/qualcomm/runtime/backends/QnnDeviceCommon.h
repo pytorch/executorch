@@ -7,10 +7,10 @@
  */
 #pragma once
 
+#include <executorch/backends/qualcomm/qc_compiler_spec_generated.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnLogger.h>
-#include <executorch/backends/qualcomm/schema_generated.h>
 
 #include <vector>
 

@@ -9,11 +9,16 @@ import gc
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 
 from executorch.backends.qualcomm.utils.utils import (
-    canonicalize_program,
     generate_qnn_executorch_option,
+    update_spill_fill_size,
 )
-from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
+
+
+def preprocess_binary(ctx_bin, compiler_specs):
+    qnn_mgr = PyQnnManagerAdaptor.QnnManager(
+        generate_qnn_executorch_option(compiler_specs),
+    )
+    return bytes(qnn_mgr.MakeBinaryInfo(ctx_bin))
 
 
 def get_encoding(
@@ -26,16 +31,17 @@ def get_encoding(
 ):
     encoding_list = []
     with open(path_to_shard, "rb") as f:
-        ctx_bin = f.read()
+        ctx_bin = preprocess_binary(f.read(), compiler_specs)
         qnn_mgr = PyQnnManagerAdaptor.QnnManager(
             generate_qnn_executorch_option(compiler_specs), ctx_bin
         )
         assert qnn_mgr.Init().value == 0, "failed to load context binary"
-        qnn_mgr.AllocateTensor()
+        graph_name = qnn_mgr.GetGraphNames()[0]
+        qnn_mgr.AllocateTensor(graph_name)
         if get_input:
             encoding_input = {"scale": [], "offset": []}
             for i in range(num_input):
-                inputs = qnn_mgr.GetGraphInputs()[i]
+                inputs = qnn_mgr.GetGraphInputs(graph_name)[i]
                 encoding = inputs.GetEncodings()
                 encoding_input["scale"].append(encoding.data["scale"].item())
                 encoding_input["offset"].append(encoding.data["offset"].item())
@@ -43,7 +49,7 @@ def get_encoding(
         if get_output:
             encoding_output = {"scale": [], "offset": []}
             for i in range(num_output):
-                outputs = qnn_mgr.GetGraphOutputs()[i]
+                outputs = qnn_mgr.GetGraphOutputs(graph_name)[i]
                 encoding = outputs.GetEncodings()
                 encoding_output["scale"].append(encoding.data["scale"].item())
                 encoding_output["offset"].append(encoding.data["offset"].item())
@@ -52,35 +58,25 @@ def get_encoding(
     return encoding_list
 
 
-def gen_pte_from_ctx_bin(
-    artifact, pte_names, compiler_specs, bundle_programs, custom_spill_fill=None
-):
-
-    # Lower with QnnBackend
-    lowered_modules = [
-        to_backend("QnnBackend", prog["edge_program"], compiler_specs)
-        for prog in bundle_programs
-    ]
+def gen_pte_from_ctx_bin(artifact, pte_names, bundle_programs, backend_config):
+    edge_prog_mgrs = [prog["edge_program_manager"] for prog in bundle_programs]
     # Setup spill-fill buffer for relieving runtime memory usage
-    canonicalize_program(lowered_modules, custom_buffer_size=custom_spill_fill)
-    # export pte files
+    update_spill_fill_size(
+        [
+            prog_mgr._edge_programs[list(prog_mgr.methods)[0]]
+            for prog_mgr in edge_prog_mgrs
+        ]
+    )
+    # Export pte files
     pte_files = []
     for pte_name in pte_names:
         print(f"{pte_name} generating...")
-        memory_planning_pass = MemoryPlanningPass(
-            alloc_graph_input=False,
-            alloc_graph_output=False,
-        )
         pte_files.append(f"{artifact}/{pte_name}.pte")
-        with open(pte_files[-1], "wb") as file:
-            file.write(
-                lowered_modules[0].buffer(
-                    extract_delegate_segments=True, memory_planning=memory_planning_pass
-                )
-            )
+        with open(pte_files[-1], "wb") as f:
+            edge_prog_mgrs[0].to_executorch(config=backend_config).write_to_file(f)
         # GC for reducing host memory consuming
         bundle_programs.pop(0)
-        lowered_modules.pop(0)
+        edge_prog_mgrs.pop(0)
         gc.collect()
 
     return pte_files

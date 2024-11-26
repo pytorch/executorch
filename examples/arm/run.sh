@@ -83,7 +83,7 @@ fi
 toolchain_cmake=${script_dir}/ethos-u-setup/arm-none-eabi-gcc.cmake
 _setup_msg="please refer to ${script_dir}/ethos-u-setup/setup.sh to properly install necessary tools."
 
-if ! [[ $portable_kernels =~ ^((^|,)aten::[a-zA-Z0-9_]+\.out)*$ ]]; then
+if ! [[ $portable_kernels =~ ^((^|,)aten::[a-zA-Z0-9_]+\.[a-zA-Z0-9_]*out)*$ ]]; then
     echo " ERROR: specified argument --portable_kernels=${portable_kernels}"
     echo "        is in the wrong format please use \"aten::<OP1>.out,aten::<OP2>.out,...\""
     echo "        e.g. \"aten::_softmax.out,aten::add.out\""
