@@ -372,6 +372,8 @@ class ToOutVarPass(PassBase):
                 else:
                     out_var_target, out_args_names = to_out_variant(target)
             except RuntimeError as e:
+                # pyre-fixme[16]: `GraphModule` has no attribute
+                #  `encounter_to_out_var_failure`.
                 graph_module.encounter_to_out_var_failure = True
                 logging.info(
                     f"Failed converting '{target}' to its out variant with error: '{e}'"
