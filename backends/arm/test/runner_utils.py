@@ -191,9 +191,6 @@ class RunnerUtil:
         target_board: str,
     ):
 
-        if target_board not in ["corstone-300", "corstone-320"]:
-            raise RuntimeError(f"Unknown target board: {target_board}")
-
         self.input_names = _get_input_names(edge_program)
         self.output_node = _get_output_node(exported_program)
         self.output_name = self.output_node.name
@@ -222,6 +219,8 @@ class RunnerUtil:
         assert (
             self._has_init_run
         ), "RunnerUtil needs to be initialized using init_run() before running Corstone300."
+        if self.target_board not in ["corstone-300", "corstone-320"]:
+            raise RuntimeError(f"Unknown target board: {self.target_board}")
 
         pte_path = os.path.join(self.intermediate_path, "program.pte")
         assert os.path.exists(pte_path), f"Pte path '{pte_path}' not found."
