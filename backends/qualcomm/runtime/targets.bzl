@@ -28,6 +28,7 @@ def define_common_targets():
             "//executorch/runtime/backend:interface",
         ],
         exported_deps = [
+            "fbsource//third-party/toolchains:log",
             "//executorch/backends/qualcomm:schema",
             "//executorch/backends/qualcomm:qc_binary_info_schema",
             "//executorch/runtime/core:core",
