@@ -69,8 +69,6 @@ jobs:
       devices: ${{ steps.set-parameters.outputs.devices }}
       delegates: ${{ steps.set-parameters.outputs.delegates }}
     steps:
-      - uses: actions/checkout@v3
-
       - name: Set parameters
         id: set-parameters
         shell: bash
@@ -119,6 +117,17 @@ jobs:
           echo "devices=$(echo "$MAPPED_ARNS_JSON" | jq -c .)" >> $GITHUB_OUTPUT
           echo "delegates=$(echo $DELEGATES | jq -Rc 'split(",")')" >> $GITHUB_OUTPUT
 
+  prepare-test-specs:
+    runs-on: linux.2xlarge
+    needs: set-parameters
+    strategy:
+      matrix:
+          model: ${{ fromJson(needs.set-parameters.outputs.models) }}
+          delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v3
+
       - name: Prepare the spec
         shell: bash
         working-directory: extension/benchmark/android/benchmark
@@ -147,7 +156,7 @@ jobs:
 
   export-models:
     name: export-models
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     needs: set-parameters
     strategy:
       matrix:
@@ -198,7 +207,7 @@ jobs:
 
   build-benchmark-app:
     name: build-benchmark-app
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     needs: set-parameters
     with:
       runner: linux.2xlarge
@@ -232,6 +241,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
     needs:
       - set-parameters
+      - prepare-test-specs
       - build-benchmark-app
       - export-models
     strategy:
