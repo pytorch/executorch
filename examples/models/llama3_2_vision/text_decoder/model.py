@@ -17,6 +17,7 @@ from executorch.examples.models.checkpoint import (
 )
 
 from executorch.examples.models.model_base import EagerModelBase
+from executorch.extension.llm.modules.attention import replace_mha_with_inference_mha
 from torchtune.models.llama3_2_vision._component_builders import llama3_2_vision_decoder
 from torchtune.models.llama3_2_vision._convert_weights import llama3_vision_meta_to_tune
 
@@ -53,7 +54,7 @@ class Llama3_2Decoder(EagerModelBase):
         self.use_kv_cache = kwargs.get("use_kv_cache", False)
         self.verbose = kwargs.get("verbose", False)
         self.args = kwargs.get("args", None)
-        self.dtype = None
+        self.dtype = kwargs.get("dtype", torch.float16)
         self.use_checkpoint = False
 
         ckpt_dir = get_default_model_resource_dir(__file__)
@@ -72,7 +73,7 @@ class Llama3_2Decoder(EagerModelBase):
                 dtype=torch.bool,
             )
         )
-        self.input_pos = torch.arange(self.max_seq_len)
+        self.input_pos = torch.arange(self.max_seq_len, dtype=torch.int64)
 
         # Load checkpoint and params.
         device = "cpu"
@@ -107,6 +108,9 @@ class Llama3_2Decoder(EagerModelBase):
             rope_base=params["rope_theta"],
             intermediate_dim=params["intermediate_dim"],
         )
+
+        # Source transformation for MultiHeadAttention
+        self.model_ = replace_mha_with_inference_mha(self.model_)
         # Save params for future use.
         for param_name, param_val in params.items():
             setattr(self.model_, param_name, param_val)
@@ -147,27 +151,33 @@ class Llama3_2Decoder(EagerModelBase):
             self.model_.setup_caches(
                 batch_size=1,
                 dtype=self.dtype,
+                encoder_max_seq_len=self.encoder_max_seq_len,
                 decoder_max_seq_len=self.max_seq_len,
             )
+        # number of tokens for example input
+        self.n_tokens = 34
+        self.model_.to(self.dtype)
 
     def get_eager_model(self) -> torch.nn.Module:
-        if self.dtype:
-            return self.model_.to(self.dtype)
-        else:
-            return self.model_.to(torch.float16)
+        return self.model_
 
     def get_example_inputs(self):
-        return (torch.ones(1, 32, dtype=torch.long),)
+        return (torch.ones(1, self.n_tokens, dtype=torch.int64),)
 
     def get_example_kwarg_inputs(self):
         # For export we must use the prefill versions of the
         # causal mask and input_pos.
+        # Hardcoding # of tiles to be 2. image tokens per tile is 1601.
         if self.use_kv_cache:
             return {
-                "input_pos": self.input_pos[None, :32],
-                "mask": self.causal_mask[None, :32],
-                # "encoder_input": None,
-                # "encoder_mask": None,
+                "input_pos": self.input_pos[None, : self.n_tokens],
+                "mask": self.causal_mask[None, : self.n_tokens],
+                "encoder_input": torch.randn(
+                    1, self.encoder_max_seq_len, self.model_.dim, dtype=self.dtype
+                ),
+                "encoder_mask": torch.ones(
+                    [1, self.n_tokens, self.encoder_max_seq_len], dtype=torch.bool
+                ),
             }
         else:
             return None
@@ -175,11 +185,12 @@ class Llama3_2Decoder(EagerModelBase):
     def get_dynamic_shapes(self):
         batch_size = 1
         dim_seq_len = torch.export.Dim("token_dim", min=1, max=self.max_seq_len)
+        # Hardcoding # of tiles to be 2. image tokens per tile is 1601.
         if self.use_kv_cache:
             dynamic_shapes = {
                 "tokens": {0: batch_size, 1: dim_seq_len},
-                # "encoder_input": {0: 1, 1: dim_enc, 2: 4096},
-                # "encoder_mask": {0: 1, 1: dim, 2: dim_enc},
+                "encoder_input": None,
+                "encoder_mask": {0: 1, 1: dim_seq_len, 2: None},
                 "mask": {0: batch_size, 1: dim_seq_len, 2: None},
                 "input_pos": {0: batch_size, 1: dim_seq_len},
             }
