@@ -33,6 +33,7 @@
 #else // use executor
 #include <executorch/runtime/core/array_ref.h> // @manual
 #include <executorch/runtime/core/portable_type/bfloat16.h> // @manual
+#include <executorch/runtime/core/portable_type/bfloat16_math.h> // @manual
 #include <executorch/runtime/core/portable_type/complex.h> // @manual
 #include <executorch/runtime/core/portable_type/device.h> // @manual
 #include <executorch/runtime/core/portable_type/half.h> // @manual

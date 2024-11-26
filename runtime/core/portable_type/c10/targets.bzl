@@ -33,6 +33,8 @@ def define_common_targets():
             # seems best to just not define C10_EMBEDDED, but if you
             # need it, it's there.
             # "-DC10_EMBEDDED",
+            "-DC10_USE_GLOG",
+            "-DC10_USE_MINIMAL_GLOG",
             "-DC10_USING_CUSTOM_GENERATED_MACROS",
         ],
         visibility = [
