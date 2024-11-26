@@ -5,9 +5,14 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+from functools import partial
 
 import torch
 from executorch.examples.models.llama.llama_transformer import ModelArgs
+from executorch.examples.models.llama.rope import (
+    hf_precompute_freqs_cis,
+    precompute_freqs_cis,
+)
 
 from executorch.examples.models.llama.source_transformation.attention_sink import (
     KVCacheWithAttentionSink,
@@ -16,12 +21,33 @@ from executorch.examples.models.llama.source_transformation.attention_sink impor
 from parameterized import parameterized
 
 
+def _get_rope_with_attention_sink(params: ModelArgs) -> RopeWithAttentionSink:
+    if params.use_hf_rope:
+        precompute_freqs_cis_fn = hf_precompute_freqs_cis
+    else:
+        precompute_freqs_cis_fn = partial(
+            precompute_freqs_cis, use_scaled=params.use_scaled_rope
+        )
+    freqs_cos, freqs_sin = precompute_freqs_cis_fn(
+        params.dim // params.n_heads,
+        (
+            params.max_seq_len  # Normal llama2.
+            if params.ffn_dim_multiplier is None
+            else params.max_seq_len * 2  # Sharded checkpoint.
+        ),
+        params.rope_freq_base,
+    )
+    return RopeWithAttentionSink(
+        params=params, freqs_cos=freqs_cos, freqs_sin=freqs_sin
+    )
+
+
 class RopeWithAttentionSinkTest(unittest.TestCase):
 
     def setUp(self):
         torch.manual_seed(42)
         self.params = ModelArgs(use_kv_cache=True, enable_dynamic_shape=True)
-        self.rope_with_attention_sink = RopeWithAttentionSink(params=self.params)
+        self.rope_with_attention_sink = _get_rope_with_attention_sink(self.params)
         self.seq_len = 32
         self.n_local_heads = self.params.n_heads
         self.n_local_kv_heads = self.params.n_heads
@@ -235,7 +261,7 @@ class KVCacheWithAttentionSinkTest(unittest.TestCase):
     def setUp(self):
         torch.manual_seed(42)
         self.params = ModelArgs(use_kv_cache=True, enable_dynamic_shape=True)
-        self.rope_with_attention_sink = RopeWithAttentionSink(params=self.params)
+        self.rope_with_attention_sink = _get_rope_with_attention_sink(self.params)
         self.max_batch_size = 1
         self.window_size = 28
         # self.sink_size = 4
