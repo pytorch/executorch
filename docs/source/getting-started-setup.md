@@ -196,7 +196,7 @@ The ExecuTorch repo uses CMake to build its C++ code. Here, we'll configure it t
   ```bash
   # Clean and configure the CMake build system. Compiled programs will
   # appear in the executorch/cmake-out directory we create here.
-  (rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake ..)
+  (rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake .. && cd ..)
 
   # Build the executor_runner target
   cmake --build cmake-out --target executor_runner -j9
