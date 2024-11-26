@@ -19,7 +19,8 @@ MODEL_NAME_TO_MODEL = {
     "llama2": ("llama", "Llama2Model"),
     "llama": ("llama", "Llama2Model"),
     "llama3_2_vision_encoder": ("llama3_2_vision", "FlamingoVisionEncoderModel"),
-    "llama3_2_text_decoder": ("llama3_2_vision", "Llama3_2Decoder"),
+    # TODO: This take too long to export on both Linux and MacOS (> 6 hours)
+    # "llama3_2_text_decoder": ("llama3_2_vision", "Llama3_2Decoder"),
     "lstm": ("lstm", "LSTMModel"),
     "mobilebert": ("mobilebert", "MobileBertModelExample"),
     "mv2": ("mobilenet_v2", "MV2Model"),
