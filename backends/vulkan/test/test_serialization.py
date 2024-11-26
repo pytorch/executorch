@@ -46,7 +46,7 @@ class TestSerialization(unittest.TestCase):
 
         return tensors
 
-    def test_serialize_vulkan_binary(self):
+    def test_serialize_vulkan_binary(self) -> None:
         vk_graph = VkGraph(
             version="0",
             chain=[],
@@ -104,7 +104,7 @@ class TestSerialization(unittest.TestCase):
             tensor_bytes = bytes(array)
             self.assertEqual(constant_data_bytes, tensor_bytes)
 
-    def test_serialize_deserialize_vkgraph(self):
+    def test_serialize_deserialize_vkgraph(self) -> None:
         in_vk_graph = VkGraph(
             version="1",
             chain=[
