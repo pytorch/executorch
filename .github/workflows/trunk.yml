@@ -351,6 +351,8 @@ jobs:
         done
 
   test-huggingface-transformers:
+    # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
+    if: ${{ !github.event.pull_request.head.repo.fork }}
     name: test-huggingface-transformers
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     secrets: inherit
