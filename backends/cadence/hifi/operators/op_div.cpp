@@ -9,6 +9,8 @@
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/kernels/portable/cpu/util/dtype_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -134,25 +136,26 @@ div_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
       InvalidArgument,
       out);
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div.out", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "div.out", CTYPE_B, [&]() {
-      ET_SWITCH_FLOAT_TYPES(common_type, ctx, "div.out", CTYPE_IN, [&]() {
-        ET_SWITCH_FLOAT_TYPES(out_type, ctx, "div.out", CTYPE_OUT, [&]() {
-          torch::executor::
-              apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-                  [](const CTYPE_A val_a, const CTYPE_B val_b) {
-                    CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                    CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                    CTYPE_IN value = a_casted / b_casted;
+  // Compute Dtype
+  ScalarType compute_type =
+      torch::executor::native::utils::get_compute_type(common_type);
 
-                    return static_cast<CTYPE_OUT>(value);
-                  },
-                  a,
-                  b,
-                  out);
-        });
-      });
-    });
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "div.out";
+
+  ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    torch::executor::native::utils::
+        apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+            [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+              return val_a / val_b;
+            },
+            ctx,
+            a,
+            torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
+            b,
+            torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
+            out,
+            torch::executor::native::utils::SupportedTensorDtypes::FLOATHBF16);
   });
 
   return out;
@@ -254,30 +257,54 @@ Tensor& div_out_mode(
     return out;
   }
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div.out_mode", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "div.out_mode", CTYPE_B, [&]() {
-      ET_SWITCH_FLOAT_TYPES(common_type, ctx, "div.out_mode", CTYPE_IN, [&]() {
-        ET_SWITCH_REAL_TYPES(out_type, ctx, "div.out_mode", CTYPE_OUT, [&]() {
-          torch::executor::
-              apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-                  [mode](const CTYPE_A val_a, const CTYPE_B val_b) {
-                    CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                    CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                    CTYPE_IN value = a_casted / b_casted;
-                    if (mode.has_value() && mode.value() == "trunc") {
-                      value = std::trunc(value);
-                    } else if (mode.has_value() && mode.value() == "floor") {
-                      value = std::floor(value);
-                    }
-                    return static_cast<CTYPE_OUT>(value);
-                  },
-                  a,
-                  b,
-                  out);
-        });
-      });
-    });
+  bool div_by_zero_error = false;
+  const bool mode_is_trunc = (mode.has_value() && mode.value() == "trunc");
+  // Compute Dtype
+  ScalarType compute_type =
+      torch::executor::native::utils::get_compute_type(common_type);
+
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "div.out";
+
+  ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    torch::executor::native::utils::
+        apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+            [mode_is_trunc, &div_by_zero_error](
+                const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+              if (executorch::runtime::is_integral_type<
+                      CTYPE_COMPUTE,
+                      /*includeBool=*/true>::value) {
+                if (val_b == 0) {
+                  div_by_zero_error = true;
+                  return static_cast<CTYPE_COMPUTE>(0);
+                }
+              }
+              CTYPE_COMPUTE value = val_a / val_b;
+              if (mode_is_trunc) {
+                value = std::trunc(value);
+              } else {
+                // We established above that the mode is either trunc or floor,
+                // so it must be floor.
+                value =
+                    torch::executor::native::utils::floor_divide(val_a, val_b);
+              }
+              return value;
+            },
+            ctx,
+            a,
+            torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
+            b,
+            torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
+            out,
+            torch::executor::native::utils::SupportedTensorDtypes::REALHBF16);
   });
+
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      !div_by_zero_error,
+      InvalidArgument,
+      out,
+      "Div mode operation encountered integer division by zero");
 
   return out;
 }
