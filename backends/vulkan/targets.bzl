@@ -66,7 +66,7 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
         compiler_flags = get_vulkan_compiler_flags(),
         labels = get_labels(no_volk),
         platforms = get_platforms(no_volk),
-        define_static_target = False,
+        define_static_target = True,
         # Static initialization is used to register shaders to the global shader registry,
         # therefore link_whole must be True to make sure unused symbols are not discarded.
         # @lint-ignore BUCKLINT: Avoid `link_whole=True`
@@ -197,7 +197,7 @@ def define_common_targets(is_fbcode = False):
             exported_deps = [
                 ":vulkan_graph_runtime_shaderlib{}".format(suffix),
             ],
-            define_static_target = False,
+            define_static_target = True,
             # Static initialization is used to register operators to the global operator registry,
             # therefore link_whole must be True to make sure unused symbols are not discarded.
             # @lint-ignore BUCKLINT: Avoid `link_whole=True`
@@ -214,7 +214,6 @@ def define_common_targets(is_fbcode = False):
             is_fbcode = is_fbcode,
             no_volk = no_volk,
         )
-
 
         runtime.cxx_library(
             name = "vulkan_backend_lib{}".format(suffix),
@@ -240,7 +239,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/backend:interface",
                 "//executorch/runtime/core/exec_aten/util:tensor_util",
             ],
-            define_static_target = False,
+            define_static_target = True,
             # VulkanBackend.cpp needs to compile with executor as whole
             # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
             link_whole = True,

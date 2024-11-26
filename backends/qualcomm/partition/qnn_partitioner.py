@@ -10,9 +10,9 @@ from typing import Any, Dict, List
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import torch
 from executorch.backends.qualcomm.builders import node_visitor
+from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
-from executorch.backends.qualcomm.utils.utils import generate_qnn_executorch_option
 
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -32,6 +32,7 @@ from .common_defs import (
     not_supported_operator,
     to_be_implemented_operator,
 )
+from .utils import generate_qnn_executorch_option
 
 
 class QnnOperatorSupport(OperatorSupportBase):
@@ -63,7 +64,11 @@ class QnnOperatorSupport(OperatorSupportBase):
             )
             return False
 
-        if node.target in allow_list_operator:
+        if (
+            node.target in allow_list_operator
+            # bypass if custom op appears
+            or OpContextLoader.namespace == node.target.namespace
+        ):
             return True
 
         if (
