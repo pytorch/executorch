@@ -69,6 +69,8 @@ jobs:
       devices: ${{ steps.set-parameters.outputs.devices }}
       delegates: ${{ steps.set-parameters.outputs.delegates }}
     steps:
+      - uses: actions/checkout@v3
+
       - name: Set parameters
         id: set-parameters
         shell: bash
