@@ -249,7 +249,7 @@ jobs:
       device-pool-arn: ${{ matrix.device }}
       android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug.apk
       android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug-androidTest.apk
-      test-spec: ${{ https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/android-llm-device-farm-test-spec.yml }}
+      test-spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/android-llm-device-farm-test-spec.yml
 
   upload-benchmark-results:
     needs:
