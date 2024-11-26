@@ -183,9 +183,9 @@ class KVCache(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # input_pos: [S], k_val: [B, H, S, D] or [B, S, H, D] depending on transpose_cache
         if self.enable_dynamic_shape:
-            start_pos = input_pos[0].item()
-            torch._check_is_size(start_pos)
-            torch._check(start_pos < self.max_seq_length)
+            # start_pos = input_pos[0].item()
+            # torch._check_is_size(start_pos)
+            # torch._check(start_pos < self.max_seq_length)
             dim_to_slice = 2 if self.transpose_cache else 1
             seq_length = k_val.size(dim_to_slice)
             # Replace the entry in the cache for this token
@@ -195,9 +195,16 @@ class KVCache(nn.Module):
             # when dim_to_slice is 1
             # We use .narrow() here to make the compiler happy
             # pyre-ignore: Incompatible parameter type [6]
-            narrowed_k = self.k_cache.narrow(dim_to_slice, start_pos, seq_length)
-            # pyre-ignore: Incompatible parameter type [6]
-            narrowed_v = self.v_cache.narrow(dim_to_slice, start_pos, seq_length)
+            # narrowed_k = self.k_cache.narrow(dim_to_slice, start_pos, seq_length)
+            # # pyre-ignore: Incompatible parameter type [6]
+            # narrowed_v = self.v_cache.narrow(dim_to_slice, start_pos, seq_length)
+
+            if self.transpose_cache:
+                narrowed_k = self.k_cache[:, :, input_pos : (input_pos + seq_length), :]
+                narrowed_v = self.v_cache[:, :, input_pos : (input_pos + seq_length), :]
+            else:
+                narrowed_k = self.k_cache[:, input_pos : (input_pos + seq_length), :, :]
+                narrowed_v = self.v_cache[:, input_pos : (input_pos + seq_length), :, :]
 
             narrowed_k.copy_(k_val)
             narrowed_v.copy_(v_val)
@@ -249,12 +256,13 @@ class SDPA(nn.Module):
 
         k, v = self.kv_cache.update(input_pos, k, v)
         if self.enable_dynamic_shape:
-            start_pos = input_pos[-1].item()
-            torch._check_is_size(start_pos)
-            torch._check(start_pos < self.max_seq_len)
+            # start_pos = input_pos[-1].item()
+            # torch._check_is_size(start_pos)
+            # torch._check(start_pos < self.max_seq_len)
             seq_length = q.size(2)
             # pyre-ignore: Incompatible parameter type [6]
-            attn_mask = mask.narrow(0, start_pos, seq_length)
+            # attn_mask = mask.narrow(0, start_pos, seq_length)
+            attn_mask = mask[input_pos : (input_pos + seq_length)]
         else:
             attn_mask = mask[None, None, input_pos]
 
@@ -510,13 +518,17 @@ class Transformer(nn.Module):
 
             if self.params.enable_dynamic_shape:
                 # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
-                input_pos_item = input_pos[-1].item()
-                torch._check_is_size(input_pos_item)
-                torch._check(input_pos_item < self.params.max_seq_len)
+                # input_pos_item = input_pos[-1].item()
+                # torch._check_is_size(input_pos_item)
+                # torch._check(input_pos_item < self.params.max_seq_len)
                 # pyre-ignore: Incompatible parameter type [6]: torch.narrow does expect int or Tensor
-                freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seqlen)
+                freqs_cos = self.freqs_cos[
+                    input_pos : (input_pos + seqlen)
+                ]  # .narrow(0, input_pos_item, seqlen)
                 # pyre-ignore: Incompatible parameter type [6]
-                freqs_sin = self.freqs_sin.narrow(0, input_pos_item, seqlen)
+                freqs_sin = self.freqs_sin[
+                    input_pos : (input_pos + seqlen)
+                ]  # .narrow(0, input_pos_item, seqlen)
             else:
                 # When not using dynamic shape, use of the .item results in
                 # symints, due to querying the data from tensor.
