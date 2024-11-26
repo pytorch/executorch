@@ -19,8 +19,8 @@
 
 namespace vkcompute {
 
-using utils::StorageType;
 using utils::GPUMemoryLayout;
+using utils::StorageType;
 
 void check_embedding_args(
     const api::vTensor& weight,
