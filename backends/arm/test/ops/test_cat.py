@@ -10,8 +10,7 @@ import unittest
 from typing import Tuple
 
 import torch
-from executorch.backends.arm.test import common
-
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
@@ -114,7 +113,7 @@ class TestCat(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(inputs=test_data)
 
     @parameterized.expand(Cat.test_parameters)
@@ -135,7 +134,7 @@ class TestCat(unittest.TestCase):
 
     # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(Cat.test_parameters)
-    @common.expectedFailureOnFVP
+    @conftest.expectedFailureOnFVP
     def test_cat_u55_BI(self, operands: tuple[torch.Tensor, ...], dim: int):
         test_data = (operands, dim)
         self._test_cat_ethosu_BI_pipeline(
@@ -144,7 +143,7 @@ class TestCat(unittest.TestCase):
 
     # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(Cat.test_parameters)
-    @common.expectedFailureOnFVP
+    @conftest.expectedFailureOnFVP
     def test_cat_u85_BI(self, operands: tuple[torch.Tensor, ...], dim: int):
         test_data = (operands, dim)
         self._test_cat_ethosu_BI_pipeline(

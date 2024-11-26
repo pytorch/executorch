@@ -11,7 +11,7 @@ import unittest
 from typing import Tuple
 
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir import EdgeCompileConfig
@@ -247,7 +247,7 @@ class TestLinear(unittest.TestCase):
             test_data,
         )
 
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(test_data_suite_rank1 + test_data_suite_rank4)
