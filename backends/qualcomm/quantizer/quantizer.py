@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 from enum import IntEnum, unique
+from functools import partial
 from typing import Callable, Optional, Sequence, Set
 
 import torch
@@ -67,28 +68,44 @@ quant_config_dict = {
     # PTQ
     (QuantDtype.use_16a16w, False): (
         get_16a16w_qnn_ptq_config,
-        get_ptq_per_channel_quant_config(torch.uint16, torch.int16),
+        partial(
+            get_ptq_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int16,
+        ),
     ),
     (QuantDtype.use_16a8w, False): (
         get_16a8w_qnn_ptq_config,
-        get_ptq_per_channel_quant_config(torch.uint16, torch.int8),
+        partial(
+            get_ptq_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int8,
+        ),
     ),
     (QuantDtype.use_16a4w, False): (
         get_16a4w_qnn_ptq_config,
-        get_ptq_per_channel_quant_config(torch.uint16, "int4"),
+        partial(
+            get_ptq_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype="int4",
+        ),
     ),
     (QuantDtype.use_8a8w, False): (
         get_8a8w_qnn_ptq_config,
-        get_ptq_per_channel_quant_config(),
+        partial(get_ptq_per_channel_quant_config),
     ),
     # QAT,
     (QuantDtype.use_16a4w, True): (
         get_16a4w_qnn_qat_config,
-        get_qat_per_channel_quant_config(torch.uint16, "int4"),
+        partial(
+            get_qat_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype="int4",
+        ),
     ),
     (QuantDtype.use_8a8w, True): (
         get_8a8w_qnn_qat_config,
-        get_qat_per_channel_quant_config(),
+        partial(get_qat_per_channel_quant_config),
     ),
 }
 
@@ -176,11 +193,18 @@ class QnnQuantizer(Quantizer):
                 f"the quant config, (quant_dtype: {quant_dtype}, is_qat: {is_qat}) is not support"
             )
 
-        quant_config_fuc, self.per_channel_quant_config = quant_config_dict[
+        quant_config_fuc, per_channel_quant_config_fuc = quant_config_dict[
             (quant_dtype, is_qat)
         ]
         self.quant_config = (
-            quant_config_fuc(act_observer) if act_observer else quant_config_fuc()
+            quant_config_fuc(act_observer=act_observer)
+            if act_observer
+            else quant_config_fuc()
+        )
+        self.per_channel_quant_config = (
+            per_channel_quant_config_fuc(act_observer=act_observer)
+            if act_observer
+            else per_channel_quant_config_fuc()
         )
 
     def set_per_channel_conv_quant(self, enable: bool) -> None:

@@ -26,9 +26,6 @@ struct PhysicalDevice final {
   VkPhysicalDeviceProperties properties;
   VkPhysicalDeviceMemoryProperties memory_properties;
 
-  // Head of the linked list of extensions to be requested
-  void* extension_features;
-
   // Additional features available from extensions
 #ifdef VK_KHR_16bit_storage
   VkPhysicalDevice16BitStorageFeatures shader_16bit_storage;
@@ -39,6 +36,9 @@ struct PhysicalDevice final {
 #ifdef VK_KHR_shader_float16_int8
   VkPhysicalDeviceShaderFloat16Int8Features shader_float16_int8_types;
 #endif /* VK_KHR_shader_float16_int8 */
+
+  // Head of the linked list of extensions to be requested
+  void* extension_features;
 
   // Available GPU queues
   std::vector<VkQueueFamilyProperties> queue_families;

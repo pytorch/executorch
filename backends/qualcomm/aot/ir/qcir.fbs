@@ -94,8 +94,13 @@ table Operator {
 }
 
 table Graph {
+    name: string;
     nodes: [Operator];
     tensors: [Tensor];
 }
 
-root_type Graph;
+table Context {
+    graphs: [Graph];
+}
+
+root_type Context;

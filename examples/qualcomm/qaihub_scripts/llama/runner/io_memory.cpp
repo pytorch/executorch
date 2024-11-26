@@ -29,7 +29,11 @@ Memory::Memory(
       input_tensors_(modules.size()),
       output_tensors_(modules.size()),
       pos_embs_path_(pos_embs_path),
-      modules_(modules) {}
+      modules_(modules) {
+  for (std::shared_ptr<Module>& module : modules_) {
+    method_names_.emplace_back(*module->method_names()->begin());
+  }
+}
 
 Memory::~Memory() {}
 
@@ -436,7 +440,9 @@ void KVCachedMemory::update_io(
             int index = (cache_stride << 1) + (cache_group << 5) + head;
             ET_CHECK_MSG(
                 modules_[shard]->set_output(
-                    output_tensors[shard][index], index) == Error::Ok,
+                    method_names_[shard],
+                    output_tensors[shard][index],
+                    index) == Error::Ok,
                 "failed to set output tensor for module %d's %d'th output "
                 "while updating kv_cache output tensors",
                 shard,
@@ -458,7 +464,8 @@ void KVCachedMemory::update_io(
     for (int shard = 0; shard < output_tensors.size(); shard++) {
       for (int index = 0; index < output_tensors[shard].size(); index++) {
         ET_CHECK_MSG(
-            modules_[shard]->set_output(output_tensors[shard][index], index) ==
+            modules_[shard]->set_output(
+                method_names_[shard], output_tensors[shard][index], index) ==
                 Error::Ok,
             "failed to set output tensor for module %d's %d'th output "
             "while updating kv_cache output tensors",
