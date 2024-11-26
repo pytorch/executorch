@@ -9,7 +9,7 @@ import unittest
 from typing import Tuple
 
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.ops.test_conv1d import Conv1d
 from executorch.backends.arm.test.ops.test_conv2d import Conv2d
 
@@ -243,7 +243,7 @@ class TestDepthwiseConv(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(testsuite_conv1d + testsuite_conv2d)
@@ -301,7 +301,7 @@ class TestDepthwiseConv(unittest.TestCase):
 
     # All test cases except 3x3_1x3x256x256_gp3_st1 have numerical issues on FVP. MLETORCH-520
     @parameterized.expand(testsuite_conv2d_u85_xfails)
-    @common.expectedFailureOnFVP
+    @conftest.expectedFailureOnFVP
     def test_dw_conv_u85_BI_xfails(
         self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
     ):
