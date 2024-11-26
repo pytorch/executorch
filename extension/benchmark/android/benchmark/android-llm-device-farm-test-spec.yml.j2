@@ -8,6 +8,14 @@ phases:
 
   pre_test:
     commands:
+      # Download the model from S3
+      - aws s3 cp {{ model_path }} model.zip
+      - unzip model.zip && ls -la
+
+      # Copy the extracted model to sdcard
+      - adb -s $DEVICEFARM_DEVICE_UDID push *.bin /sdcard
+      - adb -s $DEVICEFARM_DEVICE_UDID push *.pte /sdcard
+
       # Prepare the model and the tokenizer
       - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /sdcard/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mkdir -p /data/local/tmp/minibench/"
