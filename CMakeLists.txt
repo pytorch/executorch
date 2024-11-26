@@ -15,13 +15,15 @@
 # It should also be cmake-lint clean.
 #
 cmake_minimum_required(VERSION 3.24)
+set(CMAKE_CXX_STANDARD 17)
 
 project(Tokenizers)
 
+option(TOKENIZERS_BUILD_TEST "Build tests" OFF)
+
 set(ABSL_ENABLE_INSTALL ON)
 set(ABSL_PROPAGATE_CXX_STD ON)
-set(_pic_flag
-${CMAKE_POSITION_INDEPENDENT_CODE})
+set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(third-party/sentencepiece)
 set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
@@ -29,8 +31,19 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 add_library(tokenizers STATIC src/sentencepiece.cpp)
 
 # Using abseil from sentencepiece/third_party
-target_include_directories(
-  tokenizers PUBLIC third-party/sentencepiece/src
-                    third-party/sentencepiece include)
+target_include_directories(tokenizers PUBLIC third-party/sentencepiece/src
+                                            third-party/sentencepiece include)
 
 target_link_libraries(tokenizers PUBLIC sentencepiece-static)
+
+# Build test
+if(TOKENIZERS_BUILD_TEST)
+  find_package(GTest REQUIRED)
+  set(ENV{RESOURCES_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/test/resources)
+  add_executable(sentencepiece_test test/test_sentencepiece.cpp)
+  target_include_directories(
+    sentencepiece_test PUBLIC third-party/sentencepiece/src
+                              third-party/sentencepiece include)
+  target_link_libraries(sentencepiece_test PUBLIC tokenizers GTest::GTest
+                                                  GTest::Main)
+endif()

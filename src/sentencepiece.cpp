@@ -38,8 +38,8 @@ Error SPTokenizer::load(const std::string &tokenizer_path) {
   const auto status = _processor->Load(tokenizer_path);
   if (!status.ok()) {
     fprintf(stderr,
-            "couldn't load %s\n. If this tokenizer artifact is for llama3, "
-            "please pass `-l 3`.",
+            "couldn't load %s\n. It is likely that the tokenizer artifact is "
+            "broken or of a different format.",
             tokenizer_path.c_str());
     return Error::LoadFailure;
   }
