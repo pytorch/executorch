@@ -199,7 +199,12 @@ jobs:
                 echo "Unsupported delegate ${{ matrix.delegate }}"
                 exit 1
             fi
-            PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
+            PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh \
+              -model "${{ matrix.model }}" \
+              -build_tool "${BUILD_MODE}" \
+              -dtype "${DTYPE}" \
+              -mode "${DELEGATE_CONFIG}" \
+              -upload "${ARTIFACTS_DIR_NAME}"
         else
             PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
         fi
