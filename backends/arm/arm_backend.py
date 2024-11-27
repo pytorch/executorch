@@ -52,6 +52,7 @@ class ArmCompileSpecBuilder:
         self.permute_nhwc = False
         self.quantize_io = False
         self.tosa_version = None
+        self.input_order = None
 
     def ethosu_compile_spec(
         self,
@@ -89,7 +90,7 @@ class ArmCompileSpecBuilder:
             self.compiler_flags.append(extra_flags)
 
         base_tosa_version = "TOSA-0.80.0+BI"
-        if "U55" in config:
+        if "u55" in config:
             # Add the Ethos-U55 extension marker
             base_tosa_version += "+u55"
         self.tosa_version = TosaSpecification.create_from_string(base_tosa_version)
@@ -134,6 +135,14 @@ class ArmCompileSpecBuilder:
         self.quantize_io = quantize_io
         return self
 
+    def set_input_order(self, input_order: str = None) -> "ArmCompileSpecBuilder":
+        """
+        Reorder the inputs coming in. This may be required when inputs > 1.
+        And while using the U55/U85 CompileSpec.
+        """
+        self.input_order = input_order
+        return self
+
     def build(self) -> List[CompileSpec]:
         """
         Generate a list of compile spec objects from the builder
@@ -161,6 +170,13 @@ class ArmCompileSpecBuilder:
         if self.permute_nhwc:
             self.compile_spec.append(
                 CompileSpec("permute_memory_format", "nhwc".encode())
+            )
+
+        if self.input_order:
+            self.compile_spec.append(
+                CompileSpec(
+                    "input_order", " ".join(map(str, self.input_order)).encode()
+                )
             )
 
         if self.quantize_io:
@@ -214,6 +230,7 @@ class ArmBackend(BackendDetails):
         artifact_path = None
         output_format = ""
         compile_flags = []
+        input_order = []
         for spec in compile_spec:
             if spec.key == "debug_artifact_path":
                 artifact_path = spec.value.decode()
@@ -221,6 +238,8 @@ class ArmBackend(BackendDetails):
                 output_format = spec.value.decode()
             if spec.key == "compile_flags":
                 compile_flags.append(spec.value.decode())
+            if spec.key == "input_order":
+                input_order = list(map(int, spec.value.decode().split(",")))
 
         # Check that the output format is set in the compile spec
         if not output_format:
@@ -246,18 +265,26 @@ class ArmBackend(BackendDetails):
         )
 
         node_visitors = get_node_visitors(edge_program, tosa_spec)
-
+        input_count = 0
         for node in graph_module.graph.nodes:
             if node.op == "call_function":
                 process_call_function(node, tosa_graph, node_visitors, tosa_spec)
             elif node.op == "placeholder":
                 process_placeholder(node, tosa_graph, edge_program, tosa_spec)
+                if node.name in edge_program.graph_signature.user_inputs:
+                    input_count += 1
             elif node.op == "output":
                 process_output(node, tosa_graph)
             else:
                 # This will only happen if an unpartitioned graph is passed without
                 # any checking of compatibility.
                 dbg_fail(node, tosa_graph, artifact_path)
+
+        if len(input_order) > 0:
+            if input_count != len(input_order):
+                raise RuntimeError(
+                    "The rank of the input order is not equal to amount of input tensors"
+                )
 
         # TODO: It would be awesome if this dump could somehow be done on top level and not here.
         # Problem is that the desc.json has to be created on the tosa_graph object, which we can't
@@ -275,7 +302,7 @@ class ArmBackend(BackendDetails):
         # preprocess and some consume TOSA fb directly.
         if output_format == "vela":
             # Emit vela_bin_stream format
-            binary = vela_compile(tosa_graph, compile_flags)
+            binary = vela_compile(tosa_graph, compile_flags, input_order)
         elif output_format == "tosa":
             # Emit TOSA flatbuffer
             binary = bytes(tosa_graph.serialize())
