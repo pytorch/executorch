@@ -15,6 +15,8 @@
 #import <functional>
 #import <numeric>
 
+#define MODEL_STATE_IS_SUPPORTED 1
+
 #pragma mark - ETCoreMLMultiArrayDescriptor
 __attribute__((objc_subclassing_restricted))
 @interface ETCoreMLMultiArrayDescriptor: NSObject <NSCopying>
@@ -41,7 +43,7 @@ __attribute__((objc_subclassing_restricted))
         _shape = shape;
         _dataType = dataType;
     }
-    
+
     return self;
 }
 
@@ -49,11 +51,11 @@ __attribute__((objc_subclassing_restricted))
     if (object == self) {
         return YES;
     }
-    
+
     if (![object isKindOfClass:self.class]) {
         return NO;
     }
-    
+
     ETCoreMLMultiArrayDescriptor *other = (ETCoreMLMultiArrayDescriptor *)object;
     return [self.shape isEqualToArray:other.shape] && self.dataType == other.dataType;
 }
@@ -97,18 +99,18 @@ std::vector<size_t> calculate_strides(const std::vector<size_t>& shape) {
     if (shape.size() == 0) {
         return {};
     }
-    
+
     if (shape.size() == 1) {
         return {1};
     }
-    
+
     std::vector<size_t> strides(shape.size(), 1);
     size_t product = 1;
     for (size_t i = shape.size(); i > 0; i--) {
         strides[i - 1] = product;
         product *= shape[i - 1];
     }
-    
+
     return strides;
 }
 
@@ -126,7 +128,7 @@ MLMultiArray * _Nullable make_ml_multi_array(const std::vector<size_t>& shape,
         size_t n = std::accumulate(shape.cbegin(), shape.cend(), 1, std::multiplies<size_t>{});
         backing_storage = [[NSMutableData alloc] initWithLength:n * get_number_of_bytes(dataType)];
     }
-    
+
     __weak NSCache<ETCoreMLMultiArrayDescriptor *, NSMutableData *> *weakCache = cache;
     // Add the storage back to the cache when it gets deallocated, the next prediction would use the same storage.
     MLMultiArray *result = [[MLMultiArray alloc] initWithDataPointer:backing_storage.mutableBytes
@@ -135,7 +137,7 @@ MLMultiArray * _Nullable make_ml_multi_array(const std::vector<size_t>& shape,
                                                              strides:to_array(calculate_strides(shape))
                                                          deallocator:^(void * _Nonnull bytes) {[weakCache setObject:backing_storage forKey:descriptor];}
                                                                error:error];
-    
+
     return result;
 }
 
@@ -145,7 +147,7 @@ get_multi_array_constraints_by_name(NSDictionary<NSString *, MLFeatureDescriptio
     [feature_descriptions enumerateKeysAndObjectsUsingBlock:^(NSString *key, MLFeatureDescription *description, BOOL * _Nonnull stop) {
         result[key] = description.multiArrayConstraint;
     }];
-    
+
     return result;
 }
 
@@ -192,14 +194,14 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
     if (![asset keepAliveAndReturnError:error]) {
         return nil;
     }
-    
+
     MLModel *mlModel = [MLModel modelWithContentsOfURL:asset.contentURL
                                          configuration:configuration
                                                  error:error];
     if (!mlModel) {
         return nil;
     }
-    
+
     self = [super init];
     if (self) {
         _mlModel = mlModel;
@@ -215,7 +217,7 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
         }
 #endif
     }
-    
+
     return self;
 }
 
@@ -250,11 +252,11 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
             // We can't use the same data storage, data types are not the same.
             multiArrayArg = ::make_ml_multi_array(layout.shape(), constraint.dataType, self.cache, error);
         }
-        
+
         if (!multiArrayArg) {
             return nil;
         }
-        
+
         if (multiArrayArg && lCopyData) {
             [multiArrayArg getMutableBytesWithHandler:^(void *_Nonnull mutableBytes,
                                                         NSInteger __unused size,
@@ -265,10 +267,10 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
                 arg.copy(buffer);
             }];
         }
-        
+
         [result addObject:multiArrayArg];
     }
-    
+
     return result;
 }
 
@@ -279,7 +281,7 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
         argConstraintsByName:self.inputConstraintsByName
                     copyData:YES
                        error:error];
-    
+
 }
 
 - (nullable NSArray<MLMultiArray *> *)prepareOutputBackings:(const std::vector<executorchcoreml::MultiArray>&)outputs
@@ -289,7 +291,7 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
         argConstraintsByName:self.outputConstraintsByName
                     copyData:NO
                        error:error];
-    
+
 }
 
 - (nullable id<MLFeatureProvider>)predictionFromFeatures:(id<MLFeatureProvider>)input
