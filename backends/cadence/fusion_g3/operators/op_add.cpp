@@ -95,15 +95,15 @@ Tensor& add_out(
   }
 
   for (int i = 0; i < max_dim; i++) {
-    out_shape[i]  = 1;
+    out_shape[i] = 1;
     inp1_shape[i] = 1;
     inp2_shape[i] = 1;
   }
-  
-  int offset_out  = max_dim - out.dim();
+
+  int offset_out = max_dim - out.dim();
   int offset_inp1 = max_dim - a.dim();
   int offset_inp2 = max_dim - b.dim();
-  
+
   for (int i = 0; i < out.dim(); i++) {
     out_shape[i + offset_out] = out.size(i);
   }
@@ -111,10 +111,10 @@ Tensor& add_out(
     inp1_shape[i + offset_inp1] = a.size(i);
   }
   for (int i = 0; i < b.dim(); i++) {
-  inp2_shape[i + offset_inp2] = b.size(i); 
+    inp2_shape[i + offset_inp2] = b.size(i);
   }
 
-  if ((compute_type == ScalarType::Int) && (optimized)){
+  if ((compute_type == ScalarType::Int) && (optimized)) {
     const int* const inp1_data = a.const_data_ptr<int>();
     const int* const inp2_data = b.const_data_ptr<int>();
     int* const out_data = out.mutable_data_ptr<int>();

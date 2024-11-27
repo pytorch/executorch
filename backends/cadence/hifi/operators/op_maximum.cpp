@@ -23,7 +23,6 @@ using torch::executor::apply_binary_elementwise_fn;
 using torch::executor::Error;
 using torch::executor::resize_to_broadcast_target_size;
 
-
 namespace cadence {
 namespace impl {
 namespace HiFi {
