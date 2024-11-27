@@ -13,8 +13,8 @@ phases:
       - unzip model.zip && ls -la
 
       # Copy the model to sdcard
-      - adb -s $DEVICEFARM_DEVICE_UDID push *.bin /sdcard
-      - adb -s $DEVICEFARM_DEVICE_UDID push *.pte /sdcard
+      - adb -s $DEVICEFARM_DEVICE_UDID push -q *.bin /sdcard
+      - adb -s $DEVICEFARM_DEVICE_UDID push -q *.pte /sdcard
 
       # Prepare the model and the tokenizer
       - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /sdcard/"
