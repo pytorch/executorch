@@ -298,15 +298,25 @@ jobs:
               --workflow-run-attempt ${{ github.run_attempt }}
           done
 
-          ls -lah benchmark-results
-
-          for BENCHMARK_RESULTS in benchmark-results/*.json; do
-            cat "${BENCHMARK_RESULTS}"
-            echo
+          for SCHEMA in v2 v3; do
+            for BENCHMARK_RESULTS in benchmark-results/"${SCHEMA}"/*.json; do
+              cat "${BENCHMARK_RESULTS}"
+              echo
+            done
           done
 
-      - name: Upload the benchmark results
+      # TODO (huydhn): Remove v2 schema once the benchmark dashboard finishes the migration
+      - name: Upload the benchmark results (v2)
         uses: pytorch/test-infra/.github/actions/upload-benchmark-results@main
         with:
-          benchmark-results-dir: 'benchmark-results'
+          benchmark-results-dir: benchmark-results/v2
           dry-run: false
+          schema-version: v2
+
+      - name: Upload the benchmark results (v3)
+        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@main
+        with:
+          benchmark-results-dir: benchmark-results/v3
+          dry-run: false
+          schema-version: v3
+          github-token: ${{ secrets.GITHUB_TOKEN }}

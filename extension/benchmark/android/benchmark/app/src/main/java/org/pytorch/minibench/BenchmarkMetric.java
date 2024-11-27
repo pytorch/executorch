@@ -63,7 +63,7 @@ class BenchmarkMetric {
   // the .pte model itself instead of parsing its name
   public static BenchmarkMetric.BenchmarkModel extractBackendAndQuantization(final String model) {
     final Matcher m =
-        Pattern.compile("(?<name>\\w+)_(?<backend>\\w+)_(?<quantization>\\w+)").matcher(model);
+        Pattern.compile("(?<name>\\w+)_(?<backend>[\\w\\+]+)_(?<quantization>\\w+)").matcher(model);
     if (m.matches()) {
       return new BenchmarkMetric.BenchmarkModel(
           m.group("name"), m.group("backend"), m.group("quantization"));
