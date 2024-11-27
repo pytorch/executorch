@@ -407,7 +407,7 @@ void add_conv1d_node(
     const ValueRef out,
     const bool clamp_out) {
   ValueRef arg_weight = prepack_standard(
-      graph, weight, graph.storage_type_of(out), utils::kWidthPacked);
+      graph, weight, graph.storage_type_of(out), utils::kChannelsPacked);
   ValueRef arg_bias = prepack_biases(
       graph,
       bias,
