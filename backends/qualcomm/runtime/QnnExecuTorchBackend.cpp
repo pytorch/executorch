@@ -90,6 +90,8 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
     }
   }
   add_cached_delegate(signature, qnn_manager);
+  // This backend does not need its processed data after Init.
+  processed->Free();
   return qnn_manager;
 }
 

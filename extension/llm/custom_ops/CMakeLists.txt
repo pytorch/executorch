@@ -109,26 +109,5 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
            ${_common_compile_options} -DET_USE_THREADPOOL
   )
 
-  # pip wheels will need to be able to find the dependent libraries. On Linux,
-  # the .so has non-absolute dependencies on libs like "_portable_lib.so"
-  # without paths; as long as we `import torch` first, those dependencies will
-  # work. But Apple dylibs do not support non-absolute dependencies, so we need
-  # to tell the loader where to look for its libraries. The LC_LOAD_DYLIB
-  # entries for the portable_lib libraries will look like
-  # "@rpath/_portable_lib.cpython-310-darwin.so", so we can add an LC_RPATH
-  # entry to look in a directory relative to the installed location of our
-  # _portable_lib.so file. To see these LC_* values, run `otool -l
-  # libcustom_ops_aot_lib.dylib`.
-  if(APPLE)
-    set_target_properties(
-      custom_ops_aot_lib
-      PROPERTIES # Assume this library will be installed in
-                 # <site-packages>/executorch/extension/llm/custom_ops/, and the
-                 # _portable_lib.so is installed in
-                 # <site-packages>/executorch/extension/pybindings/
-                 BUILD_RPATH "@loader_path/../../pybindings"
-                 INSTALL_RPATH "@loader_path/../../pybindings"
-    )
-  endif()
   install(TARGETS custom_ops_aot_lib DESTINATION lib)
 endif()

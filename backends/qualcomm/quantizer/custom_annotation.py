@@ -22,7 +22,7 @@ from torch.ao.quantization.quantizer import (
 from torch.fx import Node
 
 
-def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:
+def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
     """
     This function is specific for matmul op 16a8w.
     """
@@ -78,7 +78,7 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:
         )
 
     def annotate_matmul_input1(node: Node):
-        quantization_config_8a8w = get_default_8bit_qnn_ptq_config(
+        quantization_config_8a8w = get_8a8w_qnn_ptq_config(
             act_symmetric=True, act_observer=MinMaxObserver
         )
         while isinstance(node, Node) and node.op == "call_function":

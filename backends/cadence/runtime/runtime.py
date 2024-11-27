@@ -28,7 +28,7 @@ from numpy import ndarray
 from torch.utils._pytree import TreeSpec
 
 
-class JarvisETDump:
+class CadenceETDump:
     def __init__(self, output_dir: str) -> None:
         self.tensor_dump_dir: str = os.path.join(output_dir, "tensors")
         self.etdump_path: str = os.path.join(output_dir, "etdump.etdp")
@@ -64,28 +64,26 @@ class JarvisETDump:
             for event_block in self.et_inspector.event_blocks
             if event_block.name == "Execute"
         ]
-        logging.debug(f"[Jarvis][ETdump] output: {output}")
+        logging.debug(f"[ETdump] output: {output}")
         return output[0]
 
     def print_event_block(self) -> None:
-        logging.debug("[Jarvis][ETdump] data tabular:")
+        logging.debug("[ETdump] data tabular:")
         if logging.getLogger().level <= logging.DEBUG:
             self.et_inspector.print_data_tabular()
 
     def print_event_data(self) -> None:
-        logging.debug("[Jarvis][ETdump] event data ")
+        logging.debug("[ETdump] event data ")
         for event_block in self.et_inspector.event_blocks:
             for event in event_block.events:
                 logging.debug(event)
 
     def dump_intermediate_tensors(self) -> None:
         if self.etrecord_path is None:
-            logging.info("[Jarvis][ETdump] Intermediate tensors not available")
+            logging.info("[ETdump] Intermediate tensors not available")
             return
 
-        logging.info(
-            f"[Jarvis][ETdump] Dumping intermediate tensors to {self.tensor_dump_dir}"
-        )
+        logging.info(f"[ETdump] Dumping intermediate tensors to {self.tensor_dump_dir}")
         os.makedirs(self.tensor_dump_dir, exist_ok=True)
         exec_blocks = [
             eb for eb in self.et_inspector.event_blocks if eb.name == "Execute"
@@ -153,13 +151,13 @@ def run(
     if working_dir is None:
         working_dir = tempfile.mkdtemp(dir="/tmp")
 
-    # initialize Jarvis e2e Executor with executorch_cfg.
+    # initialize e2e Executor with executorch_cfg.
     executor = Executor(working_dir)
 
     # run Executor
     executor()
 
-    etdump = JarvisETDump(output_dir=working_dir)
+    etdump = CadenceETDump(output_dir=working_dir)
     outputs = etdump.get_outputs()
 
     assert isinstance(out_spec, TreeSpec)

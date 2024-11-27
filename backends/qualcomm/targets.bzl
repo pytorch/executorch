@@ -120,7 +120,7 @@ def define_common_targets():
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
-            "//executorch/backends/qualcomm/runtime:runtime",
+            "//executorch/backends/qualcomm/runtime:runtime_android_build",
         ],
         exported_deps = [
             ":schema",

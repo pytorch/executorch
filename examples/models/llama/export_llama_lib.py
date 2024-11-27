@@ -960,8 +960,14 @@ def _load_llama_model(
             use_kv_cache,
             use_sdpa_with_kv_cache,
             enable_dynamic_shape,
+            # pyre-fixme[6]: For 5th argument expected `ModelArgs` but got
+            #  `Union[Tensor, Module]`.
             model.max_seq_len,
+            # pyre-fixme[6]: For 6th argument expected `int` but got `Union[Tensor,
+            #  Module]`.
             model.n_layers,
+            # pyre-fixme[6]: For 7th argument expected `int` but got `Union[Tensor,
+            #  Module]`.
             model.vocab_size,
             metadata_str,
         ),
@@ -1045,6 +1051,7 @@ def _get_source_transforms(  # noqa
                 transforms.append(replace_attention_to_attention_sha)
                 transforms.append(replace_causal_mask)
                 transforms.append(replace_rms_norm_with_native_rms_norm)
+                # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
                 transforms.append(convert_linear_to_conv2d)
             else:
                 transforms.append(replace_kv_cache_with_simple_kv_cache)
@@ -1056,6 +1063,7 @@ def _get_source_transforms(  # noqa
                     transforms.append(
                         get_model_with_r1_r2(args.optimized_rotation_path)
                     )
+                # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
                 transforms.append(convert_linear_to_conv2d)
 
         elif args.mps:
