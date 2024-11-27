@@ -24,7 +24,7 @@ rm -rf "$COREML_DIR_PATH/third-party"
 mkdir "$COREML_DIR_PATH/third-party"
 
 echo "${green}ExecuTorch: Cloning coremltools."
-git clone --depth 1 --branch 8.0 "https://github.com/apple/coremltools.git" $COREMLTOOLS_DIR_PATH
+git clone --depth 1 --branch 8.1 "https://github.com/apple/coremltools.git" $COREMLTOOLS_DIR_PATH
 cd $COREMLTOOLS_DIR_PATH
 
 STATUS=$?

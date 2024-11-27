@@ -165,13 +165,19 @@ class AttentionSHA(nn.Module):
 
         for i in range(self.n_heads):
             self.wq[i].weight.data.copy_(
+                # pyre-fixme[16]: Item `Tensor` of `Union[Tensor, Module]` has no
+                #  attribute `weight`.
                 attention_mha.wq.weight[i * self.head_dim : (i + 1) * self.head_dim]
             )
         for i in range(self.n_kv_heads):
             self.wk[i].weight.data.copy_(
+                # pyre-fixme[16]: Item `Tensor` of `Union[Tensor, Module]` has no
+                #  attribute `weight`.
                 attention_mha.wk.weight[i * self.head_dim : (i + 1) * self.head_dim]
             )
             self.wv[i].weight.data.copy_(
+                # pyre-fixme[16]: Item `Tensor` of `Union[Tensor, Module]` has no
+                #  attribute `weight`.
                 attention_mha.wv.weight[i * self.head_dim : (i + 1) * self.head_dim]
             )
         self.wo = attention_mha.wo
