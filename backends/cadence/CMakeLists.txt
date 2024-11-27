@@ -76,7 +76,12 @@ endif()
 if(EXECUTORCH_NNLIB_OPT)
   set(TARGET_DIR hifi)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party/nnlib)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
+endif()
+
+if(EXECUTORCH_FUSION_G3_OPT)
+  set(TARGET_DIR fusion_g3)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party/nnlib)
 endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/operators)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
