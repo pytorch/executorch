@@ -98,6 +98,7 @@ jobs:
           declare -A DEVICE_POOL_ARNS
           DEVICE_POOL_ARNS[samsung_galaxy_s22]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa"
           DEVICE_POOL_ARNS[samsung_galaxy_s24]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/98f8788c-2e25-4a3c-8bb2-0d1e8897c0db"
+          DEVICE_POOL_ARNS[google_pixel_8_pro]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/d65096ab-900b-4521-be8b-a3619b69236a"
 
           # Resolve device names with their corresponding ARNs
           if [[ ! $(echo "$DEVICES" | jq empty 2>/dev/null) ]]; then
@@ -163,13 +164,15 @@ jobs:
           model: ${{ fromJson(needs.set-parameters.outputs.models) }}
           delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
       fail-fast: false
+    secrets: inherit
     with:
-      runner: linux.4xlarge
+      runner: linux.4xlarge.memory
       docker-image: executorch-ubuntu-22.04-qnn-sdk
       submodules: 'true'
       timeout: 60
       upload-artifact: android-models
       upload-artifact-to-s3: true
+      secrets-env: EXECUTORCH_HF_TOKEN
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         echo "::group::Setting up dev environment"
@@ -187,7 +190,37 @@ jobs:
         BUILD_MODE="cmake"
         DTYPE="fp32"
 
-        if [[ ${{ matrix.model }} =~ ^stories* ]]; then
+        if [[ ${{ matrix.model }} =~ ^[^/]+/[^/]+$ ]] && [[ ${{ matrix.delegate }} == "xnnpack" ]]; then
+            pip install -U "huggingface_hub[cli]"
+            huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+            pip install accelerate sentencepiece
+            pip list
+
+            TOKENIZER_FILE=tokenizer.model
+            TOKENIZER_BIN_FILE=tokenizer.bin
+            # Fetch the file using a Python one-liner
+            DOWNLOADED_TOKENIZER_FILE_PATH=$(python -c "
+            from huggingface_hub import hf_hub_download
+            # Download the file from the Hugging Face Hub
+            downloaded_path = hf_hub_download(
+                repo_id='${{ matrix.model }}',
+                filename='${TOKENIZER_FILE}'
+            )
+            print(downloaded_path)
+            ")
+            if [ -f "$DOWNLOADED_TOKENIZER_FILE_PATH" ]; then
+                echo "${TOKENIZER_FILE} downloaded successfully at: $DOWNLOADED_TOKENIZER_FILE_PATH"
+                python -m extension.llm.tokenizer.tokenizer -t $DOWNLOADED_TOKENIZER_FILE_PATH -o ./${TOKENIZER_BIN_FILE}
+                ls ./tokenizer.bin
+            else
+                echo "Failed to download ${TOKENIZER_FILE} from ${{ matrix.model }}."
+                exit 1
+            fi
+
+            MODEL_NAME=$(echo "${{ matrix.model }}" | sed 's,/,-,g')
+            python -m extension.export_util.export_hf_model -hfm=${{ matrix.model }} -o "${MODEL_NAME}_xnnpack_fp32"
+
+        elif [[ ${{ matrix.model }} =~ ^stories* ]]; then
             # Install requirements for export_llama
             PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
             # Test llama2
@@ -205,6 +238,7 @@ jobs:
               -dtype "${DTYPE}" \
               -mode "${DELEGATE_CONFIG}" \
               -upload "${ARTIFACTS_DIR_NAME}"
+
         else
             PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh \
               "${{ matrix.model }}" \
