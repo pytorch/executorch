@@ -213,7 +213,7 @@ void add_matmul_optimized_node(
     global_size = utils::divup_vec(global_size, {4, 4, 1});
   }
 
-  utils::uvec3 local_size = graph.create_local_wg_size(global_size);
+  utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,

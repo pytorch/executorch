@@ -90,7 +90,7 @@ void add_repeat_channel_node(
   // Channel packed global work ids
   running_range[2] = out_whcn_sizes[3] * utils::div_up_4(out_whcn_sizes[2]);
   utils::uvec3 global_size = utils::make_uvec3(running_range);
-  utils::uvec3 local_size = graph.create_local_wg_size(global_size);
+  utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   const struct Block final {
     utils::ivec4 out_sizes;
