@@ -313,8 +313,14 @@ class vTensor final {
   uint32_t numel_uniform_offset_;
   uint32_t logical_limits_uniform_offset_;
 
+  // Size allocated for each uniform
+  // each uniform is assumed to be a vec of 4 ints to maintain 16 byte alignemnt
+  constexpr static size_t kSizePerUniform = sizeof(utils::ivec4);
   // Total size of tensor's uniform buffer
-  constexpr static uint32_t kMaxUniformBufferSize = 4 * 20;
+  constexpr static uint32_t kMaxUniformBufferSize =
+      4 * // we have 4 uniforms that are passed on to shaders
+      kSizePerUniform;
+
   // Initial value of uniform buffer offsets
   constexpr static uint32_t kUniformOffsetUnset = kMaxUniformBufferSize;
 

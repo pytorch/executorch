@@ -624,12 +624,11 @@ const vkapi::BufferBindInfo vTensor::sizes_ubo() {
     uniforms_ = ParamsBuffer(storage_.context_, kMaxUniformBufferSize);
   }
   if (sizes_uniform_offset_ == kUniformOffsetUnset) {
-    const auto allocation_size = sizes_.size() * sizeof(sizes_[0]);
     VK_CHECK_COND(
-        (uniforms_size_ + allocation_size) <= kMaxUniformBufferSize,
+        (uniforms_size_ + kSizePerUniform) <= kMaxUniformBufferSize,
         "Uniform data allocation has exceeded Tensor uniform buffer size");
     sizes_uniform_offset_ = uniforms_size_;
-    uniforms_size_ += allocation_size;
+    uniforms_size_ += kSizePerUniform;
     uniforms_.update(utils::make_whcn_ivec4(sizes_), sizes_uniform_offset_);
   }
   return vkapi::BufferBindInfo(uniforms_.buffer(), sizes_uniform_offset_);
@@ -640,13 +639,11 @@ const vkapi::BufferBindInfo vTensor::strides_ubo() {
     uniforms_ = ParamsBuffer(storage_.context_, kMaxUniformBufferSize);
   }
   if (unsqueezed_strides_offset_ == kUniformOffsetUnset) {
-    const auto allocation_size =
-        unsqueezed_strides_.size() * sizeof(unsqueezed_strides_[0]);
     VK_CHECK_COND(
-        (uniforms_size_ + allocation_size) <= kMaxUniformBufferSize,
+        (uniforms_size_ + kSizePerUniform) <= kMaxUniformBufferSize,
         "Uniform data allocation has exceeded Tensor uniform buffer size");
     unsqueezed_strides_offset_ = uniforms_size_;
-    uniforms_size_ += allocation_size;
+    uniforms_size_ += kSizePerUniform;
     uniforms_.update(
         utils::make_whcn_ivec4(unsqueezed_strides_),
         unsqueezed_strides_offset_);
@@ -660,10 +657,10 @@ const vkapi::BufferBindInfo vTensor::logical_limits_ubo() {
   }
   if (logical_limits_uniform_offset_ == kUniformOffsetUnset) {
     VK_CHECK_COND(
-        (uniforms_size_ + sizeof(logical_limits_)) <= kMaxUniformBufferSize,
+        (uniforms_size_ + kSizePerUniform) <= kMaxUniformBufferSize,
         "Uniform data allocation has exceeded Tensor uniform buffer size");
     logical_limits_uniform_offset_ = uniforms_size_;
-    uniforms_size_ += sizeof(logical_limits_);
+    uniforms_size_ += kSizePerUniform;
     uniforms_.update(logical_limits_, logical_limits_uniform_offset_);
   }
   return vkapi::BufferBindInfo(
@@ -676,10 +673,10 @@ const vkapi::BufferBindInfo vTensor::numel_ubo() {
   }
   if (numel_uniform_offset_ == kUniformOffsetUnset) {
     VK_CHECK_COND(
-        (uniforms_size_ + sizeof(numel_)) <= kMaxUniformBufferSize,
+        (uniforms_size_ + kSizePerUniform) <= kMaxUniformBufferSize,
         "Uniform data allocation has exceeded Tensor uniform buffer size");
     numel_uniform_offset_ = uniforms_size_;
-    uniforms_size_ += sizeof(numel_);
+    uniforms_size_ += kSizePerUniform;
     uniforms_.update(numel_, numel_uniform_offset_);
   }
   return vkapi::BufferBindInfo(uniforms_.buffer(), numel_uniform_offset_);

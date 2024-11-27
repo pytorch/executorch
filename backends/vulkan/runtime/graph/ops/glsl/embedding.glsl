@@ -47,9 +47,9 @@ void main() {
     const ivec3 in_lpos = ivec3(out_tidx.y, out_tidx.z * 4 + i, out_tidx.w / 4);
     const int in_texel_elem = load_texel_lpos(t_in, in_lpos, in_axis_map)[out_tidx.w % 4];
 
-    // Read weight tensor for embedding.
-    const ivec3 weight_lpos = ivec3(out_tidx.x, in_texel_elem, 0);
-    out_texel[i] = load_texel_lpos(t_weight, weight_lpos, weight_axis_map).x;
+    // Read weight tensor for embedding, it is height-packed.
+    const ivec3 weight_lpos = ivec3(out_tidx.x, in_texel_elem / 4, 0);
+    out_texel[i] = load_texel_lpos(t_weight, weight_lpos, weight_axis_map)[in_texel_elem % 4];
   }
 
   write_texel_lpos(t_out, out_lpos, out_texel, out_axis_map);
