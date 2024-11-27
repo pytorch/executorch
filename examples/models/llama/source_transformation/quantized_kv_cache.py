@@ -11,6 +11,8 @@ import torch
 import torch.nn as nn
 from executorch.examples.models.llama.llama_transformer import KVCache
 
+# This is needed to ensure that custom ops are registered
+from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
 from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noqa: F401
 
@@ -23,7 +25,10 @@ except:
 
     import executorch
 
-    executorch_package_path = executorch.__path__[0]
+    # Ideally package is installed in only one location but usage of
+    # PYATHONPATH can result in multiple locations.
+    # ATM this is mainly used in CI for qnn runner. Will need to revisit this
+    executorch_package_path = executorch.__path__[-1]
     libs = list(
         glob.glob(
             f"{executorch_package_path}/**/libquantized_ops_aot_lib.*", recursive=True

@@ -152,8 +152,10 @@ test_model_with_qnn() {
   source "$(dirname "${BASH_SOURCE[0]}")/build-qnn-sdk.sh"
   echo "ANDROID_NDK_ROOT: $ANDROID_NDK_ROOT"
   echo "QNN_SDK_ROOT: $QNN_SDK_ROOT"
+  echo "EXECUTORCH_ROOT: $EXECUTORCH_ROOT"
 
   export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/
+  export PYTHONPATH=$EXECUTORCH_ROOT/..
 
   if [[ "${MODEL_NAME}" == "dl3" ]]; then
     EXPORT_SCRIPT=deeplab_v3
