@@ -157,6 +157,28 @@ file(MAKE_DIRECTORY
      ${_program_schema__include_dir}/executorch/devtools/bundled_program
 )
 
+if(WIN32)
+  set(REMOVE_COMMAND "del /F /Q")
+else()
+  set(REMOVE_COMMAND "rm -f")
+endif()
+
+if(WIN32)
+  add_custom_command(
+    OUTPUT ${_etdump_schema__outputs}
+    COMMAND
+      # Note that the flatcc project actually writes its outputs into the source
+      # tree instead of under the binary directory, and there's no way to change
+      # that behavior.
+      ${_flatcc_source_dir}/bin/flatcc -cwr -o
+      ${_program_schema__include_dir}/executorch/devtools/etdump
+      ${_etdump_schema__srcs}
+    # COMMAND powershell -Command "Remove-Item -Path " ${_etdump_schema_cleanup_paths} " -Force -ErrorAction SilentlyContinue"
+    COMMAND powershell -Command "if (" "'${_etdump_schema_cleanup_paths}'" "-ne '') { Remove-Item -Path " "'${_etdump_schema_cleanup_paths}'" " -Force -ErrorAction SilentlyContinue }"
+    DEPENDS ${_etdump_schema_gen_dep}
+    COMMENT "Generating etdump headers"
+  )
+else()
 add_custom_command(
   OUTPUT ${_etdump_schema__outputs}
   COMMAND
@@ -170,6 +192,7 @@ add_custom_command(
   DEPENDS ${_etdump_schema_gen_dep}
   COMMENT "Generating etdump headers"
 )
+endif()
 
 add_library(
   etdump ${CMAKE_CURRENT_SOURCE_DIR}/etdump/etdump_flatcc.cpp
