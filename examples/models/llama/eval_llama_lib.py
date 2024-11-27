@@ -320,7 +320,7 @@ def eval_llama(
 
 def eval_llama_with_attention_sink(
     model_name: str, args: argparse.ArgumentParser
-) -> None:
+):
     """
     Evaluate the model's perplexity when AttentionSink is enabled.
 
@@ -374,3 +374,4 @@ def eval_llama_with_attention_sink(
                 break
     ppl = torch.exp(torch.cat(nlls).mean())
     print(f"Perplexity: {ppl.item()}")
+    return ppl.item()
