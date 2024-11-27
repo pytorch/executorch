@@ -14,6 +14,10 @@
 
 #include <gtest/gtest.h>
 
+#ifdef EXECUTORCH_FB_BUCK
+#include <TestResourceUtils/TestResourceUtils.h>
+#endif
+
 using namespace ::testing;
 
 using ::example::Version;
@@ -21,13 +25,20 @@ using ::executorch::extension::llm::Tokenizer;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
 
+static std::string get_resource_path(const std::string& name) {
+#ifdef EXECUTORCH_FB_BUCK
+  return facebook::xplat::testing::getPathForTestResource("resources/" + name);
+#else
+  return std::getenv("RESOURCES_PATH") + std::string("/") + name;
+#endif
+}
+
 class MultimodalTiktokenV5ExtensionTest : public Test {
  public:
   void SetUp() override {
     executorch::runtime::runtime_init();
     tokenizer_ = get_tiktoken_for_llama(Version::Multimodal);
-    modelPath_ = std::getenv("RESOURCES_PATH") +
-        std::string("/test_tiktoken_tokenizer.model");
+    modelPath_ = get_resource_path("test_tiktoken_tokenizer.model");
   }
 
   std::unique_ptr<Tokenizer> tokenizer_;

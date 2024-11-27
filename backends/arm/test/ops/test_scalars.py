@@ -75,6 +75,12 @@ class TestScalars(unittest.TestCase):
             x = 1.0 + x
             return x
 
+    class ShiftInplaceSub(torch.nn.Module):
+        def forward(self, x):
+            x = x >> 4
+            x -= 10
+            return x
+
     # Inplace ops end with '_' (from aten naming)
     ops = [
         ("Add", Add()),
@@ -160,3 +166,6 @@ class TestScalars(unittest.TestCase):
     @parameterized.expand(tensor_scalar_tests)
     def test_BI(self, test_name: str, op: torch.nn.Module, x, y):
         self._test_add_tosa_BI_pipeline(op, (x, y))
+
+    def test_shift_sub_inplace_tosa_MI(self):
+        self._test_add_tosa_MI_pipeline(self.ShiftInplaceSub(), (torch.IntTensor(5),))
