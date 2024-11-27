@@ -204,7 +204,7 @@ jobs:
             if [ -f "$DOWNLOADED_TOKENIZER_FILE_PATH" ]; then
                 echo "${TOKENIZER_FILE} downloaded successfully at: $DOWNLOADED_TOKENIZER_FILE_PATH"
                 python -m extension.llm.tokenizer.tokenizer -t $DOWNLOADED_TOKENIZER_FILE_PATH -o ./${TOKENIZER_BIN_FILE}
-                ls ./tokenizer.bin
+                ls "${TOKENIZER_BIN_FILE}"
             else
                 echo "Failed to download ${TOKENIZER_FILE} from ${{ matrix.model }}."
                 exit 1
@@ -213,7 +213,10 @@ jobs:
             MODEL_NAME=$(echo "${{ matrix.model }}" | sed 's,/,-,g')
             python -m extension.export_util.export_hf_model -hfm=${{ matrix.model }} -o "${MODEL_NAME}_xnnpack_fp32"
 
-            cp tokenizer.bin *.pte "${ARTIFACTS_DIR_NAME}"
+            # Prepare the model to upload
+            zip -j model.zip *.pte tokenizer.bin
+            mkdir -p "${ARTIFACTS_DIR_NAME}"
+            mv model.zip "${ARTIFACTS_DIR_NAME}"
 
         elif [[ ${{ matrix.model }} =~ ^stories* ]]; then
             # Install requirements for export_llama
