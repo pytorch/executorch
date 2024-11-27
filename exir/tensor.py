@@ -146,6 +146,7 @@ class TensorSpec:
         self.is_sparse = is_sparse
         self.init_mem_planning_fields()
         self.shape_dynamism: TensorShapeDynamism = determine_tensor_dynanism(self.shape)
+        self.node_name = None
 
     @property
     def allocated_memory(self) -> int:
