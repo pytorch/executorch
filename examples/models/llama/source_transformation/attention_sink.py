@@ -7,6 +7,8 @@
 # Components for supporting Attention Sink. See
 # https://arxiv.org/abs/2309.17453 for more details about Attention Sink.
 
+from typing import Optional
+
 import torch
 
 from executorch.examples.models.llama.llama_transformer import ModelArgs, Rope
@@ -23,12 +25,37 @@ class RopeWithAttentionSink(Rope):
     in KVCache instead of positions in the actual text.
     """
 
-    def __init__(self, params: ModelArgs):
+    def __init__(
+        self,
+        params: ModelArgs,
+        window_size: int,
+        sink_size: int,
+        eviction_batch_size: int,
+    ):
         super().__init__(params)
         if self.params.use_hf_rope:
             self.apply_rotary_emb_to_k = hf_apply_rotary_emb_to_k
         else:
             self.apply_rotary_emb_to_k = apply_rotary_emb_to_k
+        self.max_seq_length = window_size + sink_size
+        assert self.max_seq_length == self.params.max_seq_len
+        self.eviction_batch_size = eviction_batch_size
+        self.position_shift = 0
+
+    def get_freqs(self, input_pos: Optional[torch.Tensor], seq_len: int):
+        assert input_pos is not None
+
+        input_pos_item = input_pos.item()
+        torch._check_is_size(input_pos_item)
+        if input_pos_item + self.position_shift + seq_len > self.max_seq_length:
+            # There are not enough spaces in the cache to store the new tokens.
+            # We need to evict some old tokens and shift some recent tokens.
+            num_to_evict = max(
+                input_pos_item + self.position_shift - self.max_seq_length + seq_len,
+                self.eviction_batch_size,
+            )
+            self.position_shift -= num_to_evict  # pyre-ignore [8]
+        return super().get_freqs(input_pos + self.position_shift, seq_len)
 
     def rerotate_k(
         self,
