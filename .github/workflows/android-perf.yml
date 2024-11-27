@@ -213,6 +213,8 @@ jobs:
             MODEL_NAME=$(echo "${{ matrix.model }}" | sed 's,/,-,g')
             python -m extension.export_util.export_hf_model -hfm=${{ matrix.model }} -o "${MODEL_NAME}_xnnpack_fp32"
 
+            cp tokenizer.bin *.pte "${ARTIFACTS_DIR_NAME}"
+
         elif [[ ${{ matrix.model }} =~ ^stories* ]]; then
             # Install requirements for export_llama
             PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
