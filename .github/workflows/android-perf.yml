@@ -200,14 +200,15 @@ jobs:
             TOKENIZER_BIN_FILE=tokenizer.bin
             # Fetch the file using a Python one-liner
             DOWNLOADED_TOKENIZER_FILE_PATH=$(python -c "
-from huggingface_hub import hf_hub_download
-# Download the file from the Hugging Face Hub
-downloaded_path = hf_hub_download(
-  repo_id='${{ matrix.model }}',
-  filename='${TOKENIZER_FILE}'
-)
-print(downloaded_path)
-")
+            from huggingface_hub import hf_hub_download
+            # Download the file from the Hugging Face Hub
+            downloaded_path = hf_hub_download(
+              repo_id='${{ matrix.model }}',
+              filename='${TOKENIZER_FILE}'
+            )
+            print(downloaded_path)
+            ")
+
             if [ -f "$DOWNLOADED_TOKENIZER_FILE_PATH" ]; then
                 echo "${TOKENIZER_FILE} downloaded successfully at: $DOWNLOADED_TOKENIZER_FILE_PATH"
                 python -m extension.llm.tokenizer.tokenizer -t $DOWNLOADED_TOKENIZER_FILE_PATH -o ./${TOKENIZER_BIN_FILE}
