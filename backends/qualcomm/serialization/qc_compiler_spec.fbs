@@ -36,6 +36,7 @@ enum QcomChipset: int {
   SM8550 = 43,
   SSG2115P = 46,
   SM8650 = 57,
+  SA8295 = 39,
 }
 
 /// Indicate the information of the specified SoC.

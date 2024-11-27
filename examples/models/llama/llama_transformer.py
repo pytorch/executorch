@@ -85,6 +85,7 @@ class ModelArgs:
     n_kv_heads: Optional[int] = None
     vocab_size: int = -1  # defined later by tokenizer
     hidden_dim: Optional[int] = None
+    head_dim: Optional[int] = None  # Optional customized head_dim
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
     ffn_dim_multiplier: Optional[float] = None
     norm_eps: float = 1e-5
@@ -142,6 +143,9 @@ class ModelArgs:
                 hidden_dim = int(self.ffn_dim_multiplier * hidden_dim)
             self.hidden_dim = find_multiple(hidden_dim, multiple_of)
 
+        if self.head_dim is None:
+            self.head_dim = self.dim // self.n_heads
+
 
 class Rope(torch.nn.Module):
     def __init__(self, params: ModelArgs):
@@ -154,7 +158,7 @@ class Rope(torch.nn.Module):
                 precompute_freqs_cis, use_scaled=self.params.use_scaled_rope
             )
         freqs_cos, freqs_sin = self.precompute_freqs_cis(
-            self.params.dim // self.params.n_heads,
+            self.params.head_dim,
             (
                 self.params.max_seq_len  # Normal llama2.
                 if self.params.ffn_dim_multiplier is None
@@ -173,9 +177,22 @@ class Rope(torch.nn.Module):
         self,
         q: torch.Tensor,
         k: torch.Tensor,
-        input_pos: Optional[torch.Tensor] = None,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
     ):
-        seq_len = q.shape[1]
+        return self.apply_rotary_emb(q, k, freqs_cos, freqs_sin)
+
+    def get_freqs(self, input_pos: Optional[torch.Tensor], seq_len: int):
+        """
+        Get the precomputed frequencies for the given input position and sequence length.
+
+        Args:
+            input_pos (torch.Tensor): The input position tensor.
+            seq_len (int): The sequence length.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: The precomputed frequencies for the given input position and sequence length.
+        """
         if self.params.use_kv_cache:
             assert (
                 input_pos is not None
@@ -195,9 +212,6 @@ class Rope(torch.nn.Module):
                 # symints, due to querying the data from tensor.
                 # this path avoids that for mps backend, although probably mps backend
                 # can support dynamic shape?
-                assert (
-                    seq_len == 1
-                ), "Expected seq_len to be 1 when using kv_cache without dynamic shape"
                 freqs_cos = self.freqs_cos[input_pos]
                 freqs_sin = self.freqs_sin[input_pos]
 
@@ -205,8 +219,7 @@ class Rope(torch.nn.Module):
             assert input_pos is None, "input_pos is unused when use_kv_cache is False"
             freqs_cos = self.freqs_cos[:seq_len]
             freqs_sin = self.freqs_sin[:seq_len]
-        q, k = self.apply_rotary_emb(q, k, freqs_cos, freqs_sin)
-        return q, k
+        return freqs_cos, freqs_sin
 
 
 class KVCache(nn.Module):
@@ -338,7 +351,7 @@ class Attention(nn.Module):
         self.n_local_heads = self.n_heads // model_parallel_size
         self.n_local_kv_heads = self.n_kv_heads // model_parallel_size
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
-        self.head_dim = args.dim // self.n_heads
+        self.head_dim = args.head_dim
         self.max_batch_size = args.max_batch_size
         self.max_seq_len = args.max_seq_len
         self.dim = args.dim
@@ -372,7 +385,7 @@ class Attention(nn.Module):
             )
             self.SDPA = SDPA(
                 kv_cache=self.kv_cache,
-                dim=self.dim,
+                dim=self.n_local_heads * self.head_dim,
                 head_dim=self.head_dim,
                 n_rep=self.n_rep,
                 max_seq_len=self.max_seq_len,
@@ -382,6 +395,8 @@ class Attention(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
         input_pos: Optional[torch.Tensor] = None,
     ):
         bsz, seqlen, _ = x.shape
@@ -394,7 +409,7 @@ class Attention(nn.Module):
         v = v.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
 
         # RoPE relative positional embeddings
-        q, k = self.rope.forward(q, k, input_pos)
+        q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
 
         if self.use_kv_cache:
             assert input_pos is not None
@@ -487,7 +502,7 @@ class TransformerBlock(nn.Module):
         self.use_kv_cache = args.use_kv_cache
         self.n_heads = args.n_heads
         self.dim = args.dim
-        self.head_dim = args.dim // args.n_heads
+        self.head_dim = args.head_dim
         self.attention = Attention(args, layer_id, rope)
         if args.moe:
             self.block_sparse_moe = MOEFeedForward(args)
@@ -496,8 +511,10 @@ class TransformerBlock(nn.Module):
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-    def forward(self, x, input_pos=None):  # x: 1xN
-        h = self.attention.forward(self.attention_norm(x), input_pos)
+    def forward(self, x, freqs_cos, freqs_sin, input_pos=None):  # x: 1xN
+        h = self.attention.forward(
+            self.attention_norm(x), freqs_cos, freqs_sin, input_pos
+        )
 
         h = x + h
         if hasattr(self, "block_sparse_moe"):
@@ -541,9 +558,16 @@ class Transformer(nn.Module):
             )
         if tokens is not None and h is None:
             h = self.tok_embeddings(tokens)
+        seqlen = h.shape[1]
+        freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, seqlen)
 
         for layer in self.layers:
-            h = layer(h, input_pos)
+            h = layer(
+                h,
+                freqs_cos,
+                freqs_sin,
+                input_pos,
+            )
 
         if not self.generate_full_logits:
             # Only the last logit is used for the new generated token
