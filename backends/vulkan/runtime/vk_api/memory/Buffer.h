@@ -195,8 +195,8 @@ class MemoryMap final {
 
  public:
   template <typename T>
-  T* data(const uint32_t offset = 0) {
-    return reinterpret_cast<T*>(static_cast<uint8_t*>(data_) + offset);
+  T* data() {
+    return reinterpret_cast<T*>(data_);
   }
 
   inline size_t nbytes() {

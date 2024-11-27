@@ -795,7 +795,7 @@ struct PyModule final {
           py::isinstance<py::str>(debug_buffer_path)) {
         // Also write out the debug buffer to a separate file if requested.
         std::string debug_buffer_path_str =
-            py::cast<py::str>(debug_buffer_path);
+            py::cast<std::string>(debug_buffer_path);
         const auto debug_buffer = module_->get_etdump_debug_buffer();
         write_data_to_file(
             debug_buffer_path_str, debug_buffer.data(), debug_buffer.size());

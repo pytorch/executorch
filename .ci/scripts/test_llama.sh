@@ -27,6 +27,10 @@ while [[ $# -gt 0 ]]; do
       MODE="$2" # portable or xnnpack+custom or xnnpack+custom+qe
       shift 2
       ;;
+    -pt2e_quantize)
+      PT2E_QUANTIZE="$2"
+      shift 2
+      ;;
     -upload)
       UPLOAD_DIR="$2"
       shift 2
@@ -43,6 +47,9 @@ MODE=${MODE:-"xnnpack+custom"}
 
 # Default UPLOAD_DIR to empty string if not set
 UPLOAD_DIR="${UPLOAD_DIR:-}"
+
+# Default PT2E_QUANTIZE to empty string if not set
+PT2E_QUANTIZE="${PT2E_QUANTIZE:-}"
 
 if [[ $# -lt 4 ]]; then # Assuming 4 mandatory args
     echo "Expecting atleast 4 positional arguments"
@@ -234,6 +241,10 @@ if [[ "${COREML}" == "ON" ]]; then
 fi
 if [[ "${QNN}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} -kv -v --qnn --disable_dynamic_shape"
+  echo "PT2E_QUANTIZE is ${PT2E_QUANTIZE}"
+  if [[ "${PT2E_QUANTIZE}" == "qnn_16a16w" ]]; then
+    EXPORT_ARGS+=" --tokenizer_path tokenizer.model --pt2e_quantize qnn_16a16w --calibration_tasks wikitext --calibration_limit 1 --calibration_seq_length 128 --calibration_data Once "
+  fi
 fi
 # Add dynamically linked library location
 $PYTHON_EXECUTABLE -m examples.models.llama.export_llama ${EXPORT_ARGS}
