@@ -51,7 +51,10 @@ jobs:
       test-infra-repository: pytorch/test-infra
       test-infra-ref: main
       build-matrix: ${{ needs.generate-matrix.outputs.matrix }}
-      submodules: recursive
+      # ExecuTorch only needs the first layer of submodules; override the
+      # "recursive" default to do less work, and to give the buck daemon fewer
+      # files to look at.
+      submodules: true
       env-var-script: build/packaging/env_var_script_linux.sh
       pre-script: ${{ matrix.pre-script }}
       post-script: ${{ matrix.post-script }}

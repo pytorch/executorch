@@ -51,9 +51,6 @@ UPLOAD_DIR="${UPLOAD_DIR:-}"
 # Default PT2E_QUANTIZE to empty string if not set
 PT2E_QUANTIZE="${PT2E_QUANTIZE:-}"
 
-# Default CMake Build Type to release mode
-CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release}
-
 if [[ $# -lt 4 ]]; then # Assuming 4 mandatory args
     echo "Expecting atleast 4 positional arguments"
     echo "Usage: [...]"
@@ -146,7 +143,7 @@ cmake_install_executorch_libraries() {
     rm -rf cmake-out
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
+        -DCMAKE_BUILD_TYPE=Debug \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
@@ -160,7 +157,7 @@ cmake_install_executorch_libraries() {
         -DQNN_SDK_ROOT="$QNN_SDK_ROOT" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
-    cmake --build cmake-out -j9 --target install --config "$CMAKE_BUILD_TYPE"
+    cmake --build cmake-out -j9 --target install --config Debug
 }
 
 cmake_build_llama_runner() {
@@ -168,14 +165,14 @@ cmake_build_llama_runner() {
     dir="examples/models/llama"
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
+        -DCMAKE_BUILD_TYPE=Debug \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM="$CUSTOM" \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out/${dir} \
         ${dir}
-    cmake --build cmake-out/${dir} -j9 --config "$CMAKE_BUILD_TYPE"
+    cmake --build cmake-out/${dir} -j9 --config Debug
 
 }
 
