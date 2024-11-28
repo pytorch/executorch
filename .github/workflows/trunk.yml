@@ -131,7 +131,7 @@ jobs:
 
   test-arm-backend-delegation:
     name: test-arm-backend-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-arm-sdk
@@ -157,7 +157,7 @@ jobs:
 
   test-arm-reference-delegation:
     name: test-arm-reference-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-arm-sdk
@@ -290,7 +290,7 @@ jobs:
   #       ${CONDA_RUN} python -m unittest examples.models.llava.test.test_llava
 
   #       # run e2e (export, tokenizer and runner)
-  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llava.sh Release
+  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llava.sh
 
   test-qnn-model:
     name: test-qnn-model
@@ -351,6 +351,8 @@ jobs:
         done
 
   test-huggingface-transformers:
+    # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
+    if: ${{ !github.event.pull_request.head.repo.fork }}
     name: test-huggingface-transformers
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     secrets: inherit
