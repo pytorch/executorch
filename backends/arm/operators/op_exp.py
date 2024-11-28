@@ -34,7 +34,6 @@ class ExpVisitor_0_80_MI(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
 
         assert len(node.all_input_nodes) == 1

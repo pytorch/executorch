@@ -39,7 +39,6 @@ class MulVisitor_080_BI(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         assert inputs[0].dtype == inputs[1].dtype == output.dtype == ts.DType.INT8
         input_A = inputs[0]
@@ -97,10 +96,9 @@ class MulVisitor_080_MI(MulVisitor_080_BI):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         if inputs[0].dtype == ts.DType.INT8:
-            return super().define_node(node, tosa_graph, inputs, output, is_quant_node)
+            return super().define_node(node, tosa_graph, inputs, output)
         attr = ts.TosaSerializerAttribute()
         attr.MulAttribute(shift=0)
         tosa_graph.addOperator(

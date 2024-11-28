@@ -38,7 +38,6 @@ class SumVisitor_080_BI(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         input_shape = list(inputs[0].shape)
         dim_list = cast(list[int], inputs[1].special)
@@ -94,10 +93,9 @@ class SumVisitor_080_MI(SumVisitor_080_BI):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         if inputs[0].dtype == ts.DType.INT8:
-            return super().define_node(node, tosa_graph, inputs, output, is_quant_node)
+            return super().define_node(node, tosa_graph, inputs, output)
         input_name = inputs[0].name
         reduced_shape = list(inputs[0].shape)
         dim_list = cast(list[int], inputs[1].special)

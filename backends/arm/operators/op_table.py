@@ -29,7 +29,6 @@ class TableVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         assert node.name in self._exported_program.state_dict.keys()
         assert inputs[0].dtype == output.dtype == ts.DType.INT8

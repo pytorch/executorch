@@ -32,7 +32,6 @@ class ReluVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: list[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         attr = ts.TosaSerializerAttribute()
 

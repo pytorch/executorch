@@ -41,7 +41,6 @@ class MMVisitor_080_BI(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         # For atem.mm, the two inputs are of rank 2
         # For TOSA it needs to be rank 3
@@ -117,10 +116,9 @@ class MMVisitor_080_MI(MMVisitor_080_BI):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         if inputs[0].dtype == ts.DType.INT8:
-            return super().define_node(node, tosa_graph, inputs, output, is_quant_node)
+            return super().define_node(node, tosa_graph, inputs, output)
         reshape_dtype = output.dtype
         # For atem.mm, the two inputs are of rank 2
         # For TOSA it needs to be rank 3

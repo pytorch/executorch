@@ -36,6 +36,5 @@ class ToCopyVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         tosa_graph.addOperator(TosaOp.Op().CAST, [inputs[0].name], [output.name])

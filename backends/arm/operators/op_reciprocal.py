@@ -33,7 +33,6 @@ class ReciprocalVisitor_080_MI(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         assert inputs[0].dtype == output.dtype == ts.DType.FP32
         tosa_graph.addOperator(TosaOp.Op().RECIPROCAL, [inputs[0].name], [output.name])

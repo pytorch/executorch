@@ -33,7 +33,6 @@ class SelectVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
 
         assert len(inputs) == 3
