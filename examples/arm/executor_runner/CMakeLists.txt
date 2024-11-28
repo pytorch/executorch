@@ -234,6 +234,7 @@ target_link_libraries(
   quantized_kernels
   portable_kernels
   "-Wl,--no-whole-archive"
+  -Xlinker -Map=arm_executor_runner.map
 )
 
 # ET headers and generated headers includes

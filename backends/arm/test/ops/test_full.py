@@ -97,7 +97,7 @@ class TestFull(unittest.TestCase):
     def _test_full_tosa_ethos_pipeline(
         self, compile_spec: list[CompileSpec], module: torch.nn.Module, test_data: Tuple
     ):
-        (
+        tester = (
             ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize()
             .export()
@@ -107,7 +107,10 @@ class TestFull(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_full_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if common.is_option_enabled("corstone300"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     def _test_full_tosa_u55_pipeline(self, module: torch.nn.Module, test_data: Tuple):
         self._test_full_tosa_ethos_pipeline(
@@ -140,14 +143,18 @@ class TestFull(unittest.TestCase):
     def test_full_tosa_BI(self, test_tensor: Tuple):
         self._test_full_tosa_BI_pipeline(self.AddVariableFull(), test_tensor, False)
 
+    # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(AddVariableFull.test_parameters)
+    @common.expectedFailureOnFVP
     def test_full_u55_BI(self, test_tensor: Tuple):
         self._test_full_tosa_u55_pipeline(
             self.AddVariableFull(),
             test_tensor,
         )
 
+    # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(AddVariableFull.test_parameters)
+    @common.expectedFailureOnFVP
     def test_full_u85_BI(self, test_tensor: Tuple):
         self._test_full_tosa_u85_pipeline(
             self.AddVariableFull(),
