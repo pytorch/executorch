@@ -71,23 +71,15 @@ class TestCoreMLPartitioner(unittest.TestCase):
             )
         )
 
-        conv_block = ["aten.convolution.default", "executorch_call_delegate"]
-        safe_softmax_block = [
-            "getitem",
-            "getitem",
-            "getitem",
-            "getitem",
-            "aten.any.dim",
-            "executorch_call_delegate",
-        ]
-        final_block = ["getitem"]
-        total = conv_block + 12 * safe_softmax_block + final_block
-
         assert [
             node.target.__name__
             for node in delegated_program_manager.exported_program().graph.nodes
             if node.op == "call_function"
-        ] == total
+        ] == [
+            "aten.convolution.default",
+            "executorch_call_delegate",
+            "getitem",
+        ]
 
     def test_buffer(self):
         embedding_dim = 3

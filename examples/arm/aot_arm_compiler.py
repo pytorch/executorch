@@ -245,7 +245,9 @@ def get_calibration_data(
 
 
 def get_compile_spec(
-    target: str, intermediates: Optional[str] = None
+    target: str,
+    intermediates: Optional[str] = None,
+    reorder_inputs: Optional[str] = None,
 ) -> ArmCompileSpecBuilder:
     spec_builder = None
     if target == "TOSA":
@@ -265,6 +267,7 @@ def get_compile_spec(
             )
             .set_permute_memory_format(True)
             .set_quantize_io(True)
+            .set_input_order(reorder_inputs)
         )
     elif "ethos-u85" in target:
         spec_builder = (
@@ -277,6 +280,7 @@ def get_compile_spec(
             )
             .set_permute_memory_format(True)
             .set_quantize_io(True)
+            .set_input_order(reorder_inputs)
         )
 
     if intermediates is not None:
@@ -419,6 +423,14 @@ def get_args():
         required=False,
         help="Location for outputs, if not the default of cwd.",
     )
+    parser.add_argument(
+        "-r",
+        "--reorder_inputs",
+        type=str,
+        required=False,
+        default=None,
+        help="Provide the order of the inputs. This can be required when inputs > 1.",
+    )
     args = parser.parse_args()
 
     if args.evaluate and (
@@ -481,7 +493,9 @@ if __name__ == "__main__":
     if args.delegate:
         # As we can target multiple output encodings from ArmBackend, one must
         # be specified.
-        compile_spec = get_compile_spec(args.target, args.intermediates)
+        compile_spec = get_compile_spec(
+            args.target, args.intermediates, args.reorder_inputs
+        )
         edge = to_edge_transform_and_lower(
             exported_program,
             partitioner=[ArmPartitioner(compile_spec)],

@@ -17,24 +17,14 @@ def prod_srcs_for_arch_wrapper(arch):
     return define_xnnpack_build_src(prod_srcs)
 
 def get_xnnpack_headers():
-    # XNNPACK Headers in the path containing xnnpack/ or configs/
-    # do not contain the src/ path. However headers not in xnnpack/ or
-    # configs/ are prepend with the src/ path. This function helps us
-    # to correctly parse all the header files to the correct name
     src_headers = subdir_glob([
         ("XNNPACK/src", "**/*.h"),
     ])
-    fixed_headers = {}
-    for k, v in src_headers.items():
-        new_key = k
-        if not k.startswith("xnnpack") and not k.startswith("configs"):
-            new_key = "src/{}".format(k)
-        fixed_headers[new_key] = v
     include_headers = subdir_glob([
         ("XNNPACK/include", "*.h"),
     ])
 
-    return fixed_headers | include_headers
+    return src_headers | include_headers
 
 OPERATOR_SRCS = define_xnnpack_build_src(_OPERATOR_SRCS)
 SUBGRAPH_SRCS = define_xnnpack_build_src(_SUBGRAPH_SRCS)

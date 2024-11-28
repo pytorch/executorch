@@ -50,6 +50,26 @@ python_library(
     ],
 )
 
+python_library(
+    name = "export_example",
+    srcs = [
+        "export_example.py",
+    ],
+    deps = [
+        ":passes",
+        ":utils",
+        ":ops_registrations",
+        ":replace_ops",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot/quantizer:fusion_pass",
+        "//executorch/backends/cadence/runtime:runtime",
+        "//executorch/backends/cadence/aot/quantizer:quantizer",
+        "//executorch/backends/transforms:decompose_sdpa",
+        "//executorch/backends/transforms:remove_clone_ops",
+        "//executorch/exir:lib",
+        "//executorch/devtools:lib",
+    ],
+)
 
 python_library(
     name = "pass_utils",

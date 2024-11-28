@@ -1,0 +1,26 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("odai_jarvis")
+
+
+python_unittest(
+    name = "test_add_op",
+    srcs = [
+        "test_add_op.py",
+    ],
+    typing = True,
+    supports_static_listing = False,
+    deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:ops_registrations",
+        "//executorch/backends/cadence/aot:export_example",
+        "//executorch/backends/cadence/aot:compiler",
+    ],
+)
