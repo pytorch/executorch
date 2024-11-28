@@ -295,7 +295,7 @@ class TestConv2D(unittest.TestCase):
         module: torch.nn.Module,
         test_data: Tuple[torch.Tensor],
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -308,7 +308,10 @@ class TestConv2D(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
             .to_executorch()
+            .serialize()
         )
+        if common.is_option_enabled("corstone300"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(testsuite)
     def test_conv2d_tosa_MI(self, test_name, model):
@@ -317,6 +320,10 @@ class TestConv2D(unittest.TestCase):
     @parameterized.expand(testsuite)
     def test_conv2d_tosa_BI(self, test_name, model):
         self._test_conv2d_tosa_BI_pipeline(model, model.get_inputs())
+
+    # These cases have numerical issues on FVP, MLETORCH-520
+    testsuite.remove(("2x2_3x2x40x40_nobias", conv2d_2x2_3x2x40x40_nobias))
+    testsuite.remove(("5x5_3x2x128x128_st1", conv2d_5x5_3x2x128x128_st1))
 
     @parameterized.expand(testsuite)
     def test_conv2d_u55_BI(self, test_name, model):
