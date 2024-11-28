@@ -136,10 +136,10 @@ class TestDiv(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data, atol=1, rtol=0.1)
         )
 
-    def _test_div_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
+    def _test_div_ethos_BI_pipeline(
+        self, module: torch.nn.Module, compile_spec, test_data: Tuple[torch.Tensor]
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -155,7 +155,10 @@ class TestDiv(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if common.is_option_enabled("corstone300"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(test_data_suite)
     def test_div_tosa_MI(
@@ -180,7 +183,9 @@ class TestDiv(unittest.TestCase):
         test_data = (input_, other_)
         self._test_div_tosa_BI_pipeline(self.Div(), test_data)
 
+    # Numerical issues on FVP likely due to mul op, MLETORCH-521
     @parameterized.expand(test_data_suite)
+    @common.expectedFailureOnFVP
     def test_div_u55_BI(
         self,
         test_name: str,
@@ -189,4 +194,21 @@ class TestDiv(unittest.TestCase):
         rounding_mode: Optional[str] = None,
     ):
         test_data = (input_, other_)
-        self._test_div_u55_BI_pipeline(self.Div(), test_data)
+        self._test_div_ethos_BI_pipeline(
+            self.Div(), common.get_u55_compile_spec(), test_data
+        )
+
+    # Numerical issues on FVP likely due to mul op, MLETORCH-521
+    @parameterized.expand(test_data_suite)
+    @common.expectedFailureOnFVP
+    def test_div_u85_BI(
+        self,
+        test_name: str,
+        input_: Union[torch.Tensor, torch.types.Number],
+        other_: Union[torch.Tensor, torch.types.Number],
+        rounding_mode: Optional[str] = None,
+    ):
+        test_data = (input_, other_)
+        self._test_div_ethos_BI_pipeline(
+            self.Div(), common.get_u85_compile_spec(), test_data
+        )
