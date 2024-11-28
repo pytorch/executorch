@@ -351,4 +351,3 @@ Tensor& pow_Scalar_out(
 } // namespace HiFi
 } // namespace impl
 } // namespace cadence
-

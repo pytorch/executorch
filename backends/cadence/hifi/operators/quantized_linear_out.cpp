@@ -26,8 +26,7 @@ using ::executorch::aten::Tensor;
 using ::executorch::runtime::getLeadingDims;
 using ::executorch::runtime::KernelRuntimeContext;
 
-
-    // The nnlib kernel to compute quantized linear via matmul.
+// The nnlib kernel to compute quantized linear via matmul.
 
 void _quantized_linear_asym8u(
     const Tensor& in,
@@ -48,22 +47,22 @@ void _quantized_linear_asym8u(
   const int32_t* __restrict__ bias_data = bias.const_data_ptr<int32_t>();
   uint8_t* __restrict__ out_data = out.mutable_data_ptr<uint8_t>();
   int32_t ret = xa_nn_matmul_asym8uxasym8u_asym8u(
-        out_data,
-        weight_data,
-        in_data,
-        bias_data,
-        out_dim,
-        in_dim,
-        in_dim,
-        leading_dims,
-        in_dim,
-        out_dim,
-        1,
+      out_data,
+      weight_data,
+      in_data,
+      bias_data,
+      out_dim,
+      in_dim,
+      in_dim,
+      leading_dims,
+      in_dim,
+      out_dim,
+      1,
       -weight_zero_point.const_data_ptr<int32_t>()[0], // mat1_zero_bias
       -in_zero_point, // mat2_zero_bias
-        out_multiplier.const_data_ptr<int32_t>()[0],
-        out_shift.const_data_ptr<int32_t>()[0],
-        out_zero_point);
+      out_multiplier.const_data_ptr<int32_t>()[0],
+      out_shift.const_data_ptr<int32_t>()[0],
+      out_zero_point);
   ET_DCHECK_MSG(ret == 0, "HiFi quantized::linear failed");
 }
 
