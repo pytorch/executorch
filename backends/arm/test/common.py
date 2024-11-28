@@ -29,6 +29,7 @@ class arm_test_options(Enum):
     corstone300 = auto()
     dump_path = auto()
     date_format = auto()
+    fast_fvp = auto()
 
 
 _test_options: dict[arm_test_options, Any] = {}
@@ -41,6 +42,7 @@ def pytest_addoption(parser):
     parser.addoption("--arm_run_corstone300", action="store_true")
     parser.addoption("--default_dump_path", default=None)
     parser.addoption("--date_format", default="%d-%b-%H:%M:%S")
+    parser.addoption("--fast_fvp", action="store_true")
 
 
 def pytest_configure(config):
@@ -63,6 +65,7 @@ def pytest_configure(config):
                 f"Supplied argument 'default_dump_path={dump_path}' that does not exist or is not a directory."
             )
     _test_options[arm_test_options.date_format] = config.option.date_format
+    _test_options[arm_test_options.fast_fvp] = config.option.fast_fvp
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 
@@ -213,29 +216,44 @@ def get_tosa_compile_spec_unbuilt(
 
 
 def get_u55_compile_spec(
-    permute_memory_to_nhwc=True, quantize_io=False, custom_path=None
+    permute_memory_to_nhwc=True,
+    quantize_io=False,
+    custom_path=None,
+    reorder_inputs=None,
 ) -> list[CompileSpec]:
     """
     Default compile spec for Ethos-U55 tests.
     """
     return get_u55_compile_spec_unbuilt(
-        permute_memory_to_nhwc, quantize_io=quantize_io, custom_path=custom_path
+        permute_memory_to_nhwc,
+        quantize_io=quantize_io,
+        custom_path=custom_path,
+        reorder_inputs=reorder_inputs,
     ).build()
 
 
 def get_u85_compile_spec(
-    permute_memory_to_nhwc=True, quantize_io=False, custom_path=None
+    permute_memory_to_nhwc=True,
+    quantize_io=False,
+    custom_path=None,
+    reorder_inputs=None,
 ) -> list[CompileSpec]:
     """
     Default compile spec for Ethos-U85 tests.
     """
     return get_u85_compile_spec_unbuilt(
-        permute_memory_to_nhwc, quantize_io=quantize_io, custom_path=custom_path
+        permute_memory_to_nhwc,
+        quantize_io=quantize_io,
+        custom_path=custom_path,
+        reorder_inputs=reorder_inputs,
     ).build()
 
 
 def get_u55_compile_spec_unbuilt(
-    permute_memory_to_nhwc=True, quantize_io=False, custom_path=None
+    permute_memory_to_nhwc=True,
+    quantize_io=False,
+    custom_path=None,
+    reorder_inputs=None,
 ) -> ArmCompileSpecBuilder:
     """Get the ArmCompileSpecBuilder for the Ethos-U55 tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -254,12 +272,16 @@ def get_u55_compile_spec_unbuilt(
         .set_quantize_io(is_option_enabled("quantize_io") or quantize_io)
         .set_permute_memory_format(permute_memory_to_nhwc)
         .dump_intermediate_artifacts_to(artifact_path)
+        .set_input_order(reorder_inputs)
     )
     return compile_spec
 
 
 def get_u85_compile_spec_unbuilt(
-    permute_memory_to_nhwc=True, quantize_io=False, custom_path=None
+    permute_memory_to_nhwc=True,
+    quantize_io=False,
+    custom_path=None,
+    reorder_inputs=None,
 ) -> list[CompileSpec]:
     """Get the ArmCompileSpecBuilder for the Ethos-U85 tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -276,6 +298,7 @@ def get_u85_compile_spec_unbuilt(
         .set_quantize_io(is_option_enabled("quantize_io") or quantize_io)
         .set_permute_memory_format(permute_memory_to_nhwc)
         .dump_intermediate_artifacts_to(artifact_path)
+        .set_input_order(reorder_inputs)
     )
     return compile_spec
 
@@ -307,3 +330,14 @@ def _clean_dir(dir: Path, filter: str, num_save=10):
         for remove in sorted_files[0 : len(sorted_files) - num_save]:
             file = remove[1]
             file.unlink()
+
+
+def get_target_board(compile_spec: list[CompileSpec]) -> str | None:
+    for spec in compile_spec:
+        if spec.key == "compile_flags":
+            flags = spec.value.decode()
+            if "u55" in flags:
+                return "corstone-300"
+            elif "u85" in flags:
+                return "corstone-320"
+    return None

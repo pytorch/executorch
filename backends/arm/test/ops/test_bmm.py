@@ -41,7 +41,7 @@ class TestBMM(unittest.TestCase):
     class BMMSingleInput(torch.nn.Module):
         test_parameters = [
             (torch.rand(20, 3, 3),),
-            (torch.ones(2, 128, 128),),
+            (torch.rand(2, 128, 128),),
             (10000 * torch.randn(4, 25, 25),),
             (5 + 5 * torch.randn(3, 64, 64),),
         ]
@@ -96,7 +96,7 @@ class TestBMM(unittest.TestCase):
         compile_spec: CompileSpec,
         test_data: Tuple[torch.Tensor, ...],
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -110,7 +110,10 @@ class TestBMM(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if common.is_option_enabled("corstone300"):
+            tester.run_method_and_compare_outputs(inputs=test_data, qtol=1)
 
     @parameterized.expand(BMM.test_parameters)
     def test_bmm_tosa_MI(self, operand1: torch.Tensor, operand2: torch.Tensor):
@@ -143,9 +146,20 @@ class TestBMM(unittest.TestCase):
         self._test_bmm_tosa_BI_pipeline(self.BMMSingleInput(), test_data)
 
     @parameterized.expand(BMM.test_parameters)
+    @unittest.expectedFailure
     def test_bmm_u55_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
-        self._test_bmm_tosa_BI_pipeline(self.BMM(), test_data)
+        self._test_bmm_ethosu_BI_pipeline(
+            self.BMM(), common.get_u55_compile_spec(), test_data
+        )
+
+    @parameterized.expand(BMM.test_parameters)
+    @common.expectedFailureOnFVP
+    def test_bmm_u85_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
+        test_data = (operand1, operand2)
+        self._test_bmm_ethosu_BI_pipeline(
+            self.BMM(), common.get_u85_compile_spec(), test_data
+        )
 
     # Expected to fail with error: Warning, unsupported fusing of TOSA Rescale previous operator is of type: Memcpy
     @parameterized.expand(BMMSingleInput.test_parameters)
@@ -156,7 +170,9 @@ class TestBMM(unittest.TestCase):
             self.BMMSingleInput(), common.get_u55_compile_spec(), test_data
         )
 
+    # Numerical issues on FVP, MLETORCH 534
     @parameterized.expand(BMMSingleInput.test_parameters)
+    @common.expectedFailureOnFVP
     def test_bmm_single_input_u85_BI(self, operand1: torch.Tensor):
         test_data = (operand1,)
         self._test_bmm_ethosu_BI_pipeline(

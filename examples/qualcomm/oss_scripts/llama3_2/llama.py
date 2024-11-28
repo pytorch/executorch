@@ -293,10 +293,7 @@ def compile(args):
         start_quantize_ts = time.time()
         single_llama.quantize(
             quant_dtype,
-            custom_annotations=(
-                custom_annotate_llama_last_conv_16a8w,
-                annotate_matmul_16a8w,
-            ),
+            custom_annotations=(annotate_matmul_16a8w,),
         )
         end_quantize_ts = time.time()
         logging.info(f"Time for quantizing: {end_quantize_ts - start_quantize_ts}")
