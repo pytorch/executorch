@@ -85,6 +85,7 @@ class ModelArgs:
     n_kv_heads: Optional[int] = None
     vocab_size: int = -1  # defined later by tokenizer
     hidden_dim: Optional[int] = None
+    head_dim: Optional[int] = None  # Optional customized head_dim
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
     ffn_dim_multiplier: Optional[float] = None
     norm_eps: float = 1e-5
@@ -141,6 +142,84 @@ class ModelArgs:
             if self.ffn_dim_multiplier is not None:
                 hidden_dim = int(self.ffn_dim_multiplier * hidden_dim)
             self.hidden_dim = find_multiple(hidden_dim, multiple_of)
+
+        if self.head_dim is None:
+            self.head_dim = self.dim // self.n_heads
+
+
+class Rope(torch.nn.Module):
+    def __init__(self, params: ModelArgs):
+        super().__init__()
+        self.params = params
+        if self.params.use_hf_rope:
+            self.precompute_freqs_cis = hf_precompute_freqs_cis
+        else:
+            self.precompute_freqs_cis = partial(
+                precompute_freqs_cis, use_scaled=self.params.use_scaled_rope
+            )
+        freqs_cos, freqs_sin = self.precompute_freqs_cis(
+            self.params.head_dim,
+            (
+                self.params.max_seq_len  # Normal llama2.
+                if self.params.ffn_dim_multiplier is None
+                else self.params.max_seq_len * 2  # Sharded checkpoint.
+            ),
+            self.params.rope_freq_base,
+        )
+        self.register_buffer("freqs_cos", freqs_cos, persistent=False)
+        self.register_buffer("freqs_sin", freqs_sin, persistent=False)
+        if self.params.use_hf_rope:
+            self.apply_rotary_emb = hf_apply_rotary_emb
+        else:
+            self.apply_rotary_emb = RotaryEmbedding()
+
+    def forward(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
+    ):
+        return self.apply_rotary_emb(q, k, freqs_cos, freqs_sin)
+
+    def get_freqs(self, input_pos: Optional[torch.Tensor], seq_len: int):
+        """
+        Get the precomputed frequencies for the given input position and sequence length.
+
+        Args:
+            input_pos (torch.Tensor): The input position tensor.
+            seq_len (int): The sequence length.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: The precomputed frequencies for the given input position and sequence length.
+        """
+        if self.params.use_kv_cache:
+            assert (
+                input_pos is not None
+            ), "input_pos must be provided when use_kv_cache is True"
+
+            if self.params.enable_dynamic_shape:
+                # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
+                input_pos_item = input_pos[-1].item()
+                torch._check_is_size(input_pos_item)
+                torch._check(input_pos_item < self.params.max_seq_len)
+                # pyre-ignore: Incompatible parameter type [6]: torch.narrow does expect int or Tensor
+                freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seq_len)
+                # pyre-ignore: Incompatible parameter type [6]
+                freqs_sin = self.freqs_sin.narrow(0, input_pos_item, seq_len)
+            else:
+                # When not using dynamic shape, use of the .item results in
+                # symints, due to querying the data from tensor.
+                # this path avoids that for mps backend, although probably mps backend
+                # can support dynamic shape?
+                freqs_cos = self.freqs_cos[input_pos]
+                freqs_sin = self.freqs_sin[input_pos]
+
+        else:
+            assert input_pos is None, "input_pos is unused when use_kv_cache is False"
+            freqs_cos = self.freqs_cos[:seq_len]
+            freqs_sin = self.freqs_sin[:seq_len]
+        return freqs_cos, freqs_sin
 
 
 class KVCache(nn.Module):
@@ -262,7 +341,7 @@ class SDPA(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, args: ModelArgs, layer_id: int):
+    def __init__(self, args: ModelArgs, layer_id: int, rope: Rope):
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
         self.n_heads = args.n_heads
@@ -272,7 +351,7 @@ class Attention(nn.Module):
         self.n_local_heads = self.n_heads // model_parallel_size
         self.n_local_kv_heads = self.n_kv_heads // model_parallel_size
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
-        self.head_dim = args.dim // self.n_heads
+        self.head_dim = args.head_dim
         self.max_batch_size = args.max_batch_size
         self.max_seq_len = args.max_seq_len
         self.dim = args.dim
@@ -282,6 +361,8 @@ class Attention(nn.Module):
         self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
 
         self.layer_id = layer_id
+
+        self.rope = rope
 
         causal_mask = torch.tril(
             torch.ones(
@@ -299,21 +380,17 @@ class Attention(nn.Module):
                 args.max_seq_len,
                 self.n_kv_heads,
                 self.head_dim,
-                not args.use_sdpa_with_kv_cache_op,  # if we are using the custom op dont transpose the cache. Expect untransposed q k v
+                not args.use_sdpa_with_kv_cache_op,  # if we are using the custom op don't transpose the cache. Expect untransposed q k v
                 args.enable_dynamic_shape,
             )
             self.SDPA = SDPA(
                 kv_cache=self.kv_cache,
-                dim=self.dim,
+                dim=self.n_local_heads * self.head_dim,
                 head_dim=self.head_dim,
                 n_rep=self.n_rep,
                 max_seq_len=self.max_seq_len,
                 enable_dynamic_shape=args.enable_dynamic_shape,
             )
-        if args.use_hf_rope:
-            self.apply_rotary_emb = hf_apply_rotary_emb
-        else:
-            self.apply_rotary_emb = RotaryEmbedding()
 
     def forward(
         self,
@@ -332,7 +409,7 @@ class Attention(nn.Module):
         v = v.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
 
         # RoPE relative positional embeddings
-        q, k = self.apply_rotary_emb(q, k, freqs_cos, freqs_sin)
+        q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
 
         if self.use_kv_cache:
             assert input_pos is not None
@@ -420,13 +497,13 @@ class MOEFeedForward(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, layer_id: int, args: ModelArgs):
+    def __init__(self, layer_id: int, args: ModelArgs, rope: Rope):
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
         self.n_heads = args.n_heads
         self.dim = args.dim
-        self.head_dim = args.dim // args.n_heads
-        self.attention = Attention(args, layer_id)
+        self.head_dim = args.head_dim
+        self.attention = Attention(args, layer_id, rope)
         if args.moe:
             self.block_sparse_moe = MOEFeedForward(args)
         else:
@@ -455,9 +532,10 @@ class Transformer(nn.Module):
         self.n_layers = params.n_layers
 
         self.tok_embeddings = nn.Embedding(params.vocab_size, params.dim)
+        self.rope = Rope(params)
         self.layers = torch.nn.ModuleList()
         for layer_id in range(params.n_layers):
-            self.layers.append(TransformerBlock(layer_id, params))
+            self.layers.append(TransformerBlock(layer_id, params, self.rope))
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
         self.use_kv_cache = params.use_kv_cache
@@ -465,23 +543,6 @@ class Transformer(nn.Module):
         self.max_seq_len = params.max_seq_len
         self.input_prune_map = params.input_prune_map
         self.output_prune_map = params.output_prune_map
-        if params.use_hf_rope:
-            self.precompute_freqs_cis = hf_precompute_freqs_cis
-        else:
-            self.precompute_freqs_cis = partial(
-                precompute_freqs_cis, use_scaled=params.use_scaled_rope
-            )
-        freqs_cos, freqs_sin = self.precompute_freqs_cis(
-            params.dim // params.n_heads,
-            (
-                params.max_seq_len  # Normal llama2.
-                if params.ffn_dim_multiplier is None
-                else params.max_seq_len * 2  # Sharded checkpoint.
-            ),
-            params.rope_freq_base,
-        )
-        self.register_buffer("freqs_cos", freqs_cos, persistent=False)
-        self.register_buffer("freqs_sin", freqs_sin, persistent=False)
 
     def forward(
         self,
@@ -498,33 +559,7 @@ class Transformer(nn.Module):
         if tokens is not None and h is None:
             h = self.tok_embeddings(tokens)
         seqlen = h.shape[1]
-
-        if self.use_kv_cache:
-            assert (
-                input_pos is not None
-            ), "input_pos must be provided when use_kv_cache is True"
-
-            if self.params.enable_dynamic_shape:
-                # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
-                input_pos_item = input_pos[-1].item()
-                torch._check_is_size(input_pos_item)
-                torch._check(input_pos_item < self.params.max_seq_len)
-                # pyre-ignore: Incompatible parameter type [6]: torch.narrow does expect int or Tensor
-                freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seqlen)
-                # pyre-ignore: Incompatible parameter type [6]
-                freqs_sin = self.freqs_sin.narrow(0, input_pos_item, seqlen)
-            else:
-                # When not using dynamic shape, use of the .item results in
-                # symints, due to querying the data from tensor.
-                # this path avoids that for mps backend, although probably mps backend
-                # can support dynamic shape?
-                freqs_cos = self.freqs_cos[input_pos]
-                freqs_sin = self.freqs_sin[input_pos]
-
-        else:
-            assert input_pos is None, "input_pos is unused when use_kv_cache is False"
-            freqs_cos = self.freqs_cos[:seqlen]
-            freqs_sin = self.freqs_sin[:seqlen]
+        freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, seqlen)
 
         for layer in self.layers:
             h = layer(

@@ -1,0 +1,34 @@
+From 0fb46c2fe4a072546f87c6cb9202d5001f1eb9c5 Mon Sep 17 00:00:00 2001
+From: George Gekov <george.gekov@arm.com>
+Date: Mon, 18 Nov 2024 11:24:11 +0000
+Subject: [PATCH] Move rodata to the DDR
+
+---
+ targets/corstone-300/platform.ld | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/targets/corstone-300/platform.ld b/targets/corstone-300/platform.ld
+index b458fc6..8d4bc73 100644
+--- a/targets/corstone-300/platform.ld
++++ b/targets/corstone-300/platform.ld
+@@ -154,7 +154,7 @@ SECTIONS
+     *(SORT(.dtors.*))
+     *(.dtors)
+ 
+-    *(.rodata*)
++
+ 
+     KEEP(*(.eh_frame*))
+   } > ITCM :rom_exec
+@@ -280,7 +280,7 @@ SECTIONS
+ #endif
+     * (expected_output_data_sec)
+     * (sec_command_stream, sec_weight_data, sec_input_data)
+-
++    *(.rodata*)
+     * (ethosu_core_in_queue)
+     * (ethosu_core_out_queue)
+     . = ALIGN(4);
+-- 
+2.25.1
+
