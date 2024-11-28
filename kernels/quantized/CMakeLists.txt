@@ -112,7 +112,7 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
         quantized_pybind_kernels_lib DEPS portable_lib
       )
       target_link_libraries(
-        quantized_ops_aot_lib PUBLIC quantized_ops_pybind_lib
+        quantized_ops_aot_lib PUBLIC quantized_ops_pybind_lib PUBLIC executorch_core PUBLIC C:/Users/zhangchao/github/vortex-captain/executorch/pip-out/temp.win-amd64-cpython-310/cmake-out/kernels/portable/Release/portable_kernels.lib
       )
 
       # pip wheels will need to be able to find the dependent libraries. On
