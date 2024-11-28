@@ -22,7 +22,7 @@ from torch.ao.quantization.quantizer import (
 from torch.fx import Node
 
 
-def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:
+def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
     """
     This function is specific for matmul op 16a8w.
     """

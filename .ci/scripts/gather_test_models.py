@@ -20,16 +20,16 @@ DEFAULT_RUNNERS = {
 CUSTOM_RUNNERS = {
     "linux": {
         # This one runs OOM on smaller runner, the root cause is unclear (T163016365)
-        "w2l": "linux.12xlarge",
-        "ic4": "linux.12xlarge",
-        "resnet50": "linux.12xlarge",
-        "llava": "linux.12xlarge",
-        "llama3_2_vision_encoder": "linux.12xlarge",
-        # "llama3_2_text_decoder": "linux.12xlarge",  # TODO: re-enable test when Huy's change is in / model gets smaller.
+        "w2l": "linux.4xlarge.memory",
+        "ic4": "linux.4xlarge.memory",
+        "resnet50": "linux.4xlarge.memory",
+        "llava": "linux.4xlarge.memory",
+        "llama3_2_vision_encoder": "linux.4xlarge.memory",
+        "llama3_2_text_decoder": "linux.4xlarge.memory",
         # This one causes timeout on smaller runner, the root cause is unclear (T161064121)
-        "dl3": "linux.12xlarge",
-        "emformer_join": "linux.12xlarge",
-        "emformer_predict": "linux.12xlarge",
+        "dl3": "linux.4xlarge.memory",
+        "emformer_join": "linux.4xlarge.memory",
+        "emformer_predict": "linux.4xlarge.memory",
     }
 }
 
@@ -39,10 +39,12 @@ CUSTOM_TIMEOUT = {
     "linux": {
         "mobilebert": 90,
         "emformer_predict": 360,
+        "llama3_2_text_decoder": 360,
     },
     "macos": {
         "mobilebert": 90,
         "emformer_predict": 360,
+        "llama3_2_text_decoder": 360,
     },
 }
 
