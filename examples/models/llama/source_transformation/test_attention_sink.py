@@ -80,14 +80,10 @@ class RopeWithAttentionSinkTest(unittest.TestCase):
     def test_rotate(self, original_position, new_position):
         seq_len = 32
 
-        q = torch.rand(
-            1, seq_len, self.params.n_heads, self.params.head_dim, dtype=torch.float32
-        )
+        size = (1, seq_len, self.params.n_heads, self.params.head_dim)
+        q = torch.rand(*size, dtype=torch.float32)
         k = torch.rand(
-            1,
-            seq_len,
-            self.params.n_heads,
-            self.params.head_dim,
+            *size,
             dtype=torch.float32,
         )
         freqs_cos, freqs_sin = self.rope_with_attention_sink.get_freqs(
@@ -164,75 +160,73 @@ class KVCacheWithAttentionSinkTest(unittest.TestCase):
         )
 
     def _rand_kv_with_length(self, transpose_cache, seq_len):
-        if not transpose_cache:
-            k = torch.rand(
+        size = (
+            (
                 self.max_batch_size,
                 seq_len,
                 self.params.n_heads,
                 self.params.head_dim,
+            )
+            if not transpose_cache
+            else (
+                self.max_batch_size,
+                self.params.n_heads,
+                seq_len,
+                self.params.head_dim,
+            )
+        )
+        if not transpose_cache:
+            k = torch.rand(
+                *size,
                 dtype=self.dtype,
             )
             v = torch.rand(
-                self.max_batch_size,
-                seq_len,
-                self.params.n_heads,
-                self.params.head_dim,
+                *size,
                 dtype=self.dtype,
             )
         else:
             k = torch.rand(
-                self.max_batch_size,
-                self.params.n_heads,
-                seq_len,
-                self.params.head_dim,
+                *size,
                 dtype=self.dtype,
             )
             v = torch.rand(
-                self.max_batch_size,
-                self.params.n_heads,
-                seq_len,
-                self.params.head_dim,
+                *size,
                 dtype=self.dtype,
             )
         return k, v
 
     def _zero_kv_with_length(self, transpose_cache, seq_len):
+        size = (
+            (
+                self.max_batch_size,
+                seq_len,
+                self.params.n_heads,
+                self.params.head_dim,
+            )
+            if not transpose_cache
+            else (
+                self.max_batch_size,
+                self.params.n_heads,
+                seq_len,
+                self.params.head_dim,
+            )
+        )
         if not transpose_cache:
             k = torch.zeros(
-                (
-                    self.max_batch_size,
-                    seq_len,
-                    self.params.n_heads,
-                    self.params.head_dim,
-                ),
+                *size,
                 dtype=self.dtype,
             )
             v = torch.zeros(
-                (
-                    self.max_batch_size,
-                    seq_len,
-                    self.params.n_heads,
-                    self.params.head_dim,
-                ),
+                *size,
                 dtype=self.dtype,
             )
         else:
             k = torch.zeros(
-                (
-                    self.max_batch_size,
-                    self.params.n_heads,
-                    seq_len,
-                    self.params.head_dim,
-                ),
+                *size,
                 dtype=self.dtype,
             )
             v = torch.zeros(
-                (
-                    self.max_batch_size,
-                    self.params.n_heads,
-                    seq_len,
-                    self.params.head_dim,
-                ),
+                *size,
                 dtype=self.dtype,
             )
         return k, v
