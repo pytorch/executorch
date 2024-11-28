@@ -78,7 +78,7 @@ class TestLog(unittest.TestCase):
         module: torch.nn.Module,
         test_data: Tuple[torch.tensor],
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -93,7 +93,10 @@ class TestLog(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_log_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if common.is_option_enabled("corstone300"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(test_data_suite)
     def test_log_tosa_MI(

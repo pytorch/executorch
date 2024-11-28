@@ -83,6 +83,8 @@ def export_module_to_program(
     eager_module = module_class().eval()
     inputs = ()
     if hasattr(eager_module, "get_random_inputs"):
+        # pyre-fixme[29]: `Union[nn.modules.module.Module, torch._tensor.Tensor]` is
+        #  not a function.
         inputs = eager_module.get_random_inputs()
 
     class WrapperModule(torch.nn.Module):
