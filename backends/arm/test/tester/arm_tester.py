@@ -26,6 +26,7 @@ from executorch.backends.arm.test.common import (
     arm_test_options,
     current_time_formated,
     get_option,
+    get_target_board,
 )
 
 from executorch.backends.arm.test.runner_utils import (
@@ -267,7 +268,7 @@ class ArmTester(Tester):
         self,
         inputs: Optional[Tuple[torch.Tensor]] = None,
         stage: Optional[str] = None,
-        target_board: Optional[str] = "corstone-300",
+        target_board: Optional[str] = None,
         num_runs=1,
         atol=1e-03,
         rtol=1e-03,
@@ -300,6 +301,9 @@ class ArmTester(Tester):
         stage = stage or self.cur
         test_stage = self.stages[stage]
         is_quantized = self.stages[self.stage_name(tester.Quantize)] is not None
+
+        if target_board is None:
+            target_board = get_target_board(self.compile_spec)
 
         exported_program = self.stages[self.stage_name(tester.Export)].artifact
         edge_program = edge_stage.artifact.exported_program()

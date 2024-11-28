@@ -27,6 +27,10 @@ while [[ $# -gt 0 ]]; do
       MODE="$2" # portable or xnnpack+custom or xnnpack+custom+qe
       shift 2
       ;;
+    -pt2e_quantize)
+      PT2E_QUANTIZE="$2"
+      shift 2
+      ;;
     -upload)
       UPLOAD_DIR="$2"
       shift 2
@@ -43,6 +47,12 @@ MODE=${MODE:-"xnnpack+custom"}
 
 # Default UPLOAD_DIR to empty string if not set
 UPLOAD_DIR="${UPLOAD_DIR:-}"
+
+# Default PT2E_QUANTIZE to empty string if not set
+PT2E_QUANTIZE="${PT2E_QUANTIZE:-}"
+
+# Default CMake Build Type to release mode
+CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release}
 
 if [[ $# -lt 4 ]]; then # Assuming 4 mandatory args
     echo "Expecting atleast 4 positional arguments"
@@ -142,7 +152,7 @@ cmake_install_executorch_libraries() {
     rm -rf cmake-out
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_BUILD_TYPE=Debug \
+        -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
@@ -156,7 +166,7 @@ cmake_install_executorch_libraries() {
         -DQNN_SDK_ROOT="$QNN_SDK_ROOT" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
-    cmake --build cmake-out -j9 --target install --config Debug
+    cmake --build cmake-out -j9 --target install --config "$CMAKE_BUILD_TYPE"
 }
 
 cmake_build_llama_runner() {
@@ -164,14 +174,14 @@ cmake_build_llama_runner() {
     dir="examples/models/llama"
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_BUILD_TYPE=Debug \
+        -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM="$CUSTOM" \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out/${dir} \
         ${dir}
-    cmake --build cmake-out/${dir} -j9 --config Debug
+    cmake --build cmake-out/${dir} -j9 --config "$CMAKE_BUILD_TYPE"
 
 }
 
@@ -240,6 +250,10 @@ if [[ "${COREML}" == "ON" ]]; then
 fi
 if [[ "${QNN}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} -kv -v --qnn --disable_dynamic_shape"
+  echo "PT2E_QUANTIZE is ${PT2E_QUANTIZE}"
+  if [[ "${PT2E_QUANTIZE}" == "qnn_16a16w" ]]; then
+    EXPORT_ARGS+=" --tokenizer_path tokenizer.model --pt2e_quantize qnn_16a16w --calibration_tasks wikitext --calibration_limit 1 --calibration_seq_length 128 --calibration_data Once "
+  fi
 fi
 if [[ "${QUANTIZE_KV_CACHE}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} --quantize_kv_cache"

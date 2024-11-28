@@ -867,6 +867,7 @@ ATEN_OPS = (
     op_target(
         name = "op_native_batch_norm",
         deps = [
+            ":vec_ops",
             "//executorch/kernels/portable/cpu/util:normalization_ops_util",
         ],
     ),
