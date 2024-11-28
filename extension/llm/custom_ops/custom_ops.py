@@ -27,7 +27,7 @@ except:
     import executorch
 
     executorch_package_path = executorch.__path__[0]
-    logging.info(f"Looking for libcustom_ops_aot_lib.so in {executorch_package_path }")
+    logging.info(f"Looking for libcustom_ops_aot_lib.so in {executorch_package_path}")
     libs = list(
         glob.glob(
             f"{executorch_package_path}/**/libcustom_ops_aot_lib.*", recursive=True
