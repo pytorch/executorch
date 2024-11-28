@@ -18,6 +18,7 @@ python_library(
         "//executorch/devtools/bundled_program:config",
         "//executorch/devtools/bundled_program:core",
         "//executorch/devtools/bundled_program/serialize:lib",
+        "//executorch/devtools:lib",
         "//executorch/exir:lib",
     ],
 )
