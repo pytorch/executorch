@@ -22,12 +22,12 @@ test_data_suite: list[test_data_t] = [
         torch.rand(5) * 5,
     ),
     ("op_reciprocal_rank1_negative_ones", torch.ones(5) * (-1)),
-    ("op_reciprocal_rank4_ones", torch.ones(5, 10, 25, 20)),
-    ("op_reciprocal_rank4_negative_ones", (-1) * torch.ones(5, 10, 25, 20)),
-    ("op_reciprocal_rank4_ones_reciprocal_negative", torch.ones(5, 10, 25, 20)),
-    ("op_reciprocal_rank4_large_rand", 200 * torch.rand(5, 10, 25, 20)),
-    ("op_reciprocal_rank4_negative_large_rand", (-200) * torch.rand(5, 10, 25, 20)),
-    ("op_reciprocal_rank4_large_randn", 200 * torch.randn(5, 10, 25, 20) + 1),
+    ("op_reciprocal_rank4_ones", torch.ones(1, 10, 25, 20)),
+    ("op_reciprocal_rank4_negative_ones", (-1) * torch.ones(1, 10, 25, 20)),
+    ("op_reciprocal_rank4_ones_reciprocal_negative", torch.ones(1, 10, 25, 20)),
+    ("op_reciprocal_rank4_large_rand", 200 * torch.rand(1, 10, 25, 20)),
+    ("op_reciprocal_rank4_negative_large_rand", (-200) * torch.rand(1, 10, 25, 20)),
+    ("op_reciprocal_rank4_large_randn", 200 * torch.randn(1, 10, 25, 20) + 1),
 ]
 
 
@@ -81,7 +81,7 @@ class TestReciprocal(unittest.TestCase):
     def _test_reciprocal_u55_BI_pipeline(
         self, module: torch.nn.Module, test_data: tuple[torch.Tensor]
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -95,15 +95,16 @@ class TestReciprocal(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if common.is_option_enabled("corstone300"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(test_data_suite)
     def test_reciprocal_tosa_MI(self, test_name: str, input_: torch.Tensor):
         test_data = (input_,)
         self._test_reciprocal_tosa_MI_pipeline(self.Reciprocal(), test_data)
 
-    # Expected to fail since ArmQuantizer cannot quantize a Reciprocal layer
-    # TODO(MLETORCH-129)
     @parameterized.expand(test_data_suite)
     def test_reciprocal_tosa_BI(self, test_name: str, input_: torch.Tensor):
 

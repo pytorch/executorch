@@ -235,12 +235,12 @@ def quantize_and_export_to_cadence(
 def export_to_executorch_gen_etrecord(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
-    dump_graphs: bool = False,
     output_dir: Optional[str] = None,
     opt_level: int = 1,
+    dump_graphs: bool = False,
 ) -> ExecutorchProgramManager:
-    edge_prog_manager = export_to_edge(model, inputs)
     cadence_passes = get_cadence_passes(opt_level)
+    edge_prog_manager = export_to_edge(model, inputs, dump_graphs)
 
     # Run a couple required passes for quant/dequant ops
     cadence_prog_manager = edge_prog_manager.transform(

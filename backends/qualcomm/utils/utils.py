@@ -967,6 +967,7 @@ def get_soc_to_arch_map():
         "SM8550": HtpArch.V73,
         "SM8475": HtpArch.V69,
         "SM8450": HtpArch.V69,
+        "SA8295": HtpArch.V68,
     }
 
 
@@ -977,6 +978,7 @@ def get_soc_to_chipset_map():
         "SM8550": QcomChipset.SM8550,
         "SM8475": QcomChipset.SM8475,
         "SM8450": QcomChipset.SM8450,
+        "SA8295": QcomChipset.SA8295,
     }
 
 
