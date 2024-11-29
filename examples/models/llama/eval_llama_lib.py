@@ -102,7 +102,7 @@ class ETPybindEvalWrapper(EagerEvalWrapper):
 
         # Note: import this after portable_lib
         from executorch.extension.llm.custom_ops import (  # noqa
-            sdpa_with_kv_cache,  # usort: skip
+            custom_ops,  # usort: skip
         )
         from executorch.kernels import quantized  # noqa
 
