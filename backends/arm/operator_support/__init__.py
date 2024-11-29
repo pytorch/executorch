@@ -5,4 +5,10 @@
 
 # pyre-unsafe
 
-from . import mean_dim_support, tosa_supported_operators, var_correction_support  # noqa
+from . import (  # noqa
+    mean_dim_support,
+    right_shift_support,
+    to_copy_support,
+    tosa_supported_operators,
+    var_correction_support,
+)

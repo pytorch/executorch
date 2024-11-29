@@ -167,9 +167,7 @@ def run(
 
 
 def compare(
-    # pyre-fixme[2]: Parameter annotation cannot be `Any`.
     outputs: Any,
-    # pyre-fixme[2]: Parameter annotation cannot be `Any`.
     ref_outputs: Any,
     name: str = "",
     eps_error: float = 1e-1,
@@ -223,7 +221,6 @@ def run_and_compare(
     compare(outputs, ref_outputs, eps_error=eps_error, eps_warn=eps_warn)
 
 
-# pyre-fixme[24]: Generic type `np.ndarray` expects 2 type parameters.
 def to_nd_array(v: Union[bool, numbers.Number, ndarray, torch.Tensor]) -> np.ndarray:
     if isinstance(v, np.ndarray):
         return v

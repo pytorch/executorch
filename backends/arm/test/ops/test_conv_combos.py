@@ -238,7 +238,7 @@ class TestConvCombos(unittest.TestCase):
         compile_spec: CompileSpec,
         test_data: Tuple[torch.Tensor],
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -251,7 +251,10 @@ class TestConvCombos(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(list(module.edge_op_list))
             .to_executorch()
+            .serialize()
         )
+        if common.is_option_enabled("corstone300"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     ####################
     ## Conv + meandim ##
