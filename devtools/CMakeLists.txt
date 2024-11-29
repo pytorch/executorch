@@ -157,10 +157,13 @@ file(MAKE_DIRECTORY
      ${_program_schema__include_dir}/executorch/devtools/bundled_program
 )
 
+# Note that the flatcc project actually writes its outputs into the source
+# tree instead of under the binary directory, and there's no way to change
+# that behavior.
 if(WIN32)
-  set(REMOVE_COMMAND "del /F /Q")
+  set(_flatcc_bin_path ${_flatcc_source_dir}/bin/${CMAKE_BUILD_TYPE}/flatcc)
 else()
-  set(REMOVE_COMMAND "rm -f")
+  set(_flatcc_bin_path ${_flatcc_source_dir}/bin/flatcc)
 endif()
 
 if(WIN32)
@@ -170,7 +173,7 @@ if(WIN32)
       # Note that the flatcc project actually writes its outputs into the source
       # tree instead of under the binary directory, and there's no way to change
       # that behavior.
-      ${_flatcc_source_dir}/bin/flatcc -cwr -o
+      ${_flatcc_bin_path} -cwr -o
       ${_program_schema__include_dir}/executorch/devtools/etdump
       ${_etdump_schema__srcs}
     # COMMAND powershell -Command "Remove-Item -Path " ${_etdump_schema_cleanup_paths} " -Force -ErrorAction SilentlyContinue"
@@ -185,7 +188,7 @@ add_custom_command(
     # Note that the flatcc project actually writes its outputs into the source
     # tree instead of under the binary directory, and there's no way to change
     # that behavior.
-    ${_flatcc_source_dir}/bin/flatcc -cwr -o
+    ${_flatcc_bin_path} -cwr -o
     ${_program_schema__include_dir}/executorch/devtools/etdump
     ${_etdump_schema__srcs}
   COMMAND rm -f ${_etdump_schema_cleanup_paths}

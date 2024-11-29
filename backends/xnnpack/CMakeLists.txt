@@ -74,13 +74,6 @@ endforeach()
 
 # Generate the headers from the .fbs files.
 
-if(WIN32)
-  set(MOVE_COMMAND move)
-else()
-  set(MOVE_COMMAND mv)
-endif()
-
-
 if (WIN32)
 add_custom_command(
   OUTPUT ${_xnnpack_schema__outputs}
