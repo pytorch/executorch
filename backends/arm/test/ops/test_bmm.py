@@ -9,7 +9,7 @@ import unittest
 from typing import Tuple
 
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
@@ -112,7 +112,7 @@ class TestBMM(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(inputs=test_data, qtol=1)
 
     @parameterized.expand(BMM.test_parameters)
@@ -161,7 +161,7 @@ class TestBMM(unittest.TestCase):
         )
 
     @parameterized.expand(BMM.test_parameters[1:])
-    @common.expectedFailureOnFVP
+    @conftest.expectedFailureOnFVP
     def test_bmm_u85_BI_xfails(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
         self._test_bmm_ethosu_BI_pipeline(

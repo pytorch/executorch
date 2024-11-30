@@ -15,7 +15,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_quantization_config,
 )
 
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -117,7 +117,7 @@ class TestPermute(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(test_data_suite)
@@ -155,7 +155,7 @@ class TestPermute(unittest.TestCase):
 
     # Fails since on FVP since N > 1 is not supported. MLETORCH-517
     @parameterized.expand(test_data_suite[-2:])
-    @common.expectedFailureOnFVP
+    @conftest.expectedFailureOnFVP
     def test_permute_u85_BI_xfails(
         self, test_name: str, test_data: torch.Tensor, dims: list[int]
     ):

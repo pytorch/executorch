@@ -51,7 +51,7 @@ class TestMeanDim(unittest.TestCase):
         test_data_suite = [
             # (test_name, test_data)
             ("zeros", torch.zeros(1, 1280, 7, 7), -1, True),
-            ("ones", torch.ones(1, 1280, 7, 7), (-1, 2), True),
+            ("ones", torch.ones(1, 1280, 7, 7), (-1, 2), False),
             (
                 "rand",
                 torch.rand(1, 1280, 7, 7),
@@ -62,7 +62,7 @@ class TestMeanDim(unittest.TestCase):
                 "randn",
                 torch.randn(1, 1280, 7, 7),
                 (-1, -2, -3),
-                True,
+                False,
             ),
         ]
 

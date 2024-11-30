@@ -29,9 +29,9 @@ class TestVar(unittest.TestCase):
     class Var(torch.nn.Module):
         test_parameters = [
             (torch.randn(1, 50, 10, 20), True, 0),
-            (torch.rand(1, 50, 10), True, 0),
+            (torch.rand(1, 50, 10), False, 0),
             (torch.randn(1, 30, 15, 20), True, 1),
-            (torch.rand(1, 50, 10, 20), True, 0.5),
+            (torch.rand(1, 50, 10, 20), False, 0.5),
         ]
 
         def forward(
@@ -45,9 +45,9 @@ class TestVar(unittest.TestCase):
     class VarDim(torch.nn.Module):
         test_parameters = [
             (torch.randn(1, 50, 10, 20), 1, True, False),
-            (torch.rand(1, 50, 10), -2, True, False),
+            (torch.rand(1, 50, 10), -2, False, False),
             (torch.randn(1, 30, 15, 20), -3, True, True),
-            (torch.rand(1, 50, 10, 20), -1, True, True),
+            (torch.rand(1, 50, 10, 20), -1, False, True),
         ]
 
         test_parameters_u55 = [

@@ -13,7 +13,7 @@ import unittest
 from typing import Tuple
 
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
@@ -109,7 +109,7 @@ class TestFull(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     def _test_full_tosa_u55_pipeline(self, module: torch.nn.Module, test_data: Tuple):
@@ -145,7 +145,7 @@ class TestFull(unittest.TestCase):
 
     # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(AddVariableFull.test_parameters)
-    @common.expectedFailureOnFVP
+    @conftest.expectedFailureOnFVP
     def test_full_u55_BI(self, test_tensor: Tuple):
         self._test_full_tosa_u55_pipeline(
             self.AddVariableFull(),
@@ -154,7 +154,7 @@ class TestFull(unittest.TestCase):
 
     # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(AddVariableFull.test_parameters)
-    @common.expectedFailureOnFVP
+    @conftest.expectedFailureOnFVP
     def test_full_u85_BI(self, test_tensor: Tuple):
         self._test_full_tosa_u85_pipeline(
             self.AddVariableFull(),
