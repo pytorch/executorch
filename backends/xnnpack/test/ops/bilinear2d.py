@@ -8,6 +8,7 @@ import unittest
 
 import torch
 from executorch.backends.xnnpack.test.tester import Tester
+from executorch.backends.xnnpack.test.tester.tester import Export
 
 
 class TestUpsampleBilinear2d(unittest.TestCase):
@@ -117,4 +118,24 @@ class TestUpsampleBilinear2d(unittest.TestCase):
                 }
             )
             .check_not(["torch.ops.higher_order.executorch_call_delegate"])
+        )
+
+    def test_fp32_bilinear2d_dynamic_bilinear2d_not_partitioned(self):
+        """
+        Verify that upsample_bilinear2d ops with dynamic output sizes are not partitioned.
+        """
+        example_inputs = (torch.randn(2, 3, 4, 5),)
+        dynamic_shapes = {
+            "x": {
+                2: torch.export.Dim("h", min=1, max=10),
+                3: torch.export.Dim("w", min=1, max=12),
+            }
+        }
+        (
+            Tester(self.StaticResizeBilinear2dModule(), example_inputs)
+            .export(Export(dynamic_shapes))
+            .to_edge_transform_and_lower()
+            # NOTE The decomposition is partially delegated. This will need to be replaced
+            # with the aten upsample op once decomp is removed.
+            .check("executorch_exir_dialects_edge__ops_aten_index_Tensor")
         )
