@@ -29,20 +29,83 @@ export default function Index() {
   const [tokenizerName, setTokenizerName] = useState('');
   const [isInitialized, setIsInitialized] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
-  const [history, setHistory] = useState<Array<{input: boolean, text: string}>>([]);
+  const [history, setHistory] = useState<Array<{ input: boolean, text: string }>>([]);
   const scrollViewRef = useRef();
 
   useEffect(() => {
     const unsubscribe = LLaMABridge.onToken((token) => {
-      if (!isStopped) {  // Only process tokens if not stopped
-        setCurrentOutput(prev => prev + token);
-        if (token === ' ' || /[.,!?]/.test(token)) {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      if (!isStopped) {
+        // Natural stop
+        if (token === "<|eot_id|>") {
+          setIsGenerating(false);
+          setCurrentOutput(prev => {
+            if (prev.trim()) {
+              setHistory(prevHistory => [...prevHistory, { input: false, text: prev.trim() }]);
+            }
+            return '';
+          });
+          return;
         }
+  
+        // Skip template tokens
+        if (token === formatPrompt('') ||
+            token.includes("<|begin_of_text|>") ||
+            token.includes("<|start_header_id|>") ||
+            token.includes("<|end_header_id|>") ||
+            token.includes("assistant")) {
+          return;
+        }
+  
+        // Add token without leading newlines
+        setCurrentOutput(prev => prev + token.replace(/^\n+/, ''));
       }
     });
+  
     return () => unsubscribe();
-  }, [isStopped]);  // Add isStopped to dependencies
+  }, [isStopped, currentOutput]);
+
+
+  const formatPrompt = (text: string) => {
+    return `<|begin_of_text|><|start_header_id|>user<|end_header_id|>${text.trim()}<|eot_id|><|start_header_id|>assistant<|end_header_id|>`;
+  };
+
+  const handleGenerate = async () => {
+    if (!isInitialized || !prompt.trim()) {
+      return;
+    }
+
+    setIsStopped(false);
+    const newPrompt = prompt.trim();
+    setPrompt('');
+    setIsGenerating(true);
+    setCurrentOutput('');
+
+    // Add the user message immediately
+    const userMessage = { input: true, text: newPrompt };
+    setHistory(prev => [...prev, userMessage]);
+
+    try {
+      const formattedPrompt = formatPrompt(newPrompt);
+      await LLaMABridge.generate(formattedPrompt, 768);
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Error', 'Generation failed');
+      setIsGenerating(false);
+    }
+  };
+
+  const handleStop = () => {
+    if (!isGenerating) return;
+    
+    setIsStopped(true);
+    LLaMABridge.stop();
+    
+    if (currentOutput) {
+      setHistory(prev => [...prev, { input: false, text: currentOutput.trim() }]);
+    }
+    setCurrentOutput('');
+    setIsGenerating(false);
+  };
 
   const selectModel = async () => {
     try {
@@ -75,11 +138,23 @@ export default function Index() {
   };
 
   const initializeLLaMA = async () => {
+    // If already initialized, reset everything
+    if (isInitialized) {
+      setModelPath('');
+      setModelName('');
+      setTokenizerPath('');
+      setTokenizerName('');
+      setIsInitialized(false);
+      setHistory([]);
+      setCurrentOutput('');
+      return;
+    }
+  
     if (!modelPath || !tokenizerPath) {
       Alert.alert('Error', 'Please select both model and tokenizer files first');
       return;
     }
-
+  
     setIsInitializing(true);
     try {
       await LLaMABridge.initialize(modelPath, tokenizerPath);
@@ -88,50 +163,15 @@ export default function Index() {
     } catch (error) {
       console.error('Failed to initialize LLaMA:', error);
       Alert.alert('Error', 'Failed to initialize LLaMA');
+      setModelPath('');
+      setModelName('');
+      setTokenizerPath('');
+      setTokenizerName('');
     } finally {
       setIsInitializing(false);
     }
   };
 
-  const handleGenerate = async () => {
-    if (!isInitialized) {
-      Alert.alert('Error', 'Please initialize LLaMA first');
-      return;
-    }
-    if (!prompt.trim()) {
-      return;
-    }
-
-    setIsStopped(false);  // Add this line
-    const newPrompt = prompt.trim();
-    setPrompt('');
-    setIsGenerating(true);
-    setCurrentOutput('');
-    setHistory(prev => [...prev, { input: true, text: newPrompt }]);
-
-    try {
-      await LLaMABridge.generate(newPrompt, 768);
-    } catch (error) {
-      console.error(error);
-      Alert.alert('Error', 'Generation failed');
-    } finally {
-      setIsGenerating(false);
-      if (currentOutput) {
-        setHistory(prev => [...prev, { input: false, text: currentOutput }]);
-        setCurrentOutput('');
-      }
-    }
-  };
-
-  const handleStop = () => {
-    setIsStopped(true);
-    LLaMABridge.stop();
-    setIsGenerating(false);
-    if (currentOutput) {
-      setHistory(prev => [...prev, { input: false, text: currentOutput }]);
-      setCurrentOutput('');
-    }
-  };
 
   const handleClearHistory = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -147,8 +187,8 @@ export default function Index() {
 
       <View style={styles.setupBar}>
         <View style={styles.setupControls}>
-          <TouchableOpacity 
-            style={[styles.setupButton, modelPath ? styles.setupComplete : styles.setupIncomplete]} 
+          <TouchableOpacity
+            style={[styles.setupButton, modelPath ? styles.setupComplete : styles.setupIncomplete]}
             onPress={selectModel}
           >
             <Ionicons name="cube-outline" size={20} color="#fff" />
@@ -156,8 +196,8 @@ export default function Index() {
               {modelName ? modelName.substring(0, 15) + '...' : "Select Model"}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.setupButton, tokenizerPath ? styles.setupComplete : styles.setupIncomplete]} 
+          <TouchableOpacity
+            style={[styles.setupButton, tokenizerPath ? styles.setupComplete : styles.setupIncomplete]}
             onPress={selectTokenizer}
           >
             <Ionicons name="key-outline" size={20} color="#fff" />
@@ -166,28 +206,28 @@ export default function Index() {
             </Text>
           </TouchableOpacity>
         </View>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[
-            styles.initButton, 
+            styles.initButton,
             isInitialized ? styles.setupComplete : styles.setupIncomplete,
             (!modelPath || !tokenizerPath || isInitializing) && styles.buttonDisabled
-          ]} 
+          ]}
           onPress={initializeLLaMA}
           disabled={!modelPath || !tokenizerPath || isInitializing}
         >
           {isInitializing ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <Ionicons 
-              name={isInitialized ? "checkmark-circle-outline" : "power-outline"} 
-              size={24} 
-              color="#fff" 
+            <Ionicons
+              name={isInitialized ? "checkmark-circle-outline" : "power-outline"}
+              size={24}
+              color="#fff"
             />
           )}
         </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.content}
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
@@ -205,11 +245,10 @@ export default function Index() {
               </Text>
             </View>
           ) : history.length === 0 ? (
-            <Pressable 
+            <Pressable
               style={styles.emptyState}
               onLongPress={handleClearHistory}
             >
-              <Ionicons name="chatbubble-outline" size={48} color="#666" />
               <Text style={styles.emptyStateText}>Start a conversation</Text>
               <Text style={styles.emptyStateHint}>Long press to clear history</Text>
             </Pressable>
@@ -247,14 +286,14 @@ export default function Index() {
             editable={isInitialized}
           />
           <TouchableOpacity
-            style={[styles.sendButton, !isInitialized && styles.buttonDisabled]}
+            style={[styles.sendButton, (!isInitialized || (!isGenerating && !prompt.trim())) && styles.buttonDisabled]}
             onPress={isGenerating ? handleStop : handleGenerate}
-            disabled={!isInitialized || (!prompt.trim() && !isGenerating)}
+            disabled={!isInitialized || (!prompt.trim() && !isGenerating)} // This was backwards
           >
-            <Ionicons 
-              name={isGenerating ? "stop-outline" : "send-outline"} 
-              size={24} 
-              color="#fff" 
+            <Ionicons
+              name={isGenerating ? "stop-outline" : "send-outline"}
+              size={24}
+              color="#fff"
             />
           </TouchableOpacity>
         </View>
@@ -270,9 +309,9 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: 16,
-    alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: '#333',
+    alignItems: "start",
   },
   headerTitle: {
     fontSize: 24,
@@ -349,7 +388,6 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 12,
     marginTop: 8,
-    fontStyle: 'italic',
   },
   initPrompt: {
     padding: 20,
