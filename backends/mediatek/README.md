@@ -15,7 +15,7 @@ Before you begin, ensure you have the following prerequisites installed and conf
 
 #### 1. Buck2 Build Tool
 
-- **Download Buck2**: Obtain Buck2 from the official [releases page](https://github.com/facebook/buck2/releases/tag/2024-02-01).
+- **Download Buck2**: Obtain Buck2 from the official [releases page](https://github.com/facebook/buck2/releases/tag/2024-05-15).
 - **Add to PATH**: Extract the downloaded file and add the directory to your system's `$PATH` environment variable.
    ```bash
    export PATH=<path_to_buck>:$PATH
