@@ -28,6 +28,7 @@ Before you begin, ensure you have the following prerequisites installed and conf
    ```bash
    export ANDROID_NDK=<path_to_android_ndk>
    ```
+- **Set NDK_MIN_PLATFORM_LEVEL**: Edit build/cmake/platform.cmake and set NDK_MIN_PLATFORM_LEVEL to 26 or higher
 
 #### 3. MediaTek ExecuTorch Libraries
 
