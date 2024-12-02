@@ -138,6 +138,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
     // TODO(MLETORCH-123): Optimise into direct write from Vela into the SRAM
     //                     or DRAM output for compatible data layouts.
     for (int i = 0; i < handles.inputs->count; i++) {
+      auto tensor_count = 1, io_count = 1;
       auto tensor_in = args[i]->toTensor();
       char* scratch_addr = handles.scratch_data + handles.inputs->io[i].offset;
 
@@ -202,6 +203,19 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
         ET_LOG(Error, "No matching input copy routine");
         return Error::InvalidProgram;
       }
+      if (!permuted_input_shape) {
+        calculate_dimensions(
+            tensor_in, &handles.inputs->io[i], &tensor_count, &io_count);
+        if (tensor_count != io_count) {
+          ET_LOG(Error, "Input tensor sizes do not match");
+          ET_LOG(
+              Error,
+              "Program expects %d elements but got %d",
+              io_count,
+              tensor_count);
+          return Error::InvalidProgram;
+        }
+      }
     }
 
     // Allocate driver handle and synchronously invoke driver
@@ -236,14 +250,24 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
           result);
       return Error::InvalidProgram;
     }
-
+    int tensor_dim = 0, io_dim = 0;
     // Write outputs from scratch into EValue pointers
     for (int i = 0; i < handles.outputs->count; i++) {
+      int tensor_count = 1, io_count = 1;
       const char* output_addr =
           handles.scratch_data + handles.outputs->io[i].offset;
       // Process input EValue into scratch
       // Outputs are in the index immediately after inputs
       auto tensor_out = args[handles.inputs->count + i]->toTensor();
+
+      calculate_dimensions(
+          tensor_out, &handles.outputs->io[i], &tensor_count, &io_count);
+
+      // At times the topological order of the outputs may change.
+      // Lets instead ensure that the sum of dimensions match.
+      tensor_dim = tensor_dim + tensor_count;
+      io_dim = io_dim + io_count;
+
       bool permuted_output_shape;
       ET_CHECK_OK_OR_RETURN_ERROR(check_requires_permute(
           i,
@@ -272,6 +296,12 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
         }
       }
     }
+    if (tensor_dim != io_dim) {
+      ET_LOG(Error, "Total output tensor sizes do not match");
+      ET_LOG(
+          Error, "Program expects size of %d but got %d", tensor_dim, io_dim);
+      return Error::InvalidProgram;
+    }
     return Error::Ok;
   }
 
@@ -280,6 +310,21 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
   }
 
  private:
+  void calculate_dimensions(
+      const executorch::aten::Tensor tensor,
+      VelaIO* io,
+      int* tensor_count,
+      int* io_count) const {
+    for (int i = 0; i < tensor.dim(); i++) {
+      *tensor_count = *tensor_count * tensor.size(i);
+    }
+
+    // The VelaIO type has a shape of fixed size 4
+    for (int i = 0; i < 4; i++) {
+      *io_count = *io_count * io->shape[i];
+    }
+  }
+
   Error check_requires_permute(
       int index,
       const executorch::aten::Tensor tensor,
@@ -287,6 +332,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
       bool permuted_io_flag,
       bool* is_permuted) const {
     bool permuted_shape = false;
+
     if (tensor.dim() == 4) {
       // special case for NHWC workaround in AOT; as the compilation has
       // permuted to channel last in an undetectable way, we assume here
@@ -301,30 +347,6 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
         ET_LOG(
             Error,
             "Permute compile flag and permuted input/output don't agree");
-        return Error::InvalidProgram;
-      }
-    }
-    if (!permuted_shape) {
-      // Check the number of elements in each tensor match
-      int tensor_count = 1;
-      int io_count = 1;
-
-      for (int i = 0; i < tensor.dim(); i++) {
-        tensor_count = tensor_count * tensor.size(i);
-      }
-
-      // The VelaIO type has a shape of fixed size 4
-      for (int i = 0; i < 4; i++) {
-        io_count = io_count * io->shape[i];
-      }
-
-      if (tensor_count != io_count) {
-        ET_LOG(Error, "Input tensor sizes do not match");
-        ET_LOG(
-            Error,
-            "Program expects %d elements but got %d",
-            io_count,
-            tensor_count);
         return Error::InvalidProgram;
       }
     }
