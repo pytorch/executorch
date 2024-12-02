@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/llm/custom_ops/op_update_quantized_cache.h>
+#include <executorch/extension/llm/custom_ops/op_update_cache.h>
 
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 // @lint-ignore CLANGTIDY facebook-unused-include-check
@@ -60,7 +60,7 @@ bool validate_cache_params(
 }
 } // anonymous namespace
 
-Tensor& update_quantized_cache_out(
+Tensor& update_cache_out(
     RuntimeContext& ctx,
     const Tensor& value,
     Tensor& cache,
@@ -139,5 +139,5 @@ Tensor& update_quantized_cache_out(
 // In later diffs will rename this to update_cache.
 EXECUTORCH_LIBRARY(
     llama,
-    "update_quantized_cache.out",
-    torch::executor::native::update_quantized_cache_out);
+    "update_cache.out",
+    torch::executor::native::update_cache_out);

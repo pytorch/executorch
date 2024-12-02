@@ -67,17 +67,13 @@ class UpdateQuantizedKVCacheTest(unittest.TestCase):
         self._update_k(start_pos, k, k_scales, k_zero_points)
         self._update_v(start_pos, v, v_scales, v_zero_points)
 
-        torch.ops.llama.update_quantized_cache(k, k_cache, start_pos)
-        torch.ops.llama.update_quantized_cache(k_scales, k_scales_cache, start_pos)
-        torch.ops.llama.update_quantized_cache(
-            k_zero_points, k_zero_points_cache, start_pos
-        )
+        torch.ops.llama.update_cache(k, k_cache, start_pos)
+        torch.ops.llama.update_cache(k_scales, k_scales_cache, start_pos)
+        torch.ops.llama.update_cache(k_zero_points, k_zero_points_cache, start_pos)
 
-        torch.ops.llama.update_quantized_cache(v, v_cache, start_pos)
-        torch.ops.llama.update_quantized_cache(v_scales, v_scales_cache, start_pos)
-        torch.ops.llama.update_quantized_cache(
-            v_zero_points, v_zero_points_cache, start_pos
-        )
+        torch.ops.llama.update_cache(v, v_cache, start_pos)
+        torch.ops.llama.update_cache(v_scales, v_scales_cache, start_pos)
+        torch.ops.llama.update_cache(v_zero_points, v_zero_points_cache, start_pos)
 
         self.assertTrue(torch.allclose(k_cache, self.quantized_k_cache))
         self.assertTrue(torch.allclose(v_cache, self.quantized_v_cache))
