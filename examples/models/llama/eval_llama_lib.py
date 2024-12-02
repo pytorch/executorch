@@ -326,7 +326,7 @@ def eval_llama_with_attention_sink(model_name: str, args: argparse.ArgumentParse
     """
     assert args.use_attention_sink is not None  # pyre-ignore [16]
     assert args.attention_sink_eval_tokens > 0  # pyre-ignore [16]
-    attention_sink_params = args.use_attention_sink.split(",")  # pyre-ignore [16]
+    attention_sink_params = args.use_attention_sink.split(",")
     assert len(attention_sink_params) == 3
     sink_size = int(attention_sink_params[0])
     window_size = int(attention_sink_params[1])
