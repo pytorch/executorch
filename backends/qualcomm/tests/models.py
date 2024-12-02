@@ -325,7 +325,7 @@ class Conv2dMaxPool2d(torch.nn.Module):
 
 
 class Conv2dSequential(torch.nn.Module):
-    def __init__(self, bias=True):
+    def __init__(self, bias=True, channel_last=False):
         super().__init__()
         self.first = torch.nn.Conv2d(
             in_channels=1,
@@ -341,8 +341,10 @@ class Conv2dSequential(torch.nn.Module):
             padding=1,
             bias=bias,
         )
+        self.channel_last = channel_last
 
     def forward(self, x):
+        x = x.to(memory_format=torch.channels_last) if self.channel_last else x
         return self.second(self.first(x))
 
 
