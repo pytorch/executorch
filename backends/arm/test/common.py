@@ -11,9 +11,9 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from conftest import is_option_enabled
-
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
+
+from executorch.backends.arm.test.conftest import is_option_enabled
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
