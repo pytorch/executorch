@@ -60,6 +60,7 @@ def export_model(
     model: nn.Module,
     example_inputs: Tuple[Any, ...],
     file_name: str = "CadenceDemoModel",
+    run_and_compare: bool = True,
 ):
     # create work directory for outputs and model binary
     working_dir = tempfile.mkdtemp(dir="/tmp")
@@ -112,9 +113,10 @@ def export_model(
     )
 
     # TODO: move to test infra
-    runtime.run_and_compare(
-        executorch_prog=exec_prog,
-        inputs=example_inputs,
-        ref_outputs=ref_outputs,
-        working_dir=working_dir,
-    )
+    if run_and_compare:
+        runtime.run_and_compare(
+            executorch_prog=exec_prog,
+            inputs=example_inputs,
+            ref_outputs=ref_outputs,
+            working_dir=working_dir,
+        )
