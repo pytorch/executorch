@@ -318,9 +318,7 @@ def eval_llama(
         print(f"{task}: {res}")
 
 
-def eval_llama_with_attention_sink(
-    model_name: str, args: argparse.ArgumentParser
-):
+def eval_llama_with_attention_sink(model_name: str, args: argparse.ArgumentParser):
     """
     Evaluate the model's perplexity when AttentionSink is enabled.
 
