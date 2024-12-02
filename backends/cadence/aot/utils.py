@@ -162,7 +162,8 @@ def print_ops_info(
 
     # Print the final ops and their counts in a tabular format
     logging.info(
-        tabulate(
+        "\n"
+        + tabulate(
             sorted_ops_count,
             headers=[
                 "Final Operators                                    ",  # one character longer than the longest op name
