@@ -17,7 +17,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 from executorch.backends.xnnpack.test.tester.tester import Quantize
@@ -97,7 +97,7 @@ class TestSimpleExpand(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(Expand.test_parameters)
@@ -110,7 +110,7 @@ class TestSimpleExpand(unittest.TestCase):
 
     # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(Expand.test_parameters)
-    @common.expectedFailureOnFVP
+    @conftest.expectedFailureOnFVP
     def test_expand_u55_BI(self, test_input, multiples):
         self._test_expand_ethosu_BI_pipeline(
             common.get_u55_compile_spec(), self.Expand(), (test_input, multiples)
@@ -118,7 +118,7 @@ class TestSimpleExpand(unittest.TestCase):
 
     # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(Expand.test_parameters)
-    @common.expectedFailureOnFVP
+    @conftest.expectedFailureOnFVP
     def test_expand_u85_BI(self, test_input, multiples):
         self._test_expand_ethosu_BI_pipeline(
             common.get_u85_compile_spec(), self.Expand(), (test_input, multiples)
