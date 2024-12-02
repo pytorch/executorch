@@ -1,4 +1,5 @@
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
@@ -43,7 +44,7 @@ python_library(
         "//executorch/exir/passes:spec_prop_pass",
         "//executorch/exir/passes:weights_to_outputs_pass",
         "//executorch/exir/verification:verifier",
-    ],
+    ] +  (["//executorch/exir/program/fb:logger"] if not runtime.is_oss else [])
 )
 
 python_library(
