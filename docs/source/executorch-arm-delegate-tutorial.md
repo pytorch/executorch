@@ -322,7 +322,6 @@ ethos_u_build_dir=examples/arm/executor_runner/
 elf=$(find ${ethos_u_build_dir} -name "arm_executor_runner")
 
 FVP_Corstone_SSE-320_Ethos-U85                          \
-    -C mps4_board.subsystem.cpu0.CFGITCMSZ=11           \
     -C mps4_board.subsystem.ethosu.num_macs=${num_macs} \
     -C mps4_board.visualisation.disable-visualisation=1 \
     -C vis_hdlcd.disable_visualisation=1                \

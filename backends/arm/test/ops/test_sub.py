@@ -17,7 +17,7 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
 
-class TestSimpleSub(unittest.TestCase):
+class TestSub(unittest.TestCase):
     class Sub(torch.nn.Module):
         test_parameters = [
             (torch.ones(5),),
@@ -82,7 +82,7 @@ class TestSimpleSub(unittest.TestCase):
         module: torch.nn.Module,
         test_data: Tuple[torch.Tensor],
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -96,7 +96,10 @@ class TestSimpleSub(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if common.is_option_enabled("corstone300"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(Sub.test_parameters)
     def test_sub_tosa_MI(self, test_data: torch.Tensor):

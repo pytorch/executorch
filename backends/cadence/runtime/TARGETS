@@ -7,6 +7,8 @@ python_library(
     srcs = [
         "__init__.py",
         "executor.py",
+        "runtime.py",
+        "utils.py"
     ] + glob([
         "xtsc-cfg/**/*",
     ]),
@@ -16,6 +18,7 @@ python_library(
         "//executorch/devtools/bundled_program:config",
         "//executorch/devtools/bundled_program:core",
         "//executorch/devtools/bundled_program/serialize:lib",
+        "//executorch/devtools:lib",
         "//executorch/exir:lib",
     ],
 )
