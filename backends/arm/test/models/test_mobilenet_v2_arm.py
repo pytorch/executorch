@@ -9,7 +9,7 @@ import logging
 import unittest
 
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir import EdgeCompileConfig
@@ -96,7 +96,7 @@ class TestMobileNetV2(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
                 atol=1.0, qtol=1, inputs=self.model_inputs, target_board="corstone-300"
             )
@@ -114,7 +114,7 @@ class TestMobileNetV2(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
                 atol=1.0, qtol=1, inputs=self.model_inputs, target_board="corstone-320"
             )
