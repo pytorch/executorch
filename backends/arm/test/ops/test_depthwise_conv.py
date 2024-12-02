@@ -9,7 +9,7 @@ import unittest
 from typing import Tuple
 
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.ops.test_conv1d import Conv1d
 from executorch.backends.arm.test.ops.test_conv2d import Conv2d
 
@@ -156,6 +156,19 @@ testsuite_conv2d = [
     ("two_dw_conv2d", two_dw_conv2d),
 ]
 
+testsuite_conv2d_u85 = [
+    ("2x2_1x6x4x4_gp6_st1", dw_conv2d_2x2_1x6x4x4_gp6_st1),
+    ("3x3_1x3x256x256_gp3_st1", dw_conv2d_3x3_1x3x256x256_gp3_st1),
+    ("3x3_1x4x256x256_gp4_st1", dw_conv2d_3x3_1x4x256x256_gp4_st1),
+    ("3x3_1x4x256x256_gp4_nobias", dw_conv2d_3x3_1x4x256x256_gp4_nobias),
+]
+
+testsuite_conv2d_u85_xfails = [
+    ("3x3_2x8x198x198_gp8_st3", dw_conv2d_3x3_2x8x198x198_gp8_st3),
+    ("two_dw_conv2d", two_dw_conv2d),
+]
+
+
 testsuite_conv1d = [
     ("2_1x6x4_gp6_st1", dw_conv1d_2_1x6x4_gp6_st1),
     ("two_dw_conv1d", two_dw_conv1d),
@@ -230,7 +243,7 @@ class TestDepthwiseConv(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(testsuite_conv1d + testsuite_conv2d)
@@ -247,7 +260,7 @@ class TestDepthwiseConv(unittest.TestCase):
     )  # Works
 
     @parameterized.expand(testsuite_conv2d, skip_on_empty=True)
-    @common.expectedFailureOnFVP
+    @unittest.expectedFailure
     def test_dw_conv2d_u55_BI(
         self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
     ):
@@ -274,10 +287,8 @@ class TestDepthwiseConv(unittest.TestCase):
             model.get_inputs(),
         )
 
-    # All test cases except 3x3_1x3x256x256_gp3_st1 have numerical issues on FVP. MLETORCH-520
-    @parameterized.expand(testsuite_conv1d[:-2] + testsuite_conv2d)
-    @common.expectedFailureOnFVP
-    def test_dw_conv_u85_BI_xfails(
+    @parameterized.expand(testsuite_conv1d + testsuite_conv2d_u85)
+    def test_dw_conv_u85_BI(
         self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
     ):
         self._test_dw_conv_ethos_BI_pipeline(
@@ -288,8 +299,10 @@ class TestDepthwiseConv(unittest.TestCase):
             model.get_inputs(),
         )
 
-    @parameterized.expand(testsuite_conv1d[-2:])
-    def test_dw_conv_u85_BI(
+    # All test cases except 3x3_1x3x256x256_gp3_st1 have numerical issues on FVP. MLETORCH-520
+    @parameterized.expand(testsuite_conv2d_u85_xfails)
+    @conftest.expectedFailureOnFVP
+    def test_dw_conv_u85_BI_xfails(
         self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
     ):
         self._test_dw_conv_ethos_BI_pipeline(
