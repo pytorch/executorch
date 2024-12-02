@@ -266,7 +266,7 @@ def _replace_attention(
     for _, child_module in module._modules.items():
         if len(list(child_module.children())) > 0:  # pyre-ignore [16]
             _replace_attention(
-                module=child_module, # pyre-ignore [6]
+                module=child_module,  # pyre-ignore [6]
                 rope_with_attention_sink=rope_with_attention_sink,
                 sink_size=sink_size,
                 window_size=window_size,
