@@ -6,6 +6,7 @@
 
 from . import (
     node_visitor,
+    op_adaptive_avg_pool2d,
     op_add,
     op_avg_pool2d,
     op_batch_norm,
@@ -63,6 +64,7 @@ from . import (
 
 __all__ = [
     node_visitor,
+    op_adaptive_avg_pool2d,
     op_add,
     op_avg_pool2d,
     op_batch_norm,

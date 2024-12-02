@@ -8,6 +8,15 @@ import torch
 
 
 # module with related operator only
+class AdaptiveAvgPool2D(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        adaptive_avg_pool = torch.nn.AdaptiveAvgPool2d((1, 1))
+        return adaptive_avg_pool(x)
+
+
 class Add(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -570,13 +579,22 @@ class IndexPut(torch.nn.Module):
 
 
 class LayerNorm(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, bias=True):
         super().__init__()
-        self.layer_norm = torch.nn.LayerNorm([768], eps=1e-6)
+        self.layer_norm = torch.nn.LayerNorm([768], eps=1e-6, bias=bias)
         self.linear = torch.nn.Linear(768, 196)
 
     def forward(self, x):
         return self.linear(self.layer_norm(x))
+
+
+class LayerNormAdd(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.layer_norm = torch.nn.LayerNorm([512], eps=1e-6, bias=False)
+
+    def forward(self, x, y):
+        return self.layer_norm(x) + y
 
 
 class LeakyReLUDefault(torch.nn.Module):
