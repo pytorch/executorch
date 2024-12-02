@@ -172,11 +172,21 @@ class SoftmaxModule(torch.nn.Module):
     can_delegate = False
 
 
+class MultipleOutputsModule(torch.nn.Module):
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return (x * y, x.sum(dim=-1, keepdim=True))
+
+    example_input = (torch.randn(10, 4, 5), torch.randn(10, 4, 5))
+    can_delegate = True
+
+
 models = {
     "add": AddModule,
     "add2": AddModule2,
     "add3": AddModule3,
     "softmax": SoftmaxModule,
+    "MultipleOutputsModule": MultipleOutputsModule,
 }
 
 calibration_data = {
@@ -263,7 +273,7 @@ def get_compile_spec(
                 target,
                 system_config="Ethos_U55_High_End_Embedded",
                 memory_mode="Shared_Sram",
-                extra_flags="--debug-force-regor --output-format=raw",
+                extra_flags="--debug-force-regor --output-format=raw --verbose-operators --verbose-cycle-estimate",
             )
             .set_permute_memory_format(True)
             .set_quantize_io(True)
@@ -276,7 +286,7 @@ def get_compile_spec(
                 target,
                 system_config="Ethos_U85_SYS_DRAM_Mid",
                 memory_mode="Shared_Sram",
-                extra_flags="--output-format=raw",
+                extra_flags="--output-format=raw --verbose-operators --verbose-cycle-estimate",
             )
             .set_permute_memory_format(True)
             .set_quantize_io(True)

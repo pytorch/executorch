@@ -14,7 +14,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.backend_details import CompileSpec
@@ -23,10 +23,10 @@ from parameterized import parameterized
 
 test_data_suite = [
     # (test_name, test_data, [kernel_size, stride, padding])
-    ("zeros", torch.zeros(20, 16, 50, 32), [4, 2, 0]),
-    ("ones", torch.zeros(20, 16, 50, 32), [4, 2, 0]),
-    ("rand", torch.rand(20, 16, 50, 32), [4, 2, 0]),
-    ("randn", torch.randn(20, 16, 50, 32), [4, 2, 0]),
+    ("zeros", torch.zeros(1, 16, 50, 32), [4, 2, 0]),
+    ("ones", torch.zeros(1, 16, 50, 32), [4, 2, 0]),
+    ("rand", torch.rand(1, 16, 50, 32), [4, 2, 0]),
+    ("randn", torch.randn(1, 16, 50, 32), [4, 2, 0]),
 ]
 
 
@@ -101,7 +101,7 @@ class TestAvgPool2d(unittest.TestCase):
         test_data: Tuple[torch.tensor],
     ):
         quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -116,7 +116,10 @@ class TestAvgPool2d(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(test_data_suite)
     def test_avgpool2d_tosa_MI(
