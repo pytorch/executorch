@@ -92,7 +92,7 @@ tosa_reference_model_rev="f9ea4ab7da19318fe36b1c34d68a3e40fd6e56c5"
 
 # vela
 vela_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u-vela"
-vela_rev="a08fc18780827b5fefc814dd0162ee6317ce0ae7"
+vela_rev="49d0ae16bafd1db0fcb6790f12b7f249acf1974d"
 
 ########
 ### Mandatory user args
