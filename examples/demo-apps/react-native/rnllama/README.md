@@ -1,50 +1,41 @@
-# Welcome to your Expo app 👋
+# React Native Llama
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+<p align="center">
+  <img src="./assets/images/rnllama.png" width="200" alt="rnllama Logo">
+</p>
 
-## Get started
+A React Native mobile application for running LLaMA language models using ExecuTorch. This example is for iOS only for now.
 
-1. Install dependencies
+## Features
 
-   ```bash
-   npm install
-   ```
+- Run LLaMA models directly on device, build the UI using React Native
+- Tested using Llama 3.2 SpinQuant 1B on iPhone 12 Pro
 
-2. Start the app
 
-   ```bash
-    npx expo start
-   ```
+## Prerequisites
 
-In the output, you'll find options to open the app in a
+- Node.js & npm
+- Xcode
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Installation
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+1. Clone the repository: `git clone git@github.com:pytorch/executorch.git`
 
-## Get a fresh project
+2. Navigate to the root of the repository: `cd executorch`
 
-When you're ready, run:
+3. Install dependencies: `./install_requirements.sh --pybind xnnpack && ./examples/models/llama/install_requirements.sh`
 
-```bash
-npm run reset-project
-```
+4. Follow the instructions in the [README](https://github.com/pytorch/executorch/blob/main/examples/models/llama/README.md#option-a-download-and-export-llama32-1b3b-model) to export a model as `.pte`
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+6. Navigate to the example: `cd examples/demo-apps/react-native/rnllama`
 
-## Learn more
+7. Install dependencies: `npm install`
 
-To learn more about developing your project with Expo, look at the following resources:
+8. Run the app: `npx expo run:ios --device` and select a USB connected iOS device
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+9. Find the device in finder, and place the exported `.pte` model and the downloaded tokenizer under the app.
 
-## Join the community
+10. Select the model and tokenizer in the app to start chatting:
 
-Join our community of developers creating universal apps.
+![Select model](./assets/images/select_model.png)
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
