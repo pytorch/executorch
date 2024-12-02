@@ -13,12 +13,11 @@ import numpy as np
 import torch
 
 
-# pyre-fixme[24]: Generic type `np.ndarray` expects 2 type parameters.
-def distance(fn: Callable[[np.ndarray, np.ndarray], float]) -> Callable[
+def distance(
+    fn: Callable[[np.ndarray, np.ndarray], float],
+) -> Callable[
     [
-        # pyre-fixme[24]: Generic type `np.ndarray` expects 2 type parameters.
         typing.Union[np.ndarray, torch._tensor.Tensor],
-        # pyre-fixme[24]: Generic type `np.ndarray` expects 2 type parameters.
         typing.Union[np.ndarray, torch._tensor.Tensor],
     ],
     float,
@@ -27,9 +26,7 @@ def distance(fn: Callable[[np.ndarray, np.ndarray], float]) -> Callable[
     # the distance between two N-D tensors given a function. This can be a RMS
     # function, maximum abs diff, or any kind of distance function.
     def wrapper(
-        # pyre-fixme[24]: Generic type `np.ndarray` expects 2 type parameters.
         a: Union[np.ndarray, torch.Tensor],
-        # pyre-fixme[24]: Generic type `np.ndarray` expects 2 type parameters.
         b: Union[np.ndarray, torch.Tensor],
     ) -> float:
         # convert a and b to np.ndarray type fp64
@@ -68,24 +65,20 @@ def distance(fn: Callable[[np.ndarray, np.ndarray], float]) -> Callable[
 
 
 @distance
-# pyre-fixme[24]: Generic type `np.ndarray` expects 2 type parameters.
 def rms(a: np.ndarray, b: np.ndarray) -> float:
     return ((a - b) ** 2).mean() ** 0.5
 
 
 @distance
-# pyre-fixme[24]: Generic type `np.ndarray` expects 2 type parameters.
 def max_abs_diff(a: np.ndarray, b: np.ndarray) -> float:
     return np.abs(a - b).max()
 
 
 @distance
-# pyre-fixme[24]: Generic type `np.ndarray` expects 2 type parameters.
 def max_rel_diff(x: np.ndarray, x_ref: np.ndarray) -> float:
     return np.abs((x - x_ref) / x_ref).max()
 
 
-# pyre-fixme[24]: Generic type `np.ndarray` expects 2 type parameters.
 def to_np_arr_fp64(x: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
     if isinstance(x, torch.Tensor):
         x = x.detach().cpu().numpy()
@@ -94,11 +87,8 @@ def to_np_arr_fp64(x: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
     return x
 
 
-# pyre-fixme[3]: Return type must be annotated.
 def normalized_rms(
-    # pyre-fixme[24]: Generic type `np.ndarray` expects 2 type parameters.
     predicted: Union[np.ndarray, torch.Tensor],
-    # pyre-fixme[24]: Generic type `np.ndarray` expects 2 type parameters.
     ground_truth: Union[np.ndarray, torch.Tensor],
 ):
     num = rms(predicted, ground_truth)

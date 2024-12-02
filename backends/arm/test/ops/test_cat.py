@@ -96,7 +96,7 @@ class TestCat(unittest.TestCase):
         compile_spec: CompileSpec,
         test_data: Tuple[tuple[torch.Tensor, ...], int],
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -108,10 +108,14 @@ class TestCat(unittest.TestCase):
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
             .partition()
+            .dump_artifact()
             .check_not(["executorch_exir_dialects_edge__ops_aten_cat_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if common.is_option_enabled("corstone300"):
+            tester.run_method_and_compare_outputs(inputs=test_data)
 
     @parameterized.expand(Cat.test_parameters)
     def test_cat_tosa_MI(self, operands: tuple[torch.Tensor, ...], dim: int):
@@ -129,14 +133,18 @@ class TestCat(unittest.TestCase):
         test_data = (operands, dim)
         self._test_cat_tosa_BI_pipeline(self.Cat(), test_data)
 
+    # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(Cat.test_parameters)
+    @common.expectedFailureOnFVP
     def test_cat_u55_BI(self, operands: tuple[torch.Tensor, ...], dim: int):
         test_data = (operands, dim)
         self._test_cat_ethosu_BI_pipeline(
             self.Cat(), common.get_u55_compile_spec(), test_data
         )
 
+    # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(Cat.test_parameters)
+    @common.expectedFailureOnFVP
     def test_cat_u85_BI(self, operands: tuple[torch.Tensor, ...], dim: int):
         test_data = (operands, dim)
         self._test_cat_ethosu_BI_pipeline(
