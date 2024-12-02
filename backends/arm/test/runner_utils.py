@@ -266,8 +266,6 @@ class RunnerUtil:
                 "-C",
                 "mps3_board.uart0.out_file='-'",
                 "-C",
-                "cpu0.CFGITCMSZ=11",
-                "-C",
                 "cpu0.semihosting-enable=1",
                 "-C",
                 "cpu0.semihosting-stack_base=0",

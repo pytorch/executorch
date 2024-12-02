@@ -49,6 +49,9 @@ install_buck() {
 
   rm "${BUCK2}"
   popd
+
+  # Kill all running buck2 daemon for a fresh start
+  buck2 killall || true
 }
 
 function write_sccache_stub() {

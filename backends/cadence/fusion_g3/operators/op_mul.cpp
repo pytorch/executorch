@@ -68,27 +68,45 @@ Tensor& mul_out(
   int inp2_shape[kTensorDimensionLimit];
   int out_shape[kTensorDimensionLimit];
 
-  /* input shapes and output shapes */
-  for (auto i = 0; i < a_size.size(); i++) {
-    inp1_shape[i] = a_size[i];
-  }
-
-  for (auto i = 0; i < b_size.size(); i++) {
-    inp2_shape[i] = b_size[i];
-  }
-
-  for (auto i = 0; i < out_size.size(); i++) {
-    out_shape[i] = out_size[i];
-  }
-
   /*find broadcast*/
   const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
   const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
   const bool broadcast = (a_is_broadcasted || b_is_broadcasted);
 
   int max_dim = a.dim() > b.dim() ? a.dim() : b.dim();
+  max_dim = out.dim() > max_dim ? out.dim() : max_dim;
 
-  if (compute_type == ScalarType::Int) {
+  bool optimized = 1;
+
+  if ((a.dim() == 0) || (b.dim() == 0)) {
+    optimized = 0;
+  }
+
+  if ((broadcast == 1) && (max_dim > kTensorDimensionLimit)) {
+    optimized = 0;
+  }
+
+  for (int i = 0; i < max_dim; i++) {
+    out_shape[i] = 1;
+    inp1_shape[i] = 1;
+    inp2_shape[i] = 1;
+  }
+
+  int offset_out = max_dim - out.dim();
+  int offset_inp1 = max_dim - a.dim();
+  int offset_inp2 = max_dim - b.dim();
+
+  for (int i = 0; i < out.dim(); i++) {
+    out_shape[i + offset_out] = out.size(i);
+  }
+  for (int i = 0; i < a.dim(); i++) {
+    inp1_shape[i + offset_inp1] = a.size(i);
+  }
+  for (int i = 0; i < b.dim(); i++) {
+    inp2_shape[i + offset_inp2] = b.size(i);
+  }
+
+  if ((compute_type == ScalarType::Int) && (optimized)) {
     const int* const inp1_data = a.const_data_ptr<int>();
     const int* const inp2_data = b.const_data_ptr<int>();
     int* const out_data = out.mutable_data_ptr<int>();
@@ -105,7 +123,7 @@ Tensor& mul_out(
     } else {
       xa_nn_elm_mul_32x32_32(out_data, inp1_data, inp2_data, out.numel());
     }
-  } else if (compute_type == ScalarType::Float) {
+  } else if ((compute_type == ScalarType::Float) && (optimized)) {
     const float* const inp1_data = a.const_data_ptr<float>();
     const float* const inp2_data = b.const_data_ptr<float>();
     float* const out_data = out.mutable_data_ptr<float>();

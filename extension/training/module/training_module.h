@@ -26,7 +26,8 @@ namespace training {
  * A facade class for loading programs for on-device training and executing
  * methods within them.
  */
-class ET_EXPERIMENTAL TrainingModule final : executorch::extension::Module {
+class ET_EXPERIMENTAL TrainingModule final
+    : public executorch::extension::Module {
  public:
   explicit TrainingModule(
       std::unique_ptr<runtime::DataLoader> data_loader,
