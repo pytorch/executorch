@@ -33,15 +33,15 @@ test_data_suite = [
         None,
     ),
     (
-        "op_div_rank1_rand",
-        torch.rand(5) * 5,
-        torch.rand(5) * 5,
-        None,
-    ),
-    (
         "op_div_rank4_ones",
         torch.ones(5, 10, 25, 20),
         torch.ones(5, 10, 25, 20),
+        None,
+    ),
+    (
+        "op_div_rank1_rand",
+        torch.rand(5) * 5,
+        torch.rand(5) * 5,
         None,
     ),
     (
@@ -183,7 +183,7 @@ class TestDiv(unittest.TestCase):
         test_data = (input_, other_)
         self._test_div_tosa_BI_pipeline(self.Div(), test_data)
 
-    @parameterized.expand(test_data_suite[:2])
+    @parameterized.expand(test_data_suite[:3])
     def test_div_u55_BI(
         self,
         test_name: str,
@@ -197,7 +197,7 @@ class TestDiv(unittest.TestCase):
         )
 
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
-    @parameterized.expand(test_data_suite[2:])
+    @parameterized.expand(test_data_suite[3:])
     @conftest.expectedFailureOnFVP
     def test_div_u55_BI_xfails(
         self,
@@ -211,7 +211,7 @@ class TestDiv(unittest.TestCase):
             self.Div(), common.get_u55_compile_spec(), test_data
         )
 
-    @parameterized.expand(test_data_suite[:2])
+    @parameterized.expand(test_data_suite[:3])
     def test_div_u85_BI(
         self,
         test_name: str,
@@ -225,7 +225,7 @@ class TestDiv(unittest.TestCase):
         )
 
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
-    @parameterized.expand(test_data_suite[2:])
+    @parameterized.expand(test_data_suite[3:])
     @conftest.expectedFailureOnFVP
     def test_div_u85_BI_xfails(
         self,

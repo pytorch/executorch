@@ -29,6 +29,11 @@ test_data_suite = [
     ("randn", torch.randn(1, 16, 50, 32), [4, 2, 0]),
 ]
 
+test_data_suite_mult_batches = [
+    # (test_name, test_data, [kernel_size, stride, padding])
+    ("rand", torch.rand(2, 16, 50, 32), [4, 2, 0]),
+]
+
 
 class TestAvgPool2d(unittest.TestCase):
     """Tests AvgPool2d."""
@@ -158,6 +163,34 @@ class TestAvgPool2d(unittest.TestCase):
 
     @parameterized.expand(test_data_suite)
     def test_avgpool2d_tosa_u85_BI(
+        self,
+        test_name: str,
+        test_data: torch.Tensor,
+        model_params: int | Tuple[int, int],
+    ):
+        self._test_avgpool2d_tosa_ethos_BI_pipeline(
+            self.AvgPool2d(*model_params),
+            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            (test_data,),
+        )
+
+    @parameterized.expand(test_data_suite_mult_batches)
+    @conftest.expectedFailureOnFVP  # See MLTORCH-517
+    def test_avgpool2d_tosa_u55_BI_mult_batches(
+        self,
+        test_name: str,
+        test_data: torch.Tensor,
+        model_params: int | Tuple[int, int],
+    ):
+        self._test_avgpool2d_tosa_ethos_BI_pipeline(
+            self.AvgPool2d(*model_params),
+            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            (test_data,),
+        )
+
+    @parameterized.expand(test_data_suite_mult_batches)
+    @conftest.expectedFailureOnFVP  # See MLTORCH-517
+    def test_avgpool2d_tosa_u85_BI_mult_batches(
         self,
         test_name: str,
         test_data: torch.Tensor,

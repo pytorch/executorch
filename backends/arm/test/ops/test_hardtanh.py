@@ -23,11 +23,11 @@ from parameterized import parameterized
 
 test_data_suite = [
     # (test_name, test_data)
-    ("zeros", torch.zeros(1, 10, 10, 10)),
+    ("zeros", torch.zeros(2, 10, 10, 10)),
     ("ones", torch.ones(10, 10, 10)),
     ("rand", torch.rand(10, 10) - 0.5),
     ("randn_pos", torch.randn(10) + 10),
-    ("randn_neg", torch.randn(10) - 10),
+    ("randn_neg", torch.randn(2, 10, 10, 10) - 10),
     ("ramp", torch.arange(-16, 16, 0.2)),
 ]
 
