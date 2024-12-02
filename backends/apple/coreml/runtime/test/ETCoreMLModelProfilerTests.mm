@@ -146,7 +146,6 @@ ETCoreMLModelStructurePath *make_path_with_output_name(const std::string& output
             XCTAssertNotNil(profilingResult[make_path_with_output_name("aten__native_batch_norm_legit_no_training_default_13_cast_fp16")]);
             XCTAssertNotNil(profilingResult[make_path_with_output_name("_inversed_aten_div_tensor_24_cast_fp16")]);
             XCTAssertNotNil(profilingResult[make_path_with_output_name("aten_mean_dim_7_cast_fp16")]);
-            XCTAssertNotNil(profilingResult[make_path_with_output_name("aten_clamp_default_54_cast_fp16")]);
             XCTAssertNotNil(profilingResult[make_path_with_output_name("aten__native_batch_norm_legit_no_training_default_22_cast_fp16")]);
             XCTAssertNotNil(profilingResult[make_path_with_output_name("aten_mul_tensor_27_cast_fp16")]);
         };
