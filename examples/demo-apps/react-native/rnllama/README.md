@@ -10,6 +10,7 @@ A React Native mobile application for running LLaMA language models using ExecuT
 
 - Run LLaMA models directly on device, build the UI using React Native
 - Tested using Llama 3.2 SpinQuant 1B on iPhone 12 Pro
+- The setup is heavily inspired by the [LLaMA iOS app example](https://github.com/pytorch/executorch/tree/main/examples/demo-apps/apple_ios/LLaMA)
 
 
 ## Prerequisites
@@ -29,7 +30,7 @@ A React Native mobile application for running LLaMA language models using ExecuT
 
 6. Navigate to the example: `cd examples/demo-apps/react-native/rnllama`
 
-7. Install dependencies: `npm install`
+7. Install dependencies: `npm install && cd ios && pod install && cd ..`
 
 8. Run the app: `npx expo run:ios --device` and select a USB connected iOS device
 
@@ -37,5 +38,5 @@ A React Native mobile application for running LLaMA language models using ExecuT
 
 10. Select the model and tokenizer in the app to start chatting:
 
-![Select model](./assets/images/select_model.png)
+[![rnllama]](https://github.com/user-attachments/assets/0ca5a258-a248-4247-9e09-451945c1014b)
 
