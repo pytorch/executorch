@@ -85,7 +85,7 @@ class TestSimpleClone(unittest.TestCase):
         test_data: Tuple[torch.Tensor],
     ):
         quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
-        (
+        tester = (
             ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
@@ -94,7 +94,10 @@ class TestSimpleClone(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if common.is_option_enabled("corstone300"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     def _test_clone_tosa_u55_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
