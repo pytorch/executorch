@@ -10,14 +10,13 @@ import unittest
 from typing import Tuple
 
 import torch
-from executorch.backends.arm.test import common
-
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
 
-class TestSimpleSub(unittest.TestCase):
+class TestSub(unittest.TestCase):
     class Sub(torch.nn.Module):
         test_parameters = [
             (torch.ones(5),),
@@ -82,7 +81,7 @@ class TestSimpleSub(unittest.TestCase):
         module: torch.nn.Module,
         test_data: Tuple[torch.Tensor],
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -96,7 +95,10 @@ class TestSimpleSub(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(Sub.test_parameters)
     def test_sub_tosa_MI(self, test_data: torch.Tensor):

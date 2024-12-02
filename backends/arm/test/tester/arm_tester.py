@@ -22,12 +22,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
-from executorch.backends.arm.test.common import (
-    arm_test_options,
-    current_time_formated,
-    get_option,
-    get_target_board,
-)
+from executorch.backends.arm.test.common import get_target_board
 
 from executorch.backends.arm.test.runner_utils import (
     _get_input_quantization_params,
@@ -626,9 +621,6 @@ def _get_tosa_operator_distribution(
 
 
 def _dump_str(to_print: str, path_to_dump: Optional[str] = None):
-    default_dump_path = get_option(arm_test_options.dump_path)
-    if not path_to_dump and default_dump_path:
-        path_to_dump = default_dump_path / f"ArmTester_{current_time_formated()}.log"
     if path_to_dump:
         with open(path_to_dump, "a") as fp:
             fp.write(to_print)
