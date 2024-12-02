@@ -51,6 +51,11 @@ class ScalarsToAttributePass(ExportPass):
                 if isinstance(arg, Node):
                     new_args.append(arg)
                     continue
+                if isinstance(arg, int) and not torch.is_floating_point(
+                    get_first_fake_tensor(n)
+                ):
+                    new_args.append(arg)
+                    continue
 
                 prefix = "_tensor_constant_"
                 get_new_attr_name = get_new_attr_name_with_prefix(prefix)

@@ -184,14 +184,12 @@ def get_qnn_quantizer(
         )
         qnn_quantizer.set_per_channel_conv_quant(enable=False)
         qnn_quantizer.set_per_channel_linear_quant(enable=False)
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
         qnn_quantizer.set_quant_config(
             quant_dtype, is_qat=is_qat, act_observer=MinMaxObserver
         )
     elif quant_config == "16a4w":
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
         quant_dtype = QuantDtype.use_16a4w
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
         qnn_quantizer.set_quant_config(
             quant_dtype, is_qat=is_qat, act_observer=MinMaxObserver
         )
