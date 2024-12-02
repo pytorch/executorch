@@ -10,7 +10,7 @@ import unittest
 from typing import Tuple
 
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
@@ -95,7 +95,7 @@ class TestLog(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(test_data_suite)
