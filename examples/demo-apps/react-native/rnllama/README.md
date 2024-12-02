@@ -24,9 +24,11 @@ A React Native mobile application for running LLaMA language models using ExecuT
 
 2. Navigate to the root of the repository: `cd executorch`
 
-3. Install dependencies: `./install_requirements.sh --pybind xnnpack && ./examples/models/llama/install_requirements.sh`
+3. Pull submodules: `git submodule sync && git submodule update --init`
 
-4. Follow the instructions in the [README](https://github.com/pytorch/executorch/blob/main/examples/models/llama/README.md#option-a-download-and-export-llama32-1b3b-model) to export a model as `.pte`
+4. Install dependencies: `./install_requirements.sh --pybind xnnpack && ./examples/models/llama/install_requirements.sh`
+
+5. Follow the instructions in the [README](https://github.com/pytorch/executorch/blob/main/examples/models/llama/README.md#option-a-download-and-export-llama32-1b3b-model) to export a model as `.pte`
 
 6. Navigate to the example: `cd examples/demo-apps/react-native/rnllama`
 
@@ -34,7 +36,7 @@ A React Native mobile application for running LLaMA language models using ExecuT
 
 8. Run the app: `npx expo run:ios --device` and select a USB connected iOS device
 
-9. Find the device in finder, and place the exported `.pte` model and the downloaded tokenizer under the app.
+9. Find the device in finder, and place the exported `.pte` model and the downloaded tokenizer under the app
 
 10. Select the model and tokenizer in the app to start chatting:
 
