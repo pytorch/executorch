@@ -58,34 +58,20 @@ Tensor& mul_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "mul.out";
 
-  const exec_aten::ArrayRef<Tensor::SizesType> a_size = a.sizes();
-  const exec_aten::ArrayRef<Tensor::SizesType> b_size = b.sizes();
-  const exec_aten::ArrayRef<Tensor::SizesType> out_size = out.sizes();
-
   int kTensorDimensionLimit = 5;
 
   int inp1_shape[kTensorDimensionLimit];
   int inp2_shape[kTensorDimensionLimit];
   int out_shape[kTensorDimensionLimit];
 
-  /*find broadcast*/
-  const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
-  const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
-  const bool broadcast = (a_is_broadcasted || b_is_broadcasted);
+  bool broadcast = 0;
 
   int max_dim = a.dim() > b.dim() ? a.dim() : b.dim();
   max_dim = out.dim() > max_dim ? out.dim() : max_dim;
 
   bool optimized = 1;
 
-  if ((a.dim() == 0) || (b.dim() == 0)) {
-    optimized = 0;
-  }
-
-  if ((broadcast == 1) && (max_dim > kTensorDimensionLimit)) {
-    optimized = 0;
-  }
-
+  /* Added change to work with input dimensions more than 5 */
   for (int i = 0; i < max_dim; i++) {
     out_shape[i] = 1;
     inp1_shape[i] = 1;
@@ -106,12 +92,30 @@ Tensor& mul_out(
     inp2_shape[i + offset_inp2] = b.size(i);
   }
 
+  /*find broadcast*/
+  for (int i = 0; i < out.dim(); i++) {
+    if (((inp1_shape[i]) != (out_shape[i])) ||
+        ((inp2_shape[i]) != (out_shape[i]))) {
+      broadcast = 1;
+    }
+  }
+
+  if ((broadcast == 1) && (max_dim > kTensorDimensionLimit)) {
+    optimized = 0;
+  }
+
   if ((compute_type == ScalarType::Int) && (optimized)) {
     const int* const inp1_data = a.const_data_ptr<int>();
     const int* const inp2_data = b.const_data_ptr<int>();
     int* const out_data = out.mutable_data_ptr<int>();
 
-    if (broadcast) {
+    if (a.numel() == 1) {
+      xa_nn_elm_mul_scalar_32x32_32(
+          out_data, inp2_data, inp1_data[0], out.numel());
+    } else if (b.numel() == 1) {
+      xa_nn_elm_mul_scalar_32x32_32(
+          out_data, inp1_data, inp2_data[0], out.numel());
+    } else if (broadcast) {
       xa_nn_elm_mul_broadcast_5D_32x32_32(
           out_data,
           out_shape,
@@ -128,7 +132,13 @@ Tensor& mul_out(
     const float* const inp2_data = b.const_data_ptr<float>();
     float* const out_data = out.mutable_data_ptr<float>();
 
-    if (broadcast) {
+    if (a.numel() == 1) {
+      xa_nn_elm_mul_scalar_f32xf32_f32(
+          out_data, inp2_data, inp1_data[0], out.numel());
+    } else if (b.numel() == 1) {
+      xa_nn_elm_mul_scalar_f32xf32_f32(
+          out_data, inp1_data, inp2_data[0], out.numel());
+    } else if (broadcast) {
       xa_nn_elm_mul_broadcast_5D_f32xf32_f32(
           out_data,
           out_shape,
@@ -157,7 +167,6 @@ Tensor& mul_out(
           torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16);
     });
   }
-
   return out;
 }
 
