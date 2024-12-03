@@ -39,13 +39,14 @@ build_executorch() {
     -DEXECUTORCH_BUILD_DEVTOOLS=ON \
     -DEXECUTORCH_BUILD_VULKAN=$BUILD_VULKAN \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
+    -DEXECUTORCH_BUILD_TESTS=ON \
     -Bcmake-out
   cmake --build cmake-out -j9 --target install
 }
 
 export_test_model() {
-  python3 -m test.models.export_program --modules "ModuleAdd,ModuleAddHalf,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleLinear,ModuleMultipleEntry,ModuleSimpleTrain" --outdir "cmake-out" 2> /dev/null
-  python3 -m test.models.export_delegated_program --modules "ModuleAddMul" --backend_id "StubBackend" --outdir "cmake-out" || true
+  # python3 -m test.models.export_program --modules "ModuleAdd,ModuleAddHalf,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleLinear,ModuleMultipleEntry,ModuleSimpleTrain" --outdir "cmake-out" 2> /dev/null
+  # python3 -m test.models.export_delegated_program --modules "ModuleAddMul" --backend_id "StubBackend" --outdir "cmake-out" || true
 
   DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH="$(realpath test/models/deprecated/ModuleLinear-no-constant-segment.pte)"
   ET_MODULE_ADD_HALF_PATH="$(realpath cmake-out/ModuleAddHalf.pte)"
@@ -96,18 +97,18 @@ report_coverage() {
   ${LLVM_COV} report -instr-profile=cmake-out/merged.profdata $TEST_BINARY_LIST
 }
 
-probe_tests() {
+run_ctest() {
+  pushd cmake-out/
+  ctest
+  popd
+}
+
+probe_additional_tests() {
   # This function finds the set of directories that contain C++ tests
   # CMakeLists.txt rules, that are buildable using build_and_run_test
   dirs=(
-    backends
-    examples
-    extension
-    kernels
-    runtime
-    schema
-    devtools
-    test
+    examples/models/llama/tokenizer
+    extension/llm/tokenizer
   )
 
   find "${dirs[@]}" \
@@ -116,14 +117,15 @@ probe_tests() {
       | sort -u
 }
 
-build_executorch
+# build_executorch
+run_ctest
 export_test_model
 
 if [ -z "$1" ]; then
   echo "Running all directories:"
-  probe_tests
+  probe_additional_tests
 
-  for test_dir in $(probe_tests); do
+  for test_dir in $(probe_additional_tests); do
     build_and_run_test "${test_dir}"
   done
 else

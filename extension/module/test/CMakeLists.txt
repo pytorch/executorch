@@ -32,3 +32,5 @@ et_cxx_test(
   portable_kernels
   portable_ops_lib
 )
+
+set_property(TEST extension_module_test PROPERTY ENVIRONMENT "RESOURCES_PATH=${EXECUTORCH_ROOT}/extension/module/test/resources")
