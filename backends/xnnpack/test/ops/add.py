@@ -43,17 +43,20 @@ class TestAdd(unittest.TestCase):
             return out1, out2
 
     def _test_add(self, inputs):
-        (
-            Tester(self.Add(), inputs)
-            .export()
-            .check_count({"torch.ops.aten.add.Tensor": 4})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(self.Add(), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.add.Tensor": 4})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_fp16_add(self):
         inputs = (torch.randn(1).to(torch.float16), torch.randn(1).to(torch.float16))
@@ -65,95 +68,110 @@ class TestAdd(unittest.TestCase):
 
     def test_fp32_add_constant(self):
         inputs = (torch.randn(4, 4, 4),)
-        (
-            Tester(self.AddConstant(torch.randn(4, 4, 4)), inputs)
-            .export()
-            .check_count({"torch.ops.aten.add.Tensor": 4})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(self.AddConstant(torch.randn(4, 4, 4)), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.add.Tensor": 4})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_qs8_add_constant(self):
         inputs = (torch.randn(4, 4, 4),)
-        (
-            Tester(self.AddConstant(torch.randn(4, 4, 4)), inputs)
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.add.Tensor": 4})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(self.AddConstant(torch.randn(4, 4, 4)), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count({"torch.ops.aten.add.Tensor": 4})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_qs8_add(self):
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
-        (
-            Tester(self.Add(), inputs)
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.add.Tensor": 4})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(self.Add(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count({"torch.ops.aten.add.Tensor": 4})
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_add_Tensor",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_qs8_add2(self):
         inputs = (torch.randn(1, 1, 4, 4),)
-        (
-            Tester(self.Add2(), inputs)
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.add.Tensor": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(self.Add2(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count({"torch.ops.aten.add.Tensor": 1})
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_add_Tensor",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_qs8_add3(self):
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1))
-        (
-            Tester(self.Add(), inputs)
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.add.Tensor": 4})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(self.Add(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count({"torch.ops.aten.add.Tensor": 4})
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_add_Tensor",
                     "torch.ops.quantized_decomposed",
                 ]
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     class AddRelu(torch.nn.Module):
         def forward(self, x, y):
@@ -162,35 +180,43 @@ class TestAdd(unittest.TestCase):
 
     def test_fp32_add_relu(self):
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
-        (
-            Tester(self.AddRelu(), inputs)
-            .export()
-            .check_count({"torch.ops.aten.add.Tensor": 1})
-            .check_count({"torch.ops.aten.relu.default": 1})
-            .to_edge_transform_and_lower()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
-            .check_not(["executorch_exir_dialects_edge__ops_aten_relu_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(self.AddRelu(), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.add.Tensor": 1})
+            tester.check_count({"torch.ops.aten.relu.default": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
+            tester.check_not(["executorch_exir_dialects_edge__ops_aten_relu_default"])
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_qs8_add_relu(self):
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
-        (
-            Tester(self.AddRelu(), inputs)
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.add.Tensor": 1})
-            .check_count({"torch.ops.aten.relu.default": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(self.AddRelu(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count({"torch.ops.aten.add.Tensor": 1})
+            tester.check_count({"torch.ops.aten.relu.default": 1})
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+                tester.check_count(
+                    {"torch.ops.higher_order.executorch_call_delegate": 1}
+                )
+                tester.to_executorch()
+                tester.serialize()
+                tester.run_method_and_compare_outputs()
 
     def test_qs8_add_relu_seq(self):
         class AddReLU(torch.nn.Module):
@@ -220,17 +246,20 @@ class TestAdd(unittest.TestCase):
             ),
         )
 
-        (
-            Tester(self.AddRelu(), inputs)
-            .quantize()
-            .export()
-            .check_count(
+        for legacy in (True, False):
+            tester = Tester(self.AddRelu(), inputs)
+            tester.quantize()
+            tester.export()
+            tester.check_count(
                 {"torch.ops.aten.add.Tensor": 1, "torch.ops.aten.relu.default": 1}
             )
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+            tester.check(["torch.ops.quantized_decomposed"])
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
