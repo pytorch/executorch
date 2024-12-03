@@ -40,4 +40,4 @@ A React Native mobile application for running LLaMA language models using ExecuT
 
 10. Select the model and tokenizer in the app to start chatting:
 
-[![rnllama]](https://github.com/user-attachments/assets/0ca5a258-a248-4247-9e09-451945c1014b)
+[![rnllama]](https://github.com/user-attachments/assets/b339f1ec-8b80-41f0-b3f6-ded6698ac926)
