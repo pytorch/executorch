@@ -178,7 +178,7 @@ executorch::runtime::Result<TensorAccessor<T, N>> make_tensor_accessor(
 
   if (N != tensor.dim()) {
     ET_LOG(
-        Error, "Expecting %zd dimensions but tensor has %zd.", N, tensor.dim());
+        Error, "Expecting %zd dimensions but tensor has %zd.", static_cast<ssize_t>(N), static_cast<ssize_t>(tensor.dim()));
     return executorch::runtime::Error::InvalidArgument;
   }
 
@@ -186,8 +186,8 @@ executorch::runtime::Result<TensorAccessor<T, N>> make_tensor_accessor(
     ET_LOG(
         Error,
         "Size of data type template argument (%zd) not equal to tensor element size (%zd)",
-        sizeof(T),
-        tensor.element_size());
+        static_cast<ssize_t>(sizeof(T)),
+        static_cast<ssize_t>(tensor.element_size()));
     return executorch::runtime::Error::InvalidArgument;
   }
 
