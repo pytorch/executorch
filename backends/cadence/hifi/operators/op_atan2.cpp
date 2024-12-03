@@ -103,8 +103,6 @@ Tensor& atan2_out(
 
       xa_nn_elm_atan2_f32(p_out, p_inp1, p_inp2, num_elm);
 
-      free(ptr1);
-      free(ptr2);
     } else if (a_is_broadcasted && (!b_is_broadcasted)) {
       FLOAT32* __restrict__ ptr1 =
           (FLOAT32* __restrict__)kernels::allocate_temp_memory(
@@ -134,7 +132,6 @@ Tensor& atan2_out(
 
       xa_nn_elm_atan2_f32(p_out, p_inp1, p_inp2, num_elm);
 
-      free(ptr1);
     } else if (b_is_broadcasted && (!a_is_broadcasted)) {
       WORD32* __restrict__ ptr1 =
           (WORD32* __restrict__)kernels::allocate_temp_memory(
@@ -161,7 +158,6 @@ Tensor& atan2_out(
 
       xa_nn_elm_atan2_f32(p_out, p_inp1, p_inp2, num_elm);
 
-      free(ptr1);
     } else {
       FLOAT32* __restrict__ p_out =
           (FLOAT32* __restrict__)out.mutable_data_ptr<float>();

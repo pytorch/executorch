@@ -379,7 +379,6 @@ Tensor& clamp_tensor_out(
 
           ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
 
-          free(p_scratch);
         } else {
           WORD32 ret_val = xa_nn_elm_clamp_broadcast_4D_f32Xf32xf32_f32(
               out_data,

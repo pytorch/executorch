@@ -133,7 +133,7 @@ Tensor& where_out(
             inp2_shape,
             p_brd_cond,
             con_shape);
-        free(p_scratch);
+
       } else {
         xa_nn_elm_where_broadcast_4D_f32xf32_f32(
             out_data,
