@@ -3,6 +3,16 @@ name: apple-perf
 on:
   schedule:
     - cron: 0 1 * * *
+  pull_request:
+    paths:
+      - .github/workflows/apple-perf.yml
+      - extension/benchmark/apple/Benchmark/default-ios-device-farm-appium-test-spec.yml.j2
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apple-perf.yml
+      - extension/benchmark/apple/Benchmark/default-ios-device-farm-appium-test-spec.yml.j2
   # Note: GitHub has an upper limit of 10 inputs
   workflow_dispatch:
     inputs:
@@ -66,9 +76,9 @@ jobs:
           # Separate default values from the workflow dispatch. To ensure defaults are accessible
           # during scheduled runs and to provide flexibility for different defaults between
           # on-demand and periodic benchmarking.
-          CRON_DEFAULT_MODELS: "stories110M,mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l"
-          CRON_DEFAULT_DEVICES: "apple_iphone_15"
-          CRON_DEFAULT_DELEGATES: "xnnpack,coreml,mps"
+          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'stories110M,mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l' || 'stories110M' }}
+          CRON_DEFAULT_DEVICES: apple_iphone_15
+          CRON_DEFAULT_DELEGATES: ${{ github.event_name == 'schedule' && 'xnnpack,coreml,mps' || 'xnnpack' }}
         run: |
           set -ex
           MODELS="${{ inputs.models }}"
