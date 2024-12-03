@@ -214,7 +214,7 @@ option(EXECUTORCH_BUILD_KERNELS_QUANTIZED "Build the quantized kernels" OFF)
 
 option(EXECUTORCH_BUILD_DEVTOOLS "Build the ExecuTorch Developer Tools")
 
-option(EXECUTORCH_BUILD_TESTS "Build CMake-based unit tests" ON)
+option(EXECUTORCH_BUILD_TESTS "Build CMake-based unit tests" OFF)
 
 option(EXECUTORCH_NNLIB_OPT "Build Cadence backend Hifi nnlib kernel" OFF)
 
@@ -833,26 +833,7 @@ if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
 endif()
 
-if(BUILD_TESTING)
-  # This contains the list of tests which are always built
-  add_subdirectory(extension/evalue_util/test)
-  add_subdirectory(extension/kernel_util/test)
-  add_subdirectory(extension/memory_allocator/test)
-  add_subdirectory(extension/parallel/test)
-  add_subdirectory(extension/pytree/test)
-  add_subdirectory(kernels/portable/test)
-  add_subdirectory(kernels/portable/cpu/util/test)
-  add_subdirectory(kernels/prim_ops/test)
-  add_subdirectory(kernels/test)
-  add_subdirectory(runtime/core/exec_aten/testing_util/test)
-  add_subdirectory(runtime/core/exec_aten/util/test)
-  add_subdirectory(runtime/core/portable_type/test)
-  add_subdirectory(runtime/core/test)
-  add_subdirectory(runtime/executor/test)
-  add_subdirectory(runtime/kernel/test)
-  add_subdirectory(runtime/platform/test)
-  add_subdirectory(test/utils)
-endif()
+include(Test.cmake)
 
 # Print all summary
 executorch_print_configuration_summary()
