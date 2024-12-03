@@ -84,13 +84,21 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   target_include_directories(
     custom_ops_aot_lib PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
   )
+  # TODO: This only works if we install portable_lib.so to
+  # <site-packages>/executorch/extension/pybindings/.
+  if(APPLE)
+    set(RPATH "@loader_path/../../pybindings")
+  else()
+    set(RPATH "$ORIGIN/../../pybindings")
+  endif()
+  set_target_properties(custom_ops_aot_lib PROPERTIES INSTALL_RPATH ${RPATH})
   if(TARGET portable_lib)
     # If we have portable_lib built, custom_ops_aot_lib gives the ability to use
     # the ops in PyTorch and ExecuTorch through pybind
     target_link_libraries(custom_ops_aot_lib PUBLIC portable_lib)
   else()
     # If no portable_lib, custom_ops_aot_lib still gives the ability to use the
-    # ops in PyTorch
+    # ops in PyTorchk
     target_link_libraries(custom_ops_aot_lib PUBLIC executorch_core)
   endif()
 
@@ -109,5 +117,7 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
            ${_common_compile_options} -DET_USE_THREADPOOL
   )
 
-  install(TARGETS custom_ops_aot_lib DESTINATION lib)
+  install(TARGETS custom_ops_aot_lib
+          LIBRARY DESTINATION executorch/extension/llm/custom_ops
+  )
 endif()
