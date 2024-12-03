@@ -16,7 +16,8 @@
 #include <executorch/extension/tensor/tensor.h>
 #include <algorithm>
 #include <cstdlib>
-#include <cstring>
+
+#include <filesystem>
 #include <fstream>
 #include <string>
 
@@ -679,6 +680,39 @@ Error QnnManager::Compile(
         "Failed to finalize Qnn Graph with error: %d",
         QNN_GET_ERROR_CODE(error));
     return Error::Internal;
+  }
+
+  // Write context binary to file for debugging purpose
+  const char* et_qnn_debug_dir = getenv("ET_QNN_DEBUG_DIR");
+  if (et_qnn_debug_dir != nullptr) {
+    namespace fs = std::filesystem;
+
+    fs::path debug_dir = et_qnn_debug_dir;
+    if (!fs::exists(debug_dir) || !fs::is_directory(debug_dir)) {
+      QNN_EXECUTORCH_LOG_WARN(
+          "ET_QNN_DEBUG_DIR %s is not a valid directory", et_qnn_debug_dir);
+      return Error::Ok;
+    }
+
+    QnnExecuTorchContextBinary qnn_executorch_context_binary{nullptr, 0};
+    if (GetContextBinary(qnn_executorch_context_binary) != Error::Ok) {
+      return Error::Ok;
+    }
+    auto binary_info = GetBinaryInfo(qnn_executorch_context_binary.buffer);
+
+    std::string binary_file =
+        std::string(et_qnn_debug_dir) + "/qnn_context_binary.bin";
+    std::ofstream fout(binary_file, std::ios::binary);
+
+    fout.write(
+        reinterpret_cast<const char*>(binary_info->data()->data()),
+        binary_info->data()->size());
+
+    if (!fout) {
+      QNN_EXECUTORCH_LOG_WARN(
+          "Failed to write QNN context binary to file %s", binary_file.c_str());
+    }
+    fout.close();
   }
 
   return Error::Ok;
