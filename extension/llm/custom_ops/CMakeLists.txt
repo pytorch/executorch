@@ -98,7 +98,7 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
     target_link_libraries(custom_ops_aot_lib PUBLIC portable_lib)
   else()
     # If no portable_lib, custom_ops_aot_lib still gives the ability to use the
-    # ops in PyTorchk
+    # ops in PyTorch
     target_link_libraries(custom_ops_aot_lib PUBLIC executorch_core)
   endif()
 
