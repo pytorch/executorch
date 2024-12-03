@@ -48,10 +48,17 @@ class Attention(nn.Module):
         n_kv_heads: int,
         max_seq_length: int,
         kv_update_method: int,
+        use_static_select_in_mask: bool,
     ):
         super().__init__()
 
         self.kv_update_method = kv_update_method
+        self.use_static_select_in_mask = use_static_select_in_mask
+
+        self.use_dynamic_shapes = self.kv_update_method in [1, 4]
+        if self.use_dynamic_shapes:
+            assert not self.use_static_select_in_mask
+
         self.kv_io = False
         if self.kv_update_method == 4:
             self.kv_io = True
@@ -102,7 +109,7 @@ class Attention(nn.Module):
     def forward(
         self,
         x: torch.Tensor,  # (bsz, seqlen, dim)
-        input_pos_or_mask: torch.Tensor,  # if mask, shape is (seqlen, input_pos + seqlen)
+        input_pos: torch.Tensor,
         k_cache: Optional[torch.Tensor] = None,
         v_cache: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
@@ -110,11 +117,15 @@ class Attention(nn.Module):
         assert bsz <= self.max_batch_size
         assert dim == self.dim
 
-        input_pos = input_pos_or_mask
-        input_pos_item = input_pos[-1].item()
-        torch._check_is_size(input_pos_item)
-        torch._check(input_pos_item + seqlen <= self.max_seq_length)
-        attn_mask = self.mask.narrow(0, input_pos_item, seqlen)
+        if self.use_static_select_in_mask:
+            attn_mask = self.mask[input_pos.reshape(-1), :]
+            assert attn_mask.dim() == 2
+        else:
+            input_pos_item = input_pos[-1].item()
+            torch._check_is_size(input_pos_item)
+            torch._check(input_pos_item + seqlen <= self.max_seq_length)
+            attn_mask = self.mask.narrow(0, input_pos_item, seqlen)
+            assert attn_mask.dim() == 2
 
         # QKV
         q, k, v = self.wq(x), self.wk(x), self.wv(x)
@@ -144,15 +155,30 @@ class Attention(nn.Module):
 
         return y
 
-    def args(self):
+    def seqlen(self):
         seqlen = 2
         if self.kv_update_method in [2, 3]:
             seqlen = 1
 
+        if self.kv_update_method in [5, 6]:
+            seqlen = 10
+
+        return seqlen
+
+    def args(self):
+        seqlen = self.seqlen()
+
         ret = [
             torch.ones(self.max_batch_size, seqlen, self.dim, dtype=torch.float32),
         ]
-        ret.append(torch.tensor([0], dtype=torch.int64).reshape(1, -1))
+        if self.kv_update_method in [6]:
+            ret.append(
+                torch.tensor(
+                    [i for i in range(self.seqlen())], dtype=torch.int64
+                ).reshape(-1)
+            )
+        else:
+            ret.append(torch.tensor([0], dtype=torch.int64).reshape(1, -1))
 
         if self.kv_io:
             ret = ret + [
@@ -190,7 +216,6 @@ class Attention(nn.Module):
         return ret
 
     def dynamic_shapes(self):
-        assert self.kv_update_method in [1, 4]
         seqlen = torch.export.Dim(name="seqlen", min=1, max=self.max_seq_length)
         ret = [{1: seqlen}]
         ret = ret + [{} for _ in range(len(self.args()) - len(ret))]
@@ -200,7 +225,7 @@ class Attention(nn.Module):
         ret = {
             "args": self.args(),
         }
-        if self.kv_update_method in [1, 4]:
+        if self.use_dynamic_shapes:
             ret["dynamic_shapes"] = self.dynamic_shapes()
 
         return ret
@@ -218,6 +243,10 @@ class Attention(nn.Module):
             return self.update_kv_cache3(input_pos, k_val, v_val)
         elif self.kv_update_method == 4:
             return self.update_kv_cache4(input_pos, k_val, v_val, k_cache, v_cache)
+        elif self.kv_update_method == 5:
+            return self.update_kv_cache5(input_pos, k_val, v_val)
+        elif self.kv_update_method == 6:
+            return self.update_kv_cache6(input_pos, k_val, v_val)
 
         assert False
 
@@ -281,6 +310,21 @@ class Attention(nn.Module):
 
         return k_cache_ret, v_cache_ret
 
+    def update_kv_cache5(self, input_pos, k_val, v_val):
+        assert not self.kv_io
+        assert input_pos.numel() == 1
+        input_pos = input_pos.reshape(-1)
+        self.k_cache[:, :, input_pos : (input_pos + self.seqlen()), :] = k_val
+        self.v_cache[:, :, input_pos : (input_pos + self.seqlen()), :] = v_val
+        return self.k_cache, self.v_cache
+
+    def update_kv_cache6(self, input_pos, k_val, v_val):
+        assert not self.kv_io
+        assert input_pos.numel() == self.seqlen()
+        self.k_cache[:, :, input_pos, :] = k_val
+        self.v_cache[:, :, input_pos, :] = v_val
+        return self.k_cache, self.v_cache
+
 
 ########################################################################################################################
 # Export attention model for CoreML
@@ -294,11 +338,13 @@ with torch.no_grad():
         max_seq_length=512,
         # Change kv_update_method to 1, 2, 3, or 4 to test different update methods
         kv_update_method=4,
+        use_static_select_in_mask=False,
     )
     args = attention.args()
     attention(*args)
     exported_program = torch.export.export(attention, **attention.export_kwargs())
 
+print(exported_program)
 remove_graph_asserts(exported_program)
 mlprog = ct.convert(
     exported_program,
