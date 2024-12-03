@@ -151,22 +151,14 @@ class QuantizedKVCache(nn.Module):
             # instead of quantizing on their own.
             # But until this opting for code simplicity
             start_pos = input_pos[0].item()
-            _ = torch.ops.llama.update_quantized_cache(
-                quantized_k_val, self.k_cache, start_pos
-            )
-            _ = torch.ops.llama.update_quantized_cache(
-                k_scales, self.k_cache_scales, start_pos
-            )
-            _ = torch.ops.llama.update_quantized_cache(
+            _ = torch.ops.llama.update_cache(quantized_k_val, self.k_cache, start_pos)
+            _ = torch.ops.llama.update_cache(k_scales, self.k_cache_scales, start_pos)
+            _ = torch.ops.llama.update_cache(
                 k_zero_points, self.k_cache_zero_points, start_pos
             )
-            _ = torch.ops.llama.update_quantized_cache(
-                quantized_v_val, self.v_cache, start_pos
-            )
-            _ = torch.ops.llama.update_quantized_cache(
-                v_scales, self.v_cache_scales, start_pos
-            )
-            _ = torch.ops.llama.update_quantized_cache(
+            _ = torch.ops.llama.update_cache(quantized_v_val, self.v_cache, start_pos)
+            _ = torch.ops.llama.update_cache(v_scales, self.v_cache_scales, start_pos)
+            _ = torch.ops.llama.update_cache(
                 v_zero_points, self.v_cache_zero_points, start_pos
             )
 
@@ -205,8 +197,8 @@ class QuantizedKVCache(nn.Module):
                 v_out[:, :, input_pos] = v_val
         else:
             start_pos = input_pos[0].item()
-            _ = torch.ops.llama.update_quantized_cache(k_val, k_out, start_pos)
-            _ = torch.ops.llama.update_quantized_cache(v_val, v_out, start_pos)
+            _ = torch.ops.llama.update_cache(k_val, k_out, start_pos)
+            _ = torch.ops.llama.update_cache(v_val, v_out, start_pos)
 
         return k_out, v_out
 
