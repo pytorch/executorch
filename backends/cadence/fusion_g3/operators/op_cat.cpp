@@ -34,7 +34,6 @@ Tensor& cat_out(
     exec_aten::ArrayRef<Tensor> tensors,
     int64_t dim,
     Tensor& out) {
-
   if (dim < 0) {
     dim += out.dim();
   }

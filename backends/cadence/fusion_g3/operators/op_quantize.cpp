@@ -565,7 +565,6 @@ Tensor& quantize_per_tensor_out(
     int64_t quant_max,
     ScalarType dtype,
     Tensor& out) {
-
   torch::executor::Error err = resize_tensor(out, input.sizes());
   ET_CHECK_MSG(
       err == torch::executor::Error::Ok,
