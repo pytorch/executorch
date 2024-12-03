@@ -8,6 +8,15 @@ phases:
 
   pre_test:
     commands:
+      # Download the model from S3
+      - curl -s --fail '{{ model_path }}' -o model.zip
+      - unzip model.zip && ls -la
+
+      # Copy the model to sdcard. This prints too much progress info when the files
+      # are large, so it's better to just silent them
+      - adb -s $DEVICEFARM_DEVICE_UDID push *.bin /sdcard > /dev/null && echo OK
+      - adb -s $DEVICEFARM_DEVICE_UDID push *.pte /sdcard > /dev/null && echo OK
+
       # Prepare the model and the tokenizer
       - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /sdcard/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mkdir -p /data/local/tmp/minibench/"

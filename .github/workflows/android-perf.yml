@@ -30,10 +30,6 @@ on:
         description: The list of configs used the benchmark
         required: false
         type: string
-      test_spec:
-        description: The test spec to drive the test on AWS devices
-        required: false
-        type: string
   workflow_call:
     inputs:
       models:
@@ -58,10 +54,6 @@ on:
         default: false
       benchmark_configs:
         description: The list of configs used the benchmark
-        required: false
-        type: string
-      test_spec:
-        description: The test spec to drive the test on AWS devices
         required: false
         type: string
 
@@ -106,6 +98,7 @@ jobs:
           declare -A DEVICE_POOL_ARNS
           DEVICE_POOL_ARNS[samsung_galaxy_s22]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa"
           DEVICE_POOL_ARNS[samsung_galaxy_s24]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/98f8788c-2e25-4a3c-8bb2-0d1e8897c0db"
+          DEVICE_POOL_ARNS[google_pixel_8_pro]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/d65096ab-900b-4521-be8b-a3619b69236a"
 
           # Resolve device names with their corresponding ARNs
           if [[ ! $(echo "$DEVICES" | jq empty 2>/dev/null) ]]; then
@@ -125,22 +118,61 @@ jobs:
           echo "devices=$(echo "$MAPPED_ARNS_JSON" | jq -c .)" >> $GITHUB_OUTPUT
           echo "delegates=$(echo $DELEGATES | jq -Rc 'split(",")')" >> $GITHUB_OUTPUT
 
-  export-models:
-    name: export-models
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+  prepare-test-specs:
+    runs-on: linux.2xlarge
     needs: set-parameters
     strategy:
       matrix:
           model: ${{ fromJson(needs.set-parameters.outputs.models) }}
           delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
       fail-fast: false
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Prepare the spec
+        shell: bash
+        working-directory: extension/benchmark/android/benchmark
+        run: |
+          set -eux
+
+          # The model will be exported in the next step to this S3 path
+          MODEL_PATH="https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/model.zip"
+          # We could write a script to properly use jinja here, but there is only one variable,
+          # so let's just sed it
+          sed -i -e 's,{{ model_path }},'"${MODEL_PATH}"',g' android-llm-device-farm-test-spec.yml.j2
+          cp android-llm-device-farm-test-spec.yml.j2 android-llm-device-farm-test-spec.yml
+
+          # Just print the test spec for debugging
+          cat android-llm-device-farm-test-spec.yml
+
+      - name: Upload the spec
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}
+          retention-days: 1
+          if-no-files-found: error
+          path: extension/benchmark/android/benchmark/android-llm-device-farm-test-spec.yml
+
+  export-models:
+    name: export-models
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    needs: set-parameters
+    strategy:
+      matrix:
+          model: ${{ fromJson(needs.set-parameters.outputs.models) }}
+          delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
+      fail-fast: false
+    secrets: inherit
     with:
-      runner: linux.4xlarge
+      runner: linux.4xlarge.memory
       docker-image: executorch-ubuntu-22.04-qnn-sdk
       submodules: 'true'
       timeout: 60
       upload-artifact: android-models
       upload-artifact-to-s3: true
+      secrets-env: EXECUTORCH_HF_TOKEN
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         echo "::group::Setting up dev environment"
@@ -158,7 +190,35 @@ jobs:
         BUILD_MODE="cmake"
         DTYPE="fp32"
 
-        if [[ ${{ matrix.model }} =~ ^stories* ]]; then
+        if [[ ${{ matrix.model }} =~ ^[^/]+/[^/]+$ ]] && [[ ${{ matrix.delegate }} == "xnnpack" ]]; then
+            pip install -U "huggingface_hub[cli]"
+            huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+            pip install accelerate sentencepiece
+            pip list
+
+            TOKENIZER_FILE=tokenizer.model
+            TOKENIZER_BIN_FILE=tokenizer.bin
+            # Fetch the file using a Python one-liner
+            DOWNLOADED_TOKENIZER_FILE_PATH=$(python -c "from huggingface_hub import hf_hub_download; downloaded_path = hf_hub_download(repo_id='${{ matrix.model }}', filename='${TOKENIZER_FILE}'); print(downloaded_path)")
+
+            if [ -f "$DOWNLOADED_TOKENIZER_FILE_PATH" ]; then
+                echo "${TOKENIZER_FILE} downloaded successfully at: $DOWNLOADED_TOKENIZER_FILE_PATH"
+                python -m extension.llm.tokenizer.tokenizer -t $DOWNLOADED_TOKENIZER_FILE_PATH -o ./${TOKENIZER_BIN_FILE}
+                ls "${TOKENIZER_BIN_FILE}"
+            else
+                echo "Failed to download ${TOKENIZER_FILE} from ${{ matrix.model }}."
+                exit 1
+            fi
+
+            MODEL_NAME=$(echo "${{ matrix.model }}" | sed 's,/,-,g')
+            python -m extension.export_util.export_hf_model -hfm=${{ matrix.model }} -o "${MODEL_NAME}_xnnpack_fp32"
+
+            # Prepare the model to upload
+            zip -j model.zip *.pte tokenizer.bin
+            mkdir -p "${ARTIFACTS_DIR_NAME}"
+            mv model.zip "${ARTIFACTS_DIR_NAME}"
+
+        elif [[ ${{ matrix.model }} =~ ^stories* ]]; then
             # Install requirements for export_llama
             PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
             # Test llama2
@@ -170,15 +230,25 @@ jobs:
                 echo "Unsupported delegate ${{ matrix.delegate }}"
                 exit 1
             fi
-            PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
+            PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh \
+              -model "${{ matrix.model }}" \
+              -build_tool "${BUILD_MODE}" \
+              -dtype "${DTYPE}" \
+              -mode "${DELEGATE_CONFIG}" \
+              -upload "${ARTIFACTS_DIR_NAME}"
+
         else
-            PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
+            PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh \
+              "${{ matrix.model }}" \
+              "${BUILD_MODE}" \
+              "${{ matrix.delegate }}" \
+              "${ARTIFACTS_DIR_NAME}"
         fi
         echo "::endgroup::"
 
   build-benchmark-app:
     name: build-benchmark-app
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     needs: set-parameters
     with:
       runner: linux.2xlarge
@@ -212,6 +282,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
     needs:
       - set-parameters
+      - prepare-test-specs
       - build-benchmark-app
       - export-models
     strategy:
@@ -231,10 +302,7 @@ jobs:
       device-pool-arn: ${{ matrix.device }}
       android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug.apk
       android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug-androidTest.apk
-      # NB: Need to set the default spec here so that it works for periodic too
-      test-spec: ${{ inputs.test_spec || 'https://ossci-android.s3.amazonaws.com/executorch/android-llm-device-farm-test-spec.yml' }}
-      # Uploaded to S3 from the previous job
-      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/model.zip
+      test-spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/android-llm-device-farm-test-spec.yml
 
   upload-benchmark-results:
     needs:
