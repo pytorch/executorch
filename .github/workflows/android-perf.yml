@@ -3,6 +3,16 @@ name: android-perf
 on:
   schedule:
     - cron: 0 0 * * *
+  pull_request:
+    paths:
+      - .github/workflows/android-perf.yml
+      - extension/benchmark/android/benchmark/android-llm-device-farm-test-spec.yml.j2
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/android-perf.yml
+      - extension/benchmark/android/benchmark/android-llm-device-farm-test-spec.yml.j2
   # Note: GitHub has an upper limit of 10 inputs
   workflow_dispatch:
     inputs:
@@ -76,9 +86,9 @@ jobs:
           # Separate default values from the workflow dispatch. To ensure defaults are accessible
           # during scheduled runs and to provide flexibility for different defaults between
           # on-demand and periodic benchmarking.
-          CRON_DEFAULT_MODELS: "stories110M,dl3,mv3,mv2,ic4,ic3,vit"
-          CRON_DEFAULT_DEVICES: "samsung_galaxy_s22"
-          CRON_DEFAULT_DELEGATES: "xnnpack,qnn"
+          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'stories110M,dl3,mv3,mv2,ic4,ic3,vit' || 'stories110M' }}
+          CRON_DEFAULT_DEVICES: samsung_galaxy_s22
+          CRON_DEFAULT_DELEGATES: ${{ github.event_name == 'schedule' && 'xnnpack,qnn' || 'xnnpack' }}
         run: |
           set -ex
           MODELS="${{ inputs.models }}"
