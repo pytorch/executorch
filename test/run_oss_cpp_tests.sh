@@ -44,34 +44,6 @@ build_executorch() {
   cmake --build cmake-out -j9 --target install
 }
 
-export_test_model() {
-  # python3 -m test.models.export_program --modules "ModuleAdd,ModuleAddHalf,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleLinear,ModuleMultipleEntry,ModuleSimpleTrain" --outdir "cmake-out" 2> /dev/null
-  # python3 -m test.models.export_delegated_program --modules "ModuleAddMul" --backend_id "StubBackend" --outdir "cmake-out" || true
-
-  DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH="$(realpath test/models/deprecated/ModuleLinear-no-constant-segment.pte)"
-  ET_MODULE_ADD_HALF_PATH="$(realpath cmake-out/ModuleAddHalf.pte)"
-  ET_MODULE_ADD_PATH="$(realpath cmake-out/ModuleAdd.pte)"
-  ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH="$(realpath cmake-out/ModuleDynamicCatUnallocatedIO.pte)"
-  ET_MODULE_INDEX_PATH="$(realpath cmake-out/ModuleIndex.pte)"
-  ET_MODULE_LINEAR_PATH="$(realpath cmake-out/ModuleLinear.pte)"
-  ET_MODULE_MULTI_ENTRY_PATH="$(realpath cmake-out/ModuleMultipleEntry.pte)"
-  ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH="$(realpath cmake-out/ModuleAddMul-nosegments-da1024.pte)"
-  ET_MODULE_ADD_MUL_NOSEGMENTS_PATH="$(realpath cmake-out/ModuleAddMul-nosegments.pte)"
-  ET_MODULE_ADD_MUL_PATH="$(realpath cmake-out/ModuleAddMul.pte)"
-  ET_MODULE_SIMPLE_TRAIN_PATH="$(realpath cmake-out/ModuleSimpleTrain.pte)"
-  export DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH
-  export ET_MODULE_ADD_HALF_PATH
-  export ET_MODULE_ADD_PATH
-  export ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH
-  export ET_MODULE_INDEX_PATH
-  export ET_MODULE_LINEAR_PATH
-  export ET_MODULE_MULTI_ENTRY_PATH
-  export ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH
-  export ET_MODULE_ADD_MUL_NOSEGMENTS_PATH
-  export ET_MODULE_ADD_MUL_PATH
-  export ET_MODULE_SIMPLE_TRAIN_PATH
-}
-
 build_and_run_test() {
   local test_dir=$1
 
@@ -79,8 +51,6 @@ build_and_run_test() {
     RESOURCES_PATH=$(realpath examples/models/llama/tokenizer/test/resources)
   elif [[ "$test_dir" =~ .*extension/llm/tokenizer.* ]]; then
     RESOURCES_PATH=$(realpath extension/llm/tokenizer/test/resources)
-  else
-    RESOURCES_PATH=$(realpath extension/module/test/resources)
   fi
   export RESOURCES_PATH
 
@@ -117,9 +87,8 @@ probe_additional_tests() {
       | sort -u
 }
 
-# build_executorch
+build_executorch
 run_ctest
-export_test_model
 
 if [ -z "$1" ]; then
   echo "Running all directories:"
