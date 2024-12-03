@@ -34,7 +34,7 @@ A React Native mobile application for running LLaMA language models using ExecuT
 
 7. Install dependencies: `npm install && cd ios && pod install && cd ..`
 
-8. Run the app: `npx expo run:ios --device` and select a USB connected iOS device
+8. Run the app: `npx expo run:ios --device --configuration Release` and select a USB connected iOS device
 
 9. Find the device in finder, and place the exported `.pte` model and the downloaded tokenizer under the app
 
