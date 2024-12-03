@@ -21,48 +21,76 @@ import { Ionicons } from '@expo/vector-icons';
 export default function Index() {
   const [prompt, setPrompt] = useState('');
   const [currentOutput, setCurrentOutput] = useState('');
+
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isStopped, setIsStopped] = useState(false);
+
   const [modelPath, setModelPath] = useState('');
   const [modelName, setModelName] = useState('');
   const [tokenizerPath, setTokenizerPath] = useState('');
   const [tokenizerName, setTokenizerName] = useState('');
+
   const [isInitialized, setIsInitialized] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
-  const [history, setHistory] = useState<Array<{ input: boolean, text: string }>>([]);
+
+  const [history, setHistory] = useState<Array<{
+    input: boolean, text: string, stats?: {
+      tokens: number;
+      time: number;
+    };
+  }>>([]);
+
+  const [modelLoadTime, setModelLoadTime] = useState<number | null>(null);
+
+  const [currentGenerationStartTime, setCurrentGenerationStartTime] = useState<number | null>(null);
+  const [currentNumTokens, setCurrentNumTokens] = useState(0);
+
   const scrollViewRef = useRef();
+
+  const handleGenerationStopped = () => {
+    LLaMABridge.stop();
+    const generationEndTime = Date.now();
+    const stats = currentGenerationStartTime !== null ? {
+      tokens: currentNumTokens,
+      time: generationEndTime - currentGenerationStartTime
+    } : undefined;
+
+    setHistory(prevHistory => [...prevHistory, { input: false, text: currentOutput.trim(), stats }]);
+    setIsGenerating(false);
+    setCurrentOutput('');
+    setCurrentNumTokens(0);
+  }
 
   useEffect(() => {
     const unsubscribe = LLaMABridge.onToken((token) => {
-      if (!isStopped) {
+      if (isGenerating) {
         // Natural stop
         if (token === "<|eot_id|>") {
-          setIsGenerating(false);
-          setCurrentOutput(prev => {
-            if (prev.trim()) {
-              setHistory(prevHistory => [...prevHistory, { input: false, text: prev.trim() }]);
-            }
-            return '';
-          });
+          handleGenerationStopped();
           return;
         }
-  
+
         // Skip template tokens
         if (token === formatPrompt('') ||
-            token.includes("<|begin_of_text|>") ||
-            token.includes("<|start_header_id|>") ||
-            token.includes("<|end_header_id|>") ||
-            token.includes("assistant")) {
+          token.includes("<|begin_of_text|>") ||
+          token.includes("<|start_header_id|>") ||
+          token.includes("<|end_header_id|>") ||
+          token.includes("assistant")) {
           return;
         }
-  
+
         // Add token without leading newlines
-        setCurrentOutput(prev => prev + token.replace(/^\n+/, ''));
+        if (currentNumTokens === 0) {
+          setCurrentOutput(prev => prev + token.replace(/^\n+/, ''));
+        } else {
+          setCurrentOutput(prev => prev + token);
+        }
+
+        setCurrentNumTokens(prev => prev + 1);
       }
     });
-  
+
     return () => unsubscribe();
-  }, [isStopped, currentOutput]);
+  }, [isGenerating, currentNumTokens]);
 
 
   const formatPrompt = (text: string) => {
@@ -74,11 +102,11 @@ export default function Index() {
       return;
     }
 
-    setIsStopped(false);
+    setCurrentGenerationStartTime(Date.now());
+
     const newPrompt = prompt.trim();
     setPrompt('');
     setIsGenerating(true);
-    setCurrentOutput('');
 
     // Add the user message immediately
     const userMessage = { input: true, text: newPrompt };
@@ -94,18 +122,6 @@ export default function Index() {
     }
   };
 
-  const handleStop = () => {
-    if (!isGenerating) return;
-    
-    setIsStopped(true);
-    LLaMABridge.stop();
-    
-    if (currentOutput) {
-      setHistory(prev => [...prev, { input: false, text: currentOutput.trim() }]);
-    }
-    setCurrentOutput('');
-    setIsGenerating(false);
-  };
 
   const selectModel = async () => {
     try {
@@ -149,17 +165,21 @@ export default function Index() {
       setCurrentOutput('');
       return;
     }
-  
+
     if (!modelPath || !tokenizerPath) {
       Alert.alert('Error', 'Please select both model and tokenizer files first');
       return;
     }
-  
+
     setIsInitializing(true);
     try {
+      const startTime = Date.now();
       await LLaMABridge.initialize(modelPath, tokenizerPath);
+      const modelLoadTime = Date.now() - startTime;
+      setModelLoadTime(modelLoadTime);
+
       setIsInitialized(true);
-      Alert.alert('Success', 'LLaMA initialized successfully');
+      Alert.alert('Success', `Model loaded in ${(modelLoadTime / 1000).toFixed(1)}s`);
     } catch (error) {
       console.error('Failed to initialize LLaMA:', error);
       Alert.alert('Error', 'Failed to initialize LLaMA');
@@ -184,7 +204,7 @@ export default function Index() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>rnllama</Text>
       </View>
-
+  
       <View style={styles.setupBar}>
         <View style={styles.setupControls}>
           <TouchableOpacity
@@ -206,75 +226,95 @@ export default function Index() {
             </Text>
           </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          style={[
-            styles.initButton,
-            isInitialized ? styles.setupComplete : styles.setupIncomplete,
-            (!modelPath || !tokenizerPath || isInitializing) && styles.buttonDisabled
-          ]}
-          onPress={initializeLLaMA}
-          disabled={!modelPath || !tokenizerPath || isInitializing}
-        >
-          {isInitializing ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Ionicons
-              name={isInitialized ? "checkmark-circle-outline" : "power-outline"}
-              size={24}
-              color="#fff"
-            />
-          )}
-        </TouchableOpacity>
-      </View>
+        <View style={styles.initContainer}>
 
+          <TouchableOpacity
+            style={[
+              styles.initButton,
+              isInitialized ? styles.setupComplete : styles.setupIncomplete,
+              (!modelPath || !tokenizerPath || isInitializing) && styles.buttonDisabled
+            ]}
+            onPress={initializeLLaMA}
+            disabled={!modelPath || !tokenizerPath || isInitializing}
+          >
+            {isInitializing ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons
+                name={isInitialized ? "checkmark-circle-outline" : "power-outline"}
+                size={24}
+                color="#fff"
+              />
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+  
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.content}
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
         <ScrollView
-          ref={scrollViewRef}
-          style={styles.chatContainer}
-          contentContainerStyle={styles.chatContent}
-          onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
-        >
-          {!isInitialized ? (
-            <View style={styles.initPrompt}>
-              <Text style={styles.initPromptText}>
-                Please select model and tokenizer files, then initialize LLaMA to begin chatting
-              </Text>
-            </View>
-          ) : history.length === 0 ? (
-            <Pressable
-              style={styles.emptyState}
-              onLongPress={handleClearHistory}
-            >
-              <Text style={styles.emptyStateText}>Start a conversation</Text>
-              <Text style={styles.emptyStateHint}>Long press to clear history</Text>
-            </Pressable>
-          ) : (
-            <Pressable onLongPress={handleClearHistory}>
-              {history.map((message, index) => (
-                <View
-                  key={index}
-                  style={[
-                    message.input ? styles.sentMessage : styles.receivedMessage
-                  ]}
-                >
-                  <Text style={message.input ? styles.sentMessageText : styles.receivedMessageText}>
-                    {message.text}
-                  </Text>
-                </View>
-              ))}
-              {currentOutput && (
-                <View style={styles.receivedMessage}>
-                  <Text style={styles.receivedMessageText}>{currentOutput}</Text>
-                </View>
-              )}
-            </Pressable>
-          )}
-        </ScrollView>
-
+  ref={scrollViewRef}
+  style={styles.chatContainer}
+  contentContainerStyle={styles.chatContent}
+  onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+>
+  {!isInitialized ? (
+    <View style={styles.initPrompt}>
+      <Text style={styles.initPromptText}>
+        Please select model and tokenizer files, then initialize LLaMA to begin chatting
+      </Text>
+    </View>
+  ) : history.length === 0 ? (
+    <Pressable
+      style={styles.emptyState}
+      onLongPress={handleClearHistory}
+    >
+      {modelLoadTime && (
+        <Text style={styles.emptyStateText}>
+          Model loading took {(modelLoadTime / 1000).toFixed(1)}s
+        </Text>
+      )}
+      <Text style={styles.emptyStateText}>Start a conversation</Text>
+      <Text style={styles.emptyStateHint}>Long press to clear history</Text>
+    </Pressable>
+  ) : (
+    <Pressable onLongPress={handleClearHistory}>
+  {modelLoadTime && (
+    <View style={styles.loadTimeContainer}>
+      <Text style={styles.loadTimeMessage}>
+        Model loading took {(modelLoadTime / 1000).toFixed(1)}s
+      </Text>
+    </View>
+  )}
+  {history.map((message, index) => (
+    <View
+      key={index}
+      style={[
+        message.input ? styles.sentMessage : styles.receivedMessage
+      ]}
+    >
+      <Text style={message.input ? styles.sentMessageText : styles.receivedMessageText}>
+        {message.text}
+      </Text>
+      {!message.input && message.stats && (
+        <Text style={styles.tokensPerSecondText}>
+          {`Tokens/sec: ${(message.stats.tokens / (message.stats.time / 1000)).toFixed(2)}`}
+        </Text>
+      )}
+    </View>
+  ))}
+  {currentOutput && (
+    <View style={styles.receivedMessage}>
+      <Text style={styles.receivedMessageText}>{currentOutput}</Text>
+    </View>
+  )}
+</Pressable>
+  )}
+</ScrollView>
+  
         <View style={styles.inputContainer}>
           <TextInput
             value={prompt}
@@ -287,8 +327,8 @@ export default function Index() {
           />
           <TouchableOpacity
             style={[styles.sendButton, (!isInitialized || (!isGenerating && !prompt.trim())) && styles.buttonDisabled]}
-            onPress={isGenerating ? handleStop : handleGenerate}
-            disabled={!isInitialized || (!prompt.trim() && !isGenerating)} // This was backwards
+            onPress={isGenerating ? handleGenerationStopped : handleGenerate}
+            disabled={!isInitialized || (!prompt.trim() && !isGenerating)}
           >
             <Ionicons
               name={isGenerating ? "stop-outline" : "send-outline"}
@@ -307,11 +347,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000000',
   },
+  loadTimeContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+    padding: 8,
+    backgroundColor: '#1A1A1A',
+    borderRadius: 8,
+  },
+  loadTimeMessage: {
+    color: '#666',
+    fontSize: 14,
+  },
+  tokensPerSecondText: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 4,
+  },
   header: {
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
-    alignItems: "start",
   },
   headerTitle: {
     fontSize: 24,

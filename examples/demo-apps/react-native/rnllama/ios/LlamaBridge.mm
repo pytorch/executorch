@@ -57,4 +57,3 @@ RCT_EXPORT_METHOD(stop) {
 }
 
 @end
-
