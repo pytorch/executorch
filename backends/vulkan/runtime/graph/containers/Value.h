@@ -187,15 +187,15 @@ struct Value final {
       case TypeTag::SYMINT:
         payload.as_symint.~SymInt();
         break;
+      case TypeTag::TENSOR:
+        payload.as_tensor.reset();
+        break;
       // Manually list out the types so that if a type here is added later and
       // not handled the compiler can catch it.
       case TypeTag::NONE:
       case TypeTag::INT:
       case TypeTag::DOUBLE:
       case TypeTag::BOOL:
-        break;
-      case TypeTag::TENSOR:
-        payload.as_tensor.reset();
         break;
     }
   }
