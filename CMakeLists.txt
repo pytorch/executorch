@@ -14,7 +14,7 @@
 # ~~~
 # It should also be cmake-lint clean.
 #
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.18)
 set(CMAKE_CXX_STANDARD 17)
 
 project(Tokenizers)
@@ -38,12 +38,19 @@ target_link_libraries(tokenizers PUBLIC sentencepiece-static)
 
 # Build test
 if(TOKENIZERS_BUILD_TEST)
-  find_package(GTest REQUIRED)
+  include(FetchContent)
+  FetchContent_Declare(
+    googletest
+    # Specify the commit you depend on and update it regularly.
+    URL https://github.com/google/googletest/archive/5376968f6948923e2411081fd9372e71a59d8e77.zip
+  )
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(googletest)
+
   set(ENV{RESOURCES_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/test/resources)
   add_executable(sentencepiece_test test/test_sentencepiece.cpp)
   target_include_directories(
     sentencepiece_test PUBLIC third-party/sentencepiece/src
-                              third-party/sentencepiece include)
-  target_link_libraries(sentencepiece_test PUBLIC tokenizers GTest::GTest
-                                                  GTest::Main)
+                              third-party/sentencepiece include GTEST_INCLUDE_PATH)
+  target_link_libraries(sentencepiece_test PUBLIC tokenizers gtest_main)
 endif()

@@ -45,6 +45,38 @@ enum class Error : error_code_t {
 
   /// Encode failure.
   EncodeFailure = 0x05,
+
+  /// Base64 decode failure.
+  Base64DecodeFailure = 0x06,
 };
 
 } // namespace tokenizers
+
+/**
+ * If cond__ is false, return the specified Error
+ * from the current function, which must be of return type
+ * tokenizers::Error.
+ * TODO: Add logging support
+ * @param[in] cond__ The condition to be checked, asserted as true.
+ * @param[in] error__ Error enum value to return without the `Error::` prefix,
+ * like `InvalidArgument`.
+ */
+#define TK_CHECK_OR_RETURN_ERROR(cond__, error__)                              \
+  {                                                                            \
+    if (!(cond__)) {                                                           \
+      return ::tokenizers::Error::error__;                                     \
+    }                                                                          \
+  }
+
+/**
+ * If error__ is not Error::Ok, return the specified Error
+ * TODO: Add logging support
+ * @param[in] error__ Error enum value to return without the `Error::` prefix,
+ * like `InvalidArgument`.
+ */
+#define TK_CHECK_OK_OR_RETURN_ERROR(error__)                                   \
+  {                                                                            \
+    if (error__ != ::tokenizers::Error::Ok) {                                  \
+      return error__;                                                          \
+    }                                                                          \
+  }
