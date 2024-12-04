@@ -14,6 +14,8 @@
 #include <cmath>
 #include <cstddef> // size_t
 #include <limits>
+#include <sstream>
+#include <vector>
 
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
@@ -482,6 +484,30 @@ inline bool tensor_is_type(
       torch::executor::toString(t.scalar_type()));
 
   return true;
+}
+
+inline bool tensor_is_type(
+    executorch::aten::Tensor t,
+    const std::vector<executorch::aten::ScalarType>& dtypes) {
+  if (std::find(dtypes.begin(), dtypes.end(), t.scalar_type()) !=
+      dtypes.end()) {
+    return true;
+  }
+
+  std::stringstream dtype_ss;
+  for (size_t i = 0; i < dtypes.size(); i++) {
+    if (i != 0) {
+      dtype_ss << ", ";
+    }
+    dtype_ss << torch::executor::toString(dtypes[i]);
+  }
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      false,
+      "Expected to find one of %s types, but tensor has type %s",
+      dtype_ss.str().c_str(),
+      torch::executor::toString(t.scalar_type()));
+  return false;
 }
 
 inline bool tensor_is_integral_type(
