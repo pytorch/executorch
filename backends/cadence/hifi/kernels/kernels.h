@@ -92,9 +92,9 @@ extern "C" WORD32 xa_nn_elm_mul_broadcast_4D_f32xf32_f32(
     const WORD32* const p_inp2_shape);
 
 extern "C" void xa_nn_elm_pow_f32(
-    FLOAT32* restrict z,
-    const FLOAT32* restrict x,
-    const FLOAT32* restrict y,
+    FLOAT32* __restrict__ z,
+    const FLOAT32* __restrict__ x,
+    const FLOAT32* __restrict__ y,
     WORD32 N);
 
 extern "C" WORD32 xa_nn_elm_where_f32xf32_f32(
