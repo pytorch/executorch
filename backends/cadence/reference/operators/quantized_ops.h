@@ -89,12 +89,8 @@ inline __attribute__((always_inline)) void quantized_linear_per_channel_(
   // weight comes in shape [out_dim, in_dim]
   // output comes in empty with shape [leading_dims, out_dim]
   // Perform matrix multiply (M x N) x (N x P)' => M x P
-<<<<<<< HEAD
   int64_t leading_dims =
       executorch::runtime::getLeadingDims(src, src.dim() - 1);
-=======
-  int64_t leading_dims = getLeadingDims(src, src.dim() - 1);
->>>>>>> 74283da5a (Populate cadence cpu ops (#7165))
   const int64_t out_dim = weight.size(0); // = out_dim
   const int64_t in_dim = weight.size(1); // = in_dim
 
