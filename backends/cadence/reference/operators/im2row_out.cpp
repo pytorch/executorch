@@ -1,6 +1,5 @@
 // (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
-#include <executorch/backends/cadence/reference/kernels/kernels.h>
 #include <executorch/backends/cadence/reference/operators/operators.h>
 
 #include <algorithm>

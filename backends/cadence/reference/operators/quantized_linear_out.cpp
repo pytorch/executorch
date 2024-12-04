@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/reference/kernels/kernels.h>
 #include <executorch/backends/cadence/reference/operators/operators.h>
 #include <executorch/backends/cadence/reference/operators/quantized_ops.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
