@@ -8,7 +8,6 @@
 
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <executorch/runtime/platform/assert.h>
 
 #include <cstdint>
 #include <cstring>

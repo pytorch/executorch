@@ -8,7 +8,6 @@
 
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <executorch/runtime/platform/assert.h>
 
 #include <cstdint>
 #include <cstring>
@@ -37,7 +36,6 @@ bool _check__empty_out_dim_order(OptionalIntArrayRef dim_order, Tensor& out) {
             dim_order.value().data(), dim_order.value().size()));
 
     // Out tensor shall have same dim order as dim_order
-    auto out_dim_order = out.dim_order();
     ET_LOG_AND_RETURN_IF_FALSE(out_dim_order.size() == dim_order_ref.size());
     for (size_t i = 0; i < dim_order_ref.size(); i++) {
       ET_LOG_AND_RETURN_IF_FALSE(out_dim_order[i] == dim_order_ref[i]);
