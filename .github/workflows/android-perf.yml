@@ -3,6 +3,16 @@ name: android-perf
 on:
   schedule:
     - cron: 0 0 * * *
+  pull_request:
+    paths:
+      - .github/workflows/android-perf.yml
+      - extension/benchmark/android/benchmark/android-llm-device-farm-test-spec.yml.j2
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/android-perf.yml
+      - extension/benchmark/android/benchmark/android-llm-device-farm-test-spec.yml.j2
   # Note: GitHub has an upper limit of 10 inputs
   workflow_dispatch:
     inputs:
@@ -28,10 +38,6 @@ on:
         default: false
       benchmark_configs:
         description: The list of configs used the benchmark
-        required: false
-        type: string
-      test_spec:
-        description: The test spec to drive the test on AWS devices
         required: false
         type: string
   workflow_call:
@@ -60,10 +66,6 @@ on:
         description: The list of configs used the benchmark
         required: false
         type: string
-      test_spec:
-        description: The test spec to drive the test on AWS devices
-        required: false
-        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
@@ -84,9 +86,9 @@ jobs:
           # Separate default values from the workflow dispatch. To ensure defaults are accessible
           # during scheduled runs and to provide flexibility for different defaults between
           # on-demand and periodic benchmarking.
-          CRON_DEFAULT_MODELS: "stories110M,dl3,mv3,mv2,ic4,ic3,vit"
-          CRON_DEFAULT_DEVICES: "samsung_galaxy_s22"
-          CRON_DEFAULT_DELEGATES: "xnnpack,qnn"
+          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'stories110M,dl3,mv3,mv2,ic4,ic3,vit' || 'stories110M' }}
+          CRON_DEFAULT_DEVICES: samsung_galaxy_s22
+          CRON_DEFAULT_DELEGATES: ${{ github.event_name == 'schedule' && 'xnnpack,qnn' || 'xnnpack' }}
         run: |
           set -ex
           MODELS="${{ inputs.models }}"
@@ -124,6 +126,43 @@ jobs:
           MAPPED_ARNS_JSON=$(printf '%s\n' "${MAPPED_ARNS[@]}" | jq -R . | jq -s .)
           echo "devices=$(echo "$MAPPED_ARNS_JSON" | jq -c .)" >> $GITHUB_OUTPUT
           echo "delegates=$(echo $DELEGATES | jq -Rc 'split(",")')" >> $GITHUB_OUTPUT
+
+  prepare-test-specs:
+    runs-on: linux.2xlarge
+    needs: set-parameters
+    strategy:
+      matrix:
+          model: ${{ fromJson(needs.set-parameters.outputs.models) }}
+          delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Prepare the spec
+        shell: bash
+        working-directory: extension/benchmark/android/benchmark
+        run: |
+          set -eux
+
+          # The model will be exported in the next step to this S3 path
+          MODEL_PATH="https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/model.zip"
+          # We could write a script to properly use jinja here, but there is only one variable,
+          # so let's just sed it
+          sed -i -e 's,{{ model_path }},'"${MODEL_PATH}"',g' android-llm-device-farm-test-spec.yml.j2
+          cp android-llm-device-farm-test-spec.yml.j2 android-llm-device-farm-test-spec.yml
+
+          # Just print the test spec for debugging
+          cat android-llm-device-farm-test-spec.yml
+
+      - name: Upload the spec
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}
+          retention-days: 1
+          if-no-files-found: error
+          path: extension/benchmark/android/benchmark/android-llm-device-farm-test-spec.yml
 
   export-models:
     name: export-models
@@ -170,9 +209,18 @@ jobs:
                 echo "Unsupported delegate ${{ matrix.delegate }}"
                 exit 1
             fi
-            PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
+            PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh \
+              -model "${{ matrix.model }}" \
+              -build_tool "${BUILD_MODE}" \
+              -dtype "${DTYPE}" \
+              -mode "${DELEGATE_CONFIG}" \
+              -upload "${ARTIFACTS_DIR_NAME}"
         else
-            PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
+            PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh \
+              "${{ matrix.model }}" \
+              "${BUILD_MODE}" \
+              "${{ matrix.delegate }}" \
+              "${ARTIFACTS_DIR_NAME}"
         fi
         echo "::endgroup::"
 
@@ -212,6 +260,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
     needs:
       - set-parameters
+      - prepare-test-specs
       - build-benchmark-app
       - export-models
     strategy:
@@ -231,10 +280,7 @@ jobs:
       device-pool-arn: ${{ matrix.device }}
       android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug.apk
       android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug-androidTest.apk
-      # NB: Need to set the default spec here so that it works for periodic too
-      test-spec: ${{ inputs.test_spec || 'https://ossci-android.s3.amazonaws.com/executorch/android-llm-device-farm-test-spec.yml' }}
-      # Uploaded to S3 from the previous job
-      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/model.zip
+      test-spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/android-llm-device-farm-test-spec.yml
 
   upload-benchmark-results:
     needs:
