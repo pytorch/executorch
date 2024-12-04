@@ -98,6 +98,13 @@ add_subdirectory(runner)
 set(link_libraries gflags)
 set(_srcs main.cpp)
 
+# in Windows, cpublas and extension_threadpool have duplicated symbols
+if(WIN32 AND TARGET xnnpack_backend)
+  set(CPUBLAS "")
+else()
+  set(CPUBLAS "cpublas")
+endif()
+
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   list(
     APPEND
@@ -105,7 +112,7 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     optimized_native_cpu_ops_lib
     optimized_kernels
     portable_kernels
-    cpublas
+    ${CPUBLAS}
     eigen_blas
   )
   target_link_options_shared_lib(optimized_native_cpu_ops_lib)
@@ -131,10 +138,18 @@ if(EXECUTORCH_BUILD_TORCHAO)
 endif()
 
 set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)
+
+# in Windows, xnnpack_backend and extension_threadpool have duplicated symbols
+if(WIN32 AND TARGET xnnpack_backend)
+  set(EXTENSION_THREADPOOL "")
+else()
+  set(EXTENSION_THREADPOOL "extension_threadpool")
+endif()
+
 # Extra compile option and include dir for pthreadpool
 if(EXECUTORCH_BUILD_PTHREADPOOL)
   list(APPEND _common_compile_options -DET_USE_THREADPOOL)
-  list(APPEND link_libraries extension_threadpool pthreadpool)
+  list(APPEND link_libraries ${EXTENSION_THREADPOOL} pthreadpool)
   list(APPEND _common_include_directories
        ${XNNPACK_ROOT}/third-party/pthreadpool/include
   )
@@ -142,7 +157,7 @@ endif()
 
 # Extra sources for cpuinfo
 if(EXECUTORCH_BUILD_CPUINFO)
-  list(APPEND link_libraries extension_threadpool cpuinfo)
+  list(APPEND link_libraries ${EXTENSION_THREADPOOL} cpuinfo)
   list(APPEND _common_include_directories
        ${XNNPACK_ROOT}/third-party/cpuinfo/include
   )
