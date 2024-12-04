@@ -51,7 +51,7 @@ class TestMeanDim(unittest.TestCase):
         test_data_suite = [
             # (test_name, test_data)
             ("zeros", torch.zeros(1, 1280, 7, 7), -1, True),
-            ("ones", torch.ones(1, 1280, 7, 7), (-1, 2), True),
+            ("ones", torch.ones(1, 1280, 7, 7), (-1, 2), False),
             (
                 "rand",
                 torch.rand(1, 1280, 7, 7),
@@ -62,7 +62,7 @@ class TestMeanDim(unittest.TestCase):
                 "randn",
                 torch.randn(1, 1280, 7, 7),
                 (-1, -2, -3),
-                True,
+                False,
             ),
         ]
 
@@ -269,8 +269,10 @@ class TestMeanDim(unittest.TestCase):
     ):
         self._test_meandim_tosa_BI_pipeline(self.MeanDim(dim, keepdim), (test_data,))
 
+    # Expected to fail as this is not supported on u55.
     @parameterized.expand(MeanDim.test_data_suite)
-    def test_meandim_tosa_u55_BI(
+    @unittest.expectedFailure
+    def test_meandim_tosa_u55_BI_xfails(
         self,
         test_name: str,
         test_data: torch.Tensor,

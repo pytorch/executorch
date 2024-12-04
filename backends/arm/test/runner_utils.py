@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
-from executorch.backends.arm.test.common import arm_test_options, is_option_enabled
+from executorch.backends.arm.test.conftest import arm_test_options, is_option_enabled
 
 from torch.export import ExportedProgram
 from torch.fx.node import Node
@@ -218,7 +218,7 @@ class RunnerUtil:
 
         assert (
             self._has_init_run
-        ), "RunnerUtil needs to be initialized using init_run() before running Corstone300."
+        ), "RunnerUtil needs to be initialized using init_run() before running Corstone FVP."
         if self.target_board not in ["corstone-300", "corstone-320"]:
             raise RuntimeError(f"Unknown target board: {self.target_board}")
 
