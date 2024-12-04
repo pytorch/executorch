@@ -56,6 +56,21 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
 
+# Setup RPATH.
+# See https://gitlab.kitware.com/cmake/community/-/wikis/doc/cmake/RPATH-handling
+# Use separate rpaths during build and install phases
+set(CMAKE_SKIP_BUILD_RPATH OFF)
+# Don't use the install-rpath during the build phase
+set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+# Automatically add all linked folders that are NOT in the build directory to
+# the rpath (per library?)
+# TODO: Doesn't work for us right now because we are not installing .so's into the
+# correct locations. For example we have libcustom_ops_aot_lib.so depending on
+# _portable_lib.so, which was eventually put under <site-packages>/executorch/extension/pybindings/
+# but this rpath is not automatically added because at build time it seems `portable_lib`
+# is being built under the same directory, so no extra rpath is being added. To
+# properly fix this we need to install `portable_lib` into the correct path.
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
 # ------------------------------ OPTIONS -------------------------------------
 # WARNING: Please don't add example specific options in this CMakeLists.txt.
 # Instead please use `find_package(executorch REQUIRED)` in the example
@@ -682,22 +697,6 @@ if(EXECUTORCH_BUILD_PTHREADPOOL
 endif()
 
 if(EXECUTORCH_BUILD_PYBIND)
-  # Setup RPATH.
-  # See https://gitlab.kitware.com/cmake/community/-/wikis/doc/cmake/RPATH-handling
-  if(APPLE)
-    set(CMAKE_MACOSX_RPATH ON)
-    set(_rpath_portable_origin "@loader_path")
-  else()
-    set(_rpath_portable_origin $ORIGIN)
-  endif(APPLE)
-  # Use separate rpaths during build and install phases
-  set(CMAKE_SKIP_BUILD_RPATH  FALSE)
-  # Don't use the install-rpath during the build phase
-  set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
-  set(CMAKE_INSTALL_RPATH "${_rpath_portable_origin}")
-  # Automatically add all linked folders that are NOT in the build directory to
-  # the rpath (per library?)
-  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
 
   if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)

@@ -117,6 +117,8 @@ def define_common_targets():
         par_style = "xar",
         deps = [
             ":export_delegated_program_lib",
+            "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+
         ],
         visibility = [],  # Private
     )
@@ -124,6 +126,8 @@ def define_common_targets():
     # Class names of nn.Modules for :exported_delegated_programs to export.
     DELEGATED_MODULES_TO_EXPORT = [
         "ModuleAddMul",
+        "ModuleAddLarge",
+        "ModuleSubLarge",
     ]
 
     # Name of the backend to use when exporting delegated programs.
@@ -152,4 +156,24 @@ def define_common_targets():
             "//executorch/runtime/executor/test/...",
             "//executorch/test/...",
         ],
+    )
+
+    runtime.genrule(
+        name = "exported_xnnp_delegated_programs",
+        cmd = "$(exe :export_delegated_program)" +
+              " --modules " + ",".join(DELEGATED_MODULES_TO_EXPORT) +
+              " --backend_id " + "XnnpackBackend" +
+              " --outdir $OUT",
+        outs = {
+            fname + ".pte": [fname + ".pte"]
+            for fname in DELEGATED_MODULES_TO_EXPORT
+        },
+        default_outs = ["."],
+        visibility = [
+            "//executorch/runtime/executor/test/...",
+            "//executorch/backends/test/...",
+            "//executorch/test/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        env = {"PYTORCH_DISABLE_JUSTKNOBS": "1",},
     )
