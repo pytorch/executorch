@@ -109,7 +109,7 @@ class DimOrderOpsRevertPass(ExportPass):
 
         logger.debug(
             f" {op.__name__} = dim_order: {dim_order}."
-            f" {DimOrderOpsMap[op.__name__].__name__} = rank: {ndim}, memory_format: {nkwargs['memory_format']}."
+            f" {MemoryFormatOpsMap[op.__name__].__name__} = rank: {ndim}, memory_format: {nkwargs['memory_format']}."
         )
 
         t = MemoryFormatOpsMap[op.__name__]

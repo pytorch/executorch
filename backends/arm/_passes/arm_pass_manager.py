@@ -41,6 +41,9 @@ from executorch.backends.arm._passes.scalars_to_attribute_pass import (
     ScalarsToAttributePass,
 )
 from executorch.backends.arm._passes.size_adjust_conv2d_pass import SizeAdjustConv2DPass
+from executorch.backends.arm._passes.unsqueeze_before_repeat_pass import (
+    UnsqueezeBeforeRepeatPass,
+)
 from executorch.backends.arm._passes.unsqueeze_scalar_placeholders_pass import (
     UnsqueezeScalarPlaceholdersPass,
 )
@@ -66,6 +69,7 @@ class ArmPassManager(PassManager):
         self.add_pass(RemoveClonePass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(DecomposeLayerNormPass())
+        self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(ConvertMeanDimToAveragePool())
         self.add_pass(DecomposeMeanDimPass())
