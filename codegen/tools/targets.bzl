@@ -79,22 +79,13 @@ def define_common_targets(is_fbcode = False):
     )
 
     runtime.python_library(
-        name = "gen_oplist_copy_from_core",
-        srcs = [
-            "gen_oplist_copy_from_core.py",
-        ],
-        base_module = "tools_copy.code_analyzer",
-        external_deps = ["torchgen"],
-    )
-
-    runtime.python_library(
         name = "gen_all_oplist_lib",
         srcs = ["gen_all_oplist.py"],
         base_module = "executorch.codegen.tools",
         visibility = [
             "//executorch/...",
         ],
-        deps = [":gen_oplist_copy_from_core"],
+        external_deps = ["torchgen"],
     )
 
     runtime.python_binary(
@@ -130,7 +121,7 @@ def define_common_targets(is_fbcode = False):
         srcs = ["gen_selected_op_variants.py"],
         base_module = "executorch.codegen.tools",
         visibility = ["//executorch/..."],
-        deps = [":gen_oplist_copy_from_core"],
+        deps = [":gen_all_oplist_lib"],
     )
 
     runtime.python_binary(
