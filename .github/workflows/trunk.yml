@@ -1,4 +1,4 @@
-name: pull
+name: trunk
 
 on:
   push:
