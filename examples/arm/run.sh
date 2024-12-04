@@ -213,9 +213,9 @@ function build_executorch_runner() {
     cmake --build ${executor_runner_path}/cmake-out --parallel -- arm_executor_runner
     echo "[${FUNCNAME[0]}] Generated baremetal elf file:"
     find ${executor_runner_path}/cmake-out -name "arm_executor_runner"
-    echo "executable_text: $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec size {} \; | grep -v filename | awk '{print $1}') bytes"
-    echo "executable_data: $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec size {} \; | grep -v filename | awk '{print $2}') bytes"
-    echo "executable_bss:  $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec size {} \; | grep -v filename | awk '{print $3}') bytes"
+    echo "executable_text: $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $1}') bytes"
+    echo "executable_data: $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $2}') bytes"
+    echo "executable_bss:  $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $3}') bytes"
 }
 
 # Execute the executor_runner on FVP Simulator

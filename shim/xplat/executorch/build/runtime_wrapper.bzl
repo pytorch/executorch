@@ -59,7 +59,7 @@ def _patch_executorch_references(targets, use_static_deps = False):
         return targets
     out_targets = []
     for target in targets:
-        if target.startswith("//xplat/executorch"):
+        if target.startswith("//xplat/executorch/") or target.startswith("//xplat/executorch:"):
             fail("References to executorch build targets must use " +
                  "`//executorch`, not `//xplat/executorch`")
 

@@ -13,6 +13,7 @@ from executorch.backends.cadence.aot.export_example import export_model
 
 
 class ATenOpTestCases(unittest.TestCase):
+    # pyre-fixme[16]: Module `parameterized.parameterized` has no attribute `expand`.
     @parameterized.expand(
         [
             [(7, 5, 6), (7, 5, 6)],
@@ -61,6 +62,7 @@ class ATenOpTestCases(unittest.TestCase):
             model, (X, Y), file_name=self._testMethodName, run_and_compare=False
         )
 
+    # pyre-fixme[16]: Module `parameterized.parameterized` has no attribute `expand`.
     @parameterized.expand(
         [
             [(7, 5, 6), (7, 5, 6)],

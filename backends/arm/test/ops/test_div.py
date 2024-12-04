@@ -11,7 +11,7 @@ import unittest
 from typing import Optional, Tuple, Union
 
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from parameterized import parameterized
 
@@ -27,15 +27,15 @@ test_data_suite = [
         None,
     ),
     (
-        "op_div_rank1_rand",
-        torch.rand(5) * 5,
-        torch.rand(5) * 5,
-        None,
-    ),
-    (
         "op_div_rank1_negative_ones",
         torch.ones(5) * (-1),
         torch.ones(5) * (-1),
+        None,
+    ),
+    (
+        "op_div_rank1_rand",
+        torch.rand(5) * 5,
+        torch.rand(5) * 5,
         None,
     ),
     (
@@ -157,7 +157,7 @@ class TestDiv(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(test_data_suite)
@@ -183,9 +183,7 @@ class TestDiv(unittest.TestCase):
         test_data = (input_, other_)
         self._test_div_tosa_BI_pipeline(self.Div(), test_data)
 
-    # Numerical issues on FVP likely due to mul op, MLETORCH-521
-    @parameterized.expand(test_data_suite)
-    @common.expectedFailureOnFVP
+    @parameterized.expand(test_data_suite[:2])
     def test_div_u55_BI(
         self,
         test_name: str,
@@ -199,9 +197,37 @@ class TestDiv(unittest.TestCase):
         )
 
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
-    @parameterized.expand(test_data_suite)
-    @common.expectedFailureOnFVP
+    @parameterized.expand(test_data_suite[2:])
+    @conftest.expectedFailureOnFVP
+    def test_div_u55_BI_xfails(
+        self,
+        test_name: str,
+        input_: Union[torch.Tensor, torch.types.Number],
+        other_: Union[torch.Tensor, torch.types.Number],
+        rounding_mode: Optional[str] = None,
+    ):
+        test_data = (input_, other_)
+        self._test_div_ethos_BI_pipeline(
+            self.Div(), common.get_u55_compile_spec(), test_data
+        )
+
+    @parameterized.expand(test_data_suite[:2])
     def test_div_u85_BI(
+        self,
+        test_name: str,
+        input_: Union[torch.Tensor, torch.types.Number],
+        other_: Union[torch.Tensor, torch.types.Number],
+        rounding_mode: Optional[str] = None,
+    ):
+        test_data = (input_, other_)
+        self._test_div_ethos_BI_pipeline(
+            self.Div(), common.get_u85_compile_spec(), test_data
+        )
+
+    # Numerical issues on FVP likely due to mul op, MLETORCH-521
+    @parameterized.expand(test_data_suite[2:])
+    @conftest.expectedFailureOnFVP
+    def test_div_u85_BI_xfails(
         self,
         test_name: str,
         input_: Union[torch.Tensor, torch.types.Number],
