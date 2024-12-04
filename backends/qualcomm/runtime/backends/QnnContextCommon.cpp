@@ -51,8 +51,8 @@ Error QnnContext::Configure() {
         backend_->GetHandle(),
         device_->GetHandle(),
         temp_context_config.empty() ? nullptr : temp_context_config.data(),
-        const_cast<uint8_t*>(binary_info->data()->data()),
-        binary_info->data()->size(),
+        const_cast<uint8_t*>(binary_info->context_data()->Data()),
+        binary_info->context_data()->size(),
         &handle_,
         /*profile=*/nullptr);
     if (error != QNN_SUCCESS) {
@@ -93,10 +93,11 @@ Error QnnContext::GetContextBinary(
   Qnn_ContextBinarySize_t bytes_written = 0;
   Qnn_ErrorHandle_t error =
       qnn_interface.qnn_context_get_binary_size(handle_, &binary_size);
+  std::vector<uint8_t> binary_buffer;
   if (error == QNN_SUCCESS) {
-    binary_buffer_.resize(binary_size);
+    binary_buffer.resize(binary_size);
     error = qnn_interface.qnn_context_get_binary(
-        handle_, binary_buffer_.data(), binary_size, &bytes_written);
+        handle_, binary_buffer.data(), binary_size, &bytes_written);
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_ERROR(
           "Can't get graph binary to be saved to "
@@ -118,12 +119,12 @@ Error QnnContext::GetContextBinary(
                                   .time_since_epoch()
                                   .count());
       };
-      builder_.Reset();
+      builder64_.Reset();
       auto binary_info = qnn_delegate::CreateBinaryInfoDirect(
-          builder_, signature().c_str(), &binary_buffer_);
-      builder_.Finish(binary_info);
-      qnn_executorch_context_binary.buffer = builder_.GetBufferPointer();
-      qnn_executorch_context_binary.nbytes = builder_.GetSize();
+          builder64_, signature().c_str(), &binary_buffer);
+      builder64_.Finish(binary_info);
+      qnn_executorch_context_binary.buffer = builder64_.GetBufferPointer();
+      qnn_executorch_context_binary.nbytes = builder64_.GetSize();
     }
   } else {
     QNN_EXECUTORCH_LOG_ERROR(
