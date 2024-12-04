@@ -8,7 +8,7 @@ import unittest
 from typing import List, Tuple, Union
 
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
@@ -130,7 +130,7 @@ class TestLayerNorm(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(test_data_suite)
@@ -158,7 +158,7 @@ class TestLayerNorm(unittest.TestCase):
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
     # Skip tests that require transposes.
     @parameterized.expand(test_data_suite[:-2])
-    @common.expectedFailureOnFVP
+    @unittest.expectedFailure
     def test_layer_norm_u55_BI(
         self,
         test_name: str,
@@ -170,9 +170,8 @@ class TestLayerNorm(unittest.TestCase):
         )
 
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
-    @parameterized.expand(test_data_suite[:-1])
-    @common.expectedFailureOnFVP
-    def test_layer_norm_u85_BI_fvp_xfails(
+    @parameterized.expand(test_data_suite[:-2])
+    def test_layer_norm_u85_BI_fvp(
         self,
         test_name: str,
         test_data: torch.Tensor,
@@ -182,7 +181,7 @@ class TestLayerNorm(unittest.TestCase):
             self.LayerNorm(*model_params), common.get_u85_compile_spec(), (test_data,)
         )
 
-    @parameterized.expand(test_data_suite[-1:])
+    @parameterized.expand(test_data_suite[-2:])
     @unittest.skip  # Flaky
     def test_layer_norm_u85_BI(
         self,

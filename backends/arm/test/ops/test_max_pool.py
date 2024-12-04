@@ -15,7 +15,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 from executorch.backends.xnnpack.test.tester.tester import Quantize
@@ -171,7 +171,7 @@ class TestMaxPool2d(unittest.TestCase):
             common.get_u55_compile_spec(permute_memory_to_nhwc=True),
             (test_data,),
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
                 qtol=1, inputs=(test_data,), target_board="corstone-300"
             )
@@ -188,7 +188,7 @@ class TestMaxPool2d(unittest.TestCase):
             common.get_u85_compile_spec(permute_memory_to_nhwc=True),
             (test_data,),
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
                 qtol=1, inputs=(test_data,), target_board="corstone-320"
             )
@@ -216,7 +216,7 @@ class TestMaxPool2d(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite_mult_batches)
-    @common.expectedFailureOnFVP  # TODO: MLETORCH-433
+    @conftest.expectedFailureOnFVP  # TODO: MLETORCH-433
     def test_maxpool2d_tosa_u55_BI_mult_batches(
         self,
         test_name: str,
@@ -228,13 +228,13 @@ class TestMaxPool2d(unittest.TestCase):
             common.get_u55_compile_spec(permute_memory_to_nhwc=True),
             (test_data,),
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
                 qtol=1, inputs=(test_data,), target_board="corstone-300"
             )
 
     @parameterized.expand(test_data_suite_mult_batches)
-    @common.expectedFailureOnFVP  # TODO: MLETORCH-433
+    @conftest.expectedFailureOnFVP  # TODO: MLETORCH-433
     def test_maxpool2d_tosa_u85_BI_mult_batches(
         self,
         test_name: str,
@@ -246,7 +246,7 @@ class TestMaxPool2d(unittest.TestCase):
             common.get_u85_compile_spec(permute_memory_to_nhwc=True),
             (test_data,),
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
                 qtol=1, inputs=(test_data,), target_board="corstone-320"
             )

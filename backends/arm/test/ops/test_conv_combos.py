@@ -12,7 +12,7 @@ from typing import Tuple
 import pytest
 
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
@@ -253,7 +253,7 @@ class TestConvCombos(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     ####################
@@ -275,8 +275,6 @@ class TestConvCombos(unittest.TestCase):
             model.get_inputs(),
         )
 
-    # Numerical Issues on FVP, MLETORCH-520
-    @common.expectedFailureOnFVP
     def test_conv_meandim_u85_BI(self):
         model = ComboConv2dMeandim()
         self._test_conv_combo_ethos_BI_pipeline(
