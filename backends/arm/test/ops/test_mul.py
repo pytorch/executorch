@@ -152,7 +152,9 @@ class TestMul(unittest.TestCase):
         test_data = (input_, other_)
         self._test_mul_tosa_BI_pipeline(self.Mul(), test_data)
 
+    # Numerical issues on FVP, MLETORCH-521
     @parameterized.expand(test_data_sute)
+    @conftest.expectedFailureOnFVP
     def test_mul_u55_BI(
         self,
         test_name: str,
@@ -164,7 +166,10 @@ class TestMul(unittest.TestCase):
             common.get_u55_compile_spec(), self.Mul(), test_data
         )
 
-    @parameterized.expand(test_data_sute)
+    # Numerical issues on FVP, MLETORCH-521
+    # test_data_sute[0] works on U85
+    @parameterized.expand(test_data_sute[1:])
+    @conftest.expectedFailureOnFVP
     def test_mul_u85_BI(
         self,
         test_name: str,
