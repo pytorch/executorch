@@ -39,12 +39,14 @@ target_link_libraries(tokenizers PUBLIC sentencepiece-static)
 # Build test
 if(TOKENIZERS_BUILD_TEST)
   add_subdirectory(third-party/googletest)
-  find_package(GTest REQUIRED)
+  find_package(GTest CONFIG REQUIRED)
+  set(GTEST_INCLUDE_PATH
+      third-party/googletest/googletest/include)
   set(ENV{RESOURCES_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/test/resources)
   add_executable(sentencepiece_test test/test_sentencepiece.cpp)
   target_include_directories(
     sentencepiece_test PUBLIC third-party/sentencepiece/src
-                              third-party/sentencepiece include)
+                              third-party/sentencepiece include GTEST_INCLUDE_PATH)
   target_link_libraries(sentencepiece_test PUBLIC tokenizers GTest::GTest
                                                   GTest::Main)
 endif()
