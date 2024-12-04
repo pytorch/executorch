@@ -153,7 +153,3 @@ install(
   DESTINATION lib
   PUBLIC_HEADER DESTINATION include/executorch/kernels/quantized/
 )
-
-if(BUILD_TESTING)
-  add_subdirectory(test)
-endif()

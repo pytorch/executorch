@@ -17,7 +17,7 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
 include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
-set(_kernels portable optimized)
+set(_kernels portable optimized quantized)
 
 foreach(kernel ${_kernels})
   set(_wrapper_dir
@@ -50,6 +50,12 @@ foreach(kernel ${_kernels})
     COMMENT "Generating ${_wrapper_dir}/supported_features.cpp and header"
     VERBATIM
   )
+
+  file(COPY
+  "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/${kernel}/${kernel}_ops_lib/Functions.h"
+  "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/${kernel}/${kernel}_ops_lib/NativeFunctions.h"
+  "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/${kernel}/${kernel}_ops_lib/RegisterKernels.h"
+  DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/")
 endforeach()
 
 add_custom_target(
@@ -214,6 +220,9 @@ set(all_test_sources
 set(_portable_kernels_test_sources
     ${all_test_sources}
     ${CMAKE_CURRENT_BINARY_DIR}/include/portable/executorch/kernels/test/supported_features.cpp
+    "${EXECUTORCH_ROOT}/kernels/portable/test/op_div_test.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/test/op_gelu_test.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/test/op_mul_test.cpp"
 )
 
 et_cxx_test(
@@ -223,7 +232,6 @@ et_cxx_test(
 add_dependencies(portable_kernels_test generate_wrapper)
 target_include_directories(
   portable_kernels_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/portable"
-                                "${CMAKE_INSTALL_PREFIX}/include"
 )
 
 set(_optimized_kernels_test_sources
@@ -265,3 +273,36 @@ target_include_directories(
   optimized_kernels_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/optimized"
                                  "${CMAKE_INSTALL_PREFIX}/include"
 )
+
+if(TARGET quantized_kernels)
+  set(_quantized_kernels_test_sources
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_add_test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_choose_qparams_test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_embedding2b_test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_embedding4b_test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_embedding_test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_mixed_linear_test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_mixed_mm_test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_quantize_test.cpp"
+  )
+
+  et_cxx_test(
+    quantized_kernels_test
+    SOURCES
+    ${_quantized_kernels_test_sources}
+    EXTRA_LIBS
+    cpuinfo
+    extension_threadpool
+    quantized_kernels
+    quantized_ops_lib
+    portable_kernels
+    portable_ops_lib
+    pthreadpool
+    eigen_blas
+  )
+  add_dependencies(quantized_kernels_test generate_wrapper)
+  target_include_directories(
+    quantized_kernels_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/quantized"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/portable"
+  )
+endif()
