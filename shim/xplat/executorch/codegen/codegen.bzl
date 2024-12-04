@@ -531,12 +531,12 @@ def executorch_generated_lib(
     )
 
     # genrule for selective build from static operator list
-    oplist_dir_name = name + "_pt_oplist"
+    oplist_dir_name = name + "_et_oplist"
     runtime.genrule(
         name = oplist_dir_name,
         macros_only = False,
         cmd = ("$(exe fbsource//xplat/executorch/codegen/tools:gen_all_oplist) " +
-               "--model_file_list_path $(@query_outputs 'attrfilter(labels, et_operator_library, deps(set({deps})))') " +
+               "--model_file_list_path $(@query_outputs \'attrfilter(labels, et_operator_library, deps(set({deps})))\') " +
                "--allow_include_all_overloads " +
                "--output_dir $OUT ").format(deps = " ".join(["\"{}\"".format(d) for d in deps])),
         outs = {"selected_operators.yaml": ["selected_operators.yaml"]},
@@ -665,3 +665,31 @@ def executorch_generated_lib(
             define_static_target = define_static_targets,
             platforms = platforms,
         )
+
+# Util macro that takes in a binary or a shared library, find targets ending with `_et_oplist` in the transitive closure of deps, 
+# get the `selected_operators.yaml` from those targets, try to merge them into a single yaml. This target will fail to build, if
+# there are intersections of all `selected_operators.yaml` the `target` is depending on.
+#
+# An example failure case: a binary `bin` is depending on 2 `executorch_generated_lib`s and they both register `aten::add.out`
+# with either the same or different kernels associated to it.
+#
+# If build successfully, all of the `selected_operators.yaml` will be merged into 1 `selected_operators.yaml` for debugging purpose.
+def executorch_ops_check(
+    name,
+    deps,
+    **kwargs,
+):
+    runtime.genrule(
+        name = name,
+        macros_only = False,
+        cmd = ("$(exe fbsource//xplat/executorch/codegen/tools:gen_all_oplist) " +
+               "--model_file_list_path $(@query_outputs \"filter('.*_et_oplist', deps(set({deps})))\") " +
+               "--allow_include_all_overloads " +
+               "--check_ops_not_overlapping " +
+               "--output_dir $OUT ").format(deps = " ".join(["\'{}\'".format(d) for d in deps])),
+        define_static_target = False,
+        platforms = kwargs.pop("platforms", get_default_executorch_platforms()),
+        outs = {"selected_operators.yaml": ["selected_operators.yaml"]},
+        default_outs = ["."],
+        **kwargs,
+    )
