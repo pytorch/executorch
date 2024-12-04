@@ -8,7 +8,7 @@
 import unittest
 
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
@@ -128,7 +128,7 @@ class TestMul(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(test_data_sute)
@@ -152,9 +152,7 @@ class TestMul(unittest.TestCase):
         test_data = (input_, other_)
         self._test_mul_tosa_BI_pipeline(self.Mul(), test_data)
 
-    # Numerical issues on FVP, MLETORCH-521
     @parameterized.expand(test_data_sute)
-    @common.expectedFailureOnFVP
     def test_mul_u55_BI(
         self,
         test_name: str,
@@ -166,10 +164,7 @@ class TestMul(unittest.TestCase):
             common.get_u55_compile_spec(), self.Mul(), test_data
         )
 
-    # Numerical issues on FVP, MLETORCH-521
-    # test_data_sute[0] works on U85
-    @parameterized.expand(test_data_sute[1:])
-    @common.expectedFailureOnFVP
+    @parameterized.expand(test_data_sute)
     def test_mul_u85_BI(
         self,
         test_name: str,

@@ -75,7 +75,23 @@ from torch.utils import _pytree as pytree
 
 Val = Any
 
+from typing import Any, Callable
+
 from torch.library import Library
+
+try:
+    from executorch.exir.program.fb.logger import et_logger
+except ImportError:
+    # Define a stub decorator that does nothing
+    def et_logger(api_name: str) -> Callable[[Any], Any]:
+        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+            def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+                return func(self, *args, **kwargs)
+
+            return wrapper
+
+        return decorator
+
 
 # This is the reserved namespace that is used to register ops to that will
 # be prevented from being decomposed during to_edge_transform_and_lower.
@@ -957,6 +973,7 @@ def _gen_edge_manager_for_partitioners(
     return edge_manager
 
 
+@et_logger("to_edge_transform_and_lower")
 def to_edge_transform_and_lower(
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     transform_passes: Optional[
@@ -1110,6 +1127,7 @@ def to_edge_with_preserved_ops(
     )
 
 
+@et_logger("to_edge")
 def to_edge(
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     constant_methods: Optional[Dict[str, Any]] = None,
@@ -1204,8 +1222,10 @@ class EdgeProgramManager:
         """
         Returns the ExportedProgram specified by 'method_name'.
         """
+
         return self._edge_programs[method_name]
 
+    @et_logger("transform")
     def transform(
         self,
         passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]]],
@@ -1253,6 +1273,7 @@ class EdgeProgramManager:
             new_programs, copy.deepcopy(self._config_methods), compile_config
         )
 
+    @et_logger("to_backend")
     def to_backend(
         self, partitioner: Union[Partitioner, Dict[str, Partitioner]]
     ) -> "EdgeProgramManager":
@@ -1296,6 +1317,7 @@ class EdgeProgramManager:
             new_edge_programs, copy.deepcopy(self._config_methods), config
         )
 
+    @et_logger("to_executorch")
     def to_executorch(
         self,
         config: Optional[ExecutorchBackendConfig] = None,
