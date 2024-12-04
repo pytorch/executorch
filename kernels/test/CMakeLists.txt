@@ -29,6 +29,10 @@ foreach(kernel ${_kernels})
     COMMAND mkdir -p ${_wrapper_dir}
     COMMAND echo "#include <executorch/kernels/${kernel}/Functions.h>" >
             "${_wrapper_path}"
+    DEPENDS
+      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/Functions.h"
+      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/NativeFunctions.h"
+      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/RegisterKernels.h"
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     COMMENT "Generating ${_wrapper_path}"
     VERBATIM
@@ -51,11 +55,20 @@ foreach(kernel ${_kernels})
     VERBATIM
   )
 
-  file(COPY
-  "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/${kernel}/${kernel}_ops_lib/Functions.h"
-  "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/${kernel}/${kernel}_ops_lib/NativeFunctions.h"
-  "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/${kernel}/${kernel}_ops_lib/RegisterKernels.h"
-  DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/")
+  add_custom_command(
+    OUTPUT
+      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/Functions.h"
+      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/NativeFunctions.h"
+      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/RegisterKernels.h"
+      POST_BUILD
+    COMMAND
+      mkdir -p
+      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
+    COMMAND
+      cp
+      "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/${kernel}/${kernel}_ops_lib/*.h"
+      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
+  )
 endforeach()
 
 add_custom_target(
@@ -67,6 +80,9 @@ add_custom_target(
     "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/FunctionHeaderWrapper.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/quantized/executorch/kernels/test/FunctionHeaderWrapper.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/quantized/executorch/kernels/test/supported_features.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/quantized/executorch/kernels/test/supported_features.cpp"
 )
 
 set(all_test_sources
@@ -215,7 +231,7 @@ set(all_test_sources
     "op_where_test.cpp"
     "op_zeros_test.cpp"
     "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
-  )
+)
 
 set(_portable_kernels_test_sources
     ${all_test_sources}
@@ -302,7 +318,8 @@ if(TARGET quantized_kernels)
   )
   add_dependencies(quantized_kernels_test generate_wrapper)
   target_include_directories(
-    quantized_kernels_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/quantized"
-    "${CMAKE_CURRENT_BINARY_DIR}/include/portable"
+    quantized_kernels_test
+    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/quantized"
+            "${CMAKE_CURRENT_BINARY_DIR}/include/portable"
   )
 endif()
