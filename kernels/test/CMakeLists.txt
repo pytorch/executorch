@@ -18,8 +18,6 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
 set(_kernels portable optimized quantized)
-add_compile_options(-frtti)
-add_compile_options(-fexceptions)
 foreach(kernel ${_kernels})
   set(_wrapper_dir
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/test"
