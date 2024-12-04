@@ -22,6 +22,8 @@ except:
 
     import executorch
 
+    from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
+
     # Ideally package is installed in only one location but usage of
     # PYATHONPATH can result in multiple locations.
     # ATM this is mainly used in CI for qnn runner. Will need to revisit this
