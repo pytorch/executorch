@@ -53,4 +53,9 @@ if(TOKENIZERS_BUILD_TEST)
     sentencepiece_test PUBLIC third-party/sentencepiece/src
                               third-party/sentencepiece include GTEST_INCLUDE_PATH)
   target_link_libraries(sentencepiece_test PUBLIC tokenizers gtest_main)
+
+  # tiktoken tests
+  add_executable(tiktoken_test test/test_base64.cpp)
+  target_include_directories(tiktoken_test PUBLIC include GTEST_INCLUDE_PATH)
+  target_link_libraries(tiktoken_test PUBLIC gtest_main)
 endif()
