@@ -17,7 +17,9 @@ using executorch::runtime::Error;
 Error HtpBackendCache::RetrieveBackendBinaryInfo(
     const QnnSystemContext_BinaryInfo_t* binaryinfo) {
   QnnHtpSystemContext_HwBlobInfo_t* htp_hwblobinfo = nullptr;
+#if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 21)
   QnnHtpSystemContext_GraphBlobInfo_t* htp_graphblobinfo = nullptr;
+#endif
 
   if (binaryinfo->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_1) {
     htp_hwblobinfo = static_cast<QnnHtpSystemContext_HwBlobInfo_t*>(
@@ -25,9 +27,11 @@ Error HtpBackendCache::RetrieveBackendBinaryInfo(
   } else if (binaryinfo->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_2) {
     htp_hwblobinfo = static_cast<QnnHtpSystemContext_HwBlobInfo_t*>(
         binaryinfo->contextBinaryInfoV2.hwInfoBlob);
+#if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 21)
   } else if (binaryinfo->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_3) {
     htp_graphblobinfo = static_cast<QnnHtpSystemContext_GraphBlobInfo_t*>(
         binaryinfo->contextBinaryInfoV3.graphs->graphInfoV3.graphBlobInfo);
+#endif
   } else {
     QNN_EXECUTORCH_LOG_WARN(
         "Unknown QNN BinaryInfo version %d.", binaryinfo->version);
@@ -46,6 +50,7 @@ Error HtpBackendCache::RetrieveBackendBinaryInfo(
     }
   }
 
+#if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 21)
   if (htp_graphblobinfo) {
     if (htp_graphblobinfo->version ==
         QNN_SYSTEM_CONTEXT_HTP_GRAPH_INFO_BLOB_VERSION_V1) {
@@ -58,6 +63,7 @@ Error HtpBackendCache::RetrieveBackendBinaryInfo(
       return Error::Internal;
     }
   }
+#endif
 
   return Error::Ok;
 }
