@@ -53,6 +53,10 @@
 #define TK_WEAK __attribute__((weak))
 #endif
 
+#ifndef __has_builtin
+#define __has_builtin(x) (0)
+#endif
+
 #if __has_builtin(__builtin_strrchr)
 /// Name of the source file without a directory string.
 #define TK_SHORT_FILENAME (__builtin_strrchr("/" __FILE__, '/') + 1)
