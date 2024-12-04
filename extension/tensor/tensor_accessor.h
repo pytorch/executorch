@@ -178,7 +178,10 @@ executorch::runtime::Result<TensorAccessor<T, N>> make_tensor_accessor(
 
   if (N != tensor.dim()) {
     ET_LOG(
-        Error, "Expecting %zd dimensions but tensor has %zd.", static_cast<ssize_t>(N), static_cast<ssize_t>(tensor.dim()));
+        Error,
+        "Expecting %zd dimensions but tensor has %zd.",
+        static_cast<ssize_t>(N),
+        static_cast<ssize_t>(tensor.dim()));
     return executorch::runtime::Error::InvalidArgument;
   }
 
