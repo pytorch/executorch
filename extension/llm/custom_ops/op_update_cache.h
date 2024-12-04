@@ -15,7 +15,7 @@ namespace executor {
 
 namespace native {
 
-Tensor& update_quantized_cache_out(
+Tensor& update_cache_out(
     RuntimeContext& ctx,
     const Tensor& value,
     Tensor& cache,
