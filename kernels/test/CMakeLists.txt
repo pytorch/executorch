@@ -248,6 +248,7 @@ add_dependencies(portable_kernels_test generate_wrapper)
 target_include_directories(
   portable_kernels_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/portable"
 )
+target_compile_options(portable_kernels_test PRIVATE "-frtti" "-fexceptions")
 
 set(_optimized_kernels_test_sources
     "op_add_test.cpp"
@@ -288,6 +289,7 @@ target_include_directories(
   optimized_kernels_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/optimized"
                                  "${CMAKE_INSTALL_PREFIX}/include"
 )
+target_compile_options(optimized_kernels_test PRIVATE "-frtti" "-fexceptions")
 
 if(TARGET quantized_kernels)
   set(_quantized_kernels_test_sources
@@ -321,4 +323,5 @@ if(TARGET quantized_kernels)
     PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/quantized"
             "${CMAKE_CURRENT_BINARY_DIR}/include/portable"
   )
+  target_compile_options(quantized_kernels_test PRIVATE "-frtti" "-fexceptions")
 endif()
