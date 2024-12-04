@@ -56,7 +56,7 @@ class MemoryFormatOpsPass(ExportPass):
         else:
             assert (
                 0
-            ), f"Expecting a Tensor a ProxyValue or a Sequence, but got {type(args[0])}"
+            ), f"Expecting a Tensor, a ProxyValue, or a Sequence, but got {type(args[0])}"
 
         nkwargs["dim_order"] = get_dim_order(mem_format, ndim)
         logger.debug(
