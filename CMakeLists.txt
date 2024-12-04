@@ -21,6 +21,9 @@ project(Tokenizers)
 
 option(TOKENIZERS_BUILD_TEST "Build tests" OFF)
 
+# Ignore weak attribute warning
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-attributes")
+
 set(ABSL_ENABLE_INSTALL ON)
 set(ABSL_PROPAGATE_CXX_STD ON)
 set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})

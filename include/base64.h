@@ -69,10 +69,8 @@ inline Error validate(uint32_t v) {
 }
 
 inline Error decode(const std::string_view &input, std::string &output) {
-  if (input.size() != 4) {
-    fprintf(stderr, "input length must be 4, got %zu", input.size());
-    return Error::Base64DecodeFailure;
-  }
+  TK_CHECK_OR_RETURN_ERROR(input.size() == 4, Base64DecodeFailure,
+                           "input length must be 4, got %zu", input.size());
 
   uint32_t val = 0;
 
@@ -104,10 +102,8 @@ inline Error decode(const std::string_view &input, std::string &output) {
 
 inline Error decode_1_padding(const std::string_view &input,
                               std::string &output) {
-  if (input.size() != 3) {
-    fprintf(stderr, "input length must be 3, got %zu", input.size());
-    return Error::Base64DecodeFailure;
-  }
+  TK_CHECK_OR_RETURN_ERROR(input.size() == 3, Base64DecodeFailure,
+                           "input length must be 3, got %zu", input.size());
 
   uint32_t val = 0;
 
@@ -133,7 +129,8 @@ inline Error decode_1_padding(const std::string_view &input,
 
 inline Error decode_2_padding(const std::string_view &input,
                               std::string &output) {
-  TK_CHECK_OR_RETURN_ERROR(input.size() == 2, Base64DecodeFailure);
+  TK_CHECK_OR_RETURN_ERROR(input.size() == 2, Base64DecodeFailure,
+                           "input length must be 2, got %zu", input.size());
 
   uint32_t val = 0;
 
@@ -154,18 +151,13 @@ inline Error decode_2_padding(const std::string_view &input,
 } // namespace detail
 
 inline tokenizers::Result<std::string> decode(const std::string_view &input) {
-  if (input.empty()) {
-    fprintf(stderr, "empty input");
-    return Error::Base64DecodeFailure;
-  }
+  TK_CHECK_OR_RETURN_ERROR(!input.empty(), Base64DecodeFailure, "empty input");
 
   // Faster than `input.size() % 4`.
-  if ((input.size() & 3) != 0 || input.size() < 4) {
-    fprintf(stderr,
-            "input length must be larger than 4 and is multiple of 4, got %zu",
-            input.size());
-    return Error::Base64DecodeFailure;
-  }
+  TK_CHECK_OR_RETURN_ERROR(
+      (input.size() & 3) == 0 && input.size() >= 4, Base64DecodeFailure,
+      "input length must be larger than 4 and is multiple of 4, got %zu",
+      input.size());
 
   std::string output;
   output.reserve(input.size() / 4 * 3);
