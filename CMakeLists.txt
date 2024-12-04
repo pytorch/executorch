@@ -38,7 +38,7 @@ target_link_libraries(tokenizers PUBLIC sentencepiece-static)
 
 # Build test
 if(TOKENIZERS_BUILD_TEST)
-  find_package(GTest REQUIRED)
+  add_subdirectory(third-party/googletest)
   set(ENV{RESOURCES_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/test/resources)
   add_executable(sentencepiece_test test/test_sentencepiece.cpp)
   target_include_directories(
