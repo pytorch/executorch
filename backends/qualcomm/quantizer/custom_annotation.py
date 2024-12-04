@@ -22,7 +22,9 @@ from torch.ao.quantization.quantizer import (
 from torch.fx import Node
 
 
-def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
+def annotate_matmul_16a8w(  # noqa: C901
+    gm: torch.fx.GraphModule, traverse_input1=True
+) -> None:
     """
     This function is specific for matmul op 16a8w.
     """
@@ -99,7 +101,8 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
     for node in gm.graph.nodes:
         if node.op == "call_function" and node.target == torch.ops.aten.matmul.default:
             annotate_matmul(node, quantization_config_16a8w)
-            annotate_matmul_input1(node.args[1])
+            if traverse_input1:
+                annotate_matmul_input1(node.args[1])
 
 
 def custom_annotate_llama_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
