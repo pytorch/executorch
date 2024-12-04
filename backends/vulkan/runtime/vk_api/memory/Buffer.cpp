@@ -29,11 +29,7 @@ VulkanBuffer::VulkanBuffer(
     const VmaAllocationCreateInfo& allocation_create_info,
     const VkBufferUsageFlags usage,
     const bool allocate_memory)
-    : buffer_properties_({
-          size,
-          0u,
-          size
-      }),
+    : buffer_properties_({size, 0u, size}),
       allocator_(vma_allocator),
       memory_{},
       owns_memory_(allocate_memory),
