@@ -14,7 +14,9 @@ table BinaryInfo {
   // Signature of binary
   signature: string;
   // Data of processed binary
-  data: [ubyte];
+  context_data: [ubyte] (vector64);
+  // Data of tensor
+  tensor_data: [ubyte] (vector64);
 }
 
 root_type BinaryInfo;

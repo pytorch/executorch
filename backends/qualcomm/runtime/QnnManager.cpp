@@ -54,6 +54,7 @@ QnnManager::QnnManager(
   QnnExecuTorchBackendType backend_type =
       options->backend_options()->backend_type();
   std::string library_path = options->library_path()->str();
+  fb_opt_.max_size = FLATBUFFERS_MAX_64_BUFFER_SIZE;
 
   if (options->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo) {
     QNN_EXECUTORCH_LOG_INFO(
@@ -490,7 +491,8 @@ Error QnnManager::GetContextBinary(
 Error QnnManager::CompileQcir() {
   flatbuffers::Verifier verifier_binary_info(
       static_cast<const uint8_t* const>(qnn_context_blob_.buffer),
-      qnn_context_blob_.nbytes);
+      qnn_context_blob_.nbytes,
+      fb_opt_);
   if (!qnn_delegate::VerifyBinaryInfoBuffer(verifier_binary_info)) {
     QNN_EXECUTORCH_LOG_ERROR("Fail to verify binary info");
     return Error::Internal;
@@ -498,19 +500,22 @@ Error QnnManager::CompileQcir() {
 
   auto binary_info = qnn_delegate::GetBinaryInfo(qnn_context_blob_.buffer);
   flatbuffers::Verifier verifier_qcir(
-      binary_info->data()->data(), binary_info->data()->size());
+      binary_info->context_data()->Data(),
+      binary_info->context_data()->size(),
+      fb_opt_);
   if (!qcir::VerifyContextBuffer(verifier_qcir)) {
     QNN_EXECUTORCH_LOG_ERROR("Fail to verify qcir format");
     return Error::Internal;
   }
 
-  auto context = qcir::GetContext(binary_info->data()->data());
+  auto context = qcir::GetContext(binary_info->context_data()->Data());
   for (const auto& graph : *context->graphs()) {
     // qcir tensors to TensorWrapper
     std::vector<std::shared_ptr<TensorWrapper>> graph_inputs, graph_outputs,
         tensors;
     for (const auto& tensor : *graph->tensors()) {
-      tensors.emplace_back(CreateTensorWrapper(ToTensor(tensor)));
+      tensors.emplace_back(CreateTensorWrapper(ToTensor(
+          tensor, binary_info->tensor_data()->Data() + tensor->offset())));
       if (tensor->type() == qcir::TensorType::WRITE) {
         graph_inputs.push_back(tensors.back());
       } else if (tensor->type() == qcir::TensorType::READ) {
@@ -544,6 +549,8 @@ Error QnnManager::CompileQcir() {
         const auto& tensor = graph->tensors()->Get(index);
         std::string name = tensor->name()->str();
         Qnn_DataType_t dtype = ToDataType(tensor->dtype());
+        const uint8_t* data_ptr =
+            binary_info->tensor_data()->Data() + tensor->offset();
         if (tensor->shape()->size() != 0) {
           // add tensor param
           op->AddTensorParam(
@@ -551,50 +558,39 @@ Error QnnManager::CompileQcir() {
               dtype,
               tensor->shape()->size(),
               tensor->shape()->data(),
-              tensor->data()->data());
+              data_ptr);
         } else {
           // add scalar param
           switch (dtype) {
             case Qnn_DataType_t::QNN_DATATYPE_INT_32:
               op->AddScalarParam(
-                  name,
-                  dtype,
-                  *reinterpret_cast<const int32_t*>(tensor->data()->Data()));
+                  name, dtype, *reinterpret_cast<const int32_t*>(data_ptr));
               break;
             case Qnn_DataType_t::QNN_DATATYPE_INT_16:
               op->AddScalarParam(
-                  name,
-                  dtype,
-                  *reinterpret_cast<const int16_t*>(tensor->data()->Data()));
+                  name, dtype, *reinterpret_cast<const int16_t*>(data_ptr));
               break;
             case Qnn_DataType_t::QNN_DATATYPE_INT_8:
-              op->AddScalarParam(
-                  name, dtype, static_cast<int8_t>(*tensor->data()->Data()));
+              op->AddScalarParam(name, dtype, static_cast<int8_t>(*data_ptr));
               break;
             case Qnn_DataType_t::QNN_DATATYPE_UINT_32:
               op->AddScalarParam(
-                  name,
-                  dtype,
-                  *reinterpret_cast<const uint32_t*>(tensor->data()->Data()));
+                  name, dtype, *reinterpret_cast<const uint32_t*>(data_ptr));
               break;
             case Qnn_DataType_t::QNN_DATATYPE_UINT_16:
               op->AddScalarParam(
-                  name,
-                  dtype,
-                  *reinterpret_cast<const uint16_t*>(tensor->data()->Data()));
+                  name, dtype, *reinterpret_cast<const uint16_t*>(data_ptr));
               break;
             case Qnn_DataType_t::QNN_DATATYPE_UINT_8:
-              op->AddScalarParam(name, dtype, *tensor->data()->Data());
+              op->AddScalarParam(name, dtype, *data_ptr);
               break;
             case Qnn_DataType_t::QNN_DATATYPE_FLOAT_32:
             case Qnn_DataType_t::QNN_DATATYPE_FLOAT_16:
               op->AddScalarParam(
-                  name,
-                  dtype,
-                  *reinterpret_cast<const float*>(tensor->data()->Data()));
+                  name, dtype, *reinterpret_cast<const float*>(data_ptr));
               break;
             case Qnn_DataType_t::QNN_DATATYPE_BOOL_8:
-              op->AddScalarParam(name, dtype, *tensor->data()->Data());
+              op->AddScalarParam(name, dtype, *data_ptr);
               break;
             default:
               QNN_EXECUTORCH_LOG_ERROR(
@@ -603,7 +599,7 @@ Error QnnManager::CompileQcir() {
           }
         }
       }
-      op_wrappers.push_back(std::move(op));
+      op_wrappers.emplace_back(std::move(op));
     }
 
     ET_CHECK_OR_RETURN_ERROR(
@@ -687,7 +683,8 @@ Error QnnManager::Compile(
 std::string QnnManager::GetBinarySignature() {
   flatbuffers::Verifier verifier(
       static_cast<const uint8_t* const>(qnn_context_blob_.buffer),
-      qnn_context_blob_.nbytes);
+      qnn_context_blob_.nbytes,
+      fb_opt_);
   return VerifyBinaryInfoBuffer(verifier)
       ? GetBinaryInfo(qnn_context_blob_.buffer)->signature()->str()
       : "";

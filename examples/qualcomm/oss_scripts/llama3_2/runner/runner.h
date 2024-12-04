@@ -29,6 +29,8 @@ class Runner {
   explicit Runner(
       const std::vector<std::string>& models_path,
       const std::string& tokenizer_path,
+      const std::string& prompt,
+      const std::string& system_prompt,
       const float temperature,
       const int eval_mode);
 
@@ -61,27 +63,23 @@ class Runner {
   bool is_loaded() const;
   executorch::runtime::Error load();
   executorch::runtime::Error generate(
-      const std::string& prompt,
-      const std::string& system_prompt,
       int32_t seq_len,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {});
   void stop();
   std::vector<executorch::runtime::Result<executorch::runtime::MethodMeta>>
-  get_methods_meta();
+  get_methods_meta(std::string& method_name);
 
  private:
-  enum EvalMode {
-    kBatchPrefill = 0,
-    kKVCached,
-    kUnsupported,
-  };
   template <typename T>
   T getMetadataHelper(std::string method_name, T default_val);
   template <typename T>
   int32_t logitsToToken(const executorch::aten::Tensor& logits_tensor);
   void run_model_step(
+      const std::string& method_name,
       std::vector<std::vector<executorch::runtime::EValue>>& inputs);
+  std::string prompt_;
+
   // metadata
   int32_t max_seq_len_;
   int32_t vocab_size_;
@@ -96,7 +94,10 @@ class Runner {
   std::unique_ptr<executorch::extension::llm::Sampler> sampler_;
   Stats stats_;
   std::unique_ptr<Memory> io_mem_;
-  int32_t eval_mode_;
+  EvalMode eval_mode_;
+  std::string prefill_forward_name_;
+  std::string kv_forward_name_;
+  std::vector<std::string> method_names_;
 };
 
 } // namespace example

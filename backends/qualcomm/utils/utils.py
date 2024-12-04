@@ -5,9 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
+import re
 import warnings
 from collections import OrderedDict
-from typing import Callable, Dict, FrozenSet, List, Tuple
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 
@@ -647,7 +648,13 @@ def from_context_binary(  # noqa: C901
                 for v in outputs.values()
             )
 
-    def build_graph(inputs, outputs):
+    def build_graph(
+        inputs,
+        outputs,
+        qnn_in_order: Optional[List[int]] = None,
+        executorch_in_order: Optional[List[int]] = None,
+        executorch_out_order: Optional[List[int]] = None,
+    ):
         # custom op declaration
         inputs_str = "Tensor[] inputs"
         func_proto = f"{op_name}({inputs_str}) -> Any"
@@ -658,13 +665,39 @@ def from_context_binary(  # noqa: C901
 
         # model architecture mimicking context binary
         class Model(torch.nn.Module):
-            def forward(self, *inputs):
-                return getattr(
+            """
+            The args of forward() can be thought of as what executorch is accepting as input.
+            The getattr inside the forward() can be thought of as qnn context binary.
+            When we first pass in the input, we need to use the executorch's(nn.module) input order.
+            After we get into forward(), we then need to convert input order to qnn's input order.
+            Same as return, when qnn returns the value, we need to reorder them back to executorh's output order.
+            """
+
+            def __init__(self, qnn_in_order, executorch_out_order):
+                super().__init__()
+                self.qnn_in_order = qnn_in_order
+                self.executorch_out_order = executorch_out_order
+
+            def forward(self, *inputs):  # executorch
+                if self.qnn_in_order:
+                    inputs = tuple(inputs[i] for i in self.qnn_in_order)
+                ret = getattr(
                     getattr(torch.ops, OpContextLoader.namespace), op_name
                 ).default(inputs)
+                return (
+                    [ret[idx] for idx in self.executorch_out_order]
+                    if self.executorch_out_order
+                    else ret
+                )
 
-        model = Model()
-        prog = torch.export.export(model, tuple(inputs.values()), strict=True)
+        inputs = (
+            tuple(tuple(inputs.values())[i] for i in executorch_in_order)
+            if executorch_in_order
+            else tuple(inputs.values())
+        )
+
+        model = Model(qnn_in_order, executorch_out_order)
+        prog = torch.export.export(model, inputs, strict=True)
         # bookkeeping for variables' life cycle
         return {
             "custom_op": custom_op,
@@ -707,6 +740,7 @@ def from_context_binary(  # noqa: C901
         for k, v in type_map.items():
             dtype_map.setdefault(v, k)
 
+    qnn_in_order, executorch_in_order, executorch_out_order = [], [], []
     if custom_info is not None:
         # since some context binaries might fail to open on host
         # if they are compiled with special flags:
@@ -714,6 +748,9 @@ def from_context_binary(  # noqa: C901
         # use custom information here instead
         inputs = build_tensor(custom_info["graph_inputs"], dtype_map)
         outputs = build_tensor(custom_info["graph_outputs"], dtype_map)
+        qnn_in_order = custom_info["qnn_in_order"]
+        executorch_in_order = custom_info["executorch_in_order"]
+        executorch_out_order = custom_info["executorch_out_order"]
         graph_name = custom_info["graph_name"]
     else:
         # get context-binary io tensor info through qnn manager
@@ -728,15 +765,21 @@ def from_context_binary(  # noqa: C901
         inputs = build_tensor(qnn_mgr.GetGraphInputs(graph_name), dtype_map)
         outputs = build_tensor(qnn_mgr.GetGraphOutputs(graph_name), dtype_map)
         qnn_mgr.Destroy()
-
     # generate graph specific for loading context
-    bundle_prog = build_graph(inputs, outputs)
+    bundle_prog = build_graph(
+        inputs, outputs, qnn_in_order, executorch_in_order, executorch_out_order
+    )
     bundle_prog.update({"inputs": inputs, "outputs": outputs})
+
+    # TODO: to_edge() decorator alters the function call behavior, which
+    # requires "self" when calling. To work around this issue,
+    # temporarily remove the first parameter name.
     edge_prog_mgr = to_edge(
-        programs={graph_name: bundle_prog["exported_program"]},
+        {graph_name: bundle_prog["exported_program"]},
         # do not alter name for custom op
         compile_config=EdgeCompileConfig(_use_edge_ops=False),
     )
+
     # update meta with context binary
     for n in edge_prog_mgr._edge_programs[graph_name].graph.nodes:
         if n.op == "call_function" and OpContextLoader.namespace in str(n.target):
@@ -757,11 +800,23 @@ def draw_graph(title, path, graph_module: torch.fx.GraphModule):
 
 def generate_multi_graph_program(
     compiler_specs: List[CompileSpec],
-    processed_bytes: List[bytes],
+    exported_programs: List[ExportedProgram] = None,
     backend_config: ExecutorchBackendConfig = None,
+    constant_methods: Optional[Dict[str, Any]] = None,
 ) -> ExecutorchProgramManager:
+
     # compile multiple graphs in qcir into single context binary
-    graph_inputs, graph_outputs = {}, {}
+    (
+        graph_inputs,
+        graph_outputs,
+        qnn_in_order,
+        executorch_in_order,
+        executorch_out_order,
+    ) = ({}, {}, {}, {}, {})
+
+    processed_bytes = [
+        prog.graph_module.lowered_module_0.processed_bytes for prog in exported_programs
+    ]
     qnn_mgr = PyQnnManagerAdaptor.QnnManager(
         generate_qnn_executorch_option(compiler_specs), processed_bytes
     )
@@ -772,6 +827,41 @@ def generate_multi_graph_program(
     for graph_name in graph_names:
         graph_inputs[graph_name] = qnn_mgr.GetGraphInputs(graph_name)
         graph_outputs[graph_name] = qnn_mgr.GetGraphOutputs(graph_name)
+
+    # We need to obtain the order of the IOs to correctly map QNN with nn.module
+    for i, graph_name in enumerate(graph_names):
+        # input
+        input_names = [
+            node.name
+            for node in exported_programs[i].graph_module.graph.nodes
+            if node.op == "placeholder"
+        ]
+        qnn_input_names = [wrapper.GetName() for wrapper in graph_inputs[graph_name]]
+        input_order_list = []
+        for input_name in input_names:
+            # e.g., input_0_tokens_0
+            pattern = rf"^input_(\d+)_({input_name})_(\d+)$"
+            for j in range(len(qnn_input_names)):
+                if re.match(pattern, qnn_input_names[j]):
+                    input_order_list.append(j)
+                    break
+        assert (
+            len(input_order_list) == len(input_names) == len(qnn_input_names)
+        ), "Order list length is different from names"
+        executorch_in_order[graph_name] = input_order_list
+        qnn_in_order[graph_name] = sorted(
+            range(len(input_order_list)), key=lambda k: input_order_list[k]
+        )
+
+        # output
+        get_item_list = [
+            node
+            for node in exported_programs[i].graph_module.graph.nodes
+            if node.op == "output"
+        ][0].args[0]
+        output_order_list = [item.args[1] for item in get_item_list]
+        executorch_out_order[graph_name] = output_order_list
+
     qnn_mgr.Destroy()
 
     # build custom ops with different graph signatures
@@ -785,16 +875,20 @@ def generate_multi_graph_program(
                 "graph_inputs": graph_inputs[graph_name],
                 "graph_outputs": graph_outputs[graph_name],
                 "graph_name": graph_name,
+                "qnn_in_order": qnn_in_order[graph_name],
+                "executorch_in_order": executorch_in_order[graph_name],
+                "executorch_out_order": executorch_out_order[graph_name],
             },
         )
         for graph_name in graph_names
     ]
     # leverage ExecutorchProgramManager for generating pte with multi-methods
     edge_prog_mgr = to_edge(
-        programs={
+        {
             graph_name: bundle_prog["exported_program"]
             for graph_name, bundle_prog in zip(graph_names, bundle_progs)
         },
+        constant_methods=constant_methods,
         # do not alter name for custom op
         compile_config=EdgeCompileConfig(_use_edge_ops=False),
     )
@@ -805,7 +899,8 @@ def generate_multi_graph_program(
                 n.meta[OpContextLoader.meta_ctx_bin] = binary_info
                 break
 
-    return edge_prog_mgr.to_backend(QnnPartitioner(compiler_specs)).to_executorch(
+    edge_prog_mgr = edge_prog_mgr.to_backend(QnnPartitioner(compiler_specs))
+    return edge_prog_mgr.to_executorch(
         config=backend_config or ExecutorchBackendConfig()
     )
 
