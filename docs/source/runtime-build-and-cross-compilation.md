@@ -45,7 +45,7 @@ cd executorch
 
 # Clean and configure the CMake build system. It's good practice to do this
 # whenever cloning or pulling the upstream repo.
-(rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake ..)
+(sh clean.sh && cd cmake-out && cmake ..)
 ```
 
 Once this is done, you don't need to do it again until you pull from the upstream repo again, or if you modify any CMake-related files.
@@ -121,7 +121,7 @@ Following are instruction on how to perform cross compilation for Android and iO
 Assuming Android NDK is available, run:
 ```bash
 # Run the following lines from the `executorch/` folder
-rm -rf cmake-android-out && mkdir cmake-android-out && cd cmake-android-out
+sh clean.sh && cd cmake-android-out
 
 # point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed
 cmake -DCMAKE_TOOLCHAIN_FILE=/Users/{user_name}/Library/Android/sdk/ndk/25.2.9519653/build/cmake/android.toolchain.cmake  -DANDROID_ABI=arm64-v8a ..

@@ -74,7 +74,7 @@ build_executorch_runner_buck2() {
 build_executorch_runner_cmake() {
   CMAKE_OUTPUT_DIR=cmake-out
   # Build executorch runtime using cmake
-  rm -rf "${CMAKE_OUTPUT_DIR}" && mkdir "${CMAKE_OUTPUT_DIR}"
+  sh clean.sh
 
   pushd "${CMAKE_OUTPUT_DIR}" || return
   # This command uses buck2 to gather source files and buck2 could crash flakily
@@ -103,7 +103,7 @@ build_executorch_runner() {
 
 cmake_install_executorch_lib() {
   echo "Installing libexecutorch.a and libportable_kernels.a"
-  rm -rf cmake-out
+  sh clean.sh
   retry cmake -DBUCK2="$BUCK" \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \

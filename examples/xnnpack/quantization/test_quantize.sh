@@ -47,8 +47,7 @@ test_cmake_quantization() {
   SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
   CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
 
-  (rm -rf cmake-out \
-    && mkdir cmake-out \
+  (sh clean.sh \
     && cd cmake-out \
     && retry cmake \
       -DCMAKE_BUILD_TYPE=Release \

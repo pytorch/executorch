@@ -13,7 +13,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../.ci/scripts/utils.sh"
 
 cmake_install_executorch_lib() {
   echo "Installing libexecutorch.a"
-  rm -rf cmake-out
+  sh clean.sh
 
   retry cmake -DBUCK2="$BUCK2" \
           -DCMAKE_CXX_STANDARD_REQUIRED=ON \

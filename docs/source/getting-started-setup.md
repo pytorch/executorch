@@ -113,7 +113,7 @@ to ExecuTorch.
 >
 > ```bash
 > # From the root of the executorch repo:
-> rm -rf cmake-out pip-out
+> sh clean.sh
 > git submodule sync
 > git submodule update --init
 > ```
@@ -196,7 +196,7 @@ The ExecuTorch repo uses CMake to build its C++ code. Here, we'll configure it t
   ```bash
   # Clean and configure the CMake build system. Compiled programs will
   # appear in the executorch/cmake-out directory we create here.
-  (rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake ..)
+  (sh clean.sh && cd cmake-out && cmake ..)
 
   # Build the executor_runner target
   cmake --build cmake-out --target executor_runner -j9
@@ -213,7 +213,7 @@ The ExecuTorch repo uses CMake to build its C++ code. Here, we'll configure it t
 >
 > ```bash
 > # From the root of the executorch repo:
-> rm -rf cmake-out pip-out
+> sh clean.sh
 > git submodule sync
 > git submodule update --init
 > ```

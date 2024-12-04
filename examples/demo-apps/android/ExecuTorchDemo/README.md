@@ -69,7 +69,8 @@ We build the required ExecuTorch runtime library to run the model.
 export ANDROID_NDK=<path-to-android-ndk>
 export ANDROID_ABI=arm64-v8a
 
-rm -rf cmake-android-out && mkdir cmake-android-out
+# Run the following lines from the `executorch/` folder
+sh clean.sh
 
 # Build the core executorch library
 cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
@@ -112,7 +113,7 @@ export ANDROID_NDK=<path-to-android-ndk>
 export ANDROID_ABI=arm64-v8a
 export QNN_SDK_ROOT=<path-to-qnn-sdk>
 
-rm -rf cmake-android-out && mkdir cmake-android-out && cd cmake-android-out
+sh clean.sh && cd cmake-android-out
 cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
