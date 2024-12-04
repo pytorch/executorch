@@ -71,8 +71,7 @@ class QnnContext {
   QnnBackend* backend_;
   QnnDevice* device_;
   QnnBackendCache* cache_;
-  std::vector<uint8_t> binary_buffer_;
-  flatbuffers::FlatBufferBuilder builder_;
+  flatbuffers::FlatBufferBuilder64 builder64_;
 };
 } // namespace qnn
 } // namespace backends
