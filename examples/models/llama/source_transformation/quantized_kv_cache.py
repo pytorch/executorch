@@ -11,8 +11,6 @@ import torch
 import torch.nn as nn
 from executorch.examples.models.llama.llama_transformer import KVCache
 
-# This is needed to ensure that custom ops are registered
-from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
 from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noqa: F401
 
 
@@ -235,6 +233,8 @@ class QuantizedKVCache(nn.Module):
 
 
 def replace_kv_cache_with_quantized_kv_cache(module):
+    # This is needed to ensure that custom ops are registered
+    from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
     from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 
     logging.warning(
