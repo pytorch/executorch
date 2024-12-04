@@ -284,6 +284,12 @@ class ArmBackend(BackendDetails):
                 # any checking of compatibility.
                 dbg_fail(node, tosa_graph, artifact_path)
 
+        if len(input_order) > 0:
+            if input_count != len(input_order):
+                raise RuntimeError(
+                    "The rank of the input order is not equal to amount of input tensors"
+                )
+
         if artifact_path:
             tag = _get_first_delegation_tag(graph_module)
             dbg_tosa_dump(

@@ -76,7 +76,7 @@ def get_tosa_compile_spec_unbuilt(
     if not custom_path:
         custom_path = maybe_get_tosa_collate_path()
 
-    if custom_path is not None and not os.path.exists(custom_path):
+    if custom_path is not None:
         os.makedirs(custom_path, exist_ok=True)
     compile_spec_builder = (
         ArmCompileSpecBuilder()
