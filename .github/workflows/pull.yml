@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
-      runner: linux.4xlarge
+      runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
