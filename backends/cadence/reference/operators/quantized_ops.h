@@ -87,8 +87,13 @@ inline __attribute__((always_inline)) void quantized_linear_per_tensor_(
             (int32_t)weight_data[j * in_dim + k] - (int32_t)weight_zero_point;
         sum += x * w;
       }
+<<<<<<< HEAD
       out_data[i * out_dim + j] = ::impl::reference::kernels::quantize<T>(
           sum, requant_scale, out_zero_point);
+=======
+      out_data[i * out_dim + j] =
+          ::impl::reference::kernels::quantize<T>(sum, requant_scale, out_zero_point);
+>>>>>>> 5ebcf7f03 (create quantized_linear_per_tensor_out in cpu)
     }
   }
 }
