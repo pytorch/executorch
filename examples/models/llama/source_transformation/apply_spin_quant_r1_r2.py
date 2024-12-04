@@ -146,9 +146,9 @@ def fuse_ln_linear(
                     torch.zeros(linear.out_features, dtype=torch.float32)
                 )
             linear.bias.data = linear.bias.data.to(dtype=torch.float32) + torch.matmul(
+                W_,
                 # pyre-fixme[6]: For 2nd argument expected `Tensor` but got
                 #  `Union[Tensor, Module]`.
-                W_,
                 layernorm.bias.to(dtype=torch.float32),
             )
             linear.bias.data = linear.bias.data.to(linear_dtype)

@@ -213,9 +213,9 @@ function build_executorch_runner() {
     cmake --build ${executor_runner_path}/cmake-out --parallel -- arm_executor_runner
     echo "[${FUNCNAME[0]}] Generated baremetal elf file:"
     find ${executor_runner_path}/cmake-out -name "arm_executor_runner"
-    echo "executable_text: $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec size {} \; | grep -v filename | awk '{print $1}') bytes"
-    echo "executable_data: $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec size {} \; | grep -v filename | awk '{print $2}') bytes"
-    echo "executable_bss:  $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec size {} \; | grep -v filename | awk '{print $3}') bytes"
+    echo "executable_text: $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $1}') bytes"
+    echo "executable_data: $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $2}') bytes"
+    echo "executable_bss:  $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $3}') bytes"
 }
 
 # Execute the executor_runner on FVP Simulator
@@ -229,7 +229,6 @@ function run_fvp() {
     if [[ ${target} == *"ethos-u55"*  ]]; then
         echo "Running ${elf} for ${target} run with FVP:${fvp_model} num_macs:${num_macs}"
         ${fvp_model}                                            \
-            -C cpu0.CFGITCMSZ=11                                \
             -C ethosu.num_macs=${num_macs}                      \
             -C mps3_board.visualisation.disable-visualisation=1 \
             -C mps3_board.telnetterminal0.start_telnet=0        \
@@ -241,7 +240,6 @@ function run_fvp() {
     elif [[ ${target} == *"ethos-u85"*  ]]; then
         echo "Running ${elf} for ${target} run with FVP:${fvp_model} num_macs:${num_macs}"
     	${fvp_model}                                            \
-            -C mps4_board.subsystem.cpu0.CFGITCMSZ=11           \
             -C mps4_board.subsystem.ethosu.num_macs=${num_macs} \
             -C mps4_board.visualisation.disable-visualisation=1 \
             -C vis_hdlcd.disable_visualisation=1                \

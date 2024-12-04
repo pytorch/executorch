@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
-from executorch.backends.arm.test.common import arm_test_options, is_option_enabled
+from executorch.backends.arm.test.conftest import arm_test_options, is_option_enabled
 
 from torch.export import ExportedProgram
 from torch.fx.node import Node
@@ -218,7 +218,7 @@ class RunnerUtil:
 
         assert (
             self._has_init_run
-        ), "RunnerUtil needs to be initialized using init_run() before running Corstone300."
+        ), "RunnerUtil needs to be initialized using init_run() before running Corstone FVP."
         if self.target_board not in ["corstone-300", "corstone-320"]:
             raise RuntimeError(f"Unknown target board: {self.target_board}")
 
@@ -265,8 +265,6 @@ class RunnerUtil:
                 "mps3_board.telnetterminal0.start_telnet=0",
                 "-C",
                 "mps3_board.uart0.out_file='-'",
-                "-C",
-                "cpu0.CFGITCMSZ=11",
                 "-C",
                 "cpu0.semihosting-enable=1",
                 "-C",

@@ -172,11 +172,21 @@ class SoftmaxModule(torch.nn.Module):
     can_delegate = False
 
 
+class MultipleOutputsModule(torch.nn.Module):
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return (x * y, x.sum(dim=-1, keepdim=True))
+
+    example_input = (torch.randn(10, 4, 5), torch.randn(10, 4, 5))
+    can_delegate = True
+
+
 models = {
     "add": AddModule,
     "add2": AddModule2,
     "add3": AddModule3,
     "softmax": SoftmaxModule,
+    "MultipleOutputsModule": MultipleOutputsModule,
 }
 
 calibration_data = {

@@ -57,6 +57,21 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
 
+# Setup RPATH.
+# See https://gitlab.kitware.com/cmake/community/-/wikis/doc/cmake/RPATH-handling
+# Use separate rpaths during build and install phases
+set(CMAKE_SKIP_BUILD_RPATH OFF)
+# Don't use the install-rpath during the build phase
+set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+# Automatically add all linked folders that are NOT in the build directory to
+# the rpath (per library?)
+# TODO: Doesn't work for us right now because we are not installing .so's into the
+# correct locations. For example we have libcustom_ops_aot_lib.so depending on
+# _portable_lib.so, which was eventually put under <site-packages>/executorch/extension/pybindings/
+# but this rpath is not automatically added because at build time it seems `portable_lib`
+# is being built under the same directory, so no extra rpath is being added. To
+# properly fix this we need to install `portable_lib` into the correct path.
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
 # ------------------------------ OPTIONS -------------------------------------
 # WARNING: Please don't add example specific options in this CMakeLists.txt.
 # Instead please use `find_package(executorch REQUIRED)` in the example
@@ -766,46 +781,6 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
-  if(APPLE)
-    # pip wheels will need to be able to find the torch libraries. On Linux, the
-    # .so has non-absolute dependencies on libs like "libtorch.so" without
-    # paths; as long as we `import torch` first, those dependencies will work.
-    # But Apple dylibs do not support non-absolute dependencies, so we need to
-    # tell the loader where to look for its libraries. The LC_LOAD_DYLIB entries
-    # for the torch libraries will look like "@rpath/libtorch.dylib", so we can
-    # add an LC_RPATH entry to look in a directory relative to the installed
-    # location of our _portable_lib.so file. To see these LC_* values, run
-    # `otool -l _portable_lib*.so`.
-    set_target_properties(
-      portable_lib
-      PROPERTIES # Assume that this library will be installed in
-                 # `site-packages/executorch/extension/pybindings`, and that
-                 # the torch libs are in `site-packages/torch/lib`.
-                 BUILD_RPATH "@loader_path/../../../torch/lib"
-                 INSTALL_RPATH "@loader_path/../../../torch/lib"
-                 # Assume <executorch> is the root `site-packages/executorch`
-                 # Need to add <executorch>/extension/llm/custom_ops for
-                 # libcustom_ops_aot_lib.dylib
-                 BUILD_RPATH "@loader_path/../../extension/llm/custom_ops"
-                 INSTALL_RPATH "@loader_path/../../extension/llm/custom_ops"
-                 # Need to add <executorch>/kernels/quantized for
-                 # libquantized_ops_aot_lib.dylib
-                 BUILD_RPATH "@loader_path/../../kernels/quantized"
-                 INSTALL_RPATH "@loader_path/../../kernels/quantized"
-    )
-  else()
-    set_target_properties(
-      portable_lib
-      PROPERTIES
-        # Assume <executorch> is the root `site-packages/executorch`
-        # Need to add <executorch>/extension/llm/custom_ops for
-        # libcustom_ops_aot_lib
-        # Need to add <executorch>/kernels/quantized for
-        # libquantized_ops_aot_lib
-        BUILD_RPATH
-        "$ORIGIN:$ORIGIN/../../extension/llm/custom_ops:$ORIGIN/../../kernels/quantized"
-    )
-  endif()
 
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings
