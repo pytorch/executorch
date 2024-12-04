@@ -5,49 +5,6 @@
 #include <executorch/backends/cadence/reference/kernels/kernels.h>
 #include <executorch/backends/cadence/reference/operators/operators.h>
 
-// Generate kernels that perform elementwise arithmetic on two quantized
-// tensors. The tensors are either the same size, or the second tensor is a
-// scalar.
-#define DECLARE_POINTWISE_TENSOR_QUANTIZED_BINARY_OP(BINARY_FUNC_NAME, OP)    \
-  template <typename T>                                                       \
-  void BINARY_FUNC_NAME(                                                      \
-      const ::executorch::aten::Tensor& X,                                    \
-      float X_scale,                                                          \
-      int32_t X_zero_point,                                                   \
-      const ::executorch::aten::Tensor& Y,                                    \
-      float Y_scale,                                                          \
-      int32_t Y_zero_point,                                                   \
-      float out_scale,                                                        \
-      int32_t out_zero_point,                                                 \
-      ::executorch::aten::Tensor& out) {                                      \
-    const T* __restrict__ X_data = X.const_data_ptr<T>();                     \
-    const T* __restrict__ Y_data = Y.const_data_ptr<T>();                     \
-    T* __restrict__ out_data = out.mutable_data_ptr<T>();                     \
-    size_t Y_numel = Y.numel();                                               \
-    size_t X_numel = X.numel();                                               \
-    float inv_out_scale = 1.0f / out_scale;                                   \
-    /* Tensor that has the same element of X */                               \
-    if (Y_numel == X_numel) {                                                 \
-      for (size_t i = 0; i < X_numel; ++i) {                                  \
-        float x = kernels::dequantize<T>(X_data[i], X_scale, X_zero_point);   \
-        float y = kernels::dequantize<T>(Y_data[i], Y_scale, Y_zero_point);   \
-        float z = x OP y;                                                     \
-        out_data[i] = kernels::quantize<T>(z, inv_out_scale, out_zero_point); \
-      }                                                                       \
-    } /* if Y is a scalar Tensor */                                           \
-    else if (Y_numel == 1) {                                                  \
-      float y = kernels::dequantize<T>(Y_data[0], Y_scale, Y_zero_point);     \
-      for (size_t i = 0; i < X_numel; ++i) {                                  \
-        float x = kernels::dequantize<T>(X_data[i], X_scale, X_zero_point);   \
-        float z = x OP y;                                                     \
-        out_data[i] = kernels::quantize<T>(z, inv_out_scale, out_zero_point); \
-      }                                                                       \
-    } /* other broadcasting cases */                                          \
-    else {                                                                    \
-      ET_DCHECK_MSG(false, "Unsupported broadcasting");                       \
-    }                                                                         \
-  }
-
 template <typename T>
 inline __attribute__((always_inline)) void quantized_linear_per_tensor_(
     const ::executorch::aten::Tensor& src,
