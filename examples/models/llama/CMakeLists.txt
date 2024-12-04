@@ -80,7 +80,7 @@ find_package(gflags REQUIRED)
 # find `executorch` libraries Same as for gflags
 set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
-if(CMAKE_TOOLCHAIN_IOS OR ANDROID)
+if(CMAKE_TOOLCHAIN_IOS OR ANDROID OR WIN32 OR APPLE)
   target_link_options_shared_lib(executorch)
 endif()
 
@@ -231,9 +231,6 @@ target_include_directories(llama_main PUBLIC ${_common_include_directories})
 target_link_libraries(llama_main PUBLIC llama_runner ${link_libraries})
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
 
-if(APPLE)
-  target_link_options_shared_lib(executorch)
-endif()
 
 # Print all summary
 executorch_print_configuration_summary()

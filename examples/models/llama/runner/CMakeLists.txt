@@ -36,6 +36,11 @@ include(${EXECUTORCH_SRCS_FILE})
 
 # build llama_runner library
 list(TRANSFORM _llama_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
+if (WIN32)
+  set_property(TARGET extension_module PROPERTY
+              IMPORTED_IMPLIB "${EXECUTORCH_ROOT}/cmake-out/lib/extension_module.lib")
+
+endif()
 
 target_include_directories(
   extension_module INTERFACE ${_common_include_directories}
@@ -52,7 +57,7 @@ list(APPEND _llama_runner__srcs
 if(CMAKE_TOOLCHAIN_IOS
    OR ANDROID
    OR APPLE
-  OR WIN32
+   OR WIN32
 )
   # Building a share library on iOS requires code signing On Android we see
   # duplicated registration when using shared lib
@@ -76,24 +81,13 @@ add_subdirectory(
 )
 set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
-if (WIN32)
-  # in Windows, only extension_module_static works and has duplicated symbols with extension_tensor
-  set(llama_runner_deps executorch extension_data_loader extension_module_static
-                        re2::re2
-  )
-  # in Windows, need PUBLIC or sources files in executorch/examples/models/llama/runner/ cannot be found
-  target_include_directories(
-    llama_runner PUBLIC ${_common_include_directories} ${EXECUTORCH_ROOT}
-  )
-else()
 set(llama_runner_deps executorch extension_data_loader extension_module
                       extension_tensor re2::re2
 )
-target_include_directories(
-  llama_runner INTERFACE ${_common_include_directories} ${EXECUTORCH_ROOT}
-)
-endif()
 
 target_link_libraries(llama_runner PUBLIC ${llama_runner_deps})
 
+target_include_directories(
+  llama_runner INTERFACE ${_common_include_directories} ${EXECUTORCH_ROOT}
+)
 target_compile_options(llama_runner PUBLIC ${_preprocessor_flag})
