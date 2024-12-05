@@ -9,7 +9,7 @@ import logging
 try:
     import glob
 
-    import torch
+    import torch as _torch
     import executorch
 
     # Ideally package is installed in only one location but usage of
@@ -23,7 +23,8 @@ try:
     )
     assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
     logging.info(f"Loading custom ops library: {libs[0]}")
-    torch.ops.load_library(libs[0])
+    _torch.ops.load_library(libs[0])
+    del _torch
 except:
     import logging
 
