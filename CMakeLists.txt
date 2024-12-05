@@ -28,33 +28,40 @@ set(ABSL_ENABLE_INSTALL ON)
 set(ABSL_PROPAGATE_CXX_STD ON)
 set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+add_subdirectory(third-party/abseil-cpp)
+add_subdirectory(third-party/re2)
 add_subdirectory(third-party/sentencepiece)
 set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
-add_library(tokenizers STATIC src/sentencepiece.cpp)
+add_library(tokenizers STATIC src/sentencepiece.cpp src/tiktoken.cpp)
 
 # Using abseil from sentencepiece/third_party
-target_include_directories(tokenizers PUBLIC third-party/sentencepiece/src
-                                            third-party/sentencepiece include)
+target_include_directories(
+  tokenizers PUBLIC third-party/sentencepiece/src third-party/sentencepiece
+                    include third-party/re2)
 
-target_link_libraries(tokenizers PUBLIC sentencepiece-static)
+target_link_libraries(tokenizers PUBLIC sentencepiece-static re2::re2)
 
 # Build test
 if(TOKENIZERS_BUILD_TEST)
   include(FetchContent)
+  # CMAKE
   FetchContent_Declare(
     googletest
     # Specify the commit you depend on and update it regularly.
     URL https://github.com/google/googletest/archive/5376968f6948923e2411081fd9372e71a59d8e77.zip
   )
-  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  set(gtest_force_shared_crt
+      ON
+      CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(googletest)
 
   set(ENV{RESOURCES_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/test/resources)
   add_executable(sentencepiece_test test/test_sentencepiece.cpp)
   target_include_directories(
-    sentencepiece_test PUBLIC third-party/sentencepiece/src
-                              third-party/sentencepiece include GTEST_INCLUDE_PATH)
+    sentencepiece_test
+    PUBLIC third-party/sentencepiece/src third-party/sentencepiece include
+           GTEST_INCLUDE_PATH)
   target_link_libraries(sentencepiece_test PUBLIC tokenizers gtest_main)
 
   # tiktoken tests
