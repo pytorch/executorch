@@ -48,6 +48,15 @@ def main() -> None:
         required=False,
         help="specify segment alignment in hex. Default is 0x1000. Use 0x4000 for iOS",
     )
+
+    parser.add_argument(
+        "-e",
+        "--external_constants",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Save constants in external .ptd file. Default is False",
+    )
+
     parser.add_argument("-o", "--output_dir", default=".", help="output directory")
 
     args = parser.parse_args()
@@ -62,7 +71,7 @@ def main() -> None:
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
-    backend_config = ExecutorchBackendConfig()
+    backend_config = ExecutorchBackendConfig(external_constants=args.external_constants)
     if args.segment_alignment is not None:
         backend_config.segment_alignment = int(args.segment_alignment, 16)
     if dynamic_shapes is not None:
