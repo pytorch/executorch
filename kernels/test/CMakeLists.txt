@@ -232,6 +232,11 @@ set(all_test_sources
     "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
 )
 
+# These requires rtti and not working so far.
+list(REMOVE_ITEM all_test_sources "op_to_copy_test.cpp"
+     "op__to_dim_order_copy_test.cpp"
+)
+
 set(_portable_kernels_test_sources
     ${all_test_sources}
     ${CMAKE_CURRENT_BINARY_DIR}/include/portable/executorch/kernels/test/supported_features.cpp
@@ -248,7 +253,6 @@ add_dependencies(portable_kernels_test generate_wrapper)
 target_include_directories(
   portable_kernels_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/portable"
 )
-target_compile_options(portable_kernels_test PRIVATE "-frtti" "-fexceptions")
 
 set(_optimized_kernels_test_sources
     "op_add_test.cpp"
@@ -289,10 +293,8 @@ target_include_directories(
   optimized_kernels_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/optimized"
                                  "${CMAKE_INSTALL_PREFIX}/include"
 )
-target_compile_options(optimized_kernels_test PRIVATE "-frtti" "-fexceptions")
 
-# Currently we have issues with quantized_kernels testing. Let's skip for now.
-if(TARGET NOT_ENABLED_quantized_kernels)
+if(TARGET quantized_kernels)
   set(_quantized_kernels_test_sources
       "${EXECUTORCH_ROOT}/kernels/quantized/test/op_add_test.cpp"
       "${EXECUTORCH_ROOT}/kernels/quantized/test/op_choose_qparams_test.cpp"
@@ -324,5 +326,4 @@ if(TARGET NOT_ENABLED_quantized_kernels)
     PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/quantized"
             "${CMAKE_CURRENT_BINARY_DIR}/include/portable"
   )
-  target_compile_options(quantized_kernels_test PRIVATE "-frtti" "-fexceptions")
 endif()
