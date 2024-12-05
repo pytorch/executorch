@@ -86,7 +86,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        mode: [portable, xnnpack+custom, xnnpack+custom+qe]
+        mode: [portable, xnnpack+custom, xnnpack+custom+qe,xnnpack+custom+quantize_kv,xnnpack+quantize_kv]
         include:
           - dtype: bf16
             mode: portable
