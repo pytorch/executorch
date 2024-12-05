@@ -200,8 +200,6 @@ option(EXECUTORCH_BUILD_EXTENSION_TENSOR "Build the Tensor extension" OFF)
 
 option(EXECUTORCH_BUILD_EXTENSION_TRAINING "Build the training extension" OFF)
 
-option(EXECUTORCH_BUILD_GTESTS "Build googletest based test binaries" OFF)
-
 option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
 
 option(EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" OFF)
@@ -215,6 +213,8 @@ option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 option(EXECUTORCH_BUILD_KERNELS_QUANTIZED "Build the quantized kernels" OFF)
 
 option(EXECUTORCH_BUILD_DEVTOOLS "Build the ExecuTorch Developer Tools")
+
+option(EXECUTORCH_BUILD_TESTS "Build CMake-based unit tests" OFF)
 
 option(EXECUTORCH_NNLIB_OPT "Build Cadence backend Hifi nnlib kernel" OFF)
 
@@ -328,6 +328,10 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   set(CMAKE_POSITION_INDEPENDENT_CODE
       ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
   )
+endif()
+
+if(EXECUTORCH_BUILD_TESTS)
+  include(CTest)
 endif()
 
 if(NOT PYTHON_EXECUTABLE)
@@ -625,7 +629,7 @@ cmake_dependent_option(
 )
 
 # Add googletest if any test targets should be built
-if(EXECUTORCH_BUILD_GTESTS)
+if(BUILD_TESTING)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/googletest)
 endif()
 
@@ -828,6 +832,8 @@ endif()
 if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
 endif()
+
+include(Test.cmake)
 
 # Print all summary
 executorch_print_configuration_summary()
