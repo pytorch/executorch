@@ -14,8 +14,6 @@
 #include <cmath>
 #include <cstddef> // size_t
 #include <limits>
-#include <sstream>
-#include <vector>
 
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
@@ -488,26 +486,33 @@ inline bool tensor_is_type(
 
 inline bool tensor_is_type(
     executorch::aten::Tensor t,
-    const std::vector<executorch::aten::ScalarType>& dtypes) {
-  if (std::find(dtypes.begin(), dtypes.end(), t.scalar_type()) !=
-      dtypes.end()) {
-    return true;
-  }
-
-  std::stringstream dtype_ss;
-  for (size_t i = 0; i < dtypes.size(); i++) {
-    if (i != 0) {
-      dtype_ss << ", ";
-    }
-    dtype_ss << torch::executor::toString(dtypes[i]);
-  }
-
+    executorch::aten::ScalarType dtype,
+    executorch::aten::ScalarType dtype2) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      false,
-      "Expected to find one of %s types, but tensor has type %s",
-      dtype_ss.str().c_str(),
+      t.scalar_type() == dtype || t.scalar_type() == dtype2,
+      "Expected to find %s or %s type, but tensor has type %s",
+      torch::executor::toString(dtype),
+      torch::executor::toString(dtype2),
       torch::executor::toString(t.scalar_type()));
-  return false;
+
+  return true;
+}
+
+inline bool tensor_is_type(
+    executorch::aten::Tensor t,
+    executorch::aten::ScalarType dtype,
+    executorch::aten::ScalarType dtype2,
+    executorch::aten::ScalarType dtype3) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      t.scalar_type() == dtype || t.scalar_type() == dtype2 ||
+          t.scalar_type() == dtype3,
+      "Expected to find %s, %s, or %s type, but tensor has type %s",
+      torch::executor::toString(dtype),
+      torch::executor::toString(dtype2),
+      torch::executor::toString(dtype3),
+      torch::executor::toString(t.scalar_type()));
+
+  return true;
 }
 
 inline bool tensor_is_integral_type(
