@@ -166,7 +166,7 @@ add_custom_command(
     ${_flatcc_source_dir}/bin/flatcc -cwr -o
     ${_program_schema__include_dir}/executorch/devtools/etdump
     ${_etdump_schema__srcs}
-  COMMAND rm -f ${_etdump_schema_cleanup_paths}
+  COMMAND rm -rf ${_etdump_schema_cleanup_paths}
   DEPENDS ${_etdump_schema_gen_dep}
   COMMENT "Generating etdump headers"
 )
