@@ -64,12 +64,17 @@ class KeepDimsFalseToSqueezePass(ExportPass):
                 continue
 
             sum_node = cast(torch.fx.Node, node)
-            keep_dim = get_node_arg(sum_node.args, keep_dim_index, False)
+            keep_dim = get_node_arg(
+                # pyre-ignore[6]
+                sum_node.args,
+                keep_dim_index,
+                False,
+            )
 
             if keep_dim:
                 continue
 
-            dim_list = get_node_arg(sum_node.args, 1, [0])
+            dim_list = get_node_arg(sum_node.args, 1, [0])  # pyre-ignore[6]
 
             # Add keep_dim = True arg to sum node.
             set_node_arg(sum_node, 2, True)
