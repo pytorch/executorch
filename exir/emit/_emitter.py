@@ -62,6 +62,7 @@ from executorch.exir.schema import (
     DoubleList,
     EValue,
     ExecutionPlan,
+    ExtraTensorInfo,
     FreeCall,
     Instruction,
     Int,
@@ -119,6 +120,14 @@ class _ProgramState:
     # Delegate data stored directly in the flatbuffer. Pointed to by BackendDelegateDataReference,
     # and should be copied to Program.backend_delegate_data.
     backend_delegate_data: List[BackendDelegateInlineData] = field(default_factory=list)
+
+    # Constants are optionally stored in external files.
+    # Aggregate unique external constants into one buffer.
+    external_constant_buffer: List[bytes] = field(default_factory=list)
+    external_constant_hash: Dict[str, int] = field(default_factory=dict)
+    # Each constant_tag groups a set of constants together.
+    # {constant_tag: {fqn: index into external_constant_buffer}}
+    external_constant_map: Dict[str, Dict[str, int]] = field(default_factory=dict)
 
 
 @dataclass
@@ -328,7 +337,9 @@ class _Emitter(torch.fx.Interpreter):
             ExportErrorType.NOT_SUPPORTED, f"Unknown list type: {val_type}"
         )
 
-    def _tensor_spec_to_evalue(self, spec: TensorSpec) -> EValue:
+    def _tensor_spec_to_evalue(
+        self, spec: TensorSpec, constant_tag: Optional[str] = None
+    ) -> EValue:
         """Constructs an EValue from the given TensorSpec."""
 
         allocation_info = None
@@ -389,6 +400,8 @@ class _Emitter(torch.fx.Interpreter):
                 buffer_idx = self.program_state.cached_spec_mutable_hash_values.get(
                     hashed, -1
                 )
+            elif spec.location == DataLocation.EXTERNAL:
+                buffer_idx = self.program_state.external_constant_hash.get(hashed, -1)
             else:
                 buffer_idx = self.program_state.cached_spec_hash_values.get(hashed, -1)
 
@@ -405,6 +418,23 @@ class _Emitter(torch.fx.Interpreter):
                         buffer_idx
                     )
                     self.program_state.mutable_buffer.append(buffer)
+
+                # Constant tensor, stored in external file.
+                elif spec.location == DataLocation.EXTERNAL:
+                    assert (
+                        spec.extra_tensor_info is not None
+                        and spec.extra_tensor_info.fully_qualified_name is not None
+                    ), "Fully qualified name is not set for external tensor"
+                    buffer_idx = len(self.program_state.external_constant_buffer)
+                    self.program_state.external_constant_hash[hashed] = buffer_idx
+                    self.program_state.external_constant_buffer.append(buffer_data)
+                    if constant_tag:
+                        if constant_tag not in self.program_state.external_constant_map:
+                            self.program_state.external_constant_map[constant_tag] = {}
+                        self.program_state.external_constant_map[constant_tag][
+                            spec.extra_tensor_info.fully_qualified_name  # pyre-ignore Undefined attribute [16]: `Optional` has no attribute `fully_qualified_name`.
+                        ] = buffer_idx
+                # Constant tensor, stored in PTE.
                 else:
                     buffer_idx = len(self.program_state.constant_buffer)
                     self.program_state.cached_spec_hash_values[hashed] = buffer_idx
@@ -1539,10 +1569,23 @@ class _TopLevelEmitter(_Emitter):
         https://pytorch.org/docs/stable/fx.html#torch.fx.Graph.placeholder
         """
         spec = self.node.meta["spec"]
+        constant_tag = self.node.meta.get("constant_tag", None)
         is_user_input = True
 
         if isinstance(target, str) and isinstance(spec, TensorSpec):
             fqn, is_mutable_buffer = self._find_fqn_for_placeholder(target, spec)
+
+            # If the placeholder has a constant_tag, it is external to the PTE file
+            # and requires a fqn and location=DataLocation.EXTERNAL
+            if constant_tag is not None:
+                assert (
+                    fqn is not None
+                ), "constant tagged tensors require a fully qualified name"
+                if spec.extra_tensor_info is None:
+                    spec.extra_tensor_info = ExtraTensorInfo(fully_qualified_name=fqn)
+                else:
+                    spec.extra_tensor_info.fully_qualified_name = fqn
+                spec.location = DataLocation.EXTERNAL
 
             # From the fqn find the corresponding tensor
             real_tensor = None
@@ -1581,7 +1624,7 @@ class _TopLevelEmitter(_Emitter):
             spec.const = not (is_user_input or is_mutable_buffer)
 
         evalue = (
-            self._tensor_spec_to_evalue(spec)
+            self._tensor_spec_to_evalue(spec, constant_tag)
             if isinstance(spec, TensorSpec)
             else self._constant_to_evalue(spec, None)
         )
