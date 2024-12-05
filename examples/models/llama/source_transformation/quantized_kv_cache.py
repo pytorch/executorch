@@ -14,30 +14,6 @@ from executorch.examples.models.llama.llama_transformer import KVCache
 from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noqa: F401
 
 
-try:
-    op = torch.ops.quantized_decomposed.quantize_per_token.out
-    assert op is not None
-except:
-    import glob
-
-    import executorch
-
-    from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
-
-    # Ideally package is installed in only one location but usage of
-    # PYATHONPATH can result in multiple locations.
-    # ATM this is mainly used in CI for qnn runner. Will need to revisit this
-    executorch_package_path = executorch.__path__[-1]
-    libs = list(
-        glob.glob(
-            f"{executorch_package_path}/**/libquantized_ops_aot_lib.*", recursive=True
-        )
-    )
-    assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
-    logging.info(f"Loading custom ops library: {libs[0]}")
-    torch.ops.load_library(libs[0])
-    op = torch.ops.quantized_decomposed.quantize_per_token.out
-    assert op is not None
 
 """
  Heavily "inspired" by AO's implementation of the same in torchao/_models/llama/model.py
@@ -247,6 +223,28 @@ class QuantizedKVCache(nn.Module):
 
 
 def replace_kv_cache_with_quantized_kv_cache(module):
+    try:
+        op = torch.ops.quantized_decomposed.quantize_per_token.out
+        assert op is not None
+    except:
+        import glob
+        import executorch
+        from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
+    
+        # Ideally package is installed in only one location but usage of
+        # PYATHONPATH can result in multiple locations.
+        # ATM this is mainly used in CI for qnn runner. Will need to revisit this
+        executorch_package_path = executorch.__path__[-1]
+        libs = list(
+            glob.glob(
+                f"{executorch_package_path}/**/libquantized_ops_aot_lib.*", recursive=True
+            )
+        )
+        assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
+        logging.info(f"Loading custom ops library: {libs[0]}")
+        torch.ops.load_library(libs[0])
+        op = torch.ops.quantized_decomposed.quantize_per_token.out
+        assert op is not None
     # This is needed to ensure that custom ops are registered
     from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 
