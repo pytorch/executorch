@@ -90,14 +90,15 @@ class ArmPassManager(PassManager):
         self.add_pass(
             FoldAndAnnotateQParamsPass(
                 [
-                    exir_ops.edge.aten.minimum.default,
-                    exir_ops.edge.aten.maximum.default,
                     exir_ops.edge.aten.add.Tensor,
                     exir_ops.edge.aten.avg_pool2d.default,
+                    exir_ops.edge.aten.cat.default,
                     exir_ops.edge.aten.convolution.default,
                     exir_ops.edge.aten.exp.default,
                     exir_ops.edge.aten.full.default,
                     exir_ops.edge.aten.log.default,
+                    exir_ops.edge.aten.maximum.default,
+                    exir_ops.edge.aten.minimum.default,
                     exir_ops.edge.aten.reciprocal.default,
                     exir_ops.edge.aten.rsqrt.default,
                     exir_ops.edge.aten.sigmoid.default,
