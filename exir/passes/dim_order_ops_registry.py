@@ -58,7 +58,7 @@ def _empty_dim_order_out_impl(*args, **kwargs):
 
 
 """
-Defines a map of aten or edge ops to the corresponding dim_order ops for quick lookup
+Defines a map of edge ops to the corresponding dim_order ops for quick lookup
 """
 DimOrderOpsMap = {
     exir_ops.edge.aten._to_copy.default: exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
@@ -66,6 +66,6 @@ DimOrderOpsMap = {
 }
 
 """
-Defines a map of aten or edge ops to the corresponding memory format ops for quick lookup, which is the revert of DimOrderOpsMap
+Defines a map of edge ops to the corresponding memory format ops for quick lookup, which is the revert of DimOrderOpsMap
 """
 MemoryFormatOpsMap = {v: k for k, v in DimOrderOpsMap.items()}
