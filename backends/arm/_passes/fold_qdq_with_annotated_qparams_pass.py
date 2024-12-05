@@ -196,3 +196,33 @@ class QuantizeFullArgument(ExportPass):
                 modified = True
 
         return PassResult(graph_module, modified)
+
+
+class RetraceFoldedDtypesPass(ExportPass):
+    """
+    FoldAndAnnotateQParamsPass folds dq and q nodes. When the graph is retraced
+    some operators are retraced to types that cannot be handled by TOSA. One
+    such example is sum.dim_IntList:
+        q (int8) -> dq (fp32) -> sum (fp32) -> q (int8) ...
+    After folding it becomes:
+        q (int8)              -> sum (int64) ->         ...
+    This pass changes types of ops in self.targeted_ops, such as sum, so that
+    the output type of that matches the type of the output_qparams.
+    """
+
+    targeted_ops = {
+        exir_ops.edge.aten.sum.dim_IntList,
+    }
+
+    def call_operator(self, op, args, kwargs, meta):
+        if op not in self.targeted_ops:
+            return super().call_operator(op, args, kwargs, meta)
+
+        node_kwargs = kwargs.copy()
+        output_qparams = meta["output_qparams"]
+        if len(output_qparams) == 0:
+            return super().call_operator(op, args, kwargs, meta)
+
+        output_dtype = output_qparams[0].dtype
+        node_kwargs["dtype"] = output_dtype
+        return super().call_operator(op, args, node_kwargs, meta)

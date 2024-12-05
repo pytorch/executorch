@@ -32,6 +32,7 @@ from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     FoldAndAnnotateQParamsPass,
     QuantizeFullArgument,
+    RetraceFoldedDtypesPass,
 )
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.keep_dims_false_to_squeeze_pass import (
@@ -102,14 +103,16 @@ class ArmPassManager(PassManager):
                     exir_ops.edge.aten.select_copy.int,
                     exir_ops.edge.aten.sigmoid.default,
                     exir_ops.edge.aten.sub.Tensor,
+                    exir_ops.edge.aten.sum.dim_IntList,
                     exir_ops.edge.aten.tanh.default,
                 ]
             )
         )
+        self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(InsertTableOpsPass(exported_program))
+        self.add_pass(KeepDimsFalseToSqueezePass())
         self.add_pass(MatchArgRanksPass(exported_program))
         self.add_pass(DecomposeDivPass())
-        self.add_pass(KeepDimsFalseToSqueezePass())
         self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSoftmaxesPass())
