@@ -11,6 +11,9 @@ import torch
 from executorch.backends.arm._passes.annotate_channels_last_dim_order_pass import (
     AnnotateChannelsLastDimOrder,
 )
+from executorch.backends.arm._passes.annotate_decomposed_matmul import (
+    AnnotateDecomposedMatmulPass,
+)
 from executorch.backends.arm._passes.cast_int64_pass import CastInt64ToInt32Pass
 from executorch.backends.arm._passes.conv1d_unsqueeze_pass import Conv1dUnsqueezePass
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
@@ -69,51 +72,64 @@ class ArmPassManager(PassManager):
         self, exported_program: ExportedProgram, compile_spec: list[CompileSpec]
     ):
         """Apply passes before transforming program to backend"""
-        self.add_pass(CastInt64ToInt32Pass(exported_program))
+        self.add_pass(DecomposeLinearPass())
         self.add_pass(RemoveGetItemPass())
-        self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
-        self.add_pass(SizeAdjustConv2DPass())
-        self.add_pass(RemoveClonePass())
-        self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(DecomposeLayerNormPass())
-        self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(ConvertMeanDimToAveragePool())
         self.add_pass(DecomposeMeanDimPass())
-        self.add_pass(DecomposeLinearPass())
+        self.add_pass(ConvertSplitToSlicePass())
+        # TODO MLETORCH-558
+        self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeFullArgument())
         self.add_pass(
             FoldAndAnnotateQParamsPass(
                 [
+                    exir_ops.edge.aten.minimum.default,
+                    exir_ops.edge.aten.maximum.default,
                     exir_ops.edge.aten.add.Tensor,
                     exir_ops.edge.aten.avg_pool2d.default,
+                    exir_ops.edge.aten.bmm.default,
                     exir_ops.edge.aten.cat.default,
                     exir_ops.edge.aten.convolution.default,
+                    exir_ops.edge.aten.clone.default,
                     exir_ops.edge.aten.exp.default,
+                    exir_ops.edge.aten.expand_copy.default,
                     exir_ops.edge.aten.full.default,
                     exir_ops.edge.aten.hardtanh.default,
                     exir_ops.edge.aten.log.default,
                     exir_ops.edge.aten.max_pool2d.default,
-                    exir_ops.edge.aten.maximum.default,
-                    exir_ops.edge.aten.minimum.default,
+                    exir_ops.edge.aten.mm.default,
                     exir_ops.edge.aten.mul.Tensor,
+                    exir_ops.edge.aten.permute_copy.default,
                     exir_ops.edge.aten.reciprocal.default,
                     exir_ops.edge.aten.relu.default,
+                    exir_ops.edge.aten.repeat.default,
                     exir_ops.edge.aten.rsqrt.default,
                     exir_ops.edge.aten.select_copy.int,
                     exir_ops.edge.aten.sigmoid.default,
+                    exir_ops.edge.aten.slice_copy.Tensor,
+                    exir_ops.edge.aten.squeeze_copy.dims,
                     exir_ops.edge.aten.sub.Tensor,
                     exir_ops.edge.aten.sum.dim_IntList,
                     exir_ops.edge.aten.tanh.default,
+                    exir_ops.edge.aten.unsqueeze_copy.default,
+                    exir_ops.edge.aten.upsample_nearest2d.vec,
+                    exir_ops.edge.aten.view_copy.default,
                 ]
             )
         )
         self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(InsertTableOpsPass(exported_program))
-        self.add_pass(KeepDimsFalseToSqueezePass())
+        self.add_pass(ConvertExpandCopyToRepeatPass())
+        self.add_pass(UnsqueezeBeforeRepeatPass())
+        self.add_pass(CastInt64ToInt32Pass(exported_program))
+        self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
+        self.add_pass(SizeAdjustConv2DPass())
+        self.add_pass(RemoveClonePass())
         self.add_pass(MatchArgRanksPass(exported_program))
         self.add_pass(DecomposeDivPass())
-        self.add_pass(ConvertSplitToSlicePass())
+        self.add_pass(KeepDimsFalseToSqueezePass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSoftmaxesPass())
         for spec in compile_spec:
