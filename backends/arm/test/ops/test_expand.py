@@ -36,6 +36,7 @@ class TestSimpleExpand(unittest.TestCase):
             (torch.ones(1, 1, 2, 2), (4, 3, -1, 2)),
             (torch.ones(1), (2, 2, 4)),
             (torch.ones(3, 2, 4, 1), (-1, -1, -1, 3)),
+            (torch.ones(1, 1, 192), (1, -1, -1)),
         ]
 
         def forward(self, x: torch.Tensor, multiples: Sequence):
