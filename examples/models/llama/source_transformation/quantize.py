@@ -77,7 +77,9 @@ def quantize(  # noqa C901
         matches = re.findall(pattern, qmode)
         assert len(matches) == 1, f"Expected 1 match for pattern but got {len(matches)}"
         bitwidth = int(matches[0][0])
-        _load_torchao_aten_lib(libname="libtorchao_ops_mps_linear_fp_act_xbit_weight_aten")
+        _load_torchao_aten_lib(
+            libname="libtorchao_ops_mps_linear_fp_act_xbit_weight_aten"
+        )
         from torchao.experimental.quant_api import UIntxWeightOnlyLinearQuantizer
 
         with torch.no_grad():
