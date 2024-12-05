@@ -11,7 +11,7 @@ from executorch.exir.passes import dead_code_elimination_pass
 
 class RemoveRedundancy(ExportPass):
     """
-    Trim the 'identity' operators to reduce the unnecessary copy overhead.
+    Trim certain operators to reduce unnecessary overhead.
     """
 
     redundant_ops = {
@@ -21,6 +21,10 @@ class RemoveRedundancy(ExportPass):
         torch.ops.aten.alias.default,
         exir_ops.edge.aten.alias.default,
         exir_ops.edge.aten.lift_fresh_copy.default,
+        # remove this target if '_skip_dim_order' is set to False
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+        # remove channel_last / contiguous _to_copy if '_skip_dim_order' is set to True
+        exir_ops.edge.aten._to_copy.default,
     }
 
     def __init__(self):
@@ -29,6 +33,13 @@ class RemoveRedundancy(ExportPass):
     def _remove(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         for n in graph_module.graph.nodes:
             if n.target not in self.redundant_ops:
+                continue
+
+            # do not remove cast operator
+            if (
+                n.target == exir_ops.edge.aten._to_copy.default
+                and "memory_format" not in n.kwargs
+            ):
                 continue
 
             to_be_remove = n
