@@ -126,7 +126,7 @@ void add_slice_tensor_copy_node(
     add_dtype_suffix(kernel_name, *t_out);
 
     utils::uvec3 global_size = t_out->logical_limits();
-    utils::uvec3 local_size = adaptive_work_group_size(global_size);
+    utils::uvec3 local_size = graph.create_local_wg_size(global_size);
 
     const struct Block final {
       int dim;
