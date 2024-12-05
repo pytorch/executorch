@@ -62,7 +62,7 @@ Defines a map of aten or edge ops to the corresponding dim_order ops for quick l
 """
 DimOrderOpsMap = {
     exir_ops.edge.aten._to_copy.default: exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
-    exir_ops.edge.aten.empty.memory_forma: exir_ops.edge.dim_order_ops._empty_dim_order.default,
+    exir_ops.edge.aten.empty.memory_format: exir_ops.edge.dim_order_ops._empty_dim_order.default,
 }
 
 """
