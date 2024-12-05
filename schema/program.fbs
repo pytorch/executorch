@@ -67,6 +67,16 @@ table ExtraTensorInfo {
   fully_qualified_name: string;
 }
 
+// Indicates where a piece of data is stored.
+enum DataLocation : byte {
+  // Stored directly in the flatbuffer.
+  INLINE = 0,
+  // Stored in a segment.
+  SEGMENT = 1,
+  // Stored outside of the flatbuffer.
+  EXTERNAL = 2,
+}
+
 table Tensor {
   scalar_type: ScalarType;
 
@@ -142,6 +152,12 @@ table Tensor {
   // [Optional] Additional information about the Tensor that is not applicable
   // to most tensors.
   extra_tensor_info: ExtraTensorInfo;
+
+  // Specifies where the tensor is stored; either in a segment or external
+  // location. If a constant tensor is stored externally, data_buffer_idx
+  // is not relevant; use extra_tensor_info.fully_qualified_name to match up
+  // the external tensor.
+  location: DataLocation;
 }
 
 table Int {
@@ -273,14 +289,6 @@ table Frame {
 table FrameList {
   // For storing the frames to print stacktraces
   items: [Frame];
-}
-
-// Indicates where a piece of data is stored.
-enum DataLocation : byte {
-  // Stored directly in the flatbuffer.
-  INLINE = 0,
-  // Stored in a segment.
-  SEGMENT = 1,
 }
 
 // Indicates where the delegate data is stored

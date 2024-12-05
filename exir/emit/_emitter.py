@@ -1125,6 +1125,7 @@ class _Emitter(torch.fx.Interpreter):
                     data_buffer_idx=0,
                     allocation_info=None,
                     shape_dynamism=TensorShapeDynamism.STATIC,
+                    location=DataLocation.SEGMENT,
                 )
             )
 

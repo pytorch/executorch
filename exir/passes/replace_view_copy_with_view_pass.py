@@ -109,6 +109,8 @@ class _ViewSpec(TensorSpec):
             "mem_obj_id",
             "mem_offset",
             "dtype",  # property
+            "extra_tensor_info",  # property
+            "location",  # property
         ]
 
         # Make sure _self_fields and _base_fields are disjoint

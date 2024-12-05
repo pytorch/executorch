@@ -53,6 +53,12 @@ class ExtraTensorInfo:
     fully_qualified_name: Optional[str] = None
 
 
+class DataLocation(IntEnum):
+    INLINE = 0
+    SEGMENT = 1
+    EXTERNAL = 2
+
+
 @dataclass
 class Tensor:
     scalar_type: ScalarType
@@ -66,6 +72,7 @@ class Tensor:
 
     # check program.fbs for explanations.
     shape_dynamism: TensorShapeDynamism
+    location: DataLocation
     extra_tensor_info: Optional[ExtraTensorInfo] = None
 
 
@@ -221,11 +228,6 @@ class Frame:
 @dataclass
 class FrameList:
     items: List[Frame]
-
-
-class DataLocation(IntEnum):
-    INLINE = 0
-    SEGMENT = 1
 
 
 @dataclass

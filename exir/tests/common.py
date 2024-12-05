@@ -14,6 +14,7 @@ from executorch.exir.schema import (
     AllocationDetails,
     Chain,
     ContainerMetadata,
+    DataLocation,
     EValue,
     ExecutionPlan,
     Instruction,
@@ -56,6 +57,7 @@ def get_test_program() -> Program:
                                 memory_offset_low=16,
                             ),
                             shape_dynamism=TensorShapeDynamism.STATIC,
+                            location=DataLocation.SEGMENT,
                         )
                     ),
                 ],
