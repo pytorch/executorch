@@ -134,7 +134,9 @@ struct Value final {
           TypeTag::STRING, std::string, as_string, basic_string);
       // Tensor type
       CASE_MOVE_UNIQUE_PTR_TYPE(TypeTag::TENSOR, as_tensor);
+      // Small tensor adjacent types
       CASE_MOVE_UNIQUE_PTR_TYPE(TypeTag::STAGING, as_staging);
+      // Large tensor adjacent types
       CASE_MOVE_UNIQUE_PTR_TYPE(TypeTag::SYMINT, as_symint);
 
       case TypeTag::NONE:

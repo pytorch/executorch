@@ -3,6 +3,16 @@ name: apple-perf
 on:
   schedule:
     - cron: 0 1 * * *
+  pull_request:
+    paths:
+      - .github/workflows/apple-perf.yml
+      - extension/benchmark/apple/Benchmark/default-ios-device-farm-appium-test-spec.yml.j2
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apple-perf.yml
+      - extension/benchmark/apple/Benchmark/default-ios-device-farm-appium-test-spec.yml.j2
   # Note: GitHub has an upper limit of 10 inputs
   workflow_dispatch:
     inputs:
@@ -23,10 +33,6 @@ on:
         default: xnnpack
       benchmark_configs:
         description: The list of configs used the benchmark
-        required: false
-        type: string
-      test_spec:
-        description: The test spec to drive the test on AWS devices
         required: false
         type: string
   workflow_call:
@@ -50,10 +56,6 @@ on:
         description: The list of configs used the benchmark
         required: false
         type: string
-      test_spec:
-        description: The test spec to drive the test on AWS devices
-        required: false
-        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
@@ -74,9 +76,9 @@ jobs:
           # Separate default values from the workflow dispatch. To ensure defaults are accessible
           # during scheduled runs and to provide flexibility for different defaults between
           # on-demand and periodic benchmarking.
-          CRON_DEFAULT_MODELS: "stories110M,mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l"
-          CRON_DEFAULT_DEVICES: "apple_iphone_15"
-          CRON_DEFAULT_DELEGATES: "xnnpack,coreml,mps"
+          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'stories110M,mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l' || 'stories110M' }}
+          CRON_DEFAULT_DEVICES: apple_iphone_15
+          CRON_DEFAULT_DELEGATES: ${{ github.event_name == 'schedule' && 'xnnpack,coreml,mps' || 'xnnpack' }}
         run: |
           set -ex
           MODELS="${{ inputs.models }}"
@@ -113,6 +115,41 @@ jobs:
           MAPPED_ARNS_JSON=$(printf '%s\n' "${MAPPED_ARNS[@]}" | jq -R . | jq -s .)
           echo "devices=$(echo "$MAPPED_ARNS_JSON" | jq -c .)" >> $GITHUB_OUTPUT
           echo "delegates=$(echo $DELEGATES | jq -Rc 'split(",")')" >> $GITHUB_OUTPUT
+
+  prepare-test-specs:
+    runs-on: linux.2xlarge
+    needs: set-parameters
+    strategy:
+      matrix:
+          model: ${{ fromJson(needs.set-parameters.outputs.models) }}
+          delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Prepare the spec
+        shell: bash
+        working-directory: extension/benchmark/apple/Benchmark
+        run: |
+          set -eux
+          # The model will be exported in the next step to this S3 path
+          MODEL_PATH="https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/model.zip"
+          # We could write a script to properly use jinja here, but there is only one variable,
+          # so let's just sed it
+          sed -i -e 's,{{ model_path }},'"${MODEL_PATH}"',g' default-ios-device-farm-appium-test-spec.yml.j2
+          cp default-ios-device-farm-appium-test-spec.yml.j2 default-ios-device-farm-appium-test-spec.yml
+          # Just print the test spec for debugging
+          cat default-ios-device-farm-appium-test-spec.yml
+
+      - name: Upload the spec
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}
+          retention-days: 1
+          if-no-files-found: error
+          path: extension/benchmark/apple/Benchmark/default-ios-device-farm-appium-test-spec.yml
 
   export-models:
     name: export-models
@@ -173,10 +210,19 @@ jobs:
             DELEGATE_CONFIG="mps"
           fi
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-            bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
+            bash .ci/scripts/test_llama.sh \
+              -model "${{ matrix.model }}" \
+              -build_tool "${BUILD_MODE}" \
+              -dtype "${DTYPE}" \
+              -mode "${DELEGATE_CONFIG}" \
+              -upload "${ARTIFACTS_DIR_NAME}"
         else
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-            bash .ci/scripts/test_model.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
+            bash .ci/scripts/test_model.sh \
+              "${{ matrix.model }}" \
+              "${BUILD_MODE}" \
+              "${{ matrix.delegate }}" \
+              "${ARTIFACTS_DIR_NAME}"
         fi
         echo "::endgroup::"
 
@@ -282,6 +328,7 @@ jobs:
     if: always()
     needs:
       - set-parameters
+      - prepare-test-specs
       - upload-benchmark-app
       - export-models
     permissions:
@@ -307,8 +354,7 @@ jobs:
       # Uploaded to S3 from the previous job
       ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/Benchmark.ipa
       ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/Benchmark.xctestrun.zip
-      test-spec: ${{ inputs.test_spec || 'https://ossci-ios.s3.amazonaws.com/executorch/default-ios-device-farm-appium-test-spec.yml' }}
-      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/model.zip
+      test-spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/default-ios-device-farm-appium-test-spec.yml
 
   upload-benchmark-results:
     needs:
