@@ -27,5 +27,7 @@ jobs:
         cmake --build build -j9 --config Debug
 
         # Run unit tests
-        RESOURCES_PATH=test/resources build/sentencepiece_test
+        export RESOURCES_PATH=test/resources
+
+        build/sentencepiece_test
         build/tiktoken_test

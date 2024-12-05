@@ -39,8 +39,6 @@ public:
       : _special_tokens(_get_default_special_tokens()),
         _bos_token_index(kBOSTokenIndex), _eos_token_index(kEOSTokenIndex){};
 
-  ~Tiktoken() override;
-
   Error load(const std::string &tokenizer_path) override;
 
   Result<std::vector<uint64_t>> encode(const std::string &input, int8_t bos,
