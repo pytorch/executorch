@@ -4,25 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
-
 try:
-    import glob
+    from pathlib import Path
 
-    import torch as _torch
-    import executorch
-
-    # Ideally package is installed in only one location but usage of
-    # PYATHONPATH can result in multiple locations.
-    # ATM this is mainly used in CI for qnn runner. Will need to revisit this
-    executorch_package_path = executorch.__path__[-1]
-    libs = list(
-        glob.glob(
-            f"{executorch_package_path}/**/libquantized_ops_aot_lib.*", recursive=True
-        )
-    )
+    libs = list(Path(__file__).parent.resolve().glob("**/libquantized_ops_aot_lib.*"))
+    del Path
     assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
-    logging.info(f"Loading custom ops library: {libs[0]}")
+    import torch as _torch
+
     _torch.ops.load_library(libs[0])
     del _torch
 except:
