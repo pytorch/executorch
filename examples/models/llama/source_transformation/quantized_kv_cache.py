@@ -227,6 +227,7 @@ def replace_kv_cache_with_quantized_kv_cache(module):
         assert op is not None
     except:
         import glob
+
         import executorch
         from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
 
