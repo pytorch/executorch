@@ -38,6 +38,4 @@ class ToCopyVisitor(NodeVisitor):
         output: TosaArg,
         is_quant_node: bool,
     ) -> None:
-        assert not is_quant_node, "Casting of quantized values is not supported."
-        assert inputs
         tosa_graph.addOperator(TosaOp.Op().CAST, [inputs[0].name], [output.name])

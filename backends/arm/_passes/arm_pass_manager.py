@@ -79,12 +79,6 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeVarPass())
         self.add_pass(ConvertMeanDimToAveragePool())
         self.add_pass(DecomposeMeanDimPass())
-        self.add_pass(MatchArgRanksPass(exported_program))
-        self.add_pass(DecomposeDivPass())
-        self.add_pass(KeepDimsFalseToSqueezePass())
-        self.add_pass(ConvertSplitToSlicePass())
-        self.add_pass(Conv1dUnsqueezePass(exported_program))
-        self.add_pass(DecomposeSoftmaxesPass())
         self.add_pass(DecomposeLinearPass())
         self.add_pass(QuantizeFullArgument())
         self.add_pass(
@@ -96,17 +90,29 @@ class ArmPassManager(PassManager):
                     exir_ops.edge.aten.convolution.default,
                     exir_ops.edge.aten.exp.default,
                     exir_ops.edge.aten.full.default,
+                    exir_ops.edge.aten.hardtanh.default,
                     exir_ops.edge.aten.log.default,
+                    exir_ops.edge.aten.max_pool2d.default,
                     exir_ops.edge.aten.maximum.default,
                     exir_ops.edge.aten.minimum.default,
+                    exir_ops.edge.aten.mul.Tensor,
                     exir_ops.edge.aten.reciprocal.default,
+                    exir_ops.edge.aten.relu.default,
                     exir_ops.edge.aten.rsqrt.default,
+                    exir_ops.edge.aten.select_copy.int,
                     exir_ops.edge.aten.sigmoid.default,
+                    exir_ops.edge.aten.sub.Tensor,
                     exir_ops.edge.aten.tanh.default,
                 ]
             )
         )
         self.add_pass(InsertTableOpsPass(exported_program))
+        self.add_pass(MatchArgRanksPass(exported_program))
+        self.add_pass(DecomposeDivPass())
+        self.add_pass(KeepDimsFalseToSqueezePass())
+        self.add_pass(ConvertSplitToSlicePass())
+        self.add_pass(Conv1dUnsqueezePass(exported_program))
+        self.add_pass(DecomposeSoftmaxesPass())
         for spec in compile_spec:
             if spec.key == "permute_memory_format":
                 memory_format = spec.value.decode()

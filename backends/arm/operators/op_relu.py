@@ -8,6 +8,9 @@
 import executorch.backends.arm.tosa_quant_utils as tqutils
 import serializer.tosa_serializer as ts
 import torch.fx
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    get_output_qparams,
+)
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -37,10 +40,10 @@ class ReluVisitor(NodeVisitor):
         clamp_max_fp = 0.0
         clamp_min_qs = 0
         clamp_max_qs = 0
-        if is_quant_node:
-            out_qargs = tqutils.get_quant_arg_downstream(list(node.users)[0])
-            clamp_min_qs = tqutils.quantize_value(0, out_qargs)
-            clamp_max_qs = tqutils.quantize_value(float("inf"), out_qargs)
+        if inputs[0].dtype == ts.DType.INT8:
+            out_qargs = get_output_qparams(node)
+            clamp_min_qs = tqutils.quantize_value(0, out_qargs[0])
+            clamp_max_qs = tqutils.quantize_value(float("inf"), out_qargs[0])
 
         else:
             clamp_min_fp = 0

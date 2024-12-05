@@ -8,16 +8,15 @@ from typing import List
 
 import serializer.tosa_serializer as ts
 import torch
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    get_input_qparams,
+    get_output_qparams,
+)
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import (
-    get_quant_arg_downstream,
-    get_quant_arg_upstream,
-)
-
 from serializer.tosa_serializer import TosaOp
 
 
@@ -46,19 +45,18 @@ class MaxPool2dVisitor(NodeVisitor):
         except IndexError:
             padding = [0, 0, 0, 0]
 
-        accumulator_type = input_tensor.dtype
-
-        if is_quant_node:
-            # Accumulator type always is int8 when input tensor is an integer type.
-            accumulator_type = ts.DType.INT8
+        accumulator_type = output.dtype
 
         # Initilize zero point to zero.
         input_zp = 0
-        output_zp = 0
+        if inputs[0].dtype == ts.DType.INT8:
+            input_qparams = get_input_qparams(node)
+            input_zp = input_qparams[0].zp
 
-        if is_quant_node:
-            input_zp = get_quant_arg_upstream(node.all_input_nodes[0]).zp
-            output_zp = get_quant_arg_downstream(list(node.users)[0]).zp
+        output_zp = 0
+        if output.dtype == ts.DType.INT8:
+            output_qparams = get_output_qparams(node)
+            output_zp = output_qparams[0].zp
 
         attr = ts.TosaSerializerAttribute()
         attr.PoolAttribute(

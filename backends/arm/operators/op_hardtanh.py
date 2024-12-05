@@ -8,16 +8,16 @@ from typing import List
 
 import serializer.tosa_serializer as ts
 import torch
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    get_input_qparams,
+)
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 
-from executorch.backends.arm.tosa_quant_utils import (
-    get_quant_arg_upstream,
-    quantize_value,
-)
+from executorch.backends.arm.tosa_quant_utils import quantize_value
 from serializer.tosa_serializer import TosaOp
 
 
@@ -38,9 +38,10 @@ class HardTanhVisitor(NodeVisitor):
     ) -> None:
         attr = ts.TosaSerializerAttribute()
 
-        if is_quant_node:
+        if inputs[0].dtype == ts.DType.INT8:
             # Get quant parameters
-            qargs = get_quant_arg_upstream(node.all_input_nodes[0])
+            input_qparams = get_input_qparams(node)
+            qargs = input_qparams[0]
             # Convert to quantized representation
             clamp_min_qs = quantize_value(inputs[1].number, qargs)
             clamp_max_qs = quantize_value(inputs[2].number, qargs)
