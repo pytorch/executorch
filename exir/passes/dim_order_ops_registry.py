@@ -58,22 +58,14 @@ def _empty_dim_order_out_impl(*args, **kwargs):
 
 
 """
-Defines a map of aten or edge ops to the corresponding dim_order ops for quick lookup
+Defines a map of edge ops to the corresponding dim_order ops for quick lookup
 """
 DimOrderOpsMap = {
-    "aten._to_copy.default": exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
-    "aten.empty.memory_format": exir_ops.edge.dim_order_ops._empty_dim_order.default,
+    exir_ops.edge.aten._to_copy.default: exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+    exir_ops.edge.aten.empty.memory_format: exir_ops.edge.dim_order_ops._empty_dim_order.default,
 }
 
 """
-Defines a map of aten or edge ops to the corresponding memory format ops for quick lookup
+Defines a map of edge ops to the corresponding memory format ops for quick lookup, which is the revert of DimOrderOpsMap
 """
-MemoryFormatOpsMap = {
-    "dim_order_ops._to_dim_order_copy.default": exir_ops.edge.aten._to_copy.default,
-    "dim_order_ops._empty_dim_order.default": exir_ops.edge.aten.empty.memory_format,
-}
-
-# If we are replacing an aten op with a dim_order op, we must have a 1:1 mapping through these dicts.
-assert len(DimOrderOpsMap) == len(MemoryFormatOpsMap)
-
-# TODO stricter check for 1:1 mapping
+MemoryFormatOpsMap = {v: k for k, v in DimOrderOpsMap.items()}
