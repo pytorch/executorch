@@ -33,6 +33,7 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
     FoldAndAnnotateQParamsPass,
     QuantizeFullArgument,
 )
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.keep_dims_false_to_squeeze_pass import (
     KeepDimsFalseToSqueezePass,
 )
@@ -94,10 +95,17 @@ class ArmPassManager(PassManager):
                     exir_ops.edge.aten.add.Tensor,
                     exir_ops.edge.aten.avg_pool2d.default,
                     exir_ops.edge.aten.convolution.default,
+                    exir_ops.edge.aten.exp.default,
                     exir_ops.edge.aten.full.default,
+                    exir_ops.edge.aten.log.default,
+                    exir_ops.edge.aten.reciprocal.default,
+                    exir_ops.edge.aten.rsqrt.default,
+                    exir_ops.edge.aten.sigmoid.default,
+                    exir_ops.edge.aten.tanh.default,
                 ]
             )
         )
+        self.add_pass(InsertTableOpsPass(exported_program))
         for spec in compile_spec:
             if spec.key == "permute_memory_format":
                 memory_format = spec.value.decode()
