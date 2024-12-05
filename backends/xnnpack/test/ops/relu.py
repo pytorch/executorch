@@ -33,3 +33,18 @@ class TestRelu(unittest.TestCase):
             .serialize()
             .run_method_and_compare_outputs()
         )
+
+    def test_fp32_relu_legacy_mode(self):
+        inputs = (torch.randn(8),)
+        (
+            Tester(self.Relu(), inputs)
+            .export()
+            .check_count({"torch.ops.aten.relu.default": 1})
+            .to_edge()
+            .partition()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(["executorch_exir_dialects_edge__ops_aten_relu_default"])
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
