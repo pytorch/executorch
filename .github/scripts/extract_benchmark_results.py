@@ -451,7 +451,7 @@ def main() -> None:
             continue
 
         output_dir = os.path.join(args.output_dir, schema)
-        os.mkdir(output_dir)
+        os.makedirs(output_dir, exist_ok=True)
 
         output_file = os.path.basename(args.artifacts)
         with open(f"{output_dir}/{output_file}", "w") as f:
