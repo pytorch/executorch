@@ -56,7 +56,7 @@ class SDPACustom(torch.nn.Module):
 
         k_cache = self.kv_cache.k_cache
         v_cache = self.kv_cache.v_cache
-        if isinstance(self.kv_cache, QuantizedKVCache):
+        if hasattr(self.kv_cache, "quantized_cache_dtype"):
             # updated quantize cache, scale and zero points
             # returns dequantized kv cache
             # Not most optimal. Optimizations to follow next
