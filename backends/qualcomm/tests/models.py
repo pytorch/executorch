@@ -427,6 +427,14 @@ class Conv2dTopK(torch.nn.Module):
         return topk_values
 
 
+class Cos(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.cos(x)
+
+
 class Div(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -887,6 +895,14 @@ class Sigmoid(torch.nn.Module):
 
     def forward(self, x):
         return torch.sigmoid(x)
+
+
+class Sin(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.sin(x)
 
 
 class SimpleModel(torch.nn.Module):

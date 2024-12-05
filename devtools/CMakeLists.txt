@@ -218,3 +218,8 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
+
+if(BUILD_TESTING)
+  # TODO: This is currently not working!
+  # add_subdirectory(etdump/tests)
+endif()
