@@ -65,7 +65,9 @@ if(TOKENIZERS_BUILD_TEST)
   target_link_libraries(sentencepiece_test PUBLIC tokenizers gtest_main)
 
   # tiktoken tests
-  add_executable(tiktoken_test test/test_base64.cpp)
-  target_include_directories(tiktoken_test PUBLIC include GTEST_INCLUDE_PATH)
-  target_link_libraries(tiktoken_test PUBLIC gtest_main)
+  add_executable(tiktoken_test test/test_base64.cpp test/test_tiktoken.cpp)
+  target_include_directories(
+    tiktoken_test PUBLIC third-party/re2 third-party/abseil-cpp include
+                         GTEST_INCLUDE_PATH)
+  target_link_libraries(tiktoken_test PUBLIC tokenizers gtest_main)
 endif()

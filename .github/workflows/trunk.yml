@@ -1,11 +1,12 @@
 name: trunk
 
 on:
+  pull_request:
+    tags:
+      - ciflow/trunk/*
   push:
     branches:
       - main
-    tags:
-      - ciflow/trunk/*
   workflow_dispatch:
 
 concurrency:
@@ -29,4 +30,7 @@ jobs:
         cmake --build build -j9 --config Debug
 
         # Run unit tests
-        RESOURCES_PATH=test/resources build/sentencepiece_test
+        export RESOURCES_PATH=test/resources
+
+        build/sentencepiece_test
+        build/tiktoken_test
