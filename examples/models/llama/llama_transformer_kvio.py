@@ -9,7 +9,7 @@
 
 from dataclasses import dataclass
 from functools import partial
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 
 import torch
 import torch.nn.functional as F
@@ -102,7 +102,6 @@ class ModelArgs:
     n_kv_heads: Optional[int] = None
     vocab_size: int = -1  # defined later by tokenizer
     hidden_dim: Optional[int] = None
-    head_dim: Optional[int] = None  # Optional customized head_dim
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
     ffn_dim_multiplier: Optional[float] = None
     norm_eps: float = 1e-5
@@ -159,84 +158,6 @@ class ModelArgs:
             if self.ffn_dim_multiplier is not None:
                 hidden_dim = int(self.ffn_dim_multiplier * hidden_dim)
             self.hidden_dim = find_multiple(hidden_dim, multiple_of)
-
-        if self.head_dim is None:
-            self.head_dim = self.dim // self.n_heads
-
-
-class Rope(torch.nn.Module):
-    def __init__(self, params: ModelArgs):
-        super().__init__()
-        self.params = params
-        if self.params.use_hf_rope:
-            self.precompute_freqs_cis = hf_precompute_freqs_cis
-        else:
-            self.precompute_freqs_cis = partial(
-                precompute_freqs_cis, use_scaled=self.params.use_scaled_rope
-            )
-        freqs_cos, freqs_sin = self.precompute_freqs_cis(
-            self.params.head_dim,
-            (
-                self.params.max_seq_len  # Normal llama2.
-                if self.params.ffn_dim_multiplier is None
-                else self.params.max_seq_len * 2  # Sharded checkpoint.
-            ),
-            self.params.rope_freq_base,
-        )
-        self.register_buffer("freqs_cos", freqs_cos, persistent=False)
-        self.register_buffer("freqs_sin", freqs_sin, persistent=False)
-        if self.params.use_hf_rope:
-            self.apply_rotary_emb = hf_apply_rotary_emb
-        else:
-            self.apply_rotary_emb = RotaryEmbedding()
-
-    def forward(
-        self,
-        q: torch.Tensor,
-        k: torch.Tensor,
-        freqs_cos: torch.Tensor,
-        freqs_sin: torch.Tensor,
-    ):
-        return self.apply_rotary_emb(q, k, freqs_cos, freqs_sin)
-
-    def get_freqs(self, input_pos: Optional[torch.Tensor], seq_len: int):
-        """
-        Get the precomputed frequencies for the given input position and sequence length.
-
-        Args:
-            input_pos (torch.Tensor): The input position tensor.
-            seq_len (int): The sequence length.
-
-        Returns:
-            Tuple[torch.Tensor, torch.Tensor]: The precomputed frequencies for the given input position and sequence length.
-        """
-        if self.params.use_kv_cache:
-            assert (
-                input_pos is not None
-            ), "input_pos must be provided when use_kv_cache is True"
-
-            if self.params.enable_dynamic_shape:
-                # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
-                input_pos_item = input_pos[-1].item()
-                torch._check_is_size(input_pos_item)
-                torch._check(input_pos_item < self.params.max_seq_len)
-                # pyre-ignore: Incompatible parameter type [6]: torch.narrow does expect int or Tensor
-                freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seq_len)
-                # pyre-ignore: Incompatible parameter type [6]
-                freqs_sin = self.freqs_sin.narrow(0, input_pos_item, seq_len)
-            else:
-                # When not using dynamic shape, use of the .item results in
-                # symints, due to querying the data from tensor.
-                # this path avoids that for mps backend, although probably mps backend
-                # can support dynamic shape?
-                freqs_cos = self.freqs_cos[input_pos]
-                freqs_sin = self.freqs_sin[input_pos]
-
-        else:
-            assert input_pos is None, "input_pos is unused when use_kv_cache is False"
-            freqs_cos = self.freqs_cos[:seq_len]
-            freqs_sin = self.freqs_sin[:seq_len]
-        return freqs_cos, freqs_sin
 
 
 class KVCache(nn.Module):
@@ -358,7 +279,7 @@ class SDPA(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, args: ModelArgs, layer_id: int, rope: Rope):
+    def __init__(self, args: ModelArgs, layer_id: int):
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
         self.n_heads = args.n_heads
@@ -368,7 +289,7 @@ class Attention(nn.Module):
         self.n_local_heads = self.n_heads // model_parallel_size
         self.n_local_kv_heads = self.n_kv_heads // model_parallel_size
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
-        self.head_dim = args.head_dim
+        self.head_dim = args.dim // self.n_heads
         self.max_batch_size = args.max_batch_size
         self.max_seq_len = args.max_seq_len
         self.dim = args.dim
@@ -378,8 +299,6 @@ class Attention(nn.Module):
         self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
 
         self.layer_id = layer_id
-
-        self.rope = rope
 
         causal_mask = torch.tril(
             torch.ones(
@@ -397,17 +316,21 @@ class Attention(nn.Module):
                 args.max_seq_len,
                 self.n_kv_heads,
                 self.head_dim,
-                not args.use_sdpa_with_kv_cache_op,  # if we are using the custom op don't transpose the cache. Expect untransposed q k v
+                not args.use_sdpa_with_kv_cache_op,  # if we are using the custom op dont transpose the cache. Expect untransposed q k v
                 args.enable_dynamic_shape,
             )
             self.SDPA = SDPA(
                 kv_cache=self.kv_cache,
-                dim=self.n_local_heads * self.head_dim,
+                dim=self.dim,
                 head_dim=self.head_dim,
                 n_rep=self.n_rep,
                 max_seq_len=self.max_seq_len,
                 enable_dynamic_shape=args.enable_dynamic_shape,
             )
+        if args.use_hf_rope:
+            self.apply_rotary_emb = hf_apply_rotary_emb
+        else:
+            self.apply_rotary_emb = RotaryEmbedding()
 
     def forward(
         self,
@@ -415,6 +338,8 @@ class Attention(nn.Module):
         freqs_cos: torch.Tensor,
         freqs_sin: torch.Tensor,
         input_pos: Optional[torch.Tensor] = None,
+        k_cache: Optional[torch.Tensor] = None, # [bs, n_local_kv_heads, seq_len, head_dim]
+        v_cache: Optional[torch.Tensor] = None, # [bs, n_local_kv_heads, seq_len, head_dim]
     ):
         bsz, seqlen, _ = x.shape
 
@@ -426,25 +351,52 @@ class Attention(nn.Module):
         v = v.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
 
         # RoPE relative positional embeddings
-        q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
+        q, k = self.apply_rotary_emb(q, k, freqs_cos, freqs_sin)
 
         if self.use_kv_cache:
             assert input_pos is not None
             output = self.SDPA(input_pos, q, k, v, bsz, seqlen, self.mask)
-            return self.wo(output)
+            return self.wo(output), None, None
+        
+        assert input_pos is not None
+        assert k_cache is not None
+        assert v_cache is not None
+        assert hasattr(self, "mask")
+
+        start_pos = input_pos[-1].item()
 
         q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
+        # pyre-ignore: Incompatible parameter type [6]
+        
+        # Cannot include _check_is_size or we hit runtime error during to_edge:
+        # RuntimeError: expand: attempting to expand a dimension of length u53 + 512, 512!
+        # torch._check_is_size(start_pos)
+        torch._check(start_pos + seqlen <= self.max_seq_len)
+        torch._check(start_pos >= 0)
+
+        mask = self.mask.narrow(0, start_pos, seqlen)
+
+        k_before = k_cache.narrow(2, 0, start_pos)
+        k_after = k_cache.narrow(2, (start_pos + seqlen), (self.max_seq_len-start_pos-seqlen))
+
+        v_before = v_cache.narrow(2, 0, start_pos)
+        v_after = v_cache.narrow(2, (start_pos+seqlen), (self.max_seq_len-start_pos-seqlen))
+
+        k = torch.cat([k_before, k, k_after], dim=2)
+        v = torch.cat([v_before, v, v_after], dim=2)
+
+        k_cache_out = k
+        v_cache_out = v
+
         # grouped multiquery attention: expand out keys and values
         k = k.repeat_interleave(self.n_rep, dim=1)
         v = v.repeat_interleave(self.n_rep, dim=1)
 
-        assert hasattr(self, "mask")
-
-        mask = self.mask[:seqlen, :seqlen]
-
+        # The purpose of this is to prevent decomposing SDPA during to_edge because the
+        # decomposition has ops that are not supported by coreml
         # output = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
         output = torch.ops.coreml.sdpa(q, k, v, mask)
 
@@ -452,7 +404,7 @@ class Attention(nn.Module):
 
         output = self.wo(output)
 
-        return output
+        return output, k_cache_out, v_cache_out
 
 
 class FeedForward(nn.Module):
@@ -515,13 +467,13 @@ class MOEFeedForward(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, layer_id: int, args: ModelArgs, rope: Rope):
+    def __init__(self, layer_id: int, args: ModelArgs):
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
         self.n_heads = args.n_heads
         self.dim = args.dim
-        self.head_dim = args.head_dim
-        self.attention = Attention(args, layer_id, rope)
+        self.head_dim = args.dim // args.n_heads
+        self.attention = Attention(args, layer_id)
         if args.moe:
             self.block_sparse_moe = MOEFeedForward(args)
         else:
@@ -529,9 +481,9 @@ class TransformerBlock(nn.Module):
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-    def forward(self, x, freqs_cos, freqs_sin, input_pos=None):  # x: 1xN
-        h = self.attention.forward(
-            self.attention_norm(x), freqs_cos, freqs_sin, input_pos
+    def forward(self, x, freqs_cos, freqs_sin, input_pos=None, k_cache=None, v_cache=None):  # x: 1xN
+        h, k_cache_out, v_cache_out = self.attention.forward(
+            self.attention_norm(x), freqs_cos, freqs_sin, input_pos, k_cache, v_cache,
         )
 
         h = x + h
@@ -539,7 +491,7 @@ class TransformerBlock(nn.Module):
             out = h + self.block_sparse_moe(self.ffn_norm(h))
         else:
             out = h + self.feed_forward(self.ffn_norm(h))
-        return out
+        return out, k_cache_out, v_cache_out
 
 
 class Transformer(nn.Module):
@@ -550,10 +502,9 @@ class Transformer(nn.Module):
         self.n_layers = params.n_layers
 
         self.tok_embeddings = nn.Embedding(params.vocab_size, params.dim)
-        self.rope = Rope(params)
         self.layers = torch.nn.ModuleList()
         for layer_id in range(params.n_layers):
-            self.layers.append(TransformerBlock(layer_id, params, self.rope))
+            self.layers.append(TransformerBlock(layer_id, params))
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
         self.use_kv_cache = params.use_kv_cache
@@ -561,6 +512,23 @@ class Transformer(nn.Module):
         self.max_seq_len = params.max_seq_len
         self.input_prune_map = params.input_prune_map
         self.output_prune_map = params.output_prune_map
+        if params.use_hf_rope:
+            self.precompute_freqs_cis = hf_precompute_freqs_cis
+        else:
+            self.precompute_freqs_cis = partial(
+                precompute_freqs_cis, use_scaled=params.use_scaled_rope
+            )
+        freqs_cos, freqs_sin = self.precompute_freqs_cis(
+            params.dim // params.n_heads,
+            (
+                params.max_seq_len  # Normal llama2.
+                if params.ffn_dim_multiplier is None
+                else params.max_seq_len * 2  # Sharded checkpoint.
+            ),
+            params.rope_freq_base,
+        )
+        self.register_buffer("freqs_cos", freqs_cos, persistent=False)
+        self.register_buffer("freqs_sin", freqs_sin, persistent=False)
 
     def forward(
         self,
@@ -568,8 +536,20 @@ class Transformer(nn.Module):
         input_pos: Optional[
             torch.LongTensor
         ] = None,  # Scalar tensor indicating size of window of the caches
+        # TODO make it list of tensors
+        k_caches: Optional[List[torch.FloatTensor]] = None, 
+        v_caches: Optional[List[torch.FloatTensor]] = None, 
         h: Optional[torch.FloatTensor] = None,  # embeddings
     ) -> torch.Tensor:
+        k_caches_out = []
+        v_caches_out = []
+        
+        return_caches = True
+        if k_caches is None or v_caches is None:
+            assert k_caches is None
+            assert v_caches is None
+            return_caches = False
+
         if (tokens is None) ^ (h is not None):
             raise ValueError(
                 "You cannot specify both tokens and h at the same time, and must specify either one"
@@ -577,15 +557,63 @@ class Transformer(nn.Module):
         if tokens is not None and h is None:
             h = self.tok_embeddings(tokens)
         seqlen = h.shape[1]
-        freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, seqlen)
 
-        for layer in self.layers:
-            h = layer(
+        if self.use_kv_cache:
+            assert (
+                input_pos is not None
+            ), "input_pos must be provided when use_kv_cache is True"
+
+            if self.params.enable_dynamic_shape:
+                # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
+                input_pos_item = input_pos[-1].item()
+                torch._check_is_size(input_pos_item)
+                torch._check(input_pos_item < self.params.max_seq_len)
+                # pyre-ignore: Incompatible parameter type [6]: torch.narrow does expect int or Tensor
+                freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seqlen)
+                # pyre-ignore: Incompatible parameter type [6]
+                freqs_sin = self.freqs_sin.narrow(0, input_pos_item, seqlen)
+            else:
+                # When not using dynamic shape, use of the .item results in
+                # symints, due to querying the data from tensor.
+                # this path avoids that for mps backend, although probably mps backend
+                # can support dynamic shape?
+                freqs_cos = self.freqs_cos[input_pos]
+                freqs_sin = self.freqs_sin[input_pos]
+
+        else:
+            assert input_pos is not None
+            input_pos_item = input_pos[-1].item()
+            torch._check_is_size(input_pos_item)
+            torch._check(input_pos_item < self.max_seq_len)
+
+            # pyre-ignore: Incompatible parameter type [6]: torch.narrow does expect int or Tensor
+            freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seqlen)
+            # pyre-ignore: Incompatible parameter type [6]
+            freqs_sin = self.freqs_sin.narrow(0, input_pos_item, seqlen)
+
+        if return_caches:
+            assert len(self.layers) == k_caches.shape[0] #len(k_caches)
+            assert len(self.layers) == v_caches.shape[0] #len(v_caches)
+        for i, layer in enumerate(self.layers):
+            h, k_cache_out, v_cache_out = layer(
                 h,
                 freqs_cos,
                 freqs_sin,
                 input_pos,
+                k_caches[i, :, :, :, :] if return_caches else None,
+                v_caches[i, :, :, :, :] if return_caches else None,
             )
+            if return_caches:
+                k_caches_out.append(k_cache_out)
+                v_caches_out.append(v_cache_out)
+        
+        if return_caches:
+            k_caches_out = torch.cat(k_caches_out, dim=0)
+            v_caches_out = torch.cat(v_caches_out, dim=0)
+        else:
+            k_caches_out = None
+            v_caches_out = None
+        
 
         if not self.generate_full_logits:
             # Only the last logit is used for the new generated token
@@ -617,4 +645,6 @@ class Transformer(nn.Module):
                 expanded_logits[:, list(self.output_prune_map.values())] = logits
             logits = expanded_logits
 
+        if return_caches:
+            return logits, k_caches_out, v_caches_out
         return logits

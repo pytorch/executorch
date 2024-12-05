@@ -263,9 +263,7 @@ the checkpoint format to avoid generating faulty models.
             return self.get_example_inputs_kvcache_sdpa()
         else:
             return (
-                torch.tensor(
-                    [[1, 2, 3]], dtype=torch.long
-                ),  # tokens, with kv cache our input token length is always just 1 token.
+                torch.ones(size=(1, self.max_seq_len), dtype=torch.long),
             )
 
     # assumption is the custom op doesnt support dynamic shape right now. It might but its untested so lets first get static shape working
