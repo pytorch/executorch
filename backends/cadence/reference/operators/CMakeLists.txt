@@ -55,7 +55,6 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_expand_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_gelu.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_empty.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/dtype_util.cpp"
 )
 add_library(aten_ops_cadence ${_aten_ops__srcs})
 target_link_libraries(aten_ops_cadence PUBLIC executorch)
@@ -73,13 +72,12 @@ target_include_directories(
 add_library(
   custom_ops
   "quantized_linear_out.cpp"
+  "quantized_conv_out.cpp"
   "quantized_relu_out.cpp"
   "quantized_layer_norm.cpp"
   "quantize_per_tensor.cpp"
   "dequantize_per_tensor.cpp"
   "quantized_matmul_out.cpp"
-  "im2row_out.cpp"
-  "convolution_out.cpp"
 )
 target_include_directories(
   custom_ops PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
