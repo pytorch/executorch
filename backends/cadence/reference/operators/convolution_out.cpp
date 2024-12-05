@@ -273,6 +273,134 @@ __attribute__((noinline)) void conv2d_nhwc_core_generic(
   }
 }
 
+void convolution_nchw(
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int16_t groups,
+    Tensor& output) {
+  bool conv1d = input.dim() == 3;
+  // input = [n, c, h, w]
+  const int n = input.size(0);
+  const int c = input.size(1);
+  const int h = conv1d ? 1 : input.size(2);
+  const int w = conv1d ? input.size(2) : input.size(3);
+  // weight = [oc, wc, wh, ww]
+  const int oc = weight.size(0);
+  const int wc = weight.size(1);
+  const int wh = conv1d ? 1 : weight.size(2);
+  const int ww = conv1d ? weight.size(2) : weight.size(3);
+  // output = [n, oc, oh, ow]
+  const int oh = conv1d ? 1 : output.size(2);
+  const int ow = conv1d ? output.size(2) : output.size(3);
+
+  float* __restrict__ p_out = output.mutable_data_ptr<float>();
+  const float* __restrict__ p_in = input.const_data_ptr<float>();
+  const float* __restrict__ p_weight = weight.const_data_ptr<float>();
+  const float* __restrict__ p_bias = bias.const_data_ptr<float>();
+
+  conv2d_nchw_core_generic<>(
+      p_in,
+      p_weight,
+      p_bias,
+      p_out,
+      n,
+      c,
+      h,
+      w,
+      oc,
+      wc,
+      wh,
+      ww,
+      oh,
+      ow,
+      conv1d ? 1 : stride[0],
+      conv1d ? stride[0] : stride[1],
+      conv1d ? 0 : padding[0],
+      conv1d ? padding[0] : padding[1],
+      conv1d ? 1 : dilation[0],
+      conv1d ? dilation[0] : dilation[1],
+      groups);
+}
+
+void convolution_nhwc(
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int16_t groups,
+    Tensor& output) {
+  bool conv1d = input.dim() == 3;
+  // input = [n, h, w, c]
+  const int n = input.size(0);
+  const int h = conv1d ? 1 : input.size(1);
+  const int w = conv1d ? input.size(1) : input.size(2);
+  const int c = conv1d ? input.size(2) : input.size(3);
+
+  // weight = [oc, wh, ww, wc]
+  const int oc = weight.size(0);
+  const int wh = conv1d ? 1 : weight.size(1);
+  const int ww = conv1d ? weight.size(1) : weight.size(2);
+  const int wc = conv1d ? weight.size(2) : weight.size(3);
+
+  // output = [n, oh, ow, oc]
+  const int oh = conv1d ? 1 : output.size(1);
+  const int ow = conv1d ? output.size(1) : output.size(2);
+
+  float* __restrict__ p_out = output.mutable_data_ptr<float>();
+  const float* __restrict__ p_in = input.const_data_ptr<float>();
+  const float* __restrict__ p_weight = weight.const_data_ptr<float>();
+  const float* __restrict__ p_bias = bias.const_data_ptr<float>();
+
+  conv2d_nhwc_core_generic<>(
+      p_in,
+      p_weight,
+      p_bias,
+      p_out,
+      n,
+      h,
+      w,
+      c,
+      oc,
+      wh,
+      ww,
+      wc,
+      oh,
+      ow,
+      conv1d ? 1 : stride[0],
+      conv1d ? stride[0] : stride[1],
+      conv1d ? 0 : padding[0],
+      conv1d ? padding[0] : padding[1],
+      conv1d ? 1 : dilation[0],
+      conv1d ? dilation[0] : dilation[1],
+      groups);
+}
+
+void convolution_out(
+    __ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    bool channel_last,
+    Tensor& output) {
+  if (channel_last) {
+    convolution_nhwc(
+        input, weight, bias, stride, padding, dilation, groups, output);
+  } else {
+    convolution_nchw(
+        input, weight, bias, stride, padding, dilation, groups, output);
+  }
+}
+
 // The quantized convolution kernel. in_scale and weight_scale are implicit in
 // bias_scale, since it is a product of the two. The kernel will branch to
 // quantized::conv1d or quantized::conv2d based on the dimensionality of
