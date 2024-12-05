@@ -121,7 +121,17 @@ def EXIRATenDialectVerifier(  # noqa: C901
                     # NOTE(qihan): whether view_copy operators are marked as canonical is still under
                     #            discussion.
                     raise SpecViolationError(
-                        f"Operator {op.__module__}.{op.__name__} is not Aten Canonical."
+                        f"""
+Operator {op.__module__}.{op.__name__} is not in Core ATen opset (https://pytorch.org/docs/stable/torch.compiler_ir.html#core-aten-ir)."
+There are a few things to try:
+1. You can proceed with `to_edge(compile_config=EdgeCompileConfig(_core_aten_ops_exception_list=[torch.ops.{str(op)}]))`.
+   Please make sure that the backends you are planning to lower to is able to handle {str(op)}, or you have a corresponding kernel linked to your runtime.
+
+2. Sometimes inference and training gives slightly different ops. Try adding `with torch.no_grad():` context manager if you don't care about training.
+
+3. If the error persists after 2, this is likely caused by torch.export() + core ATen decomposition produce unexpected operator set on your model. 
+   If you believe this operator should be included into core ATen opset, please create an issue in https://github.com/pytorch/pytorch/issues and add `module: core aten` tag.
+                        """
                     )
 
     ret = _EXIRATenDialectVerifier
