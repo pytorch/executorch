@@ -5,6 +5,8 @@
 #include <executorch/backends/cadence/reference/kernels/kernels.h>
 #include <executorch/backends/cadence/reference/operators/operators.h>
 
+using executorch::runtime::getLeadingDims;
+
 // Generate kernels that perform elementwise arithmetic on two quantized
 // tensors. The tensors are either the same size, or the second tensor is a
 // scalar.
@@ -63,8 +65,7 @@ inline __attribute__((always_inline)) void quantized_linear_per_tensor_(
   // weight comes in shape [out_dim, in_dim]
   // output comes in empty with shape [leading_dims, out_dim]
   // Perform matrix multiply (M x N) x (N x P)' => M x P
-  const int64_t leading_dims =
-      executorch::runtime::getLeadingDims(src, src.dim() - 1);
+  const int64_t leading_dims = getLeadingDims(src, src.dim() - 1);
   const int64_t out_dim = weight.size(0); // = out_dim
   const int64_t in_dim = weight.size(1); // = in_dim
 
@@ -86,8 +87,13 @@ inline __attribute__((always_inline)) void quantized_linear_per_tensor_(
             (int32_t)weight_data[j * in_dim + k] - (int32_t)weight_zero_point;
         sum += x * w;
       }
+<<<<<<< HEAD
       out_data[i * out_dim + j] = ::impl::reference::kernels::quantize<T>(
           sum, requant_scale, out_zero_point);
+=======
+      out_data[i * out_dim + j] =
+          ::impl::reference::kernels::quantize<T>(sum, requant_scale, out_zero_point);
+>>>>>>> 5ebcf7f03 (create quantized_linear_per_tensor_out in cpu)
     }
   }
 }
@@ -132,8 +138,7 @@ inline __attribute__((always_inline)) void quantized_linear_per_channel_(
   // weight comes in shape [out_dim, in_dim]
   // output comes in empty with shape [leading_dims, out_dim]
   // Perform matrix multiply (M x N) x (N x P)' => M x P
-  int64_t leading_dims =
-      executorch::runtime::getLeadingDims(src, src.dim() - 1);
+  int64_t leading_dims = getLeadingDims(src, src.dim() - 1);
   const int64_t out_dim = weight.size(0); // = out_dim
   const int64_t in_dim = weight.size(1); // = in_dim
 

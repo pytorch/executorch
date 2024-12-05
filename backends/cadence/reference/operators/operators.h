@@ -14,8 +14,9 @@ namespace native {
 namespace {
 using ::executorch::runtime::getLeadingDims;
 
+
 #define ET_FORALL_CADENCE_QUANTIZED_TYPES(_) \
-  _(uint8_t, Byte)                           \
+  _(uint8_t, Byte)                          \
   _(int8_t, Char)
 
 inline __attribute__((always_inline)) void linear_(
@@ -37,7 +38,12 @@ inline __attribute__((always_inline)) void linear_(
 
   // Given an N-dimensional input [d0, d1, d2, ..., d_{N-2}, d_{N-1}], the
   // leading dimensions is d0 * d1 * ... * d_{N-2}
+<<<<<<< HEAD
   int64_t leading_dims = getLeadingDims(input, input.dim() - 1);
+=======
+  int64_t leading_dims =
+      getLeadingDims(input, input.dim() - 1);
+>>>>>>> 5ebcf7f03 (create quantized_linear_per_tensor_out in cpu)
 
   for (int i = 0; i < leading_dims; ++i) {
     for (int j = 0; j < M; ++j) {
