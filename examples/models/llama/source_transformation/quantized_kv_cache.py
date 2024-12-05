@@ -18,22 +18,7 @@ try:
     op = torch.ops.quantized_decomposed.quantize_per_token.out
     assert op is not None
 except:
-    import glob
-
-    import executorch
-
-    # Ideally package is installed in only one location but usage of
-    # PYATHONPATH can result in multiple locations.
-    # ATM this is mainly used in CI for qnn runner. Will need to revisit this
-    executorch_package_path = executorch.__path__[-1]
-    libs = list(
-        glob.glob(
-            f"{executorch_package_path}/**/libquantized_ops_aot_lib.*", recursive=True
-        )
-    )
-    assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
-    logging.info(f"Loading custom ops library: {libs[0]}")
-    torch.ops.load_library(libs[0])
+    import executorch.kernels.quantized  # noqa: F401
     op = torch.ops.quantized_decomposed.quantize_per_token.out
     assert op is not None
 
