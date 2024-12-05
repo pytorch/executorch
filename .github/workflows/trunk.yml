@@ -1,11 +1,12 @@
 name: trunk
 
 on:
+  pull_request:
+    tags:
+      - ciflow/trunk/*
   push:
     branches:
       - main
-    tags:
-      - ciflow/trunk/*
   workflow_dispatch:
 
 concurrency:
