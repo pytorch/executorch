@@ -22,10 +22,7 @@ using torch::executor::KernelRuntimeContext;
  * updated to have support for below data types, these can be removed and
  * operator need to be updated accordingly
  */
-enum datatype {
-  Ushort = 20,
-  Uint = 23,
-};
+enum datatype { Ushort = 20, Uint = 23 };
 
 namespace cadence {
 namespace impl {
@@ -118,8 +115,7 @@ Tensor& cat_out(
         tensors.size(),
         (int)dim,
         sizeof(char));
-  }
-  if (out.scalar_type() == (ScalarType)Uint) {
+  } else if (out.scalar_type() == (ScalarType)Uint) {
     xa_nn_cat(
         out_data,
         out_shapes,
@@ -164,7 +160,6 @@ Tensor& cat_out(
     if (all_1d_empty) {
       return out;
     }
-
     const size_t outer = executorch::runtime::getLeadingDims(out, dim);
     const size_t dim_stride = executorch::runtime::getTrailingDims(out, dim);
     const size_t ninputs = tensors.size();
