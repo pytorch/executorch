@@ -133,6 +133,16 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv2d_channel_last(self):
+        modules = [
+            Conv2dSequential(channel_last=True),  # noqa: F405
+            Conv2dSequential(bias=False, channel_last=True),  # noqa: F405
+        ]
+        sample_input = (torch.randn([1, 1, 3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv_transpose2d(self):
         modules = [
             ConvTranspose2dSingle(),  # noqa: F405
@@ -818,6 +828,17 @@ class TestQNNQuantizedOperator(TestQNN):
 
     def test_qnn_backend_conv2d(self):
         modules = [Conv2dSequential(), Conv2dSequential(bias=False)]  # noqa: F405
+        sample_input = (torch.randn([1, 1, 3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_channel_last(self):
+        modules = [
+            Conv2dSequential(channel_last=True),  # noqa: F405
+            Conv2dSequential(bias=False, channel_last=True),  # noqa: F405
+        ]
         sample_input = (torch.randn([1, 1, 3, 3]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
