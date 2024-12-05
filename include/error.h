@@ -41,7 +41,7 @@ enum class Error : error_code_t {
   /// Token out of range.
   OutOfRange = 0x03,
 
-  /// Artifact load failure.
+  /// Tokenizer artifact load failure.
   LoadFailure = 0x04,
 
   /// Encode failure.
@@ -49,6 +49,12 @@ enum class Error : error_code_t {
 
   /// Base64 decode failure.
   Base64DecodeFailure = 0x06,
+
+  /// Failed to parse tokenizer artifact.
+  ParseFailure = 0x07,
+
+  /// Decode failure.
+  DecodeFailure = 0x08,
 };
 
 } // namespace tokenizers
