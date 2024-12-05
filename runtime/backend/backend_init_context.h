@@ -18,8 +18,10 @@ namespace runtime {
  */
 class BackendInitContext final {
  public:
-  explicit BackendInitContext(MemoryAllocator* runtime_allocator)
-      : runtime_allocator_(runtime_allocator) {}
+  explicit BackendInitContext(
+      MemoryAllocator* runtime_allocator,
+      const char* method_name = nullptr)
+      : runtime_allocator_(runtime_allocator), method_name_(method_name) {}
 
   /** Get the runtime allocator passed from Method. It's the same runtime
    * executor used by the standard executor runtime and the life span is the
@@ -29,8 +31,20 @@ class BackendInitContext final {
     return runtime_allocator_;
   }
 
+  /** Get the loaded method name from ExecuTorch runtime. Usually it's
+   * "forward", however, if there are multiple methods in the .pte file, it can
+   * be different. One example is that we may have prefill and decode methods in
+   * the same .pte file. In this case, when client loads "prefill" method, the
+   * `get_method_name` function will return "prefill", when client loads
+   * "decode" method, the `get_method_name` function will return "decode".
+   */
+  const char* get_method_name() const {
+    return method_name_;
+  }
+
  private:
   MemoryAllocator* runtime_allocator_ = nullptr;
+  const char* method_name_ = nullptr;
 };
 
 } // namespace runtime

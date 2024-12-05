@@ -24,8 +24,6 @@ import torch
 
 from executorch.devtools.etrecord import generate_etrecord
 
-from executorch.examples.models.llama.llama_transformer import ModelArgs
-
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 
 from executorch.extension.llm.export.partitioner_lib import (
@@ -82,7 +80,7 @@ verbosity_setting = None
 
 
 EXECUTORCH_DEFINED_MODELS = ["stories110m", "llama2", "llama3", "llama3_1", "llama3_2"]
-TORCHTUNE_DEFINED_MODELS = []
+TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 
 
 class WeightType(Enum):
@@ -138,7 +136,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--model",
         default="llama3",
         choices=EXECUTORCH_DEFINED_MODELS + TORCHTUNE_DEFINED_MODELS,
-        help="The Lllama model architecture to use. stories110M, llama2, llama3, llama3_1, and llama3_2 use the same underlying LlamaTransformer architecture defined in ExecuTorch. All other models use TorchTune model definitions.",
+        help="The Lllama model to export. stories110M, llama2, llama3, llama3_1, and llama3_2 use the same underlying LlamaTransformer architecture defined in ExecuTorch. All other models use TorchTune model definitions.",
     )
     parser.add_argument(
         "-E",
@@ -451,6 +449,13 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--use_attention_sink",
+        default=None,
+        type=str,
+        help="Use attention sink to have fluent multi-round conversation. '<sink_size>,<window_size>,<batch_eviction_size>', e.g., '4,2044,1024'.",
+    )
+
+    parser.add_argument(
         "--output_prune_map",
         default=None,
         help="path to the output pruning token mapping file (token_map.json)",
@@ -682,6 +687,10 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
                 args.enable_dynamic_shape,
             )
         )
+        # Apply XNNPACK after Vulkan so that undelegated ops can be accelerated by XNNPACK
+        partitioners.append(
+            get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
+        )
         modelname = f"vulkan_{modelname}"
 
     if args.mps:
@@ -815,16 +824,18 @@ def _load_llama_model_metadata(
     use_kv_cache: bool,
     use_sdpa_with_kv_cache: bool,
     enable_dynamic_shape: bool,
-    model_args: ModelArgs,
+    max_seq_len: int,
+    n_layers: int,
+    vocab_size: int,
     metadata_str: Optional[str] = None,
 ):
     is_fairseq2 = weight_type == WeightType.FAIRSEQ2
     metadata = {
         "get_bos_id": 3 if is_fairseq2 else 1,
         "get_eos_ids": [3] if is_fairseq2 else [2],
-        "get_max_seq_len": model_args.max_seq_len,
-        "get_n_layers": model_args.n_layers,
-        "get_vocab_size": model_args.vocab_size,
+        "get_max_seq_len": max_seq_len,
+        "get_n_layers": n_layers,
+        "get_vocab_size": vocab_size,
         "use_kv_cache": use_kv_cache,
         "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
         "enable_dynamic_shape": enable_dynamic_shape,
@@ -881,27 +892,31 @@ def _load_llama_model(
         module_name = "llama"
         model_class_name = "Llama2Model"  # TODO: Change to "LlamaModel" in examples/models/llama/model.py.
     elif modelname in TORCHTUNE_DEFINED_MODELS:
-        raise NotImplementedError(
-            "Torchtune Llama models are not yet supported in ExecuTorch export."
-        )
+        if modelname == "llama3_2_vision":
+            module_name = "llama3_2_vision"
+            model_class_name = "Llama3_2Decoder"
+        else:
+            raise ValueError(f"{modelname} is not a valid Llama model.")
     else:
         raise ValueError(f"{modelname} is not a valid Llama model.")
 
-    model, example_inputs, example_kwarg_inputs, _ = EagerModelFactory.create_model(
-        module_name,
-        model_class_name,
-        checkpoint=checkpoint,
-        checkpoint_dir=checkpoint_dir,
-        params=params_path,
-        use_kv_cache=use_kv_cache,
-        use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
-        generate_full_logits=generate_full_logits,
-        fairseq2=weight_type == WeightType.FAIRSEQ2,
-        max_seq_len=max_seq_len,
-        enable_dynamic_shape=enable_dynamic_shape,
-        input_prune_map_path=input_prune_map_path,
-        output_prune_map_path=output_prune_map_path,
-        args=args,
+    model, example_inputs, example_kwarg_inputs, dynamic_shapes = (
+        EagerModelFactory.create_model(
+            module_name,
+            model_class_name,
+            checkpoint=checkpoint,
+            checkpoint_dir=checkpoint_dir,
+            params=params_path,
+            use_kv_cache=use_kv_cache,
+            use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
+            generate_full_logits=generate_full_logits,
+            fairseq2=weight_type == WeightType.FAIRSEQ2,
+            max_seq_len=max_seq_len,
+            enable_dynamic_shape=enable_dynamic_shape,
+            input_prune_map_path=input_prune_map_path,
+            output_prune_map_path=output_prune_map_path,
+            args=args,
+        )
     )
     if dtype_override:
         assert isinstance(
@@ -933,12 +948,13 @@ def _load_llama_model(
     return LLMEdgeManager(
         model=model,
         modelname=modelname,
-        max_seq_len=model.params.max_seq_len,
+        max_seq_len=model.max_seq_len,
         dtype=dtype,
         use_kv_cache=use_kv_cache,
         generate_full_logits=generate_full_logits,
         example_inputs=example_inputs,
         example_kwarg_inputs=example_kwarg_inputs,
+        dynamic_shapes=dynamic_shapes,
         enable_dynamic_shape=enable_dynamic_shape,
         calibration_tasks=calibration_tasks,
         calibration_limit=calibration_limit,
@@ -951,7 +967,15 @@ def _load_llama_model(
             use_kv_cache,
             use_sdpa_with_kv_cache,
             enable_dynamic_shape,
-            model.params,
+            # pyre-fixme[6]: For 5th argument expected `ModelArgs` but got
+            #  `Union[Tensor, Module]`.
+            model.max_seq_len,
+            # pyre-fixme[6]: For 6th argument expected `int` but got `Union[Tensor,
+            #  Module]`.
+            model.n_layers,
+            # pyre-fixme[6]: For 7th argument expected `int` but got `Union[Tensor,
+            #  Module]`.
+            model.vocab_size,
             metadata_str,
         ),
         args=args,
@@ -1034,6 +1058,7 @@ def _get_source_transforms(  # noqa
                 transforms.append(replace_attention_to_attention_sha)
                 transforms.append(replace_causal_mask)
                 transforms.append(replace_rms_norm_with_native_rms_norm)
+                # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
                 transforms.append(convert_linear_to_conv2d)
             else:
                 transforms.append(replace_kv_cache_with_simple_kv_cache)
@@ -1045,6 +1070,7 @@ def _get_source_transforms(  # noqa
                     transforms.append(
                         get_model_with_r1_r2(args.optimized_rotation_path)
                     )
+                # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
                 transforms.append(convert_linear_to_conv2d)
 
         elif args.mps:

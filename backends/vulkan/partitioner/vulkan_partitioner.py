@@ -51,11 +51,15 @@ logger.setLevel(logging.INFO)
 
 class VulkanSupportedOperators(OperatorSupportBase):
     def __init__(
-        self, texture_limits: utils.ImageExtents, require_dynamic_shape: bool = False
+        self,
+        texture_limits: utils.ImageExtents,
+        buffer_limit: int,
+        require_dynamic_shape: bool = False,
     ) -> None:
         super().__init__()
-        self.require_dynamic_shapes = require_dynamic_shape
         self.texture_limits: utils.ImageExtents = texture_limits
+        self.buffer_limit = buffer_limit
+        self.require_dynamic_shapes = require_dynamic_shape
 
     def op_node_is_compatible(
         self, node: torch.fx.Node, features: Optional[OpFeatures] = None
@@ -83,6 +87,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
             node, self.texture_limits
         )
 
+        can_use_buffers = utils.within_buffer_limit(node, self.buffer_limit)
         for i, arg in enumerate(node.args):
             if (
                 isinstance(arg, torch.fx.Node)
@@ -95,10 +100,19 @@ class VulkanSupportedOperators(OperatorSupportBase):
                 valid_texture_layouts = valid_texture_layouts.intersection(
                     arg_texture_layouts
                 )
+                can_use_buffers = can_use_buffers and utils.within_buffer_limit(
+                    arg, self.buffer_limit
+                )
 
         # If there are no valid texture memory layouts, then buffer storage must be
         # supported by the operator implementation.
         if len(valid_texture_layouts) == 0:
+            if not can_use_buffers:
+                return (
+                    False,
+                    f"op requires buffers that exceed the buffer limit ({self.buffer_limit})",
+                )
+
             compatible = VkStorageType.BUFFER in features.supported_storage_types()
             reason = "op is compatible"
             if not compatible:
@@ -309,10 +323,12 @@ class VulkanPartitioner(Partitioner):
         texture_limits: utils.ImageExtents = self.options.get(
             "texture_limits", utils.DEFAULT_TEXTURE_LIMITS
         )
+        buffer_limit: int = self.options.get("buffer_limit", utils.DEFAULT_BUFFER_LIMIT)
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
             VulkanSupportedOperators(
                 texture_limits,
+                buffer_limit,
                 require_dynamic_shape=self.options.get("require_dynamic_shapes", False),
             ),
             allows_single_node_partition=True,

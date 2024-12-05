@@ -87,6 +87,7 @@ def is_tensor_node(node: torch.fx.Node) -> bool:
 ImageExtents = Tuple[int, int, int]
 
 DEFAULT_TEXTURE_LIMITS = (16384, 16384, 2048)
+DEFAULT_BUFFER_LIMIT = 128 * (1024 * 1024)
 
 
 class PackedDim(IntEnum):
@@ -111,6 +112,22 @@ all_memory_layouts: Set[VkMemoryLayout] = {
     VkMemoryLayout.TENSOR_HEIGHT_PACKED,
     VkMemoryLayout.TENSOR_CHANNELS_PACKED,
 }
+
+
+def within_buffer_limit(node: torch.fx.Node, buffer_limit: int) -> int:
+    """
+    Checks whether the tensors produced by the given node can fit within the device's
+    GPU buffer limit, which represents the maximum number of elements that can be stored
+    in a GPU buffer.
+    """
+    assert is_tensor_node(node)
+
+    if isinstance(node.meta["val"], FakeTensor):
+        return node.meta["val"].numel() < buffer_limit
+    elif isinstance(node.meta["val"], list) or isinstance(node.meta["val"], tuple):
+        return all(x.numel() < buffer_limit for x in node.meta["val"])
+    else:
+        raise RuntimeError(f"Cannot get numel for val of type {type(node.meta['val'])}")
 
 
 def required_image_extents(sizes: torch.Size, layout: VkMemoryLayout) -> ImageExtents:

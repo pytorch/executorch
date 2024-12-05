@@ -82,6 +82,7 @@ class AddVisitor_080_BI(NodeVisitor):
 
         if needs_rescale:
             # Scale output back to 8 bit
+            # pyre-ignore
             tqutils.rescale_node_back_to_int8(node, add_output, scale, tosa_graph)
 
 

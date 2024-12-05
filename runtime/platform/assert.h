@@ -74,6 +74,7 @@
  * @param[in] _cond Condition asserted as true.
  */
 #define ET_DCHECK(_cond) ((void)0)
+#define ET_DEBUG_ONLY [[maybe_unused]]
 
 #else // NDEBUG
 
@@ -95,6 +96,7 @@
  * @param[in] _cond Condition asserted as true.
  */
 #define ET_DCHECK(_cond) ET_CHECK(_cond)
+#define ET_DEBUG_ONLY
 
 #endif // NDEBUG
 
@@ -112,9 +114,11 @@
  *
  * @param[in] _message Message on how to avoid this assertion error.
  */
-#define ET_ASSERT_UNREACHABLE_MSG(_message)                            \
-  ({                                                                   \
-    ET_CHECK_MSG(                                                      \
-        false, "Execution should not reach this point. %s", _message); \
-    ET_UNREACHABLE();                                                  \
-  })
+#define ET_ASSERT_UNREACHABLE_MSG(_format, ...)            \
+  do {                                                     \
+    ET_CHECK_MSG(                                          \
+        false,                                             \
+        "Execution should not reach this point. " _format, \
+        ##__VA_ARGS__);                                    \
+    ET_UNREACHABLE();                                      \
+  } while (0)

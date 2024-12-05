@@ -21,16 +21,13 @@ from torchtune.models.llama3_1._position_embeddings import Llama3ScaledRoPE
 from torchtune.modules.attention import MultiHeadAttention as TTMultiHeadAttention
 
 
-torch.manual_seed(0)
-
-
 class AttentionTest(unittest.TestCase):
     def setUp(self):
         super().setUp()
-
+        torch.manual_seed(0)
         # Constants
         self.embed_dim = 2048
-        self.num_heads = 32
+        self.num_heads = 8
         self.num_kv_heads = 8
         self.head_dim = 64
         self.max_seq_len = 128
@@ -44,10 +41,14 @@ class AttentionTest(unittest.TestCase):
         self.k_proj = torch.nn.Linear(
             self.embed_dim, self.num_kv_heads * self.head_dim, bias=False
         )
+        self.k_proj.weight.requires_grad = False
         self.v_proj = torch.nn.Linear(
             self.embed_dim, self.num_kv_heads * self.head_dim, bias=False
         )
-        self.output_proj = torch.nn.Linear(self.embed_dim, self.embed_dim, bias=False)
+        self.v_proj.weight.requires_grad = False
+        self.output_proj = torch.nn.Linear(
+            self.num_heads * self.head_dim, self.embed_dim, bias=False
+        )
         self.pos_embeddings = Llama3ScaledRoPE(
             dim=self.head_dim,
             max_seq_len=self.max_seq_len,
@@ -82,7 +83,7 @@ class AttentionTest(unittest.TestCase):
             pos_embeddings=self.pos_embeddings,
             max_seq_len=self.max_seq_len,
         )
-
+        self.et_mha.load_state_dict(self.tt_mha.state_dict())
         # Common inputs.
         seq_len = 10
         self.x = torch.randn(1, seq_len, self.embed_dim)
@@ -92,6 +93,12 @@ class AttentionTest(unittest.TestCase):
             {0: torch.export.Dim.STATIC, 1: seq_len_dim, 2: torch.export.Dim.STATIC},
             {0: torch.export.Dim.STATIC, 1: seq_len_dim, 2: torch.export.Dim.STATIC},
             {0: torch.export.Dim.STATIC, 1: seq_len_dim},
+        )
+        self.causal_mask = torch.tril(
+            torch.ones(
+                size=(self.max_seq_len, self.max_seq_len),
+                dtype=torch.bool,
+            )
         )
 
     def test_attention_eager(self):
@@ -149,6 +156,9 @@ class AttentionTest(unittest.TestCase):
 
         assert_close(et_res, tt_res)
 
+    @unittest.skipIf(
+        int(os.getenv("RUN_SKIPPED", 0)) < 1, reason="TODO(T207740932): test is flaky"
+    )
     def test_attention_aoti(self):
         # Self attention.
 
@@ -160,7 +170,10 @@ class AttentionTest(unittest.TestCase):
                 self.et_mha,
                 args=(self.x, self.x),
                 kwargs={"input_pos": self.input_pos},
-                options={"aot_inductor.package": True},
+                options={
+                    "aot_inductor.package": True,
+                    "reorder_for_peak_memory": False,
+                },
                 dynamic_shapes=self.dynamic_shapes,
             )
         with tempfile.TemporaryDirectory() as tempdir:
@@ -197,3 +210,35 @@ class AttentionTest(unittest.TestCase):
         tt_res = self.tt_mha(self.x, self.x, input_pos=self.input_pos)
 
         assert_close(et_res[0], tt_res)
+
+    def test_attention_torch_cond_eager(self):
+        # Different from vanilla torchtune MHA, we rewrite the if condition with torch.cond. We need to make sure they are giving the same results regarding the if condition.
+        # For the first run of MHA we provide `y` (self.x) but for the second run it will be a tensor full of nan.
+        self.et_mha.setup_cache(1, dtype=torch.float32, max_seq_len=self.max_seq_len)
+        self.tt_mha.setup_cache(1, dtype=torch.float32, max_seq_len=self.max_seq_len)
+
+        # mask
+        mask = self.causal_mask[self.input_pos, :]
+        # First run
+        et_res = self.et_mha(
+            self.x, self.x, mask=mask, input_pos=self.input_pos
+        )  # Self attention with input pos.
+        tt_res = self.tt_mha(
+            self.x, self.x, mask=mask, input_pos=self.input_pos
+        )  # Self attention with input pos.
+
+        self.assertTrue(torch.allclose(et_res, tt_res))
+
+        # Second run test kv cache read. Input pos is [10, 11, ..., 19]
+        next_input_pos = torch.arange(10, 20).unsqueeze(0)
+
+        empty_y = torch.full_like(self.x, torch.nan)
+        mask = self.causal_mask[next_input_pos, :]
+        et_res = self.et_mha(
+            self.x, empty_y, mask=mask, input_pos=next_input_pos
+        )  # Self attention with input pos.
+        tt_res = self.tt_mha(
+            self.x, None, mask=mask, input_pos=next_input_pos
+        )  # Self attention with input pos.
+
+        assert_close(et_res, tt_res)

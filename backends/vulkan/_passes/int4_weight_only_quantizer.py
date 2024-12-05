@@ -1,3 +1,4 @@
+# pyre-unsafe
 import logging
 from typing import Any, Callable, Dict, Optional, Type
 
@@ -35,7 +36,7 @@ class VkWeightOnlyInt4Linear(torch.nn.Module):
         super().__init__()
         self.padding = not _check_linear_int4_k(in_features, groupsize, inner_k_tiles)
         if self.padding:
-            from torchao.quantization.utils import find_multiple
+            from torchao.utils import find_multiple
 
             self.origin_in_features = in_features
             in_features = find_multiple(in_features, (1024,))
@@ -135,6 +136,7 @@ def _vk_replace_linear_int4(
                     scales_precision=scales_precision,
                 )
                 if copy_weights and child.weight.device != torch.device("meta"):
+                    # pyre-fixme[16]: `Module` has no attribute `weight`.
                     new_linear.weight = child.weight
                 setattr(module, name, new_linear)
         else:
@@ -203,7 +205,7 @@ class VkInt4WeightOnlyQuantizer(Quantizer):
                     if self.padding_allowed:
                         import torch.nn.functional as F
 
-                        from torchao.quantization.utils import find_multiple
+                        from torchao.utils import find_multiple
 
                         logging.warn(
                             f"warning: {fqn} is padded to satisfy in_features % 1024 == 0"

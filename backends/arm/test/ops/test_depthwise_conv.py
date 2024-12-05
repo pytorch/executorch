@@ -8,10 +8,8 @@ import unittest
 
 from typing import Tuple
 
-import pytest
-
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.ops.test_conv1d import Conv1d
 from executorch.backends.arm.test.ops.test_conv2d import Conv2d
 
@@ -158,10 +156,23 @@ testsuite_conv2d = [
     ("two_dw_conv2d", two_dw_conv2d),
 ]
 
+testsuite_conv2d_u85 = [
+    ("2x2_1x6x4x4_gp6_st1", dw_conv2d_2x2_1x6x4x4_gp6_st1),
+    ("3x3_1x3x256x256_gp3_st1", dw_conv2d_3x3_1x3x256x256_gp3_st1),
+    ("3x3_1x4x256x256_gp4_st1", dw_conv2d_3x3_1x4x256x256_gp4_st1),
+    ("3x3_1x4x256x256_gp4_nobias", dw_conv2d_3x3_1x4x256x256_gp4_nobias),
+]
+
+testsuite_conv2d_u85_xfails = [
+    ("3x3_2x8x198x198_gp8_st3", dw_conv2d_3x3_2x8x198x198_gp8_st3),
+    ("two_dw_conv2d", two_dw_conv2d),
+]
+
+
 testsuite_conv1d = [
     ("2_1x6x4_gp6_st1", dw_conv1d_2_1x6x4_gp6_st1),
-    ("3_1x3x256_gp3_st1", dw_conv1d_3_1x3x256_gp3_st1),
     ("two_dw_conv1d", two_dw_conv1d),
+    ("3_1x3x256_gp3_st1", dw_conv1d_3_1x3x256_gp3_st1),
     ("3_1x3x14_gp3_st1", dw_conv1d_3_1x3x14_gp3_st1),
 ]
 
@@ -217,7 +228,7 @@ class TestDepthwiseConv(unittest.TestCase):
         compile_spec: CompileSpec,
         test_data: Tuple[torch.Tensor],
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -230,7 +241,10 @@ class TestDepthwiseConv(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(testsuite_conv1d + testsuite_conv2d)
     def test_dw_conv_tosa_MI(self, test_name: str, model: torch.nn.Module):
@@ -238,9 +252,12 @@ class TestDepthwiseConv(unittest.TestCase):
 
     # TODO: Investigate flakyness (MLTORCH-307)
     @parameterized.expand(testsuite_conv1d + testsuite_conv2d)
-    @pytest.mark.flaky(reruns=3)
     def test_dw_conv_tosa_BI(self, test_name: str, model: torch.nn.Module):
         self._test_dw_conv_tosa_BI_pipeline(model, model.get_inputs())
+
+    testsuite_conv2d.remove(
+        ("3x3_1x3x256x256_gp3_st1", dw_conv2d_3x3_1x3x256x256_gp3_st1)
+    )  # Works
 
     @parameterized.expand(testsuite_conv2d, skip_on_empty=True)
     def test_dw_conv2d_u55_BI(
@@ -269,8 +286,22 @@ class TestDepthwiseConv(unittest.TestCase):
             model.get_inputs(),
         )
 
-    @parameterized.expand(testsuite_conv1d + testsuite_conv2d)
+    @parameterized.expand(testsuite_conv1d + testsuite_conv2d_u85)
     def test_dw_conv_u85_BI(
+        self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
+    ):
+        self._test_dw_conv_ethos_BI_pipeline(
+            model,
+            common.get_u85_compile_spec(
+                permute_memory_to_nhwc=True, quantize_io=set_quantize_io
+            ),
+            model.get_inputs(),
+        )
+
+    # All test cases except 3x3_1x3x256x256_gp3_st1 have numerical issues on FVP. MLETORCH-520
+    @parameterized.expand(testsuite_conv2d_u85_xfails)
+    @conftest.expectedFailureOnFVP
+    def test_dw_conv_u85_BI_xfails(
         self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
     ):
         self._test_dw_conv_ethos_BI_pipeline(

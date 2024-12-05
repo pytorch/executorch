@@ -15,9 +15,17 @@ lib.define(
     "_to_dim_order_copy(Tensor self, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None, bool non_blocking=False, int[]? dim_order=None) -> Tensor"
 )
 
-# Out variant drops TensorOptions
+lib.define(
+    "_empty_dim_order(int[] size, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None, int[]? dim_order=None) -> Tensor"
+)
+
+# Out variant of aten::_to_copy and aten::empty drops TensorOptions, so do their dim order variants
 lib.define(
     "_to_dim_order_copy.out(Tensor self, *, bool non_blocking=False, int[]? dim_order=None, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "_empty_dim_order.out(int[] size, *, int[]? dim_order=None, Tensor(a!) out) -> Tensor(a!)"
 )
 
 
@@ -39,11 +47,22 @@ def _to_dim_order_copy_out_impl(*args, **kwargs):
     return _op_impl(torch.ops.aten._to_copy.out, *args, **kwargs)
 
 
+@impl(lib, "_empty_dim_order", "CompositeImplicitAutograd")
+def _empty_dim_order_impl(*args, **kwargs):
+    return _op_impl(torch.ops.aten.empty.memory_format, *args, **kwargs)
+
+
+@impl(lib, "_empty_dim_order.out", "CompositeImplicitAutograd")
+def _empty_dim_order_out_impl(*args, **kwargs):
+    return _op_impl(torch.ops.aten.empty.out, *args, **kwargs)
+
+
 """
 Defines a map of aten or edge ops to the corresponding dim_order ops for quick lookup
 """
 DimOrderOpsMap = {
     "aten._to_copy.default": exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+    "aten.empty.memory_format": exir_ops.edge.dim_order_ops._empty_dim_order.default,
 }
 
 """
@@ -51,6 +70,7 @@ Defines a map of aten or edge ops to the corresponding memory format ops for qui
 """
 MemoryFormatOpsMap = {
     "dim_order_ops._to_dim_order_copy.default": exir_ops.edge.aten._to_copy.default,
+    "dim_order_ops._empty_dim_order.default": exir_ops.edge.aten.empty.memory_format,
 }
 
 # If we are replacing an aten op with a dim_order op, we must have a 1:1 mapping through these dicts.

@@ -790,6 +790,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_masked_select",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+        ],
+    ),
+    op_target(
         name = "op_max",
         deps = [
             "//executorch/kernels/portable/cpu/util:reduce_util",
@@ -861,6 +867,7 @@ ATEN_OPS = (
     op_target(
         name = "op_native_batch_norm",
         deps = [
+            ":vec_ops",
             "//executorch/kernels/portable/cpu/util:normalization_ops_util",
         ],
     ),
@@ -1074,6 +1081,9 @@ ATEN_OPS = (
         name = "op_sigmoid",
         deps = [
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
         ],
     ),
     op_target(
@@ -1241,6 +1251,12 @@ ATEN_OPS = (
     ),
     op_target(
         name = "op_zeros",
+    ),
+    op_target(
+        name = "op__empty_dim_order",
+        deps = [
+            ":scalar_utils",
+        ],
     ),
     op_target(
         name = "op__to_dim_order_copy",

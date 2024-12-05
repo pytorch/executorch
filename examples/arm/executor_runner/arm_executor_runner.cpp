@@ -85,7 +85,7 @@ using executorch::runtime::TensorInfo;
  * availible memory.
  */
 #ifndef ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE
-#define ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE (60 * 1024 * 1024)
+#define ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE (20 * 1024 * 1024)
 #endif
 const size_t method_allocation_pool_size =
     ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE;

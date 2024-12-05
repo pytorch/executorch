@@ -9,9 +9,6 @@
 package org.pytorch.executorch;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.fail;
 
 import java.nio.ByteBuffer;
@@ -19,11 +16,9 @@ import java.nio.DoubleBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.LongBuffer;
-
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
-import org.pytorch.executorch.Tensor;
 
 /** Unit tests for {@link Tensor}. */
 @RunWith(JUnit4.class)
@@ -243,28 +238,68 @@ public class TensorTest {
     long mismatchShape[] = {1, 2};
 
     try {
-        Tensor tensor = Tensor.fromBlob((float[]) null, mismatchShape);
+      Tensor tensor = Tensor.fromBlob((float[]) null, mismatchShape);
       fail("Should have thrown an exception");
     } catch (IllegalArgumentException e) {
       // expected
     }
     try {
-        Tensor tensor = Tensor.fromBlob(data, null);
+      Tensor tensor = Tensor.fromBlob(data, null);
       fail("Should have thrown an exception");
     } catch (IllegalArgumentException e) {
       // expected
     }
     try {
-        Tensor tensor = Tensor.fromBlob(data, shapeWithNegativeValues);
+      Tensor tensor = Tensor.fromBlob(data, shapeWithNegativeValues);
       fail("Should have thrown an exception");
     } catch (IllegalArgumentException e) {
       // expected
     }
     try {
-        Tensor tensor = Tensor.fromBlob(data, mismatchShape);
+      Tensor tensor = Tensor.fromBlob(data, mismatchShape);
       fail("Should have thrown an exception");
     } catch (IllegalArgumentException e) {
       // expected
+    }
+  }
+
+  @Test
+  public void testLongTensorSerde() {
+    long data[] = {1, 2, 3, 4};
+    long shape[] = {2, 2};
+    Tensor tensor = Tensor.fromBlob(data, shape);
+    byte[] bytes = tensor.toByteArray();
+
+    Tensor deser = Tensor.fromByteArray(bytes);
+    long[] deserShape = deser.shape();
+    long[] deserData = deser.getDataAsLongArray();
+
+    for (int i = 0; i < data.length; i++) {
+      assertEquals(data[i], deserData[i]);
+    }
+
+    for (int i = 0; i < shape.length; i++) {
+      assertEquals(shape[i], deserShape[i]);
+    }
+  }
+
+  @Test
+  public void testFloatTensorSerde() {
+    float data[] = {Float.MIN_VALUE, 0f, 0.1f, Float.MAX_VALUE};
+    long shape[] = {2, 2};
+    Tensor tensor = Tensor.fromBlob(data, shape);
+    byte[] bytes = tensor.toByteArray();
+
+    Tensor deser = Tensor.fromByteArray(bytes);
+    long[] deserShape = deser.shape();
+    float[] deserData = deser.getDataAsFloatArray();
+
+    for (int i = 0; i < data.length; i++) {
+      assertEquals(data[i], deserData[i], 1e-5);
+    }
+
+    for (int i = 0; i < shape.length; i++) {
+      assertEquals(shape[i], deserShape[i]);
     }
   }
 }

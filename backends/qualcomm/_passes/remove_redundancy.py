@@ -20,6 +20,7 @@ class RemoveRedundancy(ExportPass):
         exir_ops.edge.aten.clone.default,
         torch.ops.aten.alias.default,
         exir_ops.edge.aten.alias.default,
+        exir_ops.edge.aten.lift_fresh_copy.default,
     }
 
     def __init__(self):

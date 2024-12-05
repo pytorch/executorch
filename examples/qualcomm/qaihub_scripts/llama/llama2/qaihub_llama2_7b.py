@@ -8,16 +8,14 @@ import json
 import os
 from multiprocessing.connection import Client
 
-import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 import torch
-from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (  # noqa: F401
-    QcomChipset,
-)
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
+    ExecutorchBackendConfig,
     from_context_binary,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
-    generate_qnn_executorch_option,
+    get_soc_to_chipset_map,
 )
 from executorch.examples.qualcomm.qaihub_scripts.utils.utils import (
     gen_pte_from_ctx_bin,
@@ -27,6 +25,7 @@ from executorch.examples.qualcomm.utils import (
     setup_common_args_and_variables,
     SimpleADB,
 )
+from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 
 
 def main(args):
@@ -66,32 +65,33 @@ def main(args):
 
     if args.pre_gen_pte is None:
         # create custom operators as context loader
+        soc_model = get_soc_to_chipset_map()[args.model]
         bundle_programs = [
-            from_context_binary(f"{args.context_binaries}/{target}", f"ctx_loader_{i}")
+            from_context_binary(
+                ctx_path=f"{args.context_binaries}/{target}",
+                op_name=f"ctx_loader_{i}",
+                soc_model=soc_model,
+            )
             for i, target in enumerate(target_names)
         ]
         pte_names = [f"{pte_name}_{i}" for i in range(len(target_names))]
+        memory_planning_pass = MemoryPlanningPass(
+            alloc_graph_input=False,
+            alloc_graph_output=False,
+        )
         pte_files = gen_pte_from_ctx_bin(
-            args.artifact, pte_names, compiler_specs, bundle_programs
+            artifact=args.artifact,
+            pte_names=pte_names,
+            bundle_programs=bundle_programs,
+            backend_config=ExecutorchBackendConfig(
+                memory_planning_pass=memory_planning_pass
+            ),
         )
     else:
         pte_files = [f"{args.pre_gen_pte}/{pte_name}_{i}.pte" for i in range(4)]
 
     if args.compile_only:
         return
-
-    def get_logit_encoding(path_to_last_shard: str):
-        with open(f"{args.context_binaries}/{path_to_last_shard}", "rb") as f:
-            ctx_bin = f.read()
-            qnn_mgr = PyQnnManagerAdaptor.QnnManager(
-                generate_qnn_executorch_option(compiler_specs), ctx_bin
-            )
-            assert qnn_mgr.Init().value == 0, "failed to load context binary"
-            qnn_mgr.AllocateTensor()
-            logits = qnn_mgr.GetGraphOutputs()[-1]
-            encoding = logits.GetEncodings()
-            qnn_mgr.Destroy()
-            return encoding.data["scale"].item(), encoding.data["offset"].item()
 
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),

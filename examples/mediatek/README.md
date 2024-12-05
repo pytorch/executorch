@@ -72,12 +72,6 @@ bash shell_scripts/export_oss.sh <model_name>
     - `model_name`: deeplabv3/edsr/inceptionv3/inceptionv4/mobilenetv2/mobilenetv3/resnet18/resnet50
 
 # Runtime
-## Supported Chips
-
-The examples provided in this repository are tested and supported on the following MediaTek chip:
-
-- MediaTek Dimensity 9300 (D9300)
-
 ## Environment Setup
 
 To set up the build environment for the `mtk_executor_runner`:

@@ -725,7 +725,9 @@ def dispatch_trace(
 
     _, out_spec = pytree.tree_flatten(tree_out)
 
+    # pyre-fixme[16]: `GraphModule` has no attribute `in_spec`.
     gm.in_spec = in_spec
+    # pyre-fixme[16]: `GraphModule` has no attribute `out_spec`.
     gm.out_spec = out_spec
 
     # TODO (tmanlaibaatar) This is bit clowny, but our

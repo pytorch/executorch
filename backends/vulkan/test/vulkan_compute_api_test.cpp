@@ -1123,6 +1123,7 @@ TEST_F(VulkanComputeAPITest, test_tensor_creation_from_vulkan_image) {
       vkapi::create_extent3d(image_extents),
       image_format,
       image_type,
+      context()->preferred_image_tiling(),
       image_view_type,
       sampler_props,
       sampler,

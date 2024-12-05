@@ -36,38 +36,45 @@ class TestCat(unittest.TestCase):
             return x + x  # Quantize by propagation.
 
     def _test_cat(self, module, inputs, cat_num=1, quant=False, quant_ops=2):
-        tester = Tester(module, inputs)
+        for legacy_mode in (True, False):
+            tester = Tester(module, inputs)
 
-        if quant:
-            tester.quantize()
+            if quant:
+                tester.quantize()
 
-        tester.export().check_count({"torch.ops.aten.cat": 1})
-        tester.dump_artifact()
+            tester.export().check_count({"torch.ops.aten.cat": 1})
+            tester.dump_artifact()
 
-        if quant:
-            # Expect multiple quantize ops - one per input, cat, and add.
-            tester.check_node_count(
-                {
-                    # Q/DQ pair for each input and quantized op. For most tests, there are
-                    # two quantized ops - cat and add.
-                    torch.ops.quantized_decomposed.quantize_per_tensor.default: (
-                        cat_num + quant_ops
-                    )
-                }
+            if quant:
+                # Expect multiple quantize ops - one per input, cat, and add.
+                tester.check_node_count(
+                    {
+                        # Q/DQ pair for each input and quantized op. For most tests, there are
+                        # two quantized ops - cat and add.
+                        torch.ops.quantized_decomposed.quantize_per_tensor.default: (
+                            cat_num + quant_ops
+                        )
+                    }
+                )
+
+            if legacy_mode:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+
+            if quant:
+                tester.check_not(["torch.ops.quantized_decomposed"])
+
+            (
+                tester.check_count(
+                    {"torch.ops.higher_order.executorch_call_delegate": 1}
+                )
+                .check_not(["executorch_exir_dialects_edge__ops_aten_cat"])
+                .to_executorch()
+                .serialize()
+                .run_method_and_compare_outputs()
             )
-
-        tester.to_edge_transform_and_lower()
-
-        if quant:
-            tester.check_not(["torch.ops.quantized_decomposed"])
-
-        (
-            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_cat"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
 
     def test_fp16_cat2(self):
         """
@@ -152,6 +159,26 @@ class TestCat(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.cat": 1})
             .to_edge_transform_and_lower()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_cat": 1})
+        )
+
+    def test_fp32_cat_unsupported_legacy_mode(self):
+        """
+        XNNPACK only supports concatenating up to 4 values, so it should not delegate here.
+        """
+        inputs = (
+            torch.randn(1, 2, 3),
+            torch.randn(3, 2, 3),
+            torch.randn(2, 2, 3),
+            torch.randn(5, 2, 3),
+            torch.randn(1, 2, 3),
+        )
+        (
+            Tester(self.Cat5(), inputs)
+            .export()
+            .check_count({"torch.ops.aten.cat": 1})
+            .to_edge()
+            .partition()
             .check_count({"executorch_exir_dialects_edge__ops_aten_cat": 1})
         )
 

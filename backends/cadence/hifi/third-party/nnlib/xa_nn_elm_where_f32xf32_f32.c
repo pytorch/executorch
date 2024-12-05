@@ -20,10 +20,10 @@
 
 ******************************************************************************/
 #include "xa_type_def.h"
-#include "nnlib-hifi4/xa_nnlib/algo/common/include/xa_nnlib_common_fpu.h"
-#include "nnlib-hifi4/xa_nnlib/algo/common/include/xa_nn_common.h"
-#include "nnlib-hifi4/xa_nnlib/algo/common/include/xa_nnlib_err_chk.h"
-#include "nnlib-hifi4/xa_nnlib/algo/kernels/basic/hifi4/xa_nn_basic_state.h"
+#include "xa_nnlib_common_fpu.h"
+#include "xa_nn_common.h"
+#include "xa_nnlib_err_chk.h"
+// #include "xa_nn_basic_state.h"
 #include "xa_nnlib_kernels_api.h"
 
 

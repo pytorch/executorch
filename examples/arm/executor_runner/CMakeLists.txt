@@ -63,6 +63,9 @@ endif()
 if(TARGET_BOARD STREQUAL "corstone-300")
   add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target)
   target_compile_definitions(ethosu_target_common INTERFACE
+      # ETHOSU_MODEL=0 place pte file/data in SRAM area
+      # ETHOSU_MODEL=1 place pte file/data in DDR area
+      ETHOSU_MODEL=1
       # Configure NPU architecture timing adapters
       # Ethos_U55_High_End_Embedded
       # This is just example numbers and you should make this match your hardware
@@ -98,6 +101,9 @@ if(TARGET_BOARD STREQUAL "corstone-300")
 elseif(TARGET_BOARD STREQUAL "corstone-320")
   add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-320 target)
   target_compile_definitions(ethosu_target_common INTERFACE
+      # ETHOSU_MODEL=0 place pte file/data in SRAM area
+      # ETHOSU_MODEL=1 place pte file/data in DDR area
+      ETHOSU_MODEL=1
       # Configure NPU architecture timing adapters
       # Ethos_U85_SYS_DRAM_Mid
       # This is just example numbers and you should make this match your hardware
@@ -228,6 +234,7 @@ target_link_libraries(
   quantized_kernels
   portable_kernels
   "-Wl,--no-whole-archive"
+  -Xlinker -Map=arm_executor_runner.map
 )
 
 # ET headers and generated headers includes

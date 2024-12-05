@@ -111,6 +111,7 @@ Topics in this section will help you get started with ExecuTorch.
       customcarditem entries below.
    executorch-arm-delegate-tutorial
    build-run-coreml
+   build-run-mediatek-backend
    build-run-mps
    build-run-qualcomm-ai-engine-direct-backend
    build-run-xtensa
@@ -330,6 +331,13 @@ ExecuTorch tutorials.
    :image: _static/img/generic-pytorch-logo.png
    :link: build-run-coreml.html
    :tags: Export,Backend,Delegation,CoreML
+
+.. customcarditem::
+   :header: Building and Running ExecuTorch with MediaTek Backend
+   :card_description: A tutorial that walks you through the process of building ExecuTorch with MediaTek Backend
+   :image: _static/img/generic-pytorch-logo.png
+   :link: build-run-mediatek-backend.html
+   :tags: Export,Backend,Delegation,MediaTek
 
 .. customcarditem::
    :header: Building and Running ExecuTorch with MPS Backend

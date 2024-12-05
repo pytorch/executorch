@@ -90,7 +90,8 @@ static Kernel prim_ops[] = {
           EValue& self = *stack[0];
           EValue& out = *stack[1];
           exec_aten::Tensor self_tensor = self.to<exec_aten::Tensor>();
-          ET_SWITCH_REAL_TYPES(
+          ET_SWITCH_REAL_TYPES_AND(
+              Bool,
               self_tensor.scalar_type(),
               context,
               "_local_scalar_dense",
@@ -363,9 +364,17 @@ static Kernel prim_ops[] = {
         }),
 
     // executorch_prim::et_copy_index.tensor(tensor, tensor) -> tensor
-    Kernel("executorch_prim::et_copy_index.tensor", &et_copy_index),
+    Kernel(
+        "executorch_prim::et_copy_index.tensor",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          et_copy_index(context, stack);
+        }),
     // executorch_prim::et_view.default(Tensor, int[]) -> Tensor
-    Kernel("executorch_prim::et_view.default", &et_view),
+    Kernel(
+        "executorch_prim::et_view.default",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          et_view(context, stack);
+        }),
 
 };
 

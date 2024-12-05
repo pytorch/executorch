@@ -626,7 +626,9 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
 
     for (size_t i = 0; i < n_delegate; ++i) {
       const auto& delegate = *delegates->Get(i);
-      BackendInitContext backend_init_context(method_allocator);
+      BackendInitContext backend_init_context(
+          method_allocator,
+          /*method_name=*/serialization_plan_->name()->c_str());
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {
@@ -961,8 +963,8 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
   if (tensor_meta->is_memory_planned()) {
     ET_LOG(
         Error,
-        "Output %zu is memory planned, or is a constant. Cannot override \
-        the existing data pointer.",
+        "Output %zu is memory planned, or is a constant. Cannot override "
+        "the existing data pointer.",
         output_idx);
     return Error::InvalidState;
   }
@@ -1097,8 +1099,9 @@ Error Method::execute_instruction() {
           n_delegate_,
           step_state_.instr_idx);
       BackendExecutionContext backend_execution_context(
-          /*event_tracer*/ event_tracer_,
-          /*temp_allocator*/ temp_allocator_);
+          /*event_tracer=*/event_tracer_,
+          /*temp_allocator=*/temp_allocator_,
+          /*method_name=*/serialization_plan_->name()->c_str());
       err = delegates_[delegate_idx].Execute(
           backend_execution_context,
           chain.argument_lists_[step_state_.instr_idx].data());

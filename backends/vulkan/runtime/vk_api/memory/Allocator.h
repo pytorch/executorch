@@ -59,6 +59,7 @@ class Allocator final {
       const VkExtent3D&,
       const VkFormat,
       const VkImageType,
+      const VkImageTiling,
       const VkImageViewType,
       const VulkanImage::SamplerProperties&,
       VkSampler,

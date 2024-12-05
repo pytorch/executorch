@@ -57,6 +57,7 @@ COPY ./common/utils.sh utils.sh
 RUN bash ./install_cache.sh && rm install_cache.sh utils.sh
 ENV SCCACHE_BUCKET ossci-compiler-cache-circleci-v2
 ENV SCCACHE_S3_KEY_PREFIX executorch
+ENV SCCACHE_REGION us-east-1
 
 ARG TORCH_VERSION
 COPY ./common/install_pytorch.sh install_pytorch.sh

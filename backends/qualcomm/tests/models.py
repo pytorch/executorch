@@ -427,6 +427,14 @@ class Conv2dTopK(torch.nn.Module):
         return topk_values
 
 
+class Cos(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.cos(x)
+
+
 class Div(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -549,8 +557,8 @@ class HardTanh(torch.nn.Module):
 class Index(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.idx0 = torch.tensor([[0, 1], [2, 3], [4, 5]])
-        self.idx1 = torch.tensor([[1, 2], [3, 4], [5, 6]])
+        self.idx0 = torch.tensor([[0, 1], [2, 3], [4, 5]], dtype=torch.int32)
+        self.idx1 = torch.tensor([[1, 2], [3, 4], [5, 6]], dtype=torch.int32)
 
     def forward(self, x):
         return x[self.idx0] + x[self.idx1]
@@ -887,6 +895,14 @@ class Sigmoid(torch.nn.Module):
 
     def forward(self, x):
         return torch.sigmoid(x)
+
+
+class Sin(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.sin(x)
 
 
 class SimpleModel(torch.nn.Module):

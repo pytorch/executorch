@@ -7,6 +7,7 @@
  */
 #pragma once
 
+#include <executorch/backends/qualcomm/qc_binary_info_generated.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCache.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
@@ -36,15 +37,17 @@ class QnnContext {
     return handle_;
   }
 
-  std::string GetGraphName() {
-    return cache_->GetGraphName();
+  std::vector<std::string> inline GetGraphNames() {
+    return cache_->GetGraphNames();
   }
 
-  std::vector<Qnn_Tensor_t> GetGraphInputs() {
-    return cache_->GetGraphInputs();
+  std::vector<Qnn_Tensor_t> inline GetGraphInputs(
+      const std::string& graph_name) {
+    return cache_->GetGraphInputs(graph_name);
   }
-  std::vector<Qnn_Tensor_t> GetGraphOutputs() {
-    return cache_->GetGraphOutputs();
+  std::vector<Qnn_Tensor_t> inline GetGraphOutputs(
+      const std::string& graph_name) {
+    return cache_->GetGraphOutputs(graph_name);
   }
   QnnBackendCache::CacheState GetCacheState() const {
     return cache_->GetCacheState();
@@ -68,7 +71,8 @@ class QnnContext {
   QnnBackend* backend_;
   QnnDevice* device_;
   QnnBackendCache* cache_;
-  std::vector<char> binary_buffer_;
+  std::vector<uint8_t> binary_buffer_;
+  flatbuffers::FlatBufferBuilder builder_;
 };
 } // namespace qnn
 } // namespace backends

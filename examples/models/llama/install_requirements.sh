@@ -16,6 +16,8 @@ pip install "$(dirname "$0")/../../../third-party/ao"
 # Install tiktoken for tokenizer
 pip install lm_eval==0.4.5
 pip install tiktoken blobfile
+# Restore numpy if >= 2.0
+pip install "numpy<2.0"
 
 # Call the install helper for further setup
 python examples/models/llama/install_requirement_helper.py

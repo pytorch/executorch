@@ -19,13 +19,20 @@ class TestAbs(unittest.TestCase):
             z = torch.abs(x)
             return z
 
-    def _test_abs(self, inputs):
-        (
+    def _test_abs(self, inputs, legacy_mode: bool = False):
+        tester = (
             Tester(self.Abs(), inputs)
             .export()
             .check_count({"torch.ops.aten.abs.default": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+        )
+
+        if legacy_mode:
+            tester = tester.to_edge().partition()
+        else:
+            tester = tester.to_edge_transform_and_lower()
+
+        (
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_abs_default"])
             .to_executorch()
             .serialize()
@@ -41,7 +48,18 @@ class TestAbs(unittest.TestCase):
                 ],
             ).to(torch.float16),
         )
-        self._test_abs(inputs)
+        self._test_abs(inputs, legacy_mode=False)
+
+    def test_fp16_abs_legacy_mode(self):
+        inputs = (
+            torch.Tensor(
+                [
+                    [0.0, 0.1, 0.5, 0.499],
+                    [-0.6, -0.4, 100.1, -1000.1],
+                ],
+            ).to(torch.float16),
+        )
+        self._test_abs(inputs, legacy_mode=True)
 
     def test_fp32_abs(self):
         inputs = (
@@ -52,4 +70,15 @@ class TestAbs(unittest.TestCase):
                 ],
             ),
         )
-        self._test_abs(inputs)
+        self._test_abs(inputs, legacy_mode=False)
+
+    def test_fp32_abs_legacy_mode(self):
+        inputs = (
+            torch.Tensor(
+                [
+                    [0.0, 0.1, 0.5, 0.499],
+                    [-0.6, -0.4, 100.1, -1000.1],
+                ],
+            ),
+        )
+        self._test_abs(inputs, legacy_mode=True)

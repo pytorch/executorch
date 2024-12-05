@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from typing import cast, Union
 
 import torch
@@ -47,6 +49,11 @@ class ScalarsToAttributePass(ExportPass):
             new_args = []
             for arg in n.args:
                 if isinstance(arg, Node):
+                    new_args.append(arg)
+                    continue
+                if isinstance(arg, int) and not torch.is_floating_point(
+                    get_first_fake_tensor(n)
+                ):
                     new_args.append(arg)
                     continue
 

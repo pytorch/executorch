@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -13,7 +13,6 @@ from executorch.examples.models.llama.llama_transformer import (
     FeedForward,
     ModelArgs,
     precompute_freqs_cis,
-    RMSNorm,
 )
 
 
@@ -22,6 +21,10 @@ def apply_rotary_emb_single(
 ) -> torch.Tensor:
     x_r, x_i = x[..., ::2], x[..., 1::2]
 
+    # brodcast for batch_prefill mode input x
+    if x.dim() == 4:
+        freqs_cos = freqs_cos[None, :, None, :]
+        freqs_sin = freqs_sin[None, :, None, :]
     x_out_r = x_r * freqs_cos - x_i * freqs_sin
     x_out_i = x_r * freqs_sin + x_i * freqs_cos
 
@@ -59,13 +62,13 @@ class LlamaAttention(nn.Module):
         self.wk_sha = nn.ModuleList(
             [
                 nn.Linear(self.dim, self.head_dim, bias=False)
-                for _ in range(self.n_heads)
+                for _ in range(self.n_kv_heads)
             ]
         )
         self.wv_sha = nn.ModuleList(
             [
                 nn.Linear(self.dim, self.head_dim, bias=False)
-                for _ in range(self.n_heads)
+                for _ in range(self.n_kv_heads)
             ]
         )
 
@@ -76,6 +79,7 @@ class LlamaAttention(nn.Module):
             self.wq_sha[i].weight.data.copy_(
                 self.wq.weight[i * self.head_dim : (i + 1) * self.head_dim]
             )
+        for i in range(self.n_kv_heads):
             self.wk_sha[i].weight.data.copy_(
                 self.wk.weight[i * self.head_dim : (i + 1) * self.head_dim]
             )
@@ -89,38 +93,48 @@ class LlamaAttention(nn.Module):
         freqs_cos: torch.Tensor,
         freqs_sin: torch.Tensor,
         atten_mask: torch.Tensor,
-        k_caches: List[torch.Tensor],
-        v_caches: List[torch.Tensor],
+        k_caches: Optional[List[torch.Tensor]] = None,
+        v_caches: Optional[List[torch.Tensor]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         q = [wq_sha(hidden_states) for wq_sha in self.wq_sha]
         k = [wk_sha(hidden_states) for wk_sha in self.wk_sha]
         v = [wv_sha(hidden_states) for wv_sha in self.wv_sha]
         for i in range(len(q)):
             q[i] = apply_rotary_emb_single(q[i], freqs_cos, freqs_sin)
+        for i in range(len(k)):
             k[i] = apply_rotary_emb_single(k[i], freqs_cos, freqs_sin).permute(0, 2, 1)
 
-        output_kh, output_vh, output_y = [], [], []
-        for i, _ in enumerate(k_caches):
-            # cat at the seq dim
-            kh = torch.cat([k_caches[i], k[i]], dim=-1)
-            vh = torch.cat([v_caches[i], v[i]], dim=1)
+        output_y = []
+        kh, vh = [], []
+        # kv cache mode
+        if k_caches and v_caches:
+            for i, _ in enumerate(k_caches):
+                kh.append(torch.cat([k_caches[i], k[i]], dim=-1))
+                vh.append(torch.cat([v_caches[i], v[i]], dim=1))
+        # batch_prefill mode
+        else:
+            kh = k
+            vh = v
 
-            attn = q[i] @ kh
+        for i, _ in enumerate(q):
+            cache_idx = i // self.num_key_value_groups
+            attn = q[i] @ kh[cache_idx]
             attn = attn / self.scale + atten_mask
             attn = self.attn_softmax(attn)
-            y = attn @ vh
+            y = attn @ vh[cache_idx]
 
-            if self.output_new_cache_only:
-                output_kh.append(k[i])
-                output_vh.append(v[i])
-            else:
-                output_kh.append(kh)
-                output_vh.append(vh)
             output_y.append(y)
 
         y = torch.concat(output_y, dim=-1)
         y = self.wo(y)
-        return y, output_kh, output_vh
+
+        if self.output_new_cache_only:
+            if k_caches and v_caches:
+                return y, k, v
+            # batch_prefill mode. Consider to remove, it's not really used
+            return y, k[-1], v[-1]
+
+        return y, kh, vh
 
     def forward(
         self,
@@ -142,24 +156,43 @@ class LlamaAttention(nn.Module):
         k = apply_rotary_emb_single(k, freqs_cos, freqs_sin).permute(0, 2, 3, 1)
 
         output_kh, output_vh, output_y = [], [], []
+        kh, vh = [], []
+        # kv cache mode
+        if k_caches and v_caches:
+            for i, _ in enumerate(k_caches):
+                kh.append(torch.cat([k_caches[i], k[:, i, :, :]], dim=-1))
+                vh.append(torch.cat([v_caches[i], v[:, :, i, :]], dim=1))
+            for i in range(self.n_heads):
+                cache_idx = i // self.num_key_value_groups
 
-        for i, _ in enumerate(k_caches):
-            # cat at the seq dim
-            kh = torch.cat([k_caches[i], k[:, i, :, :]], dim=-1)
-            vh = torch.cat([v_caches[i], v[:, :, i, :]], dim=1)
+                attn = q[:, :, i, :] @ kh[cache_idx]
+                attn = attn / self.scale + atten_mask
+                attn = self.attn_softmax(attn)
+                y = attn @ vh[cache_idx]
 
-            attn = q[:, :, i, :] @ kh
-            attn = attn / self.scale + atten_mask
-            attn = self.attn_softmax(attn)
-            y = attn @ vh
+                output_y.append(y)
 
+        # batch_prefill mode
+        else:
+            kh = k
+            vh = v
+            for i in range(self.n_heads):
+                cache_idx = i // self.num_key_value_groups
+
+                attn = q[:, :, i, :] @ kh[:, cache_idx, :, :]
+                attn = attn / self.scale + atten_mask
+                attn = self.attn_softmax(attn)
+                y = attn @ vh[:, :, cache_idx, :]
+
+                output_y.append(y)
+
+        for i in range(self.n_kv_heads):
             if self.output_new_cache_only:
+                output_kh.append(k[:, i, :, -1])
+                output_vh.append(v[:, -1, i, :])
+            else:
                 output_kh.append(k[:, i, :, :])
                 output_vh.append(v[:, :, i, :])
-            else:
-                output_kh.append(kh)
-                output_vh.append(vh)
-            output_y.append(y)
 
         y = torch.concat(output_y, dim=-1)
         y = self.wo(y)
@@ -175,8 +208,8 @@ class LlamaDecoderLayer(nn.Module):
             config=config, output_new_cache_only=output_new_cache_only
         )
         self.feed_forward = FeedForward(config)
-        self.attention_norm = RMSNorm(config.dim, eps=config.norm_eps)
-        self.ffn_norm = RMSNorm(config.dim, eps=config.norm_eps)
+        self.attention_norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
+        self.ffn_norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
 
     def forward(
         self,
@@ -212,6 +245,7 @@ class LlamaModel(nn.Module):
         self.n_layers = config.n_layers
         self.vocab_size = config.vocab_size
         self.rope_freq_base = config.rope_freq_base
+        self.use_kv_cache = config.use_kv_cache
         self.output_new_cache_only = output_new_cache_only
 
         self.layers = nn.ModuleList(
@@ -220,7 +254,7 @@ class LlamaModel(nn.Module):
                 for _ in range(config.n_layers)
             ]
         )
-        self.norm = RMSNorm(config.dim, eps=config.norm_eps)
+        self.norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
         self.output = nn.Linear(config.dim, config.vocab_size, bias=False)
         self.tok_embeddings = nn.Embedding(config.vocab_size, config.dim)
         freqs_cos, freqs_sin = precompute_freqs_cis(
@@ -234,22 +268,30 @@ class LlamaModel(nn.Module):
     def forward(
         self,
         tokens: torch.Tensor,
-        input_pos: torch.Tensor,
         atten_mask: torch.Tensor,
+        input_pos: Optional[torch.Tensor] = None,
         *args,
     ) -> Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor]]:
+
         output_k_cache = []
         output_v_cache = []
         # following tensors should be invariant across batches
-        freqs_cos = self.freqs_cos[input_pos][0]
-        freqs_sin = self.freqs_sin[input_pos][0]
+        freqs_cos = (
+            self.freqs_cos[input_pos][0] if self.use_kv_cache else self.freqs_cos[:-1]
+        )
+        freqs_sin = (
+            self.freqs_sin[input_pos][0] if self.use_kv_cache else self.freqs_sin[:-1]
+        )
 
         hidden_states = self.tok_embeddings(tokens)
         for ind, decoder_layer in enumerate(self.layers):
-            offset_k = ind * self.n_heads
-            offset_v = self.n_layers * self.n_heads + offset_k
-            k_caches = args[offset_k : offset_k + self.n_heads]
-            v_caches = args[offset_v : offset_v + self.n_heads]
+            k_caches = None
+            v_caches = None
+            if self.use_kv_cache:
+                offset_k = ind * self.n_kv_heads
+                offset_v = self.n_layers * self.n_kv_heads + offset_k
+                k_caches = args[offset_k : offset_k + self.n_kv_heads]
+                v_caches = args[offset_v : offset_v + self.n_kv_heads]
             hidden_states, k, v = decoder_layer(
                 hidden_states,
                 freqs_cos=freqs_cos,
@@ -266,71 +308,47 @@ class LlamaModel(nn.Module):
 
         return logits, output_k_cache, output_v_cache
 
-    def get_example_inputs(self):
-        tokens = torch.randint(
-            self.vocab_size, (self.max_batch_size, 1), dtype=torch.int32
-        )
-        pos_ids = torch.zeros((self.max_batch_size, 1), dtype=torch.int32)
-        k_cache, v_cache = [], []
-        atten_mask = torch.full((self.max_batch_size, self.max_seq_len), -255.0)
-        atten_mask[:, -1] = 0
-        for _ in range(self.n_layers):
-            for _ in range(self.n_heads):
-                # transpose first to decrease the runtime efforts
-                k_cache.append(
-                    torch.zeros(
-                        self.max_batch_size,
-                        self.head_dim,
-                        self.max_seq_len - 1,
+    def get_example_inputs(self, use_kv_cache=True):
+        if use_kv_cache:
+            tokens = torch.randint(
+                self.vocab_size, (self.max_batch_size, 1), dtype=torch.int32
+            )
+            pos_ids = torch.zeros((self.max_batch_size, 1), dtype=torch.int32)
+            k_cache, v_cache = [], []
+            atten_mask = torch.full((self.max_batch_size, self.max_seq_len), -255.0)
+            atten_mask[:, -1] = 0
+            for _ in range(self.n_layers):
+                for _ in range(self.n_kv_heads):
+                    # transpose first to decrease the runtime efforts
+                    k_cache.append(
+                        torch.zeros(
+                            self.max_batch_size,
+                            self.head_dim,
+                            self.max_seq_len - 1,
+                        )
                     )
-                )
-                v_cache.append(
-                    torch.zeros(
-                        self.max_batch_size,
-                        self.max_seq_len - 1,
-                        self.head_dim,
+                    v_cache.append(
+                        torch.zeros(
+                            self.max_batch_size,
+                            self.max_seq_len - 1,
+                            self.head_dim,
+                        )
                     )
-                )
-        return (
-            tokens,
-            pos_ids,
-            atten_mask,
-            k_cache,
-            v_cache,
-        )
+            return (
+                tokens,
+                atten_mask,
+                pos_ids,
+                k_cache,
+                v_cache,
+            )
 
-    def get_export_inputs(self):
-        tokens = torch.randint(
-            self.vocab_size, (self.max_batch_size, 1), dtype=torch.int32
-        )
-        pos_ids = torch.zeros((self.max_batch_size, 1), dtype=torch.int32)
-        # this is important for torch.export not to take it as dummy input
-        k_cache, v_cache = [], []
-        atten_mask = torch.full((self.max_batch_size, self.max_seq_len), -255.0)
-        atten_mask[:, -1] = 0
-        for _ in range(self.n_layers):
-            for _ in range(self.n_heads):
-                # transpose first to decrease the runtime efforts
-                k_cache.append(
-                    torch.randn(
-                        self.max_batch_size,
-                        self.head_dim,
-                        self.max_seq_len - 1,
-                    )
-                )
-                v_cache.append(
-                    torch.randn(
-                        self.max_batch_size,
-                        self.max_seq_len - 1,
-                        self.head_dim,
-                    )
-                )
+        max_promp = self.max_seq_len - 1
+        tokens = torch.arange(0, max_promp, 1, dtype=torch.int32).unsqueeze(0)
+        atten_mask = torch.triu(torch.rand((max_promp, max_promp)), 1)
+        atten_mask[atten_mask != 0] = -255
         return (
             tokens,
-            pos_ids,
             atten_mask,
-            k_cache,
-            v_cache,
         )
 
     def get_metadata(self):
@@ -344,7 +362,8 @@ class LlamaModel(nn.Module):
             "get_max_seq_len": self.max_seq_len,
             "get_n_bos": 1,
             "get_n_eos": 1,
-            "get_n_kv_heads": self.n_heads,
+            "get_n_kv_heads": self.n_kv_heads,
             "get_n_layers": self.n_layers,
             "get_vocab_size": self.vocab_size,
+            "get_use_kv_cache": self.use_kv_cache,
         }

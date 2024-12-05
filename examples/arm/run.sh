@@ -20,6 +20,7 @@ script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 root_dir=${script_dir}/ethos-u-scratch
 
 model_name=""
+reorder_inputs=""
 aot_arm_compiler_flags="--delegate --quantize"
 target="ethos-u55-128"
 output_folder_set=false
@@ -37,6 +38,7 @@ help() {
     echo "  --output=<FOLDER>                      Output folder Default: ${output_folder}"
     echo "  --build_only                           Only build, don't run FVP"
     echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scrach dir if you not using default"
+    echo "  --reorder_inputs=<FLAGS>               Reorder the inputs. This can be required when inputs > 1."
     exit 0
 }
 
@@ -50,6 +52,7 @@ for arg in "$@"; do
       --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
       --build_only) build_only=true ;;
       --scratch-dir=*) root_dir="${arg#*=}";;
+      --reorder_inputs=*) reorder_inputs="${arg#*=}";;
       *)
       ;;
     esac
@@ -83,7 +86,7 @@ fi
 toolchain_cmake=${script_dir}/ethos-u-setup/arm-none-eabi-gcc.cmake
 _setup_msg="please refer to ${script_dir}/ethos-u-setup/setup.sh to properly install necessary tools."
 
-if ! [[ $portable_kernels =~ ^((^|,)aten::[a-zA-Z0-9_]+\.out)*$ ]]; then
+if ! [[ $portable_kernels =~ ^((^|,)aten::[a-zA-Z0-9_]+\.[a-zA-Z0-9_]*out)*$ ]]; then
     echo " ERROR: specified argument --portable_kernels=${portable_kernels}"
     echo "        is in the wrong format please use \"aten::<OP1>.out,aten::<OP2>.out,...\""
     echo "        e.g. \"aten::_softmax.out,aten::add.out\""
@@ -112,7 +115,7 @@ function generate_pte_file() {
     # We are using the aot_lib from build_quantization_aot_lib below
     SO_LIB=$(find cmake-out-aot-lib -name libquantized_ops_aot_lib.${SO_EXT})
 
-    python3 -m examples.arm.aot_arm_compiler --model_name="${model}" --target=${target} ${model_compiler_flags} --output ${output_folder} --so_library="$SO_LIB" 1>&2
+    python3 -m examples.arm.aot_arm_compiler --model_name="${model}" --target=${target} ${model_compiler_flags}  --reorder_inputs=${reorder_inputs} --output ${output_folder} --so_library="$SO_LIB" 1>&2
     [[ -f ${pte_file} ]] || { >&2 echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
     echo "${pte_file}"
 }
@@ -210,9 +213,9 @@ function build_executorch_runner() {
     cmake --build ${executor_runner_path}/cmake-out --parallel -- arm_executor_runner
     echo "[${FUNCNAME[0]}] Generated baremetal elf file:"
     find ${executor_runner_path}/cmake-out -name "arm_executor_runner"
-    echo "executable_text: $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec size {} \; | grep -v filename | awk '{print $1}') bytes"
-    echo "executable_data: $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec size {} \; | grep -v filename | awk '{print $2}') bytes"
-    echo "executable_bss:  $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec size {} \; | grep -v filename | awk '{print $3}') bytes"
+    echo "executable_text: $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $1}') bytes"
+    echo "executable_data: $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $2}') bytes"
+    echo "executable_bss:  $(find ${executor_runner_path}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $3}') bytes"
 }
 
 # Execute the executor_runner on FVP Simulator
@@ -226,7 +229,6 @@ function run_fvp() {
     if [[ ${target} == *"ethos-u55"*  ]]; then
         echo "Running ${elf} for ${target} run with FVP:${fvp_model} num_macs:${num_macs}"
         ${fvp_model}                                            \
-            -C cpu0.CFGITCMSZ=11                                \
             -C ethosu.num_macs=${num_macs}                      \
             -C mps3_board.visualisation.disable-visualisation=1 \
             -C mps3_board.telnetterminal0.start_telnet=0        \
@@ -238,7 +240,6 @@ function run_fvp() {
     elif [[ ${target} == *"ethos-u85"*  ]]; then
         echo "Running ${elf} for ${target} run with FVP:${fvp_model} num_macs:${num_macs}"
     	${fvp_model}                                            \
-            -C mps4_board.subsystem.cpu0.CFGITCMSZ=11           \
             -C mps4_board.subsystem.ethosu.num_macs=${num_macs} \
             -C mps4_board.visualisation.disable-visualisation=1 \
             -C vis_hdlcd.disable_visualisation=1                \
@@ -287,6 +288,7 @@ if [[ -z "$model_name" ]]; then
 else
     test_model=( "$model_name" )
     model_compiler_flags=( "$aot_arm_compiler_flags" )
+    reorder_inputs=( "$reorder_inputs" )
 fi
 
 # loop over running the AoT flow and executing the model on device

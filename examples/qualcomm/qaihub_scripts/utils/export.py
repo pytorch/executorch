@@ -15,18 +15,17 @@ import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAd
 import numpy as np
 
 import torch
-from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
-    QcomChipset,
-)
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
     draw_graph,
+    ExecutorchBackendConfig,
     from_context_binary,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     generate_qnn_executorch_option,
 )
+from executorch.examples.qualcomm.qaihub_scripts.utils.utils import preprocess_binary
 from executorch.examples.qualcomm.utils import make_output_dir, SimpleADB
-from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 
 
@@ -45,7 +44,7 @@ def get_logger():
     return logging.LoggerAdapter(logger, extra={"prefix": "UTILS.EXPORT"})
 
 
-def get_io_info(prog_info, ctx_bin_path, compiler_spec):
+def get_io_info(prog_info, ctx_bin_path, compiler_specs):
     def fill_tensor_info(info, qnn_tensors, category):
         # fetch related IO info stored in prog_info
         for i, (name, tensor) in enumerate(prog_info[category].items()):
@@ -70,15 +69,16 @@ def get_io_info(prog_info, ctx_bin_path, compiler_spec):
     tensor_info = {in_key: [], out_key: []}
 
     with open(ctx_bin_path, "rb") as f:
-        ctx_bin = f.read()
+        ctx_bin = preprocess_binary(f.read(), compiler_specs)
         # leverage QNN pybind interface to retrieve tensor encodings
         qnn_mgr = PyQnnManagerAdaptor.QnnManager(
-            generate_qnn_executorch_option(compiler_spec), ctx_bin
+            generate_qnn_executorch_option(compiler_specs), ctx_bin
         )
         assert qnn_mgr.Init().value == 0, "failed to load context binary"
-        qnn_mgr.AllocateTensor()
-        fill_tensor_info(tensor_info, qnn_mgr.GetGraphInputs(), in_key)
-        fill_tensor_info(tensor_info, qnn_mgr.GetGraphOutputs(), out_key)
+        graph_name = qnn_mgr.GetGraphNames()[0]
+        qnn_mgr.AllocateTensor(graph_name)
+        fill_tensor_info(tensor_info, qnn_mgr.GetGraphInputs(graph_name), in_key)
+        fill_tensor_info(tensor_info, qnn_mgr.GetGraphOutputs(graph_name), out_key)
         qnn_mgr.Destroy()
 
     return tensor_info
@@ -250,28 +250,24 @@ def compile(args):
             postfix += 1
             custom_op_name = f"{custom_op_name}_{postfix}"
         name_map[custom_op_name] = postfix
-        # step 1: generate ExportedProgram with custom op as binary loader
+        # step 1: generate ExportedProgram with custom op as binary loader & lower to QnnBackend
         logger.info(f"({index}/{num_bins}) exporting program for {ctx_bin}")
         prog_info = from_context_binary(
             ctx_bin, custom_op_name, getattr(QcomChipset, args.model)
         )
-        # step 2: lower to QnnBackend
-        logger.info(f"({index}/{num_bins}) start lowering {ctx_bin} to QnnBackend")
-        lowered_module = to_backend(
-            "QnnBackend", prog_info["edge_program"], compiler_specs
-        )
-        # step 3: write pte files and IO information
+        # step 2: write pte files and IO information
         logger.info(f"({index}/{num_bins}) exporting {binary_name}.pte")
         with open(f"{output_dir}/{binary_name}.pte", "wb") as f:
-            f.write(
-                lowered_module.buffer(
-                    extract_delegate_segments=True, memory_planning=memory_planning_pass
+            prog_info["edge_program_manager"].to_executorch(
+                config=ExecutorchBackendConfig(
+                    memory_planning_pass=memory_planning_pass
                 )
-            )
+            ).write_to_file(f)
+
         logger.info(
             f"({index}/{num_bins}) exporting network graph with {binary_name}.svg"
         )
-        draw_graph(binary_name, output_dir, prog_info["edge_program"].graph_module)
+        draw_graph(binary_name, output_dir, prog_info["exported_program"].graph_module)
         logger.info(
             f"({index}/{num_bins}) exporting graph description with {binary_name}.json"
         )

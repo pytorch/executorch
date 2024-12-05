@@ -56,6 +56,21 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
 
+# Setup RPATH.
+# See https://gitlab.kitware.com/cmake/community/-/wikis/doc/cmake/RPATH-handling
+# Use separate rpaths during build and install phases
+set(CMAKE_SKIP_BUILD_RPATH OFF)
+# Don't use the install-rpath during the build phase
+set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+# Automatically add all linked folders that are NOT in the build directory to
+# the rpath (per library?)
+# TODO: Doesn't work for us right now because we are not installing .so's into the
+# correct locations. For example we have libcustom_ops_aot_lib.so depending on
+# _portable_lib.so, which was eventually put under <site-packages>/executorch/extension/pybindings/
+# but this rpath is not automatically added because at build time it seems `portable_lib`
+# is being built under the same directory, so no extra rpath is being added. To
+# properly fix this we need to install `portable_lib` into the correct path.
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
 # ------------------------------ OPTIONS -------------------------------------
 # WARNING: Please don't add example specific options in this CMakeLists.txt.
 # Instead please use `find_package(executorch REQUIRED)` in the example
@@ -185,8 +200,6 @@ option(EXECUTORCH_BUILD_EXTENSION_TENSOR "Build the Tensor extension" OFF)
 
 option(EXECUTORCH_BUILD_EXTENSION_TRAINING "Build the training extension" OFF)
 
-option(EXECUTORCH_BUILD_GTESTS "Build googletest based test binaries" OFF)
-
 option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
 
 option(EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" OFF)
@@ -200,6 +213,8 @@ option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 option(EXECUTORCH_BUILD_KERNELS_QUANTIZED "Build the quantized kernels" OFF)
 
 option(EXECUTORCH_BUILD_DEVTOOLS "Build the ExecuTorch Developer Tools")
+
+option(EXECUTORCH_BUILD_TESTS "Build CMake-based unit tests" OFF)
 
 option(EXECUTORCH_NNLIB_OPT "Build Cadence backend Hifi nnlib kernel" OFF)
 
@@ -315,6 +330,10 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   )
 endif()
 
+if(EXECUTORCH_BUILD_TESTS)
+  include(CTest)
+endif()
+
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
@@ -324,6 +343,19 @@ message(STATUS "Using python executable '${PYTHON_EXECUTABLE}'")
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".
+# TODO(#6475): This requires/assumes that the repo lives in a directory named
+# exactly `executorch`. Check the assumption first. Remove this check once we
+# stop relying on the assumption.
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR FILENAME _repo_dir_name)
+if(NOT "${_repo_dir_name}" STREQUAL "executorch")
+  message(
+    FATAL_ERROR
+      "The ExecuTorch repo must be cloned into a directory named exactly "
+      "`executorch`; found `${_repo_dir_name}`. See "
+      "https://github.com/pytorch/executorch/issues/6475 for progress on a "
+      "fix for this restriction."
+  )
+endif()
 set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 #
@@ -597,7 +629,7 @@ cmake_dependent_option(
 )
 
 # Add googletest if any test targets should be built
-if(EXECUTORCH_BUILD_GTESTS)
+if(BUILD_TESTING)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/googletest)
 endif()
 
@@ -752,46 +784,6 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
-  if(APPLE)
-    # pip wheels will need to be able to find the torch libraries. On Linux, the
-    # .so has non-absolute dependencies on libs like "libtorch.so" without
-    # paths; as long as we `import torch` first, those dependencies will work.
-    # But Apple dylibs do not support non-absolute dependencies, so we need to
-    # tell the loader where to look for its libraries. The LC_LOAD_DYLIB entries
-    # for the torch libraries will look like "@rpath/libtorch.dylib", so we can
-    # add an LC_RPATH entry to look in a directory relative to the installed
-    # location of our _portable_lib.so file. To see these LC_* values, run
-    # `otool -l _portable_lib*.so`.
-    set_target_properties(
-      portable_lib
-      PROPERTIES # Assume that this library will be installed in
-                 # `site-packages/executorch/extension/pybindings`, and that
-                 # the torch libs are in `site-packages/torch/lib`.
-                 BUILD_RPATH "@loader_path/../../../torch/lib"
-                 INSTALL_RPATH "@loader_path/../../../torch/lib"
-                 # Assume <executorch> is the root `site-packages/executorch`
-                 # Need to add <executorch>/extension/llm/custom_ops for
-                 # libcustom_ops_aot_lib.dylib
-                 BUILD_RPATH "@loader_path/../../extension/llm/custom_ops"
-                 INSTALL_RPATH "@loader_path/../../extension/llm/custom_ops"
-                 # Need to add <executorch>/kernels/quantized for
-                 # libquantized_ops_aot_lib.dylib
-                 BUILD_RPATH "@loader_path/../../kernels/quantized"
-                 INSTALL_RPATH "@loader_path/../../kernels/quantized"
-    )
-  else()
-    set_target_properties(
-      portable_lib
-      PROPERTIES
-        # Assume <executorch> is the root `site-packages/executorch`
-        # Need to add <executorch>/extension/llm/custom_ops for
-        # libcustom_ops_aot_lib
-        # Need to add <executorch>/kernels/quantized for
-        # libquantized_ops_aot_lib
-        BUILD_RPATH
-        "$ORIGIN:$ORIGIN/../../extension/llm/custom_ops:$ORIGIN/../../kernels/quantized"
-    )
-  endif()
 
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings
@@ -840,6 +832,8 @@ endif()
 if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
 endif()
+
+include(Test.cmake)
 
 # Print all summary
 executorch_print_configuration_summary()

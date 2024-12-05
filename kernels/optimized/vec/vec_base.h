@@ -1,7 +1,5 @@
 #pragma once
 
-// @nolint PATTERNLINT <functional> is required for std::equal_to, etc.
-
 #include <cassert>
 #include <cstdint>
 #include <cstring>
