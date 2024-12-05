@@ -179,6 +179,7 @@ def _check_tensor_args_matching_op_allowed_dtype(gm: GraphModule) -> None:
     if validator.violating_ops:
         raise SpecViolationError(
             f"These operators are taking Tensor inputs with mismatched dtypes: {validator.violating_ops}"
+            "Please make sure the dtypes of the Tensor inputs are the same as the dtypes of the corresponding "
         )
 
 
