@@ -11,7 +11,6 @@
 # pyre-unsafe
 
 import logging
-from pathlib import Path
 
 import torch
 
@@ -23,7 +22,17 @@ try:
     op2 = torch.ops.llama.fast_hadamard_transform.default
     assert op2 is not None
 except:
-    libs = list(Path(__file__).parent.resolve().glob("libcustom_ops_aot_lib.*"))
+    import glob
+
+    import executorch
+
+    executorch_package_path = executorch.__path__[0]
+    logging.info(f"Looking for libcustom_ops_aot_lib.so in {executorch_package_path}")
+    libs = list(
+        glob.glob(
+            f"{executorch_package_path}/**/libcustom_ops_aot_lib.*", recursive=True
+        )
+    )
     assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
     logging.info(f"Loading custom ops library: {libs[0]}")
     torch.ops.load_library(libs[0])
