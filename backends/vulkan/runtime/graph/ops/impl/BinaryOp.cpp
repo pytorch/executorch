@@ -67,7 +67,10 @@ void add_binary_op_node(
     alpha_val = graph.extract_scalar<float>(alpha);
   }
 
-  const utils::ivec2 broadcast_params = create_broadcast_params(*t_in1, *t_in2);
+  const struct BinaryOpsParams {
+    const utils::ivec2 broadcast_params;
+    const float alpha_val;
+  } binary_ops_params{create_broadcast_params(*t_in1, *t_in2), alpha_val};
 
   std::string kernel_name("binary_");
   kernel_name.reserve(kShaderNameReserve);
@@ -83,16 +86,16 @@ void add_binary_op_node(
       {{out, vkapi::MemoryAccessType::WRITE},
        {{arg1, arg2}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->sizes_ubo(),
-       t_in1->sizes_ubo(),
-       t_in2->sizes_ubo(),
-       graph.create_params_buffer(broadcast_params),
-       graph.create_params_buffer(alpha_val)},
+      {},
       // Specialization Constants
       {t_out->hashed_layout(), t_in1->hashed_layout(), t_in2->hashed_layout()},
       // Resizing Logic
       resize_binary_op_node,
-      {}));
+      {},
+      {{graph.sizes_pc_of(out),
+        graph.sizes_pc_of(arg1),
+        graph.sizes_pc_of(arg2),
+        PushConstantDataInfo(&binary_ops_params, sizeof(binary_ops_params))}}));
 }
 
 #define DEFINE_BINARY_OP_WITH_ALPHA_FN(op_name)                          \
