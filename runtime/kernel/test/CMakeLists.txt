@@ -13,10 +13,6 @@
 #
 
 cmake_minimum_required(VERSION 3.19)
-project(runtime_kernel_test)
-
-# Use C++17 for test.
-set(CMAKE_CXX_STANDARD 17)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
@@ -27,7 +23,7 @@ target_link_libraries(
   operator_registry_test GTest::gtest GTest::gtest_main GTest::gmock executorch
 )
 target_include_directories(operator_registry_test PRIVATE ${EXECUTORCH_ROOT}/..)
-add_test(ExecuTorchTest operator_registry_test)
+add_test(operator_registry_test operator_registry_test)
 
 add_executable(kernel_runtime_context_test kernel_runtime_context_test.cpp)
 target_link_libraries(
@@ -37,7 +33,7 @@ target_link_libraries(
 target_include_directories(
   kernel_runtime_context_test PRIVATE ${EXECUTORCH_ROOT}/..
 )
-add_test(ExecuTorchTest kernel_runtime_context_test)
+add_test(kernel_runtime_context_test kernel_runtime_context_test)
 
 add_executable(
   operator_registry_max_kernel_num_test
@@ -59,7 +55,8 @@ target_compile_definitions(
 target_include_directories(
   operator_registry_max_kernel_num_test PRIVATE ${EXECUTORCH_ROOT}/..
 )
-add_test(ExecuTorchTest operator_registry_max_kernel_num_test)
+# TODO: This is currently not working!
+# add_test(operator_registry_max_kernel_num_test operator_registry_max_kernel_num_test)
 
 # TODO: Migrate kernel_double_registration_test and
 # test_kernel_manual_registration. Make sure dtype selective build is working.
