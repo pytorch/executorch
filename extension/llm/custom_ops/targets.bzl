@@ -81,7 +81,7 @@ def define_common_targets():
     runtime.python_library(
         name = "custom_ops_aot_py",
         srcs = [
-            "sdpa_with_kv_cache.py",
+            "custom_ops.py",
         ],
         visibility = [
             "//executorch/...",
