@@ -55,7 +55,7 @@ class ExtraTensorInfo:
     Check program.fbs for explanations of this enum.
     """
 
-    mutable_data_segments_idx: Optional[int] = 0
+    mutable_data_segments_idx: int = 0
     fully_qualified_name: Optional[str] = None
     location: Optional[DataLocation] = None
 
