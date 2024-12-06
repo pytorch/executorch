@@ -89,6 +89,7 @@ class CommandBuffer final {
 
   void bind_pipeline(VkPipeline, VkPipelineLayout, const utils::uvec3);
   void bind_descriptors(VkDescriptorSet);
+  void set_push_constants(VkPipelineLayout, const void*, uint32_t);
 
   void insert_barrier(PipelineBarrier& pipeline_barrier);
   void dispatch(const utils::uvec3&);
