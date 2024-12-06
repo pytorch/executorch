@@ -32,7 +32,7 @@ class MemoryFormatOpsPass(ExportPass):
     """
 
     def call_operator(self, op, args, kwargs, meta):
-        if not (isinstance(op, EdgeOpOverload) and op.__name__ in DimOrderOpsMap):
+        if not (isinstance(op, EdgeOpOverload) and op in DimOrderOpsMap):
             return super().call_operator(
                 op,
                 args,
@@ -61,10 +61,10 @@ class MemoryFormatOpsPass(ExportPass):
         nkwargs["dim_order"] = get_dim_order(mem_format, ndim)
         logger.debug(
             f"{op.__name__} = rank: {ndim}, memory_format: {mem_format}."
-            f" {DimOrderOpsMap[op.__name__].__name__} = dim_order: {nkwargs['dim_order']}"
+            f" {DimOrderOpsMap[op].__name__} = dim_order: {nkwargs['dim_order']}"
         )
 
-        t = DimOrderOpsMap[op.__name__]
+        t = DimOrderOpsMap[op]
 
         return super().call_operator(
             t,
@@ -80,7 +80,7 @@ class DimOrderOpsRevertPass(ExportPass):
     """
 
     def call_operator(self, op, args, kwargs, meta):
-        if not (isinstance(op, EdgeOpOverload) and op.__name__ in MemoryFormatOpsMap):
+        if not (isinstance(op, EdgeOpOverload) and op in MemoryFormatOpsMap):
             return super().call_operator(
                 op,
                 args,
@@ -109,10 +109,10 @@ class DimOrderOpsRevertPass(ExportPass):
 
         logger.debug(
             f" {op.__name__} = dim_order: {dim_order}."
-            f" {MemoryFormatOpsMap[op.__name__].__name__} = rank: {ndim}, memory_format: {nkwargs['memory_format']}."
+            f" {MemoryFormatOpsMap[op].__name__} = rank: {ndim}, memory_format: {nkwargs['memory_format']}."
         )
 
-        t = MemoryFormatOpsMap[op.__name__]
+        t = MemoryFormatOpsMap[op]
 
         return super().call_operator(
             t,
