@@ -43,6 +43,7 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
             "DEFAULT": "",
             "ovr_config//os:android": "--optimize",
             "ovr_config//os:linux": "--replace-u16vecn",
+            "ovr_config//os:windows": "--optimize --spv_debug",
         })
     )
 
