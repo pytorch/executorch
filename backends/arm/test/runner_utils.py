@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
-from executorch.backends.arm.test.conftest import arm_test_options, is_option_enabled
+from executorch.backends.arm.test.conftest import is_option_enabled
 
 from torch.export import ExportedProgram
 from torch.fx.node import Node
@@ -251,7 +251,7 @@ class RunnerUtil:
             cmd_line += f" -i {input_path}"
 
         ethos_u_extra_args = ""
-        if is_option_enabled(arm_test_options.fast_fvp):
+        if is_option_enabled("fast_fvp"):
             ethos_u_extra_args = ethos_u_extra_args + "--fast"
 
         command_args = {
