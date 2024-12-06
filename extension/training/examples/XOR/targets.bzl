@@ -34,7 +34,7 @@ def define_common_targets():
     runtime.python_library(
         name = "export_model_lib",
         srcs = ["export_model.py"],
-        visibility = [],
+        visibility = ["//executorch/extension/training/examples/XOR/..."],
         deps = [
             ":model",
             "//caffe2:torch",
