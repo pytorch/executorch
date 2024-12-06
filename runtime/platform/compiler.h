@@ -100,14 +100,8 @@
 #endif // (__cplusplus) >= 202002L
 
 /// Define a C symbol with weak linkage.
-#ifdef _MSC_VER
-// There currently doesn't seem to be a great way to do this in Windows and
-// given that weak linkage is not really critical on Windows, we'll just leave
-// it as a stub.
-#define ET_WEAK
-#else
+// Building on Windows also need this. Windows build uses clang-cl compiler, which supports __attribute__((weak)).
 #define ET_WEAK __attribute__((weak))
-#endif
 
 /**
  * Annotation marking a function as printf-like, providing compiler support
