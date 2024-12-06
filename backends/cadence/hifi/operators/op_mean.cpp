@@ -145,8 +145,7 @@ Tensor& mean_dim_out(
   ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, "mean.out", CTYPE_IN, [&] {
     ET_SWITCH_FLOATH_TYPES(out.scalar_type(), ctx, "mean.out", CTYPE_OUT, [&] {
       CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-      const size_t num =
-          torch::executor::exeget_reduced_dim_product(in, dim_list);
+      const size_t num = torch::executor::get_reduced_dim_product(in, dim_list);
       for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
         CTYPE_OUT sum = 0;
         if (in.numel() > 0) {
