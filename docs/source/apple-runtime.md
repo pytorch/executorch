@@ -25,7 +25,7 @@ The prebuilt ExecuTorch runtime, backend, and kernels are available as a [Swift 
 
 #### Xcode
 
-In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format "swiftpm-<version>", (e.g. "swiftpm-0.4.0"), or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-0.4.0-20241114") for a nightly build on a specific date.
+In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format "swiftpm-<version>", (e.g. "swiftpm-0.4.0"), or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-0.4.0-20241201") for a nightly build on a specific date.
 
 ![](_static/img/swiftpm_xcode1.png)
 
@@ -44,24 +44,30 @@ Click the screenshot below to watch the *demo video* on how to add the package a
 Add a package and target dependencies on ExecuTorch to your package file like this:
 
 ```swift
-// swift-tools-version:5.0
+// swift-tools-version:5.9
 import PackageDescription
 
 let package = Package(
   name: "YourPackageName",
+  platforms: [
+    .iOS(.v17),
+    .macOS(.v10_15),
+  ],
   products: [
     .library(name: "YourPackageName", targets: ["YourTargetName"]),
   ],
   dependencies: [
-    // Use "swiftpm-0.4.0.<year_month_day>" branch name for a nightly build.
-    .package(url: "https://github.com/pytorch/executorch.git", .branch("swiftpm-0.4.0"))
+    // Use "swiftpm-<version>.<year_month_day>" branch name for a nightly build.
+    .package(url: "https://github.com/pytorch/executorch.git", branch: "swiftpm-0.4.0")
   ],
   targets: [
     .target(
       name: "YourTargetName",
       dependencies: [
         .product(name: "executorch", package: "executorch"),
-        .product(name: "xnnpack_backend", package: "executorch")
+        .product(name: "backend_xnnpack", package: "executorch"),
+        .product(name: "kernels_portable", package: "executorch"),
+        // Add other backends and kernels as needed.
       ]),
   ]
 )
