@@ -1359,9 +1359,10 @@
     <span class="n">generate_error</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
     <span class="n">partitioner_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
 <span class="p">):</span>
-    <span class="n">warning_str</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Found </span><span class="si">{</span><span class="n">ops_set_to_not_decompose</span><span class="si">}</span><span class="s2"> in edge dialect program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.&quot;</span>
+    <span class="n">warning_str_end</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
     <span class="k">if</span> <span class="n">partitioner_name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">warning_str</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; This op was registered by the partitioner </span><span class="si">{</span><span class="n">partitioner_name</span><span class="si">}</span><span class="s2"> to not be decomposed.&quot;</span>
+        <span class="n">warning_str_end</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot;This op was registered by the partitioner </span><span class="si">{</span><span class="n">partitioner_name</span><span class="si">}</span><span class="s2"> to not be decomposed.</span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">warning_str_end</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot;The following ops: </span><span class="si">{</span><span class="n">ops_set_to_not_decompose</span><span class="si">}</span><span class="s2"> were specified to not be decomposed in </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.&quot;</span>
 
     <span class="c1"># Check that the ops that were registered to not be decomposed are not present in the</span>
     <span class="c1"># graph anymore as the transform passes and backends should have consumed them by now.</span>
@@ -1373,6 +1374,10 @@
         <span class="k">if</span> <span class="p">(</span>
             <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
         <span class="p">)</span> <span class="ow">and</span> <span class="n">is_op_supported</span><span class="p">:</span>
+            <span class="n">warning_str</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Node </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> with op </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="si">}</span><span class="s2"> was not decomposed or delegated.</span><span class="se">\n</span><span class="s2">&quot;</span>
+                <span class="o">+</span> <span class="n">warning_str_end</span>
+            <span class="p">)</span>
             <span class="k">if</span> <span class="n">generate_error</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="n">warning_str</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
@@ -1383,6 +1388,10 @@
             <span class="k">if</span> <span class="p">(</span>
                 <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
             <span class="p">)</span> <span class="ow">and</span> <span class="n">is_op_supported</span><span class="p">:</span>
+                <span class="n">warning_str</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Node </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> with op </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="si">}</span><span class="s2"> was not decomposed or delegated.</span><span class="se">\n</span><span class="s2">&quot;</span>
+                    <span class="o">+</span> <span class="n">warning_str_end</span>
+                <span class="p">)</span>
                 <span class="k">if</span> <span class="n">generate_error</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="n">warning_str</span><span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
