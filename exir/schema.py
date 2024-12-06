@@ -72,7 +72,6 @@ class Tensor:
 
     # check program.fbs for explanations.
     shape_dynamism: TensorShapeDynamism
-    location: DataLocation
     extra_tensor_info: Optional[ExtraTensorInfo] = None
 
 
