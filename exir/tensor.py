@@ -18,12 +18,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import executorch.exir.schema as schema
 import torch
 from executorch.exir.error import internal_assert
-from executorch.exir.schema import (
-    DataLocation,
-    ExtraTensorInfo,
-    ScalarType,
-    TensorShapeDynamism,
-)
+from executorch.exir.schema import ExtraTensorInfo, ScalarType, TensorShapeDynamism
 from executorch.exir.sym_util import eval_shape
 
 
@@ -138,7 +133,6 @@ class TensorSpec:
         const: bool = False,
         requires_grad: bool = False,
         extra_tensor_info: Optional[ExtraTensorInfo] = None,
-        location: DataLocation = DataLocation.SEGMENT,
     ) -> None:
         self.scalar_type = dtype
         self.const = const
@@ -154,7 +148,6 @@ class TensorSpec:
         self.init_mem_planning_fields()
         self.shape_dynamism: TensorShapeDynamism = determine_tensor_dynanism(self.shape)
         self.extra_tensor_info = extra_tensor_info
-        self.location = location
 
     @property
     def allocated_memory(self) -> int:
@@ -355,7 +348,6 @@ def make_tensor_value(
         allocation_info=allocation_info,
         layout=layout_enum(spec.layout),
         shape_dynamism=spec.shape_dynamism,
-        location=spec.location,
         extra_tensor_info=spec.extra_tensor_info,
     )
     return flatbuffer_tensor

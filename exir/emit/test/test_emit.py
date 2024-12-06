@@ -1642,10 +1642,8 @@ class TestEmit(unittest.TestCase):
 
             def forward(self, x):
                 return self.linear(x)
-        
-        model = to_edge(
-            export(LinearModule(), (torch.ones(5, 5),))
-        ).to_executorch(
+
+        model = to_edge(export(LinearModule(), (torch.ones(5, 5),))).to_executorch(
             config=ExecutorchBackendConfig(
                 external_constants=True,
             )
@@ -1655,8 +1653,10 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(len(emitter_output.program.constant_buffer), 1)
         # Check that constant weights are in the external constant buffer.
         self.assertEqual(len(emitter_output.external_constant_buffer), 2)
-        # Setting external_constants=True, saves all constants to the key 
+        # Setting external_constants=True, saves all constants to the key
         # '_default_external_constant'.
-        external_map = emitter_output.external_constant_map["_default_external_constant"]
+        external_map = emitter_output.external_constant_map[
+            "_default_external_constant"
+        ]
         self.assertEqual(external_map["linear.weight"], 0)
         self.assertEqual(external_map["linear.bias"], 1)
