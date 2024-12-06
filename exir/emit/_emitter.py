@@ -368,6 +368,13 @@ class _Emitter(torch.fx.Interpreter):
         if spec.const:
             # Tensor with a blob we need to serialize. May not actually be constant at runtime
             # if it's a weight with an associated gradient
+
+            if spec.storage.device.type == "mps":
+                spec.storage = spec.storage.cpu()
+            elif spec.storage.device.type != "cpu":
+                raise RuntimeError(
+                    f"Constant spec storage must be cpu or mps but found {spec.storage.device.type}."
+                )
             spec_array_type = (
                 ctypes.c_char * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
             )
