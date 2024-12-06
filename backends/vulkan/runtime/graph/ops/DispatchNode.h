@@ -19,6 +19,50 @@ namespace vkcompute {
 class ComputeGraph;
 
 /*
+ * Represents a push constant data entry
+ * Which is either shared pointer to a tensor's uniform data with an attribute
+ * Or data with a maximum size of 16 bytes
+ */
+class PushConstantDataInfo {
+  std::shared_ptr<api::vTensor::UniformData> tensorUniformData;
+  union Payload {
+    struct {
+      api::vTensor::Attribute attr;
+    };
+    struct {
+      uint8_t data[16];
+      uint32_t dataSize;
+    };
+  };
+
+  Payload payload_;
+
+ public:
+  explicit PushConstantDataInfo(
+      const std::shared_ptr<api::vTensor::UniformData>& tensorUniformData,
+      api::vTensor::Attribute attr)
+      : tensorUniformData(tensorUniformData) {
+    payload_.attr = attr;
+  }
+
+  explicit PushConstantDataInfo(const void* data, uint32_t dataLen)
+      : tensorUniformData(nullptr) {
+    VK_CHECK_COND(
+        dataLen <= 16, "Single push constant data size must be <= 16 bytes");
+    payload_.dataSize = dataLen;
+    memcpy(payload_.data, data, payload_.dataSize);
+  }
+
+  /*
+   * Function writes push constant data to the destination buffer
+   */
+  uint32_t write(
+      void* dst,
+      const uint32_t dst_offset,
+      const uint32_t max_dst_size) const;
+};
+
+/*
  * Represents a single shader execution op in a ML model.
  */
 class DispatchNode final : public ExecuteNode {
@@ -34,7 +78,8 @@ class DispatchNode final : public ExecuteNode {
       const vkapi::ParamsBindList& params,
       const vkapi::SpecVarList& spec_vars = {},
       const ResizeFunction& resize_fn = nullptr,
-      const std::vector<ValueRef>& resize_args = {});
+      const std::vector<ValueRef>& resize_args = {},
+      const std::vector<PushConstantDataInfo>& push_constants = {});
 
   ~DispatchNode() override = default;
 
@@ -46,6 +91,7 @@ class DispatchNode final : public ExecuteNode {
   const utils::uvec3 local_workgroup_size_;
   const vkapi::ParamsBindList params_;
   const vkapi::SpecVarList spec_vars_;
+  const std::vector<PushConstantDataInfo> push_constants_;
 
  public:
   operator bool() const {
