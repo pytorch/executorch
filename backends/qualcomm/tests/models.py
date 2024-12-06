@@ -461,6 +461,23 @@ class DivConstantLong(torch.nn.Module):
         return x / 10
 
 
+class DrawGraphModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.relu1 = torch.nn.ReLU()
+        self.relu2 = torch.nn.ReLU()
+        kernel_sz = 32
+        self.conv1 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=True)
+        self.conv2 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=True)
+
+    def forward(self, x):
+        x1 = self.conv1(x)
+        x2 = self.conv2(x)
+        y1 = self.relu1(x1)
+        y2 = self.relu1(x2)
+        return y1 + y2
+
+
 class EinsumBilinear(torch.nn.Module):
     def __init__(self):
         super().__init__()
