@@ -128,11 +128,19 @@ def get_coreml_partitioner(
             "block_size": 32,
             "weight_threshold": 512,
         }
+
+    assert ios == 18
+    print("OVERRIDING CONFIG TO BE 4B PER_CHANNEL")
+    op_linear_quantizer_config = {
+        "mode": "linear_symmetric",
+        "dtype": "int4",
+        "granularity": "per_channel",
+    }
     compile_specs = CoreMLBackend.generate_compile_specs(  # pyre-fixme[16]
         minimum_deployment_target=minimum_deployment_target,
         compute_precision=ct.precision(ct.precision.FLOAT16.value),
         # using `ComputeUnit.ALL` can increase the model load time, default to `ComputeUnit.CPU_AND_GPU`
-        compute_unit=ct.ComputeUnit[ct.ComputeUnit.CPU_AND_GPU.name.upper()],
+        compute_unit=ct.ComputeUnit[ct.ComputeUnit.CPU_AND_NE.name.upper()],
         model_type=CoreMLBackend.MODEL_TYPE.MODEL,  # pyre-fixme[16]
         op_linear_quantizer_config=op_linear_quantizer_config,
     )
@@ -142,6 +150,10 @@ def get_coreml_partitioner(
     return CoreMLPartitioner(  # pyre-fixme[16]
         compile_specs=compile_specs,
         take_over_mutable_buffer=take_over_mutable_buffer,
+        skip_ops_for_coreml_delegation=[
+            "quantized_decomposed.embedding_4bit.dtype",
+            "aten.embedding.default",
+        ],
     )
 
 
