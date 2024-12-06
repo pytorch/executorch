@@ -20,6 +20,7 @@ list(TRANSFORM _extension_module__srcs PREPEND "${EXECUTORCH_ROOT}/")
 if(CMAKE_TOOLCHAIN_IOS
    OR CMAKE_TOOLCHAIN_ANDROID
    OR APPLE
+   OR WIN32
 )
   # Building a share library on iOS requires code signing On Android we see
   # duplicated registration when using shared lib

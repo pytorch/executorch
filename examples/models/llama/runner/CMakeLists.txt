@@ -36,6 +36,11 @@ include(${EXECUTORCH_SRCS_FILE})
 
 # build llama_runner library
 list(TRANSFORM _llama_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
+if (WIN32)
+  set_property(TARGET extension_module PROPERTY
+              IMPORTED_IMPLIB "${EXECUTORCH_ROOT}/cmake-out/lib/extension_module.lib")
+
+endif()
 
 target_include_directories(
   extension_module INTERFACE ${_common_include_directories}
@@ -52,6 +57,7 @@ list(APPEND _llama_runner__srcs
 if(CMAKE_TOOLCHAIN_IOS
    OR ANDROID
    OR APPLE
+   OR WIN32
 )
   # Building a share library on iOS requires code signing On Android we see
   # duplicated registration when using shared lib
