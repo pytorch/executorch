@@ -880,9 +880,10 @@ def _sanity_check_graph_for_non_decomp_ops(
     generate_error=False,
     partitioner_name=None,
 ):
-    warning_str = f"Found {ops_set_to_not_decompose} in edge dialect program {name}."
+    warning_str_end = ""
     if partitioner_name is not None:
-        warning_str += f" This op was registered by the partitioner {partitioner_name} to not be decomposed."
+        warning_str_end += f"This op was registered by the partitioner {partitioner_name} to not be decomposed.\n"
+    warning_str_end += f"The following ops: {ops_set_to_not_decompose} were specified to not be decomposed in {name}."
 
     # Check that the ops that were registered to not be decomposed are not present in the
     # graph anymore as the transform passes and backends should have consumed them by now.
@@ -894,6 +895,10 @@ def _sanity_check_graph_for_non_decomp_ops(
         if (
             node.op == "call_function" and node.target in ops_set_to_not_decompose
         ) and is_op_supported:
+            warning_str = (
+                f"Node {node} with op {node.target} was not decomposed or delegated.\n"
+                + warning_str_end
+            )
             if generate_error:
                 raise RuntimeError(warning_str)
             else:
@@ -904,6 +909,10 @@ def _sanity_check_graph_for_non_decomp_ops(
             if (
                 node.op == "call_function" and node.target in ops_set_to_not_decompose
             ) and is_op_supported:
+                warning_str = (
+                    f"Node {node} with op {node.target} was not decomposed or delegated.\n"
+                    + warning_str_end
+                )
                 if generate_error:
                     raise RuntimeError(warning_str)
                 else:
