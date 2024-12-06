@@ -94,6 +94,8 @@
 // TODO: making an assumption that we have stderr
 #define TK_LOG_OUTPUT_FILE stderr
 
+namespace tokenizers {
+
 extern "C" {
 /**
  * Severity level of a log message. Values must map to printable 7-bit ASCII
@@ -134,8 +136,6 @@ inline void TK_INTERNAL_PLATFORM_WEAKNESS tk_pal_emit_log_message(
 }
 
 } // extern "C"
-namespace tokenizers {
-
 /**
  * Severity level of a log message. Must be ordered from lowest to highest
  * severity.
