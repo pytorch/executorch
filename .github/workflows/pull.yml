@@ -354,13 +354,11 @@ jobs:
         EXECUTORCH_BUILD_ARM_BAREMETAL=ON \
         .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
 
-        source .ci/scripts/utils.sh
         # Install Arm dependencies
-        install_arm
-
-        # Run pytest with coverage
-        pytest -c /dev/null -v -n auto --cov=./ --cov-report=xml backends/arm/test
-
+        .ci/scripts/setup-arm_baremetal.sh
+        
+        # Run pytest
+        .ci/scripts/test_arm_baremetal.sh test_pytest
 
   test-llama-runner-qnn-linux:
     name: test-llama-runner-qnn-linux

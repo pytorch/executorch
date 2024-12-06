@@ -55,17 +55,6 @@ install_flatc_from_source() {
   popd || return
 }
 
-install_arm() {
-  # NB: This function could be used to install Arm dependencies
-  # Setup arm example environment (including TOSA tools)
-  git config --global user.email "github_executorch@arm.com"
-  git config --global user.name "Github Executorch"
-  bash examples/arm/setup.sh --i-agree-to-the-contained-eula
-
-  # Test tosa_reference flow
-  source examples/arm/ethos-u-scratch/setup_path.sh
-}
-
 build_executorch_runner_buck2() {
   # Build executorch runtime with retry as this step is flaky on macos CI
   retry buck2 build //examples/portable/executor_runner:executor_runner
