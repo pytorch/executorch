@@ -146,7 +146,10 @@ lib.define(
     "quantized_fully_connected(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
     "Tensor weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset) -> (Tensor Z)"
 )
-
+lib.define(
+    "quantized_fully_connected.per_tensor(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
+    "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset) -> (Tensor Z)"
+)
 
 # ------------------------------------ #
 #   Migrated from custom_ops.ymal      #
@@ -191,6 +194,10 @@ lib.define("linalg_vector_norm.out(Tensor X, *, Tensor(a!) out) -> Tensor(a!)")
 lib.define(
     "quantized_fully_connected.out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
     "Tensor weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_fully_connected.per_tensor_out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
+    "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor weight_zero_points, "
@@ -595,6 +602,28 @@ def quantized_fully_connected_meta(
     bias: torch.Tensor,
     in_zero_point: int,
     weight_zero_point: torch.Tensor,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+    out_zero_point: int,
+    offset: Optional[torch.Tensor],
+) -> torch.Tensor:
+    # src comes in shape [leading_dims, in_dim]
+    # weight comes in shape [out_dim, in_dim]
+    # output comes in empty with shape [leading_dims, out_dim]
+    out_size = list(src.size())
+    weight_size = list(weight.size())
+    assert len(weight_size) == 2
+    out_size[-1] = weight_size[0]
+    return src.new_empty(out_size, dtype=src.dtype)
+
+
+@register_fake("cadence::quantized_fully_connected.per_tensor")
+def quantized_fully_connected_per_tensor_meta(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    in_zero_point: int,
+    weight_zero_point: int,
     out_multiplier: int,
     out_shift: int,
     out_zero_point: int,
@@ -607,7 +636,7 @@ def quantized_fully_connected_meta(
     weight_size = list(weight.size())
     assert len(weight_size) == 2
     out_size[-1] = weight_size[0]
-    return src.new_empty(out_size, dtype=torch.uint8)
+    return src.new_empty(out_size, dtype=src.dtype)
 
 
 @register_fake("cadence::convolution")
