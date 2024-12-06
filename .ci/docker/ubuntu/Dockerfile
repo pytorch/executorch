@@ -85,5 +85,7 @@ RUN if [ -n "${ARM_SDK}" ]; then git config --global user.email "ossci@example.c
 
 ARG QNN_SDK
 
+ARG MEDIATEK_SDK
+
 USER ci-user
 CMD ["bash"]
