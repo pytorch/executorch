@@ -95,6 +95,12 @@ BUCK_PLATFORM_MAP = {
             "c7d378f3f307e9590f0b29a5f7f1b21b8e784f4e4bd30a0160b2a69df50d2ee0"
         ],
     ),
+    ("windows", "x86_64"): BuckInfo(
+        archive_name="buck2-x86_64-pc-windows-msvc.exe.zst",
+        target_versions=[
+            "bf1685c4c4ddd9de4592b5a955cb7326fd01e6c4d5f561643422bed961a17401"
+        ],
+    ),
 }
 
 

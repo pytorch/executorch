@@ -243,7 +243,11 @@ class _BaseExtension(Extension):
             src_path = src_path.replace("%BUILD_TYPE%", cfg)
         else:
             # Remove %BUILD_TYPE% from the path.
+<<<<<<< HEAD
             src_path = src_path.replace("/%BUILD_TYPE%", "")
+=======
+            self.src = self.src.replace("%BUILD_TYPE%/", "")
+>>>>>>> 038fa5307 (fix windows build issue)
 
         # Construct the full source path, resolving globs. If there are no glob
         # pattern characters, this will just ensure that the source file exists.
@@ -291,7 +295,7 @@ class BuiltFile(_BaseExtension):
                 output is in a subdirectory named after the build type. For single-
                 config generators (like Makefile Generators or Ninja), this placeholder
                 will be removed.
-            src_name: The name of the file to install
+            src_name: The name of the file to install.
             dst: The path to install to, relative to the root of the pip
                 package. If dst ends in "/", it is treated as a directory.
                 Otherwise it is treated as a filename.
@@ -345,13 +349,17 @@ class BuiltFile(_BaseExtension):
 class BuiltExtension(_BaseExtension):
     """An extension that installs a python extension that was built by cmake."""
 
-    def __init__(self, src: str, modpath: str):
+    def __init__(self, src_dir: str, src_name: str, modpath: str):
         """Initializes a BuiltExtension.
 
         Args:
-            src: The path to the file to install (typically a shared library),
-                relative to the cmake-out directory. May be an fnmatch-style
-                glob that matches exactly one file. If the path ends in `.so`,
+            src_dir: The directory of the file to install, relative to the cmake-out
+                directory. A placeholder %BUILD_TYPE% will be replaced with the build
+                type for multi-config generators (like Visual Studio) where the build
+                output is in a subdirectory named after the build type. For single-
+                config generators (like Makefile Generators or Ninja), this placeholder
+                will be removed.
+            src_name: The name of the file to install. If the path ends in `.so`,
                 this class will also look for similarly-named `.dylib` files.
             modpath: The dotted path of the python module that maps to the
                 extension.
@@ -359,6 +367,7 @@ class BuiltExtension(_BaseExtension):
         assert (
             "/" not in modpath
         ), f"modpath must be a dotted python module path: saw '{modpath}'"
+        src = os.path.join(src_dir, src_name)
         # This is a real extension, so use the modpath as the name.
         super().__init__(src=f"%CMAKE_CACHE_DIR%/{src}", dst=modpath, name=modpath)
 
@@ -783,7 +792,9 @@ def get_ext_modules() -> List[Extension]:
             # portable kernels, and a selection of backends. This lets users
             # load and execute .pte files from python.
             BuiltExtension(
-                "_portable_lib.*", "executorch.extension.pybindings._portable_lib"
+                src_dir="%BUILD_TYPE%/", # Set the src directory based on build configuration for windows. 
+                src_name="_portable_lib.cp*", # Rename _portable_lib.* to _portable_lib.cp* to avoid _portable_lib.lib is selected on windows.
+                modpath="executorch.extension.pybindings._portable_lib",
             )
         )
         if ShouldBuild.training():
