@@ -43,20 +43,21 @@ class TensorShapeDynamism(IntEnum):
     DYNAMIC_UNBOUND = 2
 
 
+class DataLocation(IntEnum):
+    INLINE = 0
+    SEGMENT = 1
+    EXTERNAL = 2
+
+
 @dataclass
 class ExtraTensorInfo:
     """
     Check program.fbs for explanations of this enum.
     """
 
-    mutable_data_segments_idx: Optional[int] = None
+    mutable_data_segments_idx: Optional[int] = 0
     fully_qualified_name: Optional[str] = None
-
-
-class DataLocation(IntEnum):
-    INLINE = 0
-    SEGMENT = 1
-    EXTERNAL = 2
+    location: Optional[DataLocation] = None
 
 
 @dataclass
@@ -72,7 +73,6 @@ class Tensor:
 
     # check program.fbs for explanations.
     shape_dynamism: TensorShapeDynamism
-    location: DataLocation
     extra_tensor_info: Optional[ExtraTensorInfo] = None
 
 
