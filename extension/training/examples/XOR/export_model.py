@@ -18,6 +18,21 @@ from torch.export import export
 from torch.export.experimental import _export_forward_backward
 
 
+def _export_model():
+    net = TrainingNet(Net())
+    x = torch.randn(1, 2)
+
+    # Captures the forward graph. The graph will look similar to the model definition now.
+    # Will move to export_for_training soon which is the api planned to be supported in the long term.
+    ep = export(net, (x, torch.ones(1, dtype=torch.int64)))
+    # Captures the backward graph. The exported_program now contains the joint forward and backward graph.
+    ep = _export_forward_backward(ep)
+    # Lower the graph to edge dialect.
+    ep = to_edge(ep)
+    # Lower the graph to executorch.
+    ep = ep.to_executorch()
+
+
 def main() -> None:
     torch.manual_seed(0)
     parser = argparse.ArgumentParser(
@@ -32,18 +47,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    net = TrainingNet(Net())
-    x = torch.randn(1, 2)
-
-    # Captures the forward graph. The graph will look similar to the model definition now.
-    # Will move to export_for_training soon which is the api planned to be supported in the long term.
-    ep = export(net, (x, torch.ones(1, dtype=torch.int64)))
-    # Captures the backward graph. The exported_program now contains the joint forward and backward graph.
-    ep = _export_forward_backward(ep)
-    # Lower the graph to edge dialect.
-    ep = to_edge(ep)
-    # Lower the graph to executorch.
-    ep = ep.to_executorch()
+    ep = _export_model()
 
     # Write out the .pte file.
     os.makedirs(args.outdir, exist_ok=True)
