@@ -102,6 +102,19 @@ class OpWrapper final {
   const std::string GetOpType() {
     return op_type_;
   }
+  const std::string GetName() {
+    return name_;
+  }
+  const std::string GetPackageName() {
+    return package_name_;
+  }
+  std::vector<ParamWrapper*> GetRawParams() const {
+    std::vector<ParamWrapper*> raw_params;
+    for (const auto& param : params_) {
+      raw_params.push_back(param.get());
+    }
+    return raw_params;
+  }
   Qnn_OpConfig_t GetOpConfig();
 
  private:
