@@ -8,6 +8,8 @@
 set -euo pipefail
 
 unset CMAKE_PREFIX_PATH
+unset XTENSA_CORE
+export XTENSA_CORE=nxp_rt600_RI23_11_newlib
 git submodule sync
 git submodule update --init
 ./install_requirements.sh
@@ -53,7 +55,7 @@ if $STEPWISE_BUILD; then
         -DHAVE_FNMATCH_H=OFF \
         -Bcmake-out/backends/cadence \
         backends/cadence
-    cmake --build cmake-out/backends/cadence  -j16
+    cmake --build cmake-out/backends/cadence  -j8
 else
     echo "Building Cadence toolchain with ExecuTorch packages"
     cmake_prefix_path="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
@@ -79,7 +81,7 @@ else
         -DEXECUTORCH_NNLIB_OPT=ON \
         -DHAVE_FNMATCH_H=OFF \
         -Bcmake-out
-    cmake --build cmake-out --target install --config Release -j16
+    cmake --build cmake-out --target install --config Release -j8
 fi
 
 echo "Run simple model to verify cmake build"

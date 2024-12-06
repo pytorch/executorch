@@ -257,7 +257,7 @@ class TestDepthwiseConv(unittest.TestCase):
     )  # Works
 
     @parameterized.expand(testsuite_conv2d, skip_on_empty=True)
-    @conftest.expectedFailureOnFVP
+    @unittest.expectedFailure
     def test_dw_conv2d_u55_BI(
         self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
     ):

@@ -182,9 +182,9 @@ Adapter::Adapter(
   VkImage image = VK_NULL_HANDLE;
   VkResult res =
       vkCreateImage(device_.handle, &image_create_info, nullptr, &image);
-  if (res == VK_ERROR_FEATURE_NOT_PRESENT) {
+  if (res != VK_SUCCESS) {
     linear_tiling_3d_enabled_ = false;
-  } else if (res == VK_SUCCESS) {
+  } else {
     vkDestroyImage(device_.handle, image, nullptr);
   }
   return;
