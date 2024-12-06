@@ -13,6 +13,7 @@
 #include <executorch/examples/qualcomm/oss_scripts/llama3_2/runner/runner.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/llm/runner/util.h>
+#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
@@ -70,9 +71,17 @@ Runner::Runner(
   vocab_size_ = vocab_size;
   tokenizer_ = example::get_tiktoken_for_llama();
   Error err = tokenizer_->load(tokenizer_path_);
-  ET_CHECK_MSG(
-      err == Error::Ok, "failed to load tokenizer %s", tokenizer_path_.c_str());
-  eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
+  if (err == Error::InvalidArgument) {
+    ET_LOG(
+        Info,
+        "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
+        tokenizer_path_.c_str());
+    tokenizer_.reset();
+    tokenizer_ = std::make_unique<executorch::extension::llm::BPETokenizer>();
+    tokenizer_->load(tokenizer_path_);
+  } else {
+    eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
+  }
   bos_id_ = tokenizer_->bos_tok();
   eos_id_.insert(tokenizer_->eos_tok());
 
@@ -182,18 +191,19 @@ Error Runner::generate(
     stats_.model_load_end_ms = time_in_ms();
   }
   std::string post_process_prompt;
-
-  if (!system_prompt.empty()) {
-    post_process_prompt.append(
-        "<|start_header_id|>system<|end_header_id|>\n\n");
-    post_process_prompt.append(system_prompt);
-    post_process_prompt.append("<|eot_id|>\n");
-  }
-  post_process_prompt.append("<|start_header_id|>user<|end_header_id|>\n\n");
   post_process_prompt.append(prompt);
-  post_process_prompt.append(
-      "<|eot_id|><|start_header_id|>assistant<|end_header_id|>");
-  token_callback("<|begin_of_text|>");
+
+  // if (!system_prompt.empty()) {
+  //   post_process_prompt.append(
+  //       "<|start_header_id|>system<|end_header_id|>\n\n");
+  //   post_process_prompt.append(system_prompt);
+  //   post_process_prompt.append("<|eot_id|>\n");
+  // }
+  // post_process_prompt.append("<|start_header_id|>user<|end_header_id|>\n\n");
+  // post_process_prompt.append(prompt);
+  // post_process_prompt.append(
+  //     "<|eot_id|><|start_header_id|>assistant<|end_header_id|>");
+  // token_callback("<|begin_of_text|>");
 
   stats_.inference_start_ms = time_in_ms();
 
