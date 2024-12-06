@@ -271,6 +271,16 @@ def annotate_relu(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.cos.default])
+def annotate_cos(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.sin.default])
+def annotate_sin(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.tanh.default])
 def annotate_tanh(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)

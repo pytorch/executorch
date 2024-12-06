@@ -249,7 +249,7 @@ def gen_oplist(
     _dump_yaml(
         sorted(op_set),
         output_path,
-        os.path.basename(source_name) if source_name else None,
+        source_name,
         et_kernel_metadata,
         include_all_operators,
     )

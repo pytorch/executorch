@@ -124,8 +124,8 @@ class IoMemMgr {
 
   struct IoInfo {
     InfoAttrs input_token;
-    InfoAttrs pos_idx;
     InfoAttrs atten_mask;
+    InfoAttrs pos_idx;
     InfoAttrs k_caches_read;
     InfoAttrs k_caches_write;
     InfoAttrs v_caches_read;
@@ -133,8 +133,8 @@ class IoMemMgr {
     InfoAttrs logit;
     std::vector<InfoAttrs*> tensor_info{
         &input_token,
-        &pos_idx,
         &atten_mask,
+        &pos_idx,
         &k_caches_read,
         &k_caches_write,
         &v_caches_read,
@@ -252,8 +252,8 @@ class Runner {
   executorch::runtime::Result<executorch::aten::Tensor> run_model_step(
       int64_t input_token,
       ::executorch::extension::TensorPtr& token,
-      ::executorch::extension::TensorPtr& start_pos,
       ::executorch::extension::TensorPtr& atten_mask,
+      ::executorch::extension::TensorPtr& start_pos,
       std::vector<::executorch::extension::TensorPtr>& kv_tensors,
       std::vector<::executorch::extension::TensorPtr>& kv_outputs);
   // metadata
