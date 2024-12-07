@@ -67,16 +67,17 @@ table ExtraTensorInfo {
   // [Optional] Specifies the SubsegmentOffsets in
   //  program.mutable_data_segments that specifies where the data is located in.
   //  If not present and the data is located in a segment, then the data is in
-  //  the first index.
+  //  index zero.
   mutable_data_segments_idx: uint64;
 
   // [Optional] The unique name of the tensor. e.g. 'mod.linear.weight'
   fully_qualified_name: string;
 
-  // [Optional] Specifies where the tensor is stored; either in the constant segment
-  // (default case) or an external location. If a constant tensor is stored externally,
-  // data_buffer_idx is not relevant; use extra_tensor_info.fully_qualified_name to
-  // match up the external tensor.
+  // [Optional] Specifies where the tensor's data is stored.
+  // - SEGMENT (default): Data is stored in a segment.
+  // - EXTERNAL: Data is stored outside of the PTE file. fully_qualified_name
+  //   must be non-empty, and is used as a key to find the tensor's external
+  //   data. Tensor.data_buffer_idx is ignored.
   location: TensorDataLocation;
 }
 

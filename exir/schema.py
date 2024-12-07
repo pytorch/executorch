@@ -44,7 +44,7 @@ class TensorShapeDynamism(IntEnum):
 
 
 class TensorDataLocation(IntEnum):
-    CONSTANT_SEGMENT = 0
+    SEGMENT = 0
     EXTERNAL = 1
 
 
@@ -56,7 +56,7 @@ class ExtraTensorInfo:
 
     mutable_data_segments_idx: int = 0
     fully_qualified_name: Optional[str] = None
-    location: TensorDataLocation = TensorDataLocation.CONSTANT_SEGMENT
+    location: TensorDataLocation = TensorDataLocation.SEGMENT
 
 
 @dataclass
