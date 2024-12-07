@@ -86,3 +86,10 @@ class TestGenericAnnotator(unittest.TestCase):
         self.check_annotation(
             SingleOpModel(torch.flip, (torch.randn(2, 4),), dims=(0, 1)),
         )
+
+    def test_concat(self):
+        self.check_annotation(
+            SingleOpModel(
+                torch.concatenate, ((torch.randn(2, 3), torch.randn(2, 3)),), dim=0
+            ),
+        )
