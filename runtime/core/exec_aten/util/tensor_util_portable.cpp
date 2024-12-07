@@ -75,7 +75,9 @@ bool tensor_is_default_or_channels_last_dim_order(torch::executor::Tensor t) {
 
 bool tensor_is_default_dim_order(torch::executor::Tensor t) {
   bool ret_val =
-      is_contiguous_dim_order(t.dim_order().data(), t.dim_order().size());
+      is_contiguous_dim_order(t.dim_order().data(), t.dim_order().size()) ||
+      can_be_interpreted_as_channels_last_and_contiguous(
+          t.sizes().data(), t.dim());
 
   if (!ret_val) {
     ET_LOG(Error, "Expected tensor to have default dim order, but got");
@@ -92,7 +94,9 @@ bool tensor_is_default_dim_order(torch::executor::Tensor t) {
 
 bool tensor_is_channels_last_dim_order(torch::executor::Tensor t) {
   bool ret_val =
-      is_channels_last_dim_order(t.dim_order().data(), t.dim_order().size());
+      is_channels_last_dim_order(t.dim_order().data(), t.dim_order().size()) ||
+      can_be_interpreted_as_channels_last_and_contiguous(
+          t.sizes().data(), t.dim());
 
   if (!ret_val) {
     ET_LOG(Error, "Expected tensor to have channels last dim order, but got");
@@ -116,13 +120,18 @@ bool tensors_have_same_dim_order(
   bool all_channels_last = true;
   for (size_t i = 0; i < tensor_list.size(); ++i) {
     all_contiguous = all_contiguous &&
-        is_contiguous_dim_order(
-                         tensor_list[i].dim_order().data(),
-                         tensor_list[i].dim_order().size());
+        (is_contiguous_dim_order(
+             tensor_list[i].dim_order().data(),
+             tensor_list[i].dim_order().size()) ||
+         can_be_interpreted_as_channels_last_and_contiguous(
+             tensor_list[i].sizes().data(), tensor_list[i].dim()));
+
     all_channels_last = all_channels_last &&
-        is_channels_last_dim_order(
-                            tensor_list[i].dim_order().data(),
-                            tensor_list[i].dim_order().size());
+        (is_channels_last_dim_order(
+             tensor_list[i].dim_order().data(),
+             tensor_list[i].dim_order().size()) ||
+         can_be_interpreted_as_channels_last_and_contiguous(
+             tensor_list[i].sizes().data(), tensor_list[i].dim()));
   }
 
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
