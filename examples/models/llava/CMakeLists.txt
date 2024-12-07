@@ -81,7 +81,7 @@ if(LLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE)
 else()
   find_package(Torch CONFIG REQUIRED)
 endif()
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
+add_definitions(-D_GLIBCXX_USE_CXX11_ABI=1)
 
 #
 # llava_main: test binary to run llava, with tokenizer and sampler integrated
