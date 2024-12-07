@@ -1633,3 +1633,30 @@ class TestEmit(unittest.TestCase):
         input = torch.zeros(1)
         executorch_model(input)
         self.assertEqual(input, torch.ones(1))
+
+    def test_constant_tagged_tensors(self) -> None:
+        class LinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(5, 5)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        model = to_edge(export(LinearModule(), (torch.ones(5, 5),))).to_executorch(
+            config=ExecutorchBackendConfig(
+                external_constants=True,
+            )
+        )
+        emitter_output = model._emitter_output
+        # Check that constant_buffer is empty besides the non-constant placeholder 0.
+        self.assertEqual(len(emitter_output.program.constant_buffer), 1)
+        # Check that constant weights are in the external constant buffer.
+        self.assertEqual(len(emitter_output.external_constant_buffer), 2)
+        # Setting external_constants=True, saves all constants to the key
+        # '_default_external_constant'.
+        external_map = emitter_output.external_constant_map[
+            "_default_external_constant"
+        ]
+        self.assertEqual(external_map["linear.weight"], 0)
+        self.assertEqual(external_map["linear.bias"], 1)

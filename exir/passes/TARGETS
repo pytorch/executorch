@@ -10,6 +10,7 @@ python_library(
     deps = [
         ":const_prop_pass",
         ":debug_handle_generator_pass",
+        ":external_constants_pass",
         ":insert_write_back_for_buffers_pass",
         ":memory_format_ops_pass",
         ":memory_planning_pass",
@@ -51,6 +52,16 @@ python_library(
     deps = [
         "//executorch/exir:error",
         "//executorch/exir:pass_manager",
+    ],
+)
+
+python_library(
+    name = "external_constants_pass",
+    srcs = [
+        "external_constants_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
     ],
 )
 

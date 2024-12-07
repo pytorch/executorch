@@ -33,6 +33,7 @@ from executorch.exir.passes import (
     MemoryFormatOpsPass,
     OpReplacePass,
 )
+from executorch.exir.passes.external_constants_pass import external_constants_pass
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
@@ -1380,6 +1381,9 @@ class EdgeProgramManager:
                 )
             else:
                 new_gm_res = memory_planning_pass(new_gm)  # pyre-ignore[29]
+
+            if config.external_constants:
+                new_gm_res = external_constants_pass(new_gm_res)
             assert new_gm_res is not None
             new_gm = new_gm_res.graph_module
 
