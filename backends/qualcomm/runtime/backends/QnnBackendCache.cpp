@@ -109,7 +109,8 @@ Error QnnBackendCache::Configure() {
   QNN_EXECUTORCH_LOG_INFO("Caching: Caching is in RESTORE MODE.");
   flatbuffers::Verifier verifier_binary_info(
       static_cast<const uint8_t* const>(qnn_context_blob_.buffer),
-      qnn_context_blob_.nbytes);
+      qnn_context_blob_.nbytes,
+      fb_opt_);
   if (!qnn_delegate::VerifyBinaryInfoBuffer(verifier_binary_info)) {
     QNN_EXECUTORCH_LOG_ERROR("Fail to verify binary info");
     return Error::Internal;
@@ -117,17 +118,19 @@ Error QnnBackendCache::Configure() {
 
   auto binary_info = GetBinaryInfo(qnn_context_blob_.buffer);
   Error status = GetQnnGraphInfoFromBinary(
-      const_cast<uint8_t*>(binary_info->data()->data()),
-      binary_info->data()->size());
+      const_cast<uint8_t*>(binary_info->context_data()->Data()),
+      binary_info->context_data()->size());
 
   if (status == Error::Internal) {
     // check if context binary came from flatbuffer
     flatbuffers::Verifier verifier(
-        binary_info->data()->data(), binary_info->data()->size());
+        binary_info->context_data()->Data(),
+        binary_info->context_data()->size(),
+        fb_opt_);
 
     if (qcir::VerifyContextBuffer(verifier)) {
       state_ = ONLINE_PREPARE;
-      auto context = qcir::GetContext(binary_info->data()->data());
+      auto context = qcir::GetContext(binary_info->context_data()->Data());
       for (const auto& graph : *context->graphs()) {
         graph_names_.emplace_back(graph->name()->str());
       }
