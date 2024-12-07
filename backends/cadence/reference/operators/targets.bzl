@@ -7,6 +7,9 @@ def define_common_targets():
         srcs = glob([
             "*.cpp",
         ]),
+        exported_headers =glob([
+            "*.h",
+        ]),
         platforms = CXX,
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
