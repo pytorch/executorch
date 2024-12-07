@@ -53,14 +53,12 @@ enum TensorShapeDynamism : byte {
   DYNAMIC_UNBOUND = 2,
 }
 
-// Indicates where a piece of data is stored.
-enum DataLocation : byte {
-  // Stored directly in the flatbuffer.
-  INLINE = 0,
-  // Stored in a segment.
-  SEGMENT = 1,
-  // Stored outside of the flatbuffer.
-  EXTERNAL = 2,
+// Indicates where a tensor is stored.
+enum TensorDataLocation : byte {
+  // Stored in the constant segment of the PTE file.
+  CONSTANT_SEGMENT = 0,
+  // Stored outside of the PTE file.
+  EXTERNAL = 1,
 }
 
 // Table to put additional information about tensors in that is not applicable
@@ -75,11 +73,11 @@ table ExtraTensorInfo {
   // [Optional] The unique name of the tensor. e.g. 'mod.linear.weight'
   fully_qualified_name: string;
 
-  // [Optional] Specifies where the tensor is stored; either in a segment or external
-  // location. If a constant tensor is stored externally, data_buffer_idx
-  // is not relevant; use extra_tensor_info.fully_qualified_name to match up
-  // the external tensor.
-  location: DataLocation;
+  // [Optional] Specifies where the tensor is stored; either in the constant segment
+  // (default case) or an external location. If a constant tensor is stored externally,
+  // data_buffer_idx is not relevant; use extra_tensor_info.fully_qualified_name to
+  // match up the external tensor.
+  location: TensorDataLocation;
 }
 
 table Tensor {
@@ -288,6 +286,14 @@ table Frame {
 table FrameList {
   // For storing the frames to print stacktraces
   items: [Frame];
+}
+
+// Indicates where a piece of data is stored.
+enum DataLocation : byte {
+  // Stored directly in the flatbuffer.
+  INLINE = 0,
+  // Stored in a segment.
+  SEGMENT = 1,
 }
 
 // Indicates where the delegate data is stored

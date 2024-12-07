@@ -43,10 +43,9 @@ class TensorShapeDynamism(IntEnum):
     DYNAMIC_UNBOUND = 2
 
 
-class DataLocation(IntEnum):
-    INLINE = 0
-    SEGMENT = 1
-    EXTERNAL = 2
+class TensorDataLocation(IntEnum):
+    CONSTANT_SEGMENT = 0
+    EXTERNAL = 1
 
 
 @dataclass
@@ -57,7 +56,7 @@ class ExtraTensorInfo:
 
     mutable_data_segments_idx: int = 0
     fully_qualified_name: Optional[str] = None
-    location: Optional[DataLocation] = None
+    location: TensorDataLocation = TensorDataLocation.CONSTANT_SEGMENT
 
 
 @dataclass
@@ -228,6 +227,11 @@ class Frame:
 @dataclass
 class FrameList:
     items: List[Frame]
+
+
+class DataLocation(IntEnum):
+    INLINE = 0
+    SEGMENT = 1
 
 
 @dataclass
