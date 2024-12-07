@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import executorch.exir.schema as schema
 import torch
 from executorch.exir.error import internal_assert
-from executorch.exir.schema import ScalarType, TensorShapeDynamism
+from executorch.exir.schema import ExtraTensorInfo, ScalarType, TensorShapeDynamism
 from executorch.exir.sym_util import eval_shape
 
 
@@ -132,6 +132,7 @@ class TensorSpec:
         is_sparse: bool = False,
         const: bool = False,
         requires_grad: bool = False,
+        extra_tensor_info: Optional[ExtraTensorInfo] = None,
     ) -> None:
         self.scalar_type = dtype
         self.const = const
@@ -146,6 +147,7 @@ class TensorSpec:
         self.is_sparse = is_sparse
         self.init_mem_planning_fields()
         self.shape_dynamism: TensorShapeDynamism = determine_tensor_dynanism(self.shape)
+        self.extra_tensor_info = extra_tensor_info
 
     @property
     def allocated_memory(self) -> int:
@@ -346,6 +348,7 @@ def make_tensor_value(
         allocation_info=allocation_info,
         layout=layout_enum(spec.layout),
         shape_dynamism=spec.shape_dynamism,
+        extra_tensor_info=spec.extra_tensor_info,
     )
     return flatbuffer_tensor
 
