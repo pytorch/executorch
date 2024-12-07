@@ -55,8 +55,8 @@ enum TensorShapeDynamism : byte {
 
 // Indicates where a tensor is stored.
 enum TensorDataLocation : byte {
-  // Stored in the constant segment of the PTE file.
-  CONSTANT_SEGMENT = 0,
+  // Stored in a segment of the PTE file.
+  SEGMENT = 0,
   // Stored outside of the PTE file.
   EXTERNAL = 1,
 }
