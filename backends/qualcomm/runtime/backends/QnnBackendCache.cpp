@@ -52,6 +52,9 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary(
   } else if (binaryinfo->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_2) {
     num_graphs = binaryinfo->contextBinaryInfoV2.numGraphs;
     graphs = binaryinfo->contextBinaryInfoV2.graphs;
+  } else if (binaryinfo->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_3) {
+    num_graphs = binaryinfo->contextBinaryInfoV3.numGraphs;
+    graphs = binaryinfo->contextBinaryInfoV3.graphs;
   } else {
     QNN_EXECUTORCH_LOG_WARN(
         "Unknown QNN BinaryInfo version %d.", binaryinfo->version);
@@ -63,6 +66,8 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary(
       RetrieveGraphInfo<QnnSystemContext_GraphInfoV1_t>(graphs[i].graphInfoV1);
     } else if (graphs->version == QNN_SYSTEM_CONTEXT_GRAPH_INFO_VERSION_2) {
       RetrieveGraphInfo<QnnSystemContext_GraphInfoV2_t>(graphs[i].graphInfoV2);
+    } else if (graphs->version == QNN_SYSTEM_CONTEXT_GRAPH_INFO_VERSION_3) {
+      RetrieveGraphInfo<QnnSystemContext_GraphInfoV3_t>(graphs[i].graphInfoV3);
     } else {
       QNN_EXECUTORCH_LOG_WARN(
           "Unknown QNN GraphInfo version %d.", binaryinfo->version);
