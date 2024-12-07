@@ -193,6 +193,7 @@ class LLMEdgeManager:
                     dynamic_shapes=dynamic_shape,
                     strict=True,
                 )
+                exported_module.run_decomposition({})
             else:
                 logging.info("Exporting with:")
                 logging.info(f"inputs: {self.example_inputs}")
