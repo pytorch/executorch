@@ -26,7 +26,13 @@ except:
 
     import executorch
 
-    executorch_package_path = executorch.__path__[0]
+    # This is needed to ensure that custom ops are registered
+    from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
+
+    # Ideally package is installed in only one location but usage of
+    # PYATHONPATH can result in multiple locations.
+    # ATM this is mainly used in CI for qnn runner. Will need to revisit this
+    executorch_package_path = executorch.__path__[-1]
     logging.info(f"Looking for libcustom_ops_aot_lib.so in {executorch_package_path}")
     libs = list(
         glob.glob(
