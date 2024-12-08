@@ -113,7 +113,7 @@ python_library(
 
 python_library(
     name = "arm_model_evaluator",
-    src = [
+    srcs = [
         "util/arm_model_evaluator.py",
     ],
     typing = True,

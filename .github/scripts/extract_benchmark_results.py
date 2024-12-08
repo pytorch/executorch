@@ -310,6 +310,7 @@ def transform(
     workflow_run_attempt: int,
     job_name: str,
     job_id: int,
+    schema_version: str,
 ) -> List:
     """
     Transform the benchmark results into the format writable into the benchmark database
@@ -319,45 +320,91 @@ def transform(
     for r in benchmark_results:
         r["deviceInfo"]["device"] = job_name
 
-    # TODO (huydhn): This is the current schema of the database oss_ci_benchmark_v2,
-    # and I'm trying to fit ET benchmark results into it, which is kind of awkward.
-    # However, the schema is going to be updated soon
-    return [
-        {
-            # GH-info to identify where the benchmark is run
-            "repo": repo,
-            "head_branch": head_branch,
-            "workflow_id": workflow_run_id,
-            "run_attempt": workflow_run_attempt,
-            "job_id": job_id,
-            # The model
-            "name": f"{r['benchmarkModel']['name']} {r['benchmarkModel'].get('backend', '')}".strip(),
-            "dtype": (
-                r["benchmarkModel"]["quantization"]
-                if r["benchmarkModel"]["quantization"]
-                else "unknown"
-            ),
-            # The metric value
-            "metric": r["metric"],
-            "actual": r["actualValue"],
-            "target": r["targetValue"],
-            # The device
-            "device": r["deviceInfo"]["device"],
-            "arch": r["deviceInfo"].get("os", ""),
-            # Not used here, just set it to something unique here
-            "filename": workflow_name,
-            "test_name": app_type,
-            "runner": job_name,
-        }
-        for r in benchmark_results
-    ]
+    if schema_version == "v2":
+        # TODO (huydhn): Clean up this branch after ExecuTorch dashboard migrates to v3
+        return [
+            {
+                # GH-info to identify where the benchmark is run
+                "repo": repo,
+                "head_branch": head_branch,
+                "workflow_id": workflow_run_id,
+                "run_attempt": workflow_run_attempt,
+                "job_id": job_id,
+                # The model
+                "name": f"{r['benchmarkModel']['name']} {r['benchmarkModel'].get('backend', '')}".strip(),
+                "dtype": (
+                    r["benchmarkModel"]["quantization"]
+                    if r["benchmarkModel"]["quantization"]
+                    else "unknown"
+                ),
+                # The metric value
+                "metric": r["metric"],
+                "actual": r["actualValue"],
+                "target": r["targetValue"],
+                # The device
+                "device": r["deviceInfo"]["device"],
+                "arch": r["deviceInfo"].get("os", ""),
+                # Not used here, just set it to something unique here
+                "filename": workflow_name,
+                "test_name": app_type,
+                "runner": job_name,
+            }
+            for r in benchmark_results
+        ]
+    elif schema_version == "v3":
+        quantization = (
+            r["benchmarkModel"]["quantization"]
+            if r["benchmarkModel"]["quantization"]
+            else "unknown"
+        )
+        # From https://github.com/pytorch/pytorch/wiki/How-to-integrate-with-PyTorch-OSS-benchmark-database
+        return [
+            {
+                "benchmark": {
+                    "name": "ExecuTorch",
+                    "mode": "inference",
+                    "dtype": quantization,
+                    "extra_info": {
+                        "app_type": app_type,
+                    },
+                },
+                "model": {
+                    "name": r["benchmarkModel"]["name"],
+                    "type": "OSS model",
+                    "backend": r["benchmarkModel"].get("backend", ""),
+                    "extra_info": {
+                        "quantization": quantization,
+                    },
+                },
+                "metric": {
+                    "name": r["metric"],
+                    "benchmark_values": [r["actualValue"]],
+                    "target_value": r["targetValue"],
+                    "extra_info": {
+                        "method": r.get("method", ""),
+                    },
+                },
+                "runners": [
+                    {
+                        "name": r["deviceInfo"]["device"],
+                        "type": r["deviceInfo"]["os"],
+                        "avail_mem_in_gb": r["deviceInfo"].get("availMem", ""),
+                        "total_mem_in_gb": r["deviceInfo"].get("totalMem", ""),
+                    }
+                ],
+            }
+            for r in benchmark_results
+        ]
 
 
 def main() -> None:
     args = parse_args()
 
-    # Across all devices
-    all_benchmark_results = []
+    # Across all devices, keeping both schemas for now until ExecuTorch dashboard migrates to v3
+    all_benchmark_results = {
+        "v2": [],
+        "v3": [],
+    }
 
     with open(args.artifacts) as f:
         for artifact in json.load(f):
@@ -384,23 +431,31 @@ def main() -> None:
                 )
 
             if benchmark_results:
-                benchmark_results = transform(
-                    app_type,
-                    benchmark_results,
-                    args.repo,
-                    args.head_branch,
-                    args.workflow_name,
-                    args.workflow_run_id,
-                    args.workflow_run_attempt,
-                    job_name,
-                    extract_job_id(args.artifacts),
-                )
-                all_benchmark_results.extend(benchmark_results)
+                for schema in all_benchmark_results.keys():
+                    results = transform(
+                        app_type,
+                        benchmark_results,
+                        args.repo,
+                        args.head_branch,
+                        args.workflow_name,
+                        args.workflow_run_id,
+                        args.workflow_run_attempt,
+                        job_name,
+                        extract_job_id(args.artifacts),
+                        schema,
+                    )
+                    all_benchmark_results[schema].extend(results)
 
-    if all_benchmark_results:
+    for schema in all_benchmark_results.keys():
+        if not all_benchmark_results.get(schema):
+            continue
+
+        output_dir = os.path.join(args.output_dir, schema)
+        os.makedirs(output_dir, exist_ok=True)
+
         output_file = os.path.basename(args.artifacts)
-        with open(f"{args.output_dir}/{output_file}", "w") as f:
-            json.dump(all_benchmark_results, f)
+        with open(f"{output_dir}/{output_file}", "w") as f:
+            json.dump(all_benchmark_results[schema], f)
 
 
 if __name__ == "__main__":

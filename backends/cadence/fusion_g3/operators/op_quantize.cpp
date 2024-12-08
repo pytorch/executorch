@@ -31,7 +31,7 @@ enum datatype { Ushort = 20, Bits4u = 21, Bits4 = 22 };
  */
 namespace cadence {
 namespace impl {
-namespace FusionG3 {
+namespace G3 {
 namespace native {
 
 namespace {
@@ -364,8 +364,8 @@ void quantize_impl(
 
 #undef ASYM_CALCULATE_FLOAT_TYPE_TENSOR
 #undef ASYM_CALCULATE_FLOAT_TYPE_CHANNEL
-#undef ASYM_ASYM_QUANTIZE_IMPL_CHANNEL_TENSOR
-#undef ASYM_ASYM_QUANTIZE_IMPL_CHANNEL_CHANNEL
+#undef ASYM_QUANTIZE_IMPL_TENSOR
+#undef ASYM_QUANTIZE_IMPL_CHANNEL
     }
   } else {
     if (out.scalar_type() == ScalarType::Byte) {
@@ -549,8 +549,8 @@ void quantize_impl(
       }
 #undef SYM_CALCULATE_FLOAT_TYPE_TENSOR
 #undef SYM_CALCULATE_FLOAT_TYPE_CHANNEL
-#undef SYM_ASYM_QUANTIZE_IMPL_CHANNEL_TENSOR
-#undef SYM_ASYM_QUANTIZE_IMPL_CHANNEL_CHANNEL
+#undef SYM_QUANTIZE_IMPL_TENSOR
+#undef SYM_QUANTIZE_IMPL_CHANNEL
     }
   }
 }
@@ -719,7 +719,6 @@ Tensor& quantize_per_channel_out(
       axis_ptr,
       (int)quant_min,
       (int)quant_max);
-
   return out;
 }
 
@@ -802,6 +801,6 @@ Tensor& quantize_per_token_out(
 }
 
 } // namespace native
-} // namespace FusionG3
+} // namespace G3
 } // namespace impl
 } // namespace cadence
