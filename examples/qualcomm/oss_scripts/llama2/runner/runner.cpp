@@ -154,15 +154,15 @@ int32_t Runner::logitsToToken(const Tensor& logits_tensor) {
 Result<Tensor> Runner::run_model_step(
     int64_t input_token,
     TensorPtr& token,
-    TensorPtr& start_pos,
     TensorPtr& atten_mask,
+    TensorPtr& start_pos,
     std::vector<TensorPtr>& kv_tensors,
     std::vector<TensorPtr>& kv_outputs) {
   token->mutable_data_ptr<int32_t>()[0] = input_token;
 
   // inputs:[tokens, start_pos, atten_mask, k_cache, v_cache]
   std::vector<executorch::runtime::EValue> inputs = {
-      token, start_pos, atten_mask};
+      token, atten_mask, start_pos};
   inputs.insert(inputs.end(), kv_tensors.begin(), kv_tensors.end());
   auto outputs_res = module_->forward(inputs);
   ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
@@ -359,7 +359,7 @@ Error Runner::generate(
   while (pos < seq_len - 1) {
     // Run the model
     auto logits_res = run_model_step(
-        cur_token, token, start_pos, atten_mask, kv_tensors, kv_outputs);
+        cur_token, token, atten_mask, start_pos, kv_tensors, kv_outputs);
     if (pos == num_prompt_tokens) {
       stats_.first_token_ms = time_in_ms();
     } else if (pos == num_prompt_tokens - 1) {
@@ -517,9 +517,9 @@ void IoMemMgr::init_io_info() {
 void IoMemMgr::set_tensor_meta() {
   io_info_.input_token.tensor_meta =
       std::make_unique<TensorInfo>(method_meta_->input_tensor_meta(0).get());
-  io_info_.pos_idx.tensor_meta =
-      std::make_unique<TensorInfo>(method_meta_->input_tensor_meta(1).get());
   io_info_.atten_mask.tensor_meta =
+      std::make_unique<TensorInfo>(method_meta_->input_tensor_meta(1).get());
+  io_info_.pos_idx.tensor_meta =
       std::make_unique<TensorInfo>(method_meta_->input_tensor_meta(2).get());
 
   io_info_.k_caches_read.tensor_meta =

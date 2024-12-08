@@ -166,7 +166,6 @@ def qnn_capture_config():
 def qnn_edge_config() -> exir.EdgeCompileConfig:
     return exir.EdgeCompileConfig(
         _check_ir_validity=False,
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
     )
 
 

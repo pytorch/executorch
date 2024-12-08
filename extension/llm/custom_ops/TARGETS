@@ -23,9 +23,9 @@ runtime.python_test(
 )
 
 runtime.python_test(
-    name = "test_update_quantized_cache",
+    name = "test_update_cache",
     srcs = [
-        "test_update_quantized_cache.py",
+        "test_update_cache.py",
     ],
     preload_deps = [
         ":custom_ops_aot_lib",

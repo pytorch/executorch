@@ -13,16 +13,10 @@
 #
 
 cmake_minimum_required(VERSION 3.19)
-project(prim_ops_test)
-
-# Use C++17 for test.
-set(CMAKE_CXX_STANDARD 17)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/build/Test.cmake)
-
-target_link_options_shared_lib(executorch)
 
 set(_test_srcs prim_ops_test.cpp)
 

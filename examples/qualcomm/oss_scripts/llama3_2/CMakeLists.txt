@@ -43,13 +43,13 @@ list(
 )
 
 # build qnn llama3.2 1b runner
-add_executable(qnn_llama3_2_1b_runner ${_llama3_2_runner__srcs})
+add_executable(qnn_llama3_2_runner ${_llama3_2_runner__srcs})
 target_include_directories(
-  qnn_llama3_2_1b_runner PUBLIC ${_common_include_directories}
+  qnn_llama3_2_runner PUBLIC ${_common_include_directories}
 )
 
 target_link_libraries(
-  qnn_llama3_2_1b_runner
+  qnn_llama3_2_runner
   qnn_executorch_backend
   executorch_core
   extension_data_loader
@@ -60,35 +60,8 @@ target_link_libraries(
   custom_ops
 )
 target_compile_options(
-  qnn_llama3_2_1b_runner PUBLIC ${_common_compile_options}
+  qnn_llama3_2_runner PUBLIC ${_common_compile_options}
 )
 set_target_properties(
-  qnn_llama3_2_1b_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
-)
-
-
-# build qnn llama3.2 3b runner
-add_executable(qnn_llama3_2_3b_runner ${_llama3_2_runner__srcs})
-target_include_directories(
-  qnn_llama3_2_3b_runner PUBLIC ${_common_include_directories}
-)
-# Adding compile option to differentiate llama3.2 1b with 3b
-target_compile_options(qnn_llama3_2_3b_runner PRIVATE -DLLAMA3_2_3B_RUNNER)
-
-target_link_libraries(
-  qnn_llama3_2_3b_runner
-  qnn_executorch_backend
-  executorch_core
-  extension_data_loader
-  extension_module
-  extension_tensor
-  gflags
-  re2::re2
-  custom_ops
-)
-target_compile_options(
-  qnn_llama3_2_3b_runner PUBLIC ${_common_compile_options}
-)
-set_target_properties(
-  qnn_llama3_2_3b_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
+  qnn_llama3_2_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
 )
