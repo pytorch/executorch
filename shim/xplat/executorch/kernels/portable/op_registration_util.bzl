@@ -1253,6 +1253,12 @@ ATEN_OPS = (
         name = "op_zeros",
     ),
     op_target(
+        name = "op__empty_dim_order",
+        deps = [
+            ":scalar_utils",
+        ],
+    ),
+    op_target(
         name = "op__to_dim_order_copy",
         deps = [
             ":scalar_utils",

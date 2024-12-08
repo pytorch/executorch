@@ -23,7 +23,6 @@ include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
-set(TARGET_DIR reference)
 
 if(EXECUTORCH_CADENCE_CPU_RUNNER)
   include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
@@ -60,6 +59,9 @@ if(EXECUTORCH_CADENCE_CPU_RUNNER)
   cadence_runner PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
                                       ${_common_include_directories}
   )
+
+  set(TARGET_DIR reference)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
 
   target_link_libraries(
   cadence_runner
