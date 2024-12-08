@@ -33,7 +33,9 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
 
     @staticmethod
     def _merge_supported_types(
-        dtypes1: SupportedTypeDict, dtypes2: SupportedTypeDict
+        # pyre-ignore[11]
+        dtypes1: SupportedTypeDict,
+        dtypes2: SupportedTypeDict,
     ) -> SupportedTypeDict:
         merged_dtypes = dtypes1
         for k, v in dtypes2.items():
@@ -92,7 +94,7 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         if input_dtype not in supported_dtypes:
             logger.info(
                 f"Input dtype {input_val.dtype} is not supported in "
-                f"{node.target.name()}."
+                f"{node.target.name()}."  # pyre-ignore[16]
             )
             return False
 
@@ -102,7 +104,7 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         if output_val.dtype not in supported_dtypes[input_dtype]:
             logger.info(
                 f"Output dtype {output_val.dtype} is not supported in "
-                f"{node.target.name()} for input dtype {input_dtype}. "
+                f"{node.target.name()} for input dtype {input_dtype}. "  # pyre-ignore[16]
                 f"Supported output types: "
                 f"{''.join(str(t) for t in supported_dtypes[input_dtype])}"
             )
@@ -113,7 +115,7 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             if node.kwargs["memory_format"] in (torch.preserve_format,):
                 logger.info(
                     f"Argument 'memory_format' is not supported for "
-                    f"{node.target.name()} right now."
+                    f"{node.target.name()} right now."  # pyre-ignore[16]
                 )
                 return False
 

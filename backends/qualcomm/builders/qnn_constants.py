@@ -86,6 +86,11 @@ class OpElementWiseCeil:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseCos:
+    op_name: str = "ElementWiseCos"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseDivide:
     op_name: str = "ElementWiseDivide"
 
@@ -111,6 +116,11 @@ class OpElementWisePower:
 @dataclass(init=False, frozen=True)
 class OpElementWiseRsqrt:
     op_name: str = "ElementWiseRsqrt"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseSin:
+    op_name: str = "ElementWiseSin"
 
 
 @dataclass(init=False, frozen=True)
