@@ -57,7 +57,7 @@ class TestFull(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=example_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check_count({"torch.ops.aten.full.default": 1})
@@ -80,7 +80,7 @@ class TestFull(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+BI", permute_memory_to_nhwc=permute_memory_to_nhwc
+                    "TOSA-0.80+BI", permute_memory_to_nhwc=permute_memory_to_nhwc
                 ),
             )
             .quantize()

@@ -73,7 +73,7 @@ def dbg_fail(node, tosa_graph, path):
 
 
 # Helper function to match TOSA's broadcasting rank requirement
-# Ref: TOSA 0.80.0 specification - 1.9.3. Data Layouts from
+# Ref: TOSA 0.80 specification - 1.9.3. Data Layouts from
 # https://www.mlplatform.org/tosa/tosa_spec.html
 def promote_shape(tosa_fb, arg, promoted_shape, out_dtype):
     assert np.prod(arg.shape) == np.prod(promoted_shape), "Incompatible promoted shape"
@@ -85,7 +85,7 @@ def promote_shape(tosa_fb, arg, promoted_shape, out_dtype):
 
 
 # Helper transpose function to match TOSA's shape requirements
-# E.g., TOSA 0.80.0 specification - 2.3.3 CONV2D shapes:
+# E.g., TOSA 0.80 specification - 2.3.3 CONV2D shapes:
 # https://www.mlplatform.org/tosa/tosa_spec.html#_conv2d
 def transpose_helper(tosa_fb, input, new_order, out_dtype):
     # Check new_order's length is equal to input rank
