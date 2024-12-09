@@ -48,7 +48,6 @@ class VulkanBuffer final {
     VkDeviceSize size;
     VkDeviceSize mem_offset;
     VkDeviceSize mem_range;
-    VkBufferUsageFlags buffer_usage;
   };
 
   explicit VulkanBuffer();

@@ -52,7 +52,7 @@ void check_dequantize_per_tensor_args(
   ET_CHECK_MSG(
       input.scalar_type() == ScalarType::Byte ||
           input.scalar_type() == ScalarType::Char ||
-          input.scalar_type() == ScalarType::Bits16 ||
+          input.scalar_type() == ScalarType::UInt16 ||
           input.scalar_type() == ScalarType::Short ||
           input.scalar_type() == (ScalarType)Ushort ||
           input.scalar_type() == (ScalarType)Bits4 ||
@@ -83,7 +83,7 @@ void check_dequantize_per_tensor_args(
 } // namespace
 
 /* Local function which calls the kernels based on the input datatype */
-void Dequantize_impl(
+void dequantize_impl(
     Tensor& out,
     const Tensor& input,
     float* scale_data,
@@ -211,7 +211,7 @@ void Dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(ASYM_CALCULATE_INT_TYPE_TENSOR);
-          ASYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, Bits16);
+          ASYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -302,7 +302,7 @@ void Dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(ASYM_CALCULATE_INT_TYPE_CHANNEL);
-          ASYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, Bits16);
+          ASYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -368,7 +368,7 @@ void Dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(SYM_CALCULATE_INT_TYPE_TENSOR);
-          SYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, Bits16);
+          SYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -459,7 +459,7 @@ void Dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(SYM_CALCULATE_INT_TYPE_CHANNEL);
-          SYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, Bits16);
+          SYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -502,7 +502,7 @@ Tensor& dequantize_per_tensor_out(
   float scale_data = (float)scale;
   int zero_point_data = (int)zero_point;
 
-  Dequantize_impl(out, input, &scale_data, &zero_point_data, NULL, out_dtype);
+  dequantize_impl(out, input, &scale_data, &zero_point_data, NULL, out_dtype);
 
   return out;
 }
@@ -620,7 +620,7 @@ Tensor& dequantize_per_channel_out(
   for (int i = 0; i < scale.numel(); i++) {
     scale_data[i] = (float)scale_dt[i];
   }
-  Dequantize_impl(out, input, scale_data, zero_point_ptr, axis_ptr, out_dtype);
+  dequantize_impl(out, input, scale_data, zero_point_ptr, axis_ptr, out_dtype);
 
   return out;
 }
@@ -661,13 +661,19 @@ Tensor& dequantize_per_tensor_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper
   (void)context;
   return dequantize_per_tensor_out(
-      input, scale, zero_point, quant_min, quant_max, dtype, out_dtype, out);
+      input,
+      scale,
+      zero_point,
+      quant_min,
+      quant_max,
+      dtype,
+      out.scalar_type(),
+      out);
 }
 
 Tensor& dequantize_per_tensor_tensor_args_out(
