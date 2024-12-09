@@ -58,8 +58,8 @@ struct Value final {
       bool as_bool;
     } u;
 
-    api::vTensor as_tensor;
-    api::StagingBuffer as_staging;
+    std::unique_ptr<api::vTensor> as_tensor;
+    std::unique_ptr<api::StagingBuffer> as_staging;
     TensorRef as_tensorref;
 
     std::vector<int64_t> as_int_list;
@@ -73,7 +73,7 @@ struct Value final {
 
     std::string as_string;
 
-    SymInt as_symint;
+    std::unique_ptr<SymInt> as_symint;
 
     Payload() : u() {}
     // NOLINTNEXTLINE
@@ -106,17 +106,18 @@ struct Value final {
     rhs.payload.member_name.~dtor_name();                                \
     break;
 
+#define CASE_MOVE_UNIQUE_PTR_TYPE(type_tag, member_name)      \
+  case type_tag:                                              \
+    payload.member_name = std::move(rhs.payload.member_name); \
+    break;
+
   Value(Value&& rhs) noexcept : tag(rhs.tag) {
     switch (tag) {
       // Scalar types
       CASE_MOVE_TRIVIALLY_COPYABLE_TYPE(TypeTag::INT, as_int);
       CASE_MOVE_TRIVIALLY_COPYABLE_TYPE(TypeTag::DOUBLE, as_double);
       CASE_MOVE_TRIVIALLY_COPYABLE_TYPE(TypeTag::BOOL, as_bool);
-      // Tensor and tensor adjacent types
-      CASE_MOVE_MOVEABLE_TYPE(
-          TypeTag::TENSOR, api::vTensor, as_tensor, vTensor);
-      CASE_MOVE_MOVEABLE_TYPE(
-          TypeTag::STAGING, api::StagingBuffer, as_staging, StagingBuffer);
+      // Tensor adjacent type
       CASE_MOVE_MOVEABLE_TYPE(
           TypeTag::TENSORREF, TensorRef, as_tensorref, TensorRef);
       // Scalar lists
@@ -131,7 +132,12 @@ struct Value final {
           TypeTag::VALUELIST, std::vector<ValueRef>, as_value_list, vector);
       CASE_MOVE_MOVEABLE_TYPE(
           TypeTag::STRING, std::string, as_string, basic_string);
-      CASE_MOVE_MOVEABLE_TYPE(TypeTag::SYMINT, SymInt, as_symint, SymInt);
+      // Tensor type
+      CASE_MOVE_UNIQUE_PTR_TYPE(TypeTag::TENSOR, as_tensor);
+      // Small tensor adjacent types
+      CASE_MOVE_UNIQUE_PTR_TYPE(TypeTag::STAGING, as_staging);
+      // Large tensor adjacent types
+      CASE_MOVE_UNIQUE_PTR_TYPE(TypeTag::SYMINT, as_symint);
 
       case TypeTag::NONE:
         clearToNone();
@@ -142,6 +148,7 @@ struct Value final {
 
 #undef CASE_MOVE_TRIVIALLY_COPYABLE_TYPE
 #undef CASE_MOVE_MOVEABLE_TYPE
+#undef CASE_MOVE_UNIQUE_PTR_TYPE
 
   //
   // Accessors
@@ -157,12 +164,6 @@ struct Value final {
 
   ~Value() {
     switch (tag) {
-      case TypeTag::TENSOR:
-        payload.as_tensor.~vTensor();
-        break;
-      case TypeTag::STAGING:
-        payload.as_staging.~StagingBuffer();
-        break;
       case TypeTag::TENSORREF:
         payload.as_tensorref.~TensorRef();
         break;
@@ -181,8 +182,14 @@ struct Value final {
       case TypeTag::STRING:
         payload.as_string.~basic_string();
         break;
+      case TypeTag::STAGING:
+        payload.as_staging.reset();
+        break;
       case TypeTag::SYMINT:
-        payload.as_symint.~SymInt();
+        payload.as_symint.reset();
+        break;
+      case TypeTag::TENSOR:
+        payload.as_tensor.reset();
         break;
       // Manually list out the types so that if a type here is added later and
       // not handled the compiler can catch it.
@@ -253,18 +260,6 @@ struct Value final {
   }
 
   SUPPORT_TRIVIALLY_MOVEABLE_TYPE(
-      api::vTensor,
-      Tensor,
-      TypeTag::TENSOR,
-      as_tensor);
-
-  SUPPORT_TRIVIALLY_MOVEABLE_TYPE(
-      api::StagingBuffer,
-      Staging,
-      TypeTag::STAGING,
-      as_staging);
-
-  SUPPORT_TRIVIALLY_MOVEABLE_TYPE(
       TensorRef,
       TensorRef,
       TypeTag::TENSORREF,
@@ -300,10 +295,43 @@ struct Value final {
       TypeTag::STRING,
       as_string);
 
-  SUPPORT_TRIVIALLY_MOVEABLE_TYPE(SymInt, SymInt, TypeTag::SYMINT, as_symint);
-
-#undef SUPPORT_TRIVIALLY_COPYABLE_TYPE
 #undef SUPPORT_TRIVIALLY_MOVEABLE_TYPE
+
+#define SUPPORT_UNIQUE_PTR_TYPE(type, type_name, type_tag, member_name) \
+  explicit Value(type t) : tag(type_tag) {                              \
+    payload.member_name = std::make_unique<type>(std::move(t));         \
+  }                                                                     \
+  inline bool is##type_name() const {                                   \
+    return tag == type_tag;                                             \
+  }                                                                     \
+  inline type& to##type_name() const {                                  \
+    VK_CHECK_COND(                                                      \
+        is##type_name(),                                                \
+        "Expected value to have type " #type_name ", got ",             \
+        tag,                                                            \
+        " instead.");                                                   \
+    return *payload.member_name;                                        \
+  }                                                                     \
+  inline const type& toConst##type_name() const {                       \
+    VK_CHECK_COND(                                                      \
+        is##type_name(),                                                \
+        "Expected value to have type " #type_name ", got ",             \
+        tag,                                                            \
+        " instead.");                                                   \
+    return *payload.member_name;                                        \
+  }
+
+  SUPPORT_UNIQUE_PTR_TYPE(api::vTensor, Tensor, TypeTag::TENSOR, as_tensor);
+
+  SUPPORT_UNIQUE_PTR_TYPE(
+      api::StagingBuffer,
+      Staging,
+      TypeTag::STAGING,
+      as_staging);
+
+  SUPPORT_UNIQUE_PTR_TYPE(SymInt, SymInt, TypeTag::SYMINT, as_symint);
+
+#undef SUPPORT_UNIQUE_PTR_TYPE
 
  private:
   Payload payload;

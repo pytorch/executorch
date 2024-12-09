@@ -706,10 +706,6 @@ setup(
         "executorch/devtools/bundled_program": "devtools/bundled_program",
         "executorch/runtime": "runtime",
         "executorch/util": "util",
-        # Note: This will install a top-level module called "serializer",
-        # which seems too generic and might conflict with other pip packages.
-        "serializer": "backends/arm/third-party/serialization_lib/python/serializer",
-        "tosa": "backends/arm/third-party/serialization_lib/python/tosa",
     },
     cmdclass={
         "build": CustomBuild,
