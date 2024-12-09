@@ -302,7 +302,6 @@ def make_alloc_node(
                     "Memory allocator node needs FakeTensor val or TensorMetadata to proceed"
                 )
 
-    # pyre-fixme[6]
     alloc = graph_module.graph.call_function(memory.alloc, (alloc_spec,))
     alloc.meta["val"] = val
     alloc.meta["tensor_meta"] = tensor_meta
