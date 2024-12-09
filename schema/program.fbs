@@ -53,6 +53,13 @@ enum TensorShapeDynamism : byte {
   DYNAMIC_UNBOUND = 2,
 }
 
+// Indicates where a tensor is stored.
+enum TensorDataLocation : byte {
+  // Stored in a segment of the PTE file.
+  SEGMENT = 0,
+  // Stored outside of the PTE file.
+  EXTERNAL = 1,
+}
 
 // Table to put additional information about tensors in that is not applicable
 // to the vast majority of tensors in the vast majority of programs.
@@ -60,11 +67,18 @@ table ExtraTensorInfo {
   // [Optional] Specifies the SubsegmentOffsets in
   //  program.mutable_data_segments that specifies where the data is located in.
   //  If not present and the data is located in a segment, then the data is in
-  //  the first index.
+  //  index zero.
   mutable_data_segments_idx: uint64;
 
   // [Optional] The unique name of the tensor. e.g. 'mod.linear.weight'
   fully_qualified_name: string;
+
+  // [Optional] Specifies where the tensor's data is stored.
+  // - SEGMENT (default): Data is stored in a segment.
+  // - EXTERNAL: Data is stored outside of the PTE file. fully_qualified_name
+  //   must be non-empty, and is used as a key to find the tensor's external
+  //   data. Tensor.data_buffer_idx is ignored.
+  location: TensorDataLocation;
 }
 
 table Tensor {
