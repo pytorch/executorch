@@ -148,3 +148,14 @@ class ExportTest(unittest.TestCase):
             eager_model, example_inputs
         )
         self.validate_tensor_allclose(list(eager_output.values()), executorch_output)
+
+    def test_efficient_sam_export_to_executorch(self):
+        eager_model, example_inputs, _, _ = EagerModelFactory.create_model(
+            *MODEL_NAME_TO_MODEL["efficient_sam"]
+        )
+        eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
+            eager_model, example_inputs
+        )
+        self.validate_tensor_allclose(
+            list(eager_output), executorch_output, rtol=1e-2, atol=1e-2
+        )
