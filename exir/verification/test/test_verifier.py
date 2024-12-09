@@ -117,8 +117,9 @@ class TestEdgeDialectVerifier(unittest.TestCase):
 
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 t1 = x.to(dtype=torch.double, memory_format=torch.channels_last)
-                t2 = t1 + t1
-                return t1 * t2
+                t2 = torch.empty(t1.size(), memory_format=torch.channels_last)
+                t2.copy_(t1)
+                return t2
 
         m = Model().eval()
 

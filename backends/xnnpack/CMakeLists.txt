@@ -146,3 +146,7 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
+
+if(BUILD_TESTING)
+  add_subdirectory(test)
+endif()

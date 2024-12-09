@@ -48,6 +48,7 @@ from executorch.exir.operator.convert import is_out_variant
 from executorch.exir.passes.executorch_prim_ops_registry import is_sym_op
 from executorch.exir.print_program import _stacktrace_to_framelist, inspect_node
 from executorch.exir.schema import (
+    AllocationDetails,
     BackendDelegate,
     BackendDelegateDataReference,
     BackendDelegateInlineData,
@@ -328,6 +329,59 @@ class _Emitter(torch.fx.Interpreter):
             ExportErrorType.NOT_SUPPORTED, f"Unknown list type: {val_type}"
         )
 
+    def _get_allocation_info(self, spec: TensorSpec) -> AllocationDetails:
+        """Returns the allocation info for a given TensorSpec."""
+        self._internal_assert_emitter(
+            isinstance(spec.mem_id, int) and spec.mem_id >= 0,
+            self.node,
+            f"Non-const tensor should be an activation tensor: mem_id {spec.mem_id}",
+        )
+
+        self._internal_assert_emitter(
+            isinstance(spec.mem_offset, int) and spec.mem_offset >= 0,
+            self.node,
+            f"Non-const tensor should be an activation tensor: mem_offset {spec.mem_offset}",
+        )
+        try:
+            allocation_info = make_allocation_info(spec.mem_id, spec.mem_offset)
+        except AddressSpaceOverflowException as e:
+            raise InternalError(
+                self._emit_node_specific_error(
+                    self.node,
+                    (
+                        f"{e}\nHint: If you are using a memory pass based on dynamic shape bounds, "
+                        f"such as ConstraintBasedSymShapeEvalPass, this may be the cause of an "
+                        f"unbacked SymInt with its upper bound lazily set to 2^64-1 (uint64 max) "
+                        "during torch.export()."
+                    ),
+                )
+            )
+        return allocation_info
+
+    def _save_new_const_tensor(
+        self,
+        spec: TensorSpec,
+        buffer_data: bytes,
+        hashed: str,
+        allocation_info: Optional[AllocationDetails],
+    ) -> int:
+        """Saves a new constant tensor to the constant buffer and returns the buffer idx"""
+
+        self.program_state.allocated_specs.append(spec)
+        # +1 because the first buffer location is reserved.
+
+        # Update buffer_idx to point to the end of the list where we are adding the new buffer.
+        buffer = Buffer(storage=buffer_data)
+        if allocation_info:
+            buffer_idx = len(self.program_state.mutable_buffer)
+            self.program_state.cached_spec_mutable_hash_values[hashed] = buffer_idx
+            self.program_state.mutable_buffer.append(buffer)
+        else:
+            buffer_idx = len(self.program_state.constant_buffer)
+            self.program_state.cached_spec_hash_values[hashed] = buffer_idx
+            self.program_state.constant_buffer.append(buffer)
+        return buffer_idx
+
     def _tensor_spec_to_evalue(self, spec: TensorSpec) -> EValue:
         """Constructs an EValue from the given TensorSpec."""
 
@@ -339,35 +393,12 @@ class _Emitter(torch.fx.Interpreter):
         # default algos to set offsets, so need to check both.
         if spec.mem_id is not None and spec.mem_offset is not None:
             # Tensor is an activation.
-            self._internal_assert_emitter(
-                isinstance(spec.mem_id, int) and spec.mem_id >= 0,
-                self.node,
-                f"Non-const tensor should be an activation tensor: mem_id {spec.mem_id}",
-            )
+            allocation_info = self._get_allocation_info(spec)
 
-            self._internal_assert_emitter(
-                isinstance(spec.mem_offset, int) and spec.mem_offset >= 0,
-                self.node,
-                f"Non-const tensor should be an activation tensor: mem_offset {spec.mem_offset}",
-            )
-            try:
-                allocation_info = make_allocation_info(spec.mem_id, spec.mem_offset)
-            except AddressSpaceOverflowException as e:
-                raise InternalError(
-                    self._emit_node_specific_error(
-                        self.node,
-                        (
-                            f"{e}\nHint: If you are using a memory pass based on dynamic shape bounds, "
-                            f"such as ConstraintBasedSymShapeEvalPass, this may be the cause of an "
-                            f"unbacked SymInt with its upper bound lazily set to 2^64-1 (uint64 max) "
-                            "during torch.export()."
-                        ),
-                    )
-                )
-
+        # Tensor is either a constant tensor, or a mutable tensor with an initial state.
         if spec.const:
             # Tensor with a blob we need to serialize. May not actually be constant at runtime
-            # if it's a weight with an associated gradient
+            # if it's a weight with an associated gradient.
             spec_array_type = (
                 ctypes.c_char * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
             )
@@ -392,23 +423,11 @@ class _Emitter(torch.fx.Interpreter):
             else:
                 buffer_idx = self.program_state.cached_spec_hash_values.get(hashed, -1)
 
-            # Haven't seen this constant before
+            # Haven't seen this constant before.
             if buffer_idx == -1:
-                # Update buffer_idx to point to the end of the list where we are adding the new buffer.
-                buffer = Buffer(storage=buffer_data)
-                self.program_state.allocated_specs.append(spec)
-                # +1 because the first buffer location is reserved
-
-                if allocation_info:
-                    buffer_idx = len(self.program_state.mutable_buffer)
-                    self.program_state.cached_spec_mutable_hash_values[hashed] = (
-                        buffer_idx
-                    )
-                    self.program_state.mutable_buffer.append(buffer)
-                else:
-                    buffer_idx = len(self.program_state.constant_buffer)
-                    self.program_state.cached_spec_hash_values[hashed] = buffer_idx
-                    self.program_state.constant_buffer.append(buffer)
+                buffer_idx = self._save_new_const_tensor(
+                    spec, buffer_data, hashed, allocation_info
+                )
 
             if spec.const and spec.nbytes() != len(buffer_data):
                 raise InternalError(
