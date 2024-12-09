@@ -357,7 +357,7 @@ class SingleLlama:
             ).module()
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
         print("Quantizing the model...")
-
+        example_inputs = self.get_example_inputs(self.llama_meta["get_use_kv_cache"])
         calibrate(
             self.get_example_inputs(self.llama_meta["get_use_kv_cache"]),
             args.prompt,
@@ -367,6 +367,50 @@ class SingleLlama:
         )
 
         self.llama_model = convert_pt2e(fx_graph_module)
+
+        sp_model = SentencePieceProcessor(model_file=args.tokenizer_model)
+        _, atten_mask, _, k_caches, v_caches = example_inputs
+
+        # TODO: change criteria & support batch inputs if necessary
+        pos = torch.tensor(0, dtype=torch.int32)
+        token_list = [sp_model.bos_id()]
+        for prompt in args.prompt.split():
+            token_list += sp_model.encode(prompt)
+
+        def sample_top_p(probs: torch.Tensor, top_p: float) -> torch.Tensor:
+            probs_sort, probs_indices = torch.sort(probs, dim=-1, descending=True)
+            probs_sum = torch.cumsum(probs_sort, dim=-1)
+            mask = probs_sum - probs_sort > top_p
+            probs_sort[mask] = 0
+            probs_sort /= probs_sort.sum(dim=-1, keepdim=True)
+            next_token = torch.multinomial(probs_sort, num_samples=1)
+            return probs_indices.gather(dim=-1, index=next_token)
+
+        with torch.no_grad():
+            while token_list[-1] != sp_model.eos_id() and pos < args.seq_len - 1:
+                logits, new_k_caches, new_v_caches = self.llama_model(
+                    torch.full((1, 1), token_list[pos]),
+                    atten_mask,
+                    torch.full((1, 1), pos),
+                    *k_caches,
+                    *v_caches,
+                )
+                k_caches = [
+                    torch.cat([k_cache[:, :, 1:], new_k_caches[i]], dim=-1)
+                    for i, k_cache in enumerate(k_caches)
+                ]
+                v_caches = [
+                    torch.cat([v_cache[:, 1:, :], new_v_caches[i]], dim=1)
+                    for i, v_cache in enumerate(v_caches)
+                ]
+
+                pos += 1
+                atten_mask[0][-pos - 1] = 0
+                if pos >= len(token_list):
+                    probs = torch.softmax(logits[:, -1] / 0.8, dim=-1)
+                    token_list.append(sample_top_p(probs, 0.9).item())
+        print("-----")
+        print(f"convert_pt2e data:\n{sp_model.decode(token_list)}")
 
     def lowering_modules(
         self, work_space, kv_type=torch.uint8, soc_model=QcomChipset.SM8650
@@ -495,17 +539,18 @@ def inference(args, pre_gen_pte=""):
     runner_args = " ".join(
         [
             f"--model_path {pte_filename}.pte",
-            "--output_folder_path outputs",
+            "--output_path outputs/outputs.txt",
             f"--tokenizer_path {os.path.basename(args.tokenizer_bin)}",
             f'--prompt "{args.prompt}"',
             f"--seq_len {args.seq_len}",
             f"--temperature {args.temperature}",
+            "--eval_mode 1",
         ]
     )
     runner_cmd = " ".join(
         [
             f"cd {workspace} &&",
-            f"./qnn_llama_runner {runner_args}",
+            f"./qnn_llama3_2_runner {runner_args}",
         ]
     )
 
@@ -523,7 +568,7 @@ def inference(args, pre_gen_pte=""):
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
-        runner="examples/qualcomm/oss_scripts/llama2/qnn_llama_runner",
+        runner="examples/qualcomm/oss_scripts/llama3_2/qnn_llama3_2_runner",
     )
     # No pregen inputs, input_list is not required
     adb.push(inputs=[], input_list="", files=[args.tokenizer_bin])
@@ -535,16 +580,8 @@ def inference(args, pre_gen_pte=""):
     outputs = []
 
     def post_process():
-        for f in sorted(
-            os.listdir(output_data_folder), key=lambda f: int(f.split("_")[1])
-        ):
-            with codecs.open(
-                os.path.join(output_data_folder, f),
-                "r",
-                encoding="utf-8",
-                errors="replace",
-            ) as fdata:
-                outputs.append(fdata.read())
+        with open(f"{args.artifact}/outputs/outputs.txt", "r") as f:
+            outputs.append(f.read())
 
     adb.pull(output_path=args.artifact, callback=post_process)
 
