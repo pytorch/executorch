@@ -635,5 +635,9 @@ bool ETDumpGen::is_static_etdump() {
   return alloc_.data != nullptr;
 }
 
+size_t ETDumpGen::get_debug_buffer_size() const {
+  return debug_buffer_.size();
+}
+
 } // namespace etdump
 } // namespace executorch
