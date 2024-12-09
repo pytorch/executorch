@@ -30,7 +30,6 @@ build_type="Release"
 extra_build_flags=""
 build_only=false
 reorder_inputs=""
-portable_kernels="aten::_softmax.out"
 system_config=""
 memory_mode=""
 
