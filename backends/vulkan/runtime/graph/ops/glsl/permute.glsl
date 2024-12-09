@@ -19,15 +19,9 @@ layout(std430) buffer;
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
 layout(set = 0, binding = 1) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} image_in;
 
-layout(set = 0, binding = 2) uniform PRECISION restrict OutLimits {
-  ivec3 out_limits;
-};
-
-layout(set = 0, binding = 3) uniform PRECISION restrict Sizes {
+layout(push_constant) uniform PRECISION restrict Block {
+  ivec4 out_limits;
   ivec4 sizes;
-};
-
-layout(set = 0, binding = 4) uniform PRECISION restrict Block {
   // output dims
   ivec4 out_ndims;
   // x = output channels aligned to 4, y = input channels aligned to 4
@@ -41,7 +35,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 void main() {
   const u16vec3 pos = u16vec3(gl_GlobalInvocationID);
 
-  if (any(greaterThanEqual(pos, out_limits))) {
+  if (any(greaterThanEqual(pos, out_limits.xyz))) {
     return;
   }
 
