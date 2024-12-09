@@ -60,14 +60,17 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
     set(_quantized_aot_ops
         "quantized_decomposed::add.out"
         "quantized_decomposed::choose_qparams.Tensor_out"
+        "quantized_decomposed::choose_qparams_per_token_asymmetric.out"
         "quantized_decomposed::dequantize_per_channel.out"
         "quantized_decomposed::dequantize_per_tensor.out"
         "quantized_decomposed::dequantize_per_tensor.Tensor_out"
+        "quantized_decomposed::dequantize_per_token.out"
         "quantized_decomposed::mixed_linear.out"
         "quantized_decomposed::mixed_mm.out"
         "quantized_decomposed::quantize_per_channel.out"
         "quantized_decomposed::quantize_per_tensor.out"
         "quantized_decomposed::quantize_per_tensor.Tensor_out"
+        "quantized_decomposed::quantize_per_token.out"
     )
     gen_selected_ops(
       LIB_NAME "quantized_ops_aot_lib" ROOT_OPS ${_quantized_aot_ops}
