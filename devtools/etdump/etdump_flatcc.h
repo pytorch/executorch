@@ -138,6 +138,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
       const double& output) override;
   void set_debug_buffer(::executorch::runtime::Span<uint8_t> buffer);
   ETDumpResult get_etdump_data();
+  size_t get_debug_buffer_size() const;
   size_t get_num_blocks();
   bool is_static_etdump();
   void reset();
