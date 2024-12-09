@@ -42,6 +42,81 @@ def register_passable_op(op):
     passable_ops.append(op)
 
 
+def insert_rescale_ops_to_int32(
+    tosa_graph: ts.TosaSerializer, inputs: list[TosaArg], node: Node
+) -> tuple[list[TosaSerializerTensor], float]:
+    """Rescales all 'nodes' to int32, adding suitable RESCALE ops to 'tosa_graph'.
+    The scales are adjusted using the smallest scale of all 'nodes'.
+
+    Returns a list of the rescaled nodes and the scale factor used,
+    needed by rescale_node_back_to_int8.
+
+    This functions is used in serialization to TOSA for target ops that are
+    handled by the DQ/D folding pass, which stores the quantization parameters
+    in the node meta dict as opposed to 'rescale_nodes_to_int32' which search
+    the graph upstream for DQ nodes.
+    """
+
+    tensors = inputs.copy()
+
+    # Reshape tensor according to TOSA dim order
+    for tensor in tensors:
+        dim_order = tensor.dim_order
+        tensor.shape = [tensor.shape[i] for i in dim_order]
+
+    qargs = list(cast(dict[int, QuantArgs], node.meta["input_qparams"]).values())
+
+    # Scale the int8 quantized input to a common scale in the integer
+    # domain
+    min_scale = min([qarg.scale for qarg in qargs])
+    scales = [qarg.scale / min_scale for qarg in qargs]
+
+    rescaled_nodes: list[TosaSerializerTensor] = []
+    for tensor, qarg, scale in zip(tensors, qargs, scales):
+        rescaled_nodes.append(
+            build_rescale_to_int32(
+                tosa_graph,
+                tensor,
+                qarg.zp,
+                scale,
+            )
+        )
+    return rescaled_nodes, min_scale
+
+
+def insert_rescale_node_back_to_int8(
+    tosa_graph: ts.TosaSerializer,
+    last_tensor: TosaArg,
+    scale: float,
+    node: Node,
+) -> None:
+    """Rescales the node back to int8, adding a suitable RESCALE op to 'tosa_graph'.
+    Parameters:
+        node: The original node that is being handled by the rescales.
+        last_tensor:the tosa tensor to rescale back.
+        scale: the scaling factor used to rescale to int32, from the function 'rescale_nodes_to_int32'
+        tosa_graph: the tosa_graph to manipulate.
+
+    This functions is used in serialization to TOSA for target ops that are
+    handled by the DQ/D folding pass, which stores the quantization parameters
+    in the node meta dict as opposed to 'rescale_node_back_to_int8' which search
+    the graph downstream for Q nodes.
+    """
+    assert len(node.meta["output_qparams"]) == 1
+
+    qargs_out = cast(dict[int, QuantArgs], node.meta["output_qparams"])[0]
+    output_rescale_scale = scale / qargs_out.scale
+
+    # Rescale Back to INT8
+    build_rescale_from_int32(
+        tosa_graph,
+        last_tensor.name,
+        node.name,
+        qargs_out.zp,
+        output_rescale_scale,
+    )
+
+
 class QuantArgs(NamedTuple):
     scale: float
     zp: int
@@ -61,6 +136,20 @@ class QuantArgs(NamedTuple):
     def dequantize_value(self, qx: int) -> float:
         return (qx - self.zp) * self.scale
 
+    @classmethod
+    def from_operator(cls, op, args):
+        if op in dq_q_ops:
+            return cls(
+                scale=cast(float, args[1]),
+                zp=cast(int, args[2]),
+                qmin=cast(int, args[3]),
+                qmax=cast(int, args[4]),
+                dtype=cast(torch.dtype, args[5]),
+            )
+        else:
+            # We're only handling per tensor quantization
+            raise NotImplementedError
+
 
 def quantize_value(x, qargs: QuantArgs, dtype=np.int8):
     return np.clip(
@@ -77,13 +166,7 @@ def dequantize_value(qx, qargs: QuantArgs):
 def qargs_from_qnode(node: torch.fx.Node):
     assert node.target in dq_q_ops, f"Op {node} is not a quant node."
 
-    return QuantArgs(
-        scale=cast(float, node.args[1]),
-        zp=cast(int, node.args[2]),
-        qmin=cast(int, node.args[3]),
-        qmax=cast(int, node.args[4]),
-        dtype=cast(torch.dtype, node.args[5]),
-    )
+    return QuantArgs.from_operator(node.target, node.args)
 
 
 def get_neighbour_quant_args(
@@ -214,8 +297,13 @@ def get_quant_arg_upstream(node: torch.fx.Node) -> QuantArgs:
 
 
 def get_quantized_node_output_dtype(node: torch.fx.Node) -> torch.dtype:
-    if isinstance(node.target, Callable) and "tosa" in node.target.__name__:
-        return node.meta["val"].dtype
+    if isinstance(node.target, Callable) and "output_qparams" in node.meta.keys():
+        # Check if the node has had it's quantization parameters folded
+        # and retrieve the dtype from the meta dict in that case.
+        assert len(node.meta["output_qparams"]) == 1
+        qargs = cast(QuantArgs, node.meta["output_qparams"][0])
+        return qargs.dtype
+
     if node.target in dq_q_ops:
         return cast(torch.dtype, node.args[5])
 
