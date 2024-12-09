@@ -75,7 +75,7 @@ class TestLayerNorm(unittest.TestCase):
                 model=module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+MI", permute_memory_to_nhwc=True
                 ),
             )
             .export()
@@ -96,7 +96,7 @@ class TestLayerNorm(unittest.TestCase):
                 model=module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+BI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+BI", permute_memory_to_nhwc=True
                 ),
             )
             .quantize()

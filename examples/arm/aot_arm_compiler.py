@@ -263,7 +263,7 @@ def get_compile_spec(
     if target == "TOSA":
         spec_builder = (
             ArmCompileSpecBuilder()
-            .tosa_compile_spec("TOSA-0.80.0+BI")
+            .tosa_compile_spec("TOSA-0.80+BI")
             .set_permute_memory_format(True)
         )
     elif "ethos-u55" in target:

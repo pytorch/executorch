@@ -16,9 +16,9 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
 test_valid_0_80_strings = [
-    "TOSA-0.80.0+BI",
-    "TOSA-0.80.0+MI+8k",
-    "TOSA-0.80.0+BI+u55",
+    "TOSA-0.80+BI",
+    "TOSA-0.80+MI+8k",
+    "TOSA-0.80+BI+u55",
 ]
 test_valid_1_00_strings = [
     "TOSA-1.00.0+INT+FP+fft",
@@ -35,11 +35,11 @@ test_valid_1_00_extensions = {
 }
 
 test_invalid_strings = [
-    "TOSA-0.80.0+bi",
-    "TOSA-0.80.0",
-    "TOSA-0.80.0+8k",
-    "TOSA-0.80.0+BI+MI",
-    "TOSA-0.80.0+BI+U55",
+    "TOSA-0.80+bi",
+    "TOSA-0.80",
+    "TOSA-0.80+8k",
+    "TOSA-0.80+BI+MI",
+    "TOSA-0.80+BI+U55",
     "TOSA-1.00.0+fft",
     "TOSA-1.00.0+fp+bf16+fft",
     "TOSA-1.00.0+INT+INT4+cf",
@@ -50,13 +50,13 @@ test_invalid_strings = [
 ]
 
 test_compile_specs = [
-    ([CompileSpec("tosa_version", "TOSA-0.80.0+BI".encode())],),
-    ([CompileSpec("tosa_version", "TOSA-0.80.0+BI+u55".encode())],),
+    ([CompileSpec("tosa_version", "TOSA-0.80+BI".encode())],),
+    ([CompileSpec("tosa_version", "TOSA-0.80+BI+u55".encode())],),
     ([CompileSpec("tosa_version", "TOSA-1.00.0+INT".encode())],),
 ]
 
 test_compile_specs_no_version = [
-    ([CompileSpec("other_key", "TOSA-0.80.0+BI".encode())],),
+    ([CompileSpec("other_key", "TOSA-0.80+BI".encode())],),
     ([CompileSpec("other_key", "some_value".encode())],),
 ]
 
