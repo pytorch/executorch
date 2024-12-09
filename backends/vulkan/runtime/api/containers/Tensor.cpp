@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/vulkan/runtime/api/containers/Tensor.h>
+#include <cstring>
 
 namespace vkcompute {
 namespace api {
@@ -446,11 +447,10 @@ vTensor::vTensor(
       dim_order_(calculate_dim_order(sizes_.size(), packed_dim_)),
       axis_map_(default_axis_map()),
       strides_(calculate_strides(sizes, dim_order_)),
-      numel_(utils::multiply_integers(sizes_)),
       padded_sizes_{calculate_padded_sizes(sizes, packed_dim_)},
-      unsqueezed_strides_{unsqueeze_strides(strides_, numel_)},
+      unsqueezed_strides_{
+          unsqueeze_strides(strides_, utils::multiply_integers(sizes_))},
       padded_numel_(utils::multiply_integers(padded_sizes_)),
-      logical_limits_{{0, 0, 0}},
       uniforms_(),
       // Utility Uniform Buffers that can be passed to shaders as arguments
       uniforms_size_(0),
@@ -467,6 +467,11 @@ vTensor::vTensor(
           padded_sizes_,
           dtype_,
           allocate_memory) {
+  uniform_data_ = std::make_shared<UniformData>(UniformData{
+      sizes_,
+      unsqueezed_strides_,
+      {{0, 0, 0}},
+      static_cast<size_t>(utils::multiply_integers(sizes_))});
   VK_CHECK_COND(
       dim_order_is_valid(dim_order_), "computed dim order is invalid");
 
@@ -494,11 +499,9 @@ vTensor::vTensor(
       dim_order_(),
       axis_map_(default_axis_map()),
       strides_(),
-      numel_(utils::multiply_integers(sizes_)),
       padded_sizes_(calculate_padded_sizes(sizes_, packed_dim_)),
       unsqueezed_strides_(),
       padded_numel_(utils::multiply_integers(padded_sizes_)),
-      logical_limits_(),
       uniforms_(),
       // Utility Uniform Buffers that can be passed to shaders as arguments
       uniforms_size_(0),
@@ -508,6 +511,11 @@ vTensor::vTensor(
       logical_limits_uniform_offset_(kUniformOffsetUnset),
       // Construct Tensor storage
       storage_(context, image) {
+  uniform_data_ = std::make_shared<UniformData>(UniformData{
+      sizes_,
+      {0, 0, 0, 0},
+      {{0, 0, 0}},
+      static_cast<size_t>(utils::multiply_integers(sizes_))});
   set_logical_limits(storage_.image_extents_);
 }
 
@@ -519,13 +527,11 @@ vTensor::vTensor(vTensor& other)
       dim_order_(other.dim_order_.begin(), other.dim_order_.end()),
       axis_map_(other.axis_map_.begin(), other.axis_map_.end()),
       strides_(other.strides_.begin(), other.strides_.end()),
-      numel_(other.numel_),
       padded_sizes_{other.padded_sizes_.begin(), other.padded_sizes_.end()},
       unsqueezed_strides_{
           other.unsqueezed_strides_.begin(),
           other.unsqueezed_strides_.end()},
       padded_numel_(other.padded_numel_),
-      logical_limits_{other.logical_limits_},
       uniforms_(),
       // Empty initialize Utility Uniform Buffers
       uniforms_size_(0),
@@ -534,7 +540,9 @@ vTensor::vTensor(vTensor& other)
       numel_uniform_offset_(kUniformOffsetUnset),
       logical_limits_uniform_offset_(kUniformOffsetUnset),
       // Copy Tensor storage
-      storage_(other.storage_) {}
+      storage_(other.storage_) {
+  uniform_data_ = std::make_shared<UniformData>(*other.get_uniform_data());
+}
 
 vTensor::vTensor(
     vTensor& other,
@@ -548,11 +556,10 @@ vTensor::vTensor(
       dim_order_(dim_order.begin(), dim_order.end()),
       axis_map_(default_axis_map()),
       strides_(calculate_strides(sizes_, dim_order_)),
-      numel_(utils::multiply_integers(sizes_)),
       padded_sizes_{calculate_padded_sizes(sizes, packed_dim_)},
-      unsqueezed_strides_{unsqueeze_strides(strides_, numel_)},
+      unsqueezed_strides_{
+          unsqueeze_strides(strides_, utils::multiply_integers(sizes_))},
       padded_numel_(utils::multiply_integers(padded_sizes_)),
-      logical_limits_(other.logical_limits_),
       uniforms_(),
       // Empty initialize Utility Uniform Buffers
       uniforms_size_(0),
@@ -562,12 +569,43 @@ vTensor::vTensor(
       logical_limits_uniform_offset_(kUniformOffsetUnset),
       // Copy Tensor storage
       storage_(other.storage_, vkapi::element_size(dtype_) * offset_numel) {
+  uniform_data_ = std::make_shared<UniformData>(UniformData{
+      sizes_,
+      unsqueezed_strides_,
+      {other.logical_limits()},
+      static_cast<size_t>(utils::multiply_integers(sizes_))});
+
   VK_CHECK_COND(
       dim_order_is_valid(dim_order_), "new dim order provided is invalid");
   VK_CHECK_COND(
-      offset_numel + numel_ <= other.numel(),
+      offset_numel + numel() <= other.numel(),
       "Tensor alias cannot access more elements than available in the original"
       "tensor");
+}
+
+uint32_t vTensor::UniformData::write_attribute(
+    void* dst,
+    const uint32_t dst_offset,
+    const uint32_t max_dst_size,
+    const Attribute attr) {
+#define WRITE_ATTRIBUTE_CASE(enum_name, member_name)                       \
+  case vTensor::Attribute::enum_name: {                                    \
+    VK_CHECK_COND(                                                         \
+        (dst_offset + sizeof(member_name)) <= max_dst_size,                \
+        "Attempting to write tensor attribute outside data boundary.");    \
+    memcpy((uint8_t*)dst + dst_offset, &member_name, sizeof(member_name)); \
+    return sizeof(member_name);                                            \
+  }
+  switch (attr) {
+    WRITE_ATTRIBUTE_CASE(SIZES, sizes_v);
+    WRITE_ATTRIBUTE_CASE(STRIDES, strides_v);
+    WRITE_ATTRIBUTE_CASE(LOGICAL_LIMITS, logical_limits);
+    WRITE_ATTRIBUTE_CASE(NUMEL, numel);
+    default:
+      VK_THROW("Invalid Attribute");
+  }
+#undef WRITE_ATTRIBUTE_CASE
+  return 0;
 }
 
 vkapi::VulkanImage& vTensor::image(
@@ -601,9 +639,9 @@ vkapi::VulkanBuffer& vTensor::buffer(
 }
 
 void vTensor::set_logical_limits(const utils::uvec3& image_extents) {
-  logical_limits_.limits[0] = image_extents[axis_map_.at(0)];
-  logical_limits_.limits[1] = image_extents[axis_map_.at(1)];
-  logical_limits_.limits[2] = image_extents[axis_map_.at(2)];
+  uniform_data_->logical_limits.limits[0] = image_extents[axis_map_.at(0)];
+  uniform_data_->logical_limits.limits[1] = image_extents[axis_map_.at(1)];
+  uniform_data_->logical_limits.limits[2] = image_extents[axis_map_.at(2)];
 }
 
 utils::GPUMemoryLayout vTensor::estimate_memory_layout() const {
@@ -661,7 +699,7 @@ const vkapi::BufferBindInfo vTensor::logical_limits_ubo() {
         "Uniform data allocation has exceeded Tensor uniform buffer size");
     logical_limits_uniform_offset_ = uniforms_size_;
     uniforms_size_ += kSizePerUniform;
-    uniforms_.update(logical_limits_, logical_limits_uniform_offset_);
+    uniforms_.update(logical_limits(), logical_limits_uniform_offset_);
   }
   return vkapi::BufferBindInfo(
       uniforms_.buffer(), logical_limits_uniform_offset_);
@@ -677,7 +715,7 @@ const vkapi::BufferBindInfo vTensor::numel_ubo() {
         "Uniform data allocation has exceeded Tensor uniform buffer size");
     numel_uniform_offset_ = uniforms_size_;
     uniforms_size_ += kSizePerUniform;
-    uniforms_.update(numel_, numel_uniform_offset_);
+    uniforms_.update(numel(), numel_uniform_offset_);
   }
   return vkapi::BufferBindInfo(uniforms_.buffer(), numel_uniform_offset_);
 }
@@ -687,10 +725,10 @@ size_t vTensor::staging_buffer_numel() const {
   const bool int8_supported =
       storage_.context_->adapter_ptr()->has_full_int8_buffers_support();
   if (is_int8 && !int8_supported) {
-    return utils::align_up_4(numel_);
+    return utils::align_up_4(numel());
   }
   if (storage_type() == utils::kBuffer) {
-    return numel_;
+    return numel();
   }
   return padded_numel_;
 }
@@ -720,11 +758,15 @@ void vTensor::bind_allocation(const vkapi::Allocation& allocation) {
 
 void vTensor::update_metadata() {
   strides_ = calculate_strides(sizes_, dim_order_);
-  numel_ = utils::multiply_integers(sizes_);
+  uniform_data_->numel = utils::multiply_integers(sizes_);
 
   padded_sizes_ = calculate_padded_sizes(sizes_, packed_dim_);
-  unsqueezed_strides_ = unsqueeze_strides(strides_, numel_);
+  unsqueezed_strides_ = unsqueeze_strides(strides_, numel());
   padded_numel_ = utils::multiply_integers(padded_sizes_);
+
+  // Update uniform data if it has been modified
+  uniform_data_->sizes_v = utils::make_whcn_ivec4(sizes_);
+  uniform_data_->strides_v = utils::make_whcn_ivec4(unsqueezed_strides_);
 
   // Calculate the image extents that would have been used to allocate a texture
   // withthe current sizes, and use that to set the logical limits.
@@ -732,18 +774,16 @@ void vTensor::update_metadata() {
       calculate_image_extents(padded_sizes_, axis_map_, packed_dim_));
 
   if (sizes_uniform_offset_ != kUniformOffsetUnset) {
-    uniforms_.update(utils::make_whcn_ivec4(sizes_), sizes_uniform_offset_);
+    uniforms_.update(uniform_data_->sizes_v, sizes_uniform_offset_);
   }
   if (unsqueezed_strides_offset_ != kUniformOffsetUnset) {
-    uniforms_.update(
-        utils::make_whcn_ivec4(unsqueezed_strides_),
-        unsqueezed_strides_offset_);
+    uniforms_.update(uniform_data_->strides_v, unsqueezed_strides_offset_);
   }
   if (numel_uniform_offset_ != kUniformOffsetUnset) {
-    uniforms_.update(numel_, numel_uniform_offset_);
+    uniforms_.update(numel(), numel_uniform_offset_);
   }
   if (logical_limits_uniform_offset_ != kUniformOffsetUnset) {
-    uniforms_.update(logical_limits_, logical_limits_uniform_offset_);
+    uniforms_.update(logical_limits(), logical_limits_uniform_offset_);
   }
 }
 
@@ -796,6 +836,8 @@ void vTensor::virtual_clone(const vTensor& other) {
   dim_order_ = other.dim_order_;
   axis_map_ = other.axis_map_;
   packed_dim_ = other.packed_dim_;
+
+  *uniform_data_ = *other.get_uniform_data();
 }
 
 void vTensor::virtual_resize(const std::vector<int64_t>& new_sizes) {
