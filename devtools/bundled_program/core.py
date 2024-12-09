@@ -204,9 +204,6 @@ class BundledProgram:
             core_schema.Bool: bool,
             core_schema.Double: float,
         }
-        # pyre-fixme[6]: Incompatible parameter type [6]: In call `dict.__getitem__`, for 1st positional only parameter
-        # expected `Type[Union[core_schema.Bool, core_schema.Double, core_schema.Int]]` but got `Type[Union[core_schema.Bool, core_schema.Double, core_schema.Int, core_schema.Tensor, BoolList, DoubleList,
-        # IntList, Null, OptionalTensorList, String, TensorList]]`.
         return type_lookup[type(self._get_program_input(program, plan_idx, input_idx))]
 
     def _get_output_dtype(

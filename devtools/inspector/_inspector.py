@@ -939,13 +939,13 @@ class EventBlock:
 
             # delegate_debug_id can be either int based or string based, therefore we need to check both
             debug_handles = delegate_metadata_delegate_map.get(
-                delegate_debug_id  # pyre-ignore
+                delegate_debug_id
             )
             if debug_handles is not None:
                 event.debug_handles = debug_handles
             else:
                 event.debug_handles = delegate_metadata_delegate_map.get(
-                    str(delegate_debug_id)  # pyre-ignore
+                    str(delegate_debug_id)
                 )
                 for key, value in delegate_metadata_delegate_map.items():
                     if key in str(delegate_debug_id):
