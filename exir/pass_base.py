@@ -726,7 +726,6 @@ def map_args(
         args[key] = fn(args[key], schema)
 
     for i, schema in enumerate(op._schema.arguments):
-        assert isinstance(schema, ArgSchema)
         if schema.name in kwargs:
             update(schema.name, kwargs, schema)
         elif not schema.kwarg_only and i < len(args):

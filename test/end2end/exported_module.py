@@ -126,6 +126,8 @@ class ExportedModule:
         trace_inputs_method = "get_upper_bound_inputs"
         get_trace_inputs = get_inputs_adapter(
             (
+                # pyre-fixme[6]: For 1st argument expected `(...) -> Any` but got
+                #  `Union[Module, Tensor]`.
                 getattr(eager_module, trace_inputs_method)
                 if hasattr(eager_module, trace_inputs_method)
                 else eager_module.get_random_inputs
@@ -142,6 +144,8 @@ class ExportedModule:
         if hasattr(eager_module, "get_dynamic_shapes"):
             assert capture_config is not None
             assert capture_config.enable_aot is True
+            # pyre-fixme[29]: `Union[nn.modules.module.Module,
+            #  torch._tensor.Tensor]` is not a function.
             trace_dynamic_shapes = eager_module.get_dynamic_shapes()
             method_name_to_dynamic_shapes = {}
             for method in methods:
@@ -149,6 +153,8 @@ class ExportedModule:
 
         memory_planning_pass = MemoryPlanningPass()
         if hasattr(eager_module, "get_memory_planning_pass"):
+            # pyre-fixme[29]: `Union[nn.modules.module.Module,
+            #  torch._tensor.Tensor]` is not a function.
             memory_planning_pass = eager_module.get_memory_planning_pass()
 
         class WrapperModule(nn.Module):
@@ -213,6 +219,8 @@ class ExportedModule:
 
         # Get a function that creates random inputs appropriate for testing.
         get_random_inputs_fn = get_inputs_adapter(
+            # pyre-fixme[6]: For 1st argument expected `(...) -> Any` but got
+            #  `Union[Module, Tensor]`.
             eager_module.get_random_inputs,
             # all exported methods must have the same signature so just pick the first one.
             methods[0],

@@ -963,8 +963,8 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
   if (tensor_meta->is_memory_planned()) {
     ET_LOG(
         Error,
-        "Output %zu is memory planned, or is a constant. Cannot override \
-        the existing data pointer.",
+        "Output %zu is memory planned, or is a constant. Cannot override "
+        "the existing data pointer.",
         output_idx);
     return Error::InvalidState;
   }

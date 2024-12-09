@@ -18,6 +18,7 @@ def define_common_targets():
             ],
             exported_headers = [
                 "tensor.h",
+                "tensor_accessor.h",
                 "tensor_ptr.h",
                 "tensor_ptr_maker.h",
             ],

@@ -44,7 +44,9 @@ void quantize_per_tensor_out(
     int16_t* out_data = out.mutable_data_ptr<int16_t>();
     cadence::impl::HiFi::kernels::quantize<int16_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
-  } else if (out.scalar_type() == ScalarType::Bits16) {
+  } else if (
+      out.scalar_type() == ScalarType::Bits16 ||
+      out.scalar_type() == ScalarType::UInt16) {
     uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
     cadence::impl::HiFi::kernels::quantize<uint16_t>(
         out_data, input_data, 1. / scale, zero_point, numel);

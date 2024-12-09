@@ -325,7 +325,7 @@ class Conv2dMaxPool2d(torch.nn.Module):
 
 
 class Conv2dSequential(torch.nn.Module):
-    def __init__(self, bias=True):
+    def __init__(self, bias=True, channel_last=False):
         super().__init__()
         self.first = torch.nn.Conv2d(
             in_channels=1,
@@ -341,8 +341,10 @@ class Conv2dSequential(torch.nn.Module):
             padding=1,
             bias=bias,
         )
+        self.channel_last = channel_last
 
     def forward(self, x):
+        x = x.to(memory_format=torch.channels_last) if self.channel_last else x
         return self.second(self.first(x))
 
 
@@ -427,6 +429,14 @@ class Conv2dTopK(torch.nn.Module):
         return topk_values
 
 
+class Cos(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.cos(x)
+
+
 class Div(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -449,6 +459,23 @@ class DivConstantLong(torch.nn.Module):
 
     def forward(self, x):
         return x / 10
+
+
+class DrawGraphModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.relu1 = torch.nn.ReLU()
+        self.relu2 = torch.nn.ReLU()
+        kernel_sz = 32
+        self.conv1 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=True)
+        self.conv2 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=True)
+
+    def forward(self, x):
+        x1 = self.conv1(x)
+        x2 = self.conv2(x)
+        y1 = self.relu1(x1)
+        y2 = self.relu1(x2)
+        return y1 + y2
 
 
 class EinsumBilinear(torch.nn.Module):
@@ -549,8 +576,8 @@ class HardTanh(torch.nn.Module):
 class Index(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.idx0 = torch.tensor([[0, 1], [2, 3], [4, 5]])
-        self.idx1 = torch.tensor([[1, 2], [3, 4], [5, 6]])
+        self.idx0 = torch.tensor([[0, 1], [2, 3], [4, 5]], dtype=torch.int32)
+        self.idx1 = torch.tensor([[1, 2], [3, 4], [5, 6]], dtype=torch.int32)
 
     def forward(self, x):
         return x[self.idx0] + x[self.idx1]
@@ -887,6 +914,14 @@ class Sigmoid(torch.nn.Module):
 
     def forward(self, x):
         return torch.sigmoid(x)
+
+
+class Sin(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.sin(x)
 
 
 class SimpleModel(torch.nn.Module):

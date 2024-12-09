@@ -54,7 +54,7 @@ build_native_library "arm64-v8a"
 build_native_library "x86_64"
 build_aar
 bash examples/models/llama/install_requirements.sh
-source ".ci/scripts/test_llama.sh" stories110M cmake fp16 portable ${BUILD_AAR_DIR}
+source ".ci/scripts/test_llama.sh" -model stories110M -build_tool cmake -dtype fp16 -mode portable -upload ${BUILD_AAR_DIR}
 popd
 mkdir -p "$BASEDIR"/src/libs
 cp "$BUILD_AAR_DIR/executorch.aar" "$BASEDIR"/src/libs/executorch.aar

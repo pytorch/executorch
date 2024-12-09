@@ -136,6 +136,7 @@ def _vk_replace_linear_int4(
                     scales_precision=scales_precision,
                 )
                 if copy_weights and child.weight.device != torch.device("meta"):
+                    # pyre-fixme[16]: `Module` has no attribute `weight`.
                     new_linear.weight = child.weight
                 setattr(module, name, new_linear)
         else:

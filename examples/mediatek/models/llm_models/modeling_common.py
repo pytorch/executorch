@@ -675,8 +675,8 @@ class ModelChunk(BaseModelChunk):
                     )
             else:
                 if self.config.tie_word_embeddings:
-                    lm_head_weight_key = "embed_tokens.weight"
-                    lm_head_bias_key = "embed_tokens.bias"
+                    lm_head_weight_key = f"{prefix}embed_tokens.weight"
+                    lm_head_bias_key = f"{prefix}embed_tokens.bias"
                 else:
                     lm_head_weight_key = "lm_head.weight"
                     lm_head_bias_key = "lm_head.bias"
@@ -751,15 +751,16 @@ class ModelChunk(BaseModelChunk):
                 for _ in range(2 * self.num_blocks)
             ],
         )
+        # Specify dims that would be dynamic during calibration
         # Note: Assume cache size fixed shape as torch dynamic shape cannot handle dim 3 being
         # combination of 2 dynamic dims
         if get_dym_shape:
             nt = Dim("num_token", max=num_token)
             cache_dims = tuple(({} for _ in range(2 * self.num_blocks)))
             dynamic_shapes = (
-                {0: None, 1: nt, 2: None},
-                {0: None, 1: None, 2: nt, 3: nt + cache_size},
-                {0: None, 1: None, 2: nt, 3: None},
+                {0: Dim.STATIC, 1: nt, 2: Dim.STATIC},
+                {0: Dim.STATIC, 1: Dim.STATIC, 2: nt, 3: nt + cache_size},
+                {0: Dim.STATIC, 1: Dim.STATIC, 2: nt, 3: Dim.STATIC},
                 cache_dims,
             )
             return example_inputs, dynamic_shapes

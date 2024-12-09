@@ -91,8 +91,12 @@ def create_program(
     """Returns an executorch program based on ModuleAdd, along with inputs."""
 
     # Trace the test module and create a serialized ExecuTorch program.
+    # pyre-fixme[29]: `Union[torch._tensor.Tensor, torch.nn.modules.module.Module]`
+    #  is not a function.
     inputs = eager_module.get_inputs()
     input_map = {}
+    # pyre-fixme[29]: `Union[torch._tensor.Tensor, torch.nn.modules.module.Module]`
+    #  is not a function.
     for method in eager_module.get_methods_to_export():
         input_map[method] = inputs
 

@@ -9,6 +9,7 @@ python_library(
     typing = True,
     deps = [
         ":arm_backend",
+        "//executorch/backends/arm/operator_support:operator_support",
         "//executorch/backends/arm/_passes:passes",
         "//executorch/exir:lib",
     ],
@@ -108,4 +109,15 @@ python_library(
         ":tosa_quant_utils",
         "//executorch/backends/arm/operators:node_visitor",
     ],
+)
+
+python_library(
+    name = "arm_model_evaluator",
+    srcs = [
+        "util/arm_model_evaluator.py",
+    ],
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+    ]
 )

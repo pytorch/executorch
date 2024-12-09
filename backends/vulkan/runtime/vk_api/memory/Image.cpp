@@ -156,7 +156,7 @@ VulkanImage::VulkanImage(
       1u, // mipLevels
       1u, // arrayLayers
       VK_SAMPLE_COUNT_1_BIT, // samples
-      VK_IMAGE_TILING_LINEAR, // tiling
+      image_properties_.image_tiling, // tiling
       image_properties_.image_usage, // usage
       VK_SHARING_MODE_EXCLUSIVE, // sharingMode
       0u, // queueFamilyIndexCount

@@ -1087,8 +1087,8 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
 
   // Current known size on 64 bit system: 1040 B
   EXPECT_TRUE(sizeof(vTensor) < 1200);
-  // Current known size on 64 bit system: 1056 B
-  EXPECT_TRUE(sizeof(Value) < 1200);
+  // Current known size on 64 bit system: 120 B
+  EXPECT_TRUE(sizeof(Value) < 128);
   // Current known size on 64 bit system: 120 B
   EXPECT_TRUE(sizeof(StagingBuffer) < 500);
   // Current known size on 64 bit system: 384 B
@@ -1123,6 +1123,7 @@ TEST_F(VulkanComputeAPITest, test_tensor_creation_from_vulkan_image) {
       vkapi::create_extent3d(image_extents),
       image_format,
       image_type,
+      context()->preferred_image_tiling(),
       image_view_type,
       sampler_props,
       sampler,

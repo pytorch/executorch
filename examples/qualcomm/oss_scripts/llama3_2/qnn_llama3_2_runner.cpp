@@ -16,9 +16,7 @@
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama3_2/runner/runner.h>
 #include <executorch/runtime/platform/log.h>
-
 #include <gflags/gflags.h>
-
 #include <fstream>
 
 DEFINE_string(
@@ -45,12 +43,20 @@ DEFINE_int32(
     128,
     "Total number of tokens to generate (prompt + output). Defaults to max_seq_len. If the number of input tokens + seq_len > max_seq_len, the output will be truncated to max_seq_len tokens.");
 
+DEFINE_int32(
+    eval_mode,
+    0,
+    "0: PromptProcessor(batch_prefill) / 1: TokenGenerator(kv) / 2: HybridMode (TBD)");
+
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   // create llama runner
   example::Runner runner(
-      {FLAGS_model_path}, FLAGS_tokenizer_path.c_str(), FLAGS_temperature);
+      {FLAGS_model_path},
+      FLAGS_tokenizer_path.c_str(),
+      FLAGS_temperature,
+      FLAGS_eval_mode);
 
   // generate tokens & store inference output
   std::ofstream fout(FLAGS_output_path.c_str());

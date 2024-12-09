@@ -86,7 +86,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        mode: [portable, xnnpack+custom, xnnpack+custom+qe]
+        mode: [portable, xnnpack+custom, xnnpack+custom+qe,xnnpack+custom+quantize_kv,xnnpack+quantize_kv]
         include:
           - dtype: bf16
             mode: portable
@@ -117,7 +117,7 @@ jobs:
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
         # Test llama2
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh stories110M "${BUILD_TOOL}" "${DTYPE}" "${MODE}" "${ARTIFACTS_DIR_NAME}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -dtype "${DTYPE}" -mode "${MODE}" -upload "${ARTIFACTS_DIR_NAME}"
 
   test-llama-runner-linux-android:
     name: test-llama-runner-linux-android
@@ -332,7 +332,7 @@ jobs:
       docker-image: executorch-ubuntu-22.04-clang12
 
   unittest-arm:
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-arm-sdk
@@ -368,6 +368,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
+        pt2e_quantize: [qnn_16a16w, qnn_8a8w]
         mode: [qnn]
       fail-fast: false
     with:
@@ -384,6 +385,7 @@ jobs:
         DTYPE=${{ matrix.dtype }}
         BUILD_TOOL="cmake"
         MODE=${{ matrix.mode }}
+        PT2E_QUANTIZE=${{ matrix.pt2e_quantize }}
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
@@ -393,7 +395,7 @@ jobs:
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
         # Test llama2
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh stories110M "${BUILD_TOOL}" "${DTYPE}" "${MODE}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -mode "${MODE}" -dtype "${DTYPE}" -pt2e_quantize "${PT2E_QUANTIZE}"
 
   test-phi-3-mini-runner-linux:
     name: test-phi-3-mini-runner-linux
@@ -502,3 +504,21 @@ jobs:
 
         # run llama runner in eager mode
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama_runner_eager.sh
+
+  test-mediatek-models-linux:
+    name: test-mediatek-models-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.24xlarge
+      docker-image: executorch-ubuntu-22.04-mediatek-sdk
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # placeholder for mediatek to add more tests

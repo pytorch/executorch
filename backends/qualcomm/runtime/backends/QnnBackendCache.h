@@ -11,7 +11,9 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnSysImplementation.h>
 
 #include <string>
+#include <unordered_map>
 #include <vector>
+
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -23,17 +25,19 @@ class QnnBackendCache {
     DESERIALIZE = 2,
     ONLINE_PREPARE = 3,
   };
-  explicit QnnBackendCache(const QnnExecuTorchContextBinary& qnn_context_blob)
-      : qnn_context_blob_(qnn_context_blob) {}
+  explicit QnnBackendCache(
+      const QnnExecuTorchContextBinary& qnn_context_blob,
+      const std::string& aot_graph_name)
+      : qnn_context_blob_(qnn_context_blob), aot_graph_name_(aot_graph_name) {}
   virtual ~QnnBackendCache();
   QnnBackendCache(const QnnBackendCache&) = delete;
   QnnBackendCache(QnnBackendCache&&) = delete;
   QnnBackendCache& operator=(const QnnBackendCache&) = delete;
   QnnBackendCache& operator=(QnnBackendCache&&) = delete;
 
-  std::vector<Qnn_Tensor_t> GetGraphInputs();
+  std::vector<Qnn_Tensor_t> GetGraphInputs(const std::string& graph_name);
 
-  std::vector<Qnn_Tensor_t> GetGraphOutputs();
+  std::vector<Qnn_Tensor_t> GetGraphOutputs(const std::string& graph_name);
 
   const QnnExecuTorchContextBinary& GetQnnContextBlob() {
     return qnn_context_blob_;
@@ -47,8 +51,8 @@ class QnnBackendCache {
     state_ = INVALID;
   }
 
-  std::string GetGraphName() {
-    return graph_name_;
+  std::vector<std::string> GetGraphNames() {
+    return graph_names_;
   }
 
   executorch::runtime::Error Configure();
@@ -60,16 +64,24 @@ class QnnBackendCache {
   }
 
  private:
-  executorch::runtime::Error GetQnnGraphInfoFromBinary();
+  executorch::runtime::Error GetQnnGraphInfoFromBinary(
+      void* buffer,
+      uint32_t nbytes);
+
+  template <typename INFO>
+  void RetrieveGraphInfo(const INFO& info);
 
   CacheState state_{INVALID};
 
   QnnExecuTorchContextBinary qnn_context_blob_;
   QnnSystemContext_Handle_t sys_context_handle_{nullptr};
   QnnSystemImplementation qnn_sys_impl_{"libQnnSystem.so"};
-  std::string graph_name_;
-  std::vector<Qnn_Tensor_t> input_tensor_structs_;
-  std::vector<Qnn_Tensor_t> output_tensor_structs_;
+  std::vector<std::string> graph_names_;
+  std::string aot_graph_name_;
+  std::unordered_map<std::string, std::vector<Qnn_Tensor_t>>
+      input_tensor_structs_;
+  std::unordered_map<std::string, std::vector<Qnn_Tensor_t>>
+      output_tensor_structs_;
 };
 } // namespace qnn
 } // namespace backends

@@ -9,6 +9,8 @@
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/kernels/portable/cpu/util/dtype_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
@@ -144,20 +146,26 @@ mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
     return out;
   }
 
-  ET_SWITCH_REALHB_TYPES(a_type, ctx, "mul.out", CTYPE_A, [&]() {
-    ET_SWITCH_REALHB_TYPES(b_type, ctx, "mul.out", CTYPE_B, [&]() {
-      using CTYPE_IN = typename torch::executor::
-          promote_types<CTYPE_A, CTYPE_B, /*half_to_float*/ true>::type;
-      ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
-      ET_SWITCH_REALHB_TYPES(out_type, ctx, "mul.out", CTYPE_OUT, [&]() {
-        MulInner<
-            can_cast<CTYPE_IN, CTYPE_OUT>::value,
-            CTYPE_A,
-            CTYPE_B,
-            CTYPE_IN,
-            CTYPE_OUT>::run(a, b, out);
-      });
-    });
+  // Compute Dtype
+  ScalarType compute_type =
+      torch::executor::native::utils::get_compute_type(common_type);
+
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "mul.Scalar_out";
+
+  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    torch::executor::native::utils::
+        apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+            [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+              return val_a * val_b;
+            },
+            ctx,
+            a,
+            torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
+            b,
+            torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
+            out,
+            torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16);
   });
 
   return out;

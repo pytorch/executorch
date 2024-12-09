@@ -10,6 +10,7 @@ from enum import Enum
 import torch
 import torch.nn as nn
 from executorch.examples.models.llama.llama_transformer import KVCache
+
 from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noqa: F401
 
 
@@ -151,22 +152,14 @@ class QuantizedKVCache(nn.Module):
             # instead of quantizing on their own.
             # But until this opting for code simplicity
             start_pos = input_pos[0].item()
-            _ = torch.ops.llama.update_quantized_cache(
-                quantized_k_val, self.k_cache, start_pos
-            )
-            _ = torch.ops.llama.update_quantized_cache(
-                k_scales, self.k_cache_scales, start_pos
-            )
-            _ = torch.ops.llama.update_quantized_cache(
+            _ = torch.ops.llama.update_cache(quantized_k_val, self.k_cache, start_pos)
+            _ = torch.ops.llama.update_cache(k_scales, self.k_cache_scales, start_pos)
+            _ = torch.ops.llama.update_cache(
                 k_zero_points, self.k_cache_zero_points, start_pos
             )
-            _ = torch.ops.llama.update_quantized_cache(
-                quantized_v_val, self.v_cache, start_pos
-            )
-            _ = torch.ops.llama.update_quantized_cache(
-                v_scales, self.v_cache_scales, start_pos
-            )
-            _ = torch.ops.llama.update_quantized_cache(
+            _ = torch.ops.llama.update_cache(quantized_v_val, self.v_cache, start_pos)
+            _ = torch.ops.llama.update_cache(v_scales, self.v_cache_scales, start_pos)
+            _ = torch.ops.llama.update_cache(
                 v_zero_points, self.v_cache_zero_points, start_pos
             )
 
@@ -188,6 +181,26 @@ class QuantizedKVCache(nn.Module):
             self.quantized_cache_dtype,
             self.cache_fp_type,
         )
+
+        if self.is_transposed:
+            if self.enable_dynamic_shape:
+                start_pos = input_pos[0].item()
+                torch._check_is_size(start_pos)
+                dim_to_slice = 2 if self.is_transposed else 1
+                torch._check(start_pos < self.k_cache.size(dim_to_slice))
+                seq_length = k_val.size(dim_to_slice)
+                narrowed_k = k_out.narrow(dim_to_slice, start_pos, seq_length)
+                narrowed_k.copy_(k_val)
+                narrowed_v = v_out.narrow(dim_to_slice, start_pos, seq_length)
+                narrowed_v.copy_(v_val)
+            else:
+                k_out[:, :, input_pos] = k_val
+                v_out[:, :, input_pos] = v_val
+        else:
+            start_pos = input_pos[0].item()
+            _ = torch.ops.llama.update_cache(k_val, k_out, start_pos)
+            _ = torch.ops.llama.update_cache(v_val, v_out, start_pos)
+
         return k_out, v_out
 
     @classmethod
@@ -209,6 +222,33 @@ class QuantizedKVCache(nn.Module):
 
 
 def replace_kv_cache_with_quantized_kv_cache(module):
+    try:
+        op = torch.ops.quantized_decomposed.quantize_per_token.out
+        assert op is not None
+    except:
+        import glob
+
+        import executorch
+        from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
+
+        # Ideally package is installed in only one location but usage of
+        # PYATHONPATH can result in multiple locations.
+        # ATM this is mainly used in CI for qnn runner. Will need to revisit this
+        executorch_package_path = executorch.__path__[-1]
+        libs = list(
+            glob.glob(
+                f"{executorch_package_path}/**/libquantized_ops_aot_lib.*",
+                recursive=True,
+            )
+        )
+        assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
+        logging.info(f"Loading custom ops library: {libs[0]}")
+        torch.ops.load_library(libs[0])
+        op = torch.ops.quantized_decomposed.quantize_per_token.out
+        assert op is not None
+    # This is needed to ensure that custom ops are registered
+    from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+
     logging.warning(
         "Replacing KVCache with QuantizedKVCache. This modifies the model in place."
     )

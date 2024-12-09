@@ -1,0 +1,75 @@
+// Schema for flatbuffer-serialized tensors.
+
+include "scalar_type.fbs";
+namespace flat_tensor;
+
+// Update after BC breaking changes.
+file_identifier "FT01";
+file_extension "ptd";
+
+table TensorMetadata {
+  // The unique id used to connect the data and program.
+  fully_qualified_name: string;
+  scalar_type: executorch_flatbuffer.ScalarType;
+
+  // Size of each dimension.
+  dim_sizes: [int32];
+
+  // Specifies in what order the dimensions are laid out in memory (from outer
+  // to inner).
+  //
+  // For example, given a rank 3 Tensor of size (3, 5, 2). If we name
+  // dimensions: [row, column, batch], then a dim_order of:
+  // - (2, 0, 1) represents a [batch, row, column] ordering where "column" is
+  //   the innermost dimension, then comes "row", and the outermost dimension is
+  //   "batch".
+  // - (0, 2, 1) represents a [row, batch, column] ordering where "column" is
+  //   the innermost dimension, then comes "batch", and the outermost dimension
+  //   is "row".
+  dim_order: [uint8];
+
+  // FlatTensor.segments index that the tensor data is stored in.
+  segment_index: uint32;
+
+  // Tensor offsets are relative to each TensorSegment.
+  // To retrieve a given tensor:
+  // 1. segment_base_offset: from the file header.
+  // 2. segment_offset: segments[segment_index].offset
+  // 3. tensor_offset: segments[segment_offset].tensor_metadata[j].offset
+  //    Find the relevant index j by matching on tensor fqn.
+  offset: uint64;
+}
+
+// Describes a contiguous piece of data that lives outside of the flatbuffer data,
+// typically appended afterwards in the file.
+// For .ptd files, the "extended header" in the file points to the segment base offset.
+table DataSegment {
+  // Segment offsets are relative to the segment base offset provided in the
+  // extended file header. Segments will typically be aligned in a way to make
+  // it possible to use mmap() to load them.
+  offset: uint64;
+
+  // The size in bytes of valid data starting at the offset. The segment
+  // data may be followed by padding before the segment that follows it,
+  // to make it easier to use mmap().
+  size: uint64;
+}
+
+// FlatTensor is a flatbuffer-based format for storing and loading tensors.
+table FlatTensor {
+  // Schema version.
+  version: uint32;
+
+  // Alignment for each tensor in bytes. Offsets of the tensor provided
+  // in TensorMetadata.offset are aligned to tensor_alignment.
+  tensor_alignment: uint32;
+
+  // Tensor information, including metadata and offsets to the raw tensor data.
+  tensors: [TensorMetadata];
+
+  // List of data segments that follow the FlatTensor data in this file, sorted by
+  // offset. Elements in this schema can refer to these segments by index.
+  segments: [DataSegment];
+}
+
+root_type FlatTensor;

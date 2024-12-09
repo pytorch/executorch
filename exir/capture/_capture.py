@@ -120,7 +120,11 @@ def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
                 signature=ModuleCallSignature(
                     inputs=[],
                     outputs=[],
+                    # pyre-fixme[6]: For 3rd argument expected `TreeSpec` but got
+                    #  `Union[Tensor, Module]`.
                     in_spec=in_spec,
+                    # pyre-fixme[6]: For 4th argument expected `TreeSpec` but got
+                    #  `Union[Tensor, Module]`.
                     out_spec=out_spec,
                 ),
             )
@@ -350,6 +354,8 @@ def capture(  # noqa: C901
                     inputs=[],
                     outputs=[],
                     in_spec=in_spec,
+                    # pyre-fixme[6]: For 4th argument expected `TreeSpec` but got
+                    #  `Union[None, TreeSpec, Tensor, Module]`.
                     out_spec=out_spec,
                 ),
             )

@@ -6,6 +6,7 @@
 # pyre-unsafe
 
 import operator
+from typing import Type
 
 import torch.fx as fx
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -31,7 +32,9 @@ class SupportedTOSAOperatorCheck:
 
 
 # container for all SupportedTosaOperatorCheck classes
-_tosa_spec_dicts: dict[TosaSpecification, dict[str, SupportedTOSAOperatorCheck]] = {
+_tosa_spec_dicts: dict[
+    TosaSpecification, dict[str, Type[SupportedTOSAOperatorCheck]]
+] = {
     TosaSpecification.create_from_string("TOSA-0.80.0+BI"): {},
     TosaSpecification.create_from_string("TOSA-0.80.0+MI"): {},
 }
@@ -89,6 +92,7 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.avg_pool2d.default,
             exir_ops.edge.aten.max_pool2d_with_indices.default,
             exir_ops.edge.aten.sigmoid.default,
+            exir_ops.edge.aten.mean.dim,
             exir_ops.edge.aten.mm.default,
             exir_ops.edge.aten.repeat.default,
             exir_ops.edge.aten.reciprocal.default,
@@ -102,6 +106,8 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.sum.dim_IntList,
             exir_ops.edge.aten.tanh.default,
             exir_ops.edge.aten.upsample_nearest2d.vec,
+            exir_ops.edge.aten.var.correction,
+            exir_ops.edge.aten.var.dim,
             exir_ops.edge.aten.view_copy.default,
             exir_ops.edge.aten.clone.default,
             exir_ops.edge.aten.unsqueeze_copy.default,

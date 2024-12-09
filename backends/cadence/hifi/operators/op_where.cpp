@@ -8,6 +8,8 @@
 
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/kernels/portable/cpu/util/dtype_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -148,26 +150,41 @@ Tensor& where_out(
     }
     return out;
   }
-  ET_SWITCH_REALHB_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
-    ET_SWITCH_REALHB_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
-      using CTYPE_OUT =
-          typename torch::executor::promote_types<CTYPE_A, CTYPE_B>::type;
-      torch::executor::
-          apply_ternary_elementwise_fn<CTYPE_A, CTYPE_B, uint8_t, CTYPE_OUT>(
-              [](const CTYPE_A val_a,
-                 const CTYPE_B val_b,
-                 const uint8_t val_c) {
-                CTYPE_OUT a_casted = static_cast<CTYPE_OUT>(val_a);
-                CTYPE_OUT b_casted = static_cast<CTYPE_OUT>(val_b);
-                return val_c ? a_casted : b_casted;
-              },
-              a,
-              b,
-              cond,
-              out);
-    });
+
+  // Compute Dtype
+  ScalarType compute_type =
+      torch::executor::native::utils::get_compute_type(common_type);
+
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "where.self_out";
+
+  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    torch::executor::native::utils::apply_tritensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name>(
+        [](const CTYPE_COMPUTE val_a,
+           const CTYPE_COMPUTE val_b,
+           const CTYPE_COMPUTE val_c) { return val_c ? val_a : val_b; },
+        ctx,
+        a,
+        torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
+        b,
+        torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
+        cond,
+        torch::executor::native::utils::SupportedTensorDtypes::BOOL_OR_BYTE,
+        out,
+        torch::executor::native::utils::SupportedTensorDtypes::SAME_AS_COMMON);
   });
   return out;
+}
+
+Tensor& where_self_out(
+    RuntimeContext& ctx,
+    const Tensor& cond,
+    const Tensor& a,
+    const Tensor& b,
+    Tensor& out) {
+  return cadence::impl::HiFi::native::where_out(ctx, cond, a, b, out);
 }
 
 } // namespace native

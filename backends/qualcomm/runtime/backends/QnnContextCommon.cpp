@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/qualcomm/runtime/backends/QnnContextCommon.h>
+
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -45,12 +46,13 @@ Error QnnContext::Configure() {
   if (cache_->GetCacheState() == QnnBackendCache::DESERIALIZE) {
     const QnnExecuTorchContextBinary& qnn_context_blob =
         cache_->GetQnnContextBlob();
+    auto binary_info = GetBinaryInfo(qnn_context_blob.buffer);
     error = qnn_interface.qnn_context_create_from_binary(
         backend_->GetHandle(),
         device_->GetHandle(),
         temp_context_config.empty() ? nullptr : temp_context_config.data(),
-        qnn_context_blob.buffer,
-        qnn_context_blob.nbytes,
+        const_cast<uint8_t*>(binary_info->data()->data()),
+        binary_info->data()->size(),
         &handle_,
         /*profile=*/nullptr);
     if (error != QNN_SUCCESS) {
@@ -92,7 +94,7 @@ Error QnnContext::GetContextBinary(
   Qnn_ErrorHandle_t error =
       qnn_interface.qnn_context_get_binary_size(handle_, &binary_size);
   if (error == QNN_SUCCESS) {
-    binary_buffer_.reserve(binary_size);
+    binary_buffer_.resize(binary_size);
     error = qnn_interface.qnn_context_get_binary(
         handle_, binary_buffer_.data(), binary_size, &bytes_written);
     if (error != QNN_SUCCESS) {
@@ -110,8 +112,18 @@ Error QnnContext::GetContextBinary(
             binary_size);
         return Error::Internal;
       }
-      qnn_executorch_context_binary.buffer = binary_buffer_.data();
-      qnn_executorch_context_binary.nbytes = bytes_written;
+
+      auto signature = []() {
+        return std::to_string(std::chrono::high_resolution_clock::now()
+                                  .time_since_epoch()
+                                  .count());
+      };
+      builder_.Reset();
+      auto binary_info = qnn_delegate::CreateBinaryInfoDirect(
+          builder_, signature().c_str(), &binary_buffer_);
+      builder_.Finish(binary_info);
+      qnn_executorch_context_binary.buffer = builder_.GetBufferPointer();
+      qnn_executorch_context_binary.nbytes = builder_.GetSize();
     }
   } else {
     QNN_EXECUTORCH_LOG_ERROR(

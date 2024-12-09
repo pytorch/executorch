@@ -168,18 +168,19 @@ class LlamaRunner(ABC):
 
     def chat_completion(
         self,
+        max_seq_len: int,
         temperature: float = 0.6,
         top_p: float = 0.9,
+        show_progress: bool = False,
     ) -> List[int]:
         """
         Perform multi-turn chat with the language model.
 
             Args:
-                prompt (str): Text prompt for completion.
+                max_seq_len (int): Maximum number of tokens to generate for each prompt.
                 temperature (float, optional): Temperature value for controlling randomness in sampling. Defaults to 0.6.
                 top_p (float, optional): Top-p probability threshold for nucleus sampling. Defaults to 0.9.
-                echo (bool, optional): Flag indicating whether to include prompt tokens in the generated output. Defaults to False.
-
+                show_progress (bool, optional): Flag indicating whether to show number of tokens generated.
             Returns:
                 Generated list of tokens.
 
@@ -188,26 +189,31 @@ class LlamaRunner(ABC):
         """
         exit_prompt = "exit"
         tokens = []
+        pre_stop_token = []
         prompt = input("Me: ")
         while prompt and prompt != exit_prompt:
             print("LLM: ", end="", flush=True)
-            new_tokens = self.generate(
-                prompt_tokens=self.tokenizer.encode(
-                    self._format_prompt(prompt), bos=True, eos=False
-                ),
-                max_seq_len=self.max_seq_len,
+            prompt_tokens = self.tokenizer.encode(
+                self._format_prompt(prompt), bos=True, eos=False
+            )
+            generated_tokens = self.generate(
+                prompt_tokens=pre_stop_token + prompt_tokens,
+                max_seq_len=max_seq_len,
                 temperature=temperature,
                 top_p=top_p,
-                echo=True,
-                pos_base=len(tokens),
+                echo=False,
+                pos_base=len(tokens) - 1 if len(tokens) > 0 else 0,
             )
-            tokens.extend(new_tokens)
+            pre_stop_token = generated_tokens[-1:]
+            tokens.extend(prompt_tokens)
+            tokens.extend(generated_tokens)
+            if show_progress:
+                print(f"[Generated {len(tokens)} tokens]")
             prompt = input("Me: ")
         return tokens
 
     def _format_prompt(self, prompt: str) -> str:
-        return f"""
-<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+        return f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 
 You are a helpful assistant<|eot_id|><|start_header_id|>user<|end_header_id|>
 

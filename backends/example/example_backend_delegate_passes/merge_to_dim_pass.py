@@ -73,7 +73,11 @@ class MergeToDimPass(ExportPass):
                         )
                         out_to_dim_node_user.args = tuple(out_to_dim_node_user_new_args)
 
+                        # pyre-fixme[29]: `Union[torch._tensor.Tensor,
+                        #  torch.nn.modules.module.Module]` is not a function.
                         graph_module.erase_node(out_to_dim_node)
+                        # pyre-fixme[29]: `Union[torch._tensor.Tensor,
+                        #  torch.nn.modules.module.Module]` is not a function.
                         graph_module.erase_node(node)
             # TODO: Handle other merging rules, including 1->N, N->1, N->N
         return PassResult(graph_module, True)

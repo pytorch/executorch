@@ -9,11 +9,51 @@ set -exu
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-MODEL_NAME=$1 # stories110M
-BUILD_TOOL=$2 # buck2 or cmake
-DTYPE=$3 # fp16, bf16, or fp32
-MODE=${4:-"xnnpack+custom"} # portable or xnnpack+custom or xnnpack+custom+qe
-UPLOAD_DIR=${5:-}
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -model)
+      MODEL_NAME="$2" # stories110M
+      shift 2
+      ;;
+    -build_tool)
+      BUILD_TOOL="$2" # buck2 or cmake
+      shift 2
+      ;;
+    -dtype)
+      DTYPE="$2" # fp16, bf16, or fp32
+      shift 2
+      ;;
+    -mode)
+      MODE="$2" # portable or xnnpack+custom or xnnpack+custom+qe
+      shift 2
+      ;;
+    -pt2e_quantize)
+      PT2E_QUANTIZE="$2"
+      shift 2
+      ;;
+    -upload)
+      UPLOAD_DIR="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1"
+      usage
+      ;;
+  esac
+done
+
+# Default mode to xnnpack+custom if not set
+MODE=${MODE:-"xnnpack+custom"}
+
+# Default UPLOAD_DIR to empty string if not set
+UPLOAD_DIR="${UPLOAD_DIR:-}"
+
+# Default PT2E_QUANTIZE to empty string if not set
+PT2E_QUANTIZE="${PT2E_QUANTIZE:-}"
+
+# Default CMake Build Type to release mode
+CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release}
+
 if [[ $# -lt 4 ]]; then # Assuming 4 mandatory args
     echo "Expecting atleast 4 positional arguments"
     echo "Usage: [...]"
@@ -70,6 +110,12 @@ else
   COREML=OFF
 fi
 
+if [[ "${MODE}" =~ .*quantize_kv.* ]]; then
+  QUANTIZE_KV_CACHE=ON
+else
+  QUANTIZE_KV_CACHE=OFF
+fi
+
 echo "COREML option ${COREML}"
 
 if [[ "${MODE}" =~ .*qnn.* ]]; then
@@ -106,7 +152,7 @@ cmake_install_executorch_libraries() {
     rm -rf cmake-out
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_BUILD_TYPE=Debug \
+        -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
@@ -120,7 +166,7 @@ cmake_install_executorch_libraries() {
         -DQNN_SDK_ROOT="$QNN_SDK_ROOT" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
-    cmake --build cmake-out -j9 --target install --config Debug
+    cmake --build cmake-out -j9 --target install --config "$CMAKE_BUILD_TYPE"
 }
 
 cmake_build_llama_runner() {
@@ -128,14 +174,14 @@ cmake_build_llama_runner() {
     dir="examples/models/llama"
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_BUILD_TYPE=Debug \
+        -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM="$CUSTOM" \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out/${dir} \
         ${dir}
-    cmake --build cmake-out/${dir} -j9 --config Debug
+    cmake --build cmake-out/${dir} -j9 --config "$CMAKE_BUILD_TYPE"
 
 }
 
@@ -150,7 +196,7 @@ cleanup_files() {
 }
 
 prepare_artifacts_upload() {
-  if [ -n "$UPLOAD_DIR" ]; then
+  if [ -n "${UPLOAD_DIR}" ]; then
     echo "Preparing for uploading generated artifacs"
     zip -j model.zip "${EXPORTED_MODEL_NAME}" tokenizer.bin
     mkdir -p "${UPLOAD_DIR}"
@@ -204,6 +250,13 @@ if [[ "${COREML}" == "ON" ]]; then
 fi
 if [[ "${QNN}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} -kv -v --qnn --disable_dynamic_shape"
+  echo "PT2E_QUANTIZE is ${PT2E_QUANTIZE}"
+  if [[ "${PT2E_QUANTIZE}" == "qnn_16a16w" ]]; then
+    EXPORT_ARGS+=" --tokenizer_path tokenizer.model --pt2e_quantize qnn_16a16w --calibration_tasks wikitext --calibration_limit 1 --calibration_seq_length 128 --calibration_data Once "
+  fi
+fi
+if [[ "${QUANTIZE_KV_CACHE}" == "ON" ]]; then
+  EXPORT_ARGS="${EXPORT_ARGS} --quantize_kv_cache"
 fi
 # Add dynamically linked library location
 $PYTHON_EXECUTABLE -m examples.models.llama.export_llama ${EXPORT_ARGS}

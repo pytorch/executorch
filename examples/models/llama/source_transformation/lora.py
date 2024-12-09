@@ -110,13 +110,23 @@ def _replace_linear_8da4w_for_lora(
 
     def replacement_fn(child: torch.nn.Module) -> torch.nn.Module:
         new_linear = Int8DynActInt4WeightLinearLoRA(
+            # pyre-fixme[6]: For 1st argument expected `int` but got `Union[Module,
+            #  Tensor]`.
             child.in_features,
+            # pyre-fixme[6]: For 2nd argument expected `int` but got `Union[Module,
+            #  Tensor]`.
             child.out_features,
             lora_rank=lora_rank,
             bias=False,
             device=child.weight.device,
+            # pyre-fixme[6]: For 6th argument expected `int` but got `Union[Module,
+            #  Tensor]`.
             groupsize=child.groupsize,
+            # pyre-fixme[6]: For 7th argument expected `dtype` but got
+            #  `Union[Module, Tensor]`.
             precision=child.precision,
+            # pyre-fixme[6]: For 8th argument expected `dtype` but got
+            #  `Union[Module, dtype, Tensor]`.
             scales_precision=child.scales.dtype,
         )
         return new_linear

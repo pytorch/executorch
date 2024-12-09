@@ -3,21 +3,7 @@ on:
   pull_request:
     types: [closed]
     branches:
-      - 'gh/cccclai/[0-9]+/base'
-      - 'gh/dbort/[0-9]+/base'
-      - 'gh/dvorjackz/[0-9]+/base'
-      - 'gh/guangy10/[0-9]+/base'
-      - 'gh/helunwencser/[0-9]+/base'
-      - 'gh/jorgep31415/[0-9]+/base'
-      - 'gh/kimishpatel/[0-9]+/base'
-      - 'gh/kirklandsign/[0-9]+/base'
-      - 'gh/larryliu0820/[0-9]+/base'
-      - 'gh/lucylq/[0-9]+/base'
-      - 'gh/manuelcandales/[0-9]+/base'
-      - 'gh/mcr229/[0-9]+/base'
-      - 'gh/swolchok/[0-9]+/base'
-      - 'gh/SS-JIA/[0-9]+/base'
-      - 'gh/trivedivivek/[0-9]+/base'
+      - 'gh/*/[0-9]+/base'
 
 jobs:
   ghstack_merge_to_main:

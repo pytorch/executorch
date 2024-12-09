@@ -25,7 +25,6 @@
 #include "xa_nnlib_err_chk.h"
 #include "xa_nnlib_kernels_api.h"
 
-
 #if HAVE_VFPU
 static void internal_elm_add_broadcast_2D_f32xf32_f32(FLOAT32 * __restrict__ p_out,
                     const    FLOAT32 * __restrict__ p_inp1,
@@ -425,4 +424,3 @@ WORD32 xa_nn_elm_add_broadcast_4D_f32xf32_f32(FLOAT32 * __restrict__ p_out,
   return 0;
 
 }
-

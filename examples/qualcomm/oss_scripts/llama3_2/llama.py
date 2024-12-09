@@ -8,9 +8,9 @@ import getpass
 import json
 import logging
 import os
-
 import sys
 import time
+from functools import partial
 from multiprocessing.connection import Client
 
 import torch
@@ -19,14 +19,12 @@ from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 
 from executorch.backends.qualcomm.quantizer.custom_annotation import (
+    annotate_matmul_16a8w,
     custom_annotate_llama_last_conv_16a8w,
-    custom_annotate_llama_matmul_16a8w,
 )
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
-    QcomChipset,
-)
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.constants import QCOM_QUANTIZED_IO
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
@@ -64,25 +62,27 @@ logging.getLogger().setLevel(logging.INFO)
 pte_filename = "llama3_2_qnn"
 
 
-def calibrate(
+def _kv_calibrate(
     example_inputs,
     user_prompts,
     module: torch.fx.GraphModule,
     tokenizer_model_path="tokenizer.model",
+    max_seq_len=512,
 ):
     sp_model = get_tokenizer(tokenizer_model_path)
-    _, _, atten_mask, k_caches, v_caches = example_inputs
+    _, atten_mask, _, k_caches, v_caches = example_inputs
 
     # TODO: change criteria & support batch inputs if necessary
     pos = torch.tensor(0, dtype=torch.int32)
+    max_cache_len = max_seq_len - 1
     token_list = sp_model.encode(user_prompts, bos=True, eos=False)
 
     with torch.no_grad():
-        while token_list[-1] != sp_model.eos_id and pos < 512:
+        while token_list[-1] != sp_model.eos_id and pos < max_cache_len:
             logits, new_k_caches, new_v_caches = module(
                 torch.full((1, 1), token_list[pos], dtype=torch.int32),
-                torch.full((1, 1), pos),
                 atten_mask,
+                torch.full((1, 1), pos),
                 *k_caches,
                 *v_caches,
             )
@@ -103,6 +103,69 @@ def calibrate(
     print(f"calibration data:\n{sp_model.decode(token_list)}")
 
 
+def _batch_prefill_calibrate(
+    example_inputs,
+    user_prompts,
+    module: torch.fx.GraphModule,
+    tokenizer_model_path="tokenizer.model",
+    max_seq_len=512,
+):
+    sp_model = get_tokenizer(tokenizer_model_path)
+    _, atten_mask = example_inputs
+    max_cache_len = max_seq_len - 1
+
+    # TODO: change criteria & support batch inputs if necessary
+    token_list = sp_model.encode(user_prompts, bos=True, eos=False)
+    token_list = torch.tensor(token_list)[:max_cache_len].reshape(1, -1)
+    last_prompt_pos = token_list.numel()
+    if last_prompt_pos < max_cache_len:
+        token_list = torch.cat(
+            [
+                token_list,
+                torch.zeros((1, max_cache_len - last_prompt_pos), dtype=torch.int32),
+            ],
+            dim=1,
+        )
+    else:
+        token_list = token_list[:, :max_cache_len]
+
+    with torch.no_grad():
+        logits, new_k_caches, new_v_caches = module(
+            token_list,
+            atten_mask,
+        )
+        predict = [torch.argmax(logits[:, last_prompt_pos - 1], dim=-1).item()]
+
+    print(f"calibration data:\n{sp_model.decode(predict)}")
+
+
+def calibrate(
+    example_inputs,
+    user_prompts,
+    module: torch.fx.GraphModule,
+    tokenizer_model_path="tokenizer.model",
+    max_seq_len=512,
+):
+    if len(example_inputs) == 2:
+        _batch_prefill_calibrate(
+            example_inputs,
+            user_prompts,
+            module,
+            tokenizer_model_path,
+            max_seq_len,
+        )
+    elif len(example_inputs) == 5:
+        _kv_calibrate(
+            example_inputs,
+            user_prompts,
+            module,
+            tokenizer_model_path,
+            max_seq_len,
+        )
+    else:
+        raise RuntimeError("Get wrong inputs")
+
+
 class SingleLlama:
     def __init__(self, llama_model) -> None:
         super().__init__()
@@ -110,8 +173,14 @@ class SingleLlama:
         self.quant_dtype = None
         self.llama_meta = self.llama_model.get_metadata()
         self.has_quant_io = False
-        tokens, pos_ids, atten_mask, k_caches, v_caches = self.get_example_inputs()
-        self.inputs = (tokens, pos_ids, atten_mask, *k_caches, *v_caches)
+        if self.llama_meta["get_use_kv_cache"]:
+            tokens, atten_mask, pos_ids, k_caches, v_caches = self.get_example_inputs(
+                use_kv_cache=True
+            )
+            self.inputs = (tokens, atten_mask, pos_ids, *k_caches, *v_caches)
+        else:
+            tokens, atten_mask = self.get_example_inputs(use_kv_cache=False)
+            self.inputs = (tokens, atten_mask)
 
     def _tag_kv_ios(self, gm: torch.fx.GraphModule, kv_type, sharding_type):
         if not self.has_quant_io:
@@ -131,10 +200,16 @@ class SingleLlama:
                 n.meta[QCOM_QUANTIZED_IO] = kv_type
             elif n.op == "output":
                 for a in n.args[0]:
+                    # single head, kv mode
                     if (
                         a.meta["val"].flatten().size()[0]
                         == self.llama_meta["get_head_dim"]
                     ):
+                        a.meta[QCOM_QUANTIZED_IO] = kv_type
+                    # single head, batch_prefill mode
+                    elif a.meta["val"].flatten().size()[0] == self.llama_meta[
+                        "get_head_dim"
+                    ] * (self.llama_meta["get_max_seq_len"] - 1):
                         a.meta[QCOM_QUANTIZED_IO] = kv_type
 
             # Tag sharding io
@@ -162,11 +237,13 @@ class SingleLlama:
             ).module()
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
         logging.info("Quantizing the model...")
+
         calibrate(
-            self.get_example_inputs(),
+            self.get_example_inputs(self.llama_meta["get_use_kv_cache"]),
             args.prompt,
             fx_graph_module,
             tokenizer_model_path=args.tokenizer_model,
+            max_seq_len=args.seq_len,
         )
 
         self.llama_model = convert_pt2e(fx_graph_module)
@@ -232,25 +309,40 @@ class SingleLlama:
             with open(f"{work_space}/{pte_filename}.pte", "wb") as file:
                 exec_prog_mgr.write_to_file(file)
 
-    def get_example_inputs(self):
-        return self.llama_model.get_example_inputs()
+    def get_example_inputs(self, use_kv_cache=True):
+        return self.llama_model.get_example_inputs(use_kv_cache)
 
 
 def compile(args):
     os.makedirs(args.artifact, exist_ok=True)
     start_ts = time.time()
+
+    if args.model_mode == "kv":
+        use_kv_cache = output_new_cache_only = True
+        matmul_annotate_func = partial(annotate_matmul_16a8w, traverse_input1=True)
+    elif args.model_mode == "batch_prefill":
+        use_kv_cache = output_new_cache_only = False
+        matmul_annotate_func = partial(annotate_matmul_16a8w, traverse_input1=False)
+    elif args.model_mode == "hybrid":
+        raise NotImplementedError(
+            f"model_mode {args.model_mode} is not implemented yet."
+        )
+    else:
+        raise RuntimeError(f"No such model_mode {args.model_mode}.")
+
     with open(args.params) as f:
         config = ModelArgs(**json.load(f))
         # TODO: support batch inputs if necessary
         config.max_batch_size = 1
-        config.max_seq_len = 512
+        config.max_seq_len = args.seq_len
+        config.use_kv_cache = use_kv_cache
     state_dict = torch.load(
         args.checkpoint, weights_only=True, map_location="cpu", mmap=True
     )
 
     llama_instance = None
     with torch.device("meta"):
-        llama_instance = LlamaModel(config, output_new_cache_only=True)
+        llama_instance = LlamaModel(config, output_new_cache_only=output_new_cache_only)
     if "model" in state_dict:
         state_dict = state_dict["model"]
     llama_instance.load_state_dict(
@@ -297,7 +389,7 @@ def compile(args):
             quant_dtype,
             custom_annotations=(
                 custom_annotate_llama_last_conv_16a8w,
-                custom_annotate_llama_matmul_16a8w,
+                matmul_annotate_func,
             ),
         )
         end_quantize_ts = time.time()
@@ -319,6 +411,18 @@ def compile(args):
 def inference(args, pre_gen_pte=""):
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/single_llama"
 
+    if args.model_mode == "batch_prefill":
+        eval_mode = 0
+    elif args.model_mode == "kv":
+        eval_mode = 1
+    elif args.model_mode == "hybrid":
+        eval_mode = 2
+        raise NotImplementedError(
+            f"model_mode {args.model_mode} is not implemented yet."
+        )
+    else:
+        raise RuntimeError(f"No such model_mode {args.model_mode}.")
+
     runner_args = " ".join(
         [
             f"--model_path {pte_filename}.pte",
@@ -326,13 +430,14 @@ def inference(args, pre_gen_pte=""):
             f"--tokenizer_path {os.path.basename(args.tokenizer_model)}",
             f'--prompt "{args.prompt}"',
             f"--seq_len {args.seq_len}",
+            f"--eval_mode {eval_mode}",
             f"--temperature {args.temperature}",
         ]
     )
     runner_cmd = " ".join(
         [
             f"cd {workspace} &&",
-            f"./qnn_llama3_2_{args.model_size.lower()}_runner {runner_args}",
+            f"./qnn_llama3_2_runner {runner_args}",
         ]
     )
 
@@ -350,7 +455,7 @@ def inference(args, pre_gen_pte=""):
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
-        runner=f"examples/qualcomm/oss_scripts/llama3_2/qnn_llama3_2_{args.model_size.lower()}_runner",
+        runner=f"examples/qualcomm/oss_scripts/llama3_2/qnn_llama3_2_runner",
     )
     # No pregen inputs, input_list is not required
     adb.push(inputs=[], input_list="", files=[args.tokenizer_model])
@@ -469,6 +574,14 @@ if __name__ == "__main__":
         type=int,
         default=0,
         help="Specify the number of splits by inserting the fallback custom op. The graph will be split evenly by layers.",
+    )
+
+    parser.add_argument(
+        "--model_mode",
+        help="Export and inference batch_prefill mode, kv mode or hybrid(TBD) mode",
+        default="kv",
+        choices=["batch_prefill", "kv", "hybrid"],
+        type=str,
     )
 
     args = parser.parse_args()

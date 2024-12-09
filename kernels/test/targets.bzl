@@ -174,6 +174,7 @@ def define_common_targets():
     codegen_function_header_wrapper("executorch/kernels/test/custom_kernel_example", "custom_kernel_example")
 
     _common_op_test("op__to_dim_order_copy_test", ["aten", "portable"])
+    _common_op_test("op__empty_dim_order_test", ["aten", "portable"])
     _common_op_test("op_abs_test", ["aten", "portable"])
     _common_op_test("op_acos_test", ["aten", "portable"])
     _common_op_test("op_acosh_test", ["aten", "portable"])
@@ -297,7 +298,7 @@ def define_common_targets():
     _common_op_test("op_scatter_add_test", ["aten", "portable"])
     _common_op_test("op_select_scatter_test", ["aten", "portable"])
     _common_op_test("op_select_copy_test", ["aten", "portable"])
-    _common_op_test("op_sigmoid_test", ["aten", "portable"])
+    _common_op_test("op_sigmoid_test", ["aten", "portable", "optimized"])
     _common_op_test("op_sign_test", ["aten", "portable"])
     _common_op_test("op_sin_test", ["aten", "portable"])
     _common_op_test("op_sinh_test", ["aten", "portable"])

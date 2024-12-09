@@ -57,6 +57,7 @@ COPY ./common/utils.sh utils.sh
 RUN bash ./install_cache.sh && rm install_cache.sh utils.sh
 ENV SCCACHE_BUCKET ossci-compiler-cache-circleci-v2
 ENV SCCACHE_S3_KEY_PREFIX executorch
+ENV SCCACHE_REGION us-east-1
 
 ARG TORCH_VERSION
 COPY ./common/install_pytorch.sh install_pytorch.sh
@@ -83,6 +84,8 @@ COPY --chown=ci-user:ci-user ./arm /opt/arm
 RUN if [ -n "${ARM_SDK}" ]; then git config --global user.email "ossci@example.com"; git config --global user.name "OSS CI"; bash /opt/arm/setup.sh --i-agree-to-the-contained-eula /opt/arm-sdk; chown -R ci-user:ci-user /opt/arm-sdk; fi
 
 ARG QNN_SDK
+
+ARG MEDIATEK_SDK
 
 USER ci-user
 CMD ["bash"]

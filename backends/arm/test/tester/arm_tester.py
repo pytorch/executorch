@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import tempfile
 
 from collections import Counter
 from pprint import pformat
@@ -22,11 +23,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
-from executorch.backends.arm.test.common import (
-    arm_test_options,
-    current_time_formated,
-    get_option,
-)
+from executorch.backends.arm.test.common import get_target_board
 
 from executorch.backends.arm.test.runner_utils import (
     _get_input_quantization_params,
@@ -39,7 +36,11 @@ from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.devtools.backend_debug import get_delegation_info
-from executorch.exir import EdgeCompileConfig, ExecutorchProgramManager
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    ExecutorchProgramManager,
+)
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.lowered_backend_module import LoweredBackendModule
@@ -132,10 +133,15 @@ class ToExecutorch(tester.ToExecutorch):
         super().__init__(dynamic_shapes)
         self.tosa_test_util = tosa_test_util
 
+    def run(self, artifact: EdgeProgramManager, inputs=None):
+        self.executorch_program = artifact.to_executorch(self.config)
+        if module := getattr(
+            artifact.exported_program().graph_module, "lowered_module_0", None
+        ):
+            self.buffer = module.processed_bytes
+
     def run_artifact(self, inputs):
-        tosa_output = self.tosa_test_util.run_tosa_ref_model(
-            inputs=inputs,
-        )
+        tosa_output = self.tosa_test_util.run_tosa_graph(self.buffer, inputs)
         return tosa_output
 
 
@@ -267,7 +273,7 @@ class ArmTester(Tester):
         self,
         inputs: Optional[Tuple[torch.Tensor]] = None,
         stage: Optional[str] = None,
-        target_board: Optional[str] = "corstone-300",
+        target_board: Optional[str] = None,
         num_runs=1,
         atol=1e-03,
         rtol=1e-03,
@@ -300,6 +306,9 @@ class ArmTester(Tester):
         stage = stage or self.cur
         test_stage = self.stages[stage]
         is_quantized = self.stages[self.stage_name(tester.Quantize)] is not None
+
+        if target_board is None:
+            target_board = get_target_board(self.compile_spec)
 
         exported_program = self.stages[self.stage_name(tester.Export)].artifact
         edge_program = edge_stage.artifact.exported_program()
@@ -349,7 +358,7 @@ class ArmTester(Tester):
             logger.info(f"Run #{run_iteration}, input shapes: {input_shape_str}")
 
             reference_output = reference_stage.run_artifact(reference_input)
-            test_output = tuple(test_stage.run_artifact(test_input))
+            test_output = test_stage.run_artifact(test_input)
             if (
                 is_nhwc
                 and test_stage == self.stages[self.stage_name(tester.ToExecutorch)]
@@ -516,6 +525,8 @@ class ArmTester(Tester):
             banner = "=" * 40 + "TOSA debug info" + "=" * 40
             logger.error(banner)
             path_to_tosa_files = self.runner_util.intermediate_path
+            if path_to_tosa_files is None:
+                path_to_tosa_files = tempfile.mkdtemp(prefix="executorch_result_dump_")
 
             export_stage = self.stages.get(self.stage_name(tester.Export), None)
             quantize_stage = self.stages.get(self.stage_name(tester.Quantize), None)
@@ -525,8 +536,8 @@ class ArmTester(Tester):
                 qp_output = _get_output_quantization_params(
                     export_stage.artifact, output_node
                 )
-                logger.error(f"{qp_input=}")
-                logger.error(f"{qp_output=}")
+                logger.error(f"Input QuantArgs: {qp_input}")
+                logger.error(f"Output QuantArgs: {qp_output}")
 
             logger.error(f"{path_to_tosa_files=}")
             import os
@@ -622,9 +633,6 @@ def _get_tosa_operator_distribution(
 
 
 def _dump_str(to_print: str, path_to_dump: Optional[str] = None):
-    default_dump_path = get_option(arm_test_options.dump_path)
-    if not path_to_dump and default_dump_path:
-        path_to_dump = default_dump_path / f"ArmTester_{current_time_formated()}.log"
     if path_to_dump:
         with open(path_to_dump, "a") as fp:
             fp.write(to_print)

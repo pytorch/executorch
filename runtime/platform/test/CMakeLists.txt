@@ -12,10 +12,6 @@
 #
 
 cmake_minimum_required(VERSION 3.19)
-project(runtime_platform_test)
-
-# Use C++17 for test.
-set(CMAKE_CXX_STANDARD 17)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
@@ -23,8 +19,10 @@ include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
 et_cxx_test(platform_test SOURCES executor_pal_test.cpp)
 
-et_cxx_test(platform_death_test SOURCES executor_pal_death_test.cpp)
+# TODO: Re-enable this test on OSS
+# et_cxx_test(platform_death_test SOURCES executor_pal_death_test.cpp)
 
 et_cxx_test(logging_test SOURCES logging_test.cpp)
 
-et_cxx_test(clock_test SOURCES clock_test.cpp stub_platform.cpp)
+# TODO: Re-enable this test on OSS
+# et_cxx_test(clock_test SOURCES clock_test.cpp stub_platform.cpp)

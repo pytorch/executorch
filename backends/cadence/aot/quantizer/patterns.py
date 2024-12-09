@@ -75,6 +75,7 @@ class AddmmPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         addmm_node = fused_partition[0].nodes[-1]
 
         bias_qspec = DerivedQuantizationSpec(
@@ -107,6 +108,7 @@ class BmmPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         bmm_node = fused_partition[0].nodes[-1]
 
         return PartitionAnchors(
@@ -127,6 +129,7 @@ class Conv1dPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         conv1d_node = fused_partition[0].nodes[-1]
 
         bias_qspec = DerivedQuantizationSpec(
@@ -165,6 +168,7 @@ class Conv2dPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         conv2d_node = fused_partition[0].nodes[-1]
 
         bias_qspec = DerivedQuantizationSpec(
@@ -203,6 +207,7 @@ class LayerNormPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         layer_norm_node = fused_partition[0].nodes[-1]
 
         others = [(layer_norm_node, 1)]
@@ -237,6 +242,7 @@ class LinearPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         linear_node = fused_partition[0].nodes[-1]
 
         bias_qspec = DerivedQuantizationSpec(
@@ -275,6 +281,7 @@ class MatmulPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         matmul_node = fused_partition[0].nodes[-1]
 
         return PartitionAnchors(
@@ -297,6 +304,7 @@ class ReluBasePattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         relu_node = fused_partition[0].nodes[-1]
 
         return PartitionAnchors(

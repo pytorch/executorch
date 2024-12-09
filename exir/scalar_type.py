@@ -29,3 +29,10 @@ class ScalarType(IntEnum):
     QUINT4x2 = 16
     QUINT2x4 = 17
     BITS16 = 22
+    FLOAT8E5M2 = 23
+    FLOAT8E4M3FN = 24
+    FLOAT8E5M2FNUZ = 25
+    FLOAT8E4M3FNUZ = 26
+    UINT16 = 27
+    UINT32 = 28
+    UINT64 = 29

@@ -458,6 +458,28 @@ class TestLinear(unittest.TestCase):
                     lin_mod, inputs, group_size=bl, use_bias=use_bias, atol=1e-2
                 )
 
+    @unittest.skipIf(
+        not torchao_installed, "Per Channel Group Quantization Required TorchAO"
+    )
+    def test_qd8_fp32_per_token_groupwise_unsupported_groupsize(self):
+        # groupsize must be multiple of 32
+        lin_mod = BaseLinear(
+            in_size=1,
+            input_channels=60,
+            output_channels=60,
+            dtype=torch.float32,
+            use_bias=True,
+        )
+        inputs = lin_mod.get_inputs()
+
+        with self.assertRaisesRegex(
+            AssertionError,
+            "Delegation to XNNPACK requires group_size to be a multiple of 32, but got 30",
+        ):
+            self._test_groupwise_dq_linear(
+                lin_mod, inputs, group_size=30, use_bias=False, atol=1e-2
+            )
+
     def _test_linear(
         self,
         make_module,
@@ -497,6 +519,7 @@ class TestLinear(unittest.TestCase):
         which ares then transformed into aten.linear.default by the ConvertToLinear pass.
         """
         for i, _ in enumerate(in_sizes):
+            torch._dynamo.reset()
             in_size = int(in_sizes[i])
             input_size = int(input_sizes[i])
             output_size = int(output_sizes[i])

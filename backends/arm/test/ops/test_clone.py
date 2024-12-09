@@ -17,7 +17,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 from executorch.backends.xnnpack.test.tester.tester import Quantize
@@ -85,7 +85,7 @@ class TestSimpleClone(unittest.TestCase):
         test_data: Tuple[torch.Tensor],
     ):
         quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
-        (
+        tester = (
             ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
@@ -94,7 +94,10 @@ class TestSimpleClone(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     def _test_clone_tosa_u55_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
