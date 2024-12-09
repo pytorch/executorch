@@ -53,6 +53,7 @@ _SUPPORTED_OPS = [
     torch.ops.aten.tile.default,
     torch.ops.aten.flip.default,
     torch.ops.aten.cat.default,
+    torch.ops.aten.concatenate.default,
     torch.ops.aten.stack.default,
     torch.ops.aten.chunk.default,
     torch.ops.aten.contiguous.default,
