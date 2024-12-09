@@ -1087,8 +1087,8 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
 
   // Current known size on 64 bit system: 1040 B
   EXPECT_TRUE(sizeof(vTensor) < 1200);
-  // Current known size on 64 bit system: 120 B
-  EXPECT_TRUE(sizeof(Value) < 128);
+  // Current known size on 64 bit system: 48 B
+  EXPECT_TRUE(sizeof(Value) < 56);
   // Current known size on 64 bit system: 120 B
   EXPECT_TRUE(sizeof(StagingBuffer) < 500);
   // Current known size on 64 bit system: 384 B
