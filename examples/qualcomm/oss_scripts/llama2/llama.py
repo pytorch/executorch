@@ -492,6 +492,7 @@ def inference(args, pre_gen_pte=""):
             f"model_mode {args.model_mode} is not implemented yet."
         )
 
+    assert args.tokenizer_bin is not None, "Need tokenizer model for interence"
     runner_args = " ".join(
         [
             f"--model_path {pte_filename}.pte",
@@ -562,8 +563,7 @@ def inference(args, pre_gen_pte=""):
             print(f"Results[{idx}]:\n{output}")
 
 
-# flake8: noqa: C901
-if __name__ == "__main__":
+def main():
     parser = setup_common_args_and_variables()
     parser.add_argument(
         "-a",
@@ -597,7 +597,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tokenizer_bin",
         help="Pass llama2 tokenizer binary.",
-        required=True,
+        required=False,
         type=str,
     )
 
@@ -680,3 +680,8 @@ if __name__ == "__main__":
                 conn.send(json.dumps({"Error": str(e)}))
         else:
             raise Exception(e)
+
+
+# flake8: noqa: C901
+if __name__ == "__main__":
+    main()
