@@ -156,11 +156,14 @@ testsuite_conv2d = [
     ("two_dw_conv2d", two_dw_conv2d),
 ]
 
-testsuite_conv2d_u85_xfails = [
+testsuite_conv2d_u85 = [
     ("2x2_1x6x4x4_gp6_st1", dw_conv2d_2x2_1x6x4x4_gp6_st1),
     ("3x3_1x3x256x256_gp3_st1", dw_conv2d_3x3_1x3x256x256_gp3_st1),
     ("3x3_1x4x256x256_gp4_st1", dw_conv2d_3x3_1x4x256x256_gp4_st1),
     ("3x3_1x4x256x256_gp4_nobias", dw_conv2d_3x3_1x4x256x256_gp4_nobias),
+]
+
+testsuite_conv2d_u85_xfails = [
     ("3x3_2x8x198x198_gp8_st3", dw_conv2d_3x3_2x8x198x198_gp8_st3),
     ("two_dw_conv2d", two_dw_conv2d),
 ]
@@ -284,7 +287,7 @@ class TestDepthwiseConv(unittest.TestCase):
             model.get_inputs(),
         )
 
-    @parameterized.expand(testsuite_conv1d[2:])
+    @parameterized.expand(testsuite_conv1d + testsuite_conv2d_u85)
     def test_dw_conv_u85_BI(
         self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
     ):
@@ -296,12 +299,8 @@ class TestDepthwiseConv(unittest.TestCase):
             model.get_inputs(),
         )
 
-    testsuite_conv2d_u85_xfails.remove(
-        ("3x3_1x3x256x256_gp3_st1", dw_conv2d_3x3_1x3x256x256_gp3_st1)
-    )  # Works
-
     # All test cases except 3x3_1x3x256x256_gp3_st1 have numerical issues on FVP. MLETORCH-520
-    @parameterized.expand(testsuite_conv2d_u85_xfails + testsuite_conv1d[:2])
+    @parameterized.expand(testsuite_conv2d_u85_xfails)
     @conftest.expectedFailureOnFVP
     def test_dw_conv_u85_BI_xfails(
         self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
