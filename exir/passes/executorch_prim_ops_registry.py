@@ -141,6 +141,7 @@ _EXECUTORCH_SYM_OPS.update(
         torch.ops.aten._local_scalar_dense.default,
         torch.ops.aten.sym_constrain_range_for_size.default,
         torch.ops.aten.sym_constrain_range.default,
+        torch.ops.aten._assert_tensor_metadata.default,
     }
 )
 

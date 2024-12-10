@@ -722,13 +722,20 @@ def _generate_edge_program(
     program: ExportedProgram,
     ops_set_to_not_decompose: Optional[List[torch._ops.OpOverload]] = None,
 ) -> ExportedProgram:
+
+    # Remove invalid assert ops, such as _assert_tensor_metadata
+    gm = program.graph_module
+    gm_res = RemoveGraphAssertsPass()(gm)
+    assert gm_res is not None
+    gm = gm_res.graph_module
+
     if config._check_ir_validity:
         try:
             EXIRATenDialectVerifier(
                 edge_compile_config=config,
                 class_only=False,
                 exception_list=ops_set_to_not_decompose,
-            )(program.graph_module)
+            )(gm)
         except ExportError as e:
             logging.info(f"Input program {name} is not in ATen dialect.")
             raise e
@@ -745,7 +752,6 @@ def _generate_edge_program(
         if not config._skip_dim_order:
             passes.append(MemoryFormatOpsPass())
 
-    gm = program.graph_module
     for p in passes:
         gm_res = p(gm)
         assert gm_res is not None
