@@ -283,6 +283,7 @@ def define_common_targets():
     _common_op_test("op_relu_test", ["aten", "portable"])
     _common_op_test("op_remainder_test", ["aten", "portable"])
     _common_op_test("op_repeat_test", ["aten", "portable"])
+    _common_op_test("op_repeat_interleave_test", ["aten", "portable"])
     _common_op_test("op_reflection_pad1d_test", ["aten", "portable"])
     _common_op_test("op_reflection_pad2d_test", ["aten", "portable"])
     _common_op_test("op_reflection_pad3d_test", ["aten", "portable"])
