@@ -74,19 +74,15 @@ def get_tosa_compile_spec_unbuilt(
     the compile spec before calling .build() to finalize it.
     """
     if not custom_path:
-        intermediate_path = maybe_get_tosa_collate_path() or tempfile.mkdtemp(
-            prefix="arm_tosa_"
-        )
-    else:
-        intermediate_path = custom_path
+        custom_path = maybe_get_tosa_collate_path()
 
-    if not os.path.exists(intermediate_path):
-        os.makedirs(intermediate_path, exist_ok=True)
+    if custom_path is not None:
+        os.makedirs(custom_path, exist_ok=True)
     compile_spec_builder = (
         ArmCompileSpecBuilder()
         .tosa_compile_spec(tosa_version)
         .set_permute_memory_format(permute_memory_to_nhwc)
-        .dump_intermediate_artifacts_to(intermediate_path)
+        .dump_intermediate_artifacts_to(custom_path)
     )
 
     return compile_spec_builder

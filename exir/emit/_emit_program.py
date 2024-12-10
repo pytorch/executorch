@@ -47,6 +47,13 @@ class EmitterOutput:
 
     mutable_data: Optional[List[Buffer]]
 
+    # Constants are optionally stored in external files.
+    # Aggregate unique external constants into one buffer.
+    external_constant_buffer: List[bytes]
+    # Each constant_tag groups a set of constants together.
+    # {constant_tag: {fqn: index into external_constant_buffer}}
+    external_constant_map: Optional[Dict[str, Dict[str, int]]]
+
 
 def _remove_non_user_outputs(exported_program: ExportedProgram) -> torch.fx.GraphModule:
     gm = exported_program.graph_module
@@ -199,4 +206,6 @@ def emit_program(
             if len(program_state.mutable_buffer) > 1
             else None
         ),
+        external_constant_buffer=program_state.external_constant_buffer,
+        external_constant_map=program_state.external_constant_map,
     )
