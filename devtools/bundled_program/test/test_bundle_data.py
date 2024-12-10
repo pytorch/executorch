@@ -8,7 +8,7 @@
 
 import unittest
 from typing import List
-
+import tempfile
 import executorch.devtools.bundled_program.schema as bp_schema
 
 import torch
@@ -73,6 +73,43 @@ class TestBundle(unittest.TestCase):
             bundled_program.serialize_to_schema().program,
             bytes(_serialize_pte_binary(executorch_program.executorch_program)),
         )
+        
+    def test_bundled_program_from_pte(self) -> None:
+        executorch_program, method_test_suites = get_common_executorch_program()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            executorch_model_path = f"{tmp_dir}/executorch_model.pte"
+            with open(executorch_model_path, "wb") as f:
+                f.write(executorch_program.buffer)
+
+            bundled_program = BundledProgram(executorch_program=None, method_test_suites=method_test_suites, pte_file_path=executorch_model_path)
+
+            method_test_suites = sorted(method_test_suites, key=lambda t: t.method_name)
+
+            for plan_id in range(len(executorch_program.executorch_program.execution_plan)):
+                bundled_plan_test = (
+                    bundled_program.serialize_to_schema().method_test_suites[plan_id]
+                )
+                method_test_suite = method_test_suites[plan_id]
+
+                self.assertEqual(
+                    len(bundled_plan_test.test_cases), len(method_test_suite.test_cases)
+                )
+                for bundled_program_ioset, method_test_case in zip(
+                    bundled_plan_test.test_cases, method_test_suite.test_cases
+                ):
+                    self.assertIOsetDataEqual(
+                        bundled_program_ioset.inputs, method_test_case.inputs
+                    )
+                    self.assertIOsetDataEqual(
+                        bundled_program_ioset.expected_outputs,
+                        method_test_case.expected_outputs,
+                    )
+
+            self.assertEqual(
+                bundled_program.serialize_to_schema().program,
+                bytes(_serialize_pte_binary(executorch_program.executorch_program)),
+            )
 
     def test_bundled_miss_methods(self) -> None:
         executorch_program, method_test_suites = get_common_executorch_program()
