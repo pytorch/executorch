@@ -22,10 +22,11 @@ layout(push_constant) uniform restrict Block {
   ivec4 out_sizes;
   ivec4 in_sizes;
   // Operates on (x, y, z) logical extents.
+  // channel_range is stored in range.w
   ivec4 range;
   // Analogus to range variable in copy. It defines the # of channel being
   // copied.
-  // channel_range is stored in range.w
+  // dst channel offset is stored in dst_offset.w
   ivec4 dst_offset;
   int src_channel_offset;
 };

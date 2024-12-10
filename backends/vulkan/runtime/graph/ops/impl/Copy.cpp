@@ -160,10 +160,8 @@ void add_copy_channel_offset_node(
         {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
         nullptr,
         {},
-        {PushConstantDataInfo(
-             t_out->get_uniform_data(), api::vTensor::Attribute::SIZES),
-         PushConstantDataInfo(
-             t_in->get_uniform_data(), api::vTensor::Attribute::SIZES),
+        {graph.sizes_pc_of(out),
+         graph.sizes_pc_of(in),
          PushConstantDataInfo(&range_params, sizeof(range_params)),
          PushConstantDataInfo(&offset_params, sizeof(offset_params)),
          PushConstantDataInfo(
