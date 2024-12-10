@@ -12,6 +12,7 @@ class TensorLayout:
     """
     Tensor layout information for externally-serialized tensors.
     """
+
     scalar_type: ScalarType
     dim_sizes: List[int]
     dim_order: List[bytes]
