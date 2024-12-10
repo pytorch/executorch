@@ -24,7 +24,7 @@ namespace impl {
 namespace G3 {
 namespace native {
 
-Tensor& softmax_out(
+Tensor& _softmax_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
