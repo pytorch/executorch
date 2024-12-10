@@ -43,10 +43,9 @@ class TensorShapeDynamism(IntEnum):
     DYNAMIC_UNBOUND = 2
 
 
-class DataLocation(IntEnum):
-    INLINE = 0
-    SEGMENT = 1
-    EXTERNAL = 2
+class TensorDataLocation(IntEnum):
+    SEGMENT = 0
+    EXTERNAL = 1
 
 
 @dataclass
@@ -55,9 +54,9 @@ class ExtraTensorInfo:
     Check program.fbs for explanations of this enum.
     """
 
-    mutable_data_segments_idx: Optional[int] = 0
+    mutable_data_segments_idx: int = 0
     fully_qualified_name: Optional[str] = None
-    location: Optional[DataLocation] = None
+    location: TensorDataLocation = TensorDataLocation.SEGMENT
 
 
 @dataclass
@@ -228,6 +227,11 @@ class Frame:
 @dataclass
 class FrameList:
     items: List[Frame]
+
+
+class DataLocation(IntEnum):
+    INLINE = 0
+    SEGMENT = 1
 
 
 @dataclass
