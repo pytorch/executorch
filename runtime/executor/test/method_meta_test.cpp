@@ -92,6 +92,9 @@ TEST_F(MethodMetaTest, MethodMetaApi) {
       method_meta->non_const_buffer_size(1).error(),
       Error::InvalidArgument); // Deprecated API
 
+  // Number instructions in method is nonzero
+  EXPECT_NE(method_meta->num_instructions(), 0);
+
   // Missing method fails
   EXPECT_EQ(
       program_->method_meta("not_a_method").error(), Error::InvalidArgument);
