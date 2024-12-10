@@ -31,12 +31,12 @@ TEST_TENSOR_MAP = {
 TEST_TENSOR_LAYOUT = {
     "fqn1": TensorLayout(
         scalar_type=ScalarType.FLOAT,
-        dim_sizes=[1, 1, 1],
+        sizes=[1, 1, 1],
         dim_order=typing.cast(List[bytes], [0, 1, 2]),
     ),
     "fqn2": TensorLayout(
         scalar_type=ScalarType.FLOAT,
-        dim_sizes=[1, 1, 1],
+        sizes=[1, 1, 1],
         dim_order=typing.cast(List[bytes], [0, 1, 2]),
     ),
 }

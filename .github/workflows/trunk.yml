@@ -225,7 +225,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        mode: [portable, xnnpack+kv+custom, mps, coreml]
+        mode: [portable, xnnpack+kv+custom, mps, coreml, xnnpack+custom+quantize_kv]
         include:
           - dtype: bf16
             mode: portable

@@ -29,12 +29,7 @@ VulkanBuffer::VulkanBuffer(
     const VmaAllocationCreateInfo& allocation_create_info,
     const VkBufferUsageFlags usage,
     const bool allocate_memory)
-    : buffer_properties_({
-          size,
-          0u,
-          size,
-          usage,
-      }),
+    : buffer_properties_({size, 0u, size}),
       allocator_(vma_allocator),
       memory_{},
       owns_memory_(allocate_memory),
@@ -52,7 +47,7 @@ VulkanBuffer::VulkanBuffer(
       nullptr, // pNext
       0u, // flags
       buffer_properties_.size, // size
-      buffer_properties_.buffer_usage, // usage
+      usage, // usage
       VK_SHARING_MODE_EXCLUSIVE, // sharingMode
       0u, // queueFamilyIndexCount
       nullptr, // pQueueFamilyIndices
