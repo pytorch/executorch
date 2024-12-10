@@ -13,7 +13,7 @@ table TensorMetadata {
   scalar_type: executorch_flatbuffer.ScalarType;
 
   // Size of each dimension.
-  dim_sizes: [int32];
+  sizes: [int32];
 
   // Specifies in what order the dimensions are laid out in memory (from outer
   // to inner).
