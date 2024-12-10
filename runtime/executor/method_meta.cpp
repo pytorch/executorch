@@ -210,5 +210,25 @@ Result<int64_t> MethodMeta::memory_planned_buffer_size(size_t index) const {
   return s_plan_->non_const_buffer_sizes()->Get(index + 1);
 }
 
+size_t MethodMeta::num_instructions() const {
+  const auto chains = s_plan_->chains();
+  if (chains == nullptr) {
+    return 0;
+  }
+  const auto num_chains = chains->size();
+  auto num_instructions = 0;
+  for (size_t i = 0; i < num_chains; ++i) {
+    auto s_chain = chains->Get(i);
+    if (s_chain == nullptr) {
+      continue;
+    }
+    auto s_instructions = s_chain->instructions();
+    if (s_instructions != nullptr) {
+      num_instructions += s_instructions->size();
+    }
+  }
+  return num_instructions;
+}
+
 } // namespace runtime
 } // namespace executorch
