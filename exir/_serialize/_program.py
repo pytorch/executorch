@@ -11,7 +11,7 @@ import json
 import re
 
 from dataclasses import dataclass
-from typing import ClassVar, List, Literal, Optional, Tuple
+from typing import ClassVar, List, Optional, Tuple
 
 from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
@@ -19,6 +19,13 @@ from executorch.exir._serialize._flatbuffer import (
     _FlatbufferResult,
     _program_flatbuffer_to_json,
     _program_json_to_flatbuffer,
+)
+
+from executorch.exir._serialize.utils import (
+    _aligned_size,
+    _HEADER_BYTEORDER,
+    _pad_to,
+    _padding_required,
 )
 
 from executorch.exir.schema import (
@@ -33,12 +40,6 @@ from executorch.exir.schema import (
 from executorch.exir.tensor import ALIGNMENT
 
 
-# Byte order of numbers written to program headers. Always little-endian
-# regardless of the host system, since all commonly-used modern CPUs are little
-# endian.
-_HEADER_BYTEORDER: Literal["little"] = "little"
-
-
 def _program_to_json(program: Program) -> str:
     """Returns the JSON representation of the given Program."""
     return json.dumps(program, cls=_DataclassEncoder)
@@ -48,19 +49,6 @@ def _json_to_program(program_json: bytes) -> Program:
     """Returns a Program deserialized from the given JSON string."""
     # construct program class recursively from dict
     return _json_to_dataclass(json.loads(program_json), cls=Program)
-
-
-def _padding_required(offset: int, alignment: int) -> int:
-    """Returns the padding required to align `offset` to `alignment`."""
-    remainder: int = offset % alignment
-    if remainder != 0:
-        return alignment - remainder
-    return 0
-
-
-def _aligned_size(input_size: int, alignment: int) -> int:
-    """Returns input_size padded up to the next whole multiple of alignment."""
-    return input_size + _padding_required(input_size, alignment)
 
 
 def _insert_flatbuffer_header(
@@ -209,25 +197,6 @@ class _ExtendedHeader:
             + self.segment_base_offset.to_bytes(8, byteorder=_HEADER_BYTEORDER)
         )
         return data
-
-
-def _pad_to(data: bytes, length: int) -> bytes:
-    """Returns the input followed by enough zero bytes to become the requested length.
-
-    Args:
-        data: The data to pad.
-        length: The length of the returned data.
-    Returns:
-        The padded data.
-    Raises:
-        ValueError: If the requested length is less than the input length.
-    """
-    if length < len(data):
-        raise ValueError(f"Data length {len(data)} > padded length {length}")
-    if length > len(data):
-        data = data + b"\x00" * (length - len(data))
-    assert len(data) == length
-    return data
 
 
 def _get_extended_header(program_data: bytes) -> Optional[_ExtendedHeader]:
