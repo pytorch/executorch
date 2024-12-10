@@ -13,8 +13,9 @@ from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Tuple, Unio
 
 import torch
 import torch._export
-from executorch.exir._serialize import _serialize_pte_binary
 from executorch.exir._serialize._cord import Cord
+from executorch.exir._serialize._serialize import serialize
+from executorch.exir._serialize.data_serializer import DataSerializer
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.partitioner import Partitioner
@@ -56,6 +57,7 @@ from executorch.exir.verification.verifier import (
     EXIREdgeDialectVerifier,
     get_aten_verifier,
 )
+from executorch.extension.flat_tensor.serialize.serialize import FlatTensorSerializer
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
 from torch.export import ExportedProgram
 from torch.export._remove_auto_functionalized_pass import (
@@ -494,6 +496,7 @@ class ExecutorchProgram:
             )
         self.exported_program = exir_exported_program.exported_program
         self._pte_data: Optional[Cord] = None
+        self._data_files: Optional[Dict[str, Cord]] = None
         self._buffer: Optional[bytes] = None
         self._emitter_output: Optional[EmitterOutput] = None
         self._emit_stacktrace: bool = emit_stacktrace
@@ -501,16 +504,15 @@ class ExecutorchProgram:
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
+        self._data_serializer: DataSerializer = FlatTensorSerializer()
 
     def _get_pte_data(self) -> Cord:
         if self._pte_data is None:
-            self._pte_data = _serialize_pte_binary(
-                program=self.program,
-                extract_delegate_segments=self._extract_delegate_segments,
-                segment_alignment=self._segment_alignment,
-                constant_tensor_alignment=self._constant_tensor_alignment,
-                delegate_alignment=self._delegate_alignment,
+            assert self._emitter_output is not None
+            self._pte_data, self._data_files = serialize(
+                self._emitter_output, ExecutorchBackendConfig(), self._data_serializer
             )
+        assert self._pte_data is not None
         return self._pte_data
 
     @property
@@ -1443,14 +1445,11 @@ class ExecutorchProgramManager:
             self._config_methods,
         )
 
+        self._data_serializer = FlatTensorSerializer()
+
         # Serialize emitter output, ready to be written to a file.
-        self._pte_data: Cord = _serialize_pte_binary(
-            program=self._emitter_output.program,
-            mutable_data=self._emitter_output.mutable_data,
-            extract_delegate_segments=backend_config.extract_delegate_segments,
-            segment_alignment=backend_config.segment_alignment,
-            constant_tensor_alignment=backend_config.constant_tensor_alignment,
-            delegate_alignment=backend_config.delegate_alignment,
+        self._pte_data, self._data_files = serialize(
+            self._emitter_output, ExecutorchBackendConfig(), self._data_serializer
         )
         self._buffer: Optional[bytes] = None
 
@@ -1532,3 +1531,8 @@ class ExecutorchProgramManager:
         reducing the peak memory usage.
         """
         self._pte_data.write_to_file(open_file)
+
+        for filename, cord in self._data_files.items():
+            filename = filename + ".ptd"
+            with open(filename, "wb") as file:
+                cord.write_to_file(file)
