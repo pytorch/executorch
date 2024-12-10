@@ -77,6 +77,7 @@ from executorch.exir.schema import (
     ScalarType,
     String,
     Tensor,
+    TensorDataLocation,
     TensorList,
     TensorShapeDynamism,
 )
@@ -372,8 +373,8 @@ class _Emitter(torch.fx.Interpreter):
         spec: TensorSpec,
         buffer_data: bytes,
         hashed: str,
-        allocation_info: Optional[AllocationDetails],
-        constant_tag: str,
+        allocation_info: Optional[AllocationDetails] = None,
+        constant_tag: Optional[str] = None,
     ) -> int:
         """Saves a new constant tensor to the constant buffer and returns the buffer idx"""
 
@@ -395,7 +396,7 @@ class _Emitter(torch.fx.Interpreter):
             if (
                 spec.extra_tensor_info is not None
                 and spec.extra_tensor_info.fully_qualified_name is not None
-                and spec.extra_tensor_info.location == DataLocation.EXTERNAL
+                and spec.extra_tensor_info.location == TensorDataLocation.EXTERNAL
             ):
                 assert (
                     constant_tag is not None
@@ -460,7 +461,7 @@ class _Emitter(torch.fx.Interpreter):
                 )
             elif (
                 spec.extra_tensor_info is not None
-                and spec.extra_tensor_info.location == DataLocation.EXTERNAL
+                and spec.extra_tensor_info.location == TensorDataLocation.EXTERNAL
             ):
                 buffer_idx = self.program_state.external_constant_hash.get(hashed, -1)
             else:
@@ -1607,18 +1608,18 @@ class _TopLevelEmitter(_Emitter):
             fqn, is_mutable_buffer = self._find_fqn_for_placeholder(target, spec)
 
             # If the placeholder has a constant_tag, it is external to the PTE file
-            # and requires a fqn and location=DataLocation.EXTERNAL
+            # and requires a fqn and location=TensorDataLocation.EXTERNAL
             if constant_tag is not None:
                 assert (
                     fqn is not None
                 ), "constant tagged tensors require a fully qualified name"
                 if spec.extra_tensor_info is None:
                     spec.extra_tensor_info = ExtraTensorInfo(
-                        fully_qualified_name=fqn, location=DataLocation.EXTERNAL
+                        fully_qualified_name=fqn, location=TensorDataLocation.EXTERNAL
                     )
                 else:
                     spec.extra_tensor_info.fully_qualified_name = fqn
-                    spec.extra_tensor_info.location = DataLocation.EXTERNAL
+                    spec.extra_tensor_info.location = TensorDataLocation.EXTERNAL
 
             # From the fqn find the corresponding tensor
             real_tensor = None
