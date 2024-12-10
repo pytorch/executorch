@@ -202,7 +202,7 @@ class FlatTensorSerializer(DataSerializer):
                 TensorMetadata(
                     fully_qualified_name=fqn,
                     scalar_type=tensor_layout.scalar_type,
-                    dim_sizes=tensor_layout.dim_sizes,
+                    sizes=tensor_layout.sizes,
                     dim_order=tensor_layout.dim_order,
                     segment_index=0,
                     offset=offset,
