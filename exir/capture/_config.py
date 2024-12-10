@@ -89,3 +89,7 @@ class ExecutorchBackendConfig:
     # If set to true, view_copy operations will be converted to lightweight
     # view operations in the ET runtime
     remove_view_copy: bool = True
+
+    # If set to true, all constant tensors will be stored in a separate file,
+    # external to the PTE file.
+    external_constants: bool = False
