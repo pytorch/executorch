@@ -14,7 +14,7 @@ class TensorLayout:
     """
 
     scalar_type: ScalarType
-    dim_sizes: List[int]
+    sizes: List[int]
     dim_order: List[bytes]
 
 
