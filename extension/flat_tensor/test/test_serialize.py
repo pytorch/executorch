@@ -25,7 +25,7 @@ from executorch.extension.flat_tensor.serialize.serialize import (
 )
 
 # Test artifacts
-TEST_TENSOR_BUFFER = [b"\x11"*4, b"\x22"*32]
+TEST_TENSOR_BUFFER = [b"\x11" * 4, b"\x22" * 32]
 TEST_TENSOR_MAP = {
     "fqn1": 0,
     "fqn2": 0,
