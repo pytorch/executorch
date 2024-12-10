@@ -1608,7 +1608,7 @@ class _TopLevelEmitter(_Emitter):
             fqn, is_mutable_buffer = self._find_fqn_for_placeholder(target, spec)
 
             # If the placeholder has a constant_tag, it is external to the PTE file
-            # and requires a fqn and location=DataLocation.EXTERNAL
+            # and requires a fqn and location=TensorDataLocation.EXTERNAL
             if constant_tag is not None:
                 assert (
                     fqn is not None
@@ -1619,7 +1619,7 @@ class _TopLevelEmitter(_Emitter):
                     )
                 else:
                     spec.extra_tensor_info.fully_qualified_name = fqn
-                    spec.extra_tensor_info.location = DataLocation.EXTERNAL
+                    spec.extra_tensor_info.location = TensorDataLocation.EXTERNAL
 
             # From the fqn find the corresponding tensor
             real_tensor = None
