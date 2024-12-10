@@ -11,7 +11,6 @@ import re
 import shutil
 import subprocess
 import sys
-from enum import auto, Enum
 from typing import Any
 
 import pytest
@@ -22,21 +21,15 @@ This file contains the pytest hooks, fixtures etc. for the Arm test suite.
 """
 
 
-class arm_test_options(Enum):
-    quantize_io = auto()
-    corstone_fvp = auto()
-    fast_fvp = auto()
-
-
-_test_options: dict[arm_test_options, Any] = {}
-
 # ==== Pytest hooks ====
 
 
 def pytest_configure(config):
+    pytest._test_options = {}
+
     if config.option.arm_quantize_io:
         _load_libquantized_ops_aot_lib()
-        _test_options[arm_test_options.quantize_io] = True
+        pytest._test_options["quantize_io"] = True
     if config.option.arm_run_corstoneFVP:
         corstone300_exists = shutil.which("FVP_Corstone_SSE-300_Ethos-U55")
         corstone320_exists = shutil.which("FVP_Corstone_SSE-320")
@@ -44,8 +37,8 @@ def pytest_configure(config):
             raise RuntimeError(
                 "Tests are run with --arm_run_corstoneFVP but corstone FVP is not installed."
             )
-        _test_options[arm_test_options.corstone_fvp] = True
-    _test_options[arm_test_options.fast_fvp] = config.option.fast_fvp
+        pytest._test_options["corstone_fvp"] = True
+    pytest._test_options["fast_fvp"] = config.option.fast_fvp
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 
@@ -131,9 +124,7 @@ def expectedFailureOnFVP(test_item):
 # ==== End of Custom Pytest decorators =====
 
 
-def is_option_enabled(
-    option: str | arm_test_options, fail_if_not_enabled: bool = False
-) -> bool:
+def is_option_enabled(option: str, fail_if_not_enabled: bool = False) -> bool:
     """
     Returns whether an option is successfully enabled, i.e. if the flag was
     given to pytest and the necessary requirements are available.
@@ -144,10 +135,8 @@ def is_option_enabled(
     The optional parameter 'fail_if_not_enabled' makes the function raise
       a RuntimeError instead of returning False.
     """
-    if isinstance(option, str):
-        option = arm_test_options[option.lower()]
 
-    if option in _test_options and _test_options[option]:
+    if option in pytest._test_options and pytest._test_options[option]:
         return True
     else:
         if fail_if_not_enabled:
@@ -156,15 +145,15 @@ def is_option_enabled(
             return False
 
 
-def get_option(option: arm_test_options) -> Any | None:
+def get_option(option: str) -> Any | None:
     """
     Returns the value of an pytest option if it is set, otherwise None.
 
     Args:
-        option (arm_test_options): The option to check for.
+        option (str): The option to check for.
     """
-    if option in _test_options:
-        return _test_options[option]
+    if option in pytest._test_options:
+        return pytest._test_options[option]
     return None
 
 
