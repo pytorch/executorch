@@ -25,7 +25,7 @@ from executorch.extension.flat_tensor.serialize.serialize import (
 )
 
 # Test artifacts
-TEST_TENSOR_BUFFER = [b"\x11"*4, b"\x22"*32]
+TEST_TENSOR_BUFFER = [b"\x11" * 4, b"\x22" * 32]
 TEST_TENSOR_MAP = {
     "fqn1": 0,
     "fqn2": 0,
@@ -35,17 +35,17 @@ TEST_TENSOR_MAP = {
 TEST_TENSOR_LAYOUT = {
     "fqn1": TensorLayout(
         scalar_type=ScalarType.FLOAT,
-        dim_sizes=[1, 1, 1],
+        sizes=[1, 1, 1],
         dim_order=typing.cast(List[bytes], [0, 1, 2]),
     ),
     "fqn2": TensorLayout(
         scalar_type=ScalarType.FLOAT,
-        dim_sizes=[1, 1, 1],
+        sizes=[1, 1, 1],
         dim_order=typing.cast(List[bytes], [0, 1, 2]),
     ),
     "fqn3": TensorLayout(
         scalar_type=ScalarType.INT,
-        dim_sizes=[2, 2, 2],
+        sizes=[2, 2, 2],
         dim_order=typing.cast(List[bytes], [0, 1]),
     ),
 }
@@ -56,7 +56,7 @@ class TestSerialize(unittest.TestCase):
         self, tensor_layout: TensorLayout, tensor_metadata: TensorMetadata
     ) -> None:
         self.assertEqual(tensor_layout.scalar_type, tensor_metadata.scalar_type)
-        self.assertEqual(tensor_layout.dim_sizes, tensor_metadata.dim_sizes)
+        self.assertEqual(tensor_layout.sizes, tensor_metadata.sizes)
         self.assertEqual(tensor_layout.dim_order, tensor_metadata.dim_order)
 
     def test_serialize(self) -> None:
