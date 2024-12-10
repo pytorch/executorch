@@ -313,6 +313,8 @@
 
 - op: repeat.out
 
+- op: repeat_interleave.Tensor_out
+
 - op: reflection_pad1d.out
 
 - op: reflection_pad2d.out
