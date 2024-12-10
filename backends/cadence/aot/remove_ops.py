@@ -110,7 +110,8 @@ class RemoveZeroSizedCatArgsPass(ExportPass):
 
         # Otherwise, we replace args[0] with cat_inputs.
         new_args = list(args)
-        new_args[0] = cat_inputs
+        # pyre error introduced after D66937105
+        new_args[0] = cat_inputs  # pyre-ignore[6]
         return super().call_operator(op, tuple(new_args), kwargs, meta)
 
 

@@ -53,9 +53,8 @@ def serialize(
                     and tensor.extra_tensor_info.fully_qualified_name is not None
                     and tensor.extra_tensor_info.location is TensorDataLocation.EXTERNAL
                 ):
-                    # pyre-ignore Undefined attribute [16]: Optional type has no attribute `fully_qualified_name`.
                     fqn_to_tensor_layout[
-                        tensor.extra_tensor_info.fully_qualified_name
+                        tensor.extra_tensor_info.fully_qualified_name  # pyre-ignore Undefined attribute [16]
                     ] = TensorLayout(tensor.scalar_type, tensor.sizes, tensor.dim_order)
     if len(fqn_to_tensor_layout) > 0:
         assert emitter_output.external_constant_map is not None
