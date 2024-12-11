@@ -22,7 +22,7 @@ from typing import Callable, List, Optional, Union
 import pkg_resources
 import torch
 
-from executorch.devtools.etrecord import generate_etrecord
+
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 
@@ -237,8 +237,8 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--prefill_seq_length",
-        default=False,
-        action="store_true",
+        type=int,
+        default=32,
         help="Sequence length for prefill model",
     )
     parser.add_argument(
@@ -781,6 +781,7 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
         logging.info(f"--> {partitioner.__class__.__name__}")
 
     if args.generate_etrecord:
+        from executorch.devtools.etrecord import generate_etrecord
         if not builder_exported_to_edge.edge_manager:
             raise ValueError("Unable to generate etrecord due to missing edge manager.")
 

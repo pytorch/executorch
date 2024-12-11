@@ -114,6 +114,7 @@ class ModelArgs:
     num_experts: int = 8  # Number of experts
     num_activated_experts: int = 2  # Number of experts to activate
     use_kv_cache: bool = False  # Use key/value cache
+    prefill_return_kv: bool = False  # Return kv cache for prefill
     use_sdpa_with_kv_cache_op: bool = (
         False  # Use custom sdpa op that updates kv cache in-place
     )
@@ -420,7 +421,11 @@ class Attention(nn.Module):
         freqs_cos: torch.Tensor,
         freqs_sin: torch.Tensor,
         input_pos: Optional[torch.Tensor] = None,
+        return_kv: bool = False,
     ):
+        if return_kv:
+            assert self.use_kv_cache == False, "Can't return kv when use_kv_cache is True"
+
         bsz, seqlen, _ = x.shape
 
         # QKV
@@ -442,6 +447,10 @@ class Attention(nn.Module):
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
+        if return_kv:
+            k_ret = k
+            v_ret = v
+
         # grouped multiquery attention: expand out keys and values
         k = k.repeat_interleave(self.n_rep, dim=1)
         v = v.repeat_interleave(self.n_rep, dim=1)
@@ -456,6 +465,8 @@ class Attention(nn.Module):
 
         output = self.wo(output)
 
+        if return_kv:
+            return output, k_ret, v_ret
         return output
 
 
@@ -533,16 +544,24 @@ class TransformerBlock(nn.Module):
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-    def forward(self, x, freqs_cos, freqs_sin, input_pos=None):  # x: 1xN
-        h = self.attention.forward(
-            self.attention_norm(x), freqs_cos, freqs_sin, input_pos
-        )
+    def forward(self, x, freqs_cos, freqs_sin, input_pos=None, return_kv=False):  # x: 1xN
+        if not return_kv:
+            h = self.attention.forward(
+                self.attention_norm(x), freqs_cos, freqs_sin, input_pos, return_kv=False,
+            )
+        else:
+            h, k, v = self.attention.forward(
+                self.attention_norm(x), freqs_cos, freqs_sin, input_pos, return_kv=True,
+            )
 
         h = x + h
         if hasattr(self, "block_sparse_moe"):
             out = h + self.block_sparse_moe(self.ffn_norm(h))
         else:
             out = h + self.feed_forward(self.ffn_norm(h))
+        
+        if return_kv:
+            return out, k, v
         return out
 
 
@@ -565,6 +584,7 @@ class Transformer(nn.Module):
         self.max_seq_len = params.max_seq_len
         self.input_prune_map = params.input_prune_map
         self.output_prune_map = params.output_prune_map
+        self.prefill_return_kv = params.prefill_return_kv
 
     def forward(
         self,
@@ -583,13 +603,30 @@ class Transformer(nn.Module):
         seqlen = h.shape[1]
         freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, seqlen)
 
-        for layer in self.layers:
-            h = layer(
-                h,
-                freqs_cos,
-                freqs_sin,
-                input_pos,
-            )
+        if not self.prefill_return_kv:
+            for layer in self.layers:
+                h = layer(
+                    h,
+                    freqs_cos,
+                    freqs_sin,
+                    input_pos,
+                    return_kv=False,
+                )
+        else:
+            k_caches = []
+            v_caches = []
+            for layer in self.layers:
+                h, k, v = layer(
+                    h,
+                    freqs_cos,
+                    freqs_sin,
+                    input_pos,
+                    return_kv=True,
+                )
+                k_caches.append(k)
+                v_caches.append(v)
+            k_ret = torch.stack(k_caches, dim=0)
+            v_ret = torch.stack(v_caches, dim=0)
 
         if not self.generate_full_logits:
             # Only the last logit is used for the new generated token
@@ -621,4 +658,6 @@ class Transformer(nn.Module):
                 expanded_logits[:, list(self.output_prune_map.values())] = logits
             logits = expanded_logits
 
+        if self.prefill_return_kv:
+            return logits, k_ret, v_ret
         return logits

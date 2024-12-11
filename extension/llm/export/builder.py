@@ -160,8 +160,11 @@ class LLMEdgeManager:
         dim = torch.export.Dim("token_dim", max=self.max_seq_len - 1)
 
         if not self.use_kv_cache:
-            # Only one input argument: tokens
-            self.dynamic_shapes = ({1: dim},)
+            if not self.enable_dynamic_shape:
+                self.dynamic_shapes = None
+            else:
+                # Only one input argument: tokens
+                self.dynamic_shapes = ({1: dim},)
         elif self.enable_dynamic_shape:
             # Two input arguments: tokens and input_pos but input_pos is static shape
             self.dynamic_shapes = ({1: dim}, {0: 1})
