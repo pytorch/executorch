@@ -273,7 +273,7 @@ the checkpoint format to avoid generating faulty models.
         else:
             return (
                 torch.tensor(
-                    [[1, 2, 3]], dtype=torch.long
+                    [[0 for _ in range(self.args.get("prefill_seq_length", 3))]], dtype=torch.long
                 ),  # tokens, with kv cache our input token length is always just 1 token.
             )
 

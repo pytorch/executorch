@@ -23,6 +23,25 @@ from executorch.examples.models.llama.rope import (
 
 from torch import nn
 
+@torch.library.custom_op("coreml::sdpa", mutates_args=())
+def sdpa(
+    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, attn_mask: torch.Tensor
+) -> torch.Tensor:
+    """Same as F.scaled_dot_product_attention, but with custom op to avoid lowering during dialect conversion."""
+    return torch.ops.aten.scaled_dot_product_attention.default(
+        q, k, v, attn_mask=attn_mask
+    )
+
+
+@torch.library.register_fake("coreml::sdpa")
+def _(
+    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, attn_mask: torch.Tensor
+) -> torch.Tensor:
+    """Fake implementation with the right output shape, which is required for torch.compile/export/fx tracing."""
+    expected_shape = list(q.shape)
+    expected_shape[-1] = v.shape[-1]
+    return q.new_empty(expected_shape)
+
 
 class RMSNorm(torch.nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
@@ -431,7 +450,7 @@ class Attention(nn.Module):
 
         mask = self.mask[:seqlen, :seqlen]
 
-        output = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
+        output = torch.ops.coreml.sdpa(q, k, v, mask)
 
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
 

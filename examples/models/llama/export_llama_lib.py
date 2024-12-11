@@ -230,6 +230,18 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Whether or not to export a model using kv cache",
     )
     parser.add_argument(
+        "--prefill_return_kv",
+        default=False,
+        action="store_true",
+        help="Whether or not to return kv values from prefill model",
+    )
+    parser.add_argument(
+        "--prefill_seq_length",
+        default=False,
+        action="store_true",
+        help="Sequence length for prefill model",
+    )
+    parser.add_argument(
         "--quantize_kv_cache",
         default=False,
         action="store_true",
