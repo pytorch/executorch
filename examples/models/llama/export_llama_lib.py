@@ -364,6 +364,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="This option is only for coreml: The minimum iOS version to deploy",
     )
     parser.add_argument(
+        "--coreml-compute-units",
+        type=str,
+        default="cpu_only",
+        choices=("cpu_only", "cpu_and_gpu", "cpu_and_ne", "all"),
+        help="This option is only for coreml: the compute units to use when running the model",
+    )
+    parser.add_argument(
         "--qnn",
         action="store_true",
         help="Delegate llama2 to qnn backend (Qualcomm), please use it --kv_cahce=True",
@@ -703,6 +710,7 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
             args.embedding_quantize,
             args.pt2e_quantize,
             args.coreml_quantize,
+            args.coreml_compute_units,
         )
         partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
