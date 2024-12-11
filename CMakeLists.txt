@@ -28,23 +28,22 @@ set(ABSL_ENABLE_INSTALL ON)
 set(ABSL_PROPAGATE_CXX_STD ON)
 set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-add_subdirectory(third-party/abseil-cpp)
-add_subdirectory(third-party/re2)
-add_subdirectory(third-party/sentencepiece)
+add_subdirectory(${CMAKE_SOURCE_DIR}/third-party/abseil-cpp)
+add_subdirectory(${CMAKE_SOURCE_DIR}/third-party/re2)
+add_subdirectory(${CMAKE_SOURCE_DIR}/third-party/sentencepiece)
 set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
-add_library(tokenizers STATIC
-  src/sentencepiece.cpp
-  src/tiktoken.cpp
-  src/bpe_tokenizer_base.cpp)
+file(GLOB tokenizers_source_files ${CMAKE_SOURCE_DIR}/src/*.cpp)
+add_library(tokenizers STATIC ${tokenizers_source_files})
 
 # Using abseil from sentencepiece/third_party
 target_include_directories(
-  tokenizers PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
-  third-party/sentencepiece/src
-  third-party/sentencepiece
-  third-party/re2
-  third-party/json/single_include)
+  tokenizers PUBLIC
+  ${CMAKE_SOURCE_DIR}/include
+  ${CMAKE_SOURCE_DIR}/third-party/sentencepiece
+  ${CMAKE_SOURCE_DIR}/third-party/sentencepiece/src
+  ${CMAKE_SOURCE_DIR}/third-party/re2
+  ${CMAKE_SOURCE_DIR}/third-party/json/single_include)
 
 target_link_libraries(tokenizers PUBLIC sentencepiece-static re2::re2)
 
@@ -63,7 +62,7 @@ if(TOKENIZERS_BUILD_TEST)
       CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(googletest)
 
-  file(GLOB test_source_files test/test_*.cpp)
+  file(GLOB test_source_files ${CMAKE_SOURCE_DIR}/test/test_*.cpp)
   foreach(test_source_file ${test_source_files})
       get_filename_component(test_name ${test_source_file} NAME_WE)
       message(STATUS "Configuring unit test ${test_name}")
