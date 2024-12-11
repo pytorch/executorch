@@ -200,7 +200,9 @@ class Context final {
       const vkapi::DescriptorSet&,
       vkapi::PipelineBarrier&,
       const vkapi::ShaderInfo&,
-      const utils::uvec3&);
+      const utils::uvec3&,
+      const void* = nullptr,
+      const uint32_t = 0);
 
   void register_blit(
       vkapi::PipelineBarrier&,
