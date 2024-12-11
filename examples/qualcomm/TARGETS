@@ -1,11 +1,12 @@
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain fbcode-only targets.
 
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 
 oncall("executorch")
 
-runtime.python_binary(
+python_binary(
     name = "export_example",
     srcs = ["scripts/export_example.py"],
     main_function = ".scripts.export_example.main",
@@ -18,5 +19,14 @@ runtime.python_binary(
         "//executorch/devtools:lib",
         "//executorch/examples/models:models",
         "//executorch/extension/export_util:export_util",
+    ],
+)
+
+python_library(
+    name = "utils",
+    srcs = ["utils.py"],
+    deps = [
+        "//executorch/backends/qualcomm/partition:partition",
+        "//executorch/backends/qualcomm/quantizer:quantizer",
     ],
 )
