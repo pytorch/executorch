@@ -26,8 +26,7 @@ TEST(SPTokenizerTest, TestDecodeWithoutLoad) {
 
 TEST(SPTokenizerTest, TestLoad) {
   SPTokenizer tokenizer;
-  auto resources = std::getenv("RESOURCES_PATH");
-  auto path = resources + std::string("/test_sentencepiece.model");
+  auto path = RESOURCES_PATH + std::string("/test_sentencepiece.model");
   auto error = tokenizer.load(path);
   EXPECT_EQ(error, Error::Ok);
 }
@@ -40,8 +39,7 @@ TEST(SPTokenizerTest, TestLoadInvalidPath) {
 
 TEST(SPTokenizerTest, TestEncode) {
   SPTokenizer tokenizer;
-  auto resources = std::getenv("RESOURCES_PATH");
-  auto path = resources + std::string("/test_sentencepiece.model");
+  auto path = RESOURCES_PATH + std::string("/test_sentencepiece.model");
   auto error = tokenizer.load(path);
   EXPECT_EQ(error, Error::Ok);
   std::string text = "Hello world!";
@@ -56,8 +54,7 @@ TEST(SPTokenizerTest, TestEncode) {
 
 TEST(SPTokenizerTest, TestDecode) {
   SPTokenizer tokenizer;
-  auto resources = std::getenv("RESOURCES_PATH");
-  auto path = resources + std::string("/test_sentencepiece.model");
+  auto path = RESOURCES_PATH + std::string("/test_sentencepiece.model");
   auto error = tokenizer.load(path);
   EXPECT_EQ(error, Error::Ok);
   std::vector<uint64_t> tokens = {1, 15043, 3186, 29991};

@@ -50,7 +50,8 @@ target_link_libraries(tokenizers PUBLIC sentencepiece-static re2::re2)
 
 # Build test
 if(TOKENIZERS_BUILD_TEST)
-  include(FetchContent)
+    enable_testing()
+    include(FetchContent)
   # CMAKE
   FetchContent_Declare(
     googletest
@@ -62,18 +63,20 @@ if(TOKENIZERS_BUILD_TEST)
       CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(googletest)
 
-  set(ENV{RESOURCES_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/test/resources)
-  add_executable(sentencepiece_test test/test_sentencepiece.cpp)
-  target_include_directories(
-    sentencepiece_test
-    PUBLIC third-party/sentencepiece/src third-party/sentencepiece include
-           GTEST_INCLUDE_PATH)
-  target_link_libraries(sentencepiece_test PUBLIC tokenizers gtest_main)
-
-  # tiktoken tests
-  add_executable(tiktoken_test test/test_base64.cpp test/test_tiktoken.cpp)
-  target_include_directories(
-    tiktoken_test PUBLIC third-party/re2 third-party/abseil-cpp include
-                         GTEST_INCLUDE_PATH)
-  target_link_libraries(tiktoken_test PUBLIC tokenizers gtest_main)
+  file(GLOB test_source_files test/test_*.cpp)
+  foreach(test_source_file ${test_source_files})
+      get_filename_component(test_name ${test_source_file} NAME_WE)
+      message(STATUS "Configuring unit test ${test_name}")
+      add_executable(${test_name} ${test_source_file})
+      target_include_directories(${test_name} PRIVATE
+        GTEST_INCLUDE_PATH
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/third-party/sentencepiece
+        ${CMAKE_SOURCE_DIR}/third-party/re2
+        ${CMAKE_SOURCE_DIR}/third-party/json/single_include
+        )
+      target_link_libraries(${test_name} gtest_main tokenizers)
+      target_compile_definitions(${test_name} PRIVATE RESOURCES_PATH="${CMAKE_SOURCE_DIR}/test/resources")
+      add_test(${test_name} "${test_name}")
+  endforeach()
 endif()

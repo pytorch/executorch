@@ -25,9 +25,4 @@ jobs:
       script: |
         cmake -DTOKENIZERS_BUILD_TEST=ON -DCMAKE_BUILD_TYPE=Debug . -Bbuild
         cmake --build build -j9 --config Debug
-
-        # Run unit tests
-        export RESOURCES_PATH=test/resources
-
-        build/sentencepiece_test
-        build/tiktoken_test
+        ctest
