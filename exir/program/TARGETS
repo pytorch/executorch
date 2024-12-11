@@ -15,6 +15,7 @@ python_library(
 )
 
 python_library(
+    # @autodeps-skip
     name = "program",
     srcs = [
         "_program.py",
