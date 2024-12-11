@@ -1002,6 +1002,9 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_repeat_interleave",
+    ),
+    op_target(
         name = "op_replication_pad1d",
         deps = [
             "//executorch/kernels/portable/cpu/util:padding_util",
