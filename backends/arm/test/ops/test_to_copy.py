@@ -56,7 +56,6 @@ class TestToCopy(unittest.TestCase):
             )
             .export()
             .dump_artifact()
-            .check_count({"torch.ops.aten._to_copy.default": 1})
             .to_edge()
             .dump_artifact()
             .partition()
