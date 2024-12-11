@@ -145,6 +145,15 @@ the checkpoint format to avoid generating faulty models.
             enable_dynamic_shape=self.enable_dynamic_shape,
             **params,
         )
+
+        if model_args.use_scaled_rope:
+            # Older models don't have use_scaled_rope configuration
+            assert self.args.model not in ["llama2", "stories110m"]
+
+            # Llama3_2 and newer models in ExecuTorch repo should set larger scale factor
+            if self.args.model not in ["llama3", "llama3_1"]:
+                model_args.rope_scale_factor = 32
+
         if kwargs.get("verbose", False):
             print("============= weights ================")
             print("{key} : {weights.numel()} : {weights.size()}")
