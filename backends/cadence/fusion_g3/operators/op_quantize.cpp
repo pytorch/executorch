@@ -570,7 +570,7 @@ Tensor& quantize_per_tensor_out(
       err == torch::executor::Error::Ok,
       "Failed to resize out Tensor in quantize_per_tensor_out");
 
-  check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
+  // check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
 
   float scale_data = (float)scale;
   int zero_point_data = (int)zero_point;
@@ -696,7 +696,7 @@ Tensor& quantize_per_channel_out(
       zero_point.numel(),
       input.size(axis));
 
-  check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
+  // check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
 
   const double* scale_dt = scale.const_data_ptr<double>();
   const int64_t* zero_point_dt = zero_point.const_data_ptr<int64_t>();
