@@ -20,6 +20,7 @@ set(CMAKE_CXX_STANDARD 17)
 project(Tokenizers)
 
 option(TOKENIZERS_BUILD_TEST "Build tests" OFF)
+option(TOKENIZERS_BUILD_TOOLS "Build tools" OFF)
 
 # Ignore weak attribute warning
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-attributes")
@@ -82,4 +83,9 @@ if(TOKENIZERS_BUILD_TEST)
       target_compile_definitions(${test_name} PRIVATE RESOURCES_PATH="${CMAKE_SOURCE_DIR}/test/resources")
       add_test(${test_name} "${test_name}")
   endforeach()
+endif()
+
+# Build tools
+if(TOKENIZERS_BUILD_TOOLS)
+  add_subdirectory(tools/tokenize_tool)
 endif()
