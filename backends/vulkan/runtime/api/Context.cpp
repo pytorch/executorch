@@ -119,7 +119,9 @@ void Context::register_shader_dispatch(
     const vkapi::DescriptorSet& descriptors,
     vkapi::PipelineBarrier& pipeline_barrier,
     const vkapi::ShaderInfo& shader_descriptor,
-    const utils::uvec3& global_workgroup_size) {
+    const utils::uvec3& global_workgroup_size,
+    const void* push_constants_data,
+    const uint32_t push_constants_size) {
   // Adjust the global workgroup size based on the output tile size
   uint32_t global_wg_w = utils::div_up(
       global_workgroup_size[0u], shader_descriptor.out_tile_size[0u]);
@@ -144,6 +146,15 @@ void Context::register_shader_dispatch(
 
   cmd_.bind_descriptors(descriptors.get_bind_handle());
   cmd_.insert_barrier(pipeline_barrier);
+
+  if (push_constants_size > 0 && push_constants_data != nullptr) {
+    const VkDescriptorSetLayout shader_layout =
+        shader_layout_cache().retrieve(shader_descriptor.kernel_layout);
+    const VkPipelineLayout pipeline_layout =
+        pipeline_layout_cache().retrieve(shader_layout);
+    cmd_.set_push_constants(
+        pipeline_layout, push_constants_data, push_constants_size);
+  }
 
   cmd_.dispatch(effective_global_wg);
 }
