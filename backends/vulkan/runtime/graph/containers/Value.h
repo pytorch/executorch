@@ -59,7 +59,7 @@ struct Value final {
     } u;
 
     std::unique_ptr<api::vTensor> as_tensor;
-    api::StagingBuffer as_staging;
+    std::unique_ptr<api::StagingBuffer> as_staging;
     TensorRef as_tensorref;
 
     std::vector<int64_t> as_int_list;
@@ -73,7 +73,7 @@ struct Value final {
 
     std::string as_string;
 
-    SymInt as_symint;
+    std::unique_ptr<SymInt> as_symint;
 
     Payload() : u() {}
     // NOLINTNEXTLINE
@@ -117,9 +117,7 @@ struct Value final {
       CASE_MOVE_TRIVIALLY_COPYABLE_TYPE(TypeTag::INT, as_int);
       CASE_MOVE_TRIVIALLY_COPYABLE_TYPE(TypeTag::DOUBLE, as_double);
       CASE_MOVE_TRIVIALLY_COPYABLE_TYPE(TypeTag::BOOL, as_bool);
-      // Tensor adjacent types
-      CASE_MOVE_MOVEABLE_TYPE(
-          TypeTag::STAGING, api::StagingBuffer, as_staging, StagingBuffer);
+      // Tensor adjacent type
       CASE_MOVE_MOVEABLE_TYPE(
           TypeTag::TENSORREF, TensorRef, as_tensorref, TensorRef);
       // Scalar lists
@@ -134,9 +132,12 @@ struct Value final {
           TypeTag::VALUELIST, std::vector<ValueRef>, as_value_list, vector);
       CASE_MOVE_MOVEABLE_TYPE(
           TypeTag::STRING, std::string, as_string, basic_string);
-      CASE_MOVE_MOVEABLE_TYPE(TypeTag::SYMINT, SymInt, as_symint, SymInt);
       // Tensor type
       CASE_MOVE_UNIQUE_PTR_TYPE(TypeTag::TENSOR, as_tensor);
+      // Small tensor adjacent types
+      CASE_MOVE_UNIQUE_PTR_TYPE(TypeTag::STAGING, as_staging);
+      // Large tensor adjacent types
+      CASE_MOVE_UNIQUE_PTR_TYPE(TypeTag::SYMINT, as_symint);
 
       case TypeTag::NONE:
         clearToNone();
@@ -163,9 +164,6 @@ struct Value final {
 
   ~Value() {
     switch (tag) {
-      case TypeTag::STAGING:
-        payload.as_staging.~StagingBuffer();
-        break;
       case TypeTag::TENSORREF:
         payload.as_tensorref.~TensorRef();
         break;
@@ -184,8 +182,11 @@ struct Value final {
       case TypeTag::STRING:
         payload.as_string.~basic_string();
         break;
+      case TypeTag::STAGING:
+        payload.as_staging.reset();
+        break;
       case TypeTag::SYMINT:
-        payload.as_symint.~SymInt();
+        payload.as_symint.reset();
         break;
       case TypeTag::TENSOR:
         payload.as_tensor.reset();
@@ -259,12 +260,6 @@ struct Value final {
   }
 
   SUPPORT_TRIVIALLY_MOVEABLE_TYPE(
-      api::StagingBuffer,
-      Staging,
-      TypeTag::STAGING,
-      as_staging);
-
-  SUPPORT_TRIVIALLY_MOVEABLE_TYPE(
       TensorRef,
       TensorRef,
       TypeTag::TENSORREF,
@@ -300,8 +295,6 @@ struct Value final {
       TypeTag::STRING,
       as_string);
 
-  SUPPORT_TRIVIALLY_MOVEABLE_TYPE(SymInt, SymInt, TypeTag::SYMINT, as_symint);
-
 #undef SUPPORT_TRIVIALLY_MOVEABLE_TYPE
 
 #define SUPPORT_UNIQUE_PTR_TYPE(type, type_name, type_tag, member_name) \
@@ -329,6 +322,14 @@ struct Value final {
   }
 
   SUPPORT_UNIQUE_PTR_TYPE(api::vTensor, Tensor, TypeTag::TENSOR, as_tensor);
+
+  SUPPORT_UNIQUE_PTR_TYPE(
+      api::StagingBuffer,
+      Staging,
+      TypeTag::STAGING,
+      as_staging);
+
+  SUPPORT_UNIQUE_PTR_TYPE(SymInt, SymInt, TypeTag::SYMINT, as_symint);
 
 #undef SUPPORT_UNIQUE_PTR_TYPE
 
