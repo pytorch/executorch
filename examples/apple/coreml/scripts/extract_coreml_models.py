@@ -23,7 +23,7 @@ from executorch.exir.schema import (
 )
 
 
-def extract_coreml_models(pte_data: bytes):
+def extract_coreml_models(pte_data: bytes, output_dir: str = "."):
     program = deserialize_pte_binary(pte_data)
     delegates: List[BackendDelegate] = sum(
         [execution_plan.delegates for execution_plan in program.execution_plan], []
@@ -45,7 +45,7 @@ def extract_coreml_models(pte_data: bytes):
                 AssertionError("The loaded Program must have inline data.")
 
         model_name: str = f"model_{model_index}"
-        model_path: Path = Path() / "extracted_coreml_models" / model_name
+        model_path: Path = Path() / output_dir / "extracted_coreml_models" / model_name
         if model_path.exists():
             shutil.rmtree(model_path.absolute())
         os.makedirs(model_path.absolute())
@@ -72,9 +72,15 @@ if __name__ == "__main__":
         required=True,
         help="Input must be a .pte file.",
     )
+    parser.add_argument(
+        "-o",
+        "--output_dir",
+        default=".",
+        help="Output directory to save the extracted Core ML models.",
+    )
 
     args = parser.parse_args()
     model_path = str(args.model_path)
     with open(model_path, mode="rb") as pte_file:
         pte_data = pte_file.read()
-        extract_coreml_models(pte_data)
+        extract_coreml_models(pte_data, args.output_dir)

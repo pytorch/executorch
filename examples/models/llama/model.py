@@ -53,6 +53,8 @@ class Llama2Model(EagerModelBase):
         self.output_prune_map_path = kwargs.get("output_prune_map_path", None)
         self.max_seq_len = kwargs.get("max_seq_len", 128)
         self.args = kwargs.get("args", None)
+        self.prefill_seq_length = self.args.prefill_seq_length
+        self.prefill_return_kv = self.args.prefill_return_kv
 
         # The example is using a dummy small model with random weights for demo purpose only.
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model.
@@ -143,6 +145,7 @@ the checkpoint format to avoid generating faulty models.
             input_prune_map=input_prune_map,
             output_prune_map=output_prune_map,
             enable_dynamic_shape=self.enable_dynamic_shape,
+            prefill_return_kv=self.prefill_return_kv,
             **params,
         )
 
@@ -273,7 +276,7 @@ the checkpoint format to avoid generating faulty models.
         else:
             return (
                 torch.tensor(
-                    [[0 for _ in range(self.args.get("prefill_seq_length", 3))]], dtype=torch.long
+                    [[0 for _ in range(self.prefill_seq_length)]], dtype=torch.long
                 ),  # tokens, with kv cache our input token length is always just 1 token.
             )
 
