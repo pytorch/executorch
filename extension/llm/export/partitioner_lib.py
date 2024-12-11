@@ -152,7 +152,7 @@ def get_coreml_partitioner(
     compile_specs = CoreMLBackend.generate_compile_specs(  # pyre-fixme[16]
         minimum_deployment_target=minimum_deployment_target,
         compute_precision=ct.precision(ct.precision.FLOAT16.value),
-        compute_units=coreml_compute_units,
+        compute_unit=coreml_compute_units,
         model_type=CoreMLBackend.MODEL_TYPE.MODEL,  # pyre-fixme[16]
         op_linear_quantizer_config=op_linear_quantizer_config,
     )
