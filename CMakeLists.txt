@@ -44,6 +44,10 @@ target_include_directories(
   ${CMAKE_SOURCE_DIR}/third-party/sentencepiece/src
   ${CMAKE_SOURCE_DIR}/third-party/re2
   ${CMAKE_SOURCE_DIR}/third-party/json/single_include)
+target_include_directories(
+  tokenizers PRIVATE
+  ${CMAKE_SOURCE_DIR}/src/include
+)
 
 target_link_libraries(tokenizers PUBLIC sentencepiece-static re2::re2)
 
