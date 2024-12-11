@@ -33,12 +33,18 @@ add_subdirectory(third-party/re2)
 add_subdirectory(third-party/sentencepiece)
 set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
-add_library(tokenizers STATIC src/sentencepiece.cpp src/tiktoken.cpp)
+add_library(tokenizers STATIC
+  src/sentencepiece.cpp
+  src/tiktoken.cpp
+  src/bpe_tokenizer_base.cpp)
 
 # Using abseil from sentencepiece/third_party
 target_include_directories(
-  tokenizers PUBLIC third-party/sentencepiece/src third-party/sentencepiece
-                    include third-party/re2)
+  tokenizers PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+  third-party/sentencepiece/src
+  third-party/sentencepiece
+  third-party/re2
+  third-party/json/single_include)
 
 target_link_libraries(tokenizers PUBLIC sentencepiece-static re2::re2)
 
