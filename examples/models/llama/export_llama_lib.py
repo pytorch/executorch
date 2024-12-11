@@ -353,8 +353,8 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--coreml-quantize",
         default=None,
-        choices=["b4w"],
-        help="This option is only for coreml: Use coreml quantization, e.g. b4w (for blockwise 4 bit weight)",
+        choices=["b4w", "c4w"],
+        help="This option is only for coreml: Use coreml quantization, e.g. b4w (for blockwise 4 bit weight), c4w (for channelwise 4 bit weight)",
     )
     parser.add_argument(
         "--coreml-ios",
