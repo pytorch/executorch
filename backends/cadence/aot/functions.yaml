@@ -142,6 +142,41 @@
     - arg_meta: null
       kernel_name: torch::executor::where_out
 
+- op: transpose_copy.int_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::transpose_copy_int_out
+
+- op: eq.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::eq_scalar_out
+
+- op: logical_not.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::logical_not_out
+
+- op: any.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::any_out
+
+- op: native_group_norm.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::native_group_norm_out
+
+- op: sum.IntList_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sum_dim_out
+
+- op: select_copy.int_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::select_copy_int_out
+
 # custom ops
 - func: cadence::quantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
   variants: function
@@ -183,3 +218,18 @@
   kernels:
     - arg_meta: null
       kernel_name: impl::reference::quantized_matmul_out
+
+- func: cadence::quantized_linear.per_tensor_out(Tensor src, Tensor weight, Tensor bias, SymInt src_zero_point, SymInt weight_zero_point, SymInt out_multiplier, SymInt out_shift, SymInt out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::reference::quantized_linear_per_tensor_out
+
+- func: cadence::im2row.out(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, Tensor in_zero_point, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::reference::im2row_out
+
+- func: cadence::quantized_conv.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::reference::quantized_conv_per_tensor_out
