@@ -34,9 +34,10 @@
 
 namespace tokenizers {
 
-// ------------------------------Util start------------------------------------
+using namespace detail;
 
-static uint64_t _max_size() { return std::numeric_limits<uint64_t>::max(); }
+// ------------------------------Util start------------------------------------
+namespace {
 
 static Re2UPtr _create_regex(const std::string &pattern) {
   assert(!pattern.empty());
@@ -110,138 +111,8 @@ static Result<Decoder> _build_decoder(const Encoder &encoder) {
   return decoder;
 }
 
-static Result<std::vector<uint64_t>>
-_byte_pair_merge(const std::string &piece,
-                 const std::unordered_map<std::string, uint64_t> &ranks,
-                 std::function<uint64_t(uint64_t, uint64_t)> func) {
-  // This is a vector of (start, rank).
-  // The rank is of the byte pair starting at position start.
-  // The rank of the last item in the vector is not a valid value.
-  std::vector<std::pair<uint64_t, uint64_t>> parts;
-  parts.reserve(piece.size() + 1);
-  for (auto idx = 0U; idx < piece.size() + 1; ++idx) {
-    parts.emplace_back(idx, _max_size());
-  }
+} // anon namespace
 
-  auto get_rank =
-      [&piece, &ranks](const std::vector<std::pair<uint64_t, uint64_t>> &parts,
-                       uint64_t start_idx,
-                       uint64_t skip) -> std::optional<uint64_t> {
-    if (start_idx + skip + 2 < parts.size()) {
-      auto s = parts[start_idx].first;
-      auto e = parts[start_idx + skip + 2].first;
-      auto key = piece.substr(s, e - s);
-      auto iter = ranks.find(key);
-      if (iter != ranks.end()) {
-        return iter->second;
-      }
-    }
-    TK_LOG(Error, "failed to find rank for start_idx %" PRIu64 ", %" PRIu64,
-           start_idx, skip);
-    return std::nullopt;
-  };
-
-  // We look up the ranks once in the beginning and iteratively update
-  // them during each merge, which reduces the number of rank lookups.
-  for (auto i = 0U; i < parts.size() - 2; ++i) {
-    auto rank = get_rank(parts, i, 0);
-    if (rank) {
-      // usize::MAX is a sentinel value and cannot be a valid rank
-      TK_CHECK_OR_RETURN_ERROR(*rank != _max_size(), EncodeFailure,
-                               "rank is too large");
-      parts[i].second = *rank;
-    }
-  }
-
-  // If you have n parts and m merges, this does O(mn) work.
-  // We could do something with a heap and do O(m log n) work.
-  // It is important to consider that n is often small (<100), and as such
-  // the cache-locality benefits outweigh the algorithmic complexity downsides
-  // of the `parts` vector data structure above.
-
-  // Note that we hash bytes, not token pairs. As long as we train BPE the way
-  // we currently do, this is equivalent. An easy way to break this would be
-  // to decouple merge priority from token index or to prevent specific token
-  // merges.
-  while (true) {
-    if (parts.size() == 1) {
-      break;
-    }
-
-    // usize::MAX is a sentinel rank value allowing us to
-    // take the min more quickly
-    auto min_rank = std::make_pair<uint64_t, uint64_t>(_max_size(), 0);
-    for (auto i = 0U; i < parts.size() - 1; ++i) {
-      auto rank = parts[i].second;
-      if (rank < min_rank.first) {
-        min_rank.first = rank;
-        min_rank.second = i;
-      }
-    }
-
-    if (min_rank.first != _max_size()) {
-      auto i = min_rank.second;
-
-      // NOTE: We are about to remove parts[i + 1]. We do not do it
-      // yet because there are cache-locality benefits to updating
-      // parts[i] and parts[i-1] before removing, which could thrash
-      // the cache. Thus, we update the rank calculation by skipping over
-      // parts[i + 1], by invoking `get_rank!` with `skip = 1`.
-      auto rank = get_rank(parts, i, 1);
-      if (rank) {
-        parts[i].second = *rank;
-      } else {
-        parts[i].second = _max_size();
-      }
-      if (i > 0) {
-        rank = get_rank(parts, i - 1, 1);
-        if (rank) {
-          parts[i - 1].second = *rank;
-        } else {
-          parts[i - 1].second = _max_size();
-        }
-      }
-
-      parts.erase(parts.begin() + (i + 1));
-    } else {
-      break;
-    }
-  }
-  std::vector<uint64_t> out;
-  out.reserve(parts.size() - 1);
-  for (auto i = 0U; i < parts.size() - 1; ++i) {
-    auto s = parts[i].first;
-    auto e = parts[i + 1].first;
-    out.push_back(func(s, e));
-  }
-  return out;
-}
-
-static Result<std::vector<uint64_t>> _byte_pair_encode(const std::string &piece,
-                                                       const Encoder &encoder) {
-  if (piece.size() == 1) {
-    auto iter = encoder.find(piece);
-    if (iter != encoder.end()) {
-      return std::vector<uint64_t>({iter->second});
-    } else {
-      // TODO: is it possible?
-      return Error::EncodeFailure;
-    }
-  }
-
-  return _byte_pair_merge(piece, encoder,
-                          [&piece, &encoder](uint64_t start, uint64_t stop) {
-                            std::string key = piece.substr(start, stop - start);
-                            auto iter = encoder.find(key);
-                            if (iter != encoder.end()) {
-                              return iter->second;
-                            } else {
-                              // TODO: what if key does not exist? Should we
-                              // return `unknown`? assert(false); // ??
-                              return uint64_t(0);
-                            }
-                          });
-}
 // ------------------------------Util end------------------------------------
 // -------------------------private method start-------------------------------
 
@@ -249,7 +120,7 @@ template <typename T>
 std::pair<std::optional<std::string>, re2::StringPiece>
 Tiktoken::_split_with_allowed_special_token(re2::StringPiece &input,
                                             const T &allowed_special) const {
-  if (!_special_token_regex) {
+  if (!special_token_regex_) {
     return std::make_pair(std::nullopt, input);
   }
 
@@ -260,7 +131,7 @@ Tiktoken::_split_with_allowed_special_token(re2::StringPiece &input,
 #endif
   std::string special;
   while (true) {
-    if (!re2::RE2::FindAndConsume(&input, *_special_token_regex, &special)) {
+    if (!re2::RE2::FindAndConsume(&input, *special_token_regex_, &special)) {
       // No special token.
       break;
     }
@@ -287,17 +158,23 @@ Error Tiktoken::_encode(re2::StringPiece &input, std::vector<uint64_t> &ret,
   std::string piece;
   assert(_regex);
   while (re2::RE2::FindAndConsume(&input, *_regex, &piece)) {
-    auto iter = _encoder.find(piece);
-    if (iter != _encoder.end()) {
+    auto iter = encoder_.find(piece);
+    if (iter != encoder_.end()) {
       last_piece_token_len = 1;
       ret.push_back(iter->second);
       continue;
     }
-    auto tokens = TK_UNWRAP(_byte_pair_encode(piece, _encoder));
+    auto tokens = TK_UNWRAP(byte_pair_encode_(piece, encoder_));
     last_piece_token_len = tokens.size();
     ret.insert(ret.end(), tokens.begin(), tokens.end());
   }
   return Error::Ok;
+}
+
+void Tiktoken::_decode(
+  re2::StringPiece input,
+  std::string& ret) const {
+  ret += input;
 }
 
 template <typename T>
@@ -317,7 +194,7 @@ Tiktoken::_encode_with_special_token(const std::string &text,
     if (special) {
       uint64_t token = 0;
       try {
-        token = _special_token_encoder.at(*special);
+        token = special_token_encoder_.at(*special);
       } catch (const std::out_of_range &) {
         // Should never go here, since special pattern includes all special
         // chars.
@@ -350,11 +227,11 @@ Encoder Tiktoken::_build_special_token_encoder(ssize_t num_base_tokens) const {
 // -------------------------public method start-------------------------------
 
 Error Tiktoken::load(const std::string &path) {
-  _encoder = TK_UNWRAP(_load_encoder(path));
-  _special_token_encoder = _build_special_token_encoder(_encoder.size());
+  encoder_ = TK_UNWRAP(_load_encoder(path));
+  special_token_encoder_ = _build_special_token_encoder(encoder_.size());
 
-  _decoder = TK_UNWRAP(_build_decoder(_encoder));
-  _special_token_decoder = TK_UNWRAP(_build_decoder(_special_token_encoder));
+  decoder_ = TK_UNWRAP(_build_decoder(encoder_));
+  special_token_decoder_ = TK_UNWRAP(_build_decoder(special_token_encoder_));
 
   _regex = _create_regex(_pattern);
   // Warmup re2 as it is slow on the first run, void the return value as it's
@@ -362,57 +239,19 @@ Error Tiktoken::load(const std::string &path) {
   // https://github.com/google/re2/blob/6dcd83d60f7944926bfd308cc13979fc53dd69ca/re2/fuzzing/re2_fuzzer.cc#L136-L141
   (void)_regex->ReverseProgramSize();
 
-  _special_token_regex = _build_special_token_regex(_special_token_encoder);
+  special_token_regex_ = _build_special_token_regex(special_token_encoder_);
   // Same as above, warm up re2
-  (void)_special_token_regex->ReverseProgramSize();
+  (void)special_token_regex_->ReverseProgramSize();
 
   // initialize vocab_size, bos_tok, eos_tok
-  vocab_size_ = _encoder.size() + _special_token_encoder.size();
-  bos_tok_ = _special_token_encoder.at(_special_tokens->at(_bos_token_index));
-  eos_tok_ = _special_token_encoder.at(_special_tokens->at(_eos_token_index));
+  vocab_size_ = encoder_.size() + special_token_encoder_.size();
+  bos_tok_ = special_token_encoder_.at(_special_tokens->at(_bos_token_index));
+  eos_tok_ = special_token_encoder_.at(_special_tokens->at(_eos_token_index));
 
   initialized_ = true;
   return Error::Ok;
 }
 
-Result<std::vector<uint64_t>> Tiktoken::encode(const std::string &text,
-                                               int8_t bos, int8_t eos) const {
-  if (!initialized_) {
-    return Error::Uninitialized;
-  }
-  auto res =
-      TK_UNWRAP(_encode_with_special_token(text, _special_token_encoder)).first;
-  for (auto i = 0; i < bos; ++i) {
-    res.insert(res.begin(), bos_tok_);
-  }
-  for (auto i = 0; i < eos; ++i) {
-    res.push_back(eos_tok_);
-  }
-  return Result<std::vector<uint64_t>>(std::move(res));
-}
-
-Result<std::string> Tiktoken::decode(uint64_t prev, uint64_t cur) const {
-  (void)prev;
-  TK_CHECK_OK_OR_RETURN_ERROR(Tokenizer::decode_verify(cur));
-  std::string ret;
-
-  std::string token_bytes;
-  auto iter = _decoder.find(cur);
-  if (iter != _decoder.end()) {
-    token_bytes = iter->second;
-  } else {
-    iter = _special_token_decoder.find(cur);
-    if (iter != _special_token_decoder.end()) {
-      token_bytes = iter->second;
-    } else {
-      TK_CHECK_OR_RETURN_ERROR(false, DecodeFailure, "unknown token: %" PRIu64,
-                               cur);
-    }
-  }
-  ret += token_bytes;
-
-  return ret;
-}
 // -------------------------public method end-------------------------------
 
 } // namespace tokenizers
