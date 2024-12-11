@@ -15,6 +15,7 @@
 #include <pmu_ethosu.h>
 
 static uint32_t ethosu_inference_count = 0;
+static uint64_t ethosu_ArmCycleCountStart = 0;
 static uint64_t ethosu_ArmBackendExecuteCycleCountStart = 0;
 static uint64_t ethosu_ArmBackendExecuteCycleCount = 0;
 static uint64_t ethosu_ArmWhenNPURunCycleCountStart = 0;
@@ -119,17 +120,14 @@ void StartMeasurements() {
   for (size_t i = 0; i < ethosu_pmuCountersUsed; i++) {
     ethosu_pmuEventCounts[i] = 0;
   }
-  ARM_PMU_Enable();
-  DCB->DEMCR |= DCB_DEMCR_TRCENA_Msk; // Trace enable
-  ARM_PMU_CYCCNT_Reset();
-  ARM_PMU_CNTR_Enable(PMU_CNTENSET_CCNTR_ENABLE_Msk);
+  ethosu_ArmCycleCountStart = ARM_PMU_Get_CCNTR();
 }
 
 void StopMeasurements() {
   ARM_PMU_CNTR_Disable(
       PMU_CNTENCLR_CCNTR_ENABLE_Msk | PMU_CNTENCLR_CNT0_ENABLE_Msk |
       PMU_CNTENCLR_CNT1_ENABLE_Msk);
-  uint32_t cycle_count = ARM_PMU_Get_CCNTR();
+  uint32_t cycle_count = ARM_PMU_Get_CCNTR() - ethosu_ArmCycleCountStart;
 
   // Number of comand streams handled by the NPU
   ET_LOG(Info, "NPU Inferences : %d", ethosu_inference_count);
