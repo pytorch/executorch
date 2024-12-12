@@ -10,6 +10,7 @@ from torch.export import ExportedProgram
 from torch.fx import GraphModule
 from torch.fx.passes.infra.pass_base import PassResult
 
+
 class DebugHandleGeneratorPass(ExportPass):
     def call(self, graph_module: GraphModule) -> PassResult:
         """Lower a quantized reference model (with reference quantized operator patterns)

@@ -7,7 +7,7 @@
 # pyre-strict
 
 from types import FunctionType as function
-from typing import Any, Callable, Dict, List, Tuple, Union
+from typing import Callable, Dict, List, Tuple, Union
 
 import torch
 
@@ -69,15 +69,13 @@ def get_control_flow_submodules(
 
     return control_flow_submodules
 
-# TODO(gasoonjia): remove this and leverage core pytorch bfs_trace_with_node_process after code freeze
+
 def bfs_trace_with_node_process(
     gm: torch.fx.GraphModule, node_op: Callable[[torch.fx.Node], None]
 ) -> None:
     """Traverse the graph module and apply node_op to each node."""
 
-    assert isinstance(
-        gm, torch.fx.GraphModule
-    ), f"Expected GraphModule, got {type(gm)}"
+    assert isinstance(gm, torch.fx.GraphModule), f"Expected GraphModule, got {type(gm)}"
 
     queue = [gm]
     while queue:
