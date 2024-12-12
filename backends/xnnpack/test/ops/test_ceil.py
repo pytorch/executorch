@@ -19,7 +19,7 @@ class TestCeil(unittest.TestCase):
             z = torch.ceil(x)
             return z
 
-    def _test_ceil(self, inputs):
+def _test_ceil(self, inputs):
         for legacy_mode in (True, False):
             tester = Tester(self.Ceil(), inputs)
             tester.export()

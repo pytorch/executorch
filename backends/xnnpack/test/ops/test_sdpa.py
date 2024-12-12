@@ -61,20 +61,23 @@ class TestSDPA(unittest.TestCase):
 
     def _test(self, module, inputs, atol=1e-03, rtol=1e-03):
         module = module.eval()
-        (
-            Tester(module, inputs)
-            .export()
-            .to_edge_transform_and_lower(
-                ToEdgeTransformAndLower([XnnpackPartitioner(configs=[SDPAConfig])])
-            )
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(
+        for legacy in (True, False):
+            tester = Tester(module, inputs)
+            tester.export()
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower(
+                    ToEdgeTransformAndLower([XnnpackPartitioner(configs=[SDPAConfig])])
+                )
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
                 ["executorch_exir_dialects_edge__ops_aten_bmm_default"],
             )
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs(atol=atol, rtol=rtol)
-        )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs(atol=atol, rtol=rtol)
 
     def test_fp16_sdpa_mask2d(self):
         """

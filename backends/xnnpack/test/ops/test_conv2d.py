@@ -9,6 +9,7 @@ import unittest
 from typing import Optional
 
 import torch
+
 from executorch.backends.xnnpack.test.test_xnnpack_utils import randomize_bn
 from executorch.backends.xnnpack.test.tester import Quantize, Tester
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
@@ -155,29 +156,32 @@ class TestConv2d(unittest.TestCase):
         conv_count=1,
         dtype: torch.dtype = torch.float,
     ):
-        # pyre-fixme[29]: `Union[torch._tensor.Tensor,
-        #  torch.nn.modules.module.Module]` is not a function.
-        tester = Tester(m.eval(), m.get_inputs())
-
-        if quant_config is not None:
-            tester = tester.quantize(Quantize(quantization_config=quant_config))
-            tester.check(["torch.ops.quantized_decomposed"])
-
-        (
-            tester.export()
-            .check_count({"torch.ops.aten.conv2d": conv_count})
-            .to_edge_transform_and_lower()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
-            .check_not(
-                [
-                    "executorch_exir_dialects_edge__ops__native_batch_norm_legit_no_training_default"
-                ]
-            )
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs(qtol=1)
-        )
+        for legacy in (True, False):
+            if quant_config is not None:
+                tester = Tester(m.eval(), m.get_inputs())
+                tester = tester.quantize(Quantize(quantization_config=quant_config))
+                tester.check(["torch.ops.quantized_decomposed"])
+                tester.export()
+                tester.check_count({"torch.ops.aten.conv2d": conv_count})
+                if legacy:
+                    tester.to_edge()
+                    tester.partition()
+                else:
+                    tester.to_edge_transform_and_lower()
+                tester.check_not(
+                    ["executorch_exir_dialects_edge__ops_aten_convolution_default"]
+                )
+                tester.check_not(
+                    [
+                        "executorch_exir_dialects_edge__ops__native_batch_norm_legit_no_training_default"
+                    ]
+                )
+                tester.check_count(
+                    {"torch.ops.higher_order.executorch_call_delegate": 1}
+                )
+                tester.to_executorch()
+                tester.serialize()
+                tester.run_method_and_compare_outputs(qtol=1)
 
     def test_fp16_conv2d(self) -> None:
         for has_bias in (True, False):
