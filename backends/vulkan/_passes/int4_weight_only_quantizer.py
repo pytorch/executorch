@@ -226,6 +226,12 @@ class VkInt4WeightOnlyQuantizer(Quantizer):
                     self.groupsize,
                     self.precision,  # dtype for scales_and_zeros
                 )
+                # If the packing of 2 4-bit values into a single 8-bit value was not
+                # performed in the previous function call, then do it manually now.
+                if w_int4x8.shape == weight.shape:
+                    w_int4x8 = (w_int4x8[::, ::2] << 4 | w_int4x8[::, 1::2]).to(
+                        torch.uint8
+                    )
                 # In the original implementation, w_int4x8 is packed via calling the
                 # _convert_weight_to_int4pack operator before storing the weight. However
                 # the Vulkan implementation does not expect the weights to be packed, so
