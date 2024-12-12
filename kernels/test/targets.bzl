@@ -42,6 +42,29 @@ def define_common_targets():
     for aten_kernel in (True, False):
         aten_suffix = "_aten" if aten_kernel else ""
         runtime.cxx_library(
+            name = "gtest_utils" + aten_suffix,
+            exported_headers=[
+                "TestUtil.h",
+            ],
+            visibility = [
+                "//executorch/kernels/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_kernel else [],
+            exported_deps = [
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/kernel:kernel_includes",
+                "//executorch/test/utils:utils" + aten_suffix,
+                "//executorch/runtime/platform:pal_interface",
+            ],
+            fbcode_exported_deps = [
+                "//common/gtest:gtest",
+            ],
+            xplat_exported_deps = [
+                "//third-party/googletest:gtest_main",
+            ],
+        )
+        runtime.cxx_library(
             name = "test_util" + aten_suffix,
             srcs = [
                 "BinaryLogicalOpTest.cpp",
@@ -49,7 +72,6 @@ def define_common_targets():
             ],
             exported_headers = [
                 "BinaryLogicalOpTest.h",
-                "TestUtil.h",
                 "UnaryUfuncRealHBBF16ToFloatHBF16Test.h",
             ],
             visibility = [
@@ -59,6 +81,7 @@ def define_common_targets():
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_kernel else [],
             exported_deps = [
                 ":supported_features_header",
+                ":gtest_utils",
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_includes",
