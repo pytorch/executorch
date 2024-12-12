@@ -555,7 +555,9 @@ cp<span class="w"> </span>deeplab_v3/dlv3_qnn.pte<span class="w"> </span>example
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path-to-android-ndk&gt;
 <span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABI</span><span class="o">=</span>arm64-v8a
 
-rm<span class="w"> </span>-rf<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-android-out
+<span class="c1"># Run the following lines from the `executorch/` folder</span>
+./install_requirements.sh<span class="w"> </span>--clean
+mkdir<span class="w"> </span>cmake-android-out
 
 <span class="c1"># Build the core executorch library</span>
 cmake<span class="w"> </span>.<span class="w"> </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-android-out<span class="w"> </span><span class="se">\</span>
@@ -596,7 +598,8 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out/ex
 <span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABI</span><span class="o">=</span>arm64-v8a
 <span class="nb">export</span><span class="w"> </span><span class="nv">QNN_SDK_ROOT</span><span class="o">=</span>&lt;path-to-qnn-sdk&gt;
 
-rm<span class="w"> </span>-rf<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-android-out
+./install_requirements.sh<span class="w"> </span>--clean
+mkdir<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-android-out
 cmake<span class="w"> </span>.<span class="w"> </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-android-out<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ANDROID_NDK</span><span class="si">}</span><span class="s2">/build/cmake/android.toolchain.cmake&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ANDROID_ABI</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>

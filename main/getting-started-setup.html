@@ -600,7 +600,7 @@ does not currently adapt well to changes in build dependencies.</p>
 <p>You should also update and pull the submodules again, in case their versions
 have changed.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># From the root of the executorch repo:</span>
-rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span>pip-out
+./install_requirements.sh<span class="w"> </span>--clean
 git<span class="w"> </span>submodule<span class="w"> </span>sync
 git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init
 </pre></div>
@@ -677,7 +677,8 @@ to ExecuTorch.</p>
 <p>The ExecuTorch repo uses CMake to build its C++ code. Here, we’ll configure it to build the <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> tool to run it on our desktop OS.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Clean and configure the CMake build system. Compiled programs will</span>
 <span class="c1"># appear in the executorch/cmake-out directory we create here.</span>
-<span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
+./install_requirements.sh<span class="w"> </span>--clean
+<span class="o">(</span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
 
 <span class="c1"># Build the executor_runner target</span>
 cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>--target<span class="w"> </span>executor_runner<span class="w"> </span>-j9
@@ -690,7 +691,7 @@ does not currently adapt well to changes in build dependencies.</p>
 <p>You should also update and pull the submodules again, in case their versions
 have changed.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># From the root of the executorch repo:</span>
-rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span>pip-out
+./install_requirements.sh<span class="w"> </span>--clean
 git<span class="w"> </span>submodule<span class="w"> </span>sync
 git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init
 </pre></div>
