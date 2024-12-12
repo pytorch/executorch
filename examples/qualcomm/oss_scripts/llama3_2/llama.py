@@ -309,7 +309,7 @@ class SingleLlama:
             )
             edge_prog_mgr = edge_prog_mgr.to_backend(partitioner)
             exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
-            with open(f"{work_space}/{pte_filename}.pte", "wb") as file:
+            with open(f"{work_space}/{self.pte_filename}.pte", "wb") as file:
                 exec_prog_mgr.write_to_file(file)
 
     def get_example_inputs(self, use_kv_cache=True):

@@ -56,8 +56,6 @@ int main(int argc, char** argv) {
   example::Runner runner(
       {FLAGS_model_path},
       FLAGS_tokenizer_path.c_str(),
-      FLAGS_prompt.c_str(),
-      FLAGS_system_prompt.c_str(),
       FLAGS_temperature,
       FLAGS_eval_mode);
   std::vector<char> buf;
@@ -69,7 +67,11 @@ int main(int argc, char** argv) {
     }
   };
   // generate tokens & store inference output
-  runner.generate(FLAGS_seq_len, callback);
+  runner.generate(
+      FLAGS_seq_len,
+      FLAGS_prompt.c_str(),
+      FLAGS_system_prompt.c_str(),
+      callback);
   fout.write(buf.data(), buf.size());
   fout.close();
   return 0;

@@ -9,11 +9,6 @@
 #pragma once
 
 #include <cstdint>
-#include <future>
-#include <limits>
-#include <memory>
-#include <queue>
-#include <thread>
 #include <vector>
 
 #include <executorch/extension/module/module.h>
@@ -31,10 +26,7 @@ class Memory {
  public:
   Memory(std::vector<std::shared_ptr<executorch::extension::Module>>& modules);
   virtual ~Memory();
-  virtual void init_io(
-      const std::vector<executorch::runtime::Result<
-          executorch::runtime::MethodMeta>>& methods_meta,
-      EvalMode eval_mode) = 0;
+  virtual void init_io() = 0;
   virtual void prepare_prefill_io(
       const std::vector<
           executorch::runtime::Result<executorch::runtime::MethodMeta>>&
@@ -76,7 +68,8 @@ class HybridMemory : public Memory {
  public:
   HybridMemory(
       std::vector<std::shared_ptr<executorch::extension::Module>>& modules,
-      int32_t max_seq_len,
+      int32_t prefill_cache_len,
+      int32_t kv_cache_len,
       int32_t vocab_size,
       int32_t num_layers,
       int32_t head_dim,
@@ -85,10 +78,7 @@ class HybridMemory : public Memory {
       const std::string& prefill_forward_name,
       const std::string& kv_forward_name);
 
-  void init_io(
-      const std::vector<executorch::runtime::Result<
-          executorch::runtime::MethodMeta>>& methods_meta,
-      EvalMode eval_mode) override;
+  void init_io() override;
   void prepare_prefill_io(
       const std::vector<
           executorch::runtime::Result<executorch::runtime::MethodMeta>>&
@@ -146,7 +136,8 @@ class HybridMemory : public Memory {
       v_cache_out_;
   std::unique_ptr<executorch::aten::TensorImpl> kv_logits_;
   std::vector<int> shard_layers_;
-  int32_t max_seq_len_;
+  int32_t kv_cache_len_{0};
+  int32_t prefill_cache_len_{0};
   int32_t vocab_size_;
   int32_t num_layers_;
   int32_t head_dim_;

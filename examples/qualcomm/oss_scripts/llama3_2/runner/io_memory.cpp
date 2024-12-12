@@ -6,11 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <algorithm>
-#include <fstream>
-
 #include <executorch/examples/qualcomm/oss_scripts/llama3_2/runner/io_memory.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <algorithm>
 
 using executorch::aten::Tensor;
 using executorch::aten::TensorImpl;
@@ -55,7 +53,8 @@ std::vector<Tensor> Memory::get_output_tensors(
 
 HybridMemory::HybridMemory(
     std::vector<std::shared_ptr<Module>>& modules,
-    int32_t max_seq_len,
+    int32_t prefill_cache_len,
+    int32_t kv_cache_len,
     int32_t vocab_size,
     int32_t num_layers,
     int32_t head_dim,
@@ -65,7 +64,8 @@ HybridMemory::HybridMemory(
     const std::string& kv_forward_name)
     : Memory(modules),
       shard_layers_({num_layers}),
-      max_seq_len_(max_seq_len),
+      prefill_cache_len_(prefill_cache_len),
+      kv_cache_len_(kv_cache_len),
       vocab_size_(vocab_size),
       num_layers_(num_layers),
       head_dim_(head_dim),
@@ -106,17 +106,17 @@ HybridMemory::HybridMemory(
       new IO, [](void* ptr) { delete static_cast<IO*>(ptr); });
 }
 
-void HybridMemory::init_io(
-    const std::vector<executorch::runtime::Result<
-        executorch::runtime::MethodMeta>>& methods_meta,
-    EvalMode eval_mode) {
+void HybridMemory::init_io() {
   IO* ptr = static_cast<IO*>(data_ptr_.get());
   std::memset(ptr, 0, sizeof(IO));
 
-  int32_t cache_len = max_seq_len_ - 1;
-  int32_t k_in_size = (head_dim_ + 1) * (max_seq_len_ - 1);
-  int32_t k_cache_out_size = num_heads_ * head_dim_ * cache_len;
-  int32_t v_cache_size = (num_heads_ + 1) * (max_seq_len_ - 1) * head_dim_;
+  int32_t max_cache_len = std::max(kv_cache_len_, prefill_cache_len_);
+  int32_t k_in_size = (head_dim_ + 1) * max_cache_len;
+  int32_t v_cache_size = (num_heads_ + 1) * max_cache_len * head_dim_;
+  int32_t k_cache_out_size = num_heads_ * head_dim_;
+  if (eval_mode_ == EvalMode::kHybrid || eval_mode_ == EvalMode::kPrefill) {
+    k_cache_out_size *= prefill_cache_len_;
+  }
 
   // Init kv vector shape, general enough to be shared across all 3 modes.
   ptr->k_cache_out.reserve(num_layers_);
@@ -127,14 +127,14 @@ void HybridMemory::init_io(
   }
 
   auto init_prefill = [&]() {
-    ptr->prefill_input_toks.resize(cache_len);
-    ptr->prefill_atten_mask.resize(cache_len * cache_len);
-    ptr->prefill_logits.resize(cache_len * vocab_size_);
+    ptr->prefill_input_toks.resize(prefill_cache_len_);
+    ptr->prefill_atten_mask.resize(prefill_cache_len_ * prefill_cache_len_);
+    ptr->prefill_logits.resize(prefill_cache_len_ * vocab_size_);
   };
 
   auto init_kv = [&]() {
     ptr->kv_logits.resize(vocab_size_);
-    ptr->kv_attention_mask.resize(max_seq_len_, -255);
+    ptr->kv_attention_mask.resize((kv_cache_len_ + 1), -255);
     ptr->k_cache.reserve(num_layers_);
     for (int layer = 0; layer < num_layers_; layer++) {
       ptr->k_cache.emplace_back();
@@ -145,7 +145,7 @@ void HybridMemory::init_io(
     }
   };
 
-  switch (eval_mode) {
+  switch (eval_mode_) {
     case EvalMode::kPrefill:
       init_prefill();
       break;
@@ -205,9 +205,7 @@ void HybridMemory::prepare_kv_io(
 
   // [I] kv_cache
   int index = 3; // bypass input_tokens, input_pos, atten_mask
-  for (int offset = 0,
-           shard_index = 0,
-           v_stride = (max_seq_len_ - 1) * head_dim_;
+  for (int offset = 0, shard_index = 0, v_stride = kv_cache_len_ * head_dim_;
        shard_index < modules_.size();
        offset += shard_layers_[shard_index], shard_index++) {
     for (int cache_group = 0; cache_group < 2; ++cache_group) {
@@ -256,9 +254,7 @@ void HybridMemory::prepare_kv_io(
   // For k, we store it in k_cache_out and update to k_cache later.
   // For v, we append the output to the end of v_cache,
   // which serves as both input and output.
-  for (int offset = 0,
-           shard_index = 0,
-           v_stride = (max_seq_len_ - 1) * head_dim_;
+  for (int offset = 0, shard_index = 0, v_stride = kv_cache_len_ * head_dim_;
        shard_index < modules_.size();
        offset += shard_layers_[shard_index], shard_index++) {
     for (int cache_group = 0; cache_group < 2; ++cache_group) {
@@ -305,8 +301,6 @@ void HybridMemory::prepare_prefill_io(
 
   IO* ptr = static_cast<IO*>(data_ptr_.get());
 
-  // cache_len should be max_seq_len - 1
-  int32_t cache_len = methods_meta[0]->input_tensor_meta(0)->sizes()[1];
   // [I]: pre_input_tokens
   Result<TensorInfo> prefill_input_toks = methods_meta[0]->input_tensor_meta(0);
   prefill_input_toks_ = std::make_unique<TensorImpl>(
@@ -318,12 +312,12 @@ void HybridMemory::prepare_prefill_io(
           prefill_input_toks->dim_order().data()));
   input_tensors_[prefill_forward_name_][0].push_back(prefill_input_toks_.get());
   // [I]: prefill_attn_mask
-  for (int i = 0; i < cache_len; ++i) {
-    for (int j = 0; j < cache_len; ++j) {
+  for (int i = 0; i < prefill_cache_len_; ++i) {
+    for (int j = 0; j < prefill_cache_len_; ++j) {
       if (i < j) {
-        ptr->prefill_atten_mask[i * cache_len + j] = -255;
+        ptr->prefill_atten_mask[i * prefill_cache_len_ + j] = -255;
       } else {
-        ptr->prefill_atten_mask[i * cache_len + j] = 0;
+        ptr->prefill_atten_mask[i * prefill_cache_len_ + j] = 0;
       }
     }
   }
@@ -347,10 +341,22 @@ void HybridMemory::prepare_prefill_io(
       const_cast<TensorImpl::DimOrderType*>(logits->dim_order().data()));
   output_tensors_[prefill_forward_name_][modules_.size() - 1].push_back(
       prefill_logits_.get());
+
   // [O] kv_cache
   int index = 1;
-  for (int offset = 0, shard_index = 0, cache_stride = cache_len * head_dim_;
-       shard_index < modules_.size();
+  // prefill_k_stride should be equal to prefill_v_stride in prefill mode.
+  // In hybrid mode, we use kv mode cache len for v stride since we want to
+  // update prefill's result onto kv modes input.
+  int32_t prefill_k_stride = prefill_cache_len_ * head_dim_;
+  int32_t prefill_v_stride =
+      std::max(prefill_cache_len_, kv_cache_len_) * head_dim_;
+
+  if (eval_mode_ == EvalMode::kPrefill) {
+    ET_CHECK_MSG(
+        prefill_k_stride == prefill_v_stride,
+        "prefill_k_stride should be equal to prefill_v_stride");
+  }
+  for (int offset = 0, shard_index = 0; shard_index < modules_.size();
        offset += shard_layers_[shard_index], shard_index++) {
     for (int cache_group = 0; cache_group < 2; ++cache_group) {
       for (int layer = 0; layer < shard_layers_[shard_index]; ++layer) {
@@ -363,10 +369,10 @@ void HybridMemory::prepare_prefill_io(
           void* cache_ptr = (cache_group == 0)
               ? static_cast<void*>(
                     ptr->k_cache_out[layer + offset].data() +
-                    head * cache_stride)
+                    head * prefill_k_stride)
               : static_cast<void*>(
                     ptr->v_cache[layer + offset].data() +
-                    (head + 1) * cache_stride);
+                    (head + 1) * prefill_v_stride);
           cache.emplace_back(std::make_unique<TensorImpl>(
               kv_cache->scalar_type(),
               kv_cache->sizes().size(),
@@ -386,7 +392,9 @@ void HybridMemory::update_prefill_to_kv_io(
     int64_t cur_token,
     int64_t pos,
     std::vector<std::vector<Tensor>>& output_tensors) {
-  int cache_len = (max_seq_len_ - 1);
+  ET_CHECK_MSG(kv_cache_len_ != 0, "k_cache_len_ should not equal to 0");
+  ET_CHECK_MSG(
+      prefill_cache_len_ != 0, "prefill_cache_len_ should not equal to 0");
   IO* ptr = static_cast<IO*>(data_ptr_.get());
 
   ptr->input_tok = static_cast<int32_t>(cur_token);
@@ -394,7 +402,7 @@ void HybridMemory::update_prefill_to_kv_io(
   // If prompt len is 30, prefill will handle to pos = 30.
   // At this point, pos should be 31.
   for (int i = 0; i < pos + 1; i++) {
-    ptr->kv_attention_mask[cache_len - i] = 0;
+    ptr->kv_attention_mask[kv_cache_len_ - i] = 0;
   }
 
   // update v_cache
@@ -429,9 +437,9 @@ void HybridMemory::update_prefill_to_kv_io(
   for (int i = 0; i < k_cache_in.size(); ++i) {
     uint8_t* ptr_in = k_cache_in[i]->mutable_data<uint8_t>();
     const uint8_t* ptr_out = k_cache_out[i]->data<uint8_t>();
-    for (size_t j = 0, offset = cache_len; j < head_dim_;
-         ++j, offset += cache_len) {
-      for (int k = 0, k_stride = j * cache_len; k < pos; k++) {
+    for (size_t j = 0, offset = kv_cache_len_; j < head_dim_;
+         ++j, offset += kv_cache_len_) {
+      for (int k = 0, k_stride = j * prefill_cache_len_; k < pos; k++) {
         ptr_in[offset + k] = ptr_out[k_stride + k];
       }
     }
@@ -444,13 +452,12 @@ void HybridMemory::update_kv_io(
     int64_t pos,
     std::vector<std::vector<Tensor>>& output_tensors) {
   IO* ptr = static_cast<IO*>(data_ptr_.get());
-  int seq_len = (max_seq_len_ - 1);
   // update input_tok
   ptr->input_tok = static_cast<int32_t>(cur_token);
   // update position_ids
   ptr->input_pos = static_cast<int32_t>(pos);
   // update causal mask for next token
-  ptr->kv_attention_mask[seq_len - pos] = 0;
+  ptr->kv_attention_mask[kv_cache_len_ - pos] = 0;
 
   // update v_cache
   auto& v_cache_in = v_cache_in_[kv_forward_name_];
@@ -480,8 +487,8 @@ void HybridMemory::update_kv_io(
   for (int i = 0; i < k_cache_in.size(); ++i) {
     uint8_t* ptr_in = k_cache_in[i]->mutable_data<uint8_t>();
     const uint8_t* ptr_out = k_cache_out[i]->data<uint8_t>();
-    for (size_t j = 0, offset = seq_len; j < head_dim_;
-         ++j, offset += seq_len) {
+    for (size_t j = 0, offset = kv_cache_len_; j < head_dim_;
+         ++j, offset += kv_cache_len_) {
       ptr_in[offset] = ptr_out[j];
     }
     k_cache_in[i]->set_data(ptr_in + 1);
