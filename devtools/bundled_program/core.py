@@ -9,7 +9,6 @@ import typing
 from typing import Dict, List, Optional, Sequence, Type, Union
 
 import executorch.devtools.bundled_program.schema as bp_schema
-from pyre_extensions import none_throws
 
 import executorch.exir.schema as core_schema
 
@@ -44,10 +43,12 @@ class BundledProgram:
 
     def __init__(
         self,
-        executorch_program: Optional[Union[
-            ExecutorchProgram,
-            ExecutorchProgramManager,
-        ]],
+        executorch_program: Optional[
+            Union[
+                ExecutorchProgram,
+                ExecutorchProgramManager,
+            ]
+        ],
         method_test_suites: Sequence[MethodTestSuite],
         pte_file_path: Optional[str] = None,
     ):
@@ -59,18 +60,24 @@ class BundledProgram:
             pte_file_path: The path to pte file to deserialize program if executorch_program is not provided.
         """
         if not executorch_program and not pte_file_path:
-            raise RuntimeError("Either executorch_program or pte_file_path must be provided")
+            raise RuntimeError(
+                "Either executorch_program or pte_file_path must be provided"
+            )
 
         if executorch_program and pte_file_path:
-            raise RuntimeError("Only one of executorch_program or pte_file_path can be used")
+            raise RuntimeError(
+                "Only one of executorch_program or pte_file_path can be used"
+            )
 
         method_test_suites = sorted(method_test_suites, key=lambda x: x.method_name)
         if executorch_program:
             self._assert_valid_bundle(executorch_program, method_test_suites)
-        self.executorch_program: Optional[Union[
-            ExecutorchProgram,
-            ExecutorchProgramManager,
-        ]] = executorch_program
+        self.executorch_program: Optional[
+            Union[
+                ExecutorchProgram,
+                ExecutorchProgramManager,
+            ]
+        ] = executorch_program
         self._pte_file_path: Optional[str] = pte_file_path
 
         self.method_test_suites = method_test_suites
@@ -88,7 +95,8 @@ class BundledProgram:
         if self.executorch_program:
             program = self._extract_program(self.executorch_program)
         else:
-            with open(none_throws(self._pte_file_path), "rb") as f:
+            assert self._pte_file_path is not None
+            with open(self._pte_file_path, "rb") as f:
                 p_bytes = f.read()
             program = _deserialize_pte_binary(p_bytes)
 
