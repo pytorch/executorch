@@ -5,11 +5,13 @@
 
 # pyre-unsafe
 
-from typing import cast, List
+from typing import List
 
 import executorch.backends.arm.tosa_quant_utils as tqutils
-
 import serializer.tosa_serializer as ts
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    get_input_qparams,
+)
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -38,30 +40,23 @@ class MaxVisitor(NodeVisitor):
     ) -> None:
         assert inputs[0].dtype == inputs[1].dtype
 
-        input_qparams = cast(dict[int, tqutils.QuantArgs], node.meta["input_qparams"])
-        min_output = output
-
+        max_output = output
         if inputs[0].dtype == ts.DType.INT8:
+            input_qparams = get_input_qparams(node)
+            assert (
+                len(input_qparams) == 2
+            ), f"Both inputs needs to have quantization information for {node}"
             # insert RESCALEs to int32
-            x_scale = input_qparams[0].scale
-            x_zp = input_qparams[0].zp
-
-            y_scale = input_qparams[1].scale
-            y_zp = input_qparams[1].zp
-
             assert (
-                x_zp == y_zp
-            ), "Different zp for inputs, MAX should be quantized with shared quantization!"
-            assert (
-                x_scale == y_scale
-            ), "Different scale for input, MAX should be quantized with shared quantization!"
+                input_qparams[0] == input_qparams[1]
+            ), "Both inputs must have same quantization for MAX"
 
             operand_inputs, scale_back = tqutils.insert_rescale_ops_to_int32(
                 tosa_graph, inputs, node
             )
 
             output.shape = tosa_shape(output.shape, output.dim_order)
-            min_output = tosa_graph.addIntermediate(output.shape, ts.DType.INT32)
+            max_output = tosa_graph.addIntermediate(output.shape, ts.DType.INT32)
         else:
             operand_inputs = inputs
 
@@ -71,11 +66,9 @@ class MaxVisitor(NodeVisitor):
                 operand_inputs[0].name,
                 operand_inputs[1].name,
             ],
-            [min_output.name],
+            [max_output.name],
         )
 
         if output.dtype == ts.DType.INT8:
             # insert RESCALE from int32 back to int8
-            tqutils.insert_rescale_node_back_to_int8(
-                tosa_graph, min_output, scale_back, node
-            )
+            tqutils.insert_rescale_op_to_int8(tosa_graph, max_output, scale_back, node)
