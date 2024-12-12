@@ -13,17 +13,26 @@
 #include <executorch/runtime/platform/assert.h>
 #include <xa_nnlib_kernels_api.h>
 
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using executorch::runtime::canCast;
-using torch::executor::Error;
-using torch::executor::KernelRuntimeContext;
+using ::executorch::aten::Scalar;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::canCast;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::KernelRuntimeContext;
 
 namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
+
+#define XT_KERNEL_CHECK(ctx, out, kernel, ...) \
+  const auto ret = kernel(__VA_ARGS__);        \
+  ET_KERNEL_CHECK_MSG(                         \
+      ctx,                                     \
+      ret == 0,                                \
+      InvalidArgument,                         \
+      out,                                     \
+      "Failed to run kernel: " #kernel "(" #__VA_ARGS__ ")");
 
 Tensor& add_out(
     KernelRuntimeContext& ctx,
@@ -121,13 +130,30 @@ Tensor& add_out(
     torch::executor::native::utils::extract_scalar(alpha, &alpha_val);
 
     if ((a.numel() == 1) && (alpha_val == 1)) {
-      xa_nn_elm_add_scalar_32x32_32(
-          out_data, inp2_data, inp1_data[0], alpha_val, out.numel());
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_add_scalar_32x32_32,
+          out_data,
+          inp2_data,
+          inp1_data[0],
+          alpha_val,
+          out.numel());
     } else if (b.numel() == 1) {
-      xa_nn_elm_add_scalar_32x32_32(
-          out_data, inp1_data, inp2_data[0], alpha_val, out.numel());
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_add_scalar_32x32_32,
+          out_data,
+          inp1_data,
+          inp2_data[0],
+          alpha_val,
+          out.numel());
     } else if (broadcast) {
-      xa_nn_elm_add_broadcast_5D_32x32_32(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_add_broadcast_5D_32x32_32,
           out_data,
           out_shape,
           inp1_data,
@@ -137,8 +163,15 @@ Tensor& add_out(
           max_dim,
           alpha_val);
     } else {
-      xa_nn_elm_add_32x32_32(
-          out_data, inp1_data, inp2_data, alpha_val, out.numel());
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_add_32x32_32,
+          out_data,
+          inp1_data,
+          inp2_data,
+          alpha_val,
+          out.numel());
     }
   } else if ((compute_type == ScalarType::Float) && (optimized)) {
     const float* const inp1_data = a.const_data_ptr<float>();
@@ -149,13 +182,30 @@ Tensor& add_out(
     torch::executor::native::utils::extract_scalar(alpha, &alpha_val);
 
     if ((a.numel() == 1) && (alpha_val == 1.0)) {
-      xa_nn_elm_add_scalar_f32xf32_f32(
-          out_data, inp2_data, inp1_data[0], alpha_val, out.numel());
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_add_scalar_f32xf32_f32,
+          out_data,
+          inp2_data,
+          inp1_data[0],
+          alpha_val,
+          out.numel());
     } else if (b.numel() == 1) {
-      xa_nn_elm_add_scalar_f32xf32_f32(
-          out_data, inp1_data, inp2_data[0], alpha_val, out.numel());
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_add_scalar_f32xf32_f32,
+          out_data,
+          inp1_data,
+          inp2_data[0],
+          alpha_val,
+          out.numel());
     } else if (broadcast) {
-      xa_nn_elm_add_broadcast_5D_f32xf32_f32(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_add_broadcast_5D_f32xf32_f32,
           out_data,
           out_shape,
           inp1_data,
@@ -165,8 +215,15 @@ Tensor& add_out(
           max_dim,
           alpha_val);
     } else {
-      xa_nn_elm_add_f32xf32_f32(
-          out_data, inp1_data, inp2_data, alpha_val, out.numel());
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_add_f32xf32_f32,
+          out_data,
+          inp1_data,
+          inp2_data,
+          alpha_val,
+          out.numel());
     }
   } else {
     ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
@@ -242,8 +299,15 @@ Tensor& add_scalar_out(
 
     int* const out_data = out.mutable_data_ptr<int>();
 
-    xa_nn_elm_add_scalar_32x32_32(
-        out_data, inp1_data, inp2_val, alpha_val, out.numel());
+    XT_KERNEL_CHECK(
+        ctx,
+        out,
+        xa_nn_elm_add_scalar_32x32_32,
+        out_data,
+        inp1_data,
+        inp2_val,
+        alpha_val,
+        out.numel());
 
   } else if (compute_type == ScalarType::Float) {
     const float* const inp1_data = a.const_data_ptr<float>();
@@ -255,8 +319,15 @@ Tensor& add_scalar_out(
 
     float* const out_data = out.mutable_data_ptr<float>();
 
-    xa_nn_elm_add_scalar_f32xf32_f32(
-        out_data, inp1_data, inp2_val, alpha_val, out.numel());
+    XT_KERNEL_CHECK(
+        ctx,
+        out,
+        xa_nn_elm_add_scalar_f32xf32_f32,
+        out_data,
+        inp1_data,
+        inp2_val,
+        alpha_val,
+        out.numel());
 
   } else {
     ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
