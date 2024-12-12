@@ -235,7 +235,7 @@ function(resolve_buck2)
 
   set(resolve_buck2_command
       ${PYTHON_EXECUTABLE} ${executorch_root}/build/resolve_buck.py
-      --cache_dir=${CMAKE_CURRENT_BINARY_DIR}/buck2-bin
+      --cache_dir=buck2-bin
   )
 
   if(NOT ${BUCK2} STREQUAL "")
