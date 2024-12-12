@@ -7,8 +7,6 @@ on:
       - .ci/docker/**
       - .github/workflows/docker-builds.yml
       - requirements-lintrunner.txt
-      - examples/arm/setup.sh
-      - examples/arm/ethos-u-setup/**
   push:
     branches:
       - main
@@ -17,8 +15,6 @@ on:
       - .ci/docker/**
       - .github/workflows/docker-builds.yml
       - requirements-lintrunner.txt
-      - examples/arm/setup.sh
-      - examples/arm/ethos-u-setup/**
   schedule:
     - cron: 1 3 * * 3
 
