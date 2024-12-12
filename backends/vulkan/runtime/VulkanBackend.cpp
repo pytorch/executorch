@@ -582,7 +582,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     compute_graph->execute();
 
     for (size_t i = 0; i < compute_graph->outputs().size(); i++) {
-      const size_t o = num_inputs + i;
+      const size_t o = i + num_inputs;
       const ValueRef oref = compute_graph->outputs()[i].value;
       if (compute_graph->val_is_tensor(oref)) {
         VK_CHECK_COND(args[o]->isTensor());
