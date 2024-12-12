@@ -9,7 +9,10 @@
 #
 
 import unittest
+
 from typing import Sequence, Tuple
+
+import pytest
 
 import torch
 
@@ -111,6 +114,7 @@ class TestSimpleExpand(unittest.TestCase):
 
     # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(Expand.test_parameters)
+    @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
     def test_expand_u55_BI(self, test_input, multiples):
         self._test_expand_ethosu_BI_pipeline(
@@ -119,6 +123,7 @@ class TestSimpleExpand(unittest.TestCase):
 
     # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(Expand.test_parameters)
+    @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
     def test_expand_u85_BI(self, test_input, multiples):
         self._test_expand_ethosu_BI_pipeline(

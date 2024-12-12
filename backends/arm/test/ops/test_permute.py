@@ -6,7 +6,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+
 from typing import Tuple
+
+import pytest
 
 import torch
 
@@ -137,6 +140,7 @@ class TestPermute(unittest.TestCase):
 
     # Expected to fail as TOSA.Transpose is not supported by Ethos-U55.
     @parameterized.expand(test_data_suite[0:1])
+    @pytest.mark.corstone_fvp
     @unittest.expectedFailure
     def test_permute_u55_BI(
         self, test_name: str, test_data: torch.Tensor, dims: list[int]
@@ -146,6 +150,7 @@ class TestPermute(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite[:-2])
+    @pytest.mark.corstone_fvp
     def test_permute_u85_BI(
         self, test_name: str, test_data: torch.Tensor, dims: list[int]
     ):
@@ -155,6 +160,7 @@ class TestPermute(unittest.TestCase):
 
     # Fails since on FVP since N > 1 is not supported. MLETORCH-517
     @parameterized.expand(test_data_suite[-2:])
+    @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
     def test_permute_u85_BI_xfails(
         self, test_name: str, test_data: torch.Tensor, dims: list[int]

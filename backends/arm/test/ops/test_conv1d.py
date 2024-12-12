@@ -8,6 +8,8 @@ import unittest
 
 from typing import List, Optional, Tuple, Union
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
@@ -291,6 +293,7 @@ class TestConv1D(unittest.TestCase):
 
     # Expeted to fail as Conv1D requires transpoes which isn't supported on u55
     @parameterized.expand(testsuite)
+    @pytest.mark.corstone_fvp
     @unittest.expectedFailure
     def test_conv1d_u55_BI(self, test_name, model):
         self._test_conv1d_ethosu_BI_pipeline(
@@ -301,6 +304,7 @@ class TestConv1D(unittest.TestCase):
     testsuite.remove(("5_3x2x128_st1", conv1d_5_3x2x128_st1))
 
     @parameterized.expand(testsuite)
+    @pytest.mark.corstone_fvp
     def test_conv1d_u85_BI(self, test_name, model):
         self._test_conv1d_ethosu_BI_pipeline(
             model, common.get_u85_compile_spec(), model.get_inputs()

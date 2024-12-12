@@ -9,6 +9,8 @@ import unittest
 
 from typing import Tuple
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
@@ -111,6 +113,7 @@ class TestSub(unittest.TestCase):
         self._test_sub_tosa_BI_pipeline(self.Sub(), test_data)
 
     @parameterized.expand(Sub.test_parameters)
+    @pytest.mark.corstone_fvp
     def test_sub_u55_BI(self, test_data: torch.Tensor):
         test_data = (test_data,)
         self._test_sub_ethosu_BI_pipeline(
@@ -118,6 +121,7 @@ class TestSub(unittest.TestCase):
         )
 
     @parameterized.expand(Sub.test_parameters)
+    @pytest.mark.corstone_fvp
     def test_sub_u85_BI(self, test_data: torch.Tensor):
         test_data = (test_data,)
         self._test_sub_ethosu_BI_pipeline(
@@ -135,6 +139,7 @@ class TestSub(unittest.TestCase):
         self._test_sub_tosa_BI_pipeline(self.Sub2(), test_data)
 
     @parameterized.expand(Sub2.test_parameters)
+    @pytest.mark.corstone_fvp
     def test_sub2_u55_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
         self._test_sub_ethosu_BI_pipeline(
@@ -142,6 +147,7 @@ class TestSub(unittest.TestCase):
         )
 
     @parameterized.expand(Sub2.test_parameters)
+    @pytest.mark.corstone_fvp
     def test_sub2_u85_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
         self._test_sub_ethosu_BI_pipeline(

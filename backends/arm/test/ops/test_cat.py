@@ -9,6 +9,8 @@ import unittest
 
 from typing import Tuple
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
@@ -134,6 +136,7 @@ class TestCat(unittest.TestCase):
 
     # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(Cat.test_parameters)
+    @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
     def test_cat_u55_BI(self, operands: tuple[torch.Tensor, ...], dim: int):
         test_data = (operands, dim)
@@ -143,6 +146,7 @@ class TestCat(unittest.TestCase):
 
     # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(Cat.test_parameters)
+    @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
     def test_cat_u85_BI(self, operands: tuple[torch.Tensor, ...], dim: int):
         test_data = (operands, dim)

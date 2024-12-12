@@ -8,6 +8,8 @@
 import logging
 import unittest
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common, conftest
 
@@ -83,6 +85,8 @@ class TestMobileNetV2(unittest.TestCase):
             .run_method_and_compare_outputs(atol=1.0, qtol=1, inputs=self.model_inputs)
         )
 
+    @pytest.mark.slow
+    @pytest.mark.corstone_fvp
     def test_mv2_u55_BI(self):
         tester = (
             ArmTester(
@@ -101,6 +105,8 @@ class TestMobileNetV2(unittest.TestCase):
                 atol=1.0, qtol=1, inputs=self.model_inputs, target_board="corstone-300"
             )
 
+    @pytest.mark.slow
+    @pytest.mark.corstone_fvp
     def test_mv2_u85_BI(self):
         tester = (
             ArmTester(

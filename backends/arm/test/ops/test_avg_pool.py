@@ -9,6 +9,8 @@ import unittest
 
 from typing import Tuple
 
+import pytest
+
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
@@ -144,6 +146,7 @@ class TestAvgPool2d(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite)
+    @pytest.mark.corstone_fvp
     def test_avgpool2d_tosa_u55_BI(
         self,
         test_name: str,
@@ -157,6 +160,7 @@ class TestAvgPool2d(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite)
+    @pytest.mark.corstone_fvp
     def test_avgpool2d_tosa_u85_BI(
         self,
         test_name: str,
