@@ -113,6 +113,7 @@ class ModelArgs:
     )
     rope_freq_base: float = 10000.0  # The base frequency for RoPE. Keep it for BC.
     use_scaled_rope: bool = False  # Use scaled RoPE, introduced in llama3.1.
+    rope_scale_factor: int = 8
     # Additional Model Metadata needed at runtime
     bos_idx: int = 1
     eos_idx: int = 3
@@ -155,7 +156,9 @@ class Rope(torch.nn.Module):
             self.precompute_freqs_cis = hf_precompute_freqs_cis
         else:
             self.precompute_freqs_cis = partial(
-                precompute_freqs_cis, use_scaled=self.params.use_scaled_rope
+                precompute_freqs_cis,
+                use_scaled=self.params.use_scaled_rope,
+                scale_factor=self.params.rope_scale_factor,
             )
         freqs_cos, freqs_sin = self.precompute_freqs_cis(
             self.params.head_dim,
