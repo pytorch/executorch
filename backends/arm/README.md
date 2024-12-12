@@ -71,6 +71,29 @@ Or discover and run many tests:
 python -m unittest discover -s backends/arm/test/ops/
 ```
 
+### Code coverage
+
+To get code coverage:
+
+```
+coverage run --source=<SRC> --rcfile=backends/arm/test/.coveragerc -m pytest \
+--config-file=/dev/null backends/arm/test/
+```
+
+All files in `SRC` and its child directories will be analysed for code coverage,
+unless explicitly exluded in the .coveragerc file. If using venv this might be
+under `env/lib/python<VERSION_NUMBER>/site-packages/executorch/`. To get the
+absolute path, run:
+
+```
+python -c "import executorch; print(executorch.__path__)"
+```
+
+This contains a list of paths where the source directory is located. Pick the
+one that is located in `env/lib`. If that does not work try the others. Add
+`backends/arm` to the path in `--source` to only get code coverage for the Arm
+backend.
+
 ### A note on unit tests
 
 There are currently 3 ways we unit test our code.
