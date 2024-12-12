@@ -8,16 +8,15 @@
 # Different RoPE implementations
 
 import math
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 
 # ======================== Stock Implementation ========================
 
 
-def apply_scaling(freqs: torch.Tensor):
+def apply_scaling(freqs: torch.Tensor, scale_factor: int):
     # Values obtained from grid search
-    scale_factor = 8
     low_freq_factor = 1
     high_freq_factor = 4
     old_context_len = 8192  # original llama3 length
@@ -41,14 +40,19 @@ def apply_scaling(freqs: torch.Tensor):
 
 
 def precompute_freqs_cis(
-    dim: int, end: int, theta: float = 10000.0, use_scaled: bool = False
+    dim: int,
+    end: int,
+    theta: float = 10000.0,
+    use_scaled: bool = False,
+    scale_factor: Optional[int] = None,
 ):
     freqs = 1.0 / (
         theta ** (torch.arange(0, dim, 2, device="cpu")[: (dim // 2)].float() / dim)
     )
     t = torch.arange(end, device=freqs.device)  # pyre-ignore
     if use_scaled:
-        freqs = apply_scaling(freqs)  # pyre-ignore
+        assert scale_factor is not None
+        freqs = apply_scaling(freqs, scale_factor)  # pyre-ignore
     freqs = torch.outer(t, freqs).float()
     freqs_cos = torch.cos(freqs)
     freqs_sin = torch.sin(freqs)

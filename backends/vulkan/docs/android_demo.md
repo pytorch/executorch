@@ -59,6 +59,7 @@ partially lower the Llama model to Vulkan.
 # The files will usually be downloaded to ~/.llama
 python -m examples.models.llama.export_llama \
   --disable_dynamic_shape --vulkan -kv --use_sdpa_with_kv_cache -d fp32 \
+  --model "llama3_2" \ 
   -c ~/.llama/checkpoints/Llama3.2-1B/consolidated.00.pth \
   -p ~/.llama/checkpoints/Llama3.2-1B/params.json \
   --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
