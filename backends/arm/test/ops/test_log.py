@@ -9,6 +9,8 @@ import unittest
 
 from typing import Tuple
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
@@ -111,12 +113,14 @@ class TestLog(unittest.TestCase):
         self._test_log_tosa_BI_pipeline(self.Log(), (test_data,))
 
     @parameterized.expand(test_data_suite)
+    @pytest.mark.corstone_fvp
     def test_log_tosa_u55_BI(self, test_name: str, test_data: torch.Tensor):
         self._test_log_ethosu_BI_pipeline(
             common.get_u55_compile_spec(), self.Log(), (test_data,)
         )
 
     @parameterized.expand(test_data_suite)
+    @pytest.mark.corstone_fvp
     def test_log_tosa_u85_BI(self, test_name: str, test_data: torch.Tensor):
         self._test_log_ethosu_BI_pipeline(
             common.get_u85_compile_spec(), self.Log(), (test_data,)
