@@ -792,8 +792,8 @@ def get_ext_modules() -> List[Extension]:
             # portable kernels, and a selection of backends. This lets users
             # load and execute .pte files from python.
             BuiltExtension(
-                src_dir="%BUILD_TYPE%/", # Set the src directory based on build configuration for windows. 
-                src_name="_portable_lib.cp*", # Rename _portable_lib.* to _portable_lib.cp* to avoid _portable_lib.lib is selected on windows.
+                src_dir="%BUILD_TYPE%/",# Set the src directory based on build configuration for windows.
+                src_name="_portable_lib.cp*",# Rename _portable_lib.* to _portable_lib.cp* to avoid _portable_lib.lib is selected on windows.
                 modpath="executorch.extension.pybindings._portable_lib",
             )
         )
