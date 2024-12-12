@@ -128,6 +128,13 @@ if(EXECUTORCH_BUILD_TORCHAO)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental)
   target_link_options_shared_lib(torchao_ops_executorch)
   list(APPEND link_libraries torchao_ops_executorch)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+    add_subdirectory(
+      ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
+      ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental/ops/mps)
+    target_link_options_shared_lib(torchao_ops_mps_executorch)
+    list(APPEND link_libraries torchao_ops_mps_executorch)
+  endif()
 endif()
 
 set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)

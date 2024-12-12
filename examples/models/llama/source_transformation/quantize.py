@@ -72,12 +72,35 @@ def quantize(  # noqa C901
     if qmode == "int8":
         # Add quantization mode options here: group size, bit width, etc.
         return WeightOnlyInt8QuantHandler(model).quantized_model()
-    elif qmode.startswith("torchao:"):
+    elif qmode.startswith("torchao:fpa"):
+        pattern = r"torchao:fpa(\d+)w"
+        matches = re.findall(pattern, qmode)
+        assert len(matches) == 1, f"Expected 1 match for pattern but got {len(matches)}"
+        bitwidth = int(matches[0][0])
+        _load_torchao_aten_lib(libname="libtorchao_ops_mps_aten")
+        from torchao.experimental.quant_api import UIntxWeightOnlyLinearQuantizer
+
+        with torch.no_grad():
+            model = (
+                UIntxWeightOnlyLinearQuantizer(
+                    device="mps",
+                    precision=torch.float32,
+                    groupsize=group_size,
+                    bitwidth=bitwidth,
+                )
+                .quantize(model)
+                .to("cpu")
+            )
+
+        if verbose:
+            print("quantized model:", model)
+        return model
+    elif qmode.startswith("torchao:8da"):
         pattern = r"torchao:8da(\d+)w"
         matches = re.findall(pattern, qmode)
         assert len(matches) == 1, f"Expected 1 match for pattern but got {len(matches)}"
         bitwidth = int(matches[0][0])
-        _load_torchao_ops_aten()
+        _load_torchao_aten_lib(libname="libtorchao_ops_aten")
         from torchao.experimental.quant_api import Int8DynActIntxWeightLinearQuantizer
 
         with torch.no_grad():
@@ -729,7 +752,7 @@ def get_quant_embedding_transform(args):
         bitwidth, group_size = args.embedding_quantize.split(":")[1].split(",")
         group_size = int(group_size)
         bitwidth = int(bitwidth)
-        _load_torchao_ops_aten()
+        _load_torchao_aten_lib(libname="libtorchao_ops_aten")
         from torchao.experimental.quant_api import IntxWeightEmbeddingQuantizer
 
         def _torchao_embedding_quantizer(model):
@@ -785,7 +808,7 @@ def get_quant_weight_transform(args, dtype_override, verbose):
     )
 
 
-def _load_torchao_ops_aten():
+def _load_torchao_aten_lib(libname):
     import glob
     import os
 
@@ -793,7 +816,7 @@ def _load_torchao_ops_aten():
         os.path.abspath(
             os.path.join(
                 os.environ.get("CMAKE_INSTALL_PREFIX", ""),
-                "lib/libtorchao_ops_aten.*",
+                f"lib/{libname}.*",
             )
         )
     )
