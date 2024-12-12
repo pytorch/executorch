@@ -71,7 +71,7 @@ def quantize_value(x, qargs: QuantArgs, dtype=np.int8):
 
 
 def dequantize_value(qx, qargs: QuantArgs):
-    return (qx - qargs.zp) * qargs.scale
+    return (np.int64(qx) - qargs.zp) * qargs.scale
 
 
 def qargs_from_qnode(node: torch.fx.Node):
