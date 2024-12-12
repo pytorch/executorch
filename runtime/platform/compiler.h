@@ -100,7 +100,8 @@
 #endif // (__cplusplus) >= 202002L
 
 /// Define a C symbol with weak linkage.
-// Building on Windows also need this. Windows build uses clang-cl compiler, which supports __attribute__((weak)).
+// Building on Windows also need this. Windows build uses clang-cl compiler,
+// which supports __attribute__((weak)).
 #define ET_WEAK __attribute__((weak))
 
 /**
