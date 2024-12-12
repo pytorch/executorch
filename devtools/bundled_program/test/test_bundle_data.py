@@ -6,9 +6,10 @@
 
 # pyre-strict
 
+import tempfile
 import unittest
 from typing import List
-import tempfile
+
 import executorch.devtools.bundled_program.schema as bp_schema
 
 import torch
@@ -73,7 +74,8 @@ class TestBundle(unittest.TestCase):
             bundled_program.serialize_to_schema().program,
             bytes(_serialize_pte_binary(executorch_program.executorch_program)),
         )
-        
+
+
     def test_bundled_program_from_pte(self) -> None:
         executorch_program, method_test_suites = get_common_executorch_program()
 
@@ -82,11 +84,17 @@ class TestBundle(unittest.TestCase):
             with open(executorch_model_path, "wb") as f:
                 f.write(executorch_program.buffer)
 
-            bundled_program = BundledProgram(executorch_program=None, method_test_suites=method_test_suites, pte_file_path=executorch_model_path)
+            bundled_program = BundledProgram(
+                executorch_program=None,
+                method_test_suites=method_test_suites,
+                pte_file_path=executorch_model_path,
+            )
 
             method_test_suites = sorted(method_test_suites, key=lambda t: t.method_name)
 
-            for plan_id in range(len(executorch_program.executorch_program.execution_plan)):
+            for plan_id in range(
+                len(executorch_program.executorch_program.execution_plan)
+            ):
                 bundled_plan_test = (
                     bundled_program.serialize_to_schema().method_test_suites[plan_id]
                 )
