@@ -115,6 +115,13 @@ Error QnnExecuTorchBackend::execute(
 
   input_tensor_structs.reserve(input_tensors.size());
   for (int i = 0; i < input_tensors.size(); ++i) {
+    // TODO: Enable this in future to avoid unmatch tensor size, e.g., QuantIO
+    // pass causing mismatch
+    // ET_CHECK_MSG(
+    //     input_tensors[i]->GetBytes() == args[i]->toTensor().nbytes(),
+    //     "Input index %d, number of bytes does not match between args and
+    //     input_tensor, %d != %zu", i, input_tensors[i]->GetBytes(),
+    //     args[i]->toTensor().nbytes());
     if (qnn_manager->RegisterMem(
             args[i]->toTensor().mutable_data_ptr(), input_tensors[i]) !=
         Error::Ok) {
@@ -129,6 +136,15 @@ Error QnnExecuTorchBackend::execute(
   for (const auto& output_tensor : output_tensors) {
     // pos=0 limits the search to the prefix
     if (output_tensor->GetName().rfind("output_", 0) == 0) {
+      // TODO: Enable this in future to avoid unmatch tensor size, e.g., QuantIO
+      // pass causing mismatch
+      // ET_CHECK_MSG(
+      //     output_tensor->GetBytes() ==
+      //     args[output_index]->toTensor().nbytes(), "Output index %d, number
+      //     of bytes does not match between args and output_tensor, %d != %zu",
+      //     output_index,
+      //     output_tensor->GetBytes(),
+      //     args[output_index]->toTensor().nbytes());
       void* mutable_data_ptr =
           args[output_index]->toTensor().mutable_data_ptr();
       if (qnn_manager->RegisterMem(mutable_data_ptr, output_tensor) !=

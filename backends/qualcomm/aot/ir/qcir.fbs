@@ -80,7 +80,8 @@ table Tensor {
     type: TensorType;
     dtype: DataType;
     qparam: QuantizeParam;
-    data: [ubyte];
+    size: uint;
+    offset: ulong;
 }
 
 table Operator {
@@ -88,9 +89,9 @@ table Operator {
     package_name: string;
     type_name: string;
     // keep only tensor indexes
-    inputs: [int];
-    outputs: [int];
-    params: [int];
+    inputs: [uint];
+    outputs: [uint];
+    params: [uint];
 }
 
 table Graph {
