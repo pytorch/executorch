@@ -75,19 +75,21 @@ void DispatchNode::encode(ComputeGraph* graph) {
 
   bind_params_to_descriptor_set(params_, descriptor_set, idx);
 
-  uint8_t push_constants_data[128];
+  std::array<uint8_t, kMaxPushConstantSize> push_constants_data;
   uint32_t push_constants_offset = 0;
 
   for (const auto& push_constant : push_constants_) {
-    push_constants_offset +=
-        push_constant.write(push_constants_data, push_constants_offset, 128);
+    push_constants_offset += push_constant.write(
+        push_constants_data.data(),
+        push_constants_offset,
+        kMaxPushConstantSize);
   }
   context->register_shader_dispatch(
       descriptor_set,
       pipeline_barrier,
       shader_,
       global_workgroup_size_,
-      push_constants_data,
+      push_constants_data.data(),
       push_constants_offset);
 
   context->report_shader_dispatch_end();
