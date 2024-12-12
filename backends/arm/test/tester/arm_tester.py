@@ -32,6 +32,7 @@ from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
     RunnerUtil,
 )
+from executorch.backends.arm.test.tester.analyze_output_utils import print_error_diffs
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 
 from executorch.backends.xnnpack.test.tester import Tester
@@ -278,6 +279,7 @@ class ArmTester(Tester):
         atol=1e-03,
         rtol=1e-03,
         qtol=0,
+        callback=print_error_diffs,
     ):
         """
         Compares the run_artifact output of 'stage' with the output of a reference stage.
@@ -365,9 +367,20 @@ class ArmTester(Tester):
             ):
                 test_output = self.transpose_data_format(test_output, "NCHW")
 
-            self._compare_outputs(
-                reference_output, test_output, quantization_scale, atol, rtol, qtol
-            )
+            try:
+                self._compare_outputs(
+                    reference_output, test_output, quantization_scale, atol, rtol, qtol
+                )
+            except AssertionError as e:
+                callback(
+                    reference_output,
+                    test_output,
+                    quantization_scale,
+                    atol,
+                    rtol,
+                    qtol,
+                )
+                raise e
 
         return self
 
