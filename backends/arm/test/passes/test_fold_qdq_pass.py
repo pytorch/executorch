@@ -20,17 +20,20 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class SimpleQuantizeModel(torch.nn.Module):
-    def forward(self, x):
-        return x + x
+    def forward(self, x, y):
+        return x + torch.max((x + x), (y + y))
 
     def get_inputs(self):
-        return (torch.rand(1, 1280, 7, 7),)
+        return (torch.rand(1, 1280, 7, 7), torch.rand(1, 1280, 7, 7))
 
 
 class FoldAndAnnotateQParamsPassTestClass(FoldAndAnnotateQParamsPass):
     def __init__(self):
         super(FoldAndAnnotateQParamsPassTestClass, self).__init__(
-            [exir_ops.edge.aten.add.Tensor]
+            [
+                exir_ops.edge.aten.add.Tensor,
+                exir_ops.edge.aten.maximum.default,
+            ]
         )
 
 
@@ -58,15 +61,15 @@ class TestFoldAndAnnotateQParamsPass(unittest.TestCase):
             .to_edge()
             .check_count(
                 {
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 7,
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 6,
                 }
             )
             .run_passes(test_pass_stage)
             .check_count(
                 {
                     "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 1,
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 1,
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
                 }
             )
         )
