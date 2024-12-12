@@ -582,16 +582,17 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     compute_graph->execute();
 
     for (size_t i = 0; i < compute_graph->outputs().size(); i++) {
+      const size_t o = i + num_inputs;
       const ValueRef oref = compute_graph->outputs()[i].value;
       if (compute_graph->val_is_tensor(oref)) {
-        VK_CHECK_COND(args[i]->isTensor());
-        maybe_resize_output(compute_graph, i, args[num_inputs + i]->toTensor());
+        VK_CHECK_COND(args[o]->isTensor());
+        maybe_resize_output(compute_graph, i, args[o]->toTensor());
         // args holds inputs directly followed by outputs, so the i'th output
-        // for compute_graph corresponds to the (i + num_inputs)'th arg
+        // for compute_graph corresponds to the o'th arg
         compute_graph->copy_from_staging(
             compute_graph->outputs()[i].staging,
-            args[num_inputs + i]->toTensor().mutable_data_ptr(),
-            args[num_inputs + i]->toTensor().numel());
+            args[o]->toTensor().mutable_data_ptr(),
+            args[o]->toTensor().numel());
       } else {
         VK_THROW(
             "Could not handle output with type ",
