@@ -79,46 +79,75 @@ class TestUpsampleBilinear2d(unittest.TestCase):
         "executorch_exir_dialects_edge__ops_aten_clamp_default",
     }
 
+    @unittest.skip('Expected to not find "aten_index_Tensor"')
+    def test_fp32_static_resize_bilinear2d_legacy(self):
+        example_inputs = (torch.randn(2, 3, 4, 5),)
+        tester = Tester(self.StaticResizeBilinear2dModule(), example_inputs)
+        tester.export()
+        tester.to_edge()
+        tester.partition()
+        tester.check_not(self.ops)
+        tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+        tester.to_executorch()
+        tester.serialize()
+        tester.run_method_and_compare_outputs()
+
     def test_fp32_static_resize_bilinear2d(self):
         example_inputs = (torch.randn(2, 3, 4, 5),)
-        (
-            Tester(self.StaticResizeBilinear2dModule(), example_inputs)
-            .export()
-            .to_edge_transform_and_lower()
-            .check_not(self.ops)
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
+        tester = Tester(self.StaticResizeBilinear2dModule(), example_inputs)
+        tester.export()
+        tester.to_edge_transform_and_lower()
+        tester.check_not(self.ops)
+        tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+        tester.to_executorch()
+        tester.serialize()
+        tester.run_method_and_compare_outputs()
+
+    @unittest.skip('Expected to not find "aten_index_Tensor"')
+    def test_fp32_static_resize_bilinear2d_with_align_corners_legacy(self):
+        example_inputs = (torch.randn(2, 3, 4, 5),)
+        tester = Tester(
+            self.StaticResizeBilinear2dModuleWithAlignCorners(), example_inputs
         )
+        tester.export()
+        tester.to_edge()
+        tester.partition()
+        tester.check_not(self.ops)
+        tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+        tester.to_executorch()
+        tester.serialize()
+        tester.run_method_and_compare_outputs()
 
     def test_fp32_static_resize_bilinear2d_with_align_corners(self):
         example_inputs = (torch.randn(2, 3, 4, 5),)
-        (
-            Tester(self.StaticResizeBilinear2dModuleWithAlignCorners(), example_inputs)
-            .export()
-            .to_edge_transform_and_lower()
-            .check_not(self.ops)
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
+        tester = Tester(
+            self.StaticResizeBilinear2dModuleWithAlignCorners(), example_inputs
         )
+        tester.export()
+        tester.to_edge_transform_and_lower()
+        tester.check_not(self.ops)
+        tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+        tester.to_executorch()
+        tester.serialize()
+        tester.run_method_and_compare_outputs()
 
     def test_fp32_static_resize_bilinear2d_antialiased(self):
         # Check bilinear2d_aa is not partitioned
         example_inputs = (torch.randn(2, 3, 4, 5),)
-        (
-            Tester(self.Bilinear2dAntiAlias(), example_inputs)
-            .export()
-            .to_edge_transform_and_lower()
-            .check_count(
+        for legacy in (True, False):
+            tester = Tester(self.Bilinear2dAntiAlias(), example_inputs)
+            tester.export()
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count(
                 {
                     "executorch_exir_dialects_edge__ops_aten__upsample_bilinear2d_aa_default": 2
                 }
             )
-            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
-        )
+            tester.check_not(["torch.ops.higher_order.executorch_call_delegate"])
 
     def test_fp32_bilinear2d_dynamic_bilinear2d_not_partitioned(self):
         """
@@ -138,4 +167,5 @@ class TestUpsampleBilinear2d(unittest.TestCase):
             # NOTE The decomposition is partially delegated. This will need to be replaced
             # with the aten upsample op once decomp is removed.
             .check("executorch_exir_dialects_edge__ops_aten_index_Tensor")
+            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
         )
