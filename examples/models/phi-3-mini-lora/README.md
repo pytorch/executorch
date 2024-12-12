@@ -19,7 +19,8 @@ python export_model.py
 2. Run the inference model using an example runtime. For more detailed steps on this, check out [Build & Run](https://pytorch.org/executorch/stable/getting-started-setup.html#build-run).
 ```
 # Clean and configure the CMake build system. Compiled programs will appear in the executorch/cmake-out directory we create here.
-(rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake ..)
+./install_requirements.sh --clean
+(mkdir cmake-out && cd cmake-out && cmake ..)
 
 # Build the executor_runner target
 cmake --build cmake-out --target executor_runner -j9

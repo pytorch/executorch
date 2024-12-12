@@ -440,9 +440,8 @@ This example tries to reuse the Python code, with minimal modifications to make 
 ```
 git clean -xfd
 pip uninstall executorch
+./install_requirements.sh --clean
 ./install_requirements.sh --pybind xnnpack
-
-rm -rf cmake-out
 ```
 - If you encounter `pthread` related issues during link time, add `pthread` in `target_link_libraries` in `CMakeLists.txt`
 - On Mac, if there is linking error in Step 4 with error message like
