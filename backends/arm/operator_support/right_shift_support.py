@@ -23,8 +23,8 @@ class RightShiftSupported(SupportedTOSAOperatorCheck):
     targets = [exir_ops.edge.aten.__rshift__.Scalar]
 
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80.0+BI"),
-        TosaSpecification.create_from_string("TOSA-0.80.0+MI"),
+        TosaSpecification.create_from_string("TOSA-0.80+BI"),
+        TosaSpecification.create_from_string("TOSA-0.80+MI"),
     ]
 
     def is_node_supported(self, node: fx.Node, tosa_spec: TosaSpecification):

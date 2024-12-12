@@ -35,8 +35,8 @@ class SupportedTOSAOperatorCheck:
 _tosa_spec_dicts: dict[
     TosaSpecification, dict[str, Type[SupportedTOSAOperatorCheck]]
 ] = {
-    TosaSpecification.create_from_string("TOSA-0.80.0+BI"): {},
-    TosaSpecification.create_from_string("TOSA-0.80.0+MI"): {},
+    TosaSpecification.create_from_string("TOSA-0.80+BI"): {},
+    TosaSpecification.create_from_string("TOSA-0.80+MI"): {},
 }
 
 
