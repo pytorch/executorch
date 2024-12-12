@@ -579,13 +579,14 @@ the method, and the rest of the inputs will just do a sanity check if they match
 </summary><div class="sd-summary-content sd-card-body docutils">
 <dl class="py function">
 <dt class="sig sig-object py">
-<span class="sig-prename descclassname"><span class="pre">executorch.devtools.bundled_program.core.BundledProgram.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">executorch_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method_test_suites</span></span></em><span class="sig-paren">)</span></dt>
+<span class="sig-prename descclassname"><span class="pre">executorch.devtools.bundled_program.core.BundledProgram.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">executorch_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method_test_suites</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pte_file_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span></dt>
 <dd><p class="sd-card-text">Create BundledProgram by bundling the given program and method_test_suites together.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
 <li><p class="sd-card-text"><strong>executorch_program</strong> – The program to be bundled.</p></li>
 <li><p class="sd-card-text"><strong>method_test_suites</strong> – The testcases for certain methods to be bundled.</p></li>
+<li><p class="sd-card-text"><strong>pte_file_path</strong> – The path to pte file to deserialize program if executorch_program is not provided.</p></li>
 </ul>
 </dd>
 </dl>
