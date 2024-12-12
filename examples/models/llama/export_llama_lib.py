@@ -22,7 +22,7 @@ from typing import Callable, List, Optional, Union
 import pkg_resources
 import torch
 
-from executorch.devtools.etrecord import generate_etrecord
+
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 
@@ -230,6 +230,18 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Whether or not to export a model using kv cache",
     )
     parser.add_argument(
+        "--prefill_return_kv",
+        default=False,
+        action="store_true",
+        help="Whether or not to return kv values from prefill model",
+    )
+    parser.add_argument(
+        "--prefill_seq_length",
+        type=int,
+        default=32,
+        help="Sequence length for prefill model",
+    )
+    parser.add_argument(
         "--quantize_kv_cache",
         default=False,
         action="store_true",
@@ -353,8 +365,8 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--coreml-quantize",
         default=None,
-        choices=["b4w"],
-        help="This option is only for coreml: Use coreml quantization, e.g. b4w (for blockwise 4 bit weight)",
+        choices=["b4w", "c4w"],
+        help="This option is only for coreml: Use coreml quantization, e.g. b4w (for blockwise 4 bit weight), c4w (for channelwise 4 bit weight)",
     )
     parser.add_argument(
         "--coreml-ios",
@@ -362,6 +374,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=15,
         choices=(15, 16, 17, 18),
         help="This option is only for coreml: The minimum iOS version to deploy",
+    )
+    parser.add_argument(
+        "--coreml-compute-units",
+        type=str,
+        default="cpu_only",
+        choices=("cpu_only", "cpu_and_gpu", "cpu_and_ne", "all"),
+        help="This option is only for coreml: the compute units to use when running the model",
     )
     parser.add_argument(
         "--qnn",
@@ -703,6 +722,7 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
             args.embedding_quantize,
             args.pt2e_quantize,
             args.coreml_quantize,
+            args.coreml_compute_units,
         )
         partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
@@ -761,6 +781,7 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
         logging.info(f"--> {partitioner.__class__.__name__}")
 
     if args.generate_etrecord:
+        from executorch.devtools.etrecord import generate_etrecord
         if not builder_exported_to_edge.edge_manager:
             raise ValueError("Unable to generate etrecord due to missing edge manager.")
 
