@@ -19,11 +19,6 @@ layout(std430) buffer;
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "t_other", DTYPE, STORAGE)}
-${layout_declare_ubo(B, "ivec4", "out_sizes")}
-${layout_declare_ubo(B, "ivec4", "in_sizes")}
-${layout_declare_ubo(B, "ivec4", "other_sizes")}
-${layout_declare_ubo(B, "ivec2", "broadcast_params")}
-${layout_declare_ubo(B, "float", "alpha")}
 
 #include "broadcasting_utils.h"
 #include "indexing_utils.h"
@@ -39,6 +34,14 @@ const lowp ivec4 in_axis_map = unhash_axis_map(in_layout);
 
 ${layout_declare_spec_const(C, "int", "other_layout", "DEFAULT_LAYOUT")}
 const lowp ivec4 other_axis_map = unhash_axis_map(other_layout);
+
+layout(push_constant) uniform restrict Block {
+  ivec4 out_sizes;
+  ivec4 in_sizes;
+  ivec4 other_sizes;
+  ivec2 broadcast_params;
+  float alpha;
+};
 
 void main() {
   const ivec3 lpos = ivec3(gl_GlobalInvocationID);
