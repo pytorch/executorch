@@ -13,12 +13,11 @@
 #include <executorch/examples/qualcomm/oss_scripts/llama3_2/runner/runner.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/llm/runner/util.h>
+#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
-#include <chrono>
 #include <ctime>
-#include <memory>
 #include <sstream>
 
 using executorch::aten::Tensor;
@@ -41,8 +40,6 @@ std::string statsToJsonString(const Runner::Stats& stats);
 Runner::Runner(
     const std::vector<std::string>& models_path,
     const std::string& tokenizer_path,
-    const std::string& prompt,
-    const std::string& system_prompt,
     const float temperature,
     const int eval_mode)
     : n_bos_(1),
@@ -57,38 +54,20 @@ Runner::Runner(
   }
   ET_LOG(Info, "creating runner: tokenizer_path=%s", tokenizer_path_.c_str());
   ET_LOG(Info, "eval mode=%d", eval_mode);
+}
 
-  int64_t max_seq_len = getMetadataHelper<int64_t>("get_max_seq_len", -1);
-  int64_t vocab_size = getMetadataHelper<int64_t>("get_vocab_size", -1);
-  int64_t num_layers = getMetadataHelper<int64_t>("get_n_layers", -1);
-  int64_t head_dim = getMetadataHelper<int64_t>("get_head_dim", -1);
-  int64_t num_heads = getMetadataHelper<int64_t>("get_n_kv_heads", -1);
-  ET_CHECK_MSG(max_seq_len != -1, "Could not retrieve max seq len");
-  ET_CHECK_MSG(vocab_size != -1, "Could not retrieve vocab size");
-  ET_CHECK_MSG(num_layers != -1, "Could not retrieve num layers");
-  ET_CHECK_MSG(head_dim != -1, "Could not retrieve head dimension");
-  ET_CHECK_MSG(num_heads != -1, "Could not retrieve num heads");
-
-  max_seq_len_ = max_seq_len;
-  vocab_size_ = vocab_size;
-  tokenizer_ = example::get_tiktoken_for_llama();
-  Error err = tokenizer_->load(tokenizer_path_);
-  ET_CHECK_MSG(
-      err == Error::Ok, "failed to load tokenizer %s", tokenizer_path_.c_str());
-  eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
-  bos_id_ = tokenizer_->bos_tok();
-  eos_id_.insert(tokenizer_->eos_tok());
-
-  ET_CHECK_MSG(!prompt.empty(), "prompt cannot be null");
-
-  if (!system_prompt.empty()) {
-    prompt_.append("<|start_header_id|>system<|end_header_id|>\n\n");
-    prompt_.append(system_prompt);
-    prompt_.append("<|eot_id|>\n");
+bool Runner::is_loaded() const {
+  bool loaded = true;
+  for (const std::shared_ptr<Module>& module : modules_) {
+    loaded &= module->is_loaded();
   }
-  prompt_.append("<|start_header_id|>user<|end_header_id|>\n\n");
-  prompt_.append(prompt);
-  prompt_.append("<|eot_id|><|start_header_id|>assistant<|end_header_id|>");
+  return loaded && tokenizer_ && sampler_;
+}
+
+Error Runner::load() {
+  if (is_loaded()) {
+    return Error::Ok;
+  }
 
   switch (eval_mode_) {
     case EvalMode::kPrefill:
@@ -110,31 +89,6 @@ Runner::Runner(
       break;
   }
 
-  io_mem_ = std::make_unique<HybridMemory>(
-      modules_,
-      max_seq_len_,
-      vocab_size_,
-      num_layers,
-      head_dim,
-      num_heads,
-      eval_mode_,
-      prefill_forward_name_,
-      kv_forward_name_);
-  ET_LOG(Info, "creating io_memory");
-}
-
-bool Runner::is_loaded() const {
-  bool loaded = true;
-  for (const std::shared_ptr<Module>& module : modules_) {
-    loaded &= module->is_loaded();
-  }
-  return loaded && tokenizer_ && sampler_;
-}
-
-Error Runner::load() {
-  if (is_loaded()) {
-    return Error::Ok;
-  }
   for (std::shared_ptr<Module>& module : modules_) {
     if (!prefill_forward_name_.empty()) {
       ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(prefill_forward_name_));
@@ -144,25 +98,52 @@ Error Runner::load() {
     }
   }
 
-  // create sampler
-  sampler_ = std::make_unique<Sampler>(
+  if (!prefill_forward_name_.empty()) {
+    // Use input tokens length to retrieve prefill cache len
+    // Cache len equals to prefill model seq_len - 1
+    prefill_cache_len_ = get_methods_meta(prefill_forward_name_)[0]
+                             ->input_tensor_meta(0)
+                             ->sizes()[1];
+  }
+  if (!kv_forward_name_.empty()) {
+    // Use k cache length to retirieve kv cache len
+    // Cache len equals to kv model seq_len - 1
+    kv_cache_len_ =
+        get_methods_meta(kv_forward_name_)[0]->input_tensor_meta(3)->sizes()[2];
+  }
+
+  // retrieve any method meta, can be either prefill or kv
+  // Try avoid getMetadataHelper as it is time consuming.
+  auto method_meta = get_methods_meta(method_names_[0])[0].get();
+  int64_t num_layers = getMetadataHelper<int64_t>("get_n_layers", -1);
+  int64_t head_dim = method_meta.output_tensor_meta(1)->sizes()[1]; // k_cache
+  int64_t num_heads = (method_meta.num_outputs() - 1) / (num_layers * 2);
+  vocab_size_ = method_meta.output_tensor_meta(0)->sizes()[2]; // logit_tensor
+  ET_CHECK_MSG(num_layers != -1, "Could not retrieve num layers");
+
+  io_mem_ = std::make_unique<HybridMemory>(
+      modules_,
+      prefill_cache_len_,
+      kv_cache_len_,
       vocab_size_,
-      temperature_,
-      kTopp,
-      static_cast<unsigned long long>(std::time(nullptr)));
+      num_layers,
+      head_dim,
+      num_heads,
+      eval_mode_,
+      prefill_forward_name_,
+      kv_forward_name_);
+  ET_LOG(Info, "creating io_memory");
 
   // prepare io
+  io_mem_->init_io();
   switch (eval_mode_) {
     case EvalMode::kPrefill:
-      io_mem_->init_io(get_methods_meta(prefill_forward_name_), eval_mode_);
       io_mem_->prepare_prefill_io(get_methods_meta(prefill_forward_name_));
       break;
     case EvalMode::kKVCached:
-      io_mem_->init_io(get_methods_meta(kv_forward_name_), eval_mode_);
       io_mem_->prepare_kv_io(get_methods_meta(kv_forward_name_));
       break;
     case EvalMode::kHybrid:
-      io_mem_->init_io(get_methods_meta(kv_forward_name_), eval_mode_);
       io_mem_->prepare_prefill_io(get_methods_meta(prefill_forward_name_));
       io_mem_->prepare_kv_io(get_methods_meta(kv_forward_name_));
       break;
@@ -170,6 +151,35 @@ Error Runner::load() {
       ET_CHECK_MSG(false, "unsupported mode");
       break;
   }
+
+  // llama3 tokenizer
+  tokenizer_ = example::get_tiktoken_for_llama();
+  Error err = tokenizer_->load(tokenizer_path_);
+  if (err == Error::InvalidArgument) {
+    ET_LOG(
+        Info,
+        "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
+        tokenizer_path_.c_str());
+    tokenizer_.reset();
+    // llama2 tokenizer
+    tokenizer_ = std::make_unique<executorch::extension::llm::BPETokenizer>();
+    err = tokenizer_->load(tokenizer_path_);
+    ET_CHECK_MSG(
+        err == Error::Ok,
+        "failed to load tokenizer %s",
+        tokenizer_path_.c_str());
+  } else {
+    eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
+  }
+  bos_id_ = tokenizer_->bos_tok();
+  eos_id_.insert(tokenizer_->eos_tok());
+
+  // create sampler
+  sampler_ = std::make_unique<Sampler>(
+      vocab_size_,
+      temperature_,
+      kTopp,
+      static_cast<unsigned long long>(std::time(nullptr)));
 
   return Error::Ok;
 }
@@ -192,7 +202,6 @@ T Runner::getMetadataHelper(std::string method_name, T default_val) {
         method_name.c_str(),
         (long long)default_val);
   }
-  ET_LOG(Info, "%s: %lld", method_name.c_str(), (long long)res);
   return res;
 }
 
@@ -218,6 +227,8 @@ void Runner::run_model_step(
 
 Error Runner::generate(
     int32_t seq_len,
+    const std::string& prompt,
+    const std::string& system_prompt,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
   std::unordered_map<std::string, std::vector<std::vector<Tensor>>>
@@ -250,10 +261,23 @@ Error Runner::generate(
   stats_.model_load_end_ms = time_in_ms();
   stats_.inference_start_ms = time_in_ms();
 
+  ET_CHECK_MSG(!prompt.empty(), "prompt cannot be null");
+
+  if (!system_prompt.empty()) {
+    prompt_.append("<|start_header_id|>system<|end_header_id|>\n\n");
+    prompt_.append(system_prompt);
+    prompt_.append("<|eot_id|>\n");
+  }
+  prompt_.append("<|start_header_id|>user<|end_header_id|>\n\n");
+  prompt_.append(prompt);
+  prompt_.append("<|eot_id|><|start_header_id|>assistant<|end_header_id|>");
+
   if (token_callback) {
     token_callback("<|begin_of_text|>");
   }
-  seq_len = (seq_len > 0 && seq_len <= max_seq_len_) ? seq_len : max_seq_len_;
+
+  int max_seq_len = std::max(prefill_cache_len_, kv_cache_len_) + 1;
+  seq_len = (seq_len > 0 && seq_len <= max_seq_len) ? seq_len : max_seq_len;
   Result<std::vector<uint64_t>> encode_res =
       tokenizer_->encode(prompt_, n_bos_, 0);
   ET_CHECK_OK_OR_RETURN_ERROR(
@@ -261,7 +285,7 @@ Error Runner::generate(
 
   std::vector<uint64_t> prompt_tokens = encode_res.get();
   int num_prompt_tokens = prompt_tokens.size();
-  ET_CHECK_MSG(num_prompt_tokens < max_seq_len_, "max seq length exceeded");
+  ET_CHECK_MSG(num_prompt_tokens < max_seq_len, "max seq length exceeded");
   ET_CHECK_MSG(
       num_prompt_tokens < seq_len,
       "sequence length exceeded - please increase the seq_len value");
@@ -309,7 +333,7 @@ Error Runner::generate(
 
   auto kv_execute = [&](const std::string& method_name) {
     ptr->input_tok = static_cast<int32_t>(cur_token);
-    ptr->kv_attention_mask[max_seq_len_ - 1] = 0;
+    ptr->kv_attention_mask[kv_cache_len_] = 0;
     while (pos < seq_len - 1) {
       // inference
       run_model_step(method_name, inputs[method_name]);

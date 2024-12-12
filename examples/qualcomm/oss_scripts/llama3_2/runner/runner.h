@@ -29,8 +29,6 @@ class Runner {
   explicit Runner(
       const std::vector<std::string>& models_path,
       const std::string& tokenizer_path,
-      const std::string& prompt,
-      const std::string& system_prompt,
       const float temperature,
       const int eval_mode);
 
@@ -64,6 +62,8 @@ class Runner {
   executorch::runtime::Error load();
   executorch::runtime::Error generate(
       int32_t seq_len,
+      const std::string& prompt,
+      const std::string& system_prompt,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {});
   void stop();
@@ -81,7 +81,8 @@ class Runner {
   std::string prompt_;
 
   // metadata
-  int32_t max_seq_len_;
+  int32_t prefill_cache_len_{0};
+  int32_t kv_cache_len_{0};
   int32_t vocab_size_;
   int32_t bos_id_;
   std::unordered_set<uint64_t> eos_id_;
