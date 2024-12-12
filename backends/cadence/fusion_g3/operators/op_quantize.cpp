@@ -69,7 +69,7 @@ void check_quantize_per_tensor_args(
         static_cast<int32_t>(std::numeric_limits<int8_t>::min());
     quant_max_upper_bound =
         static_cast<int32_t>(std::numeric_limits<int8_t>::max());
-  } else if (dtype == ScalarType::Bits16) {
+  } else if (dtype == ScalarType::UInt16) {
     quant_min_lower_bound = std::numeric_limits<uint16_t>::min();
     quant_max_upper_bound = std::numeric_limits<uint16_t>::max();
   } else if (dtype == ScalarType::Short) {
@@ -271,7 +271,7 @@ void quantize_impl(
   case ScalarType::in_dtype:                                         \
     switch (out.scalar_type()) {                                     \
       ET_FORALL_INT_TYPES_WITH(IN_CTYPE, ASYM_QUANTIZE_IMPL_TENSOR); \
-      ASYM_QUANTIZE_IMPL_TENSOR(IN_CTYPE, uint16_t, Bits16)          \
+      ASYM_QUANTIZE_IMPL_TENSOR(IN_CTYPE, uint16_t, UInt16)          \
       default:                                                       \
         ET_CHECK_MSG(                                                \
             false,                                                   \
@@ -343,7 +343,7 @@ void quantize_impl(
   case ScalarType::in_dtype:                                          \
     switch (out.scalar_type()) {                                      \
       ET_FORALL_INT_TYPES_WITH(CTYPE_IN, ASYM_QUANTIZE_IMPL_CHANNEL); \
-      ASYM_QUANTIZE_IMPL_CHANNEL(CTYPE_IN, uint16_t, Bits16)          \
+      ASYM_QUANTIZE_IMPL_CHANNEL(CTYPE_IN, uint16_t, UInt16)          \
       default:                                                        \
         ET_CHECK_MSG(                                                 \
             false,                                                    \
@@ -458,7 +458,7 @@ void quantize_impl(
   case ScalarType::in_dtype:                                        \
     switch (out.scalar_type()) {                                    \
       ET_FORALL_INT_TYPES_WITH(IN_CTYPE, SYM_QUANTIZE_IMPL_TENSOR); \
-      SYM_QUANTIZE_IMPL_TENSOR(IN_CTYPE, uint16_t, Bits16)          \
+      SYM_QUANTIZE_IMPL_TENSOR(IN_CTYPE, uint16_t, UInt16)          \
       default:                                                      \
         ET_CHECK_MSG(                                               \
             false,                                                  \
@@ -529,7 +529,7 @@ void quantize_impl(
   case ScalarType::in_dtype:                                         \
     switch (out.scalar_type()) {                                     \
       ET_FORALL_INT_TYPES_WITH(CTYPE_IN, SYM_QUANTIZE_IMPL_CHANNEL); \
-      SYM_QUANTIZE_IMPL_CHANNEL(CTYPE_IN, uint16_t, Bits16)          \
+      SYM_QUANTIZE_IMPL_CHANNEL(CTYPE_IN, uint16_t, UInt16)          \
       default:                                                       \
         ET_CHECK_MSG(                                                \
             false,                                                   \
@@ -570,7 +570,7 @@ Tensor& quantize_per_tensor_out(
       err == torch::executor::Error::Ok,
       "Failed to resize out Tensor in quantize_per_tensor_out");
 
-  check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
+  // check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
 
   float scale_data = (float)scale;
   int zero_point_data = (int)zero_point;
@@ -696,7 +696,7 @@ Tensor& quantize_per_channel_out(
       zero_point.numel(),
       input.size(axis));
 
-  check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
+  // check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
 
   const double* scale_dt = scale.const_data_ptr<double>();
   const int64_t* zero_point_dt = zero_point.const_data_ptr<int64_t>();

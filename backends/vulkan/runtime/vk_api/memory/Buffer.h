@@ -48,7 +48,6 @@ class VulkanBuffer final {
     VkDeviceSize size;
     VkDeviceSize mem_offset;
     VkDeviceSize mem_range;
-    VkBufferUsageFlags buffer_usage;
   };
 
   explicit VulkanBuffer();
@@ -195,8 +194,8 @@ class MemoryMap final {
 
  public:
   template <typename T>
-  T* data() {
-    return reinterpret_cast<T*>(data_);
+  T* data(const uint32_t offset = 0) {
+    return reinterpret_cast<T*>(static_cast<uint8_t*>(data_) + offset);
   }
 
   inline size_t nbytes() {
