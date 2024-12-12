@@ -8,6 +8,8 @@
 
 #include <gtest/gtest.h>
 #include <stdio.h>
+#include <sys/times.h>
+#include <xtensa/sim.h>
 
 #include <executorch/backends/cadence/fusion_g3/operators/operators.h>
 #include <executorch/kernels/test/TestUtil.h>
