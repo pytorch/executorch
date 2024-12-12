@@ -18,6 +18,7 @@ namespace vkcompute {
 
 class ComputeGraph;
 
+constexpr uint32_t kMaxPushConstantSize = 128;
 /*
  * Represents a push constant data entry
  * Which is either shared pointer to a tensor's uniform data with an attribute
