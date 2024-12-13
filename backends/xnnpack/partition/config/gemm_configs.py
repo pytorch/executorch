@@ -337,6 +337,17 @@ class AddmmConfig(GEMMConfig):
         self.src_partitions = None
         self.linear_modules = [torch.nn.functional.linear, torch.nn.Linear]
 
+    def _get_weight_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
+    ) -> Tuple[bool, List[torch.fx.Node]]:
+        # TODO(maxren, T210537195):
+        if precision == ConfigPrecisionType.FP32 and self.force_fp32_dynamic_linear:
+            # if force fp32_dynamic_linear is on and we detected this as fp32, then we
+            # do not partition the weight node
+            return (True, [])
+
+        return super()._get_weight_deps(node, ep, precision)
+
     def get_deps(
         self,
         node: torch.fx.Node,
@@ -435,6 +446,16 @@ class MMConfig(AddmmConfig):
         self.bias_idx = None
         self.weight_idx = 1
         self.act_idx = 0
+
+    def _get_weight_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
+    ) -> Tuple[bool, List[torch.fx.Node]]:
+        if precision == ConfigPrecisionType.FP32 and self.force_fp32_dynamic_linear:
+            # if force fp32_dynamic_linear is on and we detected this as fp32, then we
+            # do not partition the weight node
+            return (True, [])
+
+        return super()._get_weight_deps(node, ep, precision)
 
     def supported_precision_types(self):
         return [
