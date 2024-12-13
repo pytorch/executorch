@@ -653,7 +653,8 @@ In order to run the CMake build, you need the path to the following:</p>
 <li><p>Path to the NXP SDK root. This should have been installed already in the <a class="reference internal" href="#setting-up-developer-environment"><span class="std std-doc">Setting up Developer Environment</span></a> section. This is the directory that contains the folders such as boards, components, devices, and other.</p></li>
 </ul>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out
+./install_requirements.sh<span class="w"> </span>--clean
+mkdir<span class="w"> </span>cmake-out
 <span class="c1"># prebuild and install executorch library</span>
 cmake<span class="w"> </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>&lt;path_to_executorch&gt;/backends/cadence/cadence.cmake<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out<span class="w"> </span><span class="se">\</span>

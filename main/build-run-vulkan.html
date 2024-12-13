@@ -567,7 +567,8 @@ adb<span class="w"> </span>push<span class="w"> </span>vulkan_llama2.pte<span cl
 <h2>Build and Run the LLaMA runner binary on Android<a class="headerlink" href="#build-and-run-the-llama-runner-binary-on-android" title="Permalink to this heading">¶</a></h2>
 <p>First, build and install ExecuTorch libraries, then build the LLaMA runner
 binary using the Android NDK toolchain.</p>
-<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span><span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span>./install_requirements.sh<span class="w"> </span>--clean
+<span class="o">(</span>mkdir<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>cmake<span class="w"> </span>.<span class="w"> </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-android-out<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="nv">$ANDROID_ABI</span><span class="w"> </span><span class="se">\</span>
