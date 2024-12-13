@@ -115,7 +115,7 @@ export ANDROID_ABI=arm64-v8a
 export QNN_SDK_ROOT=<path-to-qnn-sdk>
 
 ./install_requirements.sh --clean
-mkdir cmake-android-out && cd cmake-android-out
+mkdir cmake-android-out
 cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
