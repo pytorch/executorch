@@ -15,7 +15,6 @@ def _print_channels(result, reference, channels_close, C, H, W, rtol, atol):
     output_str = ""
     for c in range(C):
         if channels_close[c]:
-            # test
             continue
 
         max_diff = torch.max(torch.abs(reference - result))
