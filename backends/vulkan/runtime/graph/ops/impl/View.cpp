@@ -76,12 +76,14 @@ void add_view_node(
       {{out, vkapi::MemoryAccessType::WRITE},
        {in, vkapi::MemoryAccessType::READ}},
       // Parameter Buffers
-      {t_out->sizes_ubo(), t_in->sizes_ubo()},
+      {},
       // Specialization Constants
       {SV(t_in->packed_dim()), SV(t_out->packed_dim())},
       // Resizing Logic
       resize_view_node,
-      {sizes}));
+      {sizes},
+      // Push Constants
+      {{graph.sizes_pc_of(out), graph.sizes_pc_of(in)}}));
 }
 
 void view(ComputeGraph& graph, const std::vector<ValueRef>& args) {
