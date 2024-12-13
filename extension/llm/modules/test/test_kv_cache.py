@@ -67,9 +67,20 @@ class KVCacheTest(unittest.TestCase):
             prefill_seq_len, self.batch_size, self.num_kv_heads, self.head_dim
         )
 
+        print()
+        print("Prefilling...")
+        print()
+        
         et_res = et_cache_module(k_val, v_val)
         tt_res = self.tt_kv_cache.update(k_val_trans, v_val_trans)
         tt_res_transposed = (tt_res[0].transpose(1, 2), tt_res[1].transpose(1, 2))
+
+        print()
+        print("Final tt kv_cache.cache_pos")
+        print(self.tt_kv_cache.cache_pos)
+        print("Final tt kv_cache.k_cache")
+        print(self.tt_kv_cache.k_cache)
+        print()
 
         # Check torchtune matches executorch.
         assert_close(et_res, tt_res_transposed)
@@ -89,16 +100,18 @@ class KVCacheTest(unittest.TestCase):
 
         et_res = et_cache_module(k_val, v_val)
         tt_res = self.tt_kv_cache.update(k_val_trans, v_val_trans)
+        tt_res_transposed = (tt_res[0].transpose(1, 2), tt_res[1].transpose(1, 2))
 
         # Check torchtune matches executorch.
-        tt_res_transposed = (tt_res[0].transpose(1, 2), tt_res[1].transpose(1, 2))
         assert_close(tt_res_transposed, et_res)
 
         # All rows should be filled with 1s up to 3 + 1th row.
         et_k_cache = et_res[0]
         for i in range(prefill_seq_len + 1):
             self.assertTrue(et_k_cache[0][i][0][0] == 1)
+
         self.assertTrue(et_k_cache[0][prefill_seq_len + 1][0][0] == 0)
+
 
     def export_kv_cache(
         self,
@@ -165,6 +178,10 @@ class KVCacheTest(unittest.TestCase):
             ),
         )
         et_program = edge_program.to_executorch()
+
+        """DEBUG the executorch program"""
+        et_program.dump_executorch_program(verbose=True)
+        
         runtime = Runtime.get()
         program = runtime.load_program(et_program.buffer)
         method = program.load_method("forward")
@@ -174,3 +191,4 @@ class KVCacheTest(unittest.TestCase):
             return method.execute((k_val, v_val))
 
         self._test_kv_cache(wrapped_callable)
+

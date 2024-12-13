@@ -414,6 +414,7 @@ class LLMEdgeManager:
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
             )
         )
+        print(self.export_program.to_executorch_program(verbose=True))
         logging.info(
             "Required memory for activation in bytes: {}".format(
                 self.export_program._emitter_output.program.execution_plan[

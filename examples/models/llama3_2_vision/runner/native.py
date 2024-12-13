@@ -24,7 +24,7 @@ from executorch.extension.pybindings.portable_lib import _load_for_executorch
 from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
 
 # Note: import this after portable_lib
-from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa # usort: skip
+from executorch.extension.llm.custom_ops import custom_ops  # noqa # usort: skip
 from executorch.kernels import quantized  # noqa
 
 

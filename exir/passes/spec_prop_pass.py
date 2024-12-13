@@ -18,9 +18,9 @@ from torch.utils import _pytree as pytree
 
 
 # pyre-ignore
-def make_spec(x):
+def make_spec(x, const=False):
     if isinstance(x, torch.Tensor):
-        return TensorSpec.from_tensor(x)
+        return TensorSpec.from_tensor(x, const)
     elif isinstance(x, (int, bool, float)):
         return x
     else:

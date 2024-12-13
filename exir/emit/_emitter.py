@@ -1566,6 +1566,7 @@ class _TopLevelEmitter(_Emitter):
             fqn = self.exported_program.graph_signature.inputs_to_parameters[target]
 
         elif target in self.exported_program.graph_signature.inputs_to_buffers:
+            breakpoint()
             fqn = self.exported_program.graph_signature.inputs_to_buffers[target]
 
             # if the buffer is mutated then record that
@@ -1606,6 +1607,7 @@ class _TopLevelEmitter(_Emitter):
 
         if isinstance(target, str) and isinstance(spec, TensorSpec):
             fqn, is_mutable_buffer = self._find_fqn_for_placeholder(target, spec)
+            print(f"fqn: {fqn}, is_mutable_buffer: {is_mutable_buffer}")
 
             # If the placeholder has a constant_tag, it is external to the PTE file
             # and requires a fqn and location=TensorDataLocation.EXTERNAL
@@ -1655,7 +1657,7 @@ class _TopLevelEmitter(_Emitter):
                 spec.storage = real_tensor.untyped_storage()
 
             # User inputs and mutable buffers are not constants, other buffers or parameters are.
-            spec.const = not (is_user_input or is_mutable_buffer)
+            spec.const = not is_user_input
 
         evalue = (
             self._tensor_spec_to_evalue(spec, constant_tag)

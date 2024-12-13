@@ -46,6 +46,7 @@ from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
 from executorch.exir.passes.replace_view_copy_with_view_pass import (
     ReplaceViewCopyWithViewPass,
 )
+from executorch.exir.passes.init_mutable_buffer_pass import InitMutableBufferPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.weights_to_outputs_pass import weights_to_outputs_pass
 from executorch.exir.print_program import pretty_print, print_program
@@ -706,6 +707,7 @@ def edge_to_executorch_passes(
     passes: List[PassType] = [
         *config.passes,
         SpecPropPass(),
+        InitMutableBufferPass(),
         # ExecuTorch backend ops are unable to handle unbacked symints. So after
         # this pass, passes cannot be Interpreter-based, because it will fail if
         # there exists an unbacked symint operation.
@@ -1352,6 +1354,8 @@ class EdgeProgramManager:
             gm, new_signature = insert_write_back_for_buffers_pass(program)
             new_gm = program.graph_module
             for p in edge_to_executorch_passes(config, name):
+                if isinstance(p, InitMutableBufferPass):
+                    p.update_placeholder_tensor_specs(program, new_gm)
                 new_gm_res = p(new_gm)
                 assert new_gm_res is not None
                 new_gm = new_gm_res.graph_module
