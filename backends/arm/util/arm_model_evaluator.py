@@ -17,6 +17,7 @@ from typing import Any, Optional, Tuple
 import torch
 from torch.nn.modules import Module
 from torch.utils.data import DataLoader
+# pyre-fixme[21]: Could not find module `torchvision`.
 from torchvision import datasets, transforms
 
 
@@ -104,6 +105,8 @@ class GenericModelEvaluator:
 
         return compression_ratio
 
+    # pyre-fixme[24]: Generic type `dict` expects 2 type parameters, received 1, use
+    #  `typing.Dict[<key type>, <value type>]` to avoid runtime subscripting errors.
     def evaluate(self) -> dict[Any]:
         model_error_dict = self.get_model_error()
 
@@ -140,6 +143,7 @@ class MobileNetV2Evaluator(GenericModelEvaluator):
         self.__validation_set_path = validation_dataset_path
 
     @staticmethod
+    # pyre-fixme[11]: Annotation `ImageFolder` is not defined as a type.
     def __load_dataset(directory: str) -> datasets.ImageFolder:
         directory_path = Path(directory)
         if not directory_path.exists():
