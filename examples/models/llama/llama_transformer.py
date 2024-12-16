@@ -115,6 +115,8 @@ class ModelArgs:
     num_activated_experts: int = 2  # Number of experts to activate
     use_kv_cache: bool = False  # Use key/value cache
     prefill_return_kv: bool = False  # Return kv cache for prefill
+    decode_kv_cache_as_io: bool = False # Decode uses KV caches as IO
+    use_additive_kv_cache_update: bool = False # Additive KV cache update
     use_sdpa_with_kv_cache_op: bool = (
         False  # Use custom sdpa op that updates kv cache in-place
     )
@@ -367,6 +369,9 @@ class Attention(nn.Module):
     def __init__(self, args: ModelArgs, layer_id: int, rope: Rope):
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
+        self.decode_kv_cache_as_io = args.decode_kv_cache_as_io
+        self.use_additive_kv_cache_update = args.use_additive_kv_cache_update
+        self.return_kv_values = (args.prefill_return_kv or args.decode_kv_cache_as_io)
         self.n_heads = args.n_heads
         self.n_kv_heads = self.n_heads if args.n_kv_heads is None else args.n_kv_heads
         assert self.n_heads % self.n_kv_heads == 0
@@ -397,7 +402,7 @@ class Attention(nn.Module):
         )
         self.register_buffer("mask", causal_mask, persistent=False)
 
-        if self.use_kv_cache:
+        if self.use_kv_cache and not self.decode_kv_cache_as_io:
             self.kv_cache = KVCache(
                 args.max_batch_size,
                 args.max_seq_len,
@@ -421,10 +426,19 @@ class Attention(nn.Module):
         freqs_cos: torch.Tensor,
         freqs_sin: torch.Tensor,
         input_pos: Optional[torch.Tensor] = None,
-        return_kv: bool = False,
+        k_cache: Optional[torch.Tensor] = None,
+        v_cache: Optional[torch.Tensor] = None,
+        cache_pos_mask: Optional[torch.Tensor] = None,
     ):
-        if return_kv:
-            assert self.use_kv_cache == False, "Can't return kv when use_kv_cache is True"
+        if self.decode_kv_cache_as_io:
+            assert self.use_kv_cache
+            assert k_cache is not None
+            assert v_cache is not None
+            assert self.return_kv_values
+        
+        if self.use_additive_kv_cache_update:
+            assert self.decode_kv_cache_as_io
+            assert cache_pos_mask is not None
 
         bsz, seqlen, _ = x.shape
 
@@ -438,8 +452,9 @@ class Attention(nn.Module):
         # RoPE relative positional embeddings
         q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
 
-        if self.use_kv_cache:
+        if self.use_kv_cache and not self.decode_kv_cache_as_io:
             assert input_pos is not None
+            assert not self.return_kv_values
             output = self.SDPA(input_pos, q, k, v, bsz, seqlen, self.mask)
             return self.wo(output)
 
@@ -447,17 +462,35 @@ class Attention(nn.Module):
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
-        if return_kv:
+        if self.return_kv_values:
             k_ret = k
             v_ret = v
+        
+        assert hasattr(self, "mask")
+        if self.decode_kv_cache_as_io:
+            assert self.use_kv_cache
+            mask = self.mask[None, None, input_pos]
+            if self.use_additive_kv_cache_update:
+                assert cache_pos_mask is not None
+                assert seqlen == 1
+                k_update = cache_pos_mask * k
+                v_update = cache_pos_mask * v
+                k = k_cache + k_update
+                v = v_cache + v_update
+                assert k.shape == k_cache.shape
+                assert v.shape == v_cache.shape
+            else:
+                k = torch.ops.aten.index_put(k_cache, [None, None, input_pos, None], k)
+                v = torch.ops.aten.index_put(v_cache, [None, None, input_pos, None], v)
+        else:
+            assert not self.use_kv_cache
+            mask = self.mask[:seqlen, :seqlen]
+
 
         # grouped multiquery attention: expand out keys and values
-        k = k.repeat_interleave(self.n_rep, dim=1)
-        v = v.repeat_interleave(self.n_rep, dim=1)
-
-        assert hasattr(self, "mask")
-
-        mask = self.mask[:seqlen, :seqlen]
+        if self.n_rep > 1:
+            k = k.repeat_interleave(self.n_rep, dim=1)
+            v = v.repeat_interleave(self.n_rep, dim=1)
 
         output = torch.ops.coreml.sdpa(q, k, v, mask)
 
@@ -465,7 +498,7 @@ class Attention(nn.Module):
 
         output = self.wo(output)
 
-        if return_kv:
+        if self.return_kv_values:
             return output, k_ret, v_ret
         return output
 
@@ -533,6 +566,8 @@ class TransformerBlock(nn.Module):
     def __init__(self, layer_id: int, args: ModelArgs, rope: Rope):
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
+        self.decode_kv_cache_as_io = args.decode_kv_cache_as_io
+        self.return_kv_values = (args.prefill_return_kv or args.decode_kv_cache_as_io)
         self.n_heads = args.n_heads
         self.dim = args.dim
         self.head_dim = args.head_dim
@@ -544,14 +579,19 @@ class TransformerBlock(nn.Module):
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-    def forward(self, x, freqs_cos, freqs_sin, input_pos=None, return_kv=False):  # x: 1xN
-        if not return_kv:
+    def forward(self, x, freqs_cos, freqs_sin, input_pos=None, k_cache=None, v_cache=None, cache_pos_mask=None):  # x: 1xN
+        if self.decode_kv_cache_as_io:
+            assert self.use_kv_cache
+            assert k_cache is not None
+            assert v_cache is not None
+
+        if not self.return_kv_values:
             h = self.attention.forward(
-                self.attention_norm(x), freqs_cos, freqs_sin, input_pos, return_kv=False,
+                self.attention_norm(x), freqs_cos, freqs_sin, input_pos, k_cache, v_cache, cache_pos_mask,
             )
         else:
             h, k, v = self.attention.forward(
-                self.attention_norm(x), freqs_cos, freqs_sin, input_pos, return_kv=True,
+                self.attention_norm(x), freqs_cos, freqs_sin, input_pos, k_cache, v_cache, cache_pos_mask,
             )
 
         h = x + h
@@ -560,7 +600,7 @@ class TransformerBlock(nn.Module):
         else:
             out = h + self.feed_forward(self.ffn_norm(h))
         
-        if return_kv:
+        if self.return_kv_values:
             return out, k, v
         return out
 
@@ -580,11 +620,14 @@ class Transformer(nn.Module):
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
         self.use_kv_cache = params.use_kv_cache
+        self.decode_kv_cache_as_io = params.decode_kv_cache_as_io
         self.generate_full_logits = params.generate_full_logits
         self.max_seq_len = params.max_seq_len
         self.input_prune_map = params.input_prune_map
         self.output_prune_map = params.output_prune_map
-        self.prefill_return_kv = params.prefill_return_kv
+
+        # Whether model returns newly computed KV values
+        self.return_kv_values = (params.prefill_return_kv or params.decode_kv_cache_as_io)
 
     def forward(
         self,
@@ -592,37 +635,56 @@ class Transformer(nn.Module):
         input_pos: Optional[
             torch.LongTensor
         ] = None,  # Scalar tensor indicating size of window of the caches
-        h: Optional[torch.FloatTensor] = None,  # embeddings
+        k_cache: Optional[torch.FloatTensor] = None,
+        v_cache: Optional[torch.FloatTensor] = None,
+        cache_pos_mask: Optional[torch.FloatTensor] = None,
     ) -> torch.Tensor:
-        if (tokens is None) ^ (h is not None):
-            raise ValueError(
-                "You cannot specify both tokens and h at the same time, and must specify either one"
-            )
-        if tokens is not None and h is None:
-            h = self.tok_embeddings(tokens)
+        h = self.tok_embeddings(tokens)
+        if self.decode_kv_cache_as_io:
+            assert self.use_kv_cache
+            assert k_cache is not None
+            assert v_cache is not None
+            
+
+            
         seqlen = h.shape[1]
         freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, seqlen)
 
-        if not self.prefill_return_kv:
+        if not self.return_kv_values:
             for layer in self.layers:
                 h = layer(
                     h,
                     freqs_cos,
                     freqs_sin,
                     input_pos,
-                    return_kv=False,
+                    k_cache,
+                    v_cache,
+                    cache_pos_mask,
                 )
         else:
             k_caches = []
             v_caches = []
-            for layer in self.layers:
-                h, k, v = layer(
-                    h,
-                    freqs_cos,
-                    freqs_sin,
-                    input_pos,
-                    return_kv=True,
-                )
+            for i, layer in enumerate(self.layers):
+                if not self.decode_kv_cache_as_io:
+                    h, k, v = layer(
+                        h,
+                        freqs_cos,
+                        freqs_sin,
+                        input_pos,
+                        k_cache,
+                        v_cache,
+                        cache_pos_mask,
+                    )
+                else:
+                    h, k, v = layer(
+                        h,
+                        freqs_cos,
+                        freqs_sin,
+                        input_pos,
+                        k_cache[i,:,:,:,:],
+                        v_cache[i,:,:,:,:],
+                        cache_pos_mask,
+                    )
                 k_caches.append(k)
                 v_caches.append(v)
             k_ret = torch.stack(k_caches, dim=0)
@@ -658,6 +720,6 @@ class Transformer(nn.Module):
                 expanded_logits[:, list(self.output_prune_map.values())] = logits
             logits = expanded_logits
 
-        if self.prefill_return_kv:
+        if self.return_kv_values:
             return logits, k_ret, v_ret
         return logits

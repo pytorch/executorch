@@ -449,5 +449,8 @@ class CoreMLBackend(BackendDetails):
                 op_type_configs={"gather": None},
             )
             mlmodel = cto.coreml.linear_quantize_weights(mlmodel, config=config)
+        
+        print("MIL program:")
+        print(mlmodel._mil_program)
 
         return CoreMLBackend.preprocess_model(mlmodel, model_type=model_type)

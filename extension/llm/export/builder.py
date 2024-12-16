@@ -201,6 +201,7 @@ class LLMEdgeManager:
                 logging.info(f"inputs: {self.example_inputs}")
                 logging.info(f"kwargs: {self.example_kwarg_inputs}")
                 logging.info(f"dynamic shapes: {dynamic_shape}")
+                print("EVALUATED", self.model(*self.example_inputs))
                 exported_module = export_for_training(
                     self.model,
                     self.example_inputs,

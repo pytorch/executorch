@@ -55,6 +55,8 @@ class Llama2Model(EagerModelBase):
         self.args = kwargs.get("args", None)
         self.prefill_seq_length = self.args.prefill_seq_length
         self.prefill_return_kv = self.args.prefill_return_kv
+        self.decode_kv_cache_as_io = self.args.decode_kv_cache_as_io
+        self.use_additive_kv_cache_update = self.args.use_additive_kv_cache_update
 
         # The example is using a dummy small model with random weights for demo purpose only.
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model.
@@ -146,8 +148,15 @@ the checkpoint format to avoid generating faulty models.
             output_prune_map=output_prune_map,
             enable_dynamic_shape=self.enable_dynamic_shape,
             prefill_return_kv=self.prefill_return_kv,
+            decode_kv_cache_as_io=self.decode_kv_cache_as_io,
+            use_additive_kv_cache_update=self.use_additive_kv_cache_update,
             **params,
         )
+
+        # Used for self.decode_kv_cache_as_io and self.args.decode_kv_cache_as_io
+        self._cache_shape = (model_args.n_layers, model_args.max_batch_size, model_args.n_kv_heads, model_args.max_seq_len, model_args.head_dim)
+        self._cache_pos_mask_shape = (model_args.max_batch_size, model_args.n_kv_heads, model_args.max_seq_len, model_args.head_dim)
+        
 
         if model_args.use_scaled_rope:
             # Older models don't have use_scaled_rope configuration
@@ -288,7 +297,7 @@ the checkpoint format to avoid generating faulty models.
                 torch.tensor([0], dtype=torch.long),
             )
         else:
-            return (
+            args = (
                 torch.tensor(
                     [[1]], dtype=torch.long
                 ),  # tokens, with kv cache our input token length is always just 1 token.
@@ -296,6 +305,19 @@ the checkpoint format to avoid generating faulty models.
                     [0], dtype=torch.long
                 ),  # start_pos, what token of output are we on.
             )
+            if self.decode_kv_cache_as_io:
+                args = args + (
+                    # (n_layers, max_batch_size, n_heads, max_seq_length, head_dim)
+                    torch.zeros(self._cache_shape, dtype=torch.float16), # k-cache
+                    torch.zeros(self._cache_shape, dtype=torch.float16), # v-cache
+                )
+            
+            if self.use_additive_kv_cache_update:
+                args = args + (
+                    torch.zeros(self._cache_pos_mask_shape, dtype=torch.float16),
+                )
+            return args
+
 
     def _transform_for_pre_quantization(self, checkpoint, model_args):
         assert hasattr(self.args, "preq_mode"), "preq_mode must be specified"
