@@ -1532,3 +1532,17 @@ class ExecutorchProgramManager:
         reducing the peak memory usage.
         """
         self._pte_data.write_to_file(open_file)
+
+    def save(self, path: str) -> None:
+        """
+        Saves the serialized ExecuTorch binary to the file at `path`.
+        """
+        if path[-4:] != ".pte":
+            logging.error(f"Path {path} does not end with .pte")
+            raise ValueError(f"Path {path} does not end with .pte")
+        try:
+            with open(path, "wb") as file:
+                self.write_to_file(file)
+                logging.info(f"Saved exported program to {path}")
+        except Exception as e:
+            logging.error(f"Error while saving to {path}: {e}")

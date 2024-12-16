@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pye-strict
+# pyre-unsafe
 
 import copy
 import unittest
@@ -803,3 +803,11 @@ class TestProgramManagers(unittest.TestCase):
         self._test_to_edge_with_preserved_ops(
             program, ops_not_to_decompose, expected_non_decomposed_edge_ops
         )
+
+    def test_save_fails(self):
+        model = TestLinear()
+        program = torch.export.export(model, model._get_random_inputs())
+        edge = to_edge(program)
+        et = edge.to_executorch()
+        with self.assertRaises(ValueError):
+            _ = et.save("/tmp/test_save.pt")
