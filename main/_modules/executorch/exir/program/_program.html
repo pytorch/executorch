@@ -519,7 +519,10 @@
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.normalize_view_copy_base_pass</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">NormalizeViewCopyBasePass</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.passes.remove_graph_asserts_pass</span> <span class="kn">import</span> <span class="n">RemoveGraphAssertsPass</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.passes.remove_graph_asserts_pass</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">RemoveGraphAssertsPass</span><span class="p">,</span>
+    <span class="n">RemoveNonCoreAtenOpGraphAssertsPass</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.remove_mixed_type_operators</span> <span class="kn">import</span> <span class="n">RemoveMixedTypeOperators</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.replace_aten_with_edge_pass</span> <span class="kn">import</span> <span class="n">aten_to_edge</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.replace_view_copy_with_view_pass</span> <span class="kn">import</span> <span class="p">(</span>
@@ -1201,13 +1204,20 @@
     <span class="n">program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">ops_set_to_not_decompose</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+
+    <span class="c1"># Remove invalid assert ops, such as _assert_tensor_metadata</span>
+    <span class="n">gm</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span>
+    <span class="n">gm_res</span> <span class="o">=</span> <span class="n">RemoveNonCoreAtenOpGraphAssertsPass</span><span class="p">()(</span><span class="n">gm</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="n">gm</span> <span class="o">=</span> <span class="n">gm_res</span><span class="o">.</span><span class="n">graph_module</span>
+
     <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">EXIRATenDialectVerifier</span><span class="p">(</span>
                 <span class="n">edge_compile_config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span>
                 <span class="n">class_only</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
                 <span class="n">exception_list</span><span class="o">=</span><span class="n">ops_set_to_not_decompose</span><span class="p">,</span>
-            <span class="p">)(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
+            <span class="p">)(</span><span class="n">gm</span><span class="p">)</span>
         <span class="k">except</span> <span class="n">ExportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Input program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is not in ATen dialect.&quot;</span><span class="p">)</span>
             <span class="k">raise</span> <span class="n">e</span>
@@ -1224,7 +1234,6 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="n">config</span><span class="o">.</span><span class="n">_skip_dim_order</span><span class="p">:</span>
             <span class="n">passes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">MemoryFormatOpsPass</span><span class="p">())</span>
 
-    <span class="n">gm</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span>
     <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">passes</span><span class="p">:</span>
         <span class="n">gm_res</span> <span class="o">=</span> <span class="n">p</span><span class="p">(</span><span class="n">gm</span><span class="p">)</span>
         <span class="k">assert</span> <span class="n">gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
