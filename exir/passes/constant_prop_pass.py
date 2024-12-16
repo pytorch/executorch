@@ -170,7 +170,22 @@ def replace_with_constant_node(
     exported_program: ExportedProgram,
 ) -> tuple[torch.fx.Node, str]:
     # Add `prop_constant_tensor` to program.state_dict.
-    prop_constant_tensor_fqn = f"_prop_tensor_constant{len(exported_program.constants)}"
+    prefix = "_prop_tensor_constant"
+    prop_constant_tensor_fqn = f"{prefix}{len(exported_program.constants)}"
+    # If prop_constant_tensor_fqn already exists in the state dict, we need
+    # to create a new name. Find the largest suffix of "_prop_tensor_constant",
+    # and increment it by 1 to form the new name.
+    if prop_constant_tensor_fqn in exported_program.constants:
+        suffix = 1 + max(
+            (
+                int(name[len(prefix) :])
+                for name in exported_program.constants.keys()
+                if name.startswith(prefix) and name[len(prefix) :].isdigit()
+            ),
+            default=-1,
+        )
+        prop_constant_tensor_fqn = f"{prefix}{suffix}"
+
     exported_program.constants[prop_constant_tensor_fqn] = prop_constant_tensor
 
     # Insert a new placeholder node for the propagated constant tensor.

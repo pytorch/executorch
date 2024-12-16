@@ -20,7 +20,6 @@
 #include <executorch/backends/vulkan/runtime/graph/containers/SharedObject.h>
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/DispatchNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/PrepackNode.h>
 
@@ -349,28 +348,6 @@ class ComputeGraph final {
 
   inline vkapi::BufferBindInfo logical_limits_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().logical_limits_ubo();
-  }
-
-  inline PushConstantDataInfo sizes_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
-        values_.at(idx).toConstTensor().get_uniform_data(), api::kTensorSizes);
-  }
-
-  inline PushConstantDataInfo strides_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
-        values_.at(idx).toConstTensor().get_uniform_data(),
-        api::kTensorStrides);
-  }
-
-  inline PushConstantDataInfo logical_limits_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
-        values_.at(idx).toConstTensor().get_uniform_data(),
-        api::kTensorLogicalLimits);
-  }
-
-  inline PushConstantDataInfo numel_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
-        values_.at(idx).toConstTensor().get_uniform_data(), api::kTensorNumel);
   }
 
   //
