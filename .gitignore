@@ -1,5 +1,6 @@
 .hypothesis
 buck-out/
+buck2-bin/
 cmake-out*
 .DS_Store
 cmake-android-out/
