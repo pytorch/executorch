@@ -85,7 +85,7 @@ for arg in sys.argv[1:]:
         print("Cleaning build artifacts...")
         print("Cleaning pip-out/...")
         shutil.rmtree("pip-out/", ignore_errors=True)
-        dirs = glob.glob("cmake-out*/")
+        dirs = glob.glob("cmake-out*/") + glob.glob("cmake-android-out/")
         for d in dirs:
             print(f"Cleaning {d}...")
             shutil.rmtree(d, ignore_errors=True)
