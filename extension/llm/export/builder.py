@@ -193,6 +193,7 @@ class LLMEdgeManager:
                     dynamic_shapes=dynamic_shape,
                     strict=True,
                 )
+                print("lfq: exported_module ", exported_module.graph_module)
             else:
                 logging.info("Exporting with:")
                 logging.info(f"inputs: {self.example_inputs}")
