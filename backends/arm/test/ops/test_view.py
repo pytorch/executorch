@@ -43,6 +43,7 @@ class TestView(unittest.TestCase):
             (torch.rand(1, 1, 5, 10), (1, 1, 50, 1)),
             (torch.rand(5, 10, 1, 1), (1, 25, 2)),
             (torch.rand(2, 50, 1, 1), (1, 100)),
+            (torch.rand(2, 3, 2, 3), (2, 3, 3, 2)),
         ]
 
         def forward(self, x: torch.Tensor, new_shape):
