@@ -19,6 +19,7 @@ from executorch.examples.models.llama3_2_vision.runner.generation import (
 )
 
 from executorch.extension.pybindings.portable_lib import _load_for_executorch
+from executorch.extension.pybindings.portable_lib import _load_for_executorch_from_buffer
 
 # Load custom ops and quantized ops.
 from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
@@ -43,7 +44,10 @@ class NativeLlamaRunner(TorchTuneLlamaRunner):
             use_kv_cache=args.kv_cache,
             vocab_size=params["vocab_size"],
         )
-        self.model = _load_for_executorch(args.pte)
+        with open(args.pte, "rb") as f:
+            model_bytes = f.read()
+            self.model = _load_for_executorch_from_buffer(model_bytes)
+        # self.model = _load_for_executorch(args.pte)
         self.use_kv_cache = args.kv_cache
 
     def forward(

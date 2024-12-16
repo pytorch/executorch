@@ -1566,7 +1566,6 @@ class _TopLevelEmitter(_Emitter):
             fqn = self.exported_program.graph_signature.inputs_to_parameters[target]
 
         elif target in self.exported_program.graph_signature.inputs_to_buffers:
-            breakpoint()
             fqn = self.exported_program.graph_signature.inputs_to_buffers[target]
 
             # if the buffer is mutated then record that
@@ -1603,6 +1602,7 @@ class _TopLevelEmitter(_Emitter):
         """
         spec = self.node.meta["spec"]
         constant_tag = self.node.meta.get("constant_tag", None)
+        initialize_buffer = self.node.meta.get("et_init_buffer", None)
         is_user_input = True
 
         if isinstance(target, str) and isinstance(spec, TensorSpec):
@@ -1657,7 +1657,11 @@ class _TopLevelEmitter(_Emitter):
                 spec.storage = real_tensor.untyped_storage()
 
             # User inputs and mutable buffers are not constants, other buffers or parameters are.
-            spec.const = not is_user_input
+            if initialize_buffer:
+                assert is_mutable_buffer
+                spec.const = True
+            else:
+                spec.const = not (is_user_input or is_mutable_buffer)
 
         evalue = (
             self._tensor_spec_to_evalue(spec, constant_tag)

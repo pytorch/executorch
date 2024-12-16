@@ -1354,8 +1354,6 @@ class EdgeProgramManager:
             gm, new_signature = insert_write_back_for_buffers_pass(program)
             new_gm = program.graph_module
             for p in edge_to_executorch_passes(config, name):
-                if isinstance(p, InitMutableBufferPass):
-                    p.update_placeholder_tensor_specs(program, new_gm)
                 new_gm_res = p(new_gm)
                 assert new_gm_res is not None
                 new_gm = new_gm_res.graph_module

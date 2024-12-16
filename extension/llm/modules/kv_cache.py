@@ -56,7 +56,7 @@ class KVCache(TuneKVCache):
             "v_cache", torch.zeros(cache_shape, dtype=dtype), persistent=False
         )
         self.register_buffer(
-            "cache_pos", torch.arange(0, self.max_seq_len), persistent=True
+            "cache_pos", torch.arange(0, self.max_seq_len), persistent=False
         )
         self.batch_size = batch_size
 
