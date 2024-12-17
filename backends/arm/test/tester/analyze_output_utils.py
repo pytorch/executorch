@@ -4,8 +4,16 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import tempfile
 
 import torch
+from executorch.backends.arm.test.runner_utils import (
+    _get_input_quantization_params,
+    _get_output_node,
+    _get_output_quantization_params,
+)
+
+from executorch.backends.xnnpack.test.tester.tester import Export, Quantize
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +79,7 @@ def _print_elements(result, reference, C, H, W, rtol, atol):
 
 
 def print_error_diffs(
+    tester,
     result: torch.Tensor | tuple,
     reference: torch.Tensor | tuple,
     quantization_scale=None,
@@ -193,7 +202,50 @@ def print_error_diffs(
     end_separator = "#" * separator_length + "\n"
     output_str += end_separator
 
-    logger.info(output_str)
+    logger.error(output_str)
+
+
+def dump_error_output(
+    tester,
+    reference_output,
+    stage_output,
+    quantization_scale=None,
+    atol=1e-03,
+    rtol=1e-03,
+    qtol=0,
+):
+    """
+    Prints Quantization info and error tolerances, and saves the differing tensors to disc.
+    """
+    # Capture assertion error and print more info
+    banner = "=" * 40 + "TOSA debug info" + "=" * 40
+    logger.error(banner)
+    path_to_tosa_files = tester.runner_util.intermediate_path
+
+    if path_to_tosa_files is None:
+        path_to_tosa_files = tempfile.mkdtemp(prefix="executorch_result_dump_")
+
+    export_stage = tester.stages.get(tester.stage_name(Export), None)
+    quantize_stage = tester.stages.get(tester.stage_name(Quantize), None)
+    if export_stage is not None and quantize_stage is not None:
+        output_node = _get_output_node(export_stage.artifact)
+        qp_input = _get_input_quantization_params(export_stage.artifact)
+        qp_output = _get_output_quantization_params(export_stage.artifact, output_node)
+        logger.error(f"Input QuantArgs: {qp_input}")
+        logger.error(f"Output QuantArgs: {qp_output}")
+
+    logger.error(f"{path_to_tosa_files=}")
+    import os
+
+    torch.save(
+        stage_output,
+        os.path.join(path_to_tosa_files, "torch_tosa_output.pt"),
+    )
+    torch.save(
+        reference_output,
+        os.path.join(path_to_tosa_files, "torch_ref_output.pt"),
+    )
+    logger.error(f"{atol=}, {rtol=}, {qtol=}")
 
 
 if __name__ == "__main__":
