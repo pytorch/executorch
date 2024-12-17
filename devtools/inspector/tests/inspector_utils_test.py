@@ -25,6 +25,9 @@ from executorch.devtools.etdump import schema_flatcc as flatcc
 
 from executorch.devtools.etrecord.tests.etrecord_test import TestETRecord
 from executorch.devtools.inspector._inspector_utils import (
+    calculate_cosine_similarity,
+    calculate_mse,
+    calculate_snr,
     calculate_time_scale_factor,
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
@@ -187,6 +190,32 @@ class TestInspectorUtils(unittest.TestCase):
         self.assertEqual(
             calculate_time_scale_factor(TimeScale.CYCLES, TimeScale.CYCLES), 1
         )
+
+    def test_compare_results(self):
+        a = torch.rand(4, 4)
+
+        # Create tensor b which has very close value to tensor a
+        b = a.clone()
+        b[0, 0] += 1e-2
+        b[1, 0] += 1e-2
+        b[1, 3] -= 1e-2
+
+        self.assertLess(calculate_mse([a], [b])[0], 0.5)
+        self.assertGreater(calculate_snr([a], [b])[0], 30.0)
+        self.assertAlmostEqual(calculate_cosine_similarity([a], [b])[0], 1.0)
+
+    def test_compare_results_uint8(self):
+        a = torch.randint(0, 255, (4, 4), dtype=torch.uint8)
+
+        # Create tensor b which has very close value to tensor a
+        b = a.clone()
+        b[0, 0] += 1
+        b[1, 0] += 1
+        b[1, 3] -= 1
+
+        self.assertLess(calculate_mse([a], [b])[0], 0.5)
+        self.assertGreater(calculate_snr([a], [b])[0], 30.0)
+        self.assertAlmostEqual(calculate_cosine_similarity([a], [b])[0], 1.0)
 
 
 def gen_mock_operator_graph_with_expected_map() -> (
