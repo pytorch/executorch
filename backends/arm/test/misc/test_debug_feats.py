@@ -49,7 +49,7 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=module.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .to_edge()
@@ -63,7 +63,7 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=module.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -111,7 +111,7 @@ class TestNumericalDiffPrints(unittest.TestCase):
                 model,
                 example_inputs=model.get_inputs(),
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+MI",
+                    "TOSA-0.80+MI",
                     permute_memory_to_nhwc=True,
                     custom_path=tempfile.mkdtemp("diff_print_test"),
                 ),
@@ -138,7 +138,7 @@ def test_dump_ops_and_dtypes():
         ArmTester(
             model,
             example_inputs=model.get_inputs(),
-            compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+            compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
         )
         .quantize()
         .dump_dtype_distribution()
@@ -159,7 +159,7 @@ def test_dump_ops_and_dtypes_parseable():
         ArmTester(
             model,
             example_inputs=model.get_inputs(),
-            compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+            compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
         )
         .quantize()
         .dump_dtype_distribution(print_table=False)
@@ -187,7 +187,7 @@ class TestCollateTosaTests(unittest.TestCase):
             ArmTester(
                 model,
                 example_inputs=model.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -216,7 +216,7 @@ def test_dump_tosa_ops(caplog):
         ArmTester(
             model,
             example_inputs=model.get_inputs(),
-            compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+            compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
         )
         .quantize()
         .export()

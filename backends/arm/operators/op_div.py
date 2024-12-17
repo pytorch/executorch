@@ -24,7 +24,7 @@ class DivVisitor(NodeVisitor):
 
     # Only supported for MI
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80.0+MI"),
+        TosaSpecification.create_from_string("TOSA-0.80+MI"),
     ]
 
     def __init__(self, *args):

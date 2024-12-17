@@ -25,7 +25,7 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
     target = "aten.avg_pool2d.default"
 
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80.0+BI"),
+        TosaSpecification.create_from_string("TOSA-0.80+BI"),
     ]
 
     def __init__(self, *args):
@@ -96,7 +96,7 @@ class AvgPool2dVisitor_0_80_MI(AvgPool2dVisitor_0_80_BI):
     # inheriting 'target' from BI class
 
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80.0+MI"),
+        TosaSpecification.create_from_string("TOSA-0.80+MI"),
     ]
 
     def define_node(
