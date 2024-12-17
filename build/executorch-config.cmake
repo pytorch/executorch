@@ -26,20 +26,21 @@
 
 cmake_minimum_required(VERSION 3.19)
 
-set(_root "${CMAKE_CURRENT_LIST_DIR}/../..")
+set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(required_lib_list executorch executorch_core portable_kernels)
 set(EXECUTORCH_LIBRARIES)
-set(EXECUTORCH_INCLUDE_DIRS ${_root})
+set(EXECUTORCH_INCLUDE_DIRS ${_root}/include ${_root}/include/executorch/runtime/core/portable_type ${_root}/lib)
 foreach(lib ${required_lib_list})
   set(lib_var "LIB_${lib}")
   add_library(${lib} STATIC IMPORTED)
   find_library(
     ${lib_var} ${lib}
-    HINTS "${_root}"
+    HINTS "${_root}/lib"
     CMAKE_FIND_ROOT_PATH_BOTH
   )
   set_target_properties(${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}")
-  target_include_directories(${lib} INTERFACE ${_root})
+  target_compile_definitions(${lib} INTERFACE C10_USING_CUSTOM_GENERATED_MACROS)
+  target_include_directories(${lib} INTERFACE ${_root}/include ${_root}/include/executorch/runtime/core/portable_type ${_root}/lib)
   list(APPEND EXECUTORCH_LIBRARIES ${lib})
 endforeach()
 
@@ -93,7 +94,7 @@ foreach(lib ${lib_list})
   set(lib_var "LIB_${lib}")
   find_library(
     ${lib_var} ${lib}
-    HINTS "${_root}"
+    HINTS "${_root}/lib"
     CMAKE_FIND_ROOT_PATH_BOTH
   )
   if(NOT ${lib_var})
@@ -109,7 +110,7 @@ foreach(lib ${lib_list})
       add_library(${lib} STATIC IMPORTED)
     endif()
     set_target_properties(${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}")
-    target_include_directories(${lib} INTERFACE ${_root})
+    target_include_directories(${lib} INTERFACE ${_root}/include ${_root}/include/executorch/runtime/core/portable_type ${_root}/lib)
     list(APPEND EXECUTORCH_LIBRARIES ${lib})
   endif()
 endforeach()

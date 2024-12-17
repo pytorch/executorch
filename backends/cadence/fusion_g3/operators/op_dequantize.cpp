@@ -6,18 +6,20 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/util/reduce_util.h>
-#include <executorch/runtime/kernel/kernel_includes.h>
-#include <xa_nnlib_kernels_api.h>
 #include <algorithm>
 #include <cinttypes>
 #include <cmath>
 
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using torch::executor::Error;
-using torch::executor::KernelRuntimeContext;
+#include <xa_nnlib_kernels_api.h>
+
+#include <executorch/kernels/portable/cpu/util/reduce_util.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+
+using ::executorch::aten::Scalar;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::KernelRuntimeContext;
 
 template <typename T>
 using optional = exec_aten::optional<T>;
@@ -52,7 +54,7 @@ void check_dequantize_per_tensor_args(
   ET_CHECK_MSG(
       input.scalar_type() == ScalarType::Byte ||
           input.scalar_type() == ScalarType::Char ||
-          input.scalar_type() == ScalarType::Bits16 ||
+          input.scalar_type() == ScalarType::UInt16 ||
           input.scalar_type() == ScalarType::Short ||
           input.scalar_type() == (ScalarType)Ushort ||
           input.scalar_type() == (ScalarType)Bits4 ||
@@ -83,7 +85,7 @@ void check_dequantize_per_tensor_args(
 } // namespace
 
 /* Local function which calls the kernels based on the input datatype */
-void Dequantize_impl(
+void dequantize_impl(
     Tensor& out,
     const Tensor& input,
     float* scale_data,
@@ -185,7 +187,7 @@ void Dequantize_impl(
       if (axis == NULL) {
 // calculate the dequantized output, cast scale to float to match fbgemm
 // behavior
-#define ASYM_DEQUANTIZE_IMPL_TESNOR(IN_CTYPE, OUT_CTYPE, out_dtype)            \
+#define ASYM_DEQUANTIZE_IMPL_TENSOR(IN_CTYPE, OUT_CTYPE, out_dtype)            \
   case ScalarType::out_dtype: {                                                \
     /* Hoist these function calls out of our inner loop because they might not \
      * get inlined without LTO, particularly in ATen mode. */                  \
@@ -201,7 +203,7 @@ void Dequantize_impl(
 #define ASYM_CALCULATE_INT_TYPE_TENSOR(IN_CTYPE, in_dtype)               \
   case ScalarType::in_dtype:                                             \
     switch (out.scalar_type()) {                                         \
-      ET_FORALL_FLOAT_TYPES_WITH(IN_CTYPE, ASYM_DEQUANTIZE_IMPL_TESNOR); \
+      ET_FORALL_FLOAT_TYPES_WITH(IN_CTYPE, ASYM_DEQUANTIZE_IMPL_TENSOR); \
       default:                                                           \
         ET_CHECK_MSG(                                                    \
             false,                                                       \
@@ -211,7 +213,7 @@ void Dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(ASYM_CALCULATE_INT_TYPE_TENSOR);
-          ASYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, Bits16);
+          ASYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -219,7 +221,7 @@ void Dequantize_impl(
                 static_cast<int8_t>(input.scalar_type()));
         }
 #undef ASYM_CALCULATE_INT_TYPE_TENSOR
-#undef ASYM_DEQUANTIZE_IMPL_TESNOR
+#undef ASYM_DEQUANTIZE_IMPL_TENSOR
       } else {
         // a list contains all dimensions except axis
         int64_t dims[input.dim() - 1];
@@ -302,7 +304,7 @@ void Dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(ASYM_CALCULATE_INT_TYPE_CHANNEL);
-          ASYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, Bits16);
+          ASYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -368,7 +370,7 @@ void Dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(SYM_CALCULATE_INT_TYPE_TENSOR);
-          SYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, Bits16);
+          SYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -459,7 +461,7 @@ void Dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(SYM_CALCULATE_INT_TYPE_CHANNEL);
-          SYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, Bits16);
+          SYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -502,7 +504,7 @@ Tensor& dequantize_per_tensor_out(
   float scale_data = (float)scale;
   int zero_point_data = (int)zero_point;
 
-  Dequantize_impl(out, input, &scale_data, &zero_point_data, NULL, out_dtype);
+  dequantize_impl(out, input, &scale_data, &zero_point_data, NULL, out_dtype);
 
   return out;
 }
@@ -620,7 +622,7 @@ Tensor& dequantize_per_channel_out(
   for (int i = 0; i < scale.numel(); i++) {
     scale_data[i] = (float)scale_dt[i];
   }
-  Dequantize_impl(out, input, scale_data, zero_point_ptr, axis_ptr, out_dtype);
+  dequantize_impl(out, input, scale_data, zero_point_ptr, axis_ptr, out_dtype);
 
   return out;
 }
@@ -661,13 +663,19 @@ Tensor& dequantize_per_tensor_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper
   (void)context;
   return dequantize_per_tensor_out(
-      input, scale, zero_point, quant_min, quant_max, dtype, out_dtype, out);
+      input,
+      scale,
+      zero_point,
+      quant_min,
+      quant_max,
+      dtype,
+      out.scalar_type(),
+      out);
 }
 
 Tensor& dequantize_per_tensor_tensor_args_out(
