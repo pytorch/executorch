@@ -188,7 +188,7 @@ bool can_use_optimized_dequantize_per_channel(
 void dequantize_per_channel_optimized(
     const Tensor& in,
     const Tensor& scales,
-    const optional<Tensor>& opt_zero_points,
+    const exec_aten::optional<Tensor>& opt_zero_points,
     Tensor& out,
     int64_t axis,
     int64_t quant_min,

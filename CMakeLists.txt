@@ -257,6 +257,17 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   set(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
 endif()
 
+if(NOT DEFINED FXDIV_SOURCE_DIR)
+  set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
+    ${CMAKE_POSITION_INDEPENDENT_CODE}
+  )
+  set(FXDIV_SOURCE_DIR "backends/xnnpack/third-party/FXdiv")
+  add_subdirectory("${FXDIV_SOURCE_DIR}")
+  set(CMAKE_POSITION_INDEPENDENT_CODE
+      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
+  )
+endif()
+
 if(EXECUTORCH_BUILD_CPUINFO)
   # --- cpuinfo
   set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
@@ -742,9 +753,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_XNNPACK)
-    # need to explicitly specify XNNPACK here otherwise uses XNNPACK symbols
-    # from libtorch_cpu
-    list(APPEND _dep_libs xnnpack_backend XNNPACK)
+    # need to explicitly specify XNNPACK and microkernels-prod
+    # here otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
+    list(APPEND _dep_libs xnnpack_backend XNNPACK microkernels-prod)
   endif()
 
   # compile options for pybind

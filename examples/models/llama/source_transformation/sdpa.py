@@ -56,7 +56,7 @@ class SDPACustom(torch.nn.Module):
 
         k_cache = self.kv_cache.k_cache
         v_cache = self.kv_cache.v_cache
-        if isinstance(self.kv_cache, QuantizedKVCache):
+        if hasattr(self.kv_cache, "quantized_cache_dtype"):
             # updated quantize cache, scale and zero points
             # returns dequantized kv cache
             # Not most optimal. Optimizations to follow next
@@ -99,7 +99,7 @@ def _replace_sdpa_with_custom_op(module: torch.nn.Module):
 
 
 def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
-    from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa
+    from executorch.extension.llm.custom_ops import custom_ops  # noqa
 
     _replace_sdpa_with_custom_op(module)
     return module

@@ -16,6 +16,7 @@ import executorch.exir as exir
 # Import passes
 import executorch.exir.memory_planning  # noqa
 import torch
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, memory, to_edge
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops, ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -65,10 +66,12 @@ from functorch.experimental import control_flow
 from torch import nn
 
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.ao.quantization.quantizer import QuantizationSpec
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import QuantizationConfig
 from torch.export import export
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx import GraphModule, subgraph_rewriter
@@ -1237,6 +1240,80 @@ class TestPasses(unittest.TestCase):
                 aten.graph_signature.input_specs[-1],
             ],
         )
+
+    def test_constant_prop_pass_after_delegation(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self, dim=32):
+                super().__init__()
+                self.linear = torch.nn.Linear(dim, dim)
+
+            def forward(self, query, key, value):
+                query = self.linear(query)
+                key = self.linear(key)
+                value = self.linear(value)
+                return torch.nn.functional.scaled_dot_product_attention(
+                    query, key, value, attn_mask=None, dropout_p=0.0, is_causal=True
+                )
+
+        query = torch.randn(32, 32, 32, 32)
+        key = torch.randn(32, 32, 32, 32)
+        value = torch.randn(32, 32, 32, 32)
+
+        # Capture the model
+        m = torch.export.export_for_training(M(32), (query, key, value)).module()
+
+        # 8w16a quantization
+        from torch.ao.quantization.observer import (
+            MinMaxObserver,
+            PerChannelMinMaxObserver,
+        )
+
+        activation_qspec = QuantizationSpec(
+            dtype=torch.int16,
+            quant_min=-32768,
+            quant_max=32767,
+            qscheme=torch.per_tensor_affine,
+            is_dynamic=False,
+            observer_or_fake_quant_ctr=MinMaxObserver,
+        )
+        weight_qspec = QuantizationSpec(
+            dtype=torch.int8,
+            quant_min=-128,
+            quant_max=127,
+            qscheme=torch.per_channel_symmetric,
+            ch_axis=0,
+            is_dynamic=False,
+            observer_or_fake_quant_ctr=PerChannelMinMaxObserver,
+        )
+        custom_qconfig = QuantizationConfig(
+            input_activation=activation_qspec,
+            output_activation=activation_qspec,
+            weight=weight_qspec,
+            bias=None,
+            is_qat=False,
+        )
+        quantizer = XNNPACKQuantizer()
+        quantizer.set_global(custom_qconfig)
+        m = prepare_pt2e(m, quantizer)  # pyre-fixme[6]
+        m = convert_pt2e(m)
+
+        # export, perform constant propagation to make weights const
+        aten_prog = export(m, (query, key, value))
+        aten_prog = constant_prop_pass(aten_prog)
+
+        # lower to edge dialect
+        edge_prog = to_edge(
+            aten_prog,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False, _use_edge_ops=True
+            ),
+        )
+        edge_prog = edge_prog.to_backend(XnnpackPartitioner())
+
+        # Perform constant propagation on the decomposed ops from sdpa
+        aten_prog = constant_prop_pass(edge_prog.exported_program())
+        # There should be at least one const due to spda op
+        self.assertGreaterEqual(len(aten_prog.constants), 1)
 
     def test_constant_prop_pass_for_parameter_slice(self) -> None:
         def count_slice(gm: torch.fx.GraphModule) -> int:

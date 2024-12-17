@@ -124,7 +124,7 @@ class TestCat(unittest.TestCase):
     def test_cat_4d_tosa_MI(self):
         square = torch.ones((2, 2, 2, 2))
         for dim in range(-3, 3):
-            test_data = ((square, square), dim)
+            test_data = ((square, square.clone()), dim)
             self._test_cat_tosa_MI_pipeline(self.Cat(), test_data)
 
     @parameterized.expand(Cat.test_parameters)
