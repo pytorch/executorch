@@ -36,6 +36,7 @@ class TestSimpleExpand(unittest.TestCase):
             (torch.ones(1, 1, 2, 2), (4, 3, -1, 2)),
             (torch.ones(1), (2, 2, 4)),
             (torch.ones(3, 2, 4, 1), (-1, -1, -1, 3)),
+            (torch.ones(1, 1, 192), (1, -1, -1)),
         ]
 
         def forward(self, x: torch.Tensor, multiples: Sequence):
@@ -46,7 +47,7 @@ class TestSimpleExpand(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check_count({"torch.ops.aten.expand.default": 1})
@@ -64,7 +65,7 @@ class TestSimpleExpand(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
