@@ -88,7 +88,7 @@ ethos_u_base_rev="24.08"
 
 # tosa reference model
 tosa_reference_model_url="https://review.mlplatform.org/tosa/reference_model"
-tosa_reference_model_rev="c5570b79e90c3a36ab8c4ddb8ee3fbc2cd3f7c38"
+tosa_reference_model_rev="v0.80.1"
 
 # vela
 vela_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u-vela"
