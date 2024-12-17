@@ -235,7 +235,7 @@ function(resolve_buck2)
 
   set(resolve_buck2_command
       ${PYTHON_EXECUTABLE} ${executorch_root}/build/resolve_buck.py
-      --cache_dir=${CMAKE_CURRENT_BINARY_DIR}/buck2-bin
+      --cache_dir=buck2-bin
   )
 
   if(NOT ${BUCK2} STREQUAL "")
@@ -278,7 +278,7 @@ function(resolve_buck2)
   execute_process(
     # Note that we need to use the local buck2 variable. BUCK2 is only set in
     # the parent scope, and can still be empty in this scope.
-    COMMAND "${buck2} kill"
+    COMMAND "${buck2} killall"
     WORKING_DIRECTORY ${executorch_root}
     COMMAND_ECHO STDOUT
   )
