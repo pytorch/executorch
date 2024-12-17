@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -625,6 +626,15 @@ class Tester:
                     f"Expected {count} {key} nodes but found {op_counts[key]}."
                 )
 
+        return self
+
+    def visualize(
+        self, reuse_server: bool = True, stage: Optional[str] = None, **kwargs
+    ):
+        # import here to avoid importing model_explorer when it is not needed which is most of the time.
+        from executorch.devtools.visualization import visualize
+
+        visualize(self.get_artifact(stage), reuse_server=reuse_server, **kwargs)
         return self
 
     def run_method_and_compare_outputs(
