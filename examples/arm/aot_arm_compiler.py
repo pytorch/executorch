@@ -265,7 +265,11 @@ def get_compile_spec(
 ) -> list[CompileSpec]:
     spec_builder = None
     if target == "TOSA":
-        spec_builder = ArmCompileSpecBuilder().tosa_compile_spec("TOSA-0.80+BI")
+        spec_builder = (
+            ArmCompileSpecBuilder()
+            .tosa_compile_spec("TOSA-0.80+BI")
+            .set_quantize_io(True)
+        )
     elif "ethos-u55" in target:
         spec_builder = (
             ArmCompileSpecBuilder()
