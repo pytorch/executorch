@@ -52,9 +52,9 @@ void add_copy_offset_node(
       nullptr,
       {},
       {
-          PushConstantDataInfo(&range, sizeof(range)),
-          PushConstantDataInfo(&src_offset, sizeof(src_offset)),
-          PushConstantDataInfo(&dst_offset, sizeof(dst_offset)),
+          PushConstantDataInfo(&range, sizeof(range), sizeof(utils::ivec4)),
+          PushConstantDataInfo(&src_offset, sizeof(src_offset), sizeof(utils::ivec4)),
+          PushConstantDataInfo(&dst_offset, sizeof(dst_offset), sizeof(utils::ivec4)),
       }));
 }
 
