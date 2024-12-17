@@ -31,7 +31,6 @@ class ViewVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         attr = ts.TosaSerializerAttribute()
         new_shape = tosa_shape(inputs[1].special, output.dim_order)

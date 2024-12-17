@@ -73,7 +73,6 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         input_tensor = inputs[0]
         assert input_tensor.dtype == ts.DType.INT8
@@ -105,14 +104,13 @@ class AvgPool2dVisitor_0_80_MI(AvgPool2dVisitor_0_80_BI):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         assert (
             inputs[0].dtype == ts.DType.INT8 or inputs[0].dtype == ts.DType.FP32
         ), "Only FP32 and INT8 supported"
 
         if inputs[0].dtype == ts.DType.INT8:
-            super().define_node(node, tosa_graph, inputs, output, is_quant_node)
+            super().define_node(node, tosa_graph, inputs, output)
 
         if inputs[0].dtype == ts.DType.FP32:
             accumulator_type = ts.DType.FP32

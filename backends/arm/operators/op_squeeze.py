@@ -27,7 +27,6 @@ class SqueezeVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         shape = inputs[0].shape
         rank = len(shape)

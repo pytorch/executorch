@@ -30,7 +30,6 @@ class CatVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
 
         tensors = inputs[0].special

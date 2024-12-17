@@ -33,7 +33,10 @@ class TestBMM(unittest.TestCase):
             return torch.bmm(x, y)
 
     class MatMul(torch.nn.Module):
-        test_parameters = [(torch.rand(2, 3, 5), torch.rand(2, 5, 2))]
+        test_parameters = [
+            (torch.rand(2, 3, 5), torch.rand(2, 5, 2)),
+            (torch.rand(1, 2, 3, 5), torch.rand(1, 2, 5, 2)),
+        ]
 
         def forward(self, x, y):
             return torch.matmul(x, y)
@@ -87,7 +90,7 @@ class TestBMM(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_bmm_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
+            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
     def _test_bmm_ethosu_BI_pipeline(

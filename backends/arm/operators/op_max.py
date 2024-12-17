@@ -36,7 +36,6 @@ class MaxVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         assert inputs[0].dtype == inputs[1].dtype
 

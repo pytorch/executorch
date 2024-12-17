@@ -33,7 +33,6 @@ class SelectVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
 
         assert len(inputs) == 3
@@ -50,9 +49,7 @@ class SelectVisitor(NodeVisitor):
         expanded_shape = tuple(1 if i == dim else shape[i] for i in range(rank))
         expanded_shape = tosa_shape(expanded_shape, input_node.dim_order)
 
-        output_reshaped = tosa_graph.addIntermediate(
-            expanded_shape, ts.DType.INT8 if is_quant_node else output.dtype
-        )
+        output_reshaped = tosa_graph.addIntermediate(expanded_shape, output.dtype)
 
         attr_slice = ts.TosaSerializerAttribute()
 

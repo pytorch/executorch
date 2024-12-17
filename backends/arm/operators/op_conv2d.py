@@ -53,7 +53,6 @@ class Conv2dVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         input, weight, bias, stride, pad, dilation, _, _, group = inputs
 
