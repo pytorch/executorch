@@ -117,6 +117,7 @@ class TestBackends(unittest.TestCase):
 
             edge_program = to_edge_transform_and_lower(
                 program,
+                compile_config=self._edge_compile_config,
                 transform_passes=[
                     I64toI32(self._edge_compile_config._skip_dim_order),
                 ],
