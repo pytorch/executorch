@@ -16,14 +16,16 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
+import tosa_reference_model
 
-from executorch.backends.arm.test.conftest import arm_test_options, is_option_enabled
+from executorch.backends.arm.test.conftest import is_option_enabled
 
 from torch.export import ExportedProgram
 from torch.fx.node import Node
+from tosa import TosaGraph
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.CRITICAL)
 
 
 class QuantizationParams:
@@ -125,7 +127,7 @@ def _get_output_node(program: ExportedProgram) -> Node:
 
 def _get_output_quantization_params(
     program: ExportedProgram, output_node: Node
-) -> QuantizationParams:
+) -> Optional[QuantizationParams]:
     """
     Get output QuantizationParams from a program.
     Args:
@@ -151,8 +153,6 @@ def _get_output_quantization_params(
                 dtype=node.args[5],
             )
             break  # break early, there's only one output node
-    if quant_params is None:
-        raise RuntimeError("No Quantization parameters not found in exported model.")
     return quant_params
 
 
@@ -169,7 +169,7 @@ class RunnerUtil:
     ):
         self.intermediate_path = intermediate_path
         self.tosa_ref_model_path = tosa_ref_model_path or "tosa_reference_model"
-        assert os.path.exists(
+        assert self.intermediate_path is None or os.path.exists(
             self.intermediate_path
         ), f"TOSA artifact path don't exist! Path: {self.intermediate_path}"
 
@@ -251,7 +251,7 @@ class RunnerUtil:
             cmd_line += f" -i {input_path}"
 
         ethos_u_extra_args = ""
-        if is_option_enabled(arm_test_options.fast_fvp):
+        if is_option_enabled("fast_fvp"):
             ethos_u_extra_args = ethos_u_extra_args + "--fast"
 
         command_args = {
@@ -332,7 +332,46 @@ class RunnerUtil:
         tosa_ref_output = np.fromfile(out_path_with_suffix, dtype=np.float32)
         output_shape = self.output_node.args[0][0].meta["val"].shape
         tosa_ref_output = torch.from_numpy(tosa_ref_output).reshape(output_shape)
-        return [tosa_ref_output]
+        return tosa_ref_output
+
+    def run_tosa_graph(
+        self, graph: TosaGraph, inputs: list[np.ndarray] | list[torch.Tensor]
+    ) -> torch.Tensor:
+        """Runs the TOSA reference model with inputs and returns the result."""
+        data_np = [
+            prep_data_for_save(
+                input, self.is_quantized, self.input_names[i], self.qp_input[i]
+            )
+            for i, input in enumerate(inputs)
+        ]
+        # tosa_profile: 0 = Base Inference, 1 = Main Inference, 2 = Main Training.
+        tosa_profile = 0 if self.is_quantized else 1
+        debug_mode = "ALL" if logger.level <= logging.DEBUG else None
+        outputs, status = tosa_reference_model.run(
+            graph,
+            data_np,
+            verbosity=_tosa_refmodel_loglevel(logger.level),
+            tosa_profile=tosa_profile,
+            initialize_variable_tensor_from_numpy=1,  # True
+            debug_mode=debug_mode,
+        )
+
+        assert (
+            status == tosa_reference_model.GraphStatus.TOSA_VALID
+        ), "Non-valid TOSA given to reference model."
+
+        outputs_torch = []
+        for output in outputs:
+            output = torch.from_numpy(output)
+            if self.is_quantized:
+                # Need to dequant back to FP32 for comparison with torch output
+                quant_param = self.qp_output
+                assert (
+                    quant_param is not None
+                ), "There are no quantization parameters, check output parameters"
+                output = (output.to(torch.float32) - quant_param.zp) * quant_param.scale
+            outputs_torch.append(output)
+        return tuple(outputs_torch)
 
     def run_tosa_ref_model(
         self,
@@ -417,21 +456,13 @@ class RunnerUtil:
         assert (
             shutil.which(self.tosa_ref_model_path) is not None
         ), f"tosa_reference_model tool not found, did you run examples/arm/setup.sh? Path: {self.tosa_ref_model_path}"
-        loglevel_map = {
-            logging.INFO: "INFO",
-            logging.CRITICAL: "LOW",
-            logging.ERROR: "LOW",
-            logging.WARNING: "MED",
-            logging.DEBUG: "HIGH",
-            logging.NOTSET: "MED",
-        }
-        clamped_logging_level = max(min(logger.level // 10 * 10, 50), 0)
+
         cmd_ref_model = [
             self.tosa_ref_model_path,
             "--test_desc",
             desc_file_path,
             "-l",
-            loglevel_map[clamped_logging_level],
+            _tosa_refmodel_loglevel(logger.level),
         ]
         _run_cmd(cmd_ref_model)
 
@@ -452,13 +483,17 @@ class RunnerUtil:
                 if tosa_ref_output.dtype == np.int8:
                     tosa_ref_output = tosa_ref_output.astype(np.int32)
                 quant_param = self.qp_output
-                assert (
-                    quant_param is not None
-                ), "There are no quantization parameters, check output parameters"
-                tosa_ref_output = (tosa_ref_output - quant_param.zp) * quant_param.scale
+                if quant_param is not None:
+                    # I.e. bool output is possible for quantized models
+                    tosa_ref_output = (
+                        tosa_ref_output - quant_param.zp
+                    ) * quant_param.scale
 
             if tosa_ref_output.dtype == np.double:
                 tosa_ref_output = tosa_ref_output.astype("float32")
+            elif tosa_ref_output.dtype == bool:
+                # retain the bool output though for boolean related comparisons
+                tosa_ref_output = tosa_ref_output.astype("bool")
 
             # tosa_output is a numpy array, convert to torch tensor for comparison
             tosa_ref_outputs.append(torch.from_numpy(tosa_ref_output))
@@ -467,7 +502,10 @@ class RunnerUtil:
 
 
 def prep_data_for_save(
-    data, is_quantized: bool, input_name: str, quant_param: QuantizationParams
+    data: torch.Tensor,
+    is_quantized: bool,
+    input_name: str,
+    quant_param: QuantizationParams,
 ):
     data_np = np.array(data.detach(), order="C").astype(
         f"{data.dtype}".replace("torch.", "")
@@ -576,7 +614,6 @@ def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
     assert os.path.exists(
         tosa_schema_file
     ), f"tosa_schema_file: {tosa_schema_file} does not exist"
-
     assert shutil.which("flatc") is not None
     cmd_flatc = [
         "flatc",
@@ -611,3 +648,19 @@ def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
         pass
 
     return json_out
+
+
+def _tosa_refmodel_loglevel(loglevel: int) -> str:
+    """Converts a logging loglevel to tosa_reference_model logginglevel,
+    returned as string.
+    """
+    loglevel_map = {
+        logging.INFO: "INFO",
+        logging.CRITICAL: "LOW",
+        logging.ERROR: "LOW",
+        logging.WARNING: "MED",
+        logging.DEBUG: "HIGH",
+        logging.NOTSET: "MED",
+    }
+    clamped_logging_level = max(min(loglevel // 10 * 10, 50), 0)
+    return loglevel_map[clamped_logging_level]

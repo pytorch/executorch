@@ -20,7 +20,7 @@
 - op: _softmax.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::softmax_out
+      kernel_name: cadence::impl::G3::_softmax_out
 
 - op: add.out
   kernels:
@@ -71,7 +71,7 @@
   kernels:
     - arg_meta: null
       kernel_name: cadence::impl::G3::mul_out
-      
+
 - op: mul.Scalar_out
   kernels:
     - arg_meta: null
@@ -111,8 +111,21 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::where_out
-      
+
 - op: native_layer_norm.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::native_layer_norm_out     
+      kernel_name: cadence::impl::G3::native_layer_norm_out
+
+# custom ops
+- func: cadence::quantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::G3::native::quantize_per_tensor_out
+
+- func: cadence::dequantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::G3::native::dequantize_per_tensor_out

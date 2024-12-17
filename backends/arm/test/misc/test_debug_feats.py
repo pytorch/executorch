@@ -111,7 +111,9 @@ class TestNumericalDiffPrints(unittest.TestCase):
                 model,
                 example_inputs=model.get_inputs(),
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80.0+MI",
+                    permute_memory_to_nhwc=True,
+                    custom_path=tempfile.mkdtemp("diff_print_test"),
                 ),
             )
             .export()
