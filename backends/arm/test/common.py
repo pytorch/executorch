@@ -48,7 +48,6 @@ def maybe_get_tosa_collate_path() -> str | None:
             tosa_test_base = os.path.join(tosa_test_base, "tosa-mi")
         else:
             tosa_test_base = os.path.join(tosa_test_base, "other")
-
         return os.path.join(tosa_test_base, test_class, test_name)
 
     return None
@@ -76,6 +75,7 @@ def get_tosa_compile_spec_unbuilt(
         ArmCompileSpecBuilder()
         .tosa_compile_spec(tosa_version)
         .dump_intermediate_artifacts_to(custom_path)
+        .set_quantize_io(True)
     )
 
     return compile_spec_builder
