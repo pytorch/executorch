@@ -15,7 +15,7 @@ A React Native mobile application for running LLaMA language models using ExecuT
 
 ## Prerequisites
 
-- Node.js & npm
+- Node.js & yarn
 - Xcode
 
 ## Installation
@@ -32,7 +32,7 @@ A React Native mobile application for running LLaMA language models using ExecuT
 
 6. Navigate to the example: `cd examples/demo-apps/react-native/rnllama`
 
-7. Install dependencies: `npm install && cd ios && pod install && cd ..`
+7. Install dependencies: `yarn && cd ios && pod install && cd ..`
 
 8. Run the app: `npx expo run:ios --device --configuration Release` and select a USB connected iOS device
 

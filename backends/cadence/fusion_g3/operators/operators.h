@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#pragma once
+
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 

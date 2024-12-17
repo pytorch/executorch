@@ -38,7 +38,7 @@ include(${EXECUTORCH_SRCS_FILE})
 list(TRANSFORM _llama_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
 target_include_directories(
-  extension_module INTERFACE ${_common_include_directories}
+  extension_module INTERFACE ${_common_include_directories} ${EXECUTORCH_INCLUDE_DIRS}
 )
 
 list(
@@ -82,6 +82,6 @@ set(llama_runner_deps executorch extension_data_loader extension_module
 target_link_libraries(llama_runner PUBLIC ${llama_runner_deps})
 
 target_include_directories(
-  llama_runner INTERFACE ${_common_include_directories} ${EXECUTORCH_ROOT}
+  llama_runner INTERFACE ${_common_include_directories} ${EXECUTORCH_INCLUDE_DIRS}
 )
 target_compile_options(llama_runner PUBLIC ${_preprocessor_flag})
