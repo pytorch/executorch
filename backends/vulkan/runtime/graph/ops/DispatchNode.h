@@ -32,7 +32,7 @@ class PushConstantDataInfo {
     };
     struct {
       uint8_t data[16];
-      uint32_t dataSize;
+      uint32_t dataSize{};
     };
   };
 
