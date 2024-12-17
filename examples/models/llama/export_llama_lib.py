@@ -22,7 +22,7 @@ from typing import Callable, List, Optional, Union
 import pkg_resources
 import torch
 
-from executorch.devtools.etrecord import generate_etrecord
+
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 
@@ -228,6 +228,30 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=False,
         action="store_true",
         help="Whether or not to export a model using kv cache",
+    )
+    parser.add_argument(
+        "--decode_kv_cache_as_io",
+        default=False,
+        action="store_true",
+        help="Whether decode models accepts KV cache as IO",
+    )
+    parser.add_argument(
+        "--use_additive_kv_cache_update",
+        default=False,
+        action="store_true",
+        help="Whether use additive KV cache updates",
+    )
+    parser.add_argument(
+        "--prefill_return_kv",
+        default=False,
+        action="store_true",
+        help="Whether or not to return kv values from prefill model",
+    )
+    parser.add_argument(
+        "--prefill_seq_length",
+        type=int,
+        default=32,
+        help="Sequence length for prefill model",
     )
     parser.add_argument(
         "--quantize_kv_cache",
@@ -769,6 +793,7 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
         logging.info(f"--> {partitioner.__class__.__name__}")
 
     if args.generate_etrecord:
+        from executorch.devtools.etrecord import generate_etrecord
         if not builder_exported_to_edge.edge_manager:
             raise ValueError("Unable to generate etrecord due to missing edge manager.")
 
