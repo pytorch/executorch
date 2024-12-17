@@ -40,7 +40,7 @@ class AddVisitor_080_BI(NodeVisitor):
         output: TosaArg,
         is_quant_node: bool,
     ) -> None:
-        # Specification (0.80.0) states that input and output types
+        # Specification (0.80) states that input and output types
         # should all be the same
         assert inputs[0].dtype == inputs[1].dtype == output.dtype
         # Handle int8 (quantized) and int32
@@ -98,7 +98,7 @@ class AddVisitor_080_MI(AddVisitor_080_BI):
         output: TosaArg,
         is_quant_node: bool,
     ) -> None:
-        # Specification (0.80.0) states that input and output types
+        # Specification (0.80) states that input and output types
         # should all be the same
         assert inputs[0].dtype == inputs[1].dtype == output.dtype
 
