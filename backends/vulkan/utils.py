@@ -202,7 +202,7 @@ def set_node_spec_attr(node: torch.fx.Node, attr: str, value):
     spec = node.meta["spec"]
     if isinstance(spec, TensorSpec):
         setattr(spec, attr, value)
-    elif isinstance(spec, list) or isinstance(spec, tuple):
+    elif isinstance(spec, (list, tuple)):
         for s in spec:
             assert isinstance(s, TensorSpec)
             setattr(s, attr, value)
@@ -215,9 +215,9 @@ def get_node_spec_attr(node: torch.fx.Node, attr: str, return_first: bool = True
     spec = node.meta["spec"]
     if isinstance(spec, TensorSpec):
         return getattr(spec, attr) if hasattr(spec, attr) else None
-    elif isinstance(spec, list) or isinstance(spec, tuple):
+    elif isinstance(spec, (list, tuple)):
         if return_first:
-            return getattr(spec[0], attr) if hasattr(spec, attr) else None
+            return getattr(spec[0], attr) if hasattr(spec[0], attr) else None
         else:
             return [getattr(s, attr) if hasattr(s, attr) else None for s in spec]
     else:

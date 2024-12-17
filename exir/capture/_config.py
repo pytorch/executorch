@@ -45,8 +45,7 @@ class EdgeCompileConfig:
     )
     _skip_type_promotion: bool = False
     # TODO(gasoonjia): remove this
-    # TODO(T192537614): reenanle dim order as default
-    _skip_dim_order: bool = True
+    _skip_dim_order: bool = False
 
 
 @compatibility(is_backward_compatible=False)
@@ -89,3 +88,7 @@ class ExecutorchBackendConfig:
     # If set to true, view_copy operations will be converted to lightweight
     # view operations in the ET runtime
     remove_view_copy: bool = True
+
+    # If set to true, all constant tensors will be stored in a separate file,
+    # external to the PTE file.
+    external_constants: bool = False
