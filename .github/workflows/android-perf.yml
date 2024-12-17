@@ -86,7 +86,7 @@ jobs:
           # Separate default values from the workflow dispatch. To ensure defaults are accessible
           # during scheduled runs and to provide flexibility for different defaults between
           # on-demand and periodic benchmarking.
-          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'stories110M,dl3,mv3,mv2,ic4,ic3,vit,meta-llama/Llama-3.2-1B' || 'stories110M' }}
+          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'stories110M,dl3,mv3,mv2,ic4,ic3,vit' || 'stories110M' }}
           CRON_DEFAULT_DEVICES: samsung_galaxy_s22
           CRON_DEFAULT_DELEGATES: ${{ github.event_name == 'schedule' && 'xnnpack,qnn' || 'xnnpack' }}
         run: |

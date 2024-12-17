@@ -87,7 +87,7 @@ using namespace ::executorch::runtime;
                               tokensPerSecondMetric.tokenCount = 0;
                               const auto status = runner->generate(
                                   "Once upon a time",
-                                  128,
+                                  50,
                                   [=](const std::string &token) {
                                     tokensPerSecondMetric.tokenCount++;
                                   },
