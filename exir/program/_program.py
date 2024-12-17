@@ -33,13 +33,17 @@ from executorch.exir.passes import (
     MemoryFormatOpsPass,
     OpReplacePass,
 )
+from executorch.exir.passes.external_constants_pass import external_constants_pass
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
-from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
+from executorch.exir.passes.remove_graph_asserts_pass import (
+    RemoveGraphAssertsPass,
+    RemoveNonCoreAtenOpGraphAssertsPass,
+)
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
 from executorch.exir.passes.replace_view_copy_with_view_pass import (
@@ -721,13 +725,20 @@ def _generate_edge_program(
     program: ExportedProgram,
     ops_set_to_not_decompose: Optional[List[torch._ops.OpOverload]] = None,
 ) -> ExportedProgram:
+
+    # Remove invalid assert ops, such as _assert_tensor_metadata
+    gm = program.graph_module
+    gm_res = RemoveNonCoreAtenOpGraphAssertsPass()(gm)
+    assert gm_res is not None
+    gm = gm_res.graph_module
+
     if config._check_ir_validity:
         try:
             EXIRATenDialectVerifier(
                 edge_compile_config=config,
                 class_only=False,
                 exception_list=ops_set_to_not_decompose,
-            )(program.graph_module)
+            )(gm)
         except ExportError as e:
             logging.info(f"Input program {name} is not in ATen dialect.")
             raise e
@@ -744,7 +755,6 @@ def _generate_edge_program(
         if not config._skip_dim_order:
             passes.append(MemoryFormatOpsPass())
 
-    gm = program.graph_module
     for p in passes:
         gm_res = p(gm)
         assert gm_res is not None
@@ -1380,6 +1390,9 @@ class EdgeProgramManager:
                 )
             else:
                 new_gm_res = memory_planning_pass(new_gm)  # pyre-ignore[29]
+
+            if config.external_constants:
+                new_gm_res = external_constants_pass(new_gm_res)
             assert new_gm_res is not None
             new_gm = new_gm_res.graph_module
 
@@ -1528,3 +1541,17 @@ class ExecutorchProgramManager:
         reducing the peak memory usage.
         """
         self._pte_data.write_to_file(open_file)
+
+    def save(self, path: str) -> None:
+        """
+        Saves the serialized ExecuTorch binary to the file at `path`.
+        """
+        if path[-4:] != ".pte":
+            logging.error(f"Path {path} does not end with .pte")
+            raise ValueError(f"Path {path} does not end with .pte")
+        try:
+            with open(path, "wb") as file:
+                self.write_to_file(file)
+                logging.info(f"Saved exported program to {path}")
+        except Exception as e:
+            logging.error(f"Error while saving to {path}: {e}")

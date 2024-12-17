@@ -157,9 +157,9 @@ class TestLayerNorm(unittest.TestCase):
 
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
     # Skip tests that require transposes.
-    @parameterized.expand(test_data_suite[:-2])
+    @parameterized.expand(test_data_suite)
     @unittest.expectedFailure
-    def test_layer_norm_u55_BI(
+    def test_layer_norm_u55_BI_xfails(
         self,
         test_name: str,
         test_data: torch.Tensor,
@@ -171,7 +171,8 @@ class TestLayerNorm(unittest.TestCase):
 
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
     @parameterized.expand(test_data_suite[:-2])
-    def test_layer_norm_u85_BI_fvp(
+    @unittest.expectedFailure
+    def test_layer_norm_u85_BI_xfails(
         self,
         test_name: str,
         test_data: torch.Tensor,
@@ -182,7 +183,6 @@ class TestLayerNorm(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite[-2:])
-    @unittest.skip  # Flaky
     def test_layer_norm_u85_BI(
         self,
         test_name: str,

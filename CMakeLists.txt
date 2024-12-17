@@ -257,6 +257,17 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   set(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
 endif()
 
+if(NOT DEFINED FXDIV_SOURCE_DIR)
+  set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
+    ${CMAKE_POSITION_INDEPENDENT_CODE}
+  )
+  set(FXDIV_SOURCE_DIR "backends/xnnpack/third-party/FXdiv")
+  add_subdirectory("${FXDIV_SOURCE_DIR}")
+  set(CMAKE_POSITION_INDEPENDENT_CODE
+      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
+  )
+endif()
+
 if(EXECUTORCH_BUILD_CPUINFO)
   # --- cpuinfo
   set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
@@ -615,6 +626,12 @@ endif()
 
 # Install `executorch` library as well as `executorch-config.cmake` under
 # ${CMAKE_INSTALL_PREFIX}/
+install(DIRECTORY runtime/core/  DESTINATION include/executorch/runtime/core FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY runtime/kernel/  DESTINATION include/executorch/runtime/kernel FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY runtime/platform/  DESTINATION include/executorch/runtime/platform FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY extension/kernel_util/  DESTINATION include/executorch/extension/kernel_util FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY extension/tensor/  DESTINATION include/executorch/extension/tensor FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY extension/threadpool/  DESTINATION include/executorch/extension/threadpool FILES_MATCHING PATTERN "*.h")
 install(
   TARGETS executorch executorch_core
   DESTINATION lib
@@ -745,9 +762,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_XNNPACK)
-    # need to explicitly specify XNNPACK here otherwise uses XNNPACK symbols
-    # from libtorch_cpu
-    list(APPEND _dep_libs xnnpack_backend XNNPACK)
+    # need to explicitly specify XNNPACK and microkernels-prod
+    # here otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
+    list(APPEND _dep_libs xnnpack_backend XNNPACK microkernels-prod)
   endif()
 
   # compile options for pybind
