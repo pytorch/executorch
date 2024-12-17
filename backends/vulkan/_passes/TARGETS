@@ -44,6 +44,19 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "remove_redundant_ops",
+    srcs = ["remove_redundant_ops.py"],
+    visibility = [
+        "//executorch/backends/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+runtime.python_library(
     name = "tag_memory_meta_pass",
     srcs = ["tag_memory_meta_pass.py"],
     visibility = [
@@ -71,6 +84,7 @@ runtime.python_library(
         ":insert_prepack_nodes",
         ":int4_weight_only_quantizer",
         ":remove_local_scalar_dense",
+        ":remove_redundant_ops",
         ":tag_memory_meta_pass"
     ]
 )
