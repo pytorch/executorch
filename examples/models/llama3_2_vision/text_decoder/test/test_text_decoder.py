@@ -74,8 +74,6 @@ class TextDecoderTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = torch._inductor.aoti_compile_and_package(
                 ep,
-                model.get_example_inputs(),
-                kwargs=model.get_example_kwarg_inputs(),
                 package_path=os.path.join(tmpdir, "text_decoder.pt2"),
             )
             encoder_aoti = torch._inductor.aoti_load_package(path)
