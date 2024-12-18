@@ -800,6 +800,11 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
             # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
             canonicalize_program(builder.edge_manager.exported_program())
 
+        print("lfq: exported program after to_backend, graph_module")
+        print(builder.edge_manager.exported_program().graph_module)
+        print("lfq: exported program after to_backend, print_readable")
+        print(builder.edge_manager.exported_program().graph_module.print_readable())
+
         builder = builder.to_executorch()
 
     if args.profile_memory:
