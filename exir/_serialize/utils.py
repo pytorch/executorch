@@ -7,10 +7,10 @@ from typing import Literal
 # Byte order of numbers written to program headers. Always little-endian
 # regardless of the host system, since all commonly-used modern CPUs are little
 # endian.
-_HEADER_BYTEORDER: Literal["little"] = "little"
+HEADER_BYTEORDER: Literal["little"] = "little"
 
 
-def _pad_to(data: bytes, length: int) -> bytes:
+def pad_to(data: bytes, length: int) -> bytes:
     """Returns the input followed by enough zero bytes to become the requested length.
 
     Args:
@@ -29,7 +29,7 @@ def _pad_to(data: bytes, length: int) -> bytes:
     return data
 
 
-def _padding_required(offset: int, alignment: int) -> int:
+def padding_required(offset: int, alignment: int) -> int:
     """Returns the padding required to align `offset` to `alignment`."""
     remainder: int = offset % alignment
     if remainder != 0:
@@ -37,6 +37,6 @@ def _padding_required(offset: int, alignment: int) -> int:
     return 0
 
 
-def _aligned_size(input_size: int, alignment: int) -> int:
+def aligned_size(input_size: int, alignment: int) -> int:
     """Returns input_size padded up to the next whole multiple of alignment."""
-    return input_size + _padding_required(input_size, alignment)
+    return input_size + padding_required(input_size, alignment)

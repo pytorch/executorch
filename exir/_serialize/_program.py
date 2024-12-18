@@ -22,10 +22,10 @@ from executorch.exir._serialize._flatbuffer import (
 )
 
 from executorch.exir._serialize.utils import (
-    _aligned_size,
-    _HEADER_BYTEORDER,
-    _pad_to,
-    _padding_required,
+    aligned_size,
+    HEADER_BYTEORDER,
+    pad_to,
+    padding_required,
 )
 
 from executorch.exir.schema import (
@@ -90,11 +90,11 @@ def _insert_flatbuffer_header(
         return flatbuffer_data
 
     # We will need to adjust the root object offset after inserting the header.
-    root_offset = int.from_bytes(flatbuffer_data[0:4], byteorder=_HEADER_BYTEORDER)
+    root_offset = int.from_bytes(flatbuffer_data[0:4], byteorder=HEADER_BYTEORDER)
 
     return (
         # New root offset.
-        (root_offset + len(header_data)).to_bytes(4, byteorder=_HEADER_BYTEORDER)
+        (root_offset + len(header_data)).to_bytes(4, byteorder=HEADER_BYTEORDER)
         # Existing magic bytes.
         + flatbuffer_data[4:8]
         # Provided header + padding.
@@ -159,11 +159,9 @@ class _ExtendedHeader:
 
         return _ExtendedHeader(
             magic=data[0:4],
-            length=int.from_bytes(data[4:8], byteorder=_HEADER_BYTEORDER),
-            program_size=int.from_bytes(data[8:16], byteorder=_HEADER_BYTEORDER),
-            segment_base_offset=int.from_bytes(
-                data[16:24], byteorder=_HEADER_BYTEORDER
-            ),
+            length=int.from_bytes(data[4:8], byteorder=HEADER_BYTEORDER),
+            program_size=int.from_bytes(data[8:16], byteorder=HEADER_BYTEORDER),
+            segment_base_offset=int.from_bytes(data[16:24], byteorder=HEADER_BYTEORDER),
         )
 
     def is_valid(self) -> bool:
@@ -189,12 +187,12 @@ class _ExtendedHeader:
             # fields to this header in the future. Always use the proper size
             # (i.e., ignore self.length) since there's no reason to create an
             # invalid header.
-            + self.EXPECTED_LENGTH.to_bytes(4, byteorder=_HEADER_BYTEORDER)
+            + self.EXPECTED_LENGTH.to_bytes(4, byteorder=HEADER_BYTEORDER)
             # uint64_t: Size of the flatbuffer data, including this header.
-            + self.program_size.to_bytes(8, byteorder=_HEADER_BYTEORDER)
+            + self.program_size.to_bytes(8, byteorder=HEADER_BYTEORDER)
             # uint64_t: Offset to the start of the first segment, or zero if
             # there are no segments.
-            + self.segment_base_offset.to_bytes(8, byteorder=_HEADER_BYTEORDER)
+            + self.segment_base_offset.to_bytes(8, byteorder=HEADER_BYTEORDER)
         )
         return data
 
@@ -299,7 +297,7 @@ def _extract_constant_segment(
         constant_segment_data.append(buffer.storage)
         buffer_length = len(buffer.storage)
         pad_length = (
-            _padding_required(buffer_length, tensor_alignment)
+            padding_required(buffer_length, tensor_alignment)
             if tensor_alignment is not None
             else 0
         )
@@ -401,11 +399,11 @@ def serialize_pte_binary(
         )
         program.segments.append(
             DataSegment(
-                offset=_aligned_size(prev_end, segment_alignment), size=len(data)
+                offset=aligned_size(prev_end, segment_alignment), size=len(data)
             )
         )
         # Add to aggregate segments cord with padding.
-        padding_length = _padding_required(len(segments_data), segment_alignment)
+        padding_length = padding_required(len(segments_data), segment_alignment)
         if padding_length > 0:
             segments_data.append(b"\x00" * padding_length)
         segments_data.append(data)
@@ -423,7 +421,7 @@ def serialize_pte_binary(
 
     # Size of the header to insert. Its size is padded to the largest
     # force_align value present in the schema.
-    padded_header_length: int = _aligned_size(
+    padded_header_length: int = aligned_size(
         input_size=_ExtendedHeader.EXPECTED_LENGTH,
         alignment=result.max_alignment,
     )
@@ -431,7 +429,7 @@ def serialize_pte_binary(
     program_size: int = padded_header_length + len(result.data)
     # Offset to the first segment, or zero if there are no segments.
     segment_base_offset: int = (
-        _aligned_size(input_size=program_size, alignment=segment_alignment)
+        aligned_size(input_size=program_size, alignment=segment_alignment)
         if len(segments_data) > 0
         else 0
     )
@@ -440,7 +438,7 @@ def serialize_pte_binary(
     header_data: bytes = _ExtendedHeader(
         program_size=program_size, segment_base_offset=segment_base_offset
     ).to_bytes()
-    header_data = _pad_to(header_data, padded_header_length)
+    header_data = pad_to(header_data, padded_header_length)
 
     # Insert the header into the flatbuffer data.
     program_data: bytes = _insert_flatbuffer_header(
@@ -465,7 +463,7 @@ def serialize_pte_binary(
     # - segments data (optional); aligned to segment_alignment.
     pte_data = Cord(program_data)
     if len(segments_data) > 0:
-        padding_length = _padding_required(len(pte_data), segment_alignment)
+        padding_length = padding_required(len(pte_data), segment_alignment)
         pte_data.append(b"\x00" * padding_length)
         # The first segment after program data should start at the segment base offset.
         assert (
