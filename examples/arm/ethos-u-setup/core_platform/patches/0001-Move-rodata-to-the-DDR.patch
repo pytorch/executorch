@@ -20,11 +20,12 @@ index b458fc6..8d4bc73 100644
  
      KEEP(*(.eh_frame*))
    } > ITCM :rom_exec
-@@ -280,7 +280,7 @@ SECTIONS
+@@ -280,7 +280,8 @@ SECTIONS
  #endif
      * (expected_output_data_sec)
      * (sec_command_stream, sec_weight_data, sec_input_data)
 -
++    *(.got*)
 +    *(.rodata*)
      * (ethosu_core_in_queue)
      * (ethosu_core_out_queue)

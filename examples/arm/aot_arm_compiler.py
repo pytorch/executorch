@@ -263,7 +263,7 @@ def get_compile_spec(
     if target == "TOSA":
         spec_builder = (
             ArmCompileSpecBuilder()
-            .tosa_compile_spec("TOSA-0.80.0+BI")
+            .tosa_compile_spec("TOSA-0.80+BI")
             .set_permute_memory_format(True)
         )
     elif "ethos-u55" in target:
@@ -273,7 +273,7 @@ def get_compile_spec(
                 target,
                 system_config="Ethos_U55_High_End_Embedded",
                 memory_mode="Shared_Sram",
-                extra_flags="--debug-force-regor --output-format=raw --verbose-operators --verbose-cycle-estimate",
+                extra_flags="--debug-force-regor --output-format=raw --verbose-operators",
             )
             .set_permute_memory_format(True)
             .set_quantize_io(True)
@@ -286,7 +286,7 @@ def get_compile_spec(
                 target,
                 system_config="Ethos_U85_SYS_DRAM_Mid",
                 memory_mode="Shared_Sram",
-                extra_flags="--output-format=raw --verbose-operators --verbose-cycle-estimate",
+                extra_flags="--output-format=raw --verbose-operators",
             )
             .set_permute_memory_format(True)
             .set_quantize_io(True)
