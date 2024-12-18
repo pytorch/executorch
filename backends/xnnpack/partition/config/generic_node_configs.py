@@ -282,15 +282,23 @@ class MaxPool2dConfig(GenericNodePartitionerConfig):
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        XNNPACK's maxpool2d does not support ceil mode
+        XNNPACK's maxpool2d does not support ceil mode and requires stride <= kernel_size
         """
         if not self.check_common_constraints(node, ep):
             return False
 
+        kernel_size = node.args[1]
+        stride = node.args[2]
         is_ceil_mode = len(node.args) >= 6 and cast(bool, node.args[5])
+
         if is_ceil_mode:
             why(node, reason="ceil mode is not supported")
             return False
+
+        if stride[0] > kernel_size[0] or stride[1] > kernel_size[1]:
+            why(node, reason="stride must be less than or equal to kernel size")
+            return False
+
         return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
