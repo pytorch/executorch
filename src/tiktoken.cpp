@@ -111,7 +111,7 @@ static Result<Decoder> _build_decoder(const Encoder &encoder) {
   return decoder;
 }
 
-} // anon namespace
+} // namespace
 
 // ------------------------------Util end------------------------------------
 // -------------------------private method start-------------------------------
@@ -171,9 +171,7 @@ Error Tiktoken::_encode(re2::StringPiece &input, std::vector<uint64_t> &ret,
   return Error::Ok;
 }
 
-void Tiktoken::_decode(
-  re2::StringPiece input,
-  std::string& ret) const {
+void Tiktoken::_decode(re2::StringPiece input, std::string &ret) const {
   ret += input;
 }
 

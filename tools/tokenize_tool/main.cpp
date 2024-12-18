@@ -24,17 +24,19 @@
 
 using namespace tokenizers;
 
-std::string help(char* argv[]) {
-    std::stringstream ss;
-    ss << "Usage: " << argv[0] << " <type> <model> <input to tokenize...>" << std::endl << std::endl;
-    ss << "Types:\n" << std::endl;
-    ss << "* sentencepiece: SPTokenizer" << std::endl;
-    ss << "* tiktoken: Tiktoken" << std::endl;
-    ss << "* hf_tokenizers: HFTokenizer" << std::endl;
-    return ss.str();
+std::string help(char *argv[]) {
+  std::stringstream ss;
+  ss << "Usage: " << argv[0] << " <type> <model> <input to tokenize...>"
+     << std::endl
+     << std::endl;
+  ss << "Types:\n" << std::endl;
+  ss << "* sentencepiece: SPTokenizer" << std::endl;
+  ss << "* tiktoken: Tiktoken" << std::endl;
+  ss << "* hf_tokenizers: HFTokenizer" << std::endl;
+  return ss.str();
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
 
   // Check for the right number of CLI args
   if (argc < 4) {
@@ -64,7 +66,8 @@ int main(int argc, char* argv[]) {
     tok_ptr.reset(new HFTokenizer());
   } else {
     std::stringstream ss;
-    ss << "ERROR: Invalid tokenizer type: " << tokenizer_type << std::endl << std::endl;
+    ss << "ERROR: Invalid tokenizer type: " << tokenizer_type << std::endl
+       << std::endl;
     ss << help(argv);
     std::cerr << ss.str() << std::endl;
     return 1;
@@ -92,7 +95,7 @@ int main(int argc, char* argv[]) {
   // Decode
   std::cout << "Decoding..." << std::endl;
   uint64_t prev = tok_ptr->bos_tok();
-  for (const auto& current : encoded) {
+  for (const auto &current : encoded) {
     const auto decoded_result = tok_ptr->decode(prev, current);
     std::cout << decoded_result.get();
     prev = current;

@@ -15,14 +15,12 @@
 
 using json = nlohmann::json;
 
-namespace tokenizers
-{
+namespace tokenizers {
 
 // TokenDecoderConfig //////////////////////////////////////////////////////////
 
 TokenDecoderConfig::TokenDecoderConfig(std::string type)
-  : type(std::move(type))
-{}
+    : type(std::move(type)) {}
 
 TokenDecoder::Ptr TokenDecoderConfig::create() const {
   // NOTE: These types must line up with the type strings found in the
@@ -34,7 +32,7 @@ TokenDecoder::Ptr TokenDecoderConfig::create() const {
   throw std::runtime_error("Unsupported TokenDecoder type: " + type);
 }
 
-TokenDecoderConfig& TokenDecoderConfig::parse_json(const json& json_config) {
+TokenDecoderConfig &TokenDecoderConfig::parse_json(const json &json_config) {
   type = json_config.at("type");
   if (type == "ByteLevel") {
     // No parameters to parse
@@ -49,27 +47,29 @@ TokenDecoderConfig& TokenDecoderConfig::parse_json(const json& json_config) {
 namespace {
 
 // Copied from llama.cpp
-// CITE: https://github.com/ggerganov/llama.cpp/blob/master/src/llama-vocab.cpp#L20
-static std::string format(const char * fmt, ...) {
-    va_list ap;
-    va_list ap2;
-    va_start(ap, fmt);
-    va_copy(ap2, ap);
-    int size = vsnprintf(NULL, 0, fmt, ap);
-    // GGML_ASSERT(size >= 0 && size < INT_MAX); // NOLINT
-    std::vector<char> buf(size + 1);
-    int size2 = vsnprintf(buf.data(), size + 1, fmt, ap2);
-    // GGML_ASSERT(size2 == size);
-    va_end(ap2);
-    va_end(ap);
-    return std::string(buf.data(), size);
+// CITE:
+// https://github.com/ggerganov/llama.cpp/blob/master/src/llama-vocab.cpp#L20
+static std::string format(const char *fmt, ...) {
+  va_list ap;
+  va_list ap2;
+  va_start(ap, fmt);
+  va_copy(ap2, ap);
+  int size = vsnprintf(NULL, 0, fmt, ap);
+  // GGML_ASSERT(size >= 0 && size < INT_MAX); // NOLINT
+  std::vector<char> buf(size + 1);
+  int size2 = vsnprintf(buf.data(), size + 1, fmt, ap2);
+  // GGML_ASSERT(size2 == size);
+  va_end(ap2);
+  va_end(ap);
+  return std::string(buf.data(), size);
 }
 
-} // end anon namespace
+} // namespace
 
 std::string ByteLevelTokenDecoder::decode(re2::StringPiece token) const {
   // This is borrowed and lightly tweaked from llama.cpp
-  // CITE: https://github.com/ggerganov/llama.cpp/blob/master/src/llama-vocab.cpp#L1755
+  // CITE:
+  // https://github.com/ggerganov/llama.cpp/blob/master/src/llama-vocab.cpp#L1755
   std::string decoded_text;
   // TODO: This could be more efficient since what we really need is a string
   //  const ref.
@@ -82,7 +82,7 @@ std::string ByteLevelTokenDecoder::decode(re2::StringPiece token) const {
     } catch (const std::out_of_range & /*e*/) {
       decoded_text += "[UNK_BYTE_0x";
       for (const auto c : utf8) {
-        decoded_text += format("%02x", (uint8_t) c);
+        decoded_text += format("%02x", (uint8_t)c);
       }
       decoded_text += text + "]";
     }

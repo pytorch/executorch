@@ -70,9 +70,7 @@ private:
   Error _encode(re2::StringPiece &input, std::vector<uint64_t> &ret,
                 uint64_t &last_piece_token_len) const override;
 
-  void _decode(
-    re2::StringPiece input,
-    std::string& ret) const override;
+  void _decode(re2::StringPiece input, std::string &ret) const override;
 
   template <typename T>
   Result<std::pair<std::vector<uint64_t>, uint64_t>>
