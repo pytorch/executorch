@@ -16,8 +16,8 @@ executorch package and its dependencies.
 from executorch.extension.pybindings import portable_lib  # usort: skip
 
 # Import custom ops. This requires portable_lib to be loaded first.
-from executorch.extension.llm.custom_ops import (  # noqa: F401, F403
-    sdpa_with_kv_cache,
+from executorch.extension.llm.custom_ops.custom_ops import (  # noqa: F401, F403
+    custom_ops_lib,
 )  # usort: skip
 
 # Import quantized ops. This requires portable_lib to be loaded first.
