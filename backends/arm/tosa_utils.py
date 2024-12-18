@@ -7,13 +7,18 @@
 
 import logging
 import os
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import serializer.tosa_serializer as ts
 import torch
 from executorch.backends.arm.tosa_mapping import TosaArg
 
+from executorch.backends.arm.tosa_quant_utils import (
+    get_quant_arg_downstream,
+    get_quant_arg_upstream,
+    q_op,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
@@ -135,15 +140,10 @@ def build_reshape(tosa_fb, input_name, new_shape, output_name):
 
 def is_bias_node_for_quantized_conv(node):
     consumer_node = list(node.users)[0]
-
-    if (
+    return (
         consumer_node.target == exir_ops.edge.aten.convolution.default
-        and consumer_node.args[2] == node
-        and consumer_node.meta["val"].dtype == torch.int8
-    ):
-        return True
-
-    return False
+        and list(consumer_node.users)[0].target == q_op
+    )
 
 
 def is_consumer_node_depthwise_conv2d(node):
@@ -157,6 +157,48 @@ def is_consumer_node_depthwise_conv2d(node):
             return True
 
     return False
+
+
+def build_avg_pool_2d_common(
+    node: torch.fx.Node,
+    tosa_graph: ts.TosaSerializer,
+    input_tensor: TosaArg,
+    kernel_size: list,
+    stride: list,
+    padding: list,
+    is_quant_node: bool,
+    output: TosaArg,
+):
+    accumulator_type = input_tensor.dtype
+
+    if is_quant_node:
+        # Accumulator type always is int32 when input tensor is an integer type.
+        accumulator_type = ts.DType.INT32
+
+    # Initilize zero point to zero.
+    input_zp = 0
+    output_zp = 0
+
+    if is_quant_node:
+        input_zp = get_quant_arg_upstream(cast(torch.fx.Node, node.args[0])).zp
+        output_zp = get_quant_arg_downstream(list(node.users)[0]).zp
+
+    attr = ts.TosaSerializerAttribute()
+    attr.PoolAttribute(
+        kernel=kernel_size,
+        stride=stride,
+        pad=padding,
+        input_zp=input_zp,
+        output_zp=output_zp,
+        accum_dtype=accumulator_type,
+    )
+
+    tosa_graph.addOperator(
+        TosaOp.Op().AVG_POOL2D,
+        [input_tensor.name],
+        [output.name],
+        attr,
+    )
 
 
 def get_two_inputs(node: Node, check: bool = False) -> tuple[Node, Node]:

@@ -77,7 +77,6 @@ def _supported_symmetric_quantized_operators() -> Dict[str, List[OperatorPattern
         ],
         "mul": [[torch.mul]],
         "sub": [[torch.sub]],
-        "min_max": [[torch.min], [torch.max]],
     }
     return copy.deepcopy(supported_operators)
 
@@ -268,7 +267,6 @@ class ArmQuantizer(Quantizer):
         "add",
         "sub",
         "mul",
-        "min_max",
         "mm",
         "one_to_one",
         "generic",
