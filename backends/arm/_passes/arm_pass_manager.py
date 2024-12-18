@@ -90,8 +90,6 @@ class ArmPassManager(PassManager):
                     exir_ops.edge.aten.minimum.default,
                     exir_ops.edge.aten.maximum.default,
                     exir_ops.edge.aten.add.Tensor,
-                    exir_ops.edge.aten.avg_pool2d.default,
-                    exir_ops.edge.aten.convolution.default,
                 ]
             )
         )
