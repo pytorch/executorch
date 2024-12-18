@@ -63,7 +63,7 @@ using namespace ::executorch::runtime;
       return [filename hasSuffix:@".pte"] && [filename containsString:@"llama"];
     },
     @"tokenizer" : ^BOOL(NSString *filename) {
-      return [filename isEqual:@"tokenizer.bin"];
+      return [filename isEqual:@"tokenizer.bin"] || [filename isEqual:@"tokenizer.model"];
     },
   };
 }
@@ -87,7 +87,7 @@ using namespace ::executorch::runtime;
                               tokensPerSecondMetric.tokenCount = 0;
                               const auto status = runner->generate(
                                   "Once upon a time",
-                                  128,
+                                  50,
                                   [=](const std::string &token) {
                                     tokensPerSecondMetric.tokenCount++;
                                   },

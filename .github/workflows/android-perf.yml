@@ -108,6 +108,7 @@ jobs:
           declare -A DEVICE_POOL_ARNS
           DEVICE_POOL_ARNS[samsung_galaxy_s22]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa"
           DEVICE_POOL_ARNS[samsung_galaxy_s24]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/98f8788c-2e25-4a3c-8bb2-0d1e8897c0db"
+          DEVICE_POOL_ARNS[google_pixel_8_pro]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/d65096ab-900b-4521-be8b-a3619b69236a"
 
           # Resolve device names with their corresponding ARNs
           if [[ ! $(echo "$DEVICES" | jq empty 2>/dev/null) ]]; then
@@ -168,18 +169,20 @@ jobs:
     name: export-models
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     needs: set-parameters
+    secrets: inherit
     strategy:
       matrix:
           model: ${{ fromJson(needs.set-parameters.outputs.models) }}
           delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
       fail-fast: false
     with:
-      runner: linux.4xlarge
+      runner: linux.2xlarge.memory
       docker-image: executorch-ubuntu-22.04-qnn-sdk
       submodules: 'true'
       timeout: 60
       upload-artifact: android-models
       upload-artifact-to-s3: true
+      secrets-env: EXECUTORCH_HF_TOKEN
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         echo "::group::Setting up dev environment"
@@ -190,14 +193,109 @@ jobs:
             PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
         fi
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
+        # Install requirements for export_llama
+        PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
         ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded/${{ matrix.model }}_${{ matrix.delegate }}
         echo "::endgroup::"
 
         echo "::group::Exporting ${{ matrix.delegate }} model: ${{ matrix.model }}"
         BUILD_MODE="cmake"
-        DTYPE="fp32"
 
-        if [[ ${{ matrix.model }} =~ ^stories* ]]; then
+        if [[ ${{ matrix.model }} =~ ^[^/]+/[^/]+$ ]]; then
+            pip install -U "huggingface_hub[cli]"
+            huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+            pip install accelerate sentencepiece
+            # HuggingFace model. Assume the pattern is always like "<org>/<repo>"
+            HF_MODEL_REPO=${{ matrix.model }}
+            OUT_ET_MODEL_NAME="$(echo "$HF_MODEL_REPO" | awk -F'/' '{print $2}' | sed 's/_/-/g' | tr '[:upper:]' '[:lower:]')_${{ matrix.delegate }}"
+
+            if [[ "$HF_MODEL_REPO" == meta-llama/* ]]; then
+                # Llama models on Hugging Face
+                if [[ "$HF_MODEL_REPO" == *"SpinQuant"* ]]; then
+                    # SpinQuant
+                    # Download prequantized chceckpoint from Hugging Face
+                    DOWNLOADED_PATH=$(
+                      bash .ci/scripts/download_hf_hub.sh \
+                        --model_id "${HF_MODEL_REPO}" \
+                        --files "tokenizer.model" "params.json" "consolidated.00.pth"
+                    )
+                    # Export using ExecuTorch's model definition
+                    python -m examples.models.llama.export_llama \
+                      --model "llama3_2" \
+                      --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
+                      --params "${DOWNLOADED_PATH}/params.json" \
+                      --use_sdpa_with_kv_cache \
+                      -X \
+                      --xnnpack-extended-ops \
+                      --preq_mode 8da4w_output_8da8w \
+                      --preq_group_size 32 \
+                      --max_seq_length 2048 \
+                      --output_name "${OUT_ET_MODEL_NAME}.pte" \
+                      -kv \
+                      -d fp32 \
+                      --preq_embedding_quantize 8,0 \
+                      --use_spin_quant native \
+                      --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+                    ls -lh "${OUT_ET_MODEL_NAME}.pte"
+                elif [[ "$HF_MODEL_REPO" == *"QLORA"* ]]; then
+                    # QAT + LoRA
+                    # Download prequantized chceckpoint from Hugging Face
+                    DOWNLOADED_PATH=$(
+                      bash .ci/scripts/download_hf_hub.sh \
+                        --model_id "${HF_MODEL_REPO}" \
+                        --files "tokenizer.model" "params.json" "consolidated.00.pth"
+                    )
+                    # Export using ExecuTorch's model definition
+                    python -m examples.models.llama.export_llama \
+                      --model "llama3_2" \
+                      --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
+                      --params "${DOWNLOADED_PATH}/params.json" \
+                      -qat \
+                      -lora 16 \
+                      --preq_mode 8da4w_output_8da8w \
+                      --preq_group_size 32 \
+                      --preq_embedding_quantize 8,0 \
+                      --use_sdpa_with_kv_cache \
+                      -kv \
+                      -X \
+                      --xnnpack-extended-ops \
+                      -d fp32 \
+                      --max_seq_length 2048 \
+                      --output_name "${OUT_ET_MODEL_NAME}.pte" \
+                      --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+                    ls -lh "${OUT_ET_MODEL_NAME}.pte"
+                else
+                    if [[ ${{ matrix.delegate }} == "xnnpack_bf16" ]]; then
+                        # Original BF16 version, without any quantization
+                        DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model" "params.json" "consolidated.00.pth")
+                        python -m examples.models.llama.export_llama \
+                          --model "llama3_2" \
+                          --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
+                          --params "${DOWNLOADED_PATH}/params.json" \
+                          -kv \
+                          --use_sdpa_with_kv_cache \
+                          -X \
+                          -d bf16 \
+                          --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
+                          --output_name="${OUT_ET_MODEL_NAME}.pte"
+                        ls -lh "${OUT_ET_MODEL_NAME}.pte"
+                    else
+                        # By default, test with the Hugging Face model and the xnnpack recipe
+                        DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model")
+                        python -m extension.export_util.export_hf_model -hfm="$HF_MODEL_REPO" -o "$OUT_ET_MODEL_NAME"
+                        ls -lh "${OUT_ET_MODEL_NAME}.pte"
+                    fi
+                fi
+            else
+                echo "Unsupported model ${{ matrix.model }}"
+                exit 1
+            fi
+
+            zip -j model.zip "${OUT_ET_MODEL_NAME}.pte" "${DOWNLOADED_PATH}/tokenizer.model"
+            ls -lh model.zip
+            mkdir -p "${ARTIFACTS_DIR_NAME}"
+            mv model.zip "${ARTIFACTS_DIR_NAME}"
+        elif [[ ${{ matrix.model }} =~ ^stories* ]]; then
             # Install requirements for export_llama
             PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
             # Test llama2
@@ -209,6 +307,7 @@ jobs:
                 echo "Unsupported delegate ${{ matrix.delegate }}"
                 exit 1
             fi
+            DTYPE="fp32"
             PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh \
               -model "${{ matrix.model }}" \
               -build_tool "${BUILD_MODE}" \
