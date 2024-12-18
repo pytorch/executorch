@@ -44,9 +44,10 @@ class NativeLlamaRunner(TorchTuneLlamaRunner):
             use_kv_cache=args.kv_cache,
             vocab_size=params["vocab_size"],
         )
+        self.model_bytes = None
         with open(args.pte, "rb") as f:
-            model_bytes = f.read()
-            self.model = _load_for_executorch_from_buffer(model_bytes)
+            self.model_bytes = f.read()
+            self.model = _load_for_executorch_from_buffer(self.model_bytes)
         # self.model = _load_for_executorch(args.pte)
         self.use_kv_cache = args.kv_cache
 
