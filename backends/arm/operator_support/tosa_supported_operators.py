@@ -35,8 +35,8 @@ class SupportedTOSAOperatorCheck:
 _tosa_spec_dicts: dict[
     TosaSpecification, dict[str, Type[SupportedTOSAOperatorCheck]]
 ] = {
-    TosaSpecification.create_from_string("TOSA-0.80.0+BI"): {},
-    TosaSpecification.create_from_string("TOSA-0.80.0+MI"): {},
+    TosaSpecification.create_from_string("TOSA-0.80+BI"): {},
+    TosaSpecification.create_from_string("TOSA-0.80+MI"): {},
 }
 
 
@@ -94,8 +94,6 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.sigmoid.default,
             exir_ops.edge.aten.mean.dim,
             exir_ops.edge.aten.mm.default,
-            exir_ops.edge.aten.minimum.default,
-            exir_ops.edge.aten.maximum.default,
             exir_ops.edge.aten.repeat.default,
             exir_ops.edge.aten.reciprocal.default,
             exir_ops.edge.aten.relu.default,
