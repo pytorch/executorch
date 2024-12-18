@@ -155,6 +155,7 @@ jobs:
     name: export-models
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     needs: set-parameters
+    secrets: inherit
     strategy:
       matrix:
           model: ${{ fromJson(needs.set-parameters.outputs.models) }}
@@ -168,6 +169,7 @@ jobs:
       timeout: 60
       upload-artifact: ios-models
       upload-artifact-to-s3: true
+      secrets-env: EXECUTORCH_HF_TOKEN
       script: |
         set -eux
 
@@ -189,14 +191,110 @@ jobs:
             backends/apple/mps/install_requirements.sh
         fi
 
+        # Install requirements for export_llama
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/models/llama/install_requirements.sh
+
         ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded/${{ matrix.model }}_${{ matrix.delegate }}
         echo "::endgroup::"
 
         echo "::group::Exporting ${{ matrix.delegate }} model: ${{ matrix.model }}"
         BUILD_MODE="cmake"
-        DTYPE="fp32"
 
-        if [[ ${{ matrix.model }} =~ ^stories* ]]; then
+        if [[ ${{ matrix.model }} =~ ^[^/]+/[^/]+$ ]]; then
+          pip install -U "huggingface_hub[cli]"
+          huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+          ${CONDA_RUN} pip install accelerate sentencepiece
+          # HuggingFace model. Assume the pattern is always like "<org>/<repo>"
+          HF_MODEL_REPO=${{ matrix.model }}
+          OUT_ET_MODEL_NAME="$(echo "$HF_MODEL_REPO" | awk -F'/' '{print $2}' | sed 's/_/-/g' | tr '[:upper:]' '[:lower:]')_${{ matrix.delegate }}"
+
+          if [[ "$HF_MODEL_REPO" == meta-llama/* ]]; then
+            # Llama models on Hugging Face
+            if [[ "$HF_MODEL_REPO" == *"SpinQuant"* ]]; then
+              # SpinQuant
+              # Download prequantized chceckpoint from Hugging Face
+              DOWNLOADED_PATH=$(
+                bash .ci/scripts/download_hf_hub.sh \
+                  --model_id "${HF_MODEL_REPO}" \
+                  --files "tokenizer.model" "params.json" "consolidated.00.pth"
+              )
+              # Export using ExecuTorch's model definition
+              ${CONDA_RUN} python -m examples.models.llama.export_llama \
+                --model "llama3_2" \
+                --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
+                --params "${DOWNLOADED_PATH}/params.json" \
+                --use_sdpa_with_kv_cache \
+                -X \
+                --xnnpack-extended-ops \
+                --preq_mode 8da4w_output_8da8w \
+                --preq_group_size 32 \
+                --max_seq_length 2048 \
+                --output_name "${OUT_ET_MODEL_NAME}.pte" \
+                -kv \
+                -d fp32 \
+                --preq_embedding_quantize 8,0 \
+                --use_spin_quant native \
+                --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+              ls -lh "${OUT_ET_MODEL_NAME}.pte"
+            elif [[ "$HF_MODEL_REPO" == *"QLORA"* ]]; then
+              # QAT + LoRA
+              # Download prequantized chceckpoint from Hugging Face
+              DOWNLOADED_PATH=$(
+                bash .ci/scripts/download_hf_hub.sh \
+                  --model_id "${HF_MODEL_REPO}" \
+                  --files "tokenizer.model" "params.json" "consolidated.00.pth"
+              )
+              # Export using ExecuTorch's model definition
+              ${CONDA_RUN} python -m examples.models.llama.export_llama \
+                --model "llama3_2" \
+                --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
+                --params "${DOWNLOADED_PATH}/params.json" \
+                -qat \
+                -lora 16 \
+                --preq_mode 8da4w_output_8da8w \
+                --preq_group_size 32 \
+                --preq_embedding_quantize 8,0 \
+                --use_sdpa_with_kv_cache \
+                -kv \
+                -X \
+                --xnnpack-extended-ops \
+                -d fp32 \
+                --max_seq_length 2048 \
+                --output_name "${OUT_ET_MODEL_NAME}.pte" \
+                --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+              ls -lh "${OUT_ET_MODEL_NAME}.pte"
+            else
+              if [[ ${{ matrix.delegate }} == "xnnpack_bf16" ]]; then
+                # Original BF16 version, without any quantization
+                DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model" "params.json" "consolidated.00.pth")
+                ${CONDA_RUN} python -m examples.models.llama.export_llama \
+                  --model "llama3_2" \
+                  --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
+                  --params "${DOWNLOADED_PATH}/params.json" \
+                  -kv \
+                  --use_sdpa_with_kv_cache \
+                  -X \
+                  -d bf16 \
+                  --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
+                  --output_name="${OUT_ET_MODEL_NAME}.pte"
+                ls -lh "${OUT_ET_MODEL_NAME}.pte"
+              else
+                # By default, test with the Hugging Face model and the xnnpack recipe
+                DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model")
+                ${CONDA_RUN} python -m extension.export_util.export_hf_model -hfm="$HF_MODEL_REPO" -o "$OUT_ET_MODEL_NAME"
+                ls -lh "${OUT_ET_MODEL_NAME}.pte"
+              fi
+            fi
+          else
+            echo "Unsupported model ${{ matrix.model }}"
+            exit 1
+          fi
+
+          zip -j model.zip "${OUT_ET_MODEL_NAME}.pte" "${DOWNLOADED_PATH}/tokenizer.model"
+          ls -lh model.zip
+          mkdir -p "${ARTIFACTS_DIR_NAME}"
+          mv model.zip "${ARTIFACTS_DIR_NAME}"
+        elif [[ ${{ matrix.model }} =~ ^stories* ]]; then
           # Install requirements for export_llama
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
             bash examples/models/llama/install_requirements.sh
@@ -209,6 +307,7 @@ jobs:
           elif [[ ${{ matrix.delegate }} == "mps" ]]; then
             DELEGATE_CONFIG="mps"
           fi
+          DTYPE="fp32"
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
             bash .ci/scripts/test_llama.sh \
               -model "${{ matrix.model }}" \

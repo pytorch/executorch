@@ -5,12 +5,23 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
+
+python_library(
+    name = "static_llama",
+    srcs = [
+        "model/static_llama.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
 python_binary(
     name = "llama",
     srcs = ["llama.py"],
-    main_function = "executorch.examples.qualcomm.oss_scripts.llama3_2.llama.main",
+    main_function = "executorch.examples.qualcomm.oss_scripts.llama2.llama.main",
     deps = [
-        "//executorch/examples/qualcomm/oss_scripts/llama2:static_llama",
+        ":static_llama",
         "//caffe2:torch",
         "//executorch/extension/pybindings:aten_lib",
         "//executorch/backends/qualcomm/partition:partition",

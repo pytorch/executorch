@@ -358,11 +358,11 @@ jobs:
     secrets: inherit
     strategy:
       matrix:
-        hf_model_repo: [google/gemma-2b]
+        hf_model_repo: [google/gemma-2-2b]
       fail-fast: false
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: linux.12xlarge
+      runner: linux.2xlarge.memory
       docker-image: executorch-ubuntu-22.04-clang12
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -420,19 +420,10 @@ jobs:
         TOKENIZER_FILE=tokenizer.model
         TOKENIZER_BIN_FILE=tokenizer.bin
         ET_MODEL_NAME=et_model
-        # Fetch the file using a Python one-liner
-        DOWNLOADED_TOKENIZER_FILE_PATH=$(python -c "
-        from huggingface_hub import hf_hub_download
-        # Download the file from the Hugging Face Hub
-        downloaded_path = hf_hub_download(
-            repo_id='${{ matrix.hf_model_repo }}',
-            filename='${TOKENIZER_FILE}'
-        )
-        print(downloaded_path)
-        ")
-        if [ -f "$DOWNLOADED_TOKENIZER_FILE_PATH" ]; then
+        DOWNLOADED_TOKENIZER_FILE_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${{ matrix.hf_model_repo }}" --files "${TOKENIZER_FILE}")
+        if [ -f "$DOWNLOADED_TOKENIZER_FILE_PATH/$TOKENIZER_FILE" ]; then
             echo "${TOKENIZER_FILE} downloaded successfully at: $DOWNLOADED_TOKENIZER_FILE_PATH"
-            python -m extension.llm.tokenizer.tokenizer -t $DOWNLOADED_TOKENIZER_FILE_PATH -o ./${TOKENIZER_BIN_FILE}
+            python -m extension.llm.tokenizer.tokenizer -t "$DOWNLOADED_TOKENIZER_FILE_PATH/$TOKENIZER_FILE" -o ./${TOKENIZER_BIN_FILE}
             ls ./tokenizer.bin
         else
             echo "Failed to download ${TOKENIZER_FILE} from ${{ matrix.hf_model_repo }}."
