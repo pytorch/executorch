@@ -12,7 +12,6 @@
 #include <cstdint>
 #include <cstdio>
 
-#include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
