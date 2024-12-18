@@ -16,32 +16,6 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 
 
-def get_input_qparams(node: Node) -> dict[int, QuantArgs]:
-    """
-    Get the input quantization parameters from a node, set by the 'FoldAndAnnotateQParamsPass'.
-    Raises a ValueError if the node doesn't have any parameters set.
-    """
-    if "input_qparams" not in node.meta.keys():
-        raise ValueError(f"No input quantization parameter found in node {node}")
-    input_qparams = cast(dict[int, QuantArgs], node.meta["input_qparams"])
-    if len(input_qparams) == 0:
-        raise ValueError(f"No input quantization parameter found in node {node}")
-    return input_qparams
-
-
-def get_output_qparams(node: Node) -> dict[int, QuantArgs]:
-    """
-    Get the output quantization parameters from a node, set by the 'FoldAndAnnotateQParamsPass'.
-    Raises a ValueError if the node doesn't have any parameters set.
-    """
-    if "output_qparams" not in node.meta.keys():
-        raise ValueError(f"No output quantization parameter found in node {node}")
-    input_qparams = cast(dict[int, QuantArgs], node.meta["output_qparams"])
-    if len(input_qparams) == 0:
-        raise ValueError(f"No output quantization parameter found in node {node}")
-    return input_qparams
-
-
 class FoldAndAnnotateQParamsPass(ExportPass):
     """
     A pass that walks the graph and removes any DQ and Q nodes before and after the target

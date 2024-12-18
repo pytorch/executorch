@@ -76,7 +76,9 @@ class AddVisitor_080_BI(NodeVisitor):
         if output.dtype == ts.DType.INT8:
             # Scale output back to 8 bit
             # pyre-ignore
-            tqutils.insert_rescale_op_to_int8(tosa_graph, add_output, scale_back, node)
+            tqutils.insert_rescale_node_back_to_int8(
+                tosa_graph, add_output, scale_back, node
+            )
 
 
 @register_node_visitor
