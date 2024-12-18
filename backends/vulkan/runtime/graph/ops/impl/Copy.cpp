@@ -33,16 +33,6 @@ void add_copy_offset_node(
   add_dtype_suffix(kernel_name, *t_out);
   add_storage_type_suffix(kernel_name, *t_out);
 
-  const struct Block final {
-    alignas(16) ivec3 range;
-    alignas(16) ivec3 src_offset;
-    alignas(16) ivec3 dst_offset;
-  } offset_params{
-      range,
-      src_offset,
-      dst_offset,
-  };
-
   auto shader = VK_KERNEL_FROM_STR(kernel_name);
 
   graph.execute_nodes().emplace_back(new DispatchNode(
@@ -56,11 +46,18 @@ void add_copy_offset_node(
           {in, vkapi::kRead},
       },
       // Parameter buffers
-      {
-          graph.create_params_buffer(offset_params),
-      },
+      {},
       // Specialization Constants
-      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)}));
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
+      nullptr,
+      {},
+      {
+          PushConstantDataInfo(&range, sizeof(range), sizeof(utils::ivec4)),
+          PushConstantDataInfo(
+              &src_offset, sizeof(src_offset), sizeof(utils::ivec4)),
+          PushConstantDataInfo(
+              &dst_offset, sizeof(dst_offset), sizeof(utils::ivec4)),
+      }));
 }
 
 void add_copy_channel_offset_node(
@@ -128,28 +125,23 @@ void add_copy_channel_offset_node(
     // The shader combines the global invocation id and the dst_offset to get
     // the actual coordinate.
 
-    ivec3 dst_offset{
+    const ivec3 dst_offset{
         0, 0, dst_first_z + batch_idx * utils::div_up_4(out_channels)};
 
-    uvec3 global_size{
+    const uvec3 global_size{
         utils::safe_downcast<uint32_t>(dim_at<kWidth4D>(in_sizes)),
         utils::safe_downcast<uint32_t>(dim_at<kHeight4D>(in_sizes)),
         utils::safe_downcast<uint32_t>(dst_last_z - dst_first_z + 1)};
-    uvec3 local_size = graph.create_local_wg_size(global_size);
+    const uvec3 local_size = graph.create_local_wg_size(global_size);
 
-    const struct Block final {
-      ivec3 range;
-      int32_t channel_range;
-      ivec3 dst_offset;
-      int32_t dst_channel_offset;
-      int32_t src_channel_offset;
-    } channel_offset_params{
-        utils::make_ivec3(global_size),
-        channel_range,
-        dst_offset,
-        dst_channel_offset,
-        src_channel_offset,
-    };
+    const utils::ivec4 range_params = {
+        static_cast<int>(global_size[0]),
+        static_cast<int>(global_size[1]),
+        static_cast<int>(global_size[2]),
+        channel_range};
+
+    const utils::ivec4 offset_params = {
+        dst_offset[0], dst_offset[1], dst_offset[2], dst_channel_offset};
 
     auto shader = VK_KERNEL_FROM_STR(kernel_name);
 
@@ -165,13 +157,17 @@ void add_copy_channel_offset_node(
             {in, vkapi::MemoryAccessType::READ},
         },
         // Parameter buffers
-        {
-            t_out->sizes_ubo(),
-            t_in->sizes_ubo(),
-            graph.create_params_buffer(channel_offset_params),
-        },
+        {},
         // Specialization Constants
-        {graph.hashed_layout_of(out), graph.hashed_layout_of(in)}));
+        {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
+        nullptr,
+        {},
+        {graph.sizes_pc_of(out),
+         graph.sizes_pc_of(in),
+         PushConstantDataInfo(&range_params, sizeof(range_params)),
+         PushConstantDataInfo(&offset_params, sizeof(offset_params)),
+         PushConstantDataInfo(
+             &src_channel_offset, sizeof(src_channel_offset))}));
   }
 }
 
