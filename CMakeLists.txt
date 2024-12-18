@@ -35,7 +35,8 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/third-party/sentencepiece)
 set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
 file(GLOB tokenizers_source_files ${CMAKE_SOURCE_DIR}/src/*.cpp)
-add_library(tokenizers STATIC ${tokenizers_source_files})
+file(GLOB unicode_source_files ${CMAKE_SOURCE_DIR}/third-party/llama.cpp-unicode/src/*.cpp)
+add_library(tokenizers STATIC ${tokenizers_source_files} ${unicode_source_files})
 
 # Using abseil from sentencepiece/third_party
 target_include_directories(
@@ -44,11 +45,8 @@ target_include_directories(
   ${CMAKE_SOURCE_DIR}/third-party/sentencepiece
   ${CMAKE_SOURCE_DIR}/third-party/sentencepiece/src
   ${CMAKE_SOURCE_DIR}/third-party/re2
-  ${CMAKE_SOURCE_DIR}/third-party/json/single_include)
-target_include_directories(
-  tokenizers PRIVATE
-  ${CMAKE_SOURCE_DIR}/src/include
-)
+  ${CMAKE_SOURCE_DIR}/third-party/json/single_include
+  ${CMAKE_SOURCE_DIR}/third-party/llama.cpp-unicode/include)
 
 target_link_libraries(tokenizers PUBLIC sentencepiece-static re2::re2)
 
