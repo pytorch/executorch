@@ -45,9 +45,16 @@ class NativeLlamaRunner(TorchTuneLlamaRunner):
             use_kv_cache=args.kv_cache,
             vocab_size=params["vocab_size"],
         )
+        # Save the loaded model bytes to prevent data from going out of
+        # scope after the `with` and getting cleaned up by Python's
+        # garbage collector.
         self.model_bytes = None
         with open(args.pte, "rb") as f:
             self.model_bytes = f.read()
+            # Need to use _load_for_executorch_from_buffer instead of
+            # _load_for_executorch because the latter uses MmapDataLoader,
+            # which doesn't have load_into() implemented, which is needed
+            # for loading initialized mutable buffers.
             self.model = _load_for_executorch_from_buffer(self.model_bytes)
         self.use_kv_cache = args.kv_cache
 
