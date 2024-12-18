@@ -19,17 +19,22 @@ class TestMaximum(unittest.TestCase):
             return torch.maximum(x, y)
 
     def _test_maximum(self, inputs):
-        (
-            Tester(self.Maximum(), inputs)
-            .export()
-            .check_count({"torch.ops.aten.maximum.default": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_maximum_default"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(self.Maximum(), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.maximum.default": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
+                ["executorch_exir_dialects_edge__ops_aten_maximum_default"]
+            )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_fp16_maximum(self):
         inputs = (
@@ -50,14 +55,19 @@ class TestMaximum(unittest.TestCase):
             torch.randn(2, 3, 4),
             torch.randn(2, 1, 4),
         )
-        (
-            Tester(self.Maximum(), inputs)
-            .export()
-            .check_count({"torch.ops.aten.maximum.default": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_maximum_default"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy in (True, False):
+            tester = Tester(self.Maximum(), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.maximum.default": 1})
+            if legacy:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(
+                ["executorch_exir_dialects_edge__ops_aten_maximum_default"]
+            )
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
