@@ -126,6 +126,7 @@ def get_coreml_partitioner(
         # On iPhone 15 Pro, CPU decode model is over 8x faster than GPU for stories110M,
         # so default to CPU_ONLY
         coreml_compute_units = "cpu_only"
+    # pyre-ignore
     coreml_compute_units = {
         "cpu_only": ct.ComputeUnit.CPU_ONLY,
         "cpu_and_ne": ct.ComputeUnit.CPU_AND_NE,
