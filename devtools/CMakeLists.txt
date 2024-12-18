@@ -13,12 +13,14 @@ cmake_minimum_required(VERSION 3.19)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+set(_flatcc_source_dir ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/flatcc)
+
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
 if(NOT FLATCC_EXECUTABLE)
-  set(FLATCC_EXECUTABLE flatcc)
+  set(FLATCC_EXECUTABLE ${_flatcc_source_dir}/bin/flatcc)
 endif()
 
 # Source root directory for executorch.
@@ -66,7 +68,7 @@ set(FLATCC_DEBUG_CLANG_SANITIZE
     OFF
     CACHE BOOL ""
 )
-set(_flatcc_source_dir ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/flatcc)
+
 add_subdirectory(${_flatcc_source_dir} ${CMAKE_BINARY_DIR}/third-party/flatcc)
 
 # Fix for "relocation R_X86_64_32 against `.rodata' can not be used when making
@@ -163,7 +165,7 @@ add_custom_command(
     # Note that the flatcc project actually writes its outputs into the source
     # tree instead of under the binary directory, and there's no way to change
     # that behavior.
-    ${_flatcc_source_dir}/bin/flatcc -cwr -o
+    ${FLATCC_EXECUTABLE} -cwr -o
     ${_program_schema__include_dir}/executorch/devtools/etdump
     ${_etdump_schema__srcs}
   COMMAND rm -rf ${_etdump_schema_cleanup_paths}
