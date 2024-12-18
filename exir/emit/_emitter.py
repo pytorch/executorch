@@ -1607,7 +1607,6 @@ class _TopLevelEmitter(_Emitter):
 
         if isinstance(target, str) and isinstance(spec, TensorSpec):
             fqn, is_mutable_buffer = self._find_fqn_for_placeholder(target, spec)
-            print(f"fqn: {fqn}, is_mutable_buffer: {is_mutable_buffer}")
 
             # If the placeholder has a constant_tag, it is external to the PTE file
             # and requires a fqn and location=TensorDataLocation.EXTERNAL

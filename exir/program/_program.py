@@ -34,7 +34,6 @@ from executorch.exir.passes import (
     OpReplacePass,
 )
 from executorch.exir.passes.external_constants_pass import external_constants_pass
-from executorch.exir.passes.init_mutable_buffer_pass import InitMutableBufferPass
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
@@ -707,7 +706,6 @@ def edge_to_executorch_passes(
     passes: List[PassType] = [
         *config.passes,
         SpecPropPass(),
-        InitMutableBufferPass(),
         # ExecuTorch backend ops are unable to handle unbacked symints. So after
         # this pass, passes cannot be Interpreter-based, because it will fail if
         # there exists an unbacked symint operation.

@@ -11,7 +11,6 @@
 #include <cinttypes> // @donotremove
 #include <cstdint>
 #include <cstdio>
-#include <iostream>
 
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/runtime/backend/interface.h>
@@ -1181,10 +1180,6 @@ Error Method::execute_instruction() {
   if (err == Error::Ok) {
     step_state_.instr_idx = next_instr_idx;
   }
-
-  // TODO: Print an EValue.
-  std::cout << "(" << values_[1] << " ) Printing kv_cache k_cache: " << executorch::extension::evalue_edge_items(9216) << values_[2] << std::endl;
-  
   return err;
 }
 

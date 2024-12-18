@@ -19,7 +19,6 @@ from executorch.examples.models.llama3_2_vision.runner.generation import (
 )
 
 from executorch.extension.pybindings.portable_lib import (
-    _load_for_executorch,
     _load_for_executorch_from_buffer,
 )
 
@@ -50,7 +49,6 @@ class NativeLlamaRunner(TorchTuneLlamaRunner):
         with open(args.pte, "rb") as f:
             self.model_bytes = f.read()
             self.model = _load_for_executorch_from_buffer(self.model_bytes)
-        # self.model = _load_for_executorch(args.pte)
         self.use_kv_cache = args.kv_cache
 
     def forward(
