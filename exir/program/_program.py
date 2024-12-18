@@ -34,6 +34,7 @@ from executorch.exir.passes import (
     OpReplacePass,
 )
 from executorch.exir.passes.external_constants_pass import external_constants_pass
+from executorch.exir.passes.init_mutable_buffer_pass import InitMutableBufferPass
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
@@ -46,7 +47,6 @@ from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
 from executorch.exir.passes.replace_view_copy_with_view_pass import (
     ReplaceViewCopyWithViewPass,
 )
-from executorch.exir.passes.init_mutable_buffer_pass import InitMutableBufferPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.weights_to_outputs_pass import weights_to_outputs_pass
 from executorch.exir.print_program import pretty_print, print_program

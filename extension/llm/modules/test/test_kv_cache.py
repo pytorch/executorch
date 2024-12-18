@@ -4,13 +4,19 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import tempfile
 import unittest
 from typing import Callable, Tuple
 
 import torch
-
 from executorch.exir import EdgeCompileConfig, to_edge
+
+from executorch.extension.export_util.utils import save_pte_program
 from executorch.extension.llm.modules.kv_cache import KVCache as InferenceKVCache
+
+from executorch.extension.pybindings.portable_lib import (
+    _load_for_executorch_from_buffer,
+)
 from executorch.runtime import Runtime
 from torch.testing import assert_close
 from torchtune.modules.kv_cache import KVCache
@@ -67,20 +73,9 @@ class KVCacheTest(unittest.TestCase):
             prefill_seq_len, self.batch_size, self.num_kv_heads, self.head_dim
         )
 
-        print()
-        print("Prefilling...")
-        print()
-        
         et_res = et_cache_module(k_val, v_val)
         tt_res = self.tt_kv_cache.update(k_val_trans, v_val_trans)
         tt_res_transposed = (tt_res[0].transpose(1, 2), tt_res[1].transpose(1, 2))
-
-        print()
-        print("Final tt kv_cache.cache_pos")
-        print(self.tt_kv_cache.cache_pos)
-        print("Final tt kv_cache.k_cache")
-        print(self.tt_kv_cache.k_cache)
-        print()
 
         # Check torchtune matches executorch.
         assert_close(et_res, tt_res_transposed)
@@ -111,7 +106,6 @@ class KVCacheTest(unittest.TestCase):
             self.assertTrue(et_k_cache[0][i][0][0] == 1)
 
         self.assertTrue(et_k_cache[0][prefill_seq_len + 1][0][0] == 0)
-
 
     def export_kv_cache(
         self,
@@ -179,9 +173,6 @@ class KVCacheTest(unittest.TestCase):
         )
         et_program = edge_program.to_executorch()
 
-        """DEBUG the executorch program"""
-        et_program.dump_executorch_program(verbose=True)
-        
         runtime = Runtime.get()
         program = runtime.load_program(et_program.buffer)
         method = program.load_method("forward")
@@ -192,3 +183,27 @@ class KVCacheTest(unittest.TestCase):
 
         self._test_kv_cache(wrapped_callable)
 
+    def test_kv_cache_executorch_from_file(self):
+        exported_kv_cache = self.export_kv_cache(self.et_kv_cache)
+        edge_program = to_edge(
+            exported_kv_cache,
+            compile_config=EdgeCompileConfig(
+                _core_aten_ops_exception_list=[torch.ops.aten._assert_async.msg],
+                _check_ir_validity=False,
+            ),
+        )
+        et_program = edge_program.to_executorch()
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            pte_path = save_pte_program(et_program, "test_et_kv_cache", tempdir)
+            with open(pte_path, "rb") as f:
+                model_bytes = f.read()
+            loaded_et_program = _load_for_executorch_from_buffer(model_bytes)
+
+            # Since method.execute expects a tuple of args.
+            def wrapped_callable(
+                k_val: torch.Tensor, v_val: torch.Tensor
+            ) -> torch.Tensor:
+                return loaded_et_program.forward((k_val, v_val))
+
+            self._test_kv_cache(wrapped_callable)

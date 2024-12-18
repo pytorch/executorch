@@ -9,6 +9,7 @@ import torch
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
 from executorch.exir.passes.spec_prop_pass import make_spec
 
+
 class InitMutableBufferPass(ExportPass):
     def __init__(self) -> None:
         super().__init__()
@@ -18,4 +19,3 @@ class InitMutableBufferPass(ExportPass):
             meta["et_init_buffer"] = True
 
         return super().placeholder(name, arg, meta)
-

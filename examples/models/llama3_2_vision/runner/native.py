@@ -18,8 +18,10 @@ from executorch.examples.models.llama3_2_vision.runner.generation import (
     TorchTuneLlamaRunner,
 )
 
-from executorch.extension.pybindings.portable_lib import _load_for_executorch
-from executorch.extension.pybindings.portable_lib import _load_for_executorch_from_buffer
+from executorch.extension.pybindings.portable_lib import (
+    _load_for_executorch,
+    _load_for_executorch_from_buffer,
+)
 
 # Load custom ops and quantized ops.
 from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
