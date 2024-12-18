@@ -13,7 +13,7 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import (
+from executorch.backends.arm.tosa_utils import (
     get_quant_arg_downstream,
     get_quant_arg_upstream,
 )
