@@ -14,6 +14,10 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa_quant_utils import (
+    get_quant_arg_downstream,
+    quantize_value,
+)
 from executorch.backends.arm.tosa_utils import tosa_shape
 from torch.fx import Node
 
@@ -37,14 +41,19 @@ class FullVisitor(NodeVisitor):
         shape = tosa_shape(inputs[0].special, output.dim_order)
 
         value = inputs[1].number
-
-        if output.dtype == ts.DType.INT8:
-            fill_dtype = np.int8
+        if is_quant_node:
+            qargs = get_quant_arg_downstream(list(node.users)[0])
+            qvalue = quantize_value(value, qargs)
+            dtype = ts.DType.INT8
+            data = np.full(shape, qvalue, dtype=np.int8)
         else:
-            fill_dtype = np.float32
-        data = np.full(shape, value, dtype=fill_dtype)
+            assert (
+                output.dtype == ts.DType.FP32
+            ), "'Full' currently only supports FP32 for unquantized models."
+            dtype = ts.DType.FP32
+            data = np.full(shape, value, dtype=np.float32)
 
-        tosa_graph.addConst(shape, output.dtype, data, node.name + "full-const")
+        tosa_graph.addConst(shape, dtype, data, node.name + "full-const")
         tosa_graph.addOperator(
             ts.TosaOp.Op.IDENTITY, [node.name + "full-const"], [output.name]
         )

@@ -31,7 +31,6 @@ from executorch.backends.arm._passes.decompose_softmaxes_pass import (
 from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     FoldAndAnnotateQParamsPass,
-    QuantizeFullArgument,
 )
 from executorch.backends.arm._passes.keep_dims_false_to_squeeze_pass import (
     KeepDimsFalseToSqueezePass,
@@ -85,7 +84,6 @@ class ArmPassManager(PassManager):
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSoftmaxesPass())
         self.add_pass(DecomposeLinearPass())
-        self.add_pass(QuantizeFullArgument())
         self.add_pass(
             FoldAndAnnotateQParamsPass(
                 [
@@ -94,7 +92,6 @@ class ArmPassManager(PassManager):
                     exir_ops.edge.aten.add.Tensor,
                     exir_ops.edge.aten.avg_pool2d.default,
                     exir_ops.edge.aten.convolution.default,
-                    exir_ops.edge.aten.full.default,
                 ]
             )
         )
