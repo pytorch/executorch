@@ -41,6 +41,7 @@ class MinVisitor(NodeVisitor):
     ) -> None:
         assert inputs[0].dtype == inputs[1].dtype
 
+        scale_back = 1.0
         min_output = output
         if inputs[0].dtype == ts.DType.INT8:
             input_qparams = get_input_qparams(node)

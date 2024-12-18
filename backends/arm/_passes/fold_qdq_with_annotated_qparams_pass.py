@@ -99,6 +99,7 @@ class FoldAndAnnotateQParamsPass(ExportPass):
             for i, arg in enumerate(n.args):
                 if not isinstance(arg, Node):
                     continue
+                arg = cast(Node, arg)
 
                 # Make sure arg has requires_grad set to False
                 # For parameters that are not quantized, sometimes (i.e. convolution)
