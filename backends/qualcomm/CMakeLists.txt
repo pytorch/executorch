@@ -53,6 +53,7 @@ add_custom_command(
 )
 
 add_compile_options("-Wall" "-Werror" "-Wno-sign-compare")
+add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
 # GNU emit wanring for ignored attributes Unfortunately, we use [[maybe_unused]]
 # which can be ignored by GNU. So we make it a warning, not an error in GNU.
@@ -72,6 +73,7 @@ endif()
 include_directories(
   BEFORE ${_common_include_directories} ${QNN_SDK_ROOT}/include/QNN
   ${EXECUTORCH_SOURCE_DIR}/third-party/flatbuffers/include
+  ${EXECUTORCH_SOURCE_DIR}/runtime/core/portable_type
 )
 
 set(_qnn_schema__srcs
