@@ -15,6 +15,39 @@
 
 #include <ethosu_driver.h>
 
+#if defined(ET_EVENT_TRACER_ENABLED)
+#include <executorch/runtime/core/event_tracer.h>
+#include <executorch/runtime/core/event_tracer_hooks.h>
+using executorch::runtime::EventTracer;
+using executorch::runtime::EventTracerEntry;
+
+class EventTraceScope {
+ public:
+  EventTraceScope(EventTracer* event_tracer_, const char* name) {
+    event_tracer = event_tracer_;
+    event_tracer_entry_scope = event_tracer->start_profiling(name);
+  }
+  ~EventTraceScope() {
+    event_tracer->end_profiling(event_tracer_entry_scope);
+  }
+
+ private:
+  EventTracer* event_tracer;
+  EventTracerEntry event_tracer_entry_scope;
+};
+#define EXECUTORCH_PROF_SCOPE(EVENTTRACER, NAME) \
+  EventTraceScope event_tracer_scope = EventTraceScope(EVENTTRACER, NAME)
+#define EXECUTORCH_PROF_START(EVENTTRACER, SCOPE, NAME) \
+  SCOPE = EVENTTRACER->start_profiling(NAME)
+#define EXECUTORCH_PROF_END(EVENTTRACER, SCOPE) \
+  EVENTTRACER->end_profiling(SCOPE)
+
+#else
+#define EXECUTORCH_PROF_SCOPE(EVENTTRACER, NAME)
+#define EXECUTORCH_PROF_START(EVENTTRACER, SCOPE, NAME)
+#define EXECUTORCH_PROF_END(EVENTTRACER, SCOPE)
+#endif
+
 #include <executorch/backends/arm/runtime/VelaBinStream.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
@@ -109,20 +142,38 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
       BackendExecutionContext& context,
       DelegateHandle* input_handle,
       EValue** args) const override {
+#if defined(ET_EVENT_TRACER_ENABLED)
+    EventTracer* event_tracer = context.event_tracer();
+    EventTracerEntry event_tracer_local_scope;
+#endif
+
+    EXECUTORCH_PROF_SCOPE(event_tracer, "ArmBackend::execute()");
+    ArmBackendExecuteCallbacks ArmBackend_execute_callbacks;
+
     ExecutionHandle* execution_handle = (ExecutionHandle*)input_handle;
     VelaHandles handles;
 
-    ArmBackendExecuteCallbacks ArmBackend_execute_callbacks;
     // Command stream - we know at this point it's aligned
+    EXECUTORCH_PROF_START(
+        event_tracer,
+        event_tracer_local_scope,
+        "+ArmBackend::execute()processed_data");
     char* data = (char*)execution_handle->processed->data();
+    EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
+
     ET_LOG(Debug, "ArmBackend::execute %p", data);
 
+    EXECUTORCH_PROF_START(
+        event_tracer,
+        event_tracer_local_scope,
+        "+ArmBackend::execute()vela_bin_read()");
     // Read key sections from the vela_bin_stream
     if (vela_bin_read(data, &handles, execution_handle->processed->size()) ==
         false) {
       ET_LOG(Error, "ArmBackend::vela_read: error, invalid binary layout");
       return Error::InvalidProgram;
     }
+    EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
 
     ET_LOG(
         Debug,
@@ -186,6 +237,9 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
 
       // Select a compatible copy routine
       if (both_char and permuted_input_shape) {
+        EXECUTORCH_PROF_SCOPE(
+            event_tracer,
+            "+ArmBackend::execute()handles.input.permute_CHW_to_HWC()");
         // permuted byte copy CHW to HWC
         permute_CHW_to_HWC(
             tensor_in.mutable_data_ptr<char>(),
@@ -194,6 +248,8 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
             tensor_in.size(2),
             tensor_in.size(3));
       } else if (both_char or both_int) {
+        EXECUTORCH_PROF_SCOPE(
+            event_tracer, "+ArmBackend::execute()handles.input.memcpy()");
         // Sizes match and elt size matches so memcpy
         memcpy(
             scratch_addr,
@@ -234,7 +290,10 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
         (uint64_t)handles.weight_data, (uint64_t)handles.scratch_data};
     size_t bases_size[2] = {
         handles.weight_data_size, handles.scratch_data_size};
-    int result = ethosu_invoke_v3(
+    int result = 0;
+    EXECUTORCH_PROF_START(
+        event_tracer, event_tracer_local_scope, "+ArmBackend::execute()NPU");
+    result = ethosu_invoke_v3(
         driver.get(),
         (void*)handles.cmd_data,
         handles.cmd_data_size,
@@ -242,6 +301,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
         bases_size,
         2, /* fixed array of pointers to binary interface*/
         nullptr);
+    EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
 
     if (result != 0) {
       ET_LOG(
@@ -277,6 +337,10 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
           &permuted_output_shape));
       if (tensor_out.scalar_type() == ScalarType::Char and
           permuted_output_shape) {
+        EXECUTORCH_PROF_SCOPE(
+            event_tracer,
+            "+ArmBackend::execute()handles.output.permute_HWC_to_CHW()");
+
         char* output_address = (char*)output_addr;
         permute_HWC_to_CHW(
             output_address,
@@ -285,6 +349,8 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
             tensor_out.size(2),
             tensor_out.size(3));
       } else {
+        EXECUTORCH_PROF_SCOPE(
+            event_tracer, "+ArmBackend::execute()handles.output.move()");
         for (int j = 0; j < tensor_out.numel(); j++) {
           if (tensor_out.scalar_type() == ScalarType::Char) {
             char* output_address = (char*)output_addr;

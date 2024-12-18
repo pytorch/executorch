@@ -12,6 +12,7 @@ from typing import Any, Iterable, List, Literal, Optional, Tuple, Union
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
+import numpy as np
 import serializer.tosa_serializer as ts
 
 import torch.fx
@@ -318,15 +319,12 @@ class ArmTester(Tester):
             target_board,
         )
 
-        quantization_scale = None
         if is_quantized:
             reference_stage = self.stages[self.stage_name(tester.Quantize)]
-            # bool output is quantized with none quantized output so allow
-            # self.runner_util.qp_output to be none
-            if self.runner_util.qp_output is not None:
-                quantization_scale = self.runner_util.qp_output.scale
+            quantization_scale = self.runner_util.qp_output.scale
         else:
             reference_stage = self.stages[self.stage_name(InitialModel)]
+            quantization_scale = None
 
         logger.info(
             f"Comparing Stage '{self.stage_name(test_stage)}' with Stage '{self.stage_name(reference_stage)}'"
@@ -506,7 +504,7 @@ class ArmTester(Tester):
         inputs_transposed = list(data)
         for i in range(len(data)):
             if hasattr(data[i], "shape") and len(data[i].shape) == 4:
-                inputs_transposed[i] = torch.permute(data[i], dim_order)
+                inputs_transposed[i] = np.transpose(data[i], dim_order)
         return tuple(inputs_transposed)
 
     def _compare_outputs(

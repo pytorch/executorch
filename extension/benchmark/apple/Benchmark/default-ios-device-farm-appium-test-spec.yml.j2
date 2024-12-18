@@ -19,8 +19,9 @@ phases:
 
       # Copy the model
       - mkdir -p /tmp/Payload/Benchmark.app/aatp/data
-      - cp *.bin /tmp/Payload/Benchmark.app/aatp/data
+      - cp tokenizer.* /tmp/Payload/Benchmark.app/aatp/data
       - cp *.pte /tmp/Payload/Benchmark.app/aatp/data
+      - ls -all /tmp/Payload/Benchmark.app/aatp/data
 
       - mkdir $DEVICEFARM_TEST_PACKAGE_PATH/Debug-iphoneos
       - mkdir $DEVICEFARM_TEST_PACKAGE_PATH/Release-iphoneos

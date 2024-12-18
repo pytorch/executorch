@@ -78,7 +78,7 @@ using namespace ::executorch::runtime;
 
           const auto sizes = tensor_meta->sizes();
           tensors.emplace_back(
-              ones({sizes.begin(), sizes.end()}, tensor_meta->scalar_type()));
+              rand({sizes.begin(), sizes.end()}, tensor_meta->scalar_type()));
           XCTAssertEqual(module->set_input(tensors.back(), index), Error::Ok);
         } break;
         default:
