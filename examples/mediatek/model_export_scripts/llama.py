@@ -338,7 +338,7 @@ def export_to_et_ir(
         print(f"Exporting Shape {shape} to:\n{dest_path}")
         example_inputs = model.get_example_inputs(*ntok_and_cache)
         aten_dialect: exir.ExportedProgram = torch.export.export(
-            converted_graph, example_inputs
+            converted_graph, example_inputs, strict=True
         )
 
         print("Lowering to Edge Dialect Graph")

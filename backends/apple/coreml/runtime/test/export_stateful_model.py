@@ -47,7 +47,7 @@ def main() -> None:
         torch.randn((1, embedding_dim)),
         torch.tensor([0]),
     )
-    exported_model = export(model, example_inputs)
+    exported_model = export(model, example_inputs, strict=True)
     edge_program_manager = exir.to_edge(exported_model)
     compile_specs = CoreMLBackend.generate_compile_specs(
         compute_precision=ct.precision.FLOAT16,
