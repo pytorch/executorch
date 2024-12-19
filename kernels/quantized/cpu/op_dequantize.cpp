@@ -272,7 +272,10 @@ Tensor& dequantize_per_tensor_out(
 
   check_dequantize_per_tensor_args(
       input, quant_min, quant_max, dtype, out_dtype, out);
-
+      
+  if (out.mutable_data_ptr() == nullptr) {
+    ET_CHECK_MSG(false, "out must have non-null data pointer");
+  }
   // calculate the dequantized output, cast scale to float to match fbgemm
   // behavior
 #define DEQUANTIZE_IMPL(IN_CTYPE, OUT_CTYPE, out_dtype)                        \
