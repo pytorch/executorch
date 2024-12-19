@@ -7,6 +7,9 @@
  */
 #include "token_decoder.h"
 
+// Standard
+#include <cstdarg>
+
 // Third Party
 #include <nlohmann/json.hpp>
 
