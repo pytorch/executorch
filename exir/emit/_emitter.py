@@ -122,6 +122,8 @@ class _ProgramState:
     # Delegate data stored directly in the flatbuffer. Pointed to by BackendDelegateDataReference,
     # and should be copied to Program.backend_delegate_data.
     backend_delegate_data: List[BackendDelegateInlineData] = field(default_factory=list)
+    # Delegate cache that is used across all entry points.
+    backend_delegate_data_cache: Dict[bytes, int] = field(default_factory=dict)
 
     # Constants are optionally stored in external files.
     # Aggregate unique external constants into one buffer.
@@ -1112,10 +1114,13 @@ class _Emitter(torch.fx.Interpreter):
         if delegate_index is None:
             # Allocate an entry for the data. TODO(T150113674): Reuse any duplicate entries if
             # present.
-            data_index: int = len(self.program_state.backend_delegate_data)
-            self.program_state.backend_delegate_data.append(
-                BackendDelegateInlineData(data=processed_bytes)
-            )
+            data_index: Optional[int] = self.program_state.backend_delegate_data_cache.get(processed_bytes)
+            if data_index is None:
+                data_index = len(self.program_state.backend_delegate_data)
+                self.program_state.backend_delegate_data_cache[processed_bytes] = data_index
+                self.program_state.backend_delegate_data.append(
+                    BackendDelegateInlineData(data=processed_bytes)
+                )
 
             backend_delegate = BackendDelegate(
                 id=lowered_module.backend_id,
