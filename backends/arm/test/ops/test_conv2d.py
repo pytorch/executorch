@@ -8,6 +8,8 @@ import unittest
 
 from typing import List, Optional, Tuple, Union
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
@@ -253,7 +255,7 @@ class TestConv2D(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
                 ),
             )
             .export()
@@ -275,7 +277,7 @@ class TestConv2D(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI", permute_memory_to_nhwc=True
+                    "TOSA-0.80.0+BI", permute_memory_to_nhwc=True
                 ),
             )
             .quantize()
@@ -325,6 +327,7 @@ class TestConv2D(unittest.TestCase):
     testsuite.remove(("5x5_3x2x128x128_st1", conv2d_5x5_3x2x128x128_st1))
 
     @parameterized.expand(testsuite)
+    @pytest.mark.corstone_fvp
     def test_conv2d_u55_BI(self, test_name, model):
         self._test_conv2d_ethosu_BI_pipeline(
             common.get_u55_compile_spec(permute_memory_to_nhwc=True),
@@ -333,6 +336,7 @@ class TestConv2D(unittest.TestCase):
         )
 
     @parameterized.expand(testsuite)
+    @pytest.mark.corstone_fvp
     def test_conv2d_u85_BI(self, test_name, model):
         self._test_conv2d_ethosu_BI_pipeline(
             common.get_u85_compile_spec(permute_memory_to_nhwc=True),

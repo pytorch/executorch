@@ -7,6 +7,8 @@
 
 import unittest
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
@@ -71,7 +73,7 @@ class TestMul(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
                 ),
             )
             .export()
@@ -92,7 +94,7 @@ class TestMul(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI", permute_memory_to_nhwc=True
+                    "TOSA-0.80.0+BI", permute_memory_to_nhwc=True
                 ),
             )
             .quantize()
@@ -153,6 +155,7 @@ class TestMul(unittest.TestCase):
         self._test_mul_tosa_BI_pipeline(self.Mul(), test_data)
 
     @parameterized.expand(test_data_sute)
+    @pytest.mark.corstone_fvp
     def test_mul_u55_BI(
         self,
         test_name: str,
@@ -165,6 +168,7 @@ class TestMul(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_sute)
+    @pytest.mark.corstone_fvp
     def test_mul_u85_BI(
         self,
         test_name: str,

@@ -10,6 +10,8 @@ import unittest
 
 from typing import Optional, Tuple, Union
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
@@ -102,7 +104,7 @@ class TestDiv(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
             )
             .export()
             .check_count({"torch.ops.aten.div.Tensor": 1})
@@ -121,7 +123,7 @@ class TestDiv(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
             )
             .quantize()
             .export()
@@ -184,6 +186,7 @@ class TestDiv(unittest.TestCase):
         self._test_div_tosa_BI_pipeline(self.Div(), test_data)
 
     @parameterized.expand(test_data_suite[:2])
+    @pytest.mark.corstone_fvp
     def test_div_u55_BI(
         self,
         test_name: str,
@@ -198,6 +201,7 @@ class TestDiv(unittest.TestCase):
 
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
     @parameterized.expand(test_data_suite[2:])
+    @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
     def test_div_u55_BI_xfails(
         self,
@@ -212,6 +216,7 @@ class TestDiv(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite[:2])
+    @pytest.mark.corstone_fvp
     def test_div_u85_BI(
         self,
         test_name: str,
@@ -226,6 +231,7 @@ class TestDiv(unittest.TestCase):
 
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
     @parameterized.expand(test_data_suite[2:])
+    @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
     def test_div_u85_BI_xfails(
         self,
