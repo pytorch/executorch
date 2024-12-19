@@ -275,7 +275,7 @@ def get_compile_spec(
                 target,
                 system_config=system_config,
                 memory_mode=memory_mode,
-                extra_flags="--debug-force-regor --output-format=raw --verbose-operators",
+                extra_flags="--debug-force-regor --output-format=raw --verbose-operators --verbose-cycle-estimate",
             )
             .set_permute_memory_format(True)
             .set_quantize_io(True)
@@ -288,7 +288,7 @@ def get_compile_spec(
                 target,
                 system_config=system_config,
                 memory_mode=memory_mode,
-                extra_flags="--output-format=raw --verbose-operators",
+                extra_flags="--output-format=raw --verbose-operators --verbose-cycle-estimate",
             )
             .set_permute_memory_format(True)
             .set_quantize_io(True)
