@@ -261,7 +261,8 @@ jobs:
                 -kv \
                 --disable_dynamic_shape \
                 --coreml \
-                --coreml-ios 17 \
+                --coreml-ios 18 \
+                --coreml-quantize c4w \
                 --coreml-compute-units cpu_and_ne \
                 --output_name="${OUT_ET_MODEL_NAME}.pte"
               ls -lh "${OUT_ET_MODEL_NAME}.pte"
