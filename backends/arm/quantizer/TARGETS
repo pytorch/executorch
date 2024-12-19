@@ -5,9 +5,19 @@ python_library(
     srcs = ["arm_quantizer.py"],
     deps = [
         ":arm_quantizer_utils",
+        ":quantization_annotator",
         "//caffe2:torch",
-        "//executorch/backends/arm/quantizer/quantization_annotation:quantization_annotation",
         "//executorch/exir:lib",
+    ],
+)
+
+python_library(
+    name = "quantization_annotator",
+    srcs = ["quantization_annotator.py"],
+    deps = [
+        ":arm_quantizer_utils",
+        ":quantization_config",
+        "//caffe2:torch",
     ],
 )
 
