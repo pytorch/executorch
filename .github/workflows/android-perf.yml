@@ -132,10 +132,10 @@ jobs:
       matrix: ${{ fromJson(needs.set-parameters.outputs.benchmark_configs) }}
       fail-fast: false
     with:
-      runner: linux.2xlarge.memory
+      runner: linux.4xlarge.memory
       docker-image: executorch-ubuntu-22.04-qnn-sdk
       submodules: 'true'
-      timeout: 60
+      timeout: 240
       upload-artifact: android-models
       upload-artifact-to-s3: true
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -238,12 +238,17 @@ jobs:
                       --output_name="${OUT_ET_MODEL_NAME}.pte"
                     ls -lh "${OUT_ET_MODEL_NAME}.pte"
                 elif [[ ${{ matrix.config }} == "llama3_qnn_htp" ]]; then
-                    export QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728
-                    export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/
-                    export PYTHONPATH=$(pwd)/..
-
                     DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model" "params.json" "consolidated.00.pth")
-                    python -m examples.qualcomm.oss_scripts.llama3_2.llama -- \
+                    export QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728
+                    echo "QNN_SDK_ROOT=${QNN_SDK_ROOT}"
+                    export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/
+                    echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}"
+                    export PYTHONPATH=$(pwd)/..
+                    echo "PYTHONPATH=${PYTHONPATH}"
+                    python -c "import sys; sys.stdout.flush()"
+                    sync  # Ensures any buffered disk writes are committed
+
+                    python -m examples.qualcomm.oss_scripts.llama3_2.llama \
                       --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
                       --params "${DOWNLOADED_PATH}/params.json" \
                       --tokenizer_model "${DOWNLOADED_PATH}/tokenizer.model" \
@@ -252,10 +257,10 @@ jobs:
                       -m SM8650 \
                       --model_size 1B \
                       --model_mode kv \
+                      -b "cmake-out" \
                       --prompt "Once"
 
                     OUT_ET_MODEL_NAME="llama3_2_qnn" # Qualcomm hard-coded it in their script
-                    find . -name "${OUT_ET_MODEL_NAME}.pte" -not -path "./${OUT_ET_MODEL_NAME}.pte" -exec mv {} ./ \;
                     ls -lh "${OUT_ET_MODEL_NAME}.pte"
                 else
                     # By default, test with the Hugging Face model and the xnnpack recipe
