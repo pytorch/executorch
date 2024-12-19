@@ -6,17 +6,18 @@
 
 import copy
 
-from typing import Callable, cast, Iterable
+from typing import cast, Iterable
 
 from executorch.backends.arm.tosa_quant_utils import QuantArgs
 
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 
-q_op = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
-dq_op = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
+q_op: EdgeOpOverload = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+dq_op: EdgeOpOverload = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
 
 
 def get_input_qparams(node: Node) -> dict[int, QuantArgs]:
@@ -75,7 +76,7 @@ class FoldAndAnnotateQParamsPass(ExportPass):
 
     """
 
-    def __init__(self, targeted_ops: Iterable[Callable]):
+    def __init__(self, targeted_ops: Iterable[EdgeOpOverload]) -> None:
         super().__init__()
         self.targeted_ops = targeted_ops
 
