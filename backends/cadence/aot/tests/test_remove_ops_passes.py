@@ -649,6 +649,37 @@ class TestRemoveOpsPasses(unittest.TestCase):
         ][0]
         self.assertEqual(cat.args[1], 3)
 
+    def test_remove_permutes_around_concat_with_views(self) -> None:
+        class M(torch.nn.Module):
+            def forward(self, x, y):
+                # Mix and match views that are permutes and actual permutes. Both
+                # should be removed.
+                x = x.view(1, 1, 4, 4)
+                y = torch.permute(y, [0, 3, 1, 2])
+                z = torch.cat((x, y), 1)
+                return z.view(1, 4, 4, 8)
+
+        inputs = (torch.randn(1, 4, 4, 1), torch.randn(1, 4, 4, 7))
+        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
+        p = RemovePermutesAroundElementwiseOps()
+        graph_module = cast(PassResult, p(graph_module)).graph_module
+
+        # Expect 0 permutes and views to remain.
+        self.assertEqual(
+            count_node(graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        self.assertEqual(
+            count_node(graph_module, exir_ops.edge.aten.view_copy.default), 0
+        )
+
+        # verify that cat was updated correctly
+        cat = [
+            n
+            for n in graph_module.graph.nodes
+            if n.target == exir_ops.edge.aten.cat.default
+        ][0]
+        self.assertEqual(cat.args[1], 3)
+
     def test_remove_permutes_around_elemwise_ops_noop(self) -> None:
         class M(torch.nn.Module):
             def __init__(self):
