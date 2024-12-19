@@ -21,7 +21,7 @@ jobs:
     environment: ${{ (github.event_name == 'schedule') && 'update-commit-hash' || '' }}
     steps:
       - name: update-pytorch-commit-hash
-        uses: pytorch/test-infra/.github/actions/update-commit-hash@main
+        uses: pytorch/test-infra/.github/actions/update-commit-hash@release/2.6
         if: ${{ github.event_name == 'schedule' }}
         with:
           repo-name: pytorch

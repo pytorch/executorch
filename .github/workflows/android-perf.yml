@@ -166,7 +166,7 @@ jobs:
 
   export-models:
     name: export-models
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.6
     needs: set-parameters
     strategy:
       matrix:
@@ -226,7 +226,7 @@ jobs:
 
   build-benchmark-app:
     name: build-benchmark-app
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.6
     needs: set-parameters
     with:
       runner: linux.2xlarge
@@ -257,7 +257,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@release/2.6
     needs:
       - set-parameters
       - prepare-test-specs
@@ -305,7 +305,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Setup conda
-        uses: pytorch/test-infra/.github/actions/setup-miniconda@main
+        uses: pytorch/test-infra/.github/actions/setup-miniconda@release/2.6
         with:
           python-version: '3.10'
 
@@ -353,14 +353,14 @@ jobs:
 
       # TODO (huydhn): Remove v2 schema once the benchmark dashboard finishes the migration
       - name: Upload the benchmark results (v2)
-        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@main
+        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@release/2.6
         with:
           benchmark-results-dir: benchmark-results/v2
           dry-run: false
           schema-version: v2
 
       - name: Upload the benchmark results (v3)
-        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@main
+        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@release/2.6
         with:
           benchmark-results-dir: benchmark-results/v3
           dry-run: false
