@@ -42,6 +42,7 @@ class XNNCat:
     input4_id: int
     output_id: int
     flags: int
+    input5_id: int
 
 
 # Generic node data class for convolution type nodes
@@ -174,6 +175,11 @@ class XNNConcatenate3(XNNCat):
 
 @dataclass
 class XNNConcatenate4(XNNCat):
+    pass
+
+
+@dataclass
+class XNNConcatenate5(XNNCat):
     pass
 
 
