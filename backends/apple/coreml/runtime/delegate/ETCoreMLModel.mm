@@ -5,7 +5,6 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-
 #import <ETCoreMLModel.h>
 
 #import "ETCoreMLAsset.h"
