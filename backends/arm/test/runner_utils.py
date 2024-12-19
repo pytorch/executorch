@@ -16,12 +16,16 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
+import tosa_reference_model
+
+from executorch.backends.arm.test.conftest import is_option_enabled
 
 from torch.export import ExportedProgram
 from torch.fx.node import Node
+from tosa import TosaGraph
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.CRITICAL)
 
 
 class QuantizationParams:
@@ -167,7 +171,7 @@ class RunnerUtil:
     ):
         self.intermediate_path = intermediate_path
         self.tosa_ref_model_path = tosa_ref_model_path or "tosa_reference_model"
-        assert os.path.exists(
+        assert self.intermediate_path is None or os.path.exists(
             self.intermediate_path
         ), f"TOSA artifact path don't exist! Path: {self.intermediate_path}"
 
@@ -188,9 +192,6 @@ class RunnerUtil:
         is_quantized: bool,
         target_board: str,
     ):
-
-        if target_board not in ["corstone-300", "corstone-320"]:
-            raise RuntimeError(f"Unknown target board: {target_board}")
 
         self.input_names = _get_input_names(edge_program)
         self.output_node = _get_output_node(exported_program)
@@ -219,7 +220,9 @@ class RunnerUtil:
 
         assert (
             self._has_init_run
-        ), "RunnerUtil needs to be initialized using init_run() before running Corstone300."
+        ), "RunnerUtil needs to be initialized using init_run() before running Corstone FVP."
+        if self.target_board not in ["corstone-300", "corstone-320"]:
+            raise RuntimeError(f"Unknown target board: {self.target_board}")
 
         pte_path = os.path.join(self.intermediate_path, "program.pte")
         assert os.path.exists(pte_path), f"Pte path '{pte_path}' not found."
@@ -249,6 +252,10 @@ class RunnerUtil:
         for input_path in input_paths:
             cmd_line += f" -i {input_path}"
 
+        ethos_u_extra_args = ""
+        if is_option_enabled("fast_fvp"):
+            ethos_u_extra_args = ethos_u_extra_args + "--fast"
+
         command_args = {
             "corstone-300": [
                 "FVP_Corstone_SSE-300_Ethos-U55",
@@ -261,11 +268,11 @@ class RunnerUtil:
                 "-C",
                 "mps3_board.uart0.out_file='-'",
                 "-C",
-                "cpu0.CFGITCMSZ=11",
-                "-C",
                 "cpu0.semihosting-enable=1",
                 "-C",
                 "cpu0.semihosting-stack_base=0",
+                "-C",
+                f"ethosu.extra_args='{ethos_u_extra_args}'",
                 "-C",
                 "cpu0.semihosting-heap_limit=0",
                 "-C",
@@ -282,6 +289,8 @@ class RunnerUtil:
                 "-C",
                 "mps4_board.visualisation.disable-visualisation=1",
                 "-C",
+                "vis_hdlcd.disable_visualisation=1",
+                "-C",
                 "mps4_board.telnetterminal0.start_telnet=0",
                 "-C",
                 "mps4_board.uart0.out_file='-'",
@@ -295,6 +304,8 @@ class RunnerUtil:
                 "mps4_board.subsystem.cpu0.semihosting-stack_base=0",
                 "-C",
                 "mps4_board.subsystem.cpu0.semihosting-heap_limit=0",
+                "-C",
+                f"mps4_board.subsystem.ethosu.extra_args='{ethos_u_extra_args}'",
                 "-C",
                 f"mps4_board.subsystem.cpu0.semihosting-cmd_line='{cmd_line}'",
                 "-a",
@@ -323,7 +334,46 @@ class RunnerUtil:
         tosa_ref_output = np.fromfile(out_path_with_suffix, dtype=np.float32)
         output_shape = self.output_node.args[0][0].meta["val"].shape
         tosa_ref_output = torch.from_numpy(tosa_ref_output).reshape(output_shape)
-        return [tosa_ref_output]
+        return tosa_ref_output
+
+    def run_tosa_graph(
+        self, graph: TosaGraph, inputs: list[np.ndarray] | list[torch.Tensor]
+    ) -> torch.Tensor:
+        """Runs the TOSA reference model with inputs and returns the result."""
+        data_np = [
+            prep_data_for_save(
+                input, self.is_quantized, self.input_names[i], self.qp_input[i]
+            )
+            for i, input in enumerate(inputs)
+        ]
+        # tosa_profile: 0 = Base Inference, 1 = Main Inference, 2 = Main Training.
+        tosa_profile = 0 if self.is_quantized else 1
+        debug_mode = "ALL" if logger.level <= logging.DEBUG else None
+        outputs, status = tosa_reference_model.run(
+            graph,
+            data_np,
+            verbosity=_tosa_refmodel_loglevel(logger.level),
+            tosa_profile=tosa_profile,
+            initialize_variable_tensor_from_numpy=1,  # True
+            debug_mode=debug_mode,
+        )
+
+        assert (
+            status == tosa_reference_model.GraphStatus.TOSA_VALID
+        ), "Non-valid TOSA given to reference model."
+
+        outputs_torch = []
+        for output in outputs:
+            output = torch.from_numpy(output)
+            if self.is_quantized:
+                # Need to dequant back to FP32 for comparison with torch output
+                quant_param = self.qp_output
+                assert (
+                    quant_param is not None
+                ), "There are no quantization parameters, check output parameters"
+                output = (output.to(torch.float32) - quant_param.zp) * quant_param.scale
+            outputs_torch.append(output)
+        return tuple(outputs_torch)
 
     def run_tosa_ref_model(
         self,
@@ -408,21 +458,13 @@ class RunnerUtil:
         assert (
             shutil.which(self.tosa_ref_model_path) is not None
         ), f"tosa_reference_model tool not found, did you run examples/arm/setup.sh? Path: {self.tosa_ref_model_path}"
-        loglevel_map = {
-            logging.INFO: "INFO",
-            logging.CRITICAL: "LOW",
-            logging.ERROR: "LOW",
-            logging.WARNING: "MED",
-            logging.DEBUG: "HIGH",
-            logging.NOTSET: "MED",
-        }
-        clamped_logging_level = max(min(logger.level // 10 * 10, 50), 0)
+
         cmd_ref_model = [
             self.tosa_ref_model_path,
             "--test_desc",
             desc_file_path,
             "-l",
-            loglevel_map[clamped_logging_level],
+            _tosa_refmodel_loglevel(logger.level),
         ]
         _run_cmd(cmd_ref_model)
 
@@ -448,16 +490,24 @@ class RunnerUtil:
                 ), "There are no quantization parameters, check output parameters"
                 tosa_ref_output = (tosa_ref_output - quant_param.zp) * quant_param.scale
 
+            if tosa_ref_output.dtype == np.double:
+                tosa_ref_output = tosa_ref_output.astype("float32")
+
             # tosa_output is a numpy array, convert to torch tensor for comparison
-            tosa_ref_outputs.append(torch.from_numpy(tosa_ref_output.astype("float32")))
+            tosa_ref_outputs.append(torch.from_numpy(tosa_ref_output))
 
         return tosa_ref_outputs
 
 
 def prep_data_for_save(
-    data, is_quantized: bool, input_name: str, quant_param: QuantizationParams
+    data: torch.Tensor,
+    is_quantized: bool,
+    input_name: str,
+    quant_param: QuantizationParams,
 ):
-    data_np = np.array(data.detach(), order="C").astype(np.float32)
+    data_np = np.array(data.detach(), order="C").astype(
+        f"{data.dtype}".replace("torch.", "")
+    )
 
     if is_quantized:
         assert quant_param.node_name in input_name, (
@@ -562,7 +612,6 @@ def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
     assert os.path.exists(
         tosa_schema_file
     ), f"tosa_schema_file: {tosa_schema_file} does not exist"
-
     assert shutil.which("flatc") is not None
     cmd_flatc = [
         "flatc",
@@ -597,3 +646,19 @@ def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
         pass
 
     return json_out
+
+
+def _tosa_refmodel_loglevel(loglevel: int) -> str:
+    """Converts a logging loglevel to tosa_reference_model logginglevel,
+    returned as string.
+    """
+    loglevel_map = {
+        logging.INFO: "INFO",
+        logging.CRITICAL: "LOW",
+        logging.ERROR: "LOW",
+        logging.WARNING: "MED",
+        logging.DEBUG: "HIGH",
+        logging.NOTSET: "MED",
+    }
+    clamped_logging_level = max(min(loglevel // 10 * 10, 50), 0)
+    return loglevel_map[clamped_logging_level]

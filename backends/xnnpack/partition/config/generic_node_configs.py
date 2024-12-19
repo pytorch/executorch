@@ -303,6 +303,21 @@ class MaxPool2dConfig(GenericNodePartitionerConfig):
 class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
     target_name = "upsample_bilinear2d.vec"
 
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        XNNPACK's static_resize_bilinear does not support dynamic output sizes
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        is_output_dynamic = "val" in node.meta and any(
+            isinstance(d, torch.SymInt) for d in node.meta["val"].shape
+        )
+        if is_output_dynamic:
+            why(node, reason="dynamic output sizes are not supported")
+            return False
+        return True
+
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
 

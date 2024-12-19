@@ -31,6 +31,7 @@ def define_common_targets():
             "//executorch/backends/qualcomm/aot/wrappers:wrappers",
             "//executorch/backends/qualcomm/runtime:logging",
             "//executorch/backends/qualcomm:schema",
+            "//executorch/backends/qualcomm:qc_binary_info_schema",
             "//executorch/backends/qualcomm/aot/ir:qcir_utils",
             "//executorch/backends/qualcomm/runtime:runtime",
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),

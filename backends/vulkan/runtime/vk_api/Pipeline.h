@@ -269,9 +269,10 @@ class ComputePipelineCache final {
     }
   };
 
+  void save_cache();
+
  private:
   std::vector<char> load_cache();
-  void save_cache();
 
   // Multiple threads could potentially be adding entries into the cache, so use
   // a mutex to manage access

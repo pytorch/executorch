@@ -145,6 +145,15 @@ the checkpoint format to avoid generating faulty models.
             enable_dynamic_shape=self.enable_dynamic_shape,
             **params,
         )
+
+        if model_args.use_scaled_rope:
+            # Older models don't have use_scaled_rope configuration
+            assert self.args.model not in ["llama2", "stories110m"]
+
+            # Llama3_2 and newer models in ExecuTorch repo should set larger scale factor
+            if self.args.model not in ["llama3", "llama3_1"]:
+                model_args.rope_scale_factor = 32
+
         if kwargs.get("verbose", False):
             print("============= weights ================")
             print("{key} : {weights.numel()} : {weights.size()}")
@@ -200,6 +209,25 @@ the checkpoint format to avoid generating faulty models.
             )
 
             sanitize_checkpoint_from_pre_quantization(checkpoint)
+
+        if hasattr(self.args, "use_attention_sink") and self.args.use_attention_sink:
+            from .source_transformation.attention_sink import enable_attention_sink
+
+            attention_sink_params = self.args.use_attention_sink.split(",")
+            assert len(attention_sink_params) == 3
+            sink_size = int(attention_sink_params[0])
+            window_size = int(attention_sink_params[1])
+            eviction_batch_size = int(attention_sink_params[2])
+
+            assert self.args.max_seq_length == sink_size + window_size
+
+            self.model_ = enable_attention_sink(
+                module=self.model_,
+                params=model_args,
+                sink_size=sink_size,
+                window_size=window_size,
+                eviction_batch_size=eviction_batch_size,
+            )
 
         # assign=True: load params/buffers by assignment instead of performing an in-place copy.
         # Because we are using device="meta", tensors do not have memory associated with them

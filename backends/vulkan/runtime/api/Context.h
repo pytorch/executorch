@@ -73,6 +73,8 @@ class Context final {
   std::vector<vkapi::VulkanBuffer> buffers_to_clear_;
   std::mutex image_clearlist_mutex_;
   std::vector<vkapi::VulkanImage> images_to_clear_;
+  // Misc
+  VkImageTiling preferred_image_tiling_;
 
  public:
   // Adapter access
@@ -121,6 +123,10 @@ class Context final {
 
   inline vkapi::QueryPool& querypool() {
     return querypool_;
+  }
+
+  inline VkImageTiling preferred_image_tiling() {
+    return preferred_image_tiling_;
   }
 
   /*
@@ -194,7 +200,9 @@ class Context final {
       const vkapi::DescriptorSet&,
       vkapi::PipelineBarrier&,
       const vkapi::ShaderInfo&,
-      const utils::uvec3&);
+      const utils::uvec3&,
+      const void* = nullptr,
+      const uint32_t = 0);
 
   void register_blit(
       vkapi::PipelineBarrier&,

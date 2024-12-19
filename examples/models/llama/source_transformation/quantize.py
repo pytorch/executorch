@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
+import re
 from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -70,6 +72,49 @@ def quantize(  # noqa C901
     if qmode == "int8":
         # Add quantization mode options here: group size, bit width, etc.
         return WeightOnlyInt8QuantHandler(model).quantized_model()
+    elif qmode.startswith("torchao:fpa"):
+        pattern = r"torchao:fpa(\d+)w"
+        matches = re.findall(pattern, qmode)
+        assert len(matches) == 1, f"Expected 1 match for pattern but got {len(matches)}"
+        bitwidth = int(matches[0][0])
+        _load_torchao_aten_lib(libname="libtorchao_ops_mps_aten")
+        from torchao.experimental.quant_api import UIntxWeightOnlyLinearQuantizer
+
+        with torch.no_grad():
+            model = (
+                UIntxWeightOnlyLinearQuantizer(
+                    device="mps",
+                    precision=torch.float32,
+                    groupsize=group_size,
+                    bitwidth=bitwidth,
+                )
+                .quantize(model)
+                .to("cpu")
+            )
+
+        if verbose:
+            print("quantized model:", model)
+        return model
+    elif qmode.startswith("torchao:8da"):
+        pattern = r"torchao:8da(\d+)w"
+        matches = re.findall(pattern, qmode)
+        assert len(matches) == 1, f"Expected 1 match for pattern but got {len(matches)}"
+        bitwidth = int(matches[0][0])
+        _load_torchao_aten_lib(libname="libtorchao_ops_aten")
+        from torchao.experimental.quant_api import Int8DynActIntxWeightLinearQuantizer
+
+        with torch.no_grad():
+            model = Int8DynActIntxWeightLinearQuantizer(
+                device="cpu",
+                precision=torch.float32,
+                groupsize=group_size,
+                bitwidth=bitwidth,
+                has_weight_zeros=False,
+            ).quantize(model)
+
+        if verbose:
+            print("quantized model:", model)
+        return model
     elif qmode == "8da4w":
         # Check for required args
         if group_size is None:
@@ -79,6 +124,7 @@ def quantize(  # noqa C901
         model = Int8DynActInt4WeightQuantizer(
             precision=torch_dtype, groupsize=group_size
         ).quantize(model)
+
         if verbose:
             print("quantized model:", model)
         return model
@@ -134,7 +180,17 @@ def quantize(  # noqa C901
         model = gptq_quantizer.quantize(model, inputs)
         return model
     elif qmode == "vulkan_4w":
-        model = VkInt4WeightOnlyQuantizer().quantize(model)
+        q_group_size = 256 if group_size is None else group_size
+        model = VkInt4WeightOnlyQuantizer(groupsize=q_group_size).quantize(model)
+
+        # Apply additional quantizer for linear layers that aren't lowered to Vulkan
+        # at the moment
+        from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
+
+        model = Int8DynActInt4WeightQuantizer(
+            precision=torch_dtype, groupsize=q_group_size
+        ).quantize(model)
+
         return model
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")
@@ -692,6 +748,25 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 
 
 def get_quant_embedding_transform(args):
+    if args.embedding_quantize.startswith("torchao:"):
+        bitwidth, group_size = args.embedding_quantize.split(":")[1].split(",")
+        group_size = int(group_size)
+        bitwidth = int(bitwidth)
+        _load_torchao_aten_lib(libname="libtorchao_ops_aten")
+        from torchao.experimental.quant_api import IntxWeightEmbeddingQuantizer
+
+        def _torchao_embedding_quantizer(model):
+            with torch.no_grad():
+                model = IntxWeightEmbeddingQuantizer(
+                    device="cpu",
+                    precision=torch.float32,
+                    bitwidth=bitwidth,
+                    groupsize=group_size,
+                ).quantize(model)
+            return model
+
+        return _torchao_embedding_quantizer
+
     bitwidth, group_size = args.embedding_quantize.split(",")
     if group_size == "none" or group_size == "None" or group_size == "0":
         group_size = None
@@ -731,6 +806,25 @@ def get_quant_weight_transform(args, dtype_override, verbose):
             Path(path) if (path := args.tokenizer_path) is not None else None
         ),
     )
+
+
+def _load_torchao_aten_lib(libname):
+    import glob
+    import os
+
+    libs = glob.glob(
+        os.path.abspath(
+            os.path.join(
+                os.environ.get("CMAKE_INSTALL_PREFIX", ""),
+                f"lib/{libname}.*",
+            )
+        )
+    )
+    assert (
+        len(libs) == 1
+    ), f"Expected 1 library but got {len(libs)}.  If you installed the torchao ops in a non-standard location, please set CMAKE_INSTALL_PREFIX correctly."
+    logging.info(f"Loading custom ops library: {libs[0]}")
+    torch.ops.load_library(libs[0])
 
 
 ############################ Source Transform End #######################

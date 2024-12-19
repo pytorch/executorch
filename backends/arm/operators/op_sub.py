@@ -43,10 +43,8 @@ class SubVisitor(NodeVisitor):
                 input_nodes, tosa_graph
             )
 
-            # Preapre sub output tensor
-            broadcasted_shape = tutils.broadcast_shapes(
-                rescaled_inputs[0].shape, rescaled_inputs[0].shape
-            )
+            # Prepare sub output tensor
+            broadcasted_shape = tutils.tosa_shape(output.shape, output.dim_order)
             sub_output = tosa_graph.addIntermediate(broadcasted_shape, ts.DType.INT32)
 
             # Do the INT32 Sub

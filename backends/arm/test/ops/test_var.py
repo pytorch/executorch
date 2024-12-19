@@ -29,9 +29,9 @@ class TestVar(unittest.TestCase):
     class Var(torch.nn.Module):
         test_parameters = [
             (torch.randn(1, 50, 10, 20), True, 0),
-            (torch.rand(1, 50, 10), True, 0),
+            (torch.rand(1, 50, 10), False, 0),
             (torch.randn(1, 30, 15, 20), True, 1),
-            (torch.rand(1, 50, 10, 20), True, 0.5),
+            (torch.rand(1, 50, 10, 20), False, 0.5),
         ]
 
         def forward(
@@ -45,8 +45,18 @@ class TestVar(unittest.TestCase):
     class VarDim(torch.nn.Module):
         test_parameters = [
             (torch.randn(1, 50, 10, 20), 1, True, False),
-            (torch.rand(1, 50, 10), -2, True, False),
+            (torch.rand(1, 50, 10), -2, False, False),
             (torch.randn(1, 30, 15, 20), -3, True, True),
+            (torch.rand(1, 50, 10, 20), -1, False, True),
+        ]
+
+        test_parameters_u55 = [
+            (torch.randn(1, 50, 10, 20), 1, True, False),
+            (torch.randn(1, 30, 15, 20), -3, True, True),
+        ]
+
+        test_parameters_u55_xfails = [
+            (torch.rand(1, 50, 10), -2, True, False),
             (torch.rand(1, 50, 10, 20), -1, True, True),
         ]
 
@@ -86,7 +96,7 @@ class TestVar(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
             )
             .export()
             .to_edge()
@@ -107,7 +117,7 @@ class TestVar(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
             )
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
@@ -148,8 +158,10 @@ class TestVar(unittest.TestCase):
     def test_var_tosa_BI(self, test_tensor: torch.Tensor, keepdim, correction):
         self._test_var_tosa_BI_pipeline(self.Var(), (test_tensor, keepdim, correction))
 
+    # Expected to fail as this is not supported on u55.
     @parameterized.expand(Var.test_parameters)
-    def test_var_u55_BI(self, test_tensor: torch.Tensor, keepdim, correction):
+    @unittest.expectedFailure
+    def test_var_u55_BI_xfails(self, test_tensor: torch.Tensor, keepdim, correction):
         self._test_var_ethosu_BI_pipeline(
             self.Var(),
             common.get_u55_compile_spec(),
@@ -176,8 +188,20 @@ class TestVar(unittest.TestCase):
             self.VarDim(), (test_tensor, dim, keepdim, correction)
         )
 
-    @parameterized.expand(VarDim.test_parameters)
+    @parameterized.expand(VarDim.test_parameters_u55)
     def test_var_dim_u55_BI(self, test_tensor: torch.Tensor, dim, keepdim, correction):
+        self._test_var_ethosu_BI_pipeline(
+            self.VarDim(),
+            common.get_u55_compile_spec(),
+            (test_tensor, dim, keepdim, correction),
+        )
+
+    # Expected to fail as this is not supported on u55.
+    @parameterized.expand(VarDim.test_parameters_u55_xfails)
+    @unittest.expectedFailure
+    def test_var_dim_u55_BI_xfails(
+        self, test_tensor: torch.Tensor, dim, keepdim, correction
+    ):
         self._test_var_ethosu_BI_pipeline(
             self.VarDim(),
             common.get_u55_compile_spec(),
@@ -208,8 +232,10 @@ class TestVar(unittest.TestCase):
             self.VarCorrection(), (test_tensor, dim, keepdim, correction)
         )
 
+    # Expected to fail as this is not supported on u55.
     @parameterized.expand(VarCorrection.test_parameters)
-    def test_var_correction_u55_BI(
+    @unittest.expectedFailure
+    def test_var_correction_u55_BI_xfails(
         self, test_tensor: torch.Tensor, dim, keepdim, correction
     ):
         self._test_var_ethosu_BI_pipeline(

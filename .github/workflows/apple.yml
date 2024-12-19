@@ -7,7 +7,6 @@ on:
       - release/*
   pull_request:
     paths:
-      - .ci/docker/**
       - .ci/scripts/setup-ios.sh
       - .github/workflows/apple.yml
       - install_requirements.sh
@@ -21,14 +20,30 @@ on:
       - extension/benchmark/apple/**
       - extension/module/**
   workflow_dispatch:
+  schedule:
+    - cron: '0 10 * * *'  # Runs daily at 2 AM PST
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
 jobs:
+  set-version:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.set_version.outputs.version }}
+    steps:
+      - name: Set VERSION variable
+        id: set_version
+        shell: bash
+        run: |
+          VERSION="0.4.0.$(TZ='PST8PDT' date +%Y%m%d)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
   build-demo-ios:
     name: build-demo-ios
+    # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
+    if: ${{ !github.event.pull_request.head.repo.fork }}
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
@@ -40,6 +55,8 @@ jobs:
       secrets-env: BUILD_CERTIFICATE_BASE64 EXECUTORCH_DEMO_BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
       upload-artifact: ios-apps
       script: |
+        set -eux
+
         BUILD_TOOL=cmake
 
         .ci/scripts/setup-conda.sh
@@ -58,7 +75,7 @@ jobs:
 
         # Build and test iOS Demo App
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        build/test_ios_ci.sh ${ARTIFACTS_DIR_NAME}
+        build/test_ios_ci.sh "${ARTIFACTS_DIR_NAME}"
 
   # Upload the test demo app to S3
   upload-demo-ios:
@@ -76,6 +93,7 @@ jobs:
         shell: bash
         working-directory: ${{ runner.temp }}/artifacts/
         run: |
+          set -eux
           ls -lah ./
 
       - name: Upload the artifacts to S3
@@ -113,6 +131,7 @@ jobs:
 
   build-frameworks-ios:
     name: build-frameworks-ios
+    needs: set-version
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       runner: macos-latest-xlarge
@@ -122,8 +141,10 @@ jobs:
       upload-artifact: executorch-frameworks-ios
       timeout: 90
       script: |
+        set -eux
+
         BUILD_TOOL=cmake
-        VERSION="latest"
+        VERSION="${{ needs.set-version.outputs.version }}"
         FRAMEWORKS=(
           "executorch"
           "backend_coreml"
@@ -171,14 +192,20 @@ jobs:
         ) done
 
   upload-frameworks-ios:
+    # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
+    if: ${{ !github.event.pull_request.head.repo.fork }}
     runs-on: ubuntu-22.04
-    needs: build-frameworks-ios
+    needs: [build-frameworks-ios, set-version]
     timeout-minutes: 30
+    environment: ${{ github.ref == 'refs/heads/main' && 'cherry-pick-bot' || '' }}
     permissions:
       id-token: write
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PYTORCHBOT_CHERRY_PICK_TOKEN || secrets.GITHUB_TOKEN }}
       - uses: actions/setup-python@v4
         with:
           python-version: '3.11'
@@ -195,15 +222,15 @@ jobs:
           name: executorch-frameworks-ios
           path: ${{ runner.temp }}/frameworks-ios/
       - name: Only push to S3 when running the workflow manually from main branch
-        if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' }}
         shell: bash
         run: |
-          set -eux
           echo "UPLOAD_ON_MAIN=1" >> "${GITHUB_ENV}"
       - name: Upload the artifact to ossci-ios S3 bucket
         shell: bash
         run: |
           set -eux
+          VERSION="${{ needs.set-version.outputs.version }}"
 
           pip install awscli==1.32.18
 
@@ -214,12 +241,49 @@ jobs:
 
           for FILENAME in "${RUNNER_TEMP}"/frameworks-ios/*.zip; do
             [ -e "${FILENAME}" ] || continue
-            shasum -a 256 "${FILENAME}"
+            FRAMEWORK_NAME=$(basename "${FILENAME}" | sed "s/-${VERSION}.zip//")
+            CHECKSUM=$(shasum -a 256 "${FILENAME}" | cut -d ' ' -f1)
+            echo "${FRAMEWORK_NAME} ${CHECKSUM}" >> "${RUNNER_TEMP}/checksums.txt"
             ${AWS_CMD} "${FILENAME}" s3://ossci-ios/executorch/ --acl public-read
           done
+      - name: Update SwiftPM
+        shell: bash
+        run: |
+          set -eux
+          VERSION="${{ needs.set-version.outputs.version }}"
+          BRANCH="swiftpm-${VERSION}"
+
+          git checkout swiftpm
+
+          if git show-ref --verify --quiet refs/heads/${BRANCH}; then
+            git checkout "${BRANCH}"
+          else
+            git checkout -b "${BRANCH}"
+          fi
+
+          [[ -f Package.swift ]] || mv Package.swift.template Package.swift
+
+          sed -i "s/__VERSION__/${VERSION}/g" Package.swift
+
+          while read -r FRAMEWORK CHECKSUM; do
+            sed -i "s/__SHA256_${FRAMEWORK}__/${CHECKSUM}/g" Package.swift
+          done < "${RUNNER_TEMP}/checksums.txt"
+
+          if [[ "${UPLOAD_ON_MAIN:-0}" == "1" ]]; then
+            git config --global user.name "PyTorch Bot"
+            git config --global user.email "pytorchbot@users.noreply.github.com"
+            git add Package.swift
+            git commit -am "${VERSION}"
+            git push -f origin "${BRANCH}"
+          else
+            echo "Draft Package.swift:"
+            cat Package.swift
+          fi
 
   build-benchmark-app:
     name: build-benchmark-app
+    # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
+    if: ${{ !github.event.pull_request.head.repo.fork }}
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
@@ -282,5 +346,5 @@ jobs:
         echo "::group::Build ExecuTorch benchmark app"
         mkdir -p extension/benchmark/apple/Benchmark/Models
         ${CONDA_RUN} --no-capture-output \
-          build/build_apple_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+          build/build_apple_llm_demo.sh "${ARTIFACTS_DIR_NAME}"
         echo "::endgroup::"

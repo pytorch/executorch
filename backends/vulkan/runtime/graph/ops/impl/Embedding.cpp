@@ -15,13 +15,21 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
+#include <executorch/backends/vulkan/runtime/utils/StorageUtils.h>
+
 namespace vkcompute {
+
+using utils::GPUMemoryLayout;
+using utils::StorageType;
 
 void check_embedding_args(
     const api::vTensor& weight,
     const api::vTensor& in,
     const api::vTensor& out) {
-  VK_CHECK_COND(check_packed_dim_is(weight, WHCN::kChannelsDim));
+  // The packing logic may not be trivial here. Input and output are Channel
+  // Packed, which is default for the Vulkan backend. However, weight vector is
+  // height-packed instead of channel-packed for space reason.
+  VK_CHECK_COND(check_packed_dim_is(weight, WHCN::kHeightDim));
   VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
   VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
 }
@@ -58,7 +66,12 @@ void add_embedding_node(
 void embedding(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   ValueRef in = args[1];
   ValueRef out = args[5];
-  ValueRef weight = prepack_standard_like(graph, args[0], out);
+
+  ValueRef weight = prepack_standard(
+      graph,
+      args[0],
+      StorageType::TEXTURE_2D,
+      GPUMemoryLayout::TENSOR_HEIGHT_PACKED);
 
   add_embedding_node(graph, weight, in, out);
 }

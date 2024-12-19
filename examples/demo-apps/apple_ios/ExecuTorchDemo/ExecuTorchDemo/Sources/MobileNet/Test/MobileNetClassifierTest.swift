@@ -48,9 +48,9 @@ final class MobileNetClassifierTest: XCTestCase {
       modelFilePath: modelFilePath,
       labelsFilePath: labelsFilePath)
     for expectedClassification in [
-      Classification(label: "Arctic fox", confidence: 0.92),
-      Classification(label: "Samoyed", confidence: 0.74),
-      Classification(label: "hot pot", confidence: 0.82),
+      Classification(label: "Arctic fox", confidence: 0.9),
+      Classification(label: "Samoyed", confidence: 0.7),
+      Classification(label: "hot pot", confidence: 0.8),
     ] {
       guard
         let imagePath = Bundle(for: type(of: self))

@@ -82,6 +82,7 @@ runtime.python_library(
         "export_llama_lib.py",
         "model.py",
         "source_transformation/apply_spin_quant_r1_r2.py",
+        "source_transformation/attention.py",
         "source_transformation/lora.py",
         "source_transformation/pre_quantization.py",
         "source_transformation/prune_vocab.py",
@@ -92,6 +93,7 @@ runtime.python_library(
         "source_transformation/sdpa.py",
         "source_transformation/spin_quant.py",
         "source_transformation/vulkan_rope.py",
+        "source_transformation/attention_sink.py",
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama",
@@ -148,6 +150,8 @@ runtime.python_library(
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
+        "fbsource//third-party/pypi/tqdm:tqdm",
+        "fbsource//third-party/pypi/datasets:datasets",
         "fbsource//third-party/pypi/lm-eval:lm-eval",
         "fbsource//third-party/pypi/tiktoken:tiktoken",
         ":export_library",
@@ -210,5 +214,18 @@ runtime.python_test(
         ":sdpa",
         "//caffe2:torch",
         "//executorch/examples/models/llama:llama_transformer",
+    ],
+)
+
+runtime.python_test(
+    name = "attention_sink_test",
+    srcs = [
+        "source_transformation/test_attention_sink.py",
+    ],
+    supports_static_listing = False,
+    deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
+        "//caffe2:torch",
+        ":export_library",
     ],
 )

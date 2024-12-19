@@ -23,8 +23,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from torch._subclasses.fake_tensor import FakeTensor
-
 from torch.fx.passes.tools_common import NodeList
 from torch.fx.passes.utils.fuser_utils import topo_sort
 
@@ -37,6 +35,30 @@ def set_memory_metadata(
 ) -> None:
     utils.set_node_spec_attr(node, "vk_storage_type", storage)
     utils.set_node_spec_attr(node, "vk_memory_layout", layout)
+
+
+def insert_transition_node(
+    graph_module: torch.fx.GraphModule,
+    node: torch.fx.Node,
+    arg: torch.fx.Node,
+    storage: VkStorageType,
+    layout: VkMemoryLayout,
+) -> None:
+    """
+    Insert a clone node to copy the original tensor to a tensor with the desired storage
+    type and memory layout.
+    """
+    with graph_module.graph.inserting_before(node):
+        clone_node = graph_module.graph.create_node(
+            "call_function",
+            exir_ops.edge.aten.clone.default,
+            (arg,),
+        )
+        clone_node.meta["val"] = arg.meta["val"]
+        clone_node.meta["spec"] = deepcopy(arg.meta["spec"])
+        clone_node.meta["spec"].const = False
+        set_memory_metadata(clone_node, storage, layout)
+        arg.replace_all_uses_with(clone_node, lambda x, y=node: x == y)
 
 
 class TagMemoryMetaPass(ExportPass):
@@ -114,9 +136,7 @@ class TagMemoryMetaPass(ExportPass):
                 return storage
 
         for arg in node.args:
-            if isinstance(arg, torch.fx.Node) and isinstance(
-                arg.meta["val"], FakeTensor
-            ):
+            if isinstance(arg, torch.fx.Node) and utils.is_tensor_node(arg):
                 storage = utils.get_node_storage_type(arg)
                 if storage is not None and storage in valid_storage_types:
                     return storage
@@ -154,9 +174,7 @@ class TagMemoryMetaPass(ExportPass):
                 return layout
 
         for arg in node.args:
-            if isinstance(arg, torch.fx.Node) and isinstance(
-                arg.meta["val"], FakeTensor
-            ):
+            if isinstance(arg, torch.fx.Node) and utils.is_tensor_node(arg):
                 layout = utils.get_node_memory_layout(arg)
                 if layout is not None and layout in valid_layouts:
                     return layout
@@ -174,14 +192,38 @@ class TagMemoryMetaPass(ExportPass):
         else:
             return next(iter(valid_layouts))
 
+    def should_annotate(self, node) -> bool:
+        if not isinstance(node, torch.fx.Node):
+            return False
+
+        if not utils.is_tensor_node(node):
+            return False
+
+        # Storage type and memory layout for tensorref will be determined at runtime
+        # so there's no use in setting those attributes ahead of time.
+        if node.meta.get("vkdg_tensorref", False):
+            return False
+
+        # Skip annotating output node. The output tensors should be annotated by the
+        # time the output node is observed.
+        if node.op == "output":
+            return False
+
+        return True
+
+    def should_delay_annotation(self, node: torch.fx.Node) -> bool:
+        # For prepack nodes, delay setting the storage type and memory layout as long as
+        # possible. This is to minimize the number of transitions, since it can be
+        # difficult to predict what storage type and memory layout should be used at the
+        # time the prepack node is observed.
+        return node.target == exir_ops.edge.et_vk.prepack.default
+
+    # noqa
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         sorted_nodes: NodeList = topo_sort(list(graph_module.graph.nodes))
 
         for node in sorted_nodes:
-            if not isinstance(node.meta["val"], FakeTensor):
-                continue
-
-            if node.target == exir_ops.edge.et_vk.prepack.default:
+            if not self.should_annotate(node) or self.should_delay_annotation(node):
                 continue
 
             storage = self.propose_node_storage(node)
@@ -191,10 +233,10 @@ class TagMemoryMetaPass(ExportPass):
 
             inserting_transitions_for_node = False
             for i, arg in enumerate(node.args):
-                if not isinstance(arg, torch.fx.Node):
+                if not self.should_annotate(arg):
                     continue
-                if not isinstance(arg.meta["val"], FakeTensor):
-                    continue
+
+                assert isinstance(arg, torch.fx.Node)
 
                 arg_storage = utils.get_node_storage_type(arg)
                 arg_layout = utils.get_node_memory_layout(arg)
@@ -215,22 +257,10 @@ class TagMemoryMetaPass(ExportPass):
                         f"[Vulkan Delegate] Inserting transition(s) for {node.format_node()}:"
                     )
 
+                insert_transition_node(graph_module, node, arg, storage, layout)
+
                 logger.info(
                     f"   args {i} ({arg}): ({arg_storage}, {arg_layout}) -> ({storage}, {layout})"
                 )
-
-                # Insert a clone node to copy the original tensor to a tensor with the
-                # desired storage type and memory layout.
-                with graph_module.graph.inserting_before(node):
-                    clone_node = graph_module.graph.create_node(
-                        "call_function",
-                        exir_ops.edge.aten.clone.default,
-                        (arg,),
-                    )
-                    clone_node.meta["val"] = arg.meta["val"]
-                    clone_node.meta["spec"] = deepcopy(arg.meta["spec"])
-                    clone_node.meta["spec"].const = False
-                    set_memory_metadata(clone_node, storage, layout)
-                    arg.replace_all_uses_with(clone_node, lambda x, y=node: x == y)
 
         return PassResult(graph_module, True)

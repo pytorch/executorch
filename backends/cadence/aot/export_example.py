@@ -16,7 +16,7 @@ from typing import Any, Tuple
 
 from executorch.backends.cadence.aot.compiler import (
     convert_pt2,
-    export_to_cadence_edge_executorch,
+    export_to_executorch_gen_etrecord,
     fuse_pt2,
 )
 
@@ -60,6 +60,7 @@ def export_model(
     model: nn.Module,
     example_inputs: Tuple[Any, ...],
     file_name: str = "CadenceDemoModel",
+    run_and_compare: bool = True,
 ):
     # create work directory for outputs and model binary
     working_dir = tempfile.mkdtemp(dir="/tmp")
@@ -86,8 +87,8 @@ def export_model(
     quantized_model = fuse_pt2(converted_model, quantizer)
 
     # Get edge program after Cadence specific passes
-    exec_prog: ExecutorchProgramManager = export_to_cadence_edge_executorch(
-        quantized_model, example_inputs, working_dir
+    exec_prog: ExecutorchProgramManager = export_to_executorch_gen_etrecord(
+        quantized_model, example_inputs, output_dir=working_dir
     )
 
     logging.info("Final exported graph:\n")
@@ -112,9 +113,10 @@ def export_model(
     )
 
     # TODO: move to test infra
-    runtime.run_and_compare(
-        executorch_prog=exec_prog,
-        inputs=example_inputs,
-        ref_outputs=ref_outputs,
-        working_dir=working_dir,
-    )
+    if run_and_compare:
+        runtime.run_and_compare(
+            executorch_prog=exec_prog,
+            inputs=example_inputs,
+            ref_outputs=ref_outputs,
+            working_dir=working_dir,
+        )

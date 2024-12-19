@@ -745,8 +745,7 @@ struct PyModule final {
       } else if (py::isinstance<py::int_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
       } else {
-        // Unsupported pytype
-        ET_ASSERT_UNREACHABLE_MSG(type_str.c_str());
+        ET_ASSERT_UNREACHABLE_MSG("Unsupported pytype: %s", type_str.c_str());
       }
     }
 
@@ -796,7 +795,7 @@ struct PyModule final {
           py::isinstance<py::str>(debug_buffer_path)) {
         // Also write out the debug buffer to a separate file if requested.
         std::string debug_buffer_path_str =
-            py::cast<py::str>(debug_buffer_path);
+            py::cast<std::string>(debug_buffer_path);
         const auto debug_buffer = module_->get_etdump_debug_buffer();
         write_data_to_file(
             debug_buffer_path_str, debug_buffer.data(), debug_buffer.size());

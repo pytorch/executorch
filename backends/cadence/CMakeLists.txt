@@ -23,7 +23,6 @@ include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
-set(TARGET_DIR reference)
 
 if(EXECUTORCH_CADENCE_CPU_RUNNER)
   include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
@@ -61,6 +60,9 @@ if(EXECUTORCH_CADENCE_CPU_RUNNER)
                                       ${_common_include_directories}
   )
 
+  set(TARGET_DIR reference)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
+
   target_link_libraries(
   cadence_runner
   executorch
@@ -76,7 +78,12 @@ endif()
 if(EXECUTORCH_NNLIB_OPT)
   set(TARGET_DIR hifi)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party/nnlib)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
+endif()
+
+if(EXECUTORCH_FUSION_G3_OPT)
+  set(TARGET_DIR fusion_g3)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party/nnlib)
 endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/operators)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)

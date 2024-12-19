@@ -419,6 +419,9 @@ def main():
     print(f"Max Num Token: {max_num_token}")
     print(f"Max Cache Size: {max_cache_size}")
 
+    if args.dataset is not None:
+        embedding_layer = get_embedding_layer(config, weight_dir, state_dict)
+
     # Instantiate model chunks
     print("Instantiating submodels")
     models = []
@@ -437,7 +440,6 @@ def main():
     cal_dataset = None
     if args.dataset is not None:
         cal_dataset = load_dataset("text", data_files=args.dataset, split="train")
-        embedding_layer = get_embedding_layer(config, weight_dir, state_dict)
         master_rot_emb = get_master_rot_emb(config, dtype=torch.float32)
         if args.preformatter is not None:
             cal_dataset = cal_dataset.map(

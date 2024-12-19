@@ -9,8 +9,9 @@
 package org.pytorch.executorch;
 
 import com.facebook.jni.annotations.DoNotStrip;
+import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Locale;
-import java.util.Optional;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**
@@ -42,26 +43,8 @@ public class EValue {
   private static final int TYPE_CODE_INT = 4;
   private static final int TYPE_CODE_BOOL = 5;
 
-  private static final int TYPE_CODE_LIST_BOOL = 6;
-  private static final int TYPE_CODE_LIST_DOUBLE = 7;
-  private static final int TYPE_CODE_LIST_INT = 8;
-  private static final int TYPE_CODE_LIST_TENSOR = 9;
-  private static final int TYPE_CODE_LIST_SCALAR = 10;
-  private static final int TYPE_CODE_LIST_OPTIONAL_TENSOR = 11;
-
   private String[] TYPE_NAMES = {
-    "None",
-    "Tensor",
-    "String",
-    "Double",
-    "Int",
-    "Bool",
-    "ListBool",
-    "ListDouble",
-    "ListInt",
-    "ListTensor",
-    "ListScalar",
-    "ListOptionalTensor",
+    "None", "Tensor", "String", "Double", "Int", "Bool",
   };
 
   @DoNotStrip private final int mTypeCode;
@@ -100,31 +83,6 @@ public class EValue {
   @DoNotStrip
   public boolean isString() {
     return TYPE_CODE_STRING == this.mTypeCode;
-  }
-
-  @DoNotStrip
-  public boolean isBoolList() {
-    return TYPE_CODE_LIST_BOOL == this.mTypeCode;
-  }
-
-  @DoNotStrip
-  public boolean isIntList() {
-    return TYPE_CODE_LIST_INT == this.mTypeCode;
-  }
-
-  @DoNotStrip
-  public boolean isDoubleList() {
-    return TYPE_CODE_LIST_DOUBLE == this.mTypeCode;
-  }
-
-  @DoNotStrip
-  public boolean isTensorList() {
-    return TYPE_CODE_LIST_TENSOR == this.mTypeCode;
-  }
-
-  @DoNotStrip
-  public boolean isOptionalTensorList() {
-    return TYPE_CODE_LIST_OPTIONAL_TENSOR == this.mTypeCode;
   }
 
   /** Creates a new {@code EValue} of type {@code Optional} that contains no value. */
@@ -173,46 +131,6 @@ public class EValue {
     return iv;
   }
 
-  /** Creates a new {@code EValue} of type {@code List[bool]}. */
-  @DoNotStrip
-  public static EValue listFrom(boolean... list) {
-    final EValue iv = new EValue(TYPE_CODE_LIST_BOOL);
-    iv.mData = list;
-    return iv;
-  }
-
-  /** Creates a new {@code EValue} of type {@code List[int]}. */
-  @DoNotStrip
-  public static EValue listFrom(long... list) {
-    final EValue iv = new EValue(TYPE_CODE_LIST_INT);
-    iv.mData = list;
-    return iv;
-  }
-
-  /** Creates a new {@code EValue} of type {@code List[double]}. */
-  @DoNotStrip
-  public static EValue listFrom(double... list) {
-    final EValue iv = new EValue(TYPE_CODE_LIST_DOUBLE);
-    iv.mData = list;
-    return iv;
-  }
-
-  /** Creates a new {@code EValue} of type {@code List[Tensor]}. */
-  @DoNotStrip
-  public static EValue listFrom(Tensor... list) {
-    final EValue iv = new EValue(TYPE_CODE_LIST_TENSOR);
-    iv.mData = list;
-    return iv;
-  }
-
-  /** Creates a new {@code EValue} of type {@code List[Optional[Tensor]]}. */
-  @DoNotStrip
-  public static EValue listFrom(Optional<Tensor>... list) {
-    final EValue iv = new EValue(TYPE_CODE_LIST_OPTIONAL_TENSOR);
-    iv.mData = list;
-    return iv;
-  }
-
   @DoNotStrip
   public Tensor toTensor() {
     preconditionType(TYPE_CODE_TENSOR, mTypeCode);
@@ -243,36 +161,6 @@ public class EValue {
     return (String) mData;
   }
 
-  @DoNotStrip
-  public boolean[] toBoolList() {
-    preconditionType(TYPE_CODE_LIST_BOOL, mTypeCode);
-    return (boolean[]) mData;
-  }
-
-  @DoNotStrip
-  public long[] toIntList() {
-    preconditionType(TYPE_CODE_LIST_INT, mTypeCode);
-    return (long[]) mData;
-  }
-
-  @DoNotStrip
-  public double[] toDoubleList() {
-    preconditionType(TYPE_CODE_LIST_DOUBLE, mTypeCode);
-    return (double[]) mData;
-  }
-
-  @DoNotStrip
-  public Tensor[] toTensorList() {
-    preconditionType(TYPE_CODE_LIST_TENSOR, mTypeCode);
-    return (Tensor[]) mData;
-  }
-
-  @DoNotStrip
-  public Optional<Tensor>[] toOptionalTensorList() {
-    preconditionType(TYPE_CODE_LIST_OPTIONAL_TENSOR, mTypeCode);
-    return (Optional<Tensor>[]) mData;
-  }
-
   private void preconditionType(int typeCodeExpected, int typeCode) {
     if (typeCode != typeCodeExpected) {
       throw new IllegalStateException(
@@ -286,5 +174,74 @@ public class EValue {
 
   private String getTypeName(int typeCode) {
     return typeCode >= 0 && typeCode < TYPE_NAMES.length ? TYPE_NAMES[typeCode] : "Unknown";
+  }
+
+  /**
+   * Serializes an {@code EValue} into a byte array.
+   *
+   * @return The serialized byte array.
+   * @apiNote This method is experimental and subject to change without notice.
+   */
+  public byte[] toByteArray() {
+    if (isNone()) {
+      return ByteBuffer.allocate(1).put((byte) TYPE_CODE_NONE).array();
+    } else if (isTensor()) {
+      Tensor t = toTensor();
+      byte[] tByteArray = t.toByteArray();
+      return ByteBuffer.allocate(1 + tByteArray.length)
+          .put((byte) TYPE_CODE_TENSOR)
+          .put(tByteArray)
+          .array();
+    } else if (isBool()) {
+      return ByteBuffer.allocate(2)
+          .put((byte) TYPE_CODE_BOOL)
+          .put((byte) (toBool() ? 1 : 0))
+          .array();
+    } else if (isInt()) {
+      return ByteBuffer.allocate(9).put((byte) TYPE_CODE_INT).putLong(toInt()).array();
+    } else if (isDouble()) {
+      return ByteBuffer.allocate(9).put((byte) TYPE_CODE_DOUBLE).putDouble(toDouble()).array();
+    } else if (isString()) {
+      return ByteBuffer.allocate(1 + toString().length())
+          .put((byte) TYPE_CODE_STRING)
+          .put(toString().getBytes())
+          .array();
+    } else {
+      throw new IllegalArgumentException("Unknown Tensor dtype");
+    }
+  }
+
+  /**
+   * Deserializes an {@code EValue} from a byte[].
+   *
+   * @param bytes The byte array to deserialize from.
+   * @return The deserialized {@code EValue}.
+   * @apiNote This method is experimental and subject to change without notice.
+   */
+  public static EValue fromByteArray(byte[] bytes) {
+    ByteBuffer buffer = ByteBuffer.wrap(bytes);
+    if (buffer == null) {
+      throw new IllegalArgumentException("buffer cannot be null");
+    }
+    if (!buffer.hasRemaining()) {
+      throw new IllegalArgumentException("invalid buffer");
+    }
+    int typeCode = buffer.get();
+    switch (typeCode) {
+      case TYPE_CODE_NONE:
+        return new EValue(TYPE_CODE_NONE);
+      case TYPE_CODE_TENSOR:
+        byte[] bufferArray = buffer.array();
+        return from(Tensor.fromByteArray(Arrays.copyOfRange(bufferArray, 1, bufferArray.length)));
+      case TYPE_CODE_STRING:
+        throw new IllegalArgumentException("TYPE_CODE_STRING is not supported");
+      case TYPE_CODE_DOUBLE:
+        return from(buffer.getDouble());
+      case TYPE_CODE_INT:
+        return from(buffer.getLong());
+      case TYPE_CODE_BOOL:
+        return from(buffer.get() != 0);
+    }
+    throw new IllegalArgumentException("invalid type code: " + typeCode);
   }
 }

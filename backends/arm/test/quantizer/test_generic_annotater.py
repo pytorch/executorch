@@ -30,7 +30,9 @@ class SingleOpModel(torch.nn.Module):
 class TestGenericAnnotator(unittest.TestCase):
     def check_annotation(self, model):
         tester = ArmTester(
-            model, model.example_inputs(), common.get_tosa_compile_spec()
+            model,
+            model.example_inputs(),
+            common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
         )
         quant_model = tester.quantize().get_artifact()
         partitions = get_source_partitions(quant_model.graph, [model.op])
@@ -83,4 +85,11 @@ class TestGenericAnnotator(unittest.TestCase):
     def test_flip(self):
         self.check_annotation(
             SingleOpModel(torch.flip, (torch.randn(2, 4),), dims=(0, 1)),
+        )
+
+    def test_concat(self):
+        self.check_annotation(
+            SingleOpModel(
+                torch.concatenate, ((torch.randn(2, 3), torch.randn(2, 3)),), dim=0
+            ),
         )

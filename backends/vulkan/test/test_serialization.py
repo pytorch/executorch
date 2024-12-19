@@ -1,6 +1,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
+# pyre-strict
+#
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
@@ -11,9 +13,17 @@ from typing import List
 
 import torch
 
-from executorch.backends.vulkan.serialization.vulkan_graph_schema import VkGraph
+from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
+    IntList,
+    OperatorCall,
+    String,
+    VkGraph,
+    VkValue,
+)
 
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
+    convert_to_flatbuffer,
+    flatbuffer_to_vk_graph,
     serialize_vulkan_graph,
     VulkanDelegateHeader,
 )
@@ -36,7 +46,7 @@ class TestSerialization(unittest.TestCase):
 
         return tensors
 
-    def test_serialize_vulkan_binary(self):
+    def test_serialize_vulkan_binary(self) -> None:
         vk_graph = VkGraph(
             version="0",
             chain=[],
@@ -93,3 +103,33 @@ class TestSerialization(unittest.TestCase):
 
             tensor_bytes = bytes(array)
             self.assertEqual(constant_data_bytes, tensor_bytes)
+
+    def test_serialize_deserialize_vkgraph(self) -> None:
+        in_vk_graph = VkGraph(
+            version="1",
+            chain=[
+                OperatorCall(node_id=1, name="foo", args=[1, 2, 3]),
+                OperatorCall(node_id=2, name="bar", args=[]),
+            ],
+            values=[
+                VkValue(
+                    value=String(
+                        string_val="abc",
+                    ),
+                ),
+                VkValue(
+                    value=IntList(
+                        items=[-1, -4, 2],
+                    ),
+                ),
+            ],
+            input_ids=[],
+            output_ids=[],
+            constants=[],
+            shaders=[],
+        )
+
+        bs = convert_to_flatbuffer(in_vk_graph)
+        out_vk_graph = flatbuffer_to_vk_graph(bs)
+
+        self.assertEqual(in_vk_graph, out_vk_graph)

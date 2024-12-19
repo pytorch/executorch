@@ -8,7 +8,6 @@
 from . import (  # noqa
     node_visitor,
     op_add,
-    op_addmm,
     op_avg_pool2d,
     op_batch_norm,
     op_bmm,
@@ -20,6 +19,7 @@ from . import (  # noqa
     op_get_item,
     op_hardtanh,
     op_log,
+    op_max_pool2d,
     op_mm,
     op_mul,
     op_permute,
@@ -27,6 +27,7 @@ from . import (  # noqa
     op_reciprocal,
     op_relu,
     op_repeat,
+    op_rshift,
     op_rsqrt,
     op_select,
     op_sigmoid,
@@ -35,7 +36,9 @@ from . import (  # noqa
     op_sub,
     op_sum,
     op_tanh,
+    op_to_copy,
     op_transpose,
     op_unsqueeze,
+    op_upsample_nearest2d,
     op_view,
 )

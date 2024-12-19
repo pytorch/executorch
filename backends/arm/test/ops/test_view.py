@@ -13,14 +13,9 @@ from typing import Tuple
 
 import torch
 
-from executorch.backends.arm.quantizer.arm_quantizer import (
-    ArmQuantizer,
-    get_symmetric_quantization_config,
-)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
-from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
@@ -48,6 +43,7 @@ class TestView(unittest.TestCase):
             (torch.rand(1, 1, 5, 10), (1, 1, 50, 1)),
             (torch.rand(5, 10, 1, 1), (1, 25, 2)),
             (torch.rand(2, 50, 1, 1), (1, 100)),
+            (torch.rand(2, 3, 2, 3), (2, 3, 3, 2)),
         ]
 
         def forward(self, x: torch.Tensor, new_shape):
@@ -60,7 +56,7 @@ class TestView(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
             )
             .export()
             .check_count({"torch.ops.aten.view.default": 1})
@@ -74,14 +70,13 @@ class TestView(unittest.TestCase):
     def _test_view_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
             )
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
+            .quantize()
             .export()
             .check_count({"torch.ops.aten.view.default": 1})
             .to_edge()
@@ -97,10 +92,13 @@ class TestView(unittest.TestCase):
         module: torch.nn.Module,
         test_data: Tuple[torch.Tensor],
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
-            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
+            ArmTester(
+                module,
+                example_inputs=test_data,
+                compile_spec=compile_spec,
+            )
+            .quantize()
             .export()
             .check_count({"torch.ops.aten.view.default": 1})
             .to_edge()

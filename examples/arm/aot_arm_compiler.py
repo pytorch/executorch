@@ -13,7 +13,7 @@ import logging
 import os
 
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
@@ -22,8 +22,11 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
-from executorch.backends.arm.util.arm_model_evaluator import GenericModelEvaluator
 
+from executorch.backends.arm.util.arm_model_evaluator import (
+    GenericModelEvaluator,
+    MobileNetV2Evaluator,
+)
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.exir import (
     EdgeCompileConfig,
@@ -35,6 +38,7 @@ from tabulate import tabulate
 
 # Quantize model if required using the standard export quantizaion flow.
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.utils.data import DataLoader
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
@@ -43,7 +47,7 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.WARNING, format=FORMAT)
 
 
-def get_model_and_inputs_from_name(model_name: str):
+def get_model_and_inputs_from_name(model_name: str) -> Tuple[torch.nn.Module, Any]:
     """Given the name of an example pytorch model, return it and example inputs.
 
     Raises RuntimeError if there is no example model corresponding to the given name.
@@ -81,20 +85,37 @@ def get_model_and_inputs_from_name(model_name: str):
     return model, example_inputs
 
 
-def quantize(model, example_inputs):
+def quantize(
+    model: torch.nn.Module,
+    model_name: str,
+    example_inputs: Tuple[torch.Tensor],
+    evaluator_name: str | None,
+    evaluator_config: Dict[str, Any] | None,
+) -> torch.nn.Module:
     """This is the official recommended flow for quantization in pytorch 2.0 export"""
     logging.info("Quantizing Model...")
     logging.debug(f"Original model: {model}")
     quantizer = ArmQuantizer()
+
     # if we set is_per_channel to True, we also need to add out_variant of quantize_per_channel/dequantize_per_channel
     operator_config = get_symmetric_quantization_config(is_per_channel=False)
     quantizer.set_global(operator_config)
     m = prepare_pt2e(model, quantizer)
-    # calibration
-    m(*example_inputs)
+
+    dataset = get_calibration_data(
+        model_name, example_inputs, evaluator_name, evaluator_config
+    )
+
+    # The dataset could be a tuple of tensors or a DataLoader
+    # These two cases need to be accounted for
+    if isinstance(dataset, DataLoader):
+        for sample, _ in dataset:
+            m(sample)
+    else:
+        m(*dataset)
+
     m = convert_pt2e(m)
     logging.debug(f"Quantized model: {m}")
-    # make sure we can export to flat buffer
     return m
 
 
@@ -151,14 +172,40 @@ class SoftmaxModule(torch.nn.Module):
     can_delegate = False
 
 
+class MultipleOutputsModule(torch.nn.Module):
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return (x * y, x.sum(dim=-1, keepdim=True))
+
+    example_input = (torch.randn(10, 4, 5), torch.randn(10, 4, 5))
+    can_delegate = True
+
+
 models = {
     "add": AddModule,
     "add2": AddModule2,
     "add3": AddModule3,
     "softmax": SoftmaxModule,
+    "MultipleOutputsModule": MultipleOutputsModule,
 }
 
-evaluators = {}
+calibration_data = {
+    "add": (torch.randn(1, 5),),
+    "add2": (
+        torch.randn(1, 5),
+        torch.randn(1, 5),
+    ),
+    "add3": (
+        torch.randn(32, 5),
+        torch.randn(32, 5),
+    ),
+    "softmax": (torch.randn(32, 2, 2),),
+}
+
+evaluators = {
+    "generic": GenericModelEvaluator,
+    "mv2": MobileNetV2Evaluator,
+}
 
 targets = [
     "ethos-u55-32",
@@ -174,37 +221,78 @@ targets = [
 ]
 
 
+def get_calibration_data(
+    model_name: str,
+    example_inputs: Tuple[torch.Tensor],
+    evaluator_name: str | None,
+    evaluator_config: str | None,
+):
+    # Firstly, if the model is being evaluated, take the evaluators calibration function if it has one
+    if evaluator_name is not None:
+        evaluator = evaluators[evaluator_name]
+
+        if hasattr(evaluator, "get_calibrator"):
+            assert evaluator_config is not None
+
+            config_path = Path(evaluator_config)
+            with config_path.open() as f:
+                config = json.load(f)
+
+            if evaluator_name == "mv2":
+                return evaluator.get_calibrator(
+                    training_dataset_path=config["training_dataset_path"]
+                )
+            else:
+                raise RuntimeError(f"Unknown evaluator: {evaluator_name}")
+
+    # If the model is in the calibration_data dictionary, get the data from there
+    # This is used for the simple model examples provided
+    if model_name in calibration_data:
+        return calibration_data[model_name]
+
+    # As a last resort, fallback to the scripts previous behavior and return the example inputs
+    return example_inputs
+
+
 def get_compile_spec(
-    target: str, intermediates: Optional[str] = None
+    target: str,
+    intermediates: Optional[str] = None,
+    reorder_inputs: Optional[str] = None,
+    system_config: Optional[str] = None,
+    memory_mode: Optional[str] = None,
 ) -> ArmCompileSpecBuilder:
     spec_builder = None
     if target == "TOSA":
         spec_builder = (
-            ArmCompileSpecBuilder().tosa_compile_spec().set_permute_memory_format(True)
+            ArmCompileSpecBuilder()
+            .tosa_compile_spec("TOSA-0.80+BI")
+            .set_permute_memory_format(True)
         )
     elif "ethos-u55" in target:
         spec_builder = (
             ArmCompileSpecBuilder()
             .ethosu_compile_spec(
                 target,
-                system_config="Ethos_U55_High_End_Embedded",
-                memory_mode="Shared_Sram",
-                extra_flags="--debug-force-regor --output-format=raw",
+                system_config=system_config,
+                memory_mode=memory_mode,
+                extra_flags="--debug-force-regor --output-format=raw --verbose-operators --verbose-cycle-estimate",
             )
             .set_permute_memory_format(True)
             .set_quantize_io(True)
+            .set_input_order(reorder_inputs)
         )
     elif "ethos-u85" in target:
         spec_builder = (
             ArmCompileSpecBuilder()
             .ethosu_compile_spec(
                 target,
-                system_config="Ethos_U85_SYS_DRAM_Mid",
-                memory_mode="Shared_Sram",
-                extra_flags="--output-format=raw",
+                system_config=system_config,
+                memory_mode=memory_mode,
+                extra_flags="--output-format=raw --verbose-operators --verbose-cycle-estimate",
             )
             .set_permute_memory_format(True)
             .set_quantize_io(True)
+            .set_input_order(reorder_inputs)
         )
 
     if intermediates is not None:
@@ -213,29 +301,44 @@ def get_compile_spec(
     return spec_builder.build()
 
 
-def get_evaluator(model_name: str) -> GenericModelEvaluator:
-    if model_name not in evaluators:
-        return GenericModelEvaluator
-    else:
-        return evaluators[model_name]
-
-
 def evaluate_model(
     model_name: str,
     intermediates: str,
     model_fp32: torch.nn.Module,
     model_int8: torch.nn.Module,
     example_inputs: Tuple[torch.Tensor],
-):
-    evaluator = get_evaluator(model_name)
+    evaluator_name: str,
+    evaluator_config: str | None,
+) -> None:
+    evaluator = evaluators[evaluator_name]
 
     # Get the path of the TOSA flatbuffer that is dumped
     intermediates_path = Path(intermediates)
     tosa_paths = list(intermediates_path.glob("*.tosa"))
 
-    init_evaluator = evaluator(
-        model_name, model_fp32, model_int8, example_inputs, str(tosa_paths[0])
-    )
+    if evaluator.REQUIRES_CONFIG:
+        assert evaluator_config is not None
+
+        config_path = Path(evaluator_config)
+        with config_path.open() as f:
+            config = json.load(f)
+
+        if evaluator_name == "mv2":
+            init_evaluator = evaluator(
+                model_name,
+                model_fp32,
+                model_int8,
+                example_inputs,
+                str(tosa_paths[0]),
+                config["batch_size"],
+                config["validation_dataset_path"],
+            )
+        else:
+            raise RuntimeError(f"Unknown evaluator {evaluator_name}")
+    else:
+        init_evaluator = evaluator(
+            model_name, model_fp32, model_int8, example_inputs, str(tosa_paths[0])
+        )
 
     quant_metrics = init_evaluator.evaluate()
     output_json_path = intermediates_path / "quant_metrics.json"
@@ -287,10 +390,18 @@ def get_args():
     parser.add_argument(
         "-e",
         "--evaluate",
-        action="store_true",
         required=False,
-        default=False,
+        nargs="?",
+        const="generic",
+        choices=["generic", "mv2"],
         help="Flag for running evaluation of the model.",
+    )
+    parser.add_argument(
+        "-c",
+        "--evaluate_config",
+        required=False,
+        default=None,
+        help="Provide path to evaluator config, if it is required.",
     )
     parser.add_argument(
         "-q",
@@ -324,11 +435,33 @@ def get_args():
         required=False,
         help="Location for outputs, if not the default of cwd.",
     )
+    parser.add_argument(
+        "-r",
+        "--reorder_inputs",
+        type=str,
+        required=False,
+        default=None,
+        help="Provide the order of the inputs. This can be required when inputs > 1.",
+    )
+    parser.add_argument(
+        "--system_config",
+        required=False,
+        default=None,
+        help="System configuration to select from the Vela configuration file (see vela.ini). This option must match the selected target, default is for an optimal system 'Ethos_U55_High_End_Embedded'/'Ethos_U85_SYS_DRAM_High'",
+    )
+    parser.add_argument(
+        "--memory_mode",
+        required=False,
+        default=None,
+        help="Memory mode to select from the Vela configuration file (see vela.ini). Default is 'Shared_Sram' for Ethos-U55 targets and 'Sram_Only' for Ethos-U85 targets",
+    )
     args = parser.parse_args()
 
-    if args.evaluate and (args.quantize is None or args.intermediates is None):
+    if args.evaluate and (
+        args.quantize is None or args.intermediates is None or (not args.delegate)
+    ):
         raise RuntimeError(
-            "--evaluate requires --quantize and --intermediates to be enabled."
+            "--evaluate requires --quantize, --intermediates and --delegate to be enabled."
         )
 
     if args.debug:
@@ -352,6 +485,22 @@ def get_args():
     ):
         raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
 
+    if args.system_config is None:
+        if "u55" in args.target:
+            args.system_config = "Ethos_U55_High_End_Embedded"
+        elif "u85" in args.target:
+            args.system_confg = "Ethos_U85_SYS_DRAM_Mid"
+        else:
+            raise RuntimeError(f"Invalid target name {args.target}")
+
+    if args.memory_mode is None:
+        if "u55" in args.target:
+            args.memory_mode = "Shared_Sram"
+        elif "u85" in args.target:
+            args.memory_mode = "Sram_Only"
+        else:
+            raise RuntimeError(f"Invalid target name {args.target}")
+
     return args
 
 
@@ -371,15 +520,26 @@ if __name__ == "__main__":
     # Quantize if required
     model_int8 = None
     if args.quantize:
-        model = quantize(model, example_inputs)
+        model = quantize(
+            model, args.model_name, example_inputs, args.evaluate, args.evaluate_config
+        )
         model_int8 = model
         # Wrap quantized model back into an exported_program
         exported_program = torch.export.export_for_training(model, example_inputs)
 
+    if args.intermediates:
+        os.makedirs(args.intermediates, exist_ok=True)
+
     if args.delegate:
         # As we can target multiple output encodings from ArmBackend, one must
         # be specified.
-        compile_spec = get_compile_spec(args.target, args.intermediates)
+        compile_spec = get_compile_spec(
+            args.target,
+            args.intermediates,
+            args.reorder_inputs,
+            args.system_config,
+            args.memory_mode,
+        )
         edge = to_edge_transform_and_lower(
             exported_program,
             partitioner=[ArmPartitioner(compile_spec)],
@@ -426,5 +586,11 @@ if __name__ == "__main__":
 
     if args.evaluate:
         evaluate_model(
-            args.model_name, args.intermediates, model_fp32, model_int8, example_inputs
+            args.model_name,
+            args.intermediates,
+            model_fp32,
+            model_int8,
+            example_inputs,
+            args.evaluate,
+            args.evaluate_config,
         )

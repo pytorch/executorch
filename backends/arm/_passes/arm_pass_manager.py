@@ -23,13 +23,14 @@ from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
 from executorch.backends.arm._passes.decompose_layernorm_pass import (
     DecomposeLayerNormPass,
 )
+from executorch.backends.arm._passes.decompose_linear_pass import DecomposeLinearPass
 from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
 from executorch.backends.arm._passes.decompose_softmaxes_pass import (
     DecomposeSoftmaxesPass,
 )
 from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
-from executorch.backends.arm._passes.insert_squeeze_after_sum_pass import (
-    InsertSqueezeAfterSumPass,
+from executorch.backends.arm._passes.keep_dims_false_to_squeeze_pass import (
+    KeepDimsFalseToSqueezePass,
 )
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
 from executorch.backends.arm._passes.meandim_to_averagepool_pass import (
@@ -40,9 +41,13 @@ from executorch.backends.arm._passes.scalars_to_attribute_pass import (
     ScalarsToAttributePass,
 )
 from executorch.backends.arm._passes.size_adjust_conv2d_pass import SizeAdjustConv2DPass
+from executorch.backends.arm._passes.unsqueeze_before_repeat_pass import (
+    UnsqueezeBeforeRepeatPass,
+)
 from executorch.backends.arm._passes.unsqueeze_scalar_placeholders_pass import (
     UnsqueezeScalarPlaceholdersPass,
 )
+from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_manager import PassManager
@@ -58,20 +63,23 @@ class ArmPassManager(PassManager):
     ):
         """Apply passes before transforming program to backend"""
         self.add_pass(CastInt64ToInt32Pass(exported_program))
+        self.add_pass(RemoveGetItemPass())
         self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(RemoveClonePass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(DecomposeLayerNormPass())
+        self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(ConvertMeanDimToAveragePool())
         self.add_pass(DecomposeMeanDimPass())
         self.add_pass(MatchArgRanksPass(exported_program))
         self.add_pass(DecomposeDivPass())
-        self.add_pass(InsertSqueezeAfterSumPass())
+        self.add_pass(KeepDimsFalseToSqueezePass())
         self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSoftmaxesPass())
+        self.add_pass(DecomposeLinearPass())
         for spec in compile_spec:
             if spec.key == "permute_memory_format":
                 memory_format = spec.value.decode()

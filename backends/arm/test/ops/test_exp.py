@@ -9,8 +9,10 @@ import unittest
 
 from typing import Tuple
 
+import pytest
+
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
@@ -20,7 +22,7 @@ test_data_suite = [
     ("zeros", torch.zeros(1, 10, 10, 10)),
     ("ones", torch.ones(10, 10, 10)),
     ("rand", torch.rand(10, 10) - 0.5),
-    ("randn_pos", torch.randn(10) + 10),
+    ("randn_pos", torch.randn(1, 4, 4, 4) + 10),
     ("randn_neg", torch.randn(10) - 10),
     ("ramp", torch.arange(-16, 16, 0.2)),
 ]
@@ -40,7 +42,7 @@ class TestExp(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
             )
             .export()
             .check(["torch.ops.aten.exp.default"])
@@ -58,7 +60,7 @@ class TestExp(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
             )
             .quantize()
             .export()
@@ -78,7 +80,7 @@ class TestExp(unittest.TestCase):
         module: torch.nn.Module,
         test_data: Tuple[torch.tensor],
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -93,7 +95,10 @@ class TestExp(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_exp_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(test_data_suite)
     def test_exp_tosa_MI(
@@ -108,12 +113,14 @@ class TestExp(unittest.TestCase):
         self._test_exp_tosa_BI_pipeline(self.Exp(), (test_data,))
 
     @parameterized.expand(test_data_suite)
+    @pytest.mark.corstone_fvp
     def test_exp_tosa_u55_BI(self, test_name: str, test_data: torch.Tensor):
         self._test_exp_ethosu_BI_pipeline(
             common.get_u55_compile_spec(), self.Exp(), (test_data,)
         )
 
     @parameterized.expand(test_data_suite)
+    @pytest.mark.corstone_fvp
     def test_exp_tosa_u85_BI(self, test_name: str, test_data: torch.Tensor):
         self._test_exp_ethosu_BI_pipeline(
             common.get_u85_compile_spec(), self.Exp(), (test_data,)

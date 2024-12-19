@@ -27,27 +27,6 @@ namespace extension {
 class FileDataLoader final : public executorch::runtime::DataLoader {
  public:
   /**
-   * Creates a new FileDataLoader that wraps the named file descriptor, and the
-   * ownership of the file descriptor is passed. This helper is used when ET is
-   * running in a process that does not have access to the filesystem, and the
-   * caller is able to open the file and pass the file descriptor.
-   *
-   * @param[in] file_descriptor_uri File descriptor with the prefix "fd:///",
-   *     followed by the file descriptor number.
-   * @param[in] alignment Alignment in bytes of pointers returned by this
-   *     instance. Must be a power of two.
-   *
-   * @returns A new FileDataLoader on success.
-   * @retval Error::InvalidArgument `alignment` is not a power of two.
-   * @retval Error::AccessFailed `file_name` could not be opened, or its size
-   *     could not be found.
-   * @retval Error::MemoryAllocationFailed Internal memory allocation failure.
-   */
-  static executorch::runtime::Result<FileDataLoader> fromFileDescriptorUri(
-      const char* file_descriptor_uri,
-      size_t alignment = alignof(std::max_align_t));
-
-  /**
    * Creates a new FileDataLoader that wraps the named file.
    *
    * @param[in] file_name Path to the file to read from.
@@ -100,11 +79,6 @@ class FileDataLoader final : public executorch::runtime::DataLoader {
       void* buffer) const override;
 
  private:
-  static executorch::runtime::Result<FileDataLoader> fromFileDescriptor(
-      const char* file_name,
-      const int fd,
-      size_t alignment = alignof(std::max_align_t));
-
   FileDataLoader(
       int fd,
       size_t file_size,

@@ -85,7 +85,7 @@ for arg in sys.argv[1:]:
         print("Cleaning build artifacts...")
         print("Cleaning pip-out/...")
         shutil.rmtree("pip-out/", ignore_errors=True)
-        dirs = glob.glob("cmake-out*/")
+        dirs = glob.glob("cmake-out*/") + glob.glob("cmake-android-out/")
         for d in dirs:
             print(f"Cleaning {d}...")
             shutil.rmtree(d, ignore_errors=True)
@@ -112,7 +112,7 @@ if os.name == "nt":
 # NOTE: If a newly-fetched version of the executorch repo changes the value of
 # NIGHTLY_VERSION, you should re-run this script to install the necessary
 # package versions.
-NIGHTLY_VERSION = "dev20241101"
+NIGHTLY_VERSION = "dev20241112"
 
 # The pip repository that hosts nightly torch packages.
 TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
@@ -137,7 +137,7 @@ EXAMPLES_REQUIREMENTS = [
     "timm==1.0.7",
     f"torchaudio==2.5.0.{NIGHTLY_VERSION}" if USE_PYTORCH_NIGHTLY else "torchaudio",
     "torchsr==1.0.4",
-    "transformers==4.42.4",
+    "transformers==4.46.1",
 ]
 
 # pip packages needed for development.

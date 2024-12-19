@@ -62,6 +62,36 @@
     - arg_meta: null
       kernel_name: torch::executor::full_out
 
+- op: gelu.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::gelu_out
+
+- op: hardtanh.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::hardtanh_out
+
+- op: max_pool2d_with_indices.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::max_pool2d_with_indices_out
+
+- op: maximum.out
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::HiFi::maximum_out
+
+- op: mean.out
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::HiFi::mean_dim_out   
+
+- op: minimum.out
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::HiFi::minimum_out
+
 - op: mul.out
   kernels:
     - arg_meta: null
@@ -71,6 +101,26 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::permute_copy_out
+
+- op: pow.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::HiFi::pow_Scalar_out
+
+- op: pow.Tensor_Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::HiFi::pow_Tensor_Scalar_out
+
+- op: pow.Tensor_Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::HiFi::pow_Tensor_Tensor_out
+
+- op: rsqrt.out
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::HiFi::rsqrt_out
 
 - op: sigmoid.out
   kernels:
@@ -105,7 +155,7 @@
 - op: where.self_out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::where_out
+      kernel_name: cadence::impl::HiFi::where_out
 
 # custom ops
 - func: cadence::quantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)

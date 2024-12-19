@@ -13,24 +13,26 @@
 
 import logging
 import os
-from typing import final, List, Optional
+from typing import cast, final, List, Optional
 
 import serializer.tosa_serializer as ts
 from executorch.backends.arm.arm_vela import vela_compile
 from executorch.backends.arm.operators.node_visitor import get_node_visitors
-from executorch.backends.arm.operators.op_output import process_output
-from executorch.backends.arm.operators.op_placeholder import process_placeholder
+
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.arm._passes.arm_pass_manager import (
     ArmPassManager,
 )  # usort: skip
-from executorch.backends.arm.tosa_utils import (
-    dbg_fail,
-    dbg_tosa_dump,
+from executorch.backends.arm.process_node import (
     process_call_function,
+    process_output,
+    process_placeholder,
 )
+from executorch.backends.arm.tosa_utils import dbg_fail, dbg_tosa_dump
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
+from torch.fx import Node
 
 # TOSA backend debug functionality
 logger = logging.getLogger(__name__)
@@ -50,6 +52,8 @@ class ArmCompileSpecBuilder:
         # TODO MLETORCH-265 Remove permute_nhwc flag
         self.permute_nhwc = False
         self.quantize_io = False
+        self.tosa_version = None
+        self.input_order = None
 
     def ethosu_compile_spec(
         self,
@@ -86,9 +90,15 @@ class ArmCompileSpecBuilder:
         if extra_flags is not None:
             self.compiler_flags.append(extra_flags)
 
+        base_tosa_version = "TOSA-0.80.0+BI"
+        if "u55" in config:
+            # Add the Ethos-U55 extension marker
+            base_tosa_version += "+u55"
+        self.tosa_version = TosaSpecification.create_from_string(base_tosa_version)
+
         return self
 
-    def tosa_compile_spec(self) -> "ArmCompileSpecBuilder":
+    def tosa_compile_spec(self, tosa_version: str) -> "ArmCompileSpecBuilder":
         """
         Generate compile spec for TOSA flatbuffer output
         """
@@ -96,6 +106,7 @@ class ArmCompileSpecBuilder:
             self.output_format is None
         ), f"Output format already set: {self.output_format}"
         self.output_format = "tosa"
+        self.tosa_version = TosaSpecification.create_from_string(tosa_version)
         return self
 
     def dump_intermediate_artifacts_to(
@@ -125,10 +136,27 @@ class ArmCompileSpecBuilder:
         self.quantize_io = quantize_io
         return self
 
+    def set_input_order(
+        self, input_order: Optional[str] = None
+    ) -> "ArmCompileSpecBuilder":
+        """
+        Reorder the inputs coming in. This may be required when inputs > 1.
+        And while using the U55/U85 CompileSpec.
+        """
+        self.input_order = input_order
+        return self
+
     def build(self) -> List[CompileSpec]:
         """
         Generate a list of compile spec objects from the builder
         """
+        assert self.tosa_version
+
+        # Always supply a TOSA version
+        self.compile_spec = [
+            CompileSpec("tosa_version", str(self.tosa_version).encode())
+        ]
+
         if self.output_format == "vela":
             self.compile_spec += [
                 CompileSpec("output_format", "vela".encode()),
@@ -145,6 +173,13 @@ class ArmCompileSpecBuilder:
         if self.permute_nhwc:
             self.compile_spec.append(
                 CompileSpec("permute_memory_format", "nhwc".encode())
+            )
+
+        if self.input_order:
+            self.compile_spec.append(
+                CompileSpec(
+                    "input_order", " ".join(map(str, self.input_order)).encode()
+                )
             )
 
         if self.quantize_io:
@@ -198,6 +233,7 @@ class ArmBackend(BackendDetails):
         artifact_path = None
         output_format = ""
         compile_flags = []
+        input_order = []
         for spec in compile_spec:
             if spec.key == "debug_artifact_path":
                 artifact_path = spec.value.decode()
@@ -205,15 +241,24 @@ class ArmBackend(BackendDetails):
                 output_format = spec.value.decode()
             if spec.key == "compile_flags":
                 compile_flags.append(spec.value.decode())
+            if spec.key == "input_order":
+                input_order = list(map(int, spec.value.decode().split(",")))
 
         # Check that the output format is set in the compile spec
         if not output_format:
             raise RuntimeError("output format is required")
 
+        tosa_spec = TosaSpecification.create_from_compilespecs(compile_spec)
+        assert (
+            tosa_spec is not None
+        ), "TOSA backend needs a TOSA version specified in the CompileSpec!"
+
         if output_format == "vela" and len(compile_flags) == 0:
             # Not testing for compile_flags correctness here, just that they are
             # present. The compiler will give errors if they are not valid.
             raise RuntimeError("compile flags are required for vela output format")
+
+        logger.info(f"Converting ExportedProgram to TOSA: {tosa_spec}")
 
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
@@ -222,13 +267,16 @@ class ArmBackend(BackendDetails):
             exported_program=edge_program, compile_spec=compile_spec
         )
 
-        node_visitors = get_node_visitors(edge_program)
-
+        node_visitors = get_node_visitors(edge_program, tosa_spec)
+        input_count = 0
         for node in graph_module.graph.nodes:
+            node = cast(Node, node)
             if node.op == "call_function":
-                process_call_function(node, tosa_graph, node_visitors)
+                process_call_function(node, tosa_graph, node_visitors, tosa_spec)
             elif node.op == "placeholder":
-                process_placeholder(node, tosa_graph, edge_program)
+                process_placeholder(node, tosa_graph, edge_program, tosa_spec)
+                if node.name in edge_program.graph_signature.user_inputs:
+                    input_count += 1
             elif node.op == "output":
                 process_output(node, tosa_graph)
             else:
@@ -236,9 +284,12 @@ class ArmBackend(BackendDetails):
                 # any checking of compatibility.
                 dbg_fail(node, tosa_graph, artifact_path)
 
-        # TODO: It would be awesome if this dump could somehow be done on top level and not here.
-        # Problem is that the desc.json has to be created on the tosa_graph object, which we can't
-        # access from top level.
+        if len(input_order) > 0:
+            if input_count != len(input_order):
+                raise RuntimeError(
+                    "The rank of the input order is not equal to amount of input tensors"
+                )
+
         if artifact_path:
             tag = _get_first_delegation_tag(graph_module)
             dbg_tosa_dump(
@@ -252,13 +303,11 @@ class ArmBackend(BackendDetails):
         # preprocess and some consume TOSA fb directly.
         if output_format == "vela":
             # Emit vela_bin_stream format
-            binary = vela_compile(tosa_graph, compile_flags)
+            binary = vela_compile(tosa_graph, compile_flags, input_order)
         elif output_format == "tosa":
             # Emit TOSA flatbuffer
             binary = bytes(tosa_graph.serialize())
         else:
             raise RuntimeError(f"Unknown format {output_format}")
 
-        # Continueing from above. Can I put tosa_graph into this function?
-        # debug_handle_map = ...
         return PreprocessResult(processed_bytes=binary)

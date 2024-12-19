@@ -60,14 +60,17 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
     set(_quantized_aot_ops
         "quantized_decomposed::add.out"
         "quantized_decomposed::choose_qparams.Tensor_out"
+        "quantized_decomposed::choose_qparams_per_token_asymmetric.out"
         "quantized_decomposed::dequantize_per_channel.out"
         "quantized_decomposed::dequantize_per_tensor.out"
         "quantized_decomposed::dequantize_per_tensor.Tensor_out"
+        "quantized_decomposed::dequantize_per_token.out"
         "quantized_decomposed::mixed_linear.out"
         "quantized_decomposed::mixed_mm.out"
         "quantized_decomposed::quantize_per_channel.out"
         "quantized_decomposed::quantize_per_tensor.out"
         "quantized_decomposed::quantize_per_tensor.Tensor_out"
+        "quantized_decomposed::quantize_per_token.out"
     )
     gen_selected_ops(
       LIB_NAME "quantized_ops_aot_lib" ROOT_OPS ${_quantized_aot_ops}
@@ -126,16 +129,14 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
       # installed location of our _portable_lib.so file. To see these LC_*
       # values, run `otool -l libquantized_ops_lib.dylib`.
       if(APPLE)
-        set_target_properties(
-          quantized_ops_aot_lib
-          PROPERTIES # Assume this library will be installed in
-                     # <site-packages>/executorch/kernels/quantized/, and the
-                     # _portable_lib.so is installed in
-                     # <site-packages>/executorch/extension/pybindings/
-                     BUILD_RPATH "@loader_path/../../extensions/pybindings"
-                     INSTALL_RPATH "@loader_path/../../extensions/pybindings"
-        )
+        set(RPATH "@loader_path/../../extensions/pybindings")
+      else()
+        set(RPATH "$ORIGIN/../../extensions/pybindings")
       endif()
+      set_target_properties(
+        quantized_ops_aot_lib PROPERTIES BUILD_RPATH ${RPATH} INSTALL_RPATH
+                                                              ${RPATH}
+      )
     endif()
   endif()
 endif()

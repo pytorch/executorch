@@ -20,7 +20,6 @@ namespace api {
 class ParamsBuffer final {
  private:
   Context* context_p_;
-  size_t nbytes_;
   vkapi::VulkanBuffer vulkan_buffer_;
 
  public:
@@ -29,9 +28,14 @@ class ParamsBuffer final {
   template <typename Block>
   ParamsBuffer(Context* context_p, const Block& block)
       : context_p_(context_p),
-        nbytes_(sizeof(block)),
         vulkan_buffer_(
             context_p_->adapter_ptr()->vma().create_params_buffer(block)) {}
+
+  template <typename Block>
+  ParamsBuffer(Context* context_p, const VkDeviceSize nbytes)
+      : context_p_(context_p),
+        vulkan_buffer_(
+            context_p_->adapter_ptr()->vma().create_uniform_buffer(nbytes)) {}
 
   ParamsBuffer(const ParamsBuffer&);
   ParamsBuffer& operator=(const ParamsBuffer&);
@@ -50,14 +54,11 @@ class ParamsBuffer final {
   }
 
   template <typename Block>
-  void update(const Block& block) {
-    if (sizeof(block) != nbytes_) {
-      VK_THROW("Attempted to update ParamsBuffer with data of different size");
-    }
+  void update(const Block& block, const uint32_t offset = 0) {
     // Fill the uniform buffer with data in block
     {
       vkapi::MemoryMap mapping(vulkan_buffer_, vkapi::kWrite);
-      Block* data_ptr = mapping.template data<Block>();
+      Block* data_ptr = mapping.template data<Block>(offset);
 
       *data_ptr = block;
     }
@@ -66,7 +67,7 @@ class ParamsBuffer final {
   template <typename T>
   T read() const {
     T val;
-    if (sizeof(val) != nbytes_) {
+    if (sizeof(val) != vulkan_buffer_.mem_size()) {
       VK_THROW(
           "Attempted to store value from ParamsBuffer to type of different size");
     }

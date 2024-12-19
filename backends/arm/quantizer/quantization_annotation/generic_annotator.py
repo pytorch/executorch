@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
-
 from typing import Callable, List, Optional
 
 import torch
@@ -24,28 +23,40 @@ _SUPPORTED_OPS = [
     # DATA LAYOUT OPS
     torch.ops.aten.squeeze.default,
     torch.ops.aten.squeeze_copy.default,
+    torch.ops.aten.squeeze_copy.dim,
+    torch.ops.aten.squeeze.dim,
+    torch.ops.aten.squeeze.dims,
     torch.ops.aten.unsqueeze.default,
     torch.ops.aten.unsqueeze_copy.default,
     torch.ops.aten.reshape.default,
+    torch.ops.aten.repeat.default,
+    torch.ops.aten.expand_copy.default,
+    torch.ops.aten.expand.default,
     # Disabling these as there seems to be an issue with support for complex
     # datatypes in torch:
     # torch.ops.aten.view_as_complex.default,
     # torch.ops.aten.view_as_complex_copy.default,
     # torch.ops.aten.view_as_real.default,
     # torch.ops.aten.view_as_real_copy.default,
+    torch.ops.aten.view.default,
+    torch.ops.aten.view_as.default,
     torch.ops.aten.view_copy.default,
     torch.ops.aten.select.int,
     torch.ops.aten.select_copy.int,
     torch.ops.aten.slice.Tensor,
     torch.ops.aten.slice_copy.Tensor,
-    # 'concat' should be handled separately as it has a sequence of inputs and
-    # makes the implementation unnecessary complicated.
-    # torch.ops.aten.concat.default,
+    torch.ops.aten.split.Tensor,
+    torch.ops.aten.split_with_sizes.default,
     torch.ops.aten.transpose.Dimname,
     torch.ops.aten.transpose.int,
     torch.ops.aten.transpose_copy.int,
     torch.ops.aten.tile.default,
     torch.ops.aten.flip.default,
+    torch.ops.aten.cat.default,
+    torch.ops.aten.concatenate.default,
+    torch.ops.aten.stack.default,
+    torch.ops.aten.chunk.default,
+    torch.ops.aten.contiguous.default,
 ]
 
 
@@ -66,15 +77,31 @@ def _annotate_generic(
         if arm_quantizer_utils.is_annotated(node):
             continue
 
-        input_node = node.args[0]
+        input_acts = node.args[0]
+
+        # Check to see if there are multiple inputs.
+        # this allows for stack/cat ops to be annotated
+        # in a similar way.
+        has_multi_inputs = isinstance(input_acts, list)
+
+        input_act0 = input_acts[0] if has_multi_inputs else input_acts
 
         # Using a non-shared quantization spec here as a SharedQuantizationSpec
         # can lead to a recursion.
         _annotate_input_qspec_map(
-            node, input_node, quantization_config.get_input_act_qspec()
+            node, input_act0, quantization_config.get_input_act_qspec()
         )
-        _annotate_output_qspec(node, SharedQuantizationSpec((input_node, node)))
+        shared_with_input0_qspec = SharedQuantizationSpec((input_act0, node))
 
+        if has_multi_inputs:
+            # For the rest of the inputs, share qspec with first.
+            for input_act in input_acts[1:]:
+                if input_act is not input_act0:
+                    node.meta["quantization_annotation"].input_qspec_map[
+                        input_act
+                    ] = shared_with_input0_qspec
+
+        _annotate_output_qspec(node, shared_with_input0_qspec)
         arm_quantizer_utils.mark_nodes_as_annotated([node])
         annotated_partitions.append([node])
 

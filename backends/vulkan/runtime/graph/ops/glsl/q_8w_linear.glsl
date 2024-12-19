@@ -116,8 +116,11 @@ VEC4_T q_8w_linear(const u16vec3 out_pos, const uint16_t K) {
 }
 
 void main() {
-  const u16vec3 out_pos = u16vec3(gl_GlobalInvocationID);
-  if (any(greaterThanEqual(out_pos, out_limits))) {
+  const u16vec3 out_pos = u16vec3(
+    gl_GlobalInvocationID.x / out_limits.y,
+    gl_GlobalInvocationID.x % out_limits.y,
+    0);
+  if (out_pos.x >= out_limits.x) {
     return;
   }
 

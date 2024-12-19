@@ -4,6 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# TODO: reenable pyre after fixing the issues
+# pyre-ignore-all-errors
+
 import argparse
 import os
 import subprocess
@@ -17,9 +20,7 @@ import numpy as np
 import torch
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
-from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
-    QcomChipset,
-)
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     generate_htp_compiler_spec,
@@ -138,7 +139,7 @@ class SimpleADB:
             for file_name in files:
                 self._adb(["push", file_name, self.workspace])
 
-    def execute(self, custom_runner_cmd=None):
+    def execute(self, custom_runner_cmd=None, method_index=0):
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
         if custom_runner_cmd is None:
@@ -155,6 +156,7 @@ class SimpleADB:
                         if self.dump_intermediate_outputs
                         else ""
                     ),
+                    f"--method_index {method_index}",
                 ]
             )
             qnn_executor_runner_cmds = " ".join(
@@ -257,6 +259,27 @@ def build_executorch_binary(
     custom_pass_config=frozenset(),
     qat_training_data=None,
 ):
+    """
+    A function to generate an ExecuTorch binary for Qualcomm platforms.
+
+    Attributes:
+        model (torch.nn.Module): The model to be converted into an ExecuTorch binary.
+        inputs (torch.Tensor): Sample input tensors required for model export.
+        soc_model (QcomChipset): The target Qualcomm System on Chip (SoC) model.
+        file_name (str): Name for the output binary file (.pte).
+        dataset (List[torch.Tensor] | Callable): A dataset for quantization calibration.
+        skip_node_id_set (set, optional): Set of node IDs to be skipped during partition.
+        skip_node_op_set (set, optional): Set of operation node  to be skipped during partition.
+        quant_dtype (QuantDtype, optional): Data type for quantization.
+        custom_quantizer (Callable, optional): Custom quantizer.
+        shared_buffer (bool, optional): Applies zero-copy mechanism to optimize runtime memory allocation.
+        metadata (dict, optional): An optional dictionary that maps each method name to a constant value in eager mode.
+        dump_intermediate_outputs (bool, optional): Enables dumping model intermediate outputs.
+        custom_pass_config (frozenset, optional): Set of custom passes for model processing.
+
+    Returns:
+        None: The function writes the output to a specified .pte file.
+    """
     if quant_dtype is not None:
         captured_model = torch.export.export(model, inputs).module()
         if qat_training_data:
@@ -372,7 +395,9 @@ def segmentation_metrics(predictions, targets, classes):
     return (pa, mpa, miou, cls_iou)
 
 
-def get_imagenet_dataset(dataset_path, data_size, image_shape, crop_size=None):
+def get_imagenet_dataset(
+    dataset_path, data_size, image_shape, crop_size=None, shuffle=True
+):
     from torchvision import datasets, transforms
 
     def get_data_loader():
@@ -389,7 +414,7 @@ def get_imagenet_dataset(dataset_path, data_size, image_shape, crop_size=None):
         imagenet_data = datasets.ImageFolder(dataset_path, transform=preprocess)
         return torch.utils.data.DataLoader(
             imagenet_data,
-            shuffle=True,
+            shuffle=shuffle,
         )
 
     # prepare input data

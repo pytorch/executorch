@@ -53,6 +53,21 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "file_descriptor_data_loader",
+        srcs = ["file_descriptor_data_loader.cpp"],
+        exported_headers = ["file_descriptor_data_loader.h"],
+        visibility = [
+            "//executorch/test/...",
+            "//executorch/runtime/executor/test/...",
+            "//executorch/extension/data_loader/test/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_deps = [
+            "//executorch/runtime/core:core",
+        ],
+    )
+
+    runtime.cxx_library(
         name = "mmap_data_loader",
         srcs = ["mmap_data_loader.cpp"],
         exported_headers = ["mmap_data_loader.h"],

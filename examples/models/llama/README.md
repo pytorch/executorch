@@ -168,6 +168,7 @@ LLAMA_CHECKPOINT=path/to/checkpoint.pth
 LLAMA_PARAMS=path/to/params.json
 
 python -m examples.models.llama.export_llama \
+  --model "llama3_2" \
   --checkpoint "${LLAMA_CHECKPOINT:?}" \
   --params "${LLAMA_PARAMS:?}" \
   -kv \
@@ -189,6 +190,7 @@ LLAMA_QUANTIZED_CHECKPOINT=path/to/spinquant/checkpoint.pth
 LLAMA_PARAMS=path/to/spinquant/params.json
 
 python -m examples.models.llama.export_llama \
+   --model "llama3_2" \
    --checkpoint "${LLAMA_QUANTIZED_CHECKPOINT:?}" \
    --params "${LLAMA_PARAMS:?}" \
    --use_sdpa_with_kv_cache \
@@ -214,6 +216,7 @@ LLAMA_QUANTIZED_CHECKPOINT=path/to/qlora/checkpoint.pth
 LLAMA_PARAMS=path/to/qlora/params.json
 
 python -m examples.models.llama.export_llama \
+   --model "llama3_2" \
    --checkpoint "${LLAMA_QUANTIZED_CHECKPOINT:?}" \
    --params "${LLAMA_PARAMS:?}" \
    -qat \
@@ -239,9 +242,19 @@ You can export and run the original Llama 3 8B instruct model.
 
 2. Export model and generate `.pte` file
     ```
-    python -m examples.models.llama.export_llama --checkpoint <consolidated.00.pth> -p <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w  --group_size 128 -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --embedding-quantize 4,32 --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
+    python -m examples.models.llama.export_llama \
+	    --checkpoint <consolidated.00.pth> \
+		-p <params.json> \
+		-kv \
+		--use_sdpa_with_kv_cache \
+		-X \
+		-qmode 8da4w \
+		--group_size 128 \
+		-d fp32 \
+		--metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
+		--embedding-quantize 4,32 \
+		--output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
     ```
-
     Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `--embedding-quantize 4,32` as shown above to further reduce the model size.
 
 
@@ -427,9 +440,8 @@ This example tries to reuse the Python code, with minimal modifications to make 
 ```
 git clean -xfd
 pip uninstall executorch
+./install_requirements.sh --clean
 ./install_requirements.sh --pybind xnnpack
-
-rm -rf cmake-out
 ```
 - If you encounter `pthread` related issues during link time, add `pthread` in `target_link_libraries` in `CMakeLists.txt`
 - On Mac, if there is linking error in Step 4 with error message like

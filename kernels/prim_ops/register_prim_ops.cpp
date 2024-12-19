@@ -12,6 +12,8 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 
+#include <cmath>
+
 using torch::executor::function::et_copy_index;
 
 namespace torch {
@@ -88,7 +90,8 @@ static Kernel prim_ops[] = {
           EValue& self = *stack[0];
           EValue& out = *stack[1];
           exec_aten::Tensor self_tensor = self.to<exec_aten::Tensor>();
-          ET_SWITCH_REAL_TYPES(
+          ET_SWITCH_REAL_TYPES_AND(
+              Bool,
               self_tensor.scalar_type(),
               context,
               "_local_scalar_dense",
@@ -301,10 +304,77 @@ static Kernel prim_ops[] = {
           }
         }),
 
+    // ceil.Scalar(Scalar a) -> Scalar
+    Kernel(
+        "executorch_prim::ceil.Scalar",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& out = *stack[1];
+          if (a.isDouble()) {
+            out = EValue(static_cast<int64_t>(ceil(a.toDouble())));
+          } else {
+            ET_CHECK_MSG(false, "Unsupported DType %zu", (size_t)a.tag);
+          }
+        }),
+
+    // round.Scalar(Scalar a) -> Scalar
+    Kernel(
+        "executorch_prim::round.Scalar",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& out = *stack[1];
+          if (a.isDouble()) {
+            // Round half to even to match Python round(). Need an explicit
+            // implementation as not all platforms support fenv rounding modes.
+            // See
+            // https://codeyarns.com/tech/2018-08-17-how-to-round-half-to-even.html
+            const auto val = a.toDouble();
+            const auto r = round(val);
+            const auto d = r - val;
+            auto res = 0.0;
+
+            if (std::abs(d) != 0.5) {
+              res = r;
+            } else if (fmod(r, 2.0) == 0.0) {
+              res = r;
+            } else {
+              res = val - d;
+            }
+
+            out = EValue(static_cast<int64_t>(res));
+          } else {
+            ET_CHECK_MSG(false, "Unsupported DType %zu", (size_t)a.tag);
+          }
+        }),
+
+    // trunc.Scalar(Scalar a) -> Scalar
+    Kernel(
+        "executorch_prim::trunc.Scalar",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& out = *stack[1];
+          if (a.isDouble()) {
+            out = EValue(static_cast<int64_t>(trunc(a.toDouble())));
+          } else {
+            ET_CHECK_MSG(false, "%zu", (size_t)a.tag);
+          }
+        }),
+
     // executorch_prim::et_copy_index.tensor(tensor, tensor) -> tensor
-    Kernel("executorch_prim::et_copy_index.tensor", &et_copy_index),
+    Kernel(
+        "executorch_prim::et_copy_index.tensor",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          et_copy_index(context, stack);
+        }),
     // executorch_prim::et_view.default(Tensor, int[]) -> Tensor
-    Kernel("executorch_prim::et_view.default", &et_view),
+    Kernel(
+        "executorch_prim::et_view.default",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          et_view(context, stack);
+        }),
 
 };
 

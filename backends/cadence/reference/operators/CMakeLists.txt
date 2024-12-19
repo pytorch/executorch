@@ -39,6 +39,8 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_cat.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_clone.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_div.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_hardtanh.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_max_pool2d_with_indices.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_mean.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_mul.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_permute_copy.cpp"
@@ -53,6 +55,16 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_expand_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_gelu.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_empty.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_transpose_copy.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_eq.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_logical_not.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_any.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_native_group_norm.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_sum.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_select_copy.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/dtype_util.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/normalization_ops_util.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/select_copy_util.cpp"
 )
 add_library(aten_ops_cadence ${_aten_ops__srcs})
 target_link_libraries(aten_ops_cadence PUBLIC executorch)
@@ -76,6 +88,7 @@ add_library(
   "quantize_per_tensor.cpp"
   "dequantize_per_tensor.cpp"
   "quantized_matmul_out.cpp"
+  "im2row_out.cpp"
 )
 target_include_directories(
   custom_ops PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}

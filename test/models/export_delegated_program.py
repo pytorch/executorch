@@ -13,7 +13,7 @@ from typing import Dict, final, Optional, Sequence, Type
 import executorch.exir as exir
 
 import torch
-from executorch.exir import to_edge
+from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.test.backend_with_compiler_demo import (
@@ -52,6 +52,41 @@ class ModuleAddMul(nn.Module):
         return (torch.ones(2, 2), 2 * torch.ones(2, 2), 3 * torch.ones(2, 2))
 
 
+class ModuleAddLarge(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(
+        self, a: torch.Tensor, b: torch.Tensor, c: torch.Tensor
+    ) -> torch.Tensor:
+        x: torch.Tensor = torch.add(a, b)
+        y: torch.Tensor = torch.add(x, c)
+        z: torch.Tensor = torch.add(x, y)
+        return z
+
+    def get_random_inputs(self) -> Sequence[torch.Tensor]:
+        n = 10  # to create a large tensor
+        return (torch.ones(n, n, n), 2 * torch.ones(n, n, n), 3 * torch.ones(n, n, n))
+
+
+class ModuleSubLarge(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(
+        self, a: torch.Tensor, b: torch.Tensor, c: torch.Tensor
+    ) -> torch.Tensor:
+        x: torch.Tensor = torch.sub(a, b)
+        y: torch.Tensor = torch.sub(x, c)
+        z: torch.Tensor = torch.sub(x, y)
+        w: torch.Tensor = torch.sub(z, c)
+        return w
+
+    def get_random_inputs(self) -> Sequence[torch.Tensor]:
+        n = 10  # to create a large tensor
+        return (torch.ones(n, n, n), 2 * torch.ones(n, n, n), 3 * torch.ones(n, n, n))
+
+
 #
 # Backends
 #
@@ -83,6 +118,8 @@ def export_module_to_program(
     eager_module = module_class().eval()
     inputs = ()
     if hasattr(eager_module, "get_random_inputs"):
+        # pyre-fixme[29]: `Union[nn.modules.module.Module, torch._tensor.Tensor]` is
+        #  not a function.
         inputs = eager_module.get_random_inputs()
 
     class WrapperModule(torch.nn.Module):
@@ -93,30 +130,45 @@ def export_module_to_program(
         def forward(self, *args, **kwargs):
             return self.fn(*args, **kwargs)
 
-    edge: exir.EdgeProgramManager = to_edge(
-        export(WrapperModule(getattr(eager_module, method)), args=inputs)
+    exported_program = export(WrapperModule(getattr(eager_module, method)), args=inputs)
+
+    edge_config = EdgeCompileConfig(_check_ir_validity=False)
+    et_config = exir.ExecutorchBackendConfig(
+        extract_delegate_segments=extract_delegate_segments,
+        constant_tensor_alignment=constant_tensor_alignemnt,
+        delegate_alignment=delegate_alignment,
     )
 
-    lowered_module = to_backend(backend_id, edge.exported_program(), compile_specs=[])
-
-    class CompositeModule(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.lowered_module = lowered_module
-
-        def forward(self, *args, **kwargs):
-            return self.lowered_module(*args, **kwargs)
-
-    composite_module = CompositeModule()
-    composite_module(*inputs)
-
-    executorch_program = to_edge(export(composite_module, args=inputs)).to_executorch(
-        config=exir.ExecutorchBackendConfig(
-            extract_delegate_segments=extract_delegate_segments,
-            constant_tensor_alignment=constant_tensor_alignemnt,
-            delegate_alignment=delegate_alignment,
+    if backend_id == "XnnpackBackend":
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
         )
-    )
+
+        executorch_program = to_edge_transform_and_lower(
+            exported_program,
+            compile_config=edge_config,
+            partitioner=[XnnpackPartitioner()],
+        ).to_executorch(config=et_config)
+    else:
+        edge: exir.EdgeProgramManager = to_edge(exported_program)
+        lowered_module = to_backend(
+            backend_id, edge.exported_program(), compile_specs=[]
+        )
+
+        class CompositeModule(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered_module = lowered_module
+
+            def forward(self, *args, **kwargs):
+                return self.lowered_module(*args, **kwargs)
+
+        composite_module = CompositeModule()
+        composite_module(*inputs)
+
+        executorch_program = to_edge(
+            export(composite_module, args=inputs)
+        ).to_executorch(config=et_config)
 
     return executorch_program.buffer
 

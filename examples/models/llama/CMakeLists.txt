@@ -37,6 +37,8 @@ cmake_dependent_option(
   "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
 )
 
+option(EXECUTORCH_BUILD_TORCHAO "Build the torchao kernels" OFF)
+
 if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
 endif()
@@ -119,6 +121,20 @@ list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   target_link_options_shared_lib(custom_ops)
   list(APPEND link_libraries custom_ops)
+endif()
+
+if(EXECUTORCH_BUILD_TORCHAO)
+  set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental)
+  target_link_options_shared_lib(torchao_ops_executorch)
+  list(APPEND link_libraries torchao_ops_executorch)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+    add_subdirectory(
+      ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
+      ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental/ops/mps)
+    target_link_options_shared_lib(torchao_ops_mps_executorch)
+    list(APPEND link_libraries torchao_ops_mps_executorch)
+  endif()
 endif()
 
 set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)

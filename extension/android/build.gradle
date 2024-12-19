@@ -20,6 +20,5 @@ task makeJar(type: Jar) {
     dependencies {
         implementation 'com.facebook.fbjni:fbjni-java-only:0.2.2'
         implementation 'com.facebook.soloader:nativeloader:0.10.5'
-        testImplementation 'junit:junit:4.13.2'
     }
 }

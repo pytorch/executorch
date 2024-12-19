@@ -34,7 +34,7 @@ class TestDimOrderGuards(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=module.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
             )
             .export()
             .to_edge()
@@ -48,7 +48,7 @@ class TestDimOrderGuards(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=module.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
             )
             .quantize()
             .export()

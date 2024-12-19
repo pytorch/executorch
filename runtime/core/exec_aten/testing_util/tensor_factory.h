@@ -14,10 +14,8 @@
 #ifdef USE_ATEN_LIB
 #include <ATen/ATen.h>
 #else // !USE_ATEN_LIB
-#include <numeric>
-// @nolint PATTERNLINT Ok to use stdlib for this test framework
 #include <memory>
-// @nolint PATTERNLINT Ok to use stdlib for this test framework
+#include <numeric>
 #include <vector>
 #endif // !USE_ATEN_LIB
 
@@ -649,6 +647,13 @@ struct ScalarTypeToCppTypeWrapper<torch::executor::ScalarType::Bool> {
 // testing multiple integer types.
 template <>
 struct ScalarTypeToCppTypeWrapper<torch::executor::ScalarType::Bits16> {
+  using ctype = uint16_t;
+};
+
+// Use a C type of `uint16_t` instead of `UInt16` to simplify code reuse when
+// testing multiple integer types.
+template <>
+struct ScalarTypeToCppTypeWrapper<torch::executor::ScalarType::UInt16> {
   using ctype = uint16_t;
 };
 

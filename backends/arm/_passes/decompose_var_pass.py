@@ -4,8 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 
 import torch
+from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -51,26 +54,30 @@ class DecomposeVarPass(ExportPass):
             torch.ops.aten.var.dim,
         ):
             return super().call_operator(op, args, kwargs, meta)
-        shape = meta["val"].size()
-        dtype = meta["val"].dtype
-        dim = args[1] if len(args) > 1 else list(range(len(shape)))
-        if op == torch.ops.aten.var.dim:
-            correction = args[-2]
-            keepdim = args[-1]
-        else:
-            correction = kwargs["correction"]
-            keepdim = kwargs.get("keepdim", False)
-        if not keepdim:
-            return super().call_operator(op, args, kwargs, meta)
 
         x = args[0]
         input_shape = x.data.size()
+        shape = list(meta["val"].size())
+        if shape == []:
+            shape = [1 for _ in input_shape]
+
+        dtype = meta["val"].dtype
+        # Get dim from args based on argument type
+        dim = get_node_arg(args, key=list, default_value=list(range(len(shape))))
+
+        if op == torch.ops.aten.var.dim:
+            keepdim = get_node_arg(args, bool, False)
+            correction = get_node_arg(args, int, 1)
+        else:
+            correction = get_node_arg(kwargs, "correction", 1)
+            keepdim = get_node_arg(kwargs, "keepdim", False)
+
         N = 1
         for d in dim:
             N *= input_shape[d]
 
         mean_op, diff_op, mul_op, sum_op, full_op = get_var_decomposition(op)
-        mean = super().call_operator(mean_op, (x, dim, keepdim), {}, meta)
+        mean = super().call_operator(mean_op, (x, dim, True), {}, meta)
         diff = super().call_operator(diff_op, (x, mean), {}, meta)
         squared_diff = super().call_operator(mul_op, (diff, diff), {}, meta)
         sum = super().call_operator(sum_op, (squared_diff, dim, keepdim), {}, meta)

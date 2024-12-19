@@ -10,12 +10,14 @@ python_library(
     deps = [
         ":const_prop_pass",
         ":debug_handle_generator_pass",
+        ":external_constants_pass",
         ":insert_write_back_for_buffers_pass",
         ":memory_format_ops_pass",
         ":memory_planning_pass",
         ":normalize_transpose_pass",
         ":prim_ops_py_registry",
         ":quant_fusion_pass",
+        ":quantize_io_pass",
         ":remove_noop_pass",
         ":replace_aten_with_edge_pass",
         ":replace_broken_ops_with_function_ops_pass",
@@ -50,6 +52,16 @@ python_library(
     deps = [
         "//executorch/exir:error",
         "//executorch/exir:pass_manager",
+    ],
+)
+
+python_library(
+    name = "external_constants_pass",
+    srcs = [
+        "external_constants_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
     ],
 )
 
@@ -137,6 +149,19 @@ python_library(
     ],
     deps = [
         ":replace_aten_with_edge_pass",
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+python_library(
+    name = "quantize_io_pass",
+    srcs = [
+        "quantize_io_pass.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/numpy:numpy",
         "//caffe2:torch",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",

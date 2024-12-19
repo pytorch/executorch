@@ -11,20 +11,230 @@ def define_common_targets():
     # Define build targets for all operators registered in the tables above.
 
     runtime.cxx_library(
-        name = "cadence_hifi_ops",
-        srcs = glob([
-            "*.cpp",
-        ]),
-        exported_headers = glob(["*.h"]),
+        name = "quantize_per_tensor",
+        srcs = [
+            "quantize_per_tensor.cpp"
+        ],
         platforms = CXX,
         deps = [
             "//executorch/kernels/portable/cpu/util:all_deps",
             "//executorch/kernels/portable/cpu/pattern:all_deps",
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/kernels/portable/cpu:scalar_utils",
-            "fbsource//third-party/nnlib-hifi4/xa_nnlib:libxa_nnlib",
-            "fbsource//third-party/nnlib-hifi4/xa_nnlib:libxa_nnlib_common",
             "//executorch/backends/cadence/hifi/kernels:kernels",
+            "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "dequantize_per_tensor",
+        srcs = [
+            "dequantize_per_tensor.cpp"
+        ],
+        platforms = CXX,
+        deps = [
+            "//executorch/kernels/portable/cpu/util:all_deps",
+            "//executorch/kernels/portable/cpu/pattern:all_deps",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/backends/cadence/hifi/kernels:kernels",
+            "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "quantized_layer_norm",
+        srcs = [
+            "quantized_layer_norm.cpp"
+        ],
+        exported_headers = ["operators.h"],
+        platforms = CXX,
+        deps = [
+            "//executorch/kernels/portable/cpu/util:all_deps",
+            "//executorch/kernels/portable/cpu/pattern:all_deps",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/backends/cadence/hifi/kernels:kernels",
+            "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "quantized_linear_out",
+        srcs = [
+            "quantized_linear_out.cpp"
+        ],
+        exported_headers = ["operators.h"],
+        platforms = CXX,
+        deps = [
+            "//executorch/kernels/portable/cpu/util:all_deps",
+            "//executorch/kernels/portable/cpu/pattern:all_deps",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/backends/cadence/hifi/kernels:kernels",
+            "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "op_add",
+        srcs = [
+            "op_add.cpp",
+        ],
+        platforms = CXX,
+        deps = [
+            "//executorch/kernels/portable/cpu/util:all_deps",
+            "//executorch/kernels/portable/cpu/pattern:all_deps",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/backends/cadence/hifi/kernels:kernels",
+            "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+
+    runtime.cxx_library(
+        name = "op_mul",
+        srcs = [
+            "op_mul.cpp",
+        ],
+        platforms = CXX,
+        deps = [
+            "//executorch/kernels/portable/cpu/util:all_deps",
+            "//executorch/kernels/portable/cpu/pattern:all_deps",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/backends/cadence/hifi/kernels:kernels",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "op_sub",
+        srcs = [
+            "op_sub.cpp",
+        ],
+        platforms = CXX,
+        deps = [
+            "//executorch/kernels/portable/cpu/util:all_deps",
+            "//executorch/kernels/portable/cpu/pattern:all_deps",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/backends/cadence/hifi/kernels:kernels",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "op_div",
+        srcs = [
+            "op_div.cpp",
+        ],
+        platforms = CXX,
+        deps = [
+            "//executorch/kernels/portable/cpu/util:all_deps",
+            "//executorch/kernels/portable/cpu/pattern:all_deps",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/backends/cadence/hifi/kernels:kernels",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "op_sigmoid",
+        srcs = [
+            "op_sigmoid.cpp",
+        ],
+        platforms = CXX,
+        deps = [
+            "//executorch/kernels/portable/cpu/util:all_deps",
+            "//executorch/kernels/portable/cpu/pattern:all_deps",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/backends/cadence/hifi/kernels:kernels",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "op_tanh",
+        srcs = [
+            "op_tanh.cpp",
+        ],
+        platforms = CXX,
+        deps = [
+            "//executorch/kernels/portable/cpu/util:all_deps",
+            "//executorch/kernels/portable/cpu/pattern:all_deps",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/backends/cadence/hifi/kernels:kernels",
+            "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    
+    runtime.cxx_library(
+        name = "op_where",
+        srcs = [
+            "op_where.cpp",
+        ],
+        platforms = CXX,
+        deps = [
+            "//executorch/kernels/portable/cpu/util:all_deps",
+            "//executorch/kernels/portable/cpu/pattern:all_deps",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/backends/cadence/hifi/kernels:kernels",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
         ],
         visibility = [
             "//executorch/backends/cadence/...",

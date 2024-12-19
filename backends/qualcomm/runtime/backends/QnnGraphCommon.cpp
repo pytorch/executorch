@@ -12,7 +12,7 @@ namespace qnn {
 
 using executorch::runtime::Error;
 
-Error QnnGraph::Configure() {
+Error QnnGraph::Configure(const std::string& graph_name) {
   // create qnn backend
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
@@ -23,15 +23,22 @@ Error QnnGraph::Configure() {
       Internal,
       "Fail to make graph config.");
 
+  if (handle_.count(graph_name)) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Graph '%s' has been configured.", graph_name.c_str());
+    return Error::Ok;
+  }
+
+  Qnn_GraphHandle_t graph_handle = nullptr;
   if (context_->GetCacheState() == QnnBackendCache::DESERIALIZE) {
     // retrieve QNN Graph
     error = qnn_interface.qnn_graph_retrieve(
-        context_->GetHandle(), context_->GetGraphName().c_str(), &handle_);
+        context_->GetHandle(), graph_name.c_str(), &graph_handle);
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_ERROR(
           "Can't retrieve graph "
           "%s from context. Error %d.",
-          context_->GetGraphName().c_str(),
+          graph_name.c_str(),
           QNN_GET_ERROR_CODE(error));
       return Error::Internal;
     }
@@ -40,9 +47,9 @@ Error QnnGraph::Configure() {
       context_->GetCacheState() == QnnBackendCache::ONLINE_PREPARE) {
     Qnn_ErrorHandle_t error = qnn_interface.qnn_graph_create(
         context_->GetHandle(),
-        graph_name_.c_str(),
+        graph_name.c_str(),
         temp_graph_config.empty() ? nullptr : temp_graph_config.data(),
-        &handle_);
+        &graph_handle);
 
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_ERROR(
@@ -54,26 +61,36 @@ Error QnnGraph::Configure() {
     return Error::Internal;
   }
 
+  // book keep valid handle of created graph
+  handle_[graph_name] = graph_handle;
   // The profiler needs to be created after the backend is created.
-  profile_ =
+  profile_[graph_name] =
       std::make_unique<QnnProfile>(implementation_, backend_, profile_level_);
   return Error::Ok;
 }
 
 Qnn_ErrorHandle_t QnnGraph::GraphExecute(
+    const std::string& graph_name,
     const std::vector<Qnn_Tensor_t>& input_tensor_structs,
     std::vector<Qnn_Tensor_t>& output_tensor_structs) {
+  if (!handle_.count(graph_name)) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "graph name: %s does not exist.", graph_name.c_str());
+    return QNN_COMMON_ERROR_GENERAL;
+  }
+
   return implementation_.GetQnnInterface().qnn_graph_execute(
-      handle_,
+      handle_[graph_name],
       input_tensor_structs.data(),
       input_tensor_structs.size(),
       output_tensor_structs.data(),
       output_tensor_structs.size(),
-      profile_->GetHandle(),
+      profile_[graph_name]->GetHandle(),
       /*signalHandle=*/nullptr);
 };
 
 Error QnnGraph::EnsureTensorInQnnGraph(
+    const std::string& graph_name,
     const std::shared_ptr<TensorWrapper>& tensor_wrapper) {
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
@@ -81,7 +98,8 @@ Error QnnGraph::EnsureTensorInQnnGraph(
   if (!tensor_wrapper->IsTensorCreated()) {
     Qnn_Tensor_t tensor = tensor_wrapper->CloneTensorStruct();
 
-    error = qnn_interface.qnn_tensor_create_graph_tensor(handle_, &tensor);
+    error = qnn_interface.qnn_tensor_create_graph_tensor(
+        handle_[graph_name], &tensor);
 
     int name_conflict_count = 0;
     while (error == QNN_TENSOR_ERROR_NAME_HASH_COLLISION) {
@@ -99,7 +117,8 @@ Error QnnGraph::EnsureTensorInQnnGraph(
 
       // update
       name_conflict_count++;
-      error = qnn_interface.qnn_tensor_create_graph_tensor(handle_, &tensor);
+      error = qnn_interface.qnn_tensor_create_graph_tensor(
+          handle_[graph_name], &tensor);
     }
     tensor_wrapper->UpdateQnnTensorMeta(tensor);
     tensor_wrapper->SetTensorCreated();

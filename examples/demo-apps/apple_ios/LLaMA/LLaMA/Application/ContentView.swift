@@ -73,6 +73,7 @@ struct ContentView: View {
   @State private var imagePickerSourceType: UIImagePickerController.SourceType = .photoLibrary
 
   @State private var showingSettings = false
+  @FocusState private var textFieldFocused: Bool
 
   enum PickerType {
     case model
@@ -102,29 +103,46 @@ struct ContentView: View {
       VStack {
         if showingSettings {
           VStack(spacing: 20) {
-            Form {
-              Section(header: Text("Model and Tokenizer")
-                        .font(.headline)
-                        .foregroundColor(.primary)) {
+            HStack {
+              VStack(spacing: 10) {
                 Button(action: { pickerType = .model }) {
-                  Label(resourceManager.modelName == "" ? modelTitle : resourceManager.modelName, systemImage: "doc")
+                  Label(modelTitle, systemImage: "doc")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 300, alignment: .leading)
                 }
                 Button(action: { pickerType = .tokenizer }) {
-                  Label(resourceManager.tokenizerName == "" ? tokenizerTitle : resourceManager.tokenizerName, systemImage: "doc")
+                  Label(tokenizerTitle, systemImage: "doc")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 300, alignment: .leading)
                 }
               }
+              .padding()
+              .background(Color.gray.opacity(0.1))
+              .cornerRadius(10)
+              .fixedSize(horizontal: true, vertical: false)
+              Spacer()
             }
+            .padding()
           }
         }
 
         MessageListView(messages: $messages)
-          .gesture(
+          .simultaneousGesture(
             DragGesture().onChanged { value in
               if value.translation.height > 10 {
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                hideKeyboard()
               }
+              showingSettings = false
+              textFieldFocused = false
             }
           )
+          .onTapGesture {
+            showingSettings = false
+            textFieldFocused = false
+          }
+
         HStack {
           Button(action: {
             imagePickerSourceType = .photoLibrary
@@ -164,6 +182,11 @@ struct ContentView: View {
                 .stroke(isInputEnabled ? Color.blue : Color.gray, lineWidth: 1)
             )
             .disabled(!isInputEnabled)
+            .focused($textFieldFocused)
+            .onAppear { textFieldFocused = false }
+            .onTapGesture {
+              showingSettings = false
+            }
 
           Button(action: isGenerating ? stop : generate) {
             Image(systemName: isGenerating ? "stop.circle" : "arrowshape.up.circle.fill")
@@ -185,7 +208,7 @@ struct ContentView: View {
           Button(action: {
             showingSettings.toggle()
           }) {
-            Image(systemName: "gearshape")
+            Image(systemName: "folder")
               .imageScale(.large)
           },
         trailing:
@@ -464,6 +487,10 @@ struct ContentView: View {
         resourceManager.modelPath = url.path
       case .tokenizer:
         resourceManager.tokenizerPath = url.path
+      }
+      if resourceManager.isModelValid && resourceManager.isTokenizerValid {
+        showingSettings = false
+        textFieldFocused = true
       }
     case .failure(let error):
       withAnimation {

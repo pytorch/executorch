@@ -17,11 +17,11 @@ from executorch.backends.transforms.fuse_batch_norm_with_conv import (
 from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
 from executorch.backends.transforms.fuse_dequant_linear import FuseDequantLinearPass
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
-from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 
 from executorch.backends.vulkan._passes import (
     insert_prepack_nodes,
     RemoveLocalScalarDenseOpsTransform,
+    RemoveRedundantOpsTransform,
     TagMemoryMetaPass,
 )
 
@@ -98,6 +98,10 @@ def parse_compile_spec(compile_specs: List[CompileSpec]) -> Dict[str, Any]:
             )
         if spec.key in {"texture_limits_x", "texture_limits_y", "texture_limits_z"}:
             options[spec.key] = int.from_bytes(spec.value, byteorder="little")
+
+        if spec.key == "skip_tag_memory_metadata":
+            options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
+
         # Unhandled options are ignored
 
     return options
@@ -139,7 +143,7 @@ class VulkanBackend(BackendDetails):
         program = apply_passes(
             program,
             [
-                RemoveCloneOpsTransform(),
+                RemoveRedundantOpsTransform(),
                 AddmmToLinearTransform(),
                 FuseDequantLinearPass(),
                 FuseViewCopyTransform(),

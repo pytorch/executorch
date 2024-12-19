@@ -14,7 +14,6 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_utils import is_permute_node_before_addmm
 from serializer.tosa_serializer import TosaOp
 
 
@@ -81,13 +80,6 @@ class PermuteVisitor(NodeVisitor):
         output: TosaArg,
         is_quant_node: bool,
     ) -> None:
-        if is_permute_node_before_addmm(node):
-            ## Simply add an identityOp
-            tosa_graph.addOperator(
-                TosaOp.Op().IDENTITY, [inputs[0].name], [output.name]
-            )
-            return
-
         # The permutation vector describes a permutation P in default Pytorch dim_order.
         # For rank 4, the default dim_order NCHW.
         # E.g. (2,3,0,1) -> permute (n,c,h,w) to (w,c,n,h)

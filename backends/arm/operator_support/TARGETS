@@ -1,0 +1,12 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+python_library(
+    name = "operator_support",
+    srcs = glob(["*.py"]),
+    typing = True,
+    deps = [
+        "//executorch/backends/xnnpack/_passes:xnnpack_passes",
+        "//executorch/exir:lib",
+        "//executorch/backends/arm:tosa_specification"
+    ],
+)

@@ -51,7 +51,6 @@ def register_annotator(op: str):
 from . import (  # noqa
     adaptive_ang_pool2d_annotator,
     add_annotator,
-    cat_annotator,
     conv_annotator,
     generic_annotator,
     linear_annotator,
@@ -60,5 +59,5 @@ from . import (  # noqa
     mul_annotator,
     one_to_one_annotator,
     sub_annotator,
-    sum_annotator,
+    upsample_nearest2d_annotator,
 )

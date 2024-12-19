@@ -221,6 +221,7 @@ def get_ptq_per_channel_quant_config(
     act_dtype=torch.uint8,
     weight_dtype=torch.int8,
     act_observer=MovingAverageMinMaxObserver,
+    act_symmetric: bool = False,
 ) -> QuantizationConfig:
     extra_args: Dict[str, Any] = {"eps": 2**-12}
 
@@ -241,13 +242,27 @@ def get_ptq_per_channel_quant_config(
     ), f"weight_dtype, {weight_dtype} is not one of supported types, {supported_weight_dtypes}"
 
     # torch do not support uint16 quantization, use int32 to bypass
-    act_quantization_spec = QuantizationSpec(
-        dtype=torch.int32 if act_dtype == torch.uint16 else act_dtype,
-        quant_min=torch.iinfo(act_dtype).min,
-        quant_max=torch.iinfo(act_dtype).max,
-        qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
-    )
+    if act_symmetric:
+        # If zero_point is 128, htp can do optimizations.
+        # If we keep quant_min and quant_max none, observer will default use 128 as zero_point.
+        # If we provide uint8 quant_min/max, it will use 127 as zero_point, which is undesired.
+        act_quantization_spec = QuantizationSpec(
+            dtype=torch.int32 if act_dtype == torch.uint16 else act_dtype,
+            qscheme=torch.per_tensor_symmetric,
+            observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
+        )
+    else:
+        # PyTorch will remove redundant observers based on attributes such as:
+        # dtype, quant_min, quant_max, ch_axis, etc.
+        # Providing values like quant_min and quant_max can help observers compare
+        # and further reduce the number of observers.
+        act_quantization_spec = QuantizationSpec(
+            dtype=torch.int32 if act_dtype == torch.uint16 else act_dtype,
+            quant_min=torch.iinfo(act_dtype).min,
+            quant_max=torch.iinfo(act_dtype).max,
+            qscheme=torch.per_tensor_affine,
+            observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
+        )
 
     weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8 if weight_dtype == "int4" else weight_dtype,

@@ -37,6 +37,7 @@ class TestSimpleRepeat(unittest.TestCase):
             (torch.randn(3), (2, 2)),
             (torch.randn(3), (1, 2, 3)),
             (torch.randn((3, 3)), (2, 2, 2)),
+            (torch.randn((3, 3, 3)), (2, 1, 2, 4)),
         ]
 
         def forward(self, x: torch.Tensor, multiples: Sequence):
@@ -47,7 +48,7 @@ class TestSimpleRepeat(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
             )
             .export()
             .check_count({"torch.ops.aten.repeat.default": 1})
@@ -65,7 +66,7 @@ class TestSimpleRepeat(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
             )
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
@@ -106,8 +107,16 @@ class TestSimpleRepeat(unittest.TestCase):
     def test_repeat_tosa_BI(self, test_input, multiples):
         self._test_repeat_tosa_BI_pipeline(self.Repeat(), (test_input, multiples))
 
-    @parameterized.expand(Repeat.test_parameters)
+    @parameterized.expand(Repeat.test_parameters[:-1])
     def test_repeat_u55_BI(self, test_input, multiples):
+        self._test_repeat_ethosu_pipeline(
+            common.get_u55_compile_spec(), self.Repeat(), (test_input, multiples)
+        )
+
+    # Final test requires transpose which is not supported on u55.
+    @parameterized.expand(Repeat.test_parameters[-1:])
+    @unittest.expectedFailure
+    def test_repeat_u55_BI_xfails(self, test_input, multiples):
         self._test_repeat_ethosu_pipeline(
             common.get_u55_compile_spec(), self.Repeat(), (test_input, multiples)
         )

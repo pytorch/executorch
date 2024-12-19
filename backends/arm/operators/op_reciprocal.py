@@ -2,6 +2,8 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
 from typing import List
 
 import numpy as np
@@ -15,7 +17,8 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import (
     dequantize_value,
-    get_quant_node_args,
+    get_quant_arg_downstream,
+    get_quant_arg_upstream,
     QuantArgs,
     quantize_value,
 )
@@ -41,8 +44,8 @@ class DivVisitor(NodeVisitor):
 
         if is_quant_node:
             input = inputs[0]
-            input_qargs = get_quant_node_args(node.all_input_nodes[0])
-            output_qargs = get_quant_node_args(list(node.users)[0])
+            input_qargs = get_quant_arg_upstream(node.all_input_nodes[0])
+            output_qargs = get_quant_arg_downstream(list(node.users)[0])
 
             div_table = div_table_8bit(input_qargs, output_qargs)
 

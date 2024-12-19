@@ -8,8 +8,10 @@
 import logging
 import unittest
 
+import pytest
+
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir import EdgeCompileConfig
@@ -54,12 +56,12 @@ class TestMobileNetV2(unittest.TestCase):
             ArmTester(
                 self.mv2,
                 example_inputs=self.model_inputs,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=common.get_tosa_compile_spec(
+                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
+                ),
             )
             .export()
-            .to_edge(config=self._edge_compile_config)
-            .check(list(self.all_operators))
-            .partition()
+            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
             .to_executorch()
             .run_method_and_compare_outputs(inputs=self.model_inputs)
         )
@@ -69,13 +71,13 @@ class TestMobileNetV2(unittest.TestCase):
             ArmTester(
                 self.mv2,
                 example_inputs=self.model_inputs,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=common.get_tosa_compile_spec(
+                    "TOSA-0.80.0+BI", permute_memory_to_nhwc=True
+                ),
             )
             .quantize()
             .export()
-            .to_edge(config=self._edge_compile_config)
-            .check(list(self.operators_after_quantization))
-            .partition()
+            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
             .to_executorch()
             # atol=1.0 is a defensive upper limit
             # TODO MLETROCH-72
@@ -83,6 +85,8 @@ class TestMobileNetV2(unittest.TestCase):
             .run_method_and_compare_outputs(atol=1.0, qtol=1, inputs=self.model_inputs)
         )
 
+    @pytest.mark.slow
+    @pytest.mark.corstone_fvp
     def test_mv2_u55_BI(self):
         tester = (
             ArmTester(
@@ -92,17 +96,17 @@ class TestMobileNetV2(unittest.TestCase):
             )
             .quantize()
             .export()
-            .to_edge(config=self._edge_compile_config)
-            .check(list(self.operators_after_quantization))
-            .partition()
+            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
             .to_executorch()
             .serialize()
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
                 atol=1.0, qtol=1, inputs=self.model_inputs, target_board="corstone-300"
             )
 
+    @pytest.mark.slow
+    @pytest.mark.corstone_fvp
     def test_mv2_u85_BI(self):
         tester = (
             ArmTester(
@@ -112,13 +116,11 @@ class TestMobileNetV2(unittest.TestCase):
             )
             .quantize()
             .export()
-            .to_edge(config=self._edge_compile_config)
-            .check(list(self.operators_after_quantization))
-            .partition()
+            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
             .to_executorch()
             .serialize()
         )
-        if common.is_option_enabled("corstone300"):
+        if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
                 atol=1.0, qtol=1, inputs=self.model_inputs, target_board="corstone-320"
             )

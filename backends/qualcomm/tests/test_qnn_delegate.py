@@ -29,12 +29,13 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 
 from executorch.backends.qualcomm.utils.utils import (
-    canonicalize_program,
     capture_program,
     from_context_binary,
     generate_htp_compiler_spec,
+    generate_multi_graph_program,
     generate_qnn_executorch_compiler_spec,
     skip_annotation,
+    update_spill_fill_size,
 )
 
 from executorch.examples.models.llama.llama_transformer import ModelArgs, MOEFeedForward
@@ -43,6 +44,20 @@ from executorch.examples.qualcomm.utils import setup_common_args_and_variables
 
 from executorch.backends.qualcomm.tests.models import *  # noqa: F403
 
+import os
+import random
+
+from collections import defaultdict
+from typing import List
+
+from executorch.backends.qualcomm._passes.fuse_consecutive_transpose import (
+    FuseConsecutiveTranspose,
+)
+from executorch.backends.qualcomm._passes.insert_io_qdq import InsertIOQDQ
+from executorch.backends.qualcomm._passes.insert_requantize import InsertRequantize
+from executorch.backends.qualcomm._passes.layout_transform import LayoutTransform
+from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
+from executorch.backends.qualcomm.debugger.utils import DrawGraph
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.models.inception_v3 import InceptionV3Model
@@ -56,6 +71,7 @@ from executorch.examples.models.torchvision_vit.model import TorchVisionViTModel
 from executorch.examples.models.wav2letter import Wav2LetterModel
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import disable_validation
+from executorch.exir.passes import PassManager
 
 
 class TestQNNFloatingPointOperator(TestQNN):
@@ -132,6 +148,16 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv2d_channel_last(self):
+        modules = [
+            Conv2dSequential(channel_last=True),  # noqa: F405
+            Conv2dSequential(bias=False, channel_last=True),  # noqa: F405
+        ]
+        sample_input = (torch.randn([1, 1, 3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv_transpose2d(self):
         modules = [
             ConvTranspose2dSingle(),  # noqa: F405
@@ -141,6 +167,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_cos(self):
+        module = Cos()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_einsum_outer_product(self):
         module = EinsumOuterProduct()  # noqa: F405
@@ -462,6 +493,11 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_sigmoid(self):
         module = Sigmoid()  # noqa: F405
         sample_input = (torch.randn([1, 3, 3, 3]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sin(self):
+        module = Sin()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_select_copy(self):
@@ -813,6 +849,17 @@ class TestQNNQuantizedOperator(TestQNN):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv2d_channel_last(self):
+        modules = [
+            Conv2dSequential(channel_last=True),  # noqa: F405
+            Conv2dSequential(bias=False, channel_last=True),  # noqa: F405
+        ]
+        sample_input = (torch.randn([1, 1, 3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv_transpose2d(self):
         modules = [
             ConvTranspose2dSingle(),  # noqa: F405
@@ -823,6 +870,12 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_cos(self):
+        module = Cos()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_einsum_outer_product(self):
         module = EinsumOuterProduct()  # noqa: F405
@@ -1200,6 +1253,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_sin(self):
+        module = Sin()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_slice_copy(self):
         modules = [SliceCopy(), SliceCopyWithStep()]  # noqa: F405
         sample_input = (
@@ -1536,7 +1595,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         )
         partitioner = QnnPartitioner(compiler_specs)
         edge_prog.exported_program = to_backend(edge_prog.exported_program, partitioner)
-        canonicalize_program(edge_prog.exported_program)
+        update_spill_fill_size(edge_prog.exported_program)
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module, sample_input, exec_prog)
 
@@ -1560,9 +1619,53 @@ class TestQNNFloatingPointUtils(TestQNN):
         edge_prog = to_edge(
             torch.export.export(module, sample_input),
         )
-        canonicalize_program(edge_prog.exported_program())
+        update_spill_fill_size(edge_prog.exported_program())
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module.get_reference_module(), sample_input, exec_prog)
+
+    def test_qnn_backend_multi_graphs(self):
+        if self.enable_x86_64:
+            self.skipTest("weight sharing is not supported on host machine")
+
+        seq_conv = Conv2dSequential()  # noqa: F405
+        # weight sharing
+        modules = [seq_conv, seq_conv.second]
+        sample_inputs = [(torch.randn([1, 1, 3, 3]),), (torch.randn([1, 3, 3, 3]),)]
+        graph_names = ["seq_conv", "single_conv"]
+        edge_progs = [
+            capture_program(module, sample_input)
+            for module, sample_input in zip(modules, sample_inputs)
+        ]
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=True,
+        )
+        compiler_specs = [
+            generate_qnn_executorch_compiler_spec(
+                soc_model=self.chipset_table[TestQNN.model],
+                backend_options=backend_options,
+                multiple_graphs=True,
+                graph_name=graph_name,
+            )
+            for graph_name in graph_names
+        ]
+        exported_programs = [
+            to_backend(edge_prog.exported_program, QnnPartitioner(compiler_specs[i]))
+            for i, edge_prog in enumerate(edge_progs)
+        ]
+        prog_mgr = generate_multi_graph_program(
+            compiler_specs=compiler_specs[0],
+            processed_bytes=[
+                prog.graph_module.lowered_module_0.processed_bytes
+                for prog in exported_programs
+            ],
+        )
+        for index, module in enumerate(modules):
+            self.verify_output(
+                module=module,
+                sample_inputs=sample_inputs[index],
+                executorch_prog=prog_mgr,
+                method_index=index,
+            )
 
     def test_qnn_backend_profile_op(self):
         TestQNN.enable_profile = True
@@ -1621,23 +1724,164 @@ class TestQNNFloatingPointUtils(TestQNN):
             )
             ctx_path = f"{tmp_dir}/model_ctx.bin"
             bundle_program = from_context_binary(ctx_path, "ctx_loader")
-            backend_options = generate_htp_compiler_spec(use_fp16=True)
-            compiler_specs = generate_qnn_executorch_compiler_spec(
-                soc_model=self.chipset_table[TestQNN.model],
-                backend_options=backend_options,
-                is_from_context_binary=True,
-            )
-            lowered_module = to_backend(
-                "QnnBackend", bundle_program["edge_program"], compiler_specs
-            )
             self.verify_output(
                 module,
                 tuple(
                     torch.randn(size=v.shape, dtype=v.dtype)
                     for v in bundle_program["inputs"].values()
                 ),
-                lowered_module,
+                bundle_program["edge_program_manager"].to_executorch(),
             )
+
+    def test_qnn_backend_draw_graph(self):
+        golden_data = """digraph test {
+            rankdir=TB
+            input_0_x_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightgreen">name: input_0_x_0</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_WRITE</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            p_conv2_weight_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightpink">name: p_conv2_weight_0</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">dims: [3, 3, 32, 32]</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            p_conv2_bias_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightpink">name: p_conv2_bias_0</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">dims: [32]</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            aten_convolution_default_1_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_convolution_default_1_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            aten_relu_default_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_relu_default_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            aten_relu_default_1_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_relu_default_1_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            output_aten_add_tensor_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightgreen">name: output_aten_add_tensor_0</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_READ</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            p_conv1_weight_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightpink">name: p_conv1_weight_0</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">dims: [3, 3, 32, 32]</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            p_conv1_bias_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightpink">name: p_conv1_bias_0</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">dims: [32]</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            aten_convolution_default_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_convolution_default_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            input_0_x_0 -> aten_convolution_default_1_0
+            p_conv2_weight_0 -> aten_convolution_default_1_0
+            p_conv2_bias_0 -> aten_convolution_default_1_0
+            aten_convolution_default_0 -> aten_relu_default_0
+            input_0_x_0 -> aten_convolution_default_0
+            p_conv1_weight_0 -> aten_convolution_default_0
+            p_conv1_bias_0 -> aten_convolution_default_0
+            aten_convolution_default_1_0 -> aten_relu_default_1_0
+            aten_relu_default_0 -> output_aten_add_tensor_0
+            aten_relu_default_1_0 -> output_aten_add_tensor_0
+        }
+        """
+        module = DrawGraphModel()  # noqa: F405
+        sample_input = (torch.randn(1, 32, 28, 28),)
+        delegated_program = capture_program(module, sample_input)
+
+        """
+        This piece of code simulates the behavior of the final preprocessing step to obtain the op wrapper list. 
+        In practice, users need to set a breakpoint in the preprocessing step and use the DrawGraph tool to visualize the graph.
+        """
+        qnn_compiler_passes = PassManager(
+            passes=[
+                InsertRequantize(delegated_program.exported_program),
+                InsertIOQDQ(delegated_program.exported_program),
+                LayoutTransform(
+                    delegated_program.exported_program, insert_permute=True
+                ),
+                FuseConsecutiveTranspose(),
+            ]
+        )
+
+        pass_result = qnn_compiler_passes(
+            delegated_program.exported_program.graph_module
+        )
+        nodes_to_wrappers = defaultdict(dict)
+        node_visitors = get_node_visitors(
+            delegated_program.exported_program, enable_tensor_dump=False
+        )
+
+        py_op_wrapper_list = []
+        for node in pass_result.graph_module.graph.nodes:
+            if node.op == "call_function":
+                if node.target.__name__ in node_visitors:
+                    py_op_wrapper = node_visitors[node.target.__name__].define_node(
+                        node, nodes_to_wrappers
+                    )
+                    if py_op_wrapper is not None:
+                        if isinstance(py_op_wrapper, List):
+                            py_op_wrapper_list.extend(py_op_wrapper)
+                        else:
+                            py_op_wrapper_list.append(py_op_wrapper)
+                elif node.op in [
+                    "get_attr",
+                    "placeholder",
+                    "output",
+                ]:
+                    continue
+        # random py_op_wrapper_list to check it's correctness
+        random.shuffle(py_op_wrapper_list)
+        DrawGraph("test", ".", py_op_wrapper_list, dot_string=True)
+        test_file = os.path.join(".", "test.dot")
+        with open(test_file, "r") as test:
+            test_data = test.read()
+        assert sorted(golden_data.split()) == sorted(
+            test_data.split()
+        ), "Generated .dot file does not match the golden file."
 
 
 class TestQNNQuantizedUtils(TestQNN):
@@ -1819,7 +2063,7 @@ class TestQNNQuantizedUtils(TestQNN):
         )
         partitioner = QnnPartitioner(compiler_specs)
         edge_prog.exported_program = to_backend(edge_prog.exported_program, partitioner)
-        canonicalize_program(edge_prog.exported_program)
+        update_spill_fill_size(edge_prog.exported_program)
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module, sample_input, exec_prog)
 
@@ -1844,9 +2088,53 @@ class TestQNNQuantizedUtils(TestQNN):
         edge_prog = to_edge(
             torch.export.export(module, sample_input),
         )
-        canonicalize_program(edge_prog.exported_program())
+        update_spill_fill_size(edge_prog.exported_program())
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module.get_reference_module(), sample_input, exec_prog)
+
+    def test_qnn_backend_multi_graphs(self):
+        if self.enable_x86_64:
+            self.skipTest("weight sharing is not supported on host machine")
+
+        seq_conv = Conv2dSequential()  # noqa: F405
+        # weight sharing
+        modules = [seq_conv, seq_conv.second]
+        sample_inputs = [(torch.randn([1, 1, 3, 3]),), (torch.randn([1, 3, 3, 3]),)]
+        graph_names = ["seq_conv", "single_conv"]
+        edge_progs = [
+            capture_program(self.get_qdq_module(module, sample_input), sample_input)
+            for module, sample_input in zip(modules, sample_inputs)
+        ]
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=True,
+        )
+        compiler_specs = [
+            generate_qnn_executorch_compiler_spec(
+                soc_model=self.chipset_table[TestQNN.model],
+                backend_options=backend_options,
+                multiple_graphs=True,
+                graph_name=graph_name,
+            )
+            for graph_name in graph_names
+        ]
+        exported_programs = [
+            to_backend(edge_prog.exported_program, QnnPartitioner(compiler_specs[i]))
+            for i, edge_prog in enumerate(edge_progs)
+        ]
+        prog_mgr = generate_multi_graph_program(
+            compiler_specs=compiler_specs[0],
+            processed_bytes=[
+                prog.graph_module.lowered_module_0.processed_bytes
+                for prog in exported_programs
+            ],
+        )
+        for index, module in enumerate(modules):
+            self.verify_output(
+                module=module,
+                sample_inputs=sample_inputs[index],
+                executorch_prog=prog_mgr,
+                method_index=index,
+            )
 
     def test_qnn_backend_profile_op(self):
         TestQNN.enable_profile = True
@@ -1908,23 +2196,183 @@ class TestQNNQuantizedUtils(TestQNN):
             )
             ctx_path = f"{tmp_dir}/model_ctx.bin"
             bundle_program = from_context_binary(ctx_path, "ctx_loader")
-            backend_options = generate_htp_compiler_spec(use_fp16=False)
-            compiler_specs = generate_qnn_executorch_compiler_spec(
-                soc_model=self.chipset_table[TestQNN.model],
-                backend_options=backend_options,
-                is_from_context_binary=True,
-            )
-            lowered_module = to_backend(
-                "QnnBackend", bundle_program["edge_program"], compiler_specs
-            )
             self.verify_output(
                 module,
                 tuple(
                     torch.randn(size=v.shape, dtype=v.dtype)
                     for v in bundle_program["inputs"].values()
                 ),
-                lowered_module,
+                bundle_program["edge_program_manager"].to_executorch(),
             )
+
+    def test_qnn_backend_draw_graph(self):
+        golden_data = """digraph test {
+            rankdir=TB
+            aten_convolution_default_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_convolution_default_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            aten_relu_default_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_relu_default_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            quantized_decomposed_quantize_per_tensor_default_8_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: quantized_decomposed_quantize_per_tensor_default_8_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 32, 28, 28]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            b__frozen_param2_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightpink">name: b__frozen_param2_0</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">data_type: Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">dims: [3, 3, 32, 32]</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            b__frozen_param3_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightpink">name: b__frozen_param3_0</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">data_type: Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">dims: [32]</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            aten_convolution_default_1_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_convolution_default_1_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            aten_relu_default_1_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_relu_default_1_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            aten_add_tensor_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_add_tensor_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            output_quantized_decomposed_dequantize_per_tensor_tensor_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightgreen">name: output_quantized_decomposed_dequantize_per_tensor_tensor_0</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_READ</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">dims: [1, 32, 28, 28]</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            input_0_x_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightgreen">name: input_0_x_0</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_WRITE</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">dims: [1, 32, 28, 28]</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            b__frozen_param0_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightpink">name: b__frozen_param0_0</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">data_type: Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">dims: [3, 3, 32, 32]</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            b__frozen_param1_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightpink">name: b__frozen_param1_0</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">data_type: Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">dims: [32]</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            quantized_decomposed_quantize_per_tensor_default_8_0 -> aten_convolution_default_0
+            input_0_x_0 -> quantized_decomposed_quantize_per_tensor_default_8_0
+            b__frozen_param0_0 -> aten_convolution_default_0
+            b__frozen_param1_0 -> aten_convolution_default_0
+            aten_convolution_default_0 -> aten_relu_default_0
+            quantized_decomposed_quantize_per_tensor_default_8_0 -> aten_convolution_default_1_0
+            b__frozen_param2_0 -> aten_convolution_default_1_0
+            b__frozen_param3_0 -> aten_convolution_default_1_0
+            aten_convolution_default_1_0 -> aten_relu_default_1_0
+            aten_relu_default_0 -> aten_add_tensor_0
+            aten_relu_default_1_0 -> aten_add_tensor_0
+            aten_add_tensor_0 -> output_quantized_decomposed_dequantize_per_tensor_tensor_0
+        }
+        """
+        module = DrawGraphModel()  # noqa: F405
+        sample_input = (torch.randn(1, 32, 28, 28),)
+        module = self.get_qdq_module(module, sample_input)
+        delegated_program = capture_program(module, sample_input)
+
+        """
+        This piece of code simulates the behavior of the final preprocessing step to obtain the op wrapper list. 
+        In practice, users need to set a breakpoint in the preprocessing step and use the DrawGraph tool to visualize the graph.
+        """
+        qnn_compiler_passes = PassManager(
+            passes=[
+                InsertRequantize(delegated_program.exported_program),
+                InsertIOQDQ(delegated_program.exported_program),
+                LayoutTransform(
+                    delegated_program.exported_program, insert_permute=True
+                ),
+                FuseConsecutiveTranspose(),
+            ]
+        )
+
+        pass_result = qnn_compiler_passes(
+            delegated_program.exported_program.graph_module
+        )
+        nodes_to_wrappers = defaultdict(dict)
+        node_visitors = get_node_visitors(
+            delegated_program.exported_program, enable_tensor_dump=False
+        )
+
+        py_op_wrapper_list = []
+        for node in pass_result.graph_module.graph.nodes:
+            if node.op == "call_function":
+                if node.target.__name__ in node_visitors:
+                    py_op_wrapper = node_visitors[node.target.__name__].define_node(
+                        node, nodes_to_wrappers
+                    )
+                    if py_op_wrapper is not None:
+                        if isinstance(py_op_wrapper, List):
+                            py_op_wrapper_list.extend(py_op_wrapper)
+                        else:
+                            py_op_wrapper_list.append(py_op_wrapper)
+                elif node.op in [
+                    "get_attr",
+                    "placeholder",
+                    "output",
+                ]:
+                    continue
+        # random py_op_wrapper_list to check it's correctness
+        random.shuffle(py_op_wrapper_list)
+        DrawGraph("test", ".", py_op_wrapper_list, dot_string=True)
+        test_file = os.path.join(".", "test.dot")
+        with open(test_file, "r") as test:
+            test_data = test.read()
+        assert sorted(golden_data.split()) == sorted(
+            test_data.split()
+        ), "Generated .dot file does not match the golden file."
 
 
 class TestExampleOssScript(TestQNN):
@@ -2918,6 +3366,44 @@ class TestExampleScript(TestQNN):
                 cpu, htp = msg["CPU"], msg["HTP"]
                 for k, v in cpu.items():
                     self.assertLessEqual(abs(v[0] - htp[k][0]), 5)
+
+    def test_wav2letter(self):
+        if not self.required_envs([self.pretrained_weight]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/wav2letter.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--pretrained_weight",
+            self.pretrained_weight,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertLessEqual(msg["wer"], 0.5)
+                self.assertLessEqual(msg["cer"], 0.25)
 
     def test_export_example(self):
         if not self.required_envs([self.model_name]):

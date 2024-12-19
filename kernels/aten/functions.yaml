@@ -243,6 +243,8 @@
 
 - op: masked_scatter.out
 
+- op: masked_select.out
+
 - op: max_pool2d_with_indices.out
 
 - op: max.dim_max
@@ -310,6 +312,8 @@
 - op: remainder.Scalar_out
 
 - op: repeat.out
+
+- op: repeat_interleave.Tensor_out
 
 - op: reflection_pad1d.out
 

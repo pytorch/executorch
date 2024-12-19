@@ -8,6 +8,8 @@
 # eager models, apply source transformations and quantization and export them to
 # ExecuTorch.
 
+# pyre-unsafe
+
 import logging
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
@@ -184,24 +186,29 @@ class LLMEdgeManager:
             if hasattr(self.args, "qnn") and self.args.qnn:
                 # TODO: this is temporary and export_for_training doesn't work with qnn either. We need a
                 # functional graph. See issue https://github.com/pytorch/executorch/pull/4627 for more details
-                # pyre-fixme[8]: Attribute has type `Optional[GraphModule]`; used as
-                #  `Module`.
-                self.pre_autograd_graph_module = torch.export.export(
+                exported_module = torch.export.export(
                     self.model,
                     self.example_inputs,
                     self.example_kwarg_inputs,
                     dynamic_shapes=dynamic_shape,
                     strict=True,
-                ).module()
+                )
             else:
-                # pyre-fixme[8]: Attribute has type `Optional[GraphModule]`; used as
-                #  `Module`.
-                self.pre_autograd_graph_module = export_for_training(
+                logging.info("Exporting with:")
+                logging.info(f"inputs: {self.example_inputs}")
+                logging.info(f"kwargs: {self.example_kwarg_inputs}")
+                logging.info(f"dynamic shapes: {dynamic_shape}")
+                exported_module = export_for_training(
                     self.model,
                     self.example_inputs,
                     kwargs=self.example_kwarg_inputs,
                     dynamic_shapes=dynamic_shape,
-                ).module()
+                )
+            # pyre-fixme[8]: Attribute has type `Optional[GraphModule]`; used as
+            #  `Module`.
+            self.pre_autograd_graph_module = exported_module.module()
+            if hasattr(self.args, "export_only") and self.args.export_only:
+                torch.export.save(exported_module, self.args.output_name)
 
         return self
 

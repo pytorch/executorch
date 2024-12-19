@@ -55,9 +55,9 @@ if [[ "${ARCH}" == "x86_64" ]]; then
     corstone320_md5_checksum="3deb3c68f9b2d145833f15374203514d"
 
     # toochain
-    toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi.tar.xz"
-    toolchain_dir="arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi"
-    toolchain_md5_checksum="00ebb1b70b1f88906c61206457eacb61"
+    toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz"
+    toolchain_dir="arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi"
+    toolchain_md5_checksum="0601a9588bc5b9c99ad2b56133b7f118"
 elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
     # FVPs
     corstone300_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64_armv8l.tgz?rev=9cc6e9a32bb947ca9b21fa162144cb01&hash=7657A4CF27D42E892E3F08D452AAB073"
@@ -70,13 +70,13 @@ elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
 
     # toochain
     if [[ "${OS}" == "Darwin" ]]; then
-        toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-darwin-arm64-arm-none-eabi.tar.xz"
-        toolchain_dir="arm-gnu-toolchain-12.3.rel1-darwin-arm64-arm-none-eabi"
-        toolchain_md5_checksum="53d034e9423e7f470acc5ed2a066758e"
+        toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi.tar.xz"
+        toolchain_dir="arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi"
+        toolchain_md5_checksum="f1c18320bb3121fa89dca11399273f4e"
     elif [[ "${OS}" == "Linux" ]]; then
-        toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi.tar.xz"
-        toolchain_dir="arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi"
-        toolchain_md5_checksum="02c9b0d3bb1110575877d8eee1f223f2"
+        toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi.tar.xz"
+        toolchain_dir="arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi"
+        toolchain_md5_checksum="303102d97b877ebbeb36b3158994b218"
     fi
 else
     echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
@@ -88,8 +88,12 @@ ethos_u_base_rev="24.08"
 
 # tosa reference model
 tosa_reference_model_url="https://review.mlplatform.org/tosa/reference_model"
-tosa_reference_model_rev="f9ea4ab7da19318fe36b1c34d68a3e40fd6e56c5"
- 
+tosa_reference_model_rev="c5570b79e90c3a36ab8c4ddb8ee3fbc2cd3f7c38"
+
+# vela
+vela_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u-vela"
+vela_rev="5427dc7e9c1a4c7d554163290faeea75f168772d"
+
 ########
 ### Mandatory user args
 ########
@@ -174,15 +178,15 @@ function setup_fvp() {
 function setup_toolchain() {
     # Download and install the arm-none-eabi toolchain
     cd "${root_dir}"
-    if [[ ! -e gcc.tar.xz ]]; then
+    if [[ ! -e "${toolchain_dir}.tar.xz" ]]; then
         echo "[${FUNCNAME[0]}] Downloading toolchain ..."
-        curl --output gcc.tar.xz "${toolchain_url}"
-        verify_md5 ${toolchain_md5_checksum} gcc.tar.xz
+        curl --output "${toolchain_dir}.tar.xz" "${toolchain_url}"
+        verify_md5 ${toolchain_md5_checksum} "${toolchain_dir}.tar.xz"
     fi
 
     echo "[${FUNCNAME[0]}] Installing toolchain ..."
     rm -rf "${toolchain_dir}"
-    tar xf gcc.tar.xz
+    tar xf "${toolchain_dir}.tar.xz"
     toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
     export PATH=${PATH}:${toolchain_bin_path}
     hash arm-none-eabi-gcc
@@ -198,6 +202,7 @@ function setup_ethos_u() {
     cd ethos-u
     git reset --hard ${ethos_u_base_rev}
     python3 ./fetch_externals.py -c ${ethos_u_base_rev}.json fetch
+
     pip install pyelftools
     echo "[${FUNCNAME[0]}] Done @ $(git describe --all --long 3> /dev/null) in ${root_dir}/ethos-u dir."
 }
@@ -218,64 +223,19 @@ function patch_repo() {
 }
 
 function setup_tosa_reference_model() {
-    # The debug flow on the host includes running on a reference implementation of TOSA
-    # This is useful primarily for debug of quantization accuracy, but also for internal
-    # errors for the early codebase
-    cd "${root_dir}"
-    if [[ ! -e reference_model ]]; then
-        git clone ${tosa_reference_model_url}
-        cd reference_model
-        git checkout ${tosa_reference_model_rev}
-        git submodule update --init --recursive
-        cd ..
-    fi
-    cd reference_model
-    mkdir -p build
-    cd build
-    cmake ..
+    
+    # reference_model flatbuffers version clashes with Vela.
+    # go with Vela's since it newer.
+    # Vela's flatbuffer requirement is expected to loosen, then remove this. MLETORCH-565
+    pip install tosa-tools@git+${tosa_reference_model_url}@${tosa_reference_model_rev} --no-dependencies flatbuffers
 
-    # make use of half the cores for building
-    if [[ "${OS}" == "Linux" ]]; then
-        n=$(( $(nproc) / 2 ))
-    elif [[ "${OS}" == "Darwin" ]]; then
-        n=$(( $(sysctl -n hw.logicalcpu) / 2 ))
-    else
-        n=1
-    fi
-
-    if [[ "$n" -lt 1 ]]; then
-        n=1
-    fi
-
-    make -j"${n}"
-    cd reference_model
-    tosa_bin_path=`pwd`
-    echo "export PATH=\${PATH}:${tosa_bin_path}" >> "${setup_path_script}"
 }
 
 function setup_vela() {
     #
     # Prepare the Vela compiler for AoT to Ethos-U compilation
     #
-    cd "${root_dir}"
-    if [[ ! -e ethos-u-vela ]]; then
-        git clone https://review.mlplatform.org/ml/ethos-u/ethos-u-vela
-        repo_dir="${root_dir}/ethos-u-vela"
-        base_rev=57ce18c89ccc6f6309333dccb24ed30dc68b571f
-        patch_repo
-    fi
-    cd "${root_dir}/ethos-u-vela"
-
-    # different command for conda vs venv
-    VNV=$(python3 -c "import sys; print('venv') if (sys.prefix != sys.base_prefix) else print('not_venv')")
-    if [ ${VNV} == "venv" ]; then
-	pip install .
-    else
-       # if not venv, we need the site-path where the vela
-       vela_path=$(python -c "import site; print(site.USER_BASE+'/bin')")
-       echo "export PATH=\${PATH}:${vela_path}" >> ${setup_path_script}
-       pip install . --user
-    fi
+    pip install ethos-u-vela@git+${vela_repo_url}@${vela_rev}
 }
 
 ########

@@ -21,8 +21,11 @@ class BackendExecutionContext final {
  public:
   BackendExecutionContext(
       EventTracer* event_tracer = nullptr,
-      MemoryAllocator* temp_allocator = nullptr)
-      : event_tracer_(event_tracer), temp_allocator_(temp_allocator) {}
+      MemoryAllocator* temp_allocator = nullptr,
+      const char* method_name = nullptr)
+      : event_tracer_(event_tracer),
+        temp_allocator_(temp_allocator),
+        method_name_(method_name) {}
 
   /**
    * Returns a pointer to an instance of EventTracer to do profiling/debugging
@@ -52,9 +55,17 @@ class BackendExecutionContext final {
     return temp_allocator_;
   }
 
+  /**
+   * Get the name of the executing method from the ExecuTorch runtime.
+   */
+  const char* get_method_name() const {
+    return method_name_;
+  }
+
  private:
   EventTracer* event_tracer_ = nullptr;
   MemoryAllocator* temp_allocator_ = nullptr;
+  const char* method_name_ = nullptr;
 };
 
 } // namespace runtime
