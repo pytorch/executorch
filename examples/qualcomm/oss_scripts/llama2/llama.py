@@ -108,7 +108,6 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:
     def annotate_single_in_single_out(
         node: Node, quantization_config: QuantizationConfig
     ) -> None:
-
         input_qspec_map = {}
         input_act = node.args[0]
         input_qspec_map[input_act] = quantization_config.input_activation
@@ -356,7 +355,7 @@ class SingleLlama:
 
         with torch.no_grad():
             fx_graph_module = torch.export.export(
-                self.llama_model, self.inputs
+                self.llama_model, self.inputs, strict=True
             ).module()
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
         print("Quantizing the model...")

@@ -44,7 +44,7 @@ class TestRemoveViewCopy(unittest.TestCase):
         model = TestModel1()
         model.eval()
         example_inputs = model.get_example_inputs()
-        ep = torch.export.export(model, example_inputs)
+        ep = torch.export.export(model, example_inputs, strict=True)
         etpm = to_edge(ep).to_executorch(
             config=ExecutorchBackendConfig(
                 remove_view_copy=False,
@@ -59,7 +59,7 @@ class TestRemoveViewCopy(unittest.TestCase):
         model = TestModel1()
         model.eval()
         example_inputs = model.get_example_inputs()
-        ep = torch.export.export(model, example_inputs)
+        ep = torch.export.export(model, example_inputs, strict=True)
 
         epm_remove = to_edge(ep)
         epm_no_remove = copy.deepcopy(
@@ -96,7 +96,7 @@ class TestRemoveViewCopy(unittest.TestCase):
         model = TestModel1()
         model.eval()
         example_inputs = model.get_example_inputs()
-        ep = torch.export.export(model, example_inputs)
+        ep = torch.export.export(model, example_inputs, strict=True)
 
         etpm = to_edge(ep).to_executorch(
             config=ExecutorchBackendConfig(

@@ -112,7 +112,7 @@ class TestBackends(unittest.TestCase):
             model(*sample_inputs)
 
             program: ExportedProgram = export(
-                model, sample_inputs, dynamic_shapes=dynamic_shapes
+                model, sample_inputs, dynamic_shapes=dynamic_shapes, strict=True
             )
 
             edge_program = to_edge_transform_and_lower(
