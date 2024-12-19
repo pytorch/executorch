@@ -385,7 +385,7 @@ class TestQNN(unittest.TestCase):
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
     ) -> torch.fx.GraphModule:
-        m = torch.export.export(module, inputs).module()
+        m = torch.export.export(module, inputs, strict=True).module()
 
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_quant_annotations)
