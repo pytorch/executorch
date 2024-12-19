@@ -24,7 +24,7 @@ HEADERS_PATH="include"
 
 PLATFORMS=("ios" "simulator" "macos")
 PLATFORM_FLAGS=("OS64" "SIMULATORARM64" "MAC_ARM64")
-PLATFORM_TARGET=("18.0" "18.0" "10.15")
+PLATFORM_TARGET=("17.0" "17.0" "10.15")
 
 FRAMEWORK_EXECUTORCH="executorch:\
 libexecutorch.a,\
