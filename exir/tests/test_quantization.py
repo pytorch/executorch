@@ -71,7 +71,7 @@ class TestQuantization(unittest.TestCase):
                 _check_ir_validity=False,
             )
             m = to_edge(
-                export(m, example_inputs), compile_config=compile_config
+                export(m, example_inputs, strict=True), compile_config=compile_config
             ).transform([QuantFusionPass(), SpecPropPass()])
 
             after_quant_result = m.exported_program().module()(*example_inputs)[0]
@@ -79,9 +79,7 @@ class TestQuantization(unittest.TestCase):
                 "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor"
             ).check(
                 "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor"
-            ).run(
-                m.exported_program().graph_module.code
-            )
+            ).run(m.exported_program().graph_module.code)
             # after_quant_fusion_result = m(*example_inputs)[0]
 
             # TODO: implement torch.ops.quantized_decomposed.add_relu.out
