@@ -37,7 +37,7 @@ def main() -> None:
     trace_inputs = (torch.ones(2, 2, dtype=torch.float),)
 
     # Trace to FX Graph.
-    exec_prog = to_edge(export(model, trace_inputs)).to_executorch(
+    exec_prog = to_edge(export(model, trace_inputs, strict=True)).to_executorch(
         config=ExecutorchBackendConfig(
             memory_planning_pass=MemoryPlanningPass(),
             to_out_var_pass=ToOutVarPass(),
