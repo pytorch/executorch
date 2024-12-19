@@ -257,6 +257,8 @@
 
 - op: mean.out
 
+- op: mean.dtype_out
+
 - op: min.dim_min
 
 - op: min.unary_out
