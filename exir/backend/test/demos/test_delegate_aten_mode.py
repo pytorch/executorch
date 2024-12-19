@@ -35,7 +35,7 @@ class TestDelegateAtenMode(unittest.TestCase):
 
         add_mul_module = AddMulModule()
         model_inputs = (torch.ones(2, 2), 2 * torch.ones(2, 2), 3 * torch.ones(2, 2))
-        edge_graph_module = to_edge(export(add_mul_module, model_inputs))
+        edge_graph_module = to_edge(export(add_mul_module, model_inputs, strict=True))
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_add_mul = to_backend(
@@ -56,7 +56,9 @@ class TestDelegateAtenMode(unittest.TestCase):
 
         composite_model(*model_inputs)
 
-        exec_prog = to_edge(export(composite_model, model_inputs)).to_executorch()
+        exec_prog = to_edge(
+            export(composite_model, model_inputs, strict=True)
+        ).to_executorch()
 
         buff = exec_prog.buffer
 
