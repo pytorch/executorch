@@ -310,7 +310,7 @@ class MultiHeadAttention(nn.Module):
             self.kv_cache.v_cache.copy_(v)
             self.kv_cache.cache_pos.copy_(cache_pos)
 
-        output = self._sdpa(q, k, v, b, s_x, mask=mask)
+        output = self._sdpa(0, q, k, v, b, s_x)
         return self.output_proj(output)
 
 
@@ -363,6 +363,7 @@ class SDPA(nn.Module):
             expand_shape = (-1, -1, self.q_per_kv, -1, -1)
             k = k.unsqueeze(2).expand(expand_shape).flatten(1, 2)
             v = v.unsqueeze(2).expand(expand_shape).flatten(1, 2)
+
 
         output = self._attention_fn(
             q,
