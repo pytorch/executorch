@@ -11,6 +11,8 @@ import numpy as np
 import serializer.tosa_serializer as ts
 import torch
 import torch.fx
+
+# pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
 )
@@ -112,7 +114,9 @@ def process_quantized_bias(
         _,
     ) = consumer_node.all_input_nodes
 
-    input_qargs = get_input_qparams(consumer_node)
+    input_qargs = get_input_qparams(
+        consumer_node
+    )  # pyre-ignore[16]: Module `executorch.backends.arm` has no attribute `_passes`.
 
     input_node_scale = input_qargs[0].scale
     weight_node_scale = input_qargs[1].scale

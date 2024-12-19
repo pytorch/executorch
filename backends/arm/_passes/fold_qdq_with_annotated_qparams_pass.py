@@ -99,7 +99,6 @@ class FoldAndAnnotateQParamsPass(ExportPass):
             for i, arg in enumerate(n.args):
                 if not isinstance(arg, Node):
                     continue
-                arg = cast(Node, arg)
 
                 # Make sure arg has requires_grad set to False
                 # For parameters that are not quantized, sometimes (i.e. convolution)
@@ -125,7 +124,8 @@ class FoldAndAnnotateQParamsPass(ExportPass):
                 )
 
                 # arg.args[0] is the tensor input, replace the input usage
-                n.replace_input_with(arg, arg.args[0])
+                tensor_input = cast(Node, arg.args[0])
+                n.replace_input_with(arg, tensor_input)
                 graph_module.graph.erase_node(arg)
 
             # Copy the users, since we are modifying it.

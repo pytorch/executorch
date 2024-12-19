@@ -57,6 +57,7 @@ def insert_rescale_ops_to_int32(
     the graph upstream for DQ nodes.
     """
 
+    # pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
     from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
         get_input_qparams,
     )
@@ -68,7 +69,7 @@ def insert_rescale_ops_to_int32(
         dim_order = tensor.dim_order
         tensor.shape = [tensor.shape[i] for i in dim_order]
 
-    input_qparams = get_input_qparams(node)
+    input_qparams = get_input_qparams(node)  # pyre-ignore[16]
     qargs = input_qparams.values()
 
     # Scale the int8 quantized input to a common scale in the integer
@@ -107,11 +108,12 @@ def insert_rescale_op_to_int8(
     in the node meta dict as opposed to 'rescale_node_back_to_int8' which search
     the graph downstream for Q nodes.
     """
+    # pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
     from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
         get_output_qparams,
     )
 
-    output_qparams = get_output_qparams(node)
+    output_qparams = get_output_qparams(node)  # pyre-ignore[16]
     assert len(output_qparams) == 1, "More than one output not supported"
 
     qargs_out = output_qparams[0]
