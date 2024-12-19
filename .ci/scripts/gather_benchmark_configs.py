@@ -39,8 +39,7 @@ BENCHMARK_CONFIGS = {
     "ios": [
         "coreml_fp16",
         "mps",
-        # TODO: Add support for llama3 ane
-        # "llama3_coreml_ane",
+        "llama3_coreml_ane",
     ],
 }
 
