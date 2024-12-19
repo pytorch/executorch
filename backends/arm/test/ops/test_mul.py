@@ -32,23 +32,23 @@ test_data_sute = [
     ),
     (
         "op_mul_rank4_randn",
-        torch.randn(1, 10, 25, 20),
-        torch.randn(1, 10, 25, 20),
+        torch.randn(5, 10, 25, 20),
+        torch.randn(5, 10, 25, 20),
     ),
     (
         "op_mul_rank4_ones_mul_negative",
-        torch.ones(1, 10, 25, 20),
-        (-1) * torch.ones(1, 10, 25, 20),
+        torch.ones(5, 10, 25, 20),
+        (-1) * torch.ones(5, 10, 25, 20),
     ),
     (
         "op_mul_rank4_negative_large_rand",
-        (-200) * torch.rand(1, 10, 25, 20),
-        torch.rand(1, 1, 1, 20),
+        (-200) * torch.rand(5, 10, 25, 20),
+        torch.rand(5, 1, 1, 20),
     ),
     (
         "op_mul_rank4_large_randn",
-        200 * torch.randn(1, 10, 25, 20),
-        torch.rand(1, 10, 25, 1),
+        200 * torch.randn(5, 10, 25, 20),
+        torch.rand(5, 10, 25, 1),
     ),
 ]
 

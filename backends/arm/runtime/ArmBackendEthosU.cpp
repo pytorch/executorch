@@ -241,9 +241,10 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
             event_tracer,
             "+ArmBackend::execute()handles.input.permute_CHW_to_HWC()");
         // permuted byte copy CHW to HWC
-        permute_CHW_to_HWC(
+        permute_NCHW_to_NHWC(
             tensor_in.mutable_data_ptr<char>(),
             scratch_addr,
+            tensor_in.size(0),
             tensor_in.size(1),
             tensor_in.size(2),
             tensor_in.size(3));
@@ -342,9 +343,10 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
             "+ArmBackend::execute()handles.output.permute_HWC_to_CHW()");
 
         char* output_address = (char*)output_addr;
-        permute_HWC_to_CHW(
+        permute_NHWC_to_NCHW(
             output_address,
             tensor_out.mutable_data_ptr<char>(),
+            tensor_out.size(0),
             tensor_out.size(1),
             tensor_out.size(2),
             tensor_out.size(3));
@@ -420,21 +422,53 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
     return Error::Ok;
   }
 
-  void permute_CHW_to_HWC(char* input, char* output, int C, int H, int W)
-      const {
-    for (int i = 0; i != H * W; ++i) {
-      for (int j = 0; j < C; ++j) {
-        output[i * C + j] = input[i + j * W * H];
+  void permute_NCHW_to_NHWC(
+      const char* input,
+      char* output,
+      const int N,
+      const int C,
+      const int H,
+      const int W) const {
+    for (int n = 0; n < N; n++) {
+      for (int c = 0; c < C; c++) {
+        for (int i = 0; i < H * W; i++) {
+          *output = *input;
+          // Next element
+          input++;
+          output += C;
+        }
+        // Rewind output and increment to next channel
+        output -= (H * W * C);
+        output++;
       }
+      // Rewind output and increment to next batch
+      output -= C;
+      output += (H * W * C);
     }
   }
 
-  void permute_HWC_to_CHW(char* input, char* output, int C, int H, int W)
-      const {
-    for (int i = 0; i != H * W; ++i) {
-      for (int j = 0; j < C; ++j) {
-        output[i + j * W * H] = input[i * C + j];
+  void permute_NHWC_to_NCHW(
+      const char* input,
+      char* output,
+      const int N,
+      const int C,
+      const int H,
+      const int W) const {
+    for (int n = 0; n < N; n++) {
+      for (int i = 0; i < H * W; i++) {
+        for (int c = 0; c < C; c++) {
+          *output = *input;
+          // Next channel
+          input++;
+          output += H * W;
+        }
+        // Rewind output and increment to next element
+        output -= (H * W * C);
+        output++;
       }
+      // Rewind output and increment to next batch
+      output -= H * W;
+      output += (H * W * C);
     }
   }
 };

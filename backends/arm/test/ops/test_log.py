@@ -17,11 +17,11 @@ from parameterized import parameterized
 
 test_data_suite = [
     # (test_name, test_data)
-    ("ones_rank4", torch.ones(1, 10, 10, 10)),
+    ("ones_rank4", torch.ones(2, 10, 10, 10)),
     ("ones_rank3", torch.ones(10, 10, 10)),
     ("rand", torch.rand(10, 10) + 0.001),
     ("randn_pos", torch.randn(10) + 10),
-    ("randn_spread", torch.max(torch.Tensor([0.0]), torch.randn(10) * 100)),
+    ("randn_spread", torch.max(torch.Tensor([0.0]), torch.randn(2, 10, 10, 10) * 100)),
     ("ramp", torch.arange(0.01, 20, 0.2)),
 ]
 

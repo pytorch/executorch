@@ -22,12 +22,12 @@ test_data_suite: list[test_data_t] = [
         torch.rand(5) * 5,
     ),
     ("op_reciprocal_rank1_negative_ones", torch.ones(5) * (-1)),
-    ("op_reciprocal_rank4_ones", torch.ones(1, 10, 25, 20)),
-    ("op_reciprocal_rank4_negative_ones", (-1) * torch.ones(1, 10, 25, 20)),
-    ("op_reciprocal_rank4_ones_reciprocal_negative", torch.ones(1, 10, 25, 20)),
-    ("op_reciprocal_rank4_large_rand", 200 * torch.rand(1, 10, 25, 20)),
-    ("op_reciprocal_rank4_negative_large_rand", (-200) * torch.rand(1, 10, 25, 20)),
-    ("op_reciprocal_rank4_large_randn", 200 * torch.randn(1, 10, 25, 20) + 1),
+    ("op_reciprocal_rank4_ones", torch.ones(5, 10, 25, 20)),
+    ("op_reciprocal_rank4_negative_ones", (-1) * torch.ones(5, 10, 25, 20)),
+    ("op_reciprocal_rank4_ones_reciprocal_negative", torch.ones(5, 10, 25, 20)),
+    ("op_reciprocal_rank4_large_rand", 200 * torch.rand(5, 10, 25, 20)),
+    ("op_reciprocal_rank4_negative_large_rand", (-200) * torch.rand(5, 10, 25, 20)),
+    ("op_reciprocal_rank4_large_randn", 200 * torch.randn(5, 10, 25, 20) + 1),
 ]
 
 

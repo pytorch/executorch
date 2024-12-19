@@ -16,8 +16,8 @@ from parameterized import parameterized
 
 test_data_suite = [
     # (test_name, test_data, [normalized_shape, eps, elementwise_affine, has_bias] )
-    ("randn_last_dim", torch.randn(1, 5, 5, 5), [[5]]),
-    ("rand_last_two_dims", torch.rand(1, 5, 5, 5), [[5, 5]]),
+    ("randn_last_dim", torch.randn(2, 5, 5, 5), [[5]]),
+    ("rand_last_two_dims", torch.rand(2, 5, 5, 5), [[5, 5]]),
     (
         "rand_last_two_dims_not_elementwise_affine",
         torch.rand(1, 5, 5, 5),

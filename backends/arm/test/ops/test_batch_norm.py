@@ -22,7 +22,7 @@ test_data_suite = [
     # (test_name, test_data, [num_features, affine, track_running_stats, weight, bias, running_mean, running_var,] )
     (
         "zeros_affineT_runStatsT_default_weight_bias_mean_var",
-        torch.zeros(1, 32, 112, 112),
+        torch.zeros(2, 32, 112, 112),
         [
             32,
             True,

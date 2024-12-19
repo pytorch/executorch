@@ -25,8 +25,8 @@ class TestSimpleAdd(unittest.TestCase):
             (torch.FloatTensor([1, 2, 3, 5, 7]),),
             (3 * torch.ones(8),),
             (10 * torch.randn(8),),
-            (torch.ones(1, 1, 4, 4),),
-            (torch.ones(1, 3, 4, 2),),
+            (torch.ones(2, 1, 4, 4),),
+            (torch.ones(2, 3, 4, 2),),
         ]
 
         def forward(self, x):
@@ -38,10 +38,10 @@ class TestSimpleAdd(unittest.TestCase):
                 torch.FloatTensor([1, 2, 3, 5, 7]),
                 (torch.FloatTensor([2, 1, 2, 1, 10])),
             ),
-            (torch.ones(1, 10, 4, 6), torch.ones(1, 10, 4, 6)),
-            (torch.randn(1, 1, 4, 4), torch.ones(1, 1, 4, 1)),
-            (torch.randn(1, 3, 4, 4), torch.randn(1, 3, 4, 4)),
-            (10000 * torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1)),
+            (torch.ones(2, 10, 4, 6), torch.ones(2, 10, 4, 6)),
+            (torch.randn(2, 3, 4, 4), torch.randn(2, 3, 4, 4)),
+            (torch.randn(2, 1, 4, 4), torch.ones(2, 1, 4, 1)),
+            (10000 * torch.randn(2, 1, 4, 4), torch.randn(2, 1, 4, 1)),
         ]
 
         def __init__(self):
