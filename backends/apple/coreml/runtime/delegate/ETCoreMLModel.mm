@@ -5,6 +5,8 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
+#define MODEL_STATE_IS_SUPPORTED 1
+
 #import <ETCoreMLModel.h>
 
 #import "ETCoreMLAsset.h"
