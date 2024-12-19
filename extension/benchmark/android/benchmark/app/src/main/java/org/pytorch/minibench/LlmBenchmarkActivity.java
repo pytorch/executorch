@@ -120,6 +120,9 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
   }
 
   private double extractTPS(final String tokens) {
+    if (tokens == null) {
+      return 0.0f;
+    }
     final Matcher m = Pattern.compile("\\d+\\.?\\d*").matcher(tokens);
     if (m.find()) {
       return Double.parseDouble(m.group());

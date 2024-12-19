@@ -12,6 +12,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Message;
+import android.util.Log;
 import org.pytorch.executorch.LlamaCallback;
 import org.pytorch.executorch.LlamaModule;
 
@@ -64,6 +65,7 @@ public class ModelRunner implements LlamaCallback {
 
   @Override
   public void onResult(String result) {
+      Log.e("BENCH", "RESULT!!!" + result);
     mCallback.onTokenGenerated(result);
   }
 
