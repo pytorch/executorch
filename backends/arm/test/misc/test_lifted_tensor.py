@@ -60,7 +60,7 @@ class TestLiftedTensor(unittest.TestCase):
             ArmTester(
                 LiftedTensor(op),
                 example_inputs=data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .to_edge()
@@ -77,7 +77,7 @@ class TestLiftedTensor(unittest.TestCase):
             ArmTester(
                 LiftedTensor(op),
                 example_inputs=data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -95,7 +95,7 @@ class TestLiftedTensor(unittest.TestCase):
             ArmTester(
                 LiftedScalarTensor(op, arg1),
                 example_inputs=(data),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .to_edge()
@@ -110,7 +110,7 @@ class TestLiftedTensor(unittest.TestCase):
             ArmTester(
                 LiftedScalarTensor(op, arg1),
                 example_inputs=(data),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()

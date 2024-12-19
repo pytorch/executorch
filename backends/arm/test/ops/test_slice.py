@@ -39,7 +39,7 @@ class TestSimpleSlice(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check(["torch.ops.aten.slice.Tensor"])
@@ -60,7 +60,7 @@ class TestSimpleSlice(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+BI", permute_memory_to_nhwc=permute
+                    "TOSA-0.80+BI", permute_memory_to_nhwc=permute
                 ),
             )
             .quantize()

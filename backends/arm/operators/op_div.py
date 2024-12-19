@@ -13,6 +13,7 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.arm.tosa_utils import tosa_shape
 from serializer.tosa_serializer import TosaOp
 
@@ -20,6 +21,11 @@ from serializer.tosa_serializer import TosaOp
 @register_node_visitor
 class DivVisitor(NodeVisitor):
     target = "aten.div.Tensor"
+
+    # Only supported for MI
+    tosa_specs = [
+        TosaSpecification.create_from_string("TOSA-0.80+MI"),
+    ]
 
     def __init__(self, *args):
         super().__init__(*args)

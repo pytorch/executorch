@@ -25,8 +25,8 @@ class NodeVisitor:
     # When all node_visitors has been refactored to target a specific
     # version, this list should be removed.
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80.0+BI"),
-        TosaSpecification.create_from_string("TOSA-0.80.0+MI"),
+        TosaSpecification.create_from_string("TOSA-0.80+BI"),
+        TosaSpecification.create_from_string("TOSA-0.80+MI"),
     ]
 
     def __init__(self, exported_program: ExportedProgram, tosa_spec: TosaSpecification):
@@ -46,8 +46,8 @@ class NodeVisitor:
 
 # container for all node visitors
 _node_visitor_dicts = {
-    TosaSpecification.create_from_string("TOSA-0.80.0+BI"): {},
-    TosaSpecification.create_from_string("TOSA-0.80.0+MI"): {},
+    TosaSpecification.create_from_string("TOSA-0.80+BI"): {},
+    TosaSpecification.create_from_string("TOSA-0.80+MI"): {},
 }
 
 

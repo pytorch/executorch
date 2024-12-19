@@ -32,7 +32,7 @@ class TestGenericAnnotator(unittest.TestCase):
         tester = ArmTester(
             model,
             model.example_inputs(),
-            common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+            common.get_tosa_compile_spec("TOSA-0.80+BI"),
         )
         quant_model = tester.quantize().get_artifact()
         partitions = get_source_partitions(quant_model.graph, [model.op])
