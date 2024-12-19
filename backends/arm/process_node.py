@@ -114,9 +114,9 @@ def process_quantized_bias(
         _,
     ) = consumer_node.all_input_nodes
 
-    input_qargs = get_input_qparams(
+    input_qargs = get_input_qparams(  # pyre-ignore[16]: Module `executorch.backends.arm` has no attribute `_passes`.
         consumer_node
-    )  # pyre-ignore[16]: Module `executorch.backends.arm` has no attribute `_passes`.
+    )
 
     input_node_scale = input_qargs[0].scale
     weight_node_scale = input_qargs[1].scale

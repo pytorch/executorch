@@ -46,9 +46,9 @@ class MinVisitor(NodeVisitor):
         scale_back = 1.0
         min_output = output
         if inputs[0].dtype == ts.DType.INT8:
-            input_qparams = get_input_qparams(
+            input_qparams = get_input_qparams(  # pyre-ignore[16]: 'Module `executorch.backends.arm` has no attribute `_passes`.'
                 node
-            )  # pyre-ignore[16]: 'Module `executorch.backends.arm` has no attribute `_passes`.'
+            )
             assert (
                 len(input_qparams) == 2
             ), f"Both inputs needs to have quantization information for {node}"
