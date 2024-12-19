@@ -243,10 +243,11 @@ jobs:
                     export PYTHONPATH=$(pwd)/..
 
                     DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model" "params.json" "consolidated.00.pth")
-                    python -m examples.qualcomm.oss_scripts.llama3_2.llama -- \
+                    python -m examples.qualcomm.oss_scripts.llama3_2.llama \
                       --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
                       --params "${DOWNLOADED_PATH}/params.json" \
                       --tokenizer_model "${DOWNLOADED_PATH}/tokenizer.model" \
+                      -b "cmake-android-out" \
                       --compile_only \
                       --ptq 16a4w \
                       -m SM8650 \
