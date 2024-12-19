@@ -41,6 +41,7 @@ BENCHMARK_CONFIGS = {
         "mps",
         # TODO: Add support for llama3 ane
         # "llama3_coreml_ane",
+        "llama3_coreml_ane",
     ],
 }
 
