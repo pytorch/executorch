@@ -27,7 +27,7 @@ class AddVisitor_080_BI(NodeVisitor):
     target = "aten.add.Tensor"
 
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80.0+BI"),
+        TosaSpecification.create_from_string("TOSA-0.80+BI"),
     ]
 
     def __init__(self, *args):
@@ -91,7 +91,7 @@ class AddVisitor_080_MI(AddVisitor_080_BI):
     # inheriting 'target' from BI class
 
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80.0+MI"),
+        TosaSpecification.create_from_string("TOSA-0.80+MI"),
     ]
 
     def __init__(self, *args):
