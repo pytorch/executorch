@@ -184,15 +184,17 @@ class LLMEdgeManager:
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             if hasattr(self.args, "qnn") and self.args.qnn:
-                # TODO: this is temporary and export_for_training doesn't work with qnn either. We need a
-                # functional graph. See issue https://github.com/pytorch/executorch/pull/4627 for more details
-                exported_module = torch.export.export(
-                    self.model,
-                    self.example_inputs,
-                    self.example_kwarg_inputs,
-                    dynamic_shapes=dynamic_shape,
-                    strict=True,
-                )
+                from unittest.mock import patch
+                with patch.object(torch._utils_internal, 'export_training_ir_rollout_check', return_value=False):
+                    # TODO: this is temporary and export_for_training doesn't work with qnn either. We need a
+                    # functional graph. See issue https://github.com/pytorch/executorch/pull/4627 for more details
+                    exported_module = torch.export.export(
+                        self.model,
+                        self.example_inputs,
+                        self.example_kwarg_inputs,
+                        dynamic_shapes=dynamic_shape,
+                        strict=True,
+                    )
             else:
                 logging.info("Exporting with:")
                 logging.info(f"inputs: {self.example_inputs}")
