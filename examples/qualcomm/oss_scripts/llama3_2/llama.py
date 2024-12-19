@@ -236,7 +236,7 @@ class SingleLlama:
 
         with torch.no_grad():
             fx_graph_module = torch.export.export(
-                self.llama_model, self.inputs
+                self.llama_model, self.inputs, strict=True
             ).module()
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
         logging.info("Quantizing the model...")

@@ -32,7 +32,7 @@ class TestCompatibility(unittest.TestCase):
 
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
-        edgeir_m = to_edge(export(sin_module, model_inputs))
+        edgeir_m = to_edge(export(sin_module, model_inputs, strict=True))
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(

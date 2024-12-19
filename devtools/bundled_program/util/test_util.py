@@ -271,6 +271,7 @@ def get_common_executorch_program() -> (
         m_name: export(
             StatefulWrapperModule(eager_model, getattr(eager_model, m_name)),
             capture_inputs[m_name],
+            strict=True,
         )
         for m_name in eager_model.method_names
     }

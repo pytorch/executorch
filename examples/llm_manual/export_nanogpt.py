@@ -30,7 +30,7 @@ with sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
     m = export_for_training(
         model, example_inputs, dynamic_shapes=dynamic_shape
     ).module()
-    traced_model = export(m, example_inputs, dynamic_shapes=dynamic_shape)
+    traced_model = export(m, example_inputs, dynamic_shapes=dynamic_shape, strict=True)
 
 # Convert the model into a runnable ExecuTorch program.
 # To be further lowered to Xnnpack backend, `traced_model` needs xnnpack-specific edge compile config

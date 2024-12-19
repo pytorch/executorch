@@ -33,7 +33,7 @@ class TestTraining(unittest.TestCase):
 
     def test(self):
         m = self.ModuleSimpleTrain()
-        ep = torch.export.export(m, m.get_random_inputs())
+        ep = torch.export.export(m, m.get_random_inputs(), strict=True)
         ep = _export_forward_backward(ep)
         ep = to_edge(ep)
         ep = ep.to_executorch()

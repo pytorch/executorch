@@ -190,6 +190,7 @@ class ExportedModule:
                         if method_name_to_dynamic_shapes
                         else None
                     ),
+                    strict=True,
                 )
 
         exec_prog = to_edge(
