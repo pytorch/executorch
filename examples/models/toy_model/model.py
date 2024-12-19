@@ -27,7 +27,7 @@ class MulModule(torch.nn.Module, EagerModelBase):
 class LinearModule(torch.nn.Module, EagerModelBase):
     def __init__(self):
         super().__init__()
-        self.linear = torch.nn.Linear(3, 3)
+        self.linear = torch.nn.Linear(768, 768)
 
     def forward(self, arg):
         return self.linear(arg)
@@ -36,7 +36,7 @@ class LinearModule(torch.nn.Module, EagerModelBase):
         return self
 
     def get_example_inputs(self):
-        return (torch.randn(3, 3),)
+        return (torch.randn(1, 768),)
 
 
 class AddModule(torch.nn.Module, EagerModelBase):

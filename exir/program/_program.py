@@ -1319,6 +1319,7 @@ class EdgeProgramManager:
             EdgeProgramManager: A copy of the calling EdgeProgramManager with the
             specified subgraphs lowered.
         """
+        breakpoint()
         new_edge_programs: Dict[str, ExportedProgram] = {}
         if isinstance(partitioner, dict):
             for name, program in self._edge_programs.items():

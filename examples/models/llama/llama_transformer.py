@@ -405,6 +405,8 @@ class Attention(nn.Module):
         bsz, seqlen, _ = x.shape
 
         # QKV
+        # x.shape = [2048]
+        print("lfq shape: ", x.shape)
         q, k, v = self.wq(x), self.wk(x), self.wv(x)
         # We need view_copy elimination
         q = q.view(bsz, seqlen, self.n_local_heads, self.head_dim)
