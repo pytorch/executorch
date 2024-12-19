@@ -16,6 +16,7 @@ from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     BOOL,
     DOUBLE,
     INT,
+    OLD_STRING,
     OPT_AT_DOUBLE_ARRAY_REF,
     OPT_AT_INT_ARRAY_REF,
     OPT_AT_TENSOR,
@@ -398,7 +399,7 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
             or ref.src_cpp_type == OPT_MEMORY_FORMAT
         ):
             ret_str += "add_none(); \n"
-        elif ref.src_cpp_type == STRING:
+        elif ref.src_cpp_type == STRING or ref.src_cpp_type == OLD_STRING:
             ret_str += f"add_string(std::string({ref.src_cpp_name})); \n"
         elif ref.src_cpp_type == TWO_TENSOR_TUPLE:
             ret_str += f"add_value_list({{{ref.name}_first, {ref.name}_second}}); \n"
