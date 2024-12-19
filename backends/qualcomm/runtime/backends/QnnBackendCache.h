@@ -28,9 +28,7 @@ class QnnBackendCache {
   explicit QnnBackendCache(
       const QnnExecuTorchContextBinary& qnn_context_blob,
       const std::string& aot_graph_name)
-      : qnn_context_blob_(qnn_context_blob), aot_graph_name_(aot_graph_name) {
-    fb_opt_.max_size = FLATBUFFERS_MAX_64_BUFFER_SIZE;
-  }
+      : qnn_context_blob_(qnn_context_blob), aot_graph_name_(aot_graph_name) {}
   virtual ~QnnBackendCache();
   QnnBackendCache(const QnnBackendCache&) = delete;
   QnnBackendCache(QnnBackendCache&&) = delete;
@@ -84,7 +82,6 @@ class QnnBackendCache {
       input_tensor_structs_;
   std::unordered_map<std::string, std::vector<Qnn_Tensor_t>>
       output_tensor_structs_;
-  flatbuffers::Verifier::Options fb_opt_;
 };
 } // namespace qnn
 } // namespace backends

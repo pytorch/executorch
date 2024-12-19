@@ -147,7 +147,6 @@ class QnnManager {
           {Qnn_DataType_t::QNN_DATATYPE_UFIXED_POINT_16,
            executorch::aten::ScalarType::Bits16},
   };
-  flatbuffers::Verifier::Options fb_opt_;
 };
 } // namespace qnn
 } // namespace backends

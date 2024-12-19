@@ -7,10 +7,10 @@
  */
 #pragma once
 
-#include <executorch/backends/qualcomm/qc_binary_info_generated.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCache.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnDeviceCommon.h>
 
 #include <memory>
@@ -71,7 +71,7 @@ class QnnContext {
   QnnBackend* backend_;
   QnnDevice* device_;
   QnnBackendCache* cache_;
-  flatbuffers::FlatBufferBuilder64 builder64_;
+  QnnContextCustomProtocol qnn_context_custom_protocol_;
 };
 } // namespace qnn
 } // namespace backends

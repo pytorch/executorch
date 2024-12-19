@@ -10,6 +10,7 @@
 #include <executorch/backends/qualcomm/qc_compiler_spec_generated.h>
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 
 namespace executorch {
 namespace backends {
@@ -36,8 +37,23 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
   QnnExecuTorchContextBinary qnn_context_blob;
   const qnn_delegate::QnnExecuTorchOptions* qnn_executorch_options = nullptr;
 
-  qnn_context_blob.buffer = const_cast<void*>(processed->data());
-  qnn_context_blob.nbytes = processed->size();
+  auto [status, signature, ctx_size, ctx_bin] =
+      QnnContextCustomProtocol().DeserializeContextCustomBuffer(
+          const_cast<void*>(processed->data()));
+  if (status == Error::Ok) {
+    QNN_EXECUTORCH_LOG_INFO(
+        "Deserializing processed data using QnnContextCustomProtocol");
+    // After this stage, qnn_context_blob.nbytes & qnn_context_blob.buffer will
+    // only store qnn_context_binary.
+    qnn_context_blob.nbytes = ctx_size;
+    qnn_context_blob.buffer = ctx_bin;
+  } else {
+    // This buffer will be verified again in QnnBackendCache.
+    QNN_EXECUTORCH_LOG_INFO(
+        "Deserializing processed data using QnnQcirCustomProtocol");
+    qnn_context_blob.buffer = const_cast<void*>(processed->data());
+    qnn_context_blob.nbytes = processed->size();
+  }
 
   // convert CompileSpec to qnn ExecuTorch option
   for (auto& compile_spec : compile_specs) {
@@ -62,7 +78,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
   // ---
   // check if current context binary has already been initialized
   // return cached one for reducing memory footprint
-  std::string signature = qnn_manager->GetBinarySignature();
+
   auto iter = delegate_map_.find(signature);
   if (iter != delegate_map_.end()) {
     QNN_EXECUTORCH_LOG_INFO(
@@ -186,7 +202,7 @@ bool QnnExecuTorchBackend::is_available() const {
 }
 
 void QnnExecuTorchBackend::add_cached_delegate(
-    const std::string& signature,
+    const std::int64_t& signature,
     executorch::runtime::DelegateHandle* handle) const {
   std::lock_guard<std::mutex> guard(mutex_);
   delegate_map_[signature] = handle;
