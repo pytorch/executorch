@@ -201,7 +201,15 @@ def export_to_edge(
     edge_prog_manager = to_edge(
         expo_program,
         compile_config=EdgeCompileConfig(
-            _check_ir_validity=False, _skip_dim_order=True
+            _skip_dim_order=True,
+            # Allow specific non-core aten ops in the IR.
+            _core_aten_ops_exception_list=[
+                torch.ops.aten.linear.default,
+                torch.ops.aten.native_batch_norm.default,
+                torch.ops.aten.linalg_vector_norm.default,
+                torch.ops.aten.unfold.default,
+                torch.ops.aten.angle.default,
+            ],
         ),
     )
 
