@@ -93,6 +93,22 @@ class GEMMConfig(XNNPartitionerConfig):
 
         return ConfigPrecisionType.STATIC_QUANT
 
+    def _overwrite_precision(self, node: torch.fx.Node):
+        precision = self._detect_precision(node)
+        if precision not in self.enabled_precision_types:
+            # detected precision is not enabled, lets try to partition it as fp32
+            if self.enabled_precision_types == [ConfigPrecisionType.FP32]:
+                # if only fp32 is enabled, then we can still partition fp32 gemms
+                # even with in a quantized graph
+                if precision in [
+                    ConfigPrecisionType.STATIC_QUANT,
+                    ConfigPrecisionType.DYNAMIC_QUANT,
+                ]:
+                    precision = ConfigPrecisionType.FP32
+                    logging.info(f"Overwriting precision, partitioning {node} as FP32")
+                    return True, precision
+        return False, precision
+
     def get_deps(
         self,
         node: torch.fx.Node,
@@ -107,7 +123,7 @@ class GEMMConfig(XNNPartitionerConfig):
         if precision not in self.supported_precision_types():
             # detected precision but it is either disabled or not supported
             return (False, [])
-
+        _, precision = self._overwrite_precision(node)
         valid_bias, bias_deps = self._get_bias_deps(node, ep, precision)
         valid_weight, weight_deps = self._get_weight_deps(node, ep, precision)
         valid_act, act_deps = self._get_act_deps(node, ep, precision)
@@ -193,7 +209,7 @@ class GEMMConfig(XNNPartitionerConfig):
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
     ) -> Tuple[bool, List[torch.fx.Node]]:
         gemm_deps = []
-        if len(node.all_input_nodes) > 2 and self.bias_idx:
+        if len(node.all_input_nodes) > 2 and self.bias_idx is not None:
             bias_node = get_input_node(node, self.bias_idx)
             if bias_node:
                 if not is_param_node(ep, bias_node):
@@ -266,7 +282,14 @@ class LinearConfig(GEMMConfig):
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
     ) -> Tuple[bool, List[torch.fx.Node]]:
         if precision == ConfigPrecisionType.FP32 and self.force_fp32_dynamic_linear:
-            # if force fp32_dynamic_linear is on and we detected this as fp32, then we
+            # if force fp32_dynamic_linear is enabled, then we
+            # do not partition the weight node
+            return (True, [])
+
+        # Since we are in Linear, we may assume that the weights are indeed static.
+        overwritten_linear_precision, new_precision = self._overwrite_precision(node)
+        if new_precision == ConfigPrecisionType.FP32 and overwritten_linear_precision:
+            # if overwriting quantized precision to fp32, then we
             # do not partition the weight node
             return (True, [])
 

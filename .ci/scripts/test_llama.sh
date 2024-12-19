@@ -208,7 +208,7 @@ prepare_artifacts_upload() {
 PARAMS="params.json"
 CHECKPOINT_FILE_NAME=""
 touch "${PARAMS}"
-if [[ "${MODEL_NAME}" == "stories110M" ]]; then
+if [[ "${MODEL_NAME}" == "llama" ]] || [[ "${MODEL_NAME}" == "stories"* ]] || [[ "${MODEL_NAME}" == "tinyllama" ]]; then
   CHECKPOINT_FILE_NAME="stories110M.pt"
   download_stories_model_artifacts
 else

@@ -209,25 +209,25 @@ test_model_with_mps() {
 if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
   test_model
-elif [[ "${BACKEND}" == "qnn" ]]; then
+elif [[ "${BACKEND}" == *"qnn"* ]]; then
   echo "Testing ${MODEL_NAME} with qnn..."
   test_model_with_qnn
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
-elif [[ "${BACKEND}" == "coreml" ]]; then
+elif [[ "${BACKEND}" == *"coreml"* ]]; then
   echo "Testing ${MODEL_NAME} with coreml..."
   test_model_with_coreml
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
-elif [[ "${BACKEND}" == "mps" ]]; then
+elif [[ "${BACKEND}" == *"mps"* ]]; then
   echo "Testing ${MODEL_NAME} with mps..."
   test_model_with_mps
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
-elif [[ "${BACKEND}" == "xnnpack" ]]; then
+elif [[ "${BACKEND}" == *"xnnpack"* ]]; then
   echo "Testing ${MODEL_NAME} with xnnpack..."
   WITH_QUANTIZATION=true
   WITH_DELEGATION=true

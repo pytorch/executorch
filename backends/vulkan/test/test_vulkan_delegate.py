@@ -1590,6 +1590,35 @@ class TestBackends(unittest.TestCase):
             (torch.tensor([[[0, 1], [0, 1]], [[4, 2], [3, 3]]]),),
         )
 
+    # def test_vulkan_backend_conv_with_dim_order(self):
+    #     class Conv2dSequential(torch.nn.Module):
+    #         def __init__(self, bias=True, channel_last=False):
+    #             super().__init__()
+    #             self.first = torch.nn.Conv2d(
+    #                 in_channels=1,
+    #                 out_channels=3,
+    #                 kernel_size=(3, 3),
+    #                 padding=1,
+    #                 bias=bias,
+    #             )
+    #             self.second = torch.nn.Conv2d(
+    #                 in_channels=3,
+    #                 out_channels=2,
+    #                 kernel_size=(3, 3),
+    #                 padding=1,
+    #                 bias=bias,
+    #             )
+
+    #         def forward(self, x):
+    #             x = x.to(memory_format=torch.channels_last)
+    #             return self.second(self.first(x))
+
+    #     self.lower_module_and_test_output(
+    #         Conv2dSequential(),
+    #         (torch.rand(size=[1, 1, 3, 3]),),
+    #
+    #     )
+
     def test_vulkan_backend_flip(self):
         class FlipModule(torch.nn.Module):
             def __init__(self):
@@ -1654,32 +1683,3 @@ class TestBackends(unittest.TestCase):
             GridPriorsModule(),
             (torch.rand(size=[1, 5, 2, 3]),),
         )
-
-    # def test_vulkan_backend_conv_with_dim_order(self):
-    #     class Conv2dSequential(torch.nn.Module):
-    #         def __init__(self, bias=True, channel_last=False):
-    #             super().__init__()
-    #             self.first = torch.nn.Conv2d(
-    #                 in_channels=1,
-    #                 out_channels=3,
-    #                 kernel_size=(3, 3),
-    #                 padding=1,
-    #                 bias=bias,
-    #             )
-    #             self.second = torch.nn.Conv2d(
-    #                 in_channels=3,
-    #                 out_channels=2,
-    #                 kernel_size=(3, 3),
-    #                 padding=1,
-    #                 bias=bias,
-    #             )
-
-    #         def forward(self, x):
-    #             x = x.to(memory_format=torch.channels_last)
-    #             return self.second(self.first(x))
-
-    #     self.lower_module_and_test_output(
-    #         Conv2dSequential(),
-    #         (torch.rand(size=[1, 1, 3, 3]),),
-    #
-    #     )

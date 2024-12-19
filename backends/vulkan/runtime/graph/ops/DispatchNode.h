@@ -46,12 +46,15 @@ class PushConstantDataInfo {
     payload_.attr = attr;
   }
 
-  explicit PushConstantDataInfo(const void* data, uint32_t dataLen)
+  explicit PushConstantDataInfo(
+      const void* data,
+      uint32_t dataLen,
+      uint32_t pushConstantLen = 0)
       : tensorUniformData(nullptr) {
     VK_CHECK_COND(
         dataLen <= 16, "Single push constant data size must be <= 16 bytes");
-    payload_.dataSize = dataLen;
-    memcpy(payload_.data, data, payload_.dataSize);
+    payload_.dataSize = pushConstantLen ? pushConstantLen : dataLen;
+    memcpy(payload_.data, data, dataLen);
   }
 
   /*
