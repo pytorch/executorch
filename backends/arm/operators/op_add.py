@@ -11,7 +11,6 @@ import executorch.backends.arm.tosa_quant_utils as tqutils
 import executorch.backends.arm.tosa_utils as tutils
 
 import serializer.tosa_serializer as ts
-import torch
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -41,33 +40,27 @@ class AddVisitor_080_BI(NodeVisitor):
         output: TosaArg,
         is_quant_node: bool,
     ) -> None:
-        input_nodes = tutils.get_two_inputs(node)
+        # Specification (0.80) states that input and output types
+        # should all be the same
+        assert inputs[0].dtype == inputs[1].dtype == output.dtype
+        # Handle int8 (quantized) and int32
+        assert inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]
 
-        if not is_quant_node and not all(
-            tensor.meta["val"].dtype in (torch.int8, torch.int32)
-            for tensor in input_nodes
-        ):
-            raise RuntimeError(
-                f"Unexpected non quantized {AddVisitor_080_BI.target} node."
+        if inputs[0].dtype == ts.DType.INT8:
+            rescaled_inputs, scale_back = tqutils.insert_rescale_ops_to_int32(
+                tosa_graph, inputs, node
             )
+        else:
+            # input[0].dtype == ts.DType.INT32
+            # Non quantized input, natively support by TOSA.ADD
+            rescaled_inputs = inputs
 
-        needs_rescale = not (
-            all(tensor.meta["val"].dtype == torch.int32 for tensor in input_nodes)
-            and node.meta["val"].dtype == torch.int32
-        )
-
-        if needs_rescale:
-            # Rescale inputs to 32 bit
-            rescaled_inputs, scale = tqutils.rescale_nodes_to_int32(
-                input_nodes, tosa_graph
-            )
-
-            # Prepare add output tensor
+        if output.dtype == ts.DType.INT8:
             broadcasted_shape = tutils.tosa_shape(output.shape, output.dim_order)
             add_output = tosa_graph.addIntermediate(broadcasted_shape, ts.DType.INT32)
         else:
+            # output.dtype == ts.DType.INT32
             add_output = output
-            rescaled_inputs = inputs
 
         # Do the INT32 Add
         tosa_graph.addOperator(
@@ -80,10 +73,10 @@ class AddVisitor_080_BI(NodeVisitor):
             None,
         )
 
-        if needs_rescale:
+        if output.dtype == ts.DType.INT8:
             # Scale output back to 8 bit
             # pyre-ignore
-            tqutils.rescale_node_back_to_int8(node, add_output, scale, tosa_graph)
+            tqutils.insert_rescale_op_to_int8(tosa_graph, add_output, scale_back, node)
 
 
 @register_node_visitor
@@ -105,11 +98,19 @@ class AddVisitor_080_MI(AddVisitor_080_BI):
         output: TosaArg,
         is_quant_node: bool,
     ) -> None:
-        if is_quant_node:
+        # Specification (0.80) states that input and output types
+        # should all be the same
+        assert inputs[0].dtype == inputs[1].dtype == output.dtype
+
+        if inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]:
             # Call the inherited define_node for handling integers
             super().define_node(node, tosa_graph, inputs, output, is_quant_node)
         else:
             # FP32 Add lowering
+            assert inputs[0].dtype == ts.DType.FP32
+            assert output.dtype == ts.DType.FP32
+
+            # MI lowering
             tosa_graph.addOperator(
                 TosaOp.Op().ADD,
                 [inputs[0].name, inputs[1].name],

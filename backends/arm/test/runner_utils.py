@@ -127,7 +127,7 @@ def _get_output_node(program: ExportedProgram) -> Node:
 
 def _get_output_quantization_params(
     program: ExportedProgram, output_node: Node
-) -> QuantizationParams:
+) -> Optional[QuantizationParams]:
     """
     Get output QuantizationParams from a program.
     Args:
@@ -153,8 +153,6 @@ def _get_output_quantization_params(
                 dtype=node.args[5],
             )
             break  # break early, there's only one output node
-    if quant_params is None:
-        raise RuntimeError("No Quantization parameters not found in exported model.")
     return quant_params
 
 
@@ -485,13 +483,17 @@ class RunnerUtil:
                 if tosa_ref_output.dtype == np.int8:
                     tosa_ref_output = tosa_ref_output.astype(np.int32)
                 quant_param = self.qp_output
-                assert (
-                    quant_param is not None
-                ), "There are no quantization parameters, check output parameters"
-                tosa_ref_output = (tosa_ref_output - quant_param.zp) * quant_param.scale
+                if quant_param is not None:
+                    # I.e. bool output is possible for quantized models
+                    tosa_ref_output = (
+                        tosa_ref_output - quant_param.zp
+                    ) * quant_param.scale
 
             if tosa_ref_output.dtype == np.double:
                 tosa_ref_output = tosa_ref_output.astype("float32")
+            elif tosa_ref_output.dtype == bool:
+                # retain the bool output though for boolean related comparisons
+                tosa_ref_output = tosa_ref_output.astype("bool")
 
             # tosa_output is a numpy array, convert to torch tensor for comparison
             tosa_ref_outputs.append(torch.from_numpy(tosa_ref_output))

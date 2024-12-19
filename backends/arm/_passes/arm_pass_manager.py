@@ -29,6 +29,10 @@ from executorch.backends.arm._passes.decompose_softmaxes_pass import (
     DecomposeSoftmaxesPass,
 )
 from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    FoldAndAnnotateQParamsPass,
+    QuantizeFullArgument,
+)
 from executorch.backends.arm._passes.keep_dims_false_to_squeeze_pass import (
     KeepDimsFalseToSqueezePass,
 )
@@ -50,6 +54,7 @@ from executorch.backends.arm._passes.unsqueeze_scalar_placeholders_pass import (
 from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_manager import PassManager
 
 
@@ -80,6 +85,19 @@ class ArmPassManager(PassManager):
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSoftmaxesPass())
         self.add_pass(DecomposeLinearPass())
+        self.add_pass(QuantizeFullArgument())
+        self.add_pass(
+            FoldAndAnnotateQParamsPass(
+                [
+                    exir_ops.edge.aten.minimum.default,
+                    exir_ops.edge.aten.maximum.default,
+                    exir_ops.edge.aten.add.Tensor,
+                    exir_ops.edge.aten.avg_pool2d.default,
+                    exir_ops.edge.aten.convolution.default,
+                    exir_ops.edge.aten.full.default,
+                ]
+            )
+        )
         for spec in compile_spec:
             if spec.key == "permute_memory_format":
                 memory_format = spec.value.decode()
