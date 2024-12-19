@@ -107,7 +107,10 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
                 return x + y
 
         ep = torch.export.export(
-            M(), (torch.ones(3),), dynamic_shapes={"x": {0: torch.export.Dim("x")}}
+            M(),
+            (torch.ones(3),),
+            dynamic_shapes={"x": {0: torch.export.Dim("x")}},
+            strict=True,
         )
         exir.to_edge(ep)
 

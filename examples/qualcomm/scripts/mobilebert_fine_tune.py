@@ -292,7 +292,7 @@ def main(args):
         )
         # lower all graph again, the skipped operators will be left in CPU
         exec_prog = to_edge(
-            torch.export.export(graph_module, inputs[0]),
+            torch.export.export(graph_module, inputs[0], strict=True),
         ).to_executorch()
 
         with open(f"{args.artifact}/{pte_filename}.pte", "wb") as file:

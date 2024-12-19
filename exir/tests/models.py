@@ -173,10 +173,7 @@ class CompositeDelegateModule(torch.nn.Module):
 
         delegated_m = DelegateAdd()
         edge_ir_m = to_edge(
-            export(
-                delegated_m,
-                delegated_m.get_random_inputs(),
-            )
+            export(delegated_m, delegated_m.get_random_inputs(), strict=True)
         )
         lowered_module = LoweredBackendModule(
             edge_program=edge_ir_m.exported_program(),

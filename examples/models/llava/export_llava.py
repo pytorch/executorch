@@ -116,6 +116,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
             manager.pre_autograd_graph_module,
             manager.example_inputs,
             dynamic_shapes=manager._get_dynamic_shape(),
+            strict=True,
         )
     return text_model_ep
 
@@ -158,6 +159,7 @@ def export_image_encoder(llava, resized, dynamic_shapes):
             manager.pre_autograd_graph_module,
             manager.example_inputs,
             dynamic_shapes=manager.dynamic_shapes,
+            strict=True,
         )
     return image_encoder_ep
 
@@ -176,7 +178,10 @@ def export_token_embedding(llava, prompt):
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():
         token_embedding_ep = torch.export.export(
-            quantized_token_embed.embed_tokens, (prompt,), dynamic_shapes=dynamic_shapes
+            quantized_token_embed.embed_tokens,
+            (prompt,),
+            dynamic_shapes=dynamic_shapes,
+            strict=True,
         )
     return token_embedding_ep
 

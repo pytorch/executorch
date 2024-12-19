@@ -1251,7 +1251,7 @@ class TestBackends(unittest.TestCase):
                 return y
 
         inputs = ({"a": torch.randn(2, 2), "b": torch.randn(2, 2)},)
-        edge_prog = exir.to_edge(torch.export.export(M(), inputs))
+        edge_prog = exir.to_edge(torch.export.export(M(), inputs, strict=True))
         lowered_gm = to_backend(
             BackendWithCompilerDemo.__name__, edge_prog.exported_program(), []
         )

@@ -71,7 +71,7 @@ class TestQuantization(unittest.TestCase):
                 _check_ir_validity=False,
             )
             m = to_edge(
-                export(m, example_inputs), compile_config=compile_config
+                export(m, example_inputs, strict=True), compile_config=compile_config
             ).transform([QuantFusionPass(), SpecPropPass()])
 
             after_quant_result = m.exported_program().module()(*example_inputs)[0]

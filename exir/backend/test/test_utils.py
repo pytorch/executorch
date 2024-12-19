@@ -94,20 +94,14 @@ class TestUtils(unittest.TestCase):
 
         graph_module_1: torch.fx.GraphModule = (
             to_edge(
-                export(
-                    MyModule1(),
-                    (torch.rand(3, 4), torch.rand(3, 4)),
-                )
+                export(MyModule1(), (torch.rand(3, 4), torch.rand(3, 4)), strict=True)
             )
             .exported_program()
             .graph_module
         )
         graph_module_2: torch.fx.GraphModule = (
             to_edge(
-                export(
-                    MyModule2(),
-                    (torch.rand(3, 4), torch.rand(3, 4)),
-                )
+                export(MyModule2(), (torch.rand(3, 4), torch.rand(3, 4)), strict=True)
             )
             .exported_program()
             .graph_module
@@ -131,10 +125,7 @@ class TestUtils(unittest.TestCase):
 
         large_model = (
             to_edge(
-                export(
-                    LargeModel(),
-                    inputs,
-                ),
+                export(LargeModel(), inputs, strict=True),
                 compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
             )
             .exported_program()
@@ -143,7 +134,7 @@ class TestUtils(unittest.TestCase):
 
         pattern = (
             to_edge(
-                export(torch.nn.Linear(3, 3), inputs),
+                export(torch.nn.Linear(3, 3), inputs, strict=True),
                 compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
             )
             .exported_program()
@@ -179,10 +170,7 @@ class TestUtils(unittest.TestCase):
                 )
 
         exported_program = to_edge(
-            export(
-                torch.nn.Linear(3, 3),
-                (torch.randn(3, 3),),
-            )
+            export(torch.nn.Linear(3, 3), (torch.randn(3, 3),), strict=True)
         )
 
         error_msg = r"needs a `partition_tags` field containing a mapping of tags to delegate spec"
@@ -216,7 +204,7 @@ class TestUtils(unittest.TestCase):
 
         m = Model()
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
-        edge = to_edge(export(m, inputs))
+        edge = to_edge(export(m, inputs, strict=True))
         edge = edge.to_backend(AddMulPartitionerDemo())
         number_of_cpu_nodes = get_non_lowered_nodes(edge.exported_program().graph)
         # Only sub is not not lowerable
@@ -237,7 +225,7 @@ class TestUtils(unittest.TestCase):
 
         m = Model()
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
-        edge = to_edge(export(m, inputs))
+        edge = to_edge(export(m, inputs, strict=True))
         edge = edge.to_backend(AddMulPartitionerDemo())
         number_of_delegates = get_delegates(edge.exported_program().graph)
         # there will be 2 delegates: (mm + add) -> sub -> (mm + add)
@@ -259,7 +247,9 @@ class TestUtils(unittest.TestCase):
         m = Model()
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
 
-        edge = to_edge(export(m, inputs)).to_backend(AddMulPartitionerDemo())
+        edge = to_edge(export(m, inputs, strict=True)).to_backend(
+            AddMulPartitionerDemo()
+        )
 
         graph_str = format_delegated_graph(edge.exported_program().graph_module)
         self.assertIn(

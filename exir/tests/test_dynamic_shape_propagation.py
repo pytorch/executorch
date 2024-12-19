@@ -22,7 +22,12 @@ class TestDynamicShapeProp(TestCase):
         inputs = inputs[0], inputs[1]
 
         prog = to_edge(
-            export(eager_model, inputs, dynamic_shapes=eager_model.get_dynamic_shape()),
+            export(
+                eager_model,
+                inputs,
+                dynamic_shapes=eager_model.get_dynamic_shape(),
+                strict=True,
+            ),
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
 
@@ -48,7 +53,7 @@ class TestUnbackedSymInt(TestCase):
         inputs = inputs[0], inputs[1]
 
         prog = to_edge(
-            export(eager_model, inputs, dynamic_shapes=None),
+            export(eager_model, inputs, dynamic_shapes=None, strict=True),
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
         new_prog = prog.transform([SpecPropPass(), HintBasedSymShapeEvalPass()])
