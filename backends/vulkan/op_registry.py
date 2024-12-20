@@ -228,6 +228,8 @@ def update_features(aten_op):
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
         exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        # dim order copy operator will be removed; memory layout is handled internally
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
     ]
 )
 def register_ephemeral_op(features: OpFeatures):

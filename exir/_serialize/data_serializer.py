@@ -24,6 +24,8 @@ class SerializationInfo:
     tensor_buffers: Sequence[bytes]
 
     # A map from tensor name (fqn) to tensor index inside `tensor_buffers`.
+    # Note: multiple tensor names may map to the same index as `tensor_buffers`
+    # is likely deduplicated.
     fqn_to_buffer_index: Dict[str, int]
 
     # A map from tensor name (fqn) to TensorLayout.

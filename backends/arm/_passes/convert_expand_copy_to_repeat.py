@@ -36,9 +36,11 @@ class ConvertExpandCopyToRepeatPass(ExportPass):
         ]
 
         # To convert expand arg to repeat arg, non-repeated dims should have
-        # multiples[dim] = 1.
+        # multiples[dim] = 1. Passing -1 to expand arg means
+        # not changing the size of that dimension.
         multiples = [
-            multiples[i] if extended_shape[i] == 1 else 1 for i in range(expanded_rank)
+            multiples[i] if multiples[i] != -1 and extended_shape[i] == 1 else 1
+            for i in range(expanded_rank)
         ]
         return super().call_operator(
             op=self.repeat, args=(args[0], multiples), kwargs=kwargs, meta=meta

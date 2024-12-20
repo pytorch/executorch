@@ -23,8 +23,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from torch._subclasses.fake_tensor import FakeTensor
-
 from torch.fx.passes.tools_common import NodeList
 from torch.fx.passes.utils.fuser_utils import topo_sort
 
@@ -138,9 +136,7 @@ class TagMemoryMetaPass(ExportPass):
                 return storage
 
         for arg in node.args:
-            if isinstance(arg, torch.fx.Node) and isinstance(
-                arg.meta["val"], FakeTensor
-            ):
+            if isinstance(arg, torch.fx.Node) and utils.is_tensor_node(arg):
                 storage = utils.get_node_storage_type(arg)
                 if storage is not None and storage in valid_storage_types:
                     return storage
@@ -178,9 +174,7 @@ class TagMemoryMetaPass(ExportPass):
                 return layout
 
         for arg in node.args:
-            if isinstance(arg, torch.fx.Node) and isinstance(
-                arg.meta["val"], FakeTensor
-            ):
+            if isinstance(arg, torch.fx.Node) and utils.is_tensor_node(arg):
                 layout = utils.get_node_memory_layout(arg)
                 if layout is not None and layout in valid_layouts:
                     return layout
@@ -202,12 +196,17 @@ class TagMemoryMetaPass(ExportPass):
         if not isinstance(node, torch.fx.Node):
             return False
 
-        if not isinstance(node.meta["val"], FakeTensor):
+        if not utils.is_tensor_node(node):
             return False
 
         # Storage type and memory layout for tensorref will be determined at runtime
         # so there's no use in setting those attributes ahead of time.
         if node.meta.get("vkdg_tensorref", False):
+            return False
+
+        # Skip annotating output node. The output tensors should be annotated by the
+        # time the output node is observed.
+        if node.op == "output":
             return False
 
         return True
