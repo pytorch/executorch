@@ -10,9 +10,11 @@
 
 # pyre-unsafe
 
+import contextlib
 import logging
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
+from unittest.mock import patch
 
 import torch
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
@@ -184,15 +186,23 @@ class LLMEdgeManager:
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             if hasattr(self.args, "qnn") and self.args.qnn:
-                # TODO: this is temporary and export_for_training doesn't work with qnn either. We need a
-                # functional graph. See issue https://github.com/pytorch/executorch/pull/4627 for more details
-                exported_module = torch.export.export(
-                    self.model,
-                    self.example_inputs,
-                    self.example_kwarg_inputs,
-                    dynamic_shapes=dynamic_shape,
-                    strict=True,
-                )
+                # TODO: this is temporary, as qnn flow does not work with new, non-functional export IR.
+                # See issue: https://github.com/pytorch/executorch/issues/7373
+
+                with patch.object(
+                    torch._utils_internal,
+                    "export_training_ir_rollout_check",
+                    return_value=False,
+                ):
+                    # TODO: this is temporary and export_for_training doesn't work with qnn either. We need a
+                    # functional graph. See issue https://github.com/pytorch/executorch/pull/4627 for more details
+                    exported_module = torch.export.export(
+                        self.model,
+                        self.example_inputs,
+                        self.example_kwarg_inputs,
+                        dynamic_shapes=dynamic_shape,
+                        strict=True,
+                    )
             else:
                 logging.info("Exporting with:")
                 logging.info(f"inputs: {self.example_inputs}")
@@ -354,15 +364,25 @@ class LLMEdgeManager:
             if self.pre_autograd_graph_module is None:
                 # Run export() if it didn't run
                 self.export()
-            self.edge_manager = export_to_edge(
-                self.pre_autograd_graph_module,  # pyre-fixme[6]
-                self.example_inputs,
-                example_kwarg_inputs=self.example_kwarg_inputs,
-                dynamic_shapes=dynamic_shape,
-                edge_constant_methods=self.metadata,
-                edge_compile_config=edge_config,
-                verbose=self.verbose,
-            )
+
+            override_export_behaviour = contextlib.nullcontext()
+            if hasattr(self.args, "qnn") and self.args.qnn:
+                override_export_behaviour = patch.object(
+                    torch._utils_internal,
+                    "export_training_ir_rollout_check",
+                    return_value=False,
+                )
+
+            with override_export_behaviour:
+                self.edge_manager = export_to_edge(
+                    self.pre_autograd_graph_module,  # pyre-fixme[6]
+                    self.example_inputs,
+                    example_kwarg_inputs=self.example_kwarg_inputs,
+                    dynamic_shapes=dynamic_shape,
+                    edge_constant_methods=self.metadata,
+                    edge_compile_config=edge_config,
+                    verbose=self.verbose,
+                )
         return self
 
     def to_backend(self, partitioners: Optional[List[Partitioner]]) -> "LLMEdgeManager":
