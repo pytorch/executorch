@@ -8,6 +8,8 @@
 import executorch.backends.arm.tosa_quant_utils as tqutils
 import serializer.tosa_serializer as ts
 import torch.fx
+
+# pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_output_qparams,
 )
@@ -40,7 +42,7 @@ class ReluVisitor(NodeVisitor):
         clamp_min_qs = 0
         clamp_max_qs = 0
         if inputs[0].dtype == ts.DType.INT8:
-            out_qargs = get_output_qparams(node)
+            out_qargs = get_output_qparams(node)  # pyre-ignore[16]
             clamp_min_qs = tqutils.quantize_value(0, out_qargs[0])
             clamp_max_qs = tqutils.quantize_value(float("inf"), out_qargs[0])
 

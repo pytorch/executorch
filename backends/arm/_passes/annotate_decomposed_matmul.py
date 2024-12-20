@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import itertools
-from typing import Any, Dict, List
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import create_node
@@ -13,10 +12,7 @@ from executorch.backends.arm.tosa_quant_utils import dq_op, q_op
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule
-from torch.fx.passes.utils.source_matcher_utils import (
-    get_source_partitions,
-    SourcePartition,
-)
+from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
 class AnnotateDecomposedMatmulPass(ExportPass):
@@ -28,8 +24,8 @@ class AnnotateDecomposedMatmulPass(ExportPass):
     matmul-op (can be mm or bmm).
     """
 
-    def call(self, graph_module: GraphModule):
-        matmul_partitions: Dict[Any, List[SourcePartition]] = get_source_partitions(
+    def call(self, graph_module: GraphModule) -> PassResult:
+        matmul_partitions = get_source_partitions(
             graph_module.graph,
             [
                 torch.matmul,
@@ -56,7 +52,7 @@ class AnnotateDecomposedMatmulPass(ExportPass):
                     input_node = partition.input_nodes[i]
                     matmul_input_node = matmul_args[i]
                     # Remove partition input dq-node
-                    input_node.replace_all_uses_with(input_node.args[0])
+                    input_node.replace_all_uses_with(input_node.all_input_nodes[0])
                     graph_module.graph.erase_node(input_node)
                     input_node_qargs = input_node.args[1:]
                     with graph_module.graph.inserting_before(matmul_node):
@@ -81,7 +77,9 @@ class AnnotateDecomposedMatmulPass(ExportPass):
                     matmul_node.replace_all_uses_with(q_node)
                     q_node.args = (matmul_node, *output_node_qargs)
                 # Remove partition output q-node
-                partition_output.replace_all_uses_with(partition_output.args[0])
+                partition_output.replace_all_uses_with(
+                    partition_output.all_input_nodes[0]
+                )
                 graph_module.graph.erase_node(partition_output)
 
         # retrace the graph to update the fake tensor types

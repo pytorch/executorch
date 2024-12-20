@@ -6,14 +6,20 @@
 
 import copy
 
-from typing import cast, Iterable
+from typing import cast, Dict, Iterable, Set, Tuple
 
 from executorch.backends.arm.tosa_quant_utils import QuantArgs
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import (
+    Argument,
+    ExportPass,
+    NodeMetadata,
+    PassResult,
+    ProxyValue,
+)
 from torch.fx import GraphModule, Node
 
 q_op: EdgeOpOverload = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
@@ -82,7 +88,7 @@ class FoldAndAnnotateQParamsPass(ExportPass):
 
     def fold_and_annotate_arg(
         self, graph_module: GraphModule, node: Node, arg_list: list[Node], i: int
-    ):
+    ) -> None:
         input_qparams = None
         nodes_to_remove = set()
         for arg in arg_list:
@@ -210,11 +216,17 @@ class RetraceFoldedDtypesPass(ExportPass):
     the output type of that matches the type of the output_qparams.
     """
 
-    targeted_ops = {
+    targeted_ops: Set[EdgeOpOverload] = {
         exir_ops.edge.aten.sum.dim_IntList,
     }
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(
+        self,
+        op,  # pyre-ignore
+        args: Tuple[Argument, ...],
+        kwargs: Dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
         if op not in self.targeted_ops:
             return super().call_operator(op, args, kwargs, meta)
 

@@ -9,6 +9,8 @@ from typing import List
 
 import serializer.tosa_serializer as ts
 import torch
+
+# pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
     get_output_qparams,
@@ -49,7 +51,7 @@ class BMMVisitor(NodeVisitor):
         # for a later rescale.
 
         if inputs[0].dtype == ts.DType.INT8:
-            input_qparams = get_input_qparams(node)
+            input_qparams = get_input_qparams(node)  # pyre-ignore[16]
             input0_zp = input_qparams[0].zp
             input1_zp = input_qparams[1].zp
             bmm_result = tosa_graph.addIntermediate(output.shape, ts.DType.INT32)
@@ -71,9 +73,9 @@ class BMMVisitor(NodeVisitor):
 
         # As INT8 accumulates into INT32, we need to rescale it back to INT8
         if output.dtype == ts.DType.INT8:
-            output_qparams = get_output_qparams(node)[0]
+            output_qparams = get_output_qparams(node)[0]  # pyre-ignore[16]
             final_output_scale = (
-                input_qparams[0].scale * input_qparams[1].scale
+                input_qparams[0].scale * input_qparams[1].scale  # pyre-ignore[61]
             ) / output_qparams.scale
 
             build_rescale(

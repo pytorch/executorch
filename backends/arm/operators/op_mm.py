@@ -9,6 +9,8 @@ from typing import List
 
 import serializer.tosa_serializer as ts
 import torch
+
+# pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
     get_output_qparams,
@@ -52,7 +54,7 @@ class MMVisitor_080_BI(NodeVisitor):
         # The output also needs to be rank 3
         output_new_shape = (1, output.shape[0], output.shape[1])
 
-        input_qparams = get_input_qparams(node)
+        input_qparams = get_input_qparams(node)  # pyre-ignore[16]
         assert len(input_qparams) == 2
         input0_qparams = input_qparams[0]
         input1_qparams = input_qparams[1]
@@ -78,7 +80,7 @@ class MMVisitor_080_BI(NodeVisitor):
         )
 
         # As INT8 accumulates into INT32, we need to rescale it back to INT8
-        output_qparams = get_output_qparams(node)
+        output_qparams = get_output_qparams(node)  # pyre-ignore[16]
         assert len(output_qparams) == 1
 
         final_output_scale = (

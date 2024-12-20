@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Callable
+from typing import Callable, Dict
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import create_node
@@ -12,6 +12,7 @@ from executorch.backends.arm.tosa_quant_utils import QuantArgs
 from executorch.exir import ExportedProgram
 
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule
@@ -22,7 +23,7 @@ lib.define("_table(Tensor self) -> Tensor")
 
 
 @impl(lib, "_table")
-def _table_impl(*args, **kwargs):
+def _table_impl(*args, **kwargs):  # pyre-ignore
     return args[0]
 
 
@@ -34,7 +35,7 @@ class InsertTableOpsPass(ExportPass):
     which will be used to produce the table values in operators/op_table.py.
     """
 
-    table_ops = {
+    table_ops: Dict[EdgeOpOverload, Callable[[torch.Tensor], torch.Tensor]] = {
         exir_ops.edge.aten.exp.default: torch.exp,
         exir_ops.edge.aten.log.default: torch.log,
         exir_ops.edge.aten.reciprocal.default: torch.reciprocal,
@@ -43,7 +44,7 @@ class InsertTableOpsPass(ExportPass):
         exir_ops.edge.aten.tanh.default: torch.tanh,
     }
 
-    def __init__(self, exported_program: ExportedProgram):
+    def __init__(self, exported_program: ExportedProgram) -> None:
         super().__init__()
         self.exported_program = exported_program
 
