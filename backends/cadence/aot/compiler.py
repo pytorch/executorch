@@ -176,7 +176,7 @@ def export_program(
     torch._C._set_mkldnn_enabled(False)
 
     # else: capture the model and return it.
-    expo_program = export(model, inputs)
+    expo_program = export(model, inputs, strict=True)
 
     if dump_graphs:
         logging.info("Exported graph:")

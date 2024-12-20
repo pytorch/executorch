@@ -25,7 +25,7 @@ class TestGraphPartition(unittest.TestCase):
     ) -> torch.fx.GraphModule:
         graph_module = (
             to_edge(
-                export(module, inputs),
+                export(module, inputs, strict=True),
                 compile_config=EdgeCompileConfig(
                     _check_ir_validity=False,
                 ),
@@ -70,7 +70,6 @@ class TestGraphPartition(unittest.TestCase):
         supported_modules: List[torch.nn.Module],
         op_support: Optional[OperatorSupportBase] = None,
     ) -> List:
-
         node_list = self.get_node_list(graph_module, supported_modules)
 
         partition_list = generate_partitions_from_list_of_nodes(

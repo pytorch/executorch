@@ -61,7 +61,7 @@ def main() -> None:
     quantizer = QnnQuantizer()
 
     # Typical pytorch 2.0 quantization flow
-    m = torch.export.export(model.eval(), example_inputs).module()
+    m = torch.export.export(model.eval(), example_inputs, strict=True).module()
     m = prepare_pt2e(m, quantizer)
     # Calibration
     m(*example_inputs)

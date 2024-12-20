@@ -239,12 +239,7 @@ def maketest(
             #  torch._tensor.Tensor]` is not a function.
             inputs = eager_module.get_random_inputs()
             graph_module = (
-                to_edge(
-                    export(
-                        eager_module,
-                        inputs,
-                    )
-                )
+                to_edge(export(eager_module, inputs, strict=True))
                 .exported_program()
                 .graph_module
             )
@@ -491,10 +486,7 @@ class TestMisc(unittest.TestCase):
         expected_bufsizes: List[int],
     ) -> None:
         edge_program = to_edge(
-            export(
-                MultiplePoolsToyModel(),
-                (torch.ones(1),),
-            )
+            export(MultiplePoolsToyModel(), (torch.ones(1),), strict=True)
         )
 
         edge_program.to_executorch(
@@ -538,7 +530,8 @@ class TestMisc(unittest.TestCase):
                 return torch.nn.functional.sigmoid(self.linear(x) + self.constant + 1)
 
         def count_planned_inputs(
-            nodes: List[Node], graph_signature: Any  # pyre-ignore
+            nodes: List[Node],
+            graph_signature: Any,  # pyre-ignore
         ) -> Tuple[int, int]:
             num_mem_planned_placeholders = 0
             num_placeholders = 0
@@ -555,7 +548,9 @@ class TestMisc(unittest.TestCase):
         model = Simple()
         inputs = (torch.randn(5, 5),)
 
-        ep_no_input_planning = to_edge(export(model, inputs)).to_executorch(
+        ep_no_input_planning = to_edge(
+            export(model, inputs, strict=True)
+        ).to_executorch(
             config=ExecutorchBackendConfig(
                 memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
@@ -575,7 +570,7 @@ class TestMisc(unittest.TestCase):
             5,  # x, self.constant, linear weight, linear bias, '1' scalar promoted to tensor
         )
 
-        ep_input_planning = to_edge(export(model, inputs)).to_executorch(
+        ep_input_planning = to_edge(export(model, inputs, strict=True)).to_executorch(
             config=ExecutorchBackendConfig(
                 memory_planning_pass=MemoryPlanningPass(alloc_graph_input=True),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
@@ -609,7 +604,7 @@ class TestMisc(unittest.TestCase):
 
         model = TestModel()
         example_inputs = (torch.rand(1, 6, 2), torch.rand(1, 6, 2), torch.randn(5, 5))
-        exported_model = torch.export.export(model, example_inputs)
+        exported_model = torch.export.export(model, example_inputs, strict=True)
         edge = to_edge(exported_model)
 
         class TestPass(ExportPass):

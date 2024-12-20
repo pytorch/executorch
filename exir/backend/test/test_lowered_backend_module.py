@@ -58,7 +58,7 @@ class TestBackendAPI(unittest.TestCase):
 
         return (
             to_edge(
-                export(WrappedModule(), example_inputs),
+                export(WrappedModule(), example_inputs, strict=True),
                 compile_config=edge_compile_config,
             )
             .to_executorch()
@@ -78,10 +78,7 @@ class TestBackendAPI(unittest.TestCase):
         model_inputs = (torch.ones(1),)
         expected_res = sin_module(*model_inputs)
         edgeir_m = to_edge(
-            export(
-                sin_module,
-                model_inputs,
-            ),
+            export(sin_module, model_inputs, strict=True),
             compile_config=exir.EdgeCompileConfig(
                 _check_ir_validity=False, _use_edge_ops=True
             ),
@@ -133,7 +130,8 @@ class TestBackendAPI(unittest.TestCase):
             model_inputs = model.get_random_inputs()
 
             edgeir_m = to_edge(
-                export(model, model_inputs), compile_config=edge_compile_config
+                export(model, model_inputs, strict=True),
+                compile_config=edge_compile_config,
             )
             lowered_model = to_backend(
                 QnnBackend.__name__, edgeir_m.exported_program(), []
@@ -189,7 +187,8 @@ class TestBackendAPI(unittest.TestCase):
             model_inputs = model.get_random_inputs()
 
             edgeir_m = to_edge(
-                export(model, model_inputs), compile_config=edge_compile_config
+                export(model, model_inputs, strict=True),
+                compile_config=edge_compile_config,
             )
             lowered_module = to_backend(
                 QnnBackend.__name__, edgeir_m.exported_program(), []
@@ -206,7 +205,8 @@ class TestBackendAPI(unittest.TestCase):
 
             wrapped_module = WrappedModule(lowered_module)
             wrapped_module_edge = to_edge(
-                export(wrapped_module, model_inputs), compile_config=edge_compile_config
+                export(wrapped_module, model_inputs, strict=True),
+                compile_config=edge_compile_config,
             )
 
             nested_lowered_model = to_backend(

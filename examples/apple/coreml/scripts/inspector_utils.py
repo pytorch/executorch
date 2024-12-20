@@ -65,9 +65,7 @@ def build_devtools_runner_including_coreml(
     build_devtools_runner_command: str = (
         "./examples/devtools/build_example_runner.sh --coreml"
     )
-    build_command: str = (
-        f"{cd_root_command} && {conda_activate_env_command} && {build_devtools_runner_command}"
-    )
+    build_command: str = f"{cd_root_command} && {conda_activate_env_command} && {build_devtools_runner_command}"
     subprocess.run(
         f'bash -c "{build_command}"', shell=True, check=True
     ).check_returncode()
@@ -87,10 +85,7 @@ def to_core_aten(
     module: torch.nn.Module,
     example_inputs: Tuple[Value, ...],
 ) -> ExportedProgram:
-    core_aten_program = export(
-        mod=module,
-        args=example_inputs,
-    )
+    core_aten_program = export(mod=module, args=example_inputs, strict=True)
     return core_aten_program
 
 
