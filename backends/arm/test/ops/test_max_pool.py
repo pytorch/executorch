@@ -10,6 +10,8 @@ import unittest
 
 from typing import Tuple
 
+import pytest
+
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
@@ -160,6 +162,7 @@ class TestMaxPool2d(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite)
+    @pytest.mark.corstone_fvp
     def test_maxpool2d_tosa_u55_BI(
         self,
         test_name: str,
@@ -177,6 +180,7 @@ class TestMaxPool2d(unittest.TestCase):
             )
 
     @parameterized.expand(test_data_suite)
+    @pytest.mark.corstone_fvp
     def test_maxpool2d_tosa_u85_BI(
         self,
         test_name: str,
@@ -216,6 +220,7 @@ class TestMaxPool2d(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite_mult_batches)
+    @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP  # TODO: MLETORCH-433
     def test_maxpool2d_tosa_u55_BI_mult_batches(
         self,
@@ -234,6 +239,7 @@ class TestMaxPool2d(unittest.TestCase):
             )
 
     @parameterized.expand(test_data_suite_mult_batches)
+    @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP  # TODO: MLETORCH-433
     def test_maxpool2d_tosa_u85_BI_mult_batches(
         self,
