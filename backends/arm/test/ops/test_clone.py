@@ -11,6 +11,8 @@
 import unittest
 from typing import Tuple
 
+import pytest
+
 import torch
 
 from executorch.backends.arm.quantizer.arm_quantizer import (
@@ -122,9 +124,11 @@ class TestSimpleClone(unittest.TestCase):
         self._test_clone_tosa_BI_pipeline(self.Clone(), (test_tensor,))
 
     @parameterized.expand(Clone.test_parameters)
+    @pytest.mark.corstone_fvp
     def test_clone_u55_BI(self, test_tensor: torch.Tensor):
         self._test_clone_tosa_u55_pipeline(self.Clone(), (test_tensor,))
 
     @parameterized.expand(Clone.test_parameters)
+    @pytest.mark.corstone_fvp
     def test_clone_u85_BI(self, test_tensor: torch.Tensor):
         self._test_clone_tosa_u85_pipeline(self.Clone(), (test_tensor,))
