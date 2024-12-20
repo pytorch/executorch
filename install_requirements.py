@@ -112,22 +112,18 @@ if os.name == "nt":
 # NOTE: If a newly-fetched version of the executorch repo changes the value of
 # NIGHTLY_VERSION, you should re-run this script to install the necessary
 # package versions.
-NIGHTLY_VERSION = "dev20241112"
+NIGHTLY_VERSION = "dev20241218"
 
 # The pip repository that hosts nightly torch packages.
-TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
+TORCH_URL = "https://download.pytorch.org/whl/test/cpu"
 
 # pip packages needed by exir.
 EXIR_REQUIREMENTS = [
     # Setting USE_PYTORCH_NIGHTLY to false to test the pinned PyTorch commit. Note
     # that we don't need to set any version number there because they have already
     # been installed on CI before this step, so pip won't reinstall them
-    f"torch==2.6.0.{NIGHTLY_VERSION}" if USE_PYTORCH_NIGHTLY else "torch",
-    (
-        f"torchvision==0.20.0.{NIGHTLY_VERSION}"
-        if USE_PYTORCH_NIGHTLY
-        else "torchvision"
-    ),  # For testing.
+    "torch==2.6.0" if USE_PYTORCH_NIGHTLY else "torch",
+    ("torchvision==0.21.0" if USE_PYTORCH_NIGHTLY else "torchvision"),  # For testing.
     "typing-extensions",
 ]
 
@@ -135,7 +131,7 @@ EXIR_REQUIREMENTS = [
 # TODO: Make each example publish its own requirements.txt
 EXAMPLES_REQUIREMENTS = [
     "timm==1.0.7",
-    f"torchaudio==2.5.0.{NIGHTLY_VERSION}" if USE_PYTORCH_NIGHTLY else "torchaudio",
+    "torchaudio==2.6.0" if USE_PYTORCH_NIGHTLY else "torchaudio",
     "torchsr==1.0.4",
     "transformers==4.46.1",
 ]
@@ -165,7 +161,7 @@ subprocess.run(
         "install",
         *REQUIREMENTS_TO_INSTALL,
         "--extra-index-url",
-        TORCH_NIGHTLY_URL,
+        TORCH_URL,
     ],
     check=True,
 )
@@ -192,7 +188,7 @@ subprocess.run(
         "--no-build-isolation",
         "-v",
         "--extra-index-url",
-        TORCH_NIGHTLY_URL,
+        TORCH_URL,
     ],
     check=True,
 )
