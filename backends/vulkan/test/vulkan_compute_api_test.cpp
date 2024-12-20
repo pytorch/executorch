@@ -1087,8 +1087,8 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
 
   // Current known size on 64 bit system: 1040 B
   EXPECT_TRUE(sizeof(vTensor) < 1200);
-  // Current known size on 64 bit system: 120 B
-  EXPECT_TRUE(sizeof(Value) < 128);
+  // Current known size on 64 bit system: 48 B
+  EXPECT_TRUE(sizeof(Value) < 56);
   // Current known size on 64 bit system: 120 B
   EXPECT_TRUE(sizeof(StagingBuffer) < 500);
   // Current known size on 64 bit system: 384 B
@@ -1601,9 +1601,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   auto addFn = VK_GET_OP_FN("aten.add.Tensor");
   addFn(graph, {a.value, b.value, kDummyValueRef, c});
 
-  // +2: alpha UBO, broadcast UBO for arithmetic shader
-  // +1: t.sizes_ubo() for arithmetic shader output c
-  expected_vma_allocation_count += 3;
+  // no new allocations if binary op uses push constants
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   IOValueRef d = graph.add_input_tensor(
@@ -1624,17 +1622,16 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   auto mulFn = VK_GET_OP_FN("aten.mul.Tensor");
   mulFn(graph, {c, d.value, e});
 
-  // +2: alpha UBO, broadcast UBO for arithmetic shader
-  // +1: t.sizes_ubo() for arithmetic shader output e
-  expected_vma_allocation_count += 3;
+  // no new allocations if binary op uses push constants
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   IOValueRef out = {};
   out.value = e;
   out.staging = graph.set_output_tensor(out.value);
 
+  // +1: staging buffer input tensor
   // +1: staging buffer for the output tensor
-  expected_vma_allocation_count += 1;
+  expected_vma_allocation_count += 2;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   graph.prepare();

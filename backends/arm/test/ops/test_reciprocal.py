@@ -6,6 +6,8 @@
 
 import unittest
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
@@ -46,7 +48,7 @@ class TestReciprocal(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check_count({"torch.ops.aten.reciprocal.default": 1})
@@ -65,7 +67,7 @@ class TestReciprocal(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -112,6 +114,7 @@ class TestReciprocal(unittest.TestCase):
         self._test_reciprocal_tosa_BI_pipeline(self.Reciprocal(), test_data)
 
     @parameterized.expand(test_data_suite)
+    @pytest.mark.corstone_fvp
     def test_reciprocal_u55_BI(self, test_name: str, input_: torch.Tensor):
         test_data = (input_,)
         self._test_reciprocal_u55_BI_pipeline(self.Reciprocal(), test_data)
