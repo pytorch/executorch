@@ -5,7 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+
 from typing import List, Tuple, Union
+
+import pytest
 
 import torch
 from executorch.backends.arm.test import common, conftest
@@ -158,6 +161,7 @@ class TestLayerNorm(unittest.TestCase):
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
     # Skip tests that require transposes.
     @parameterized.expand(test_data_suite)
+    @pytest.mark.corstone_fvp
     @unittest.expectedFailure
     def test_layer_norm_u55_BI_xfails(
         self,
@@ -171,6 +175,7 @@ class TestLayerNorm(unittest.TestCase):
 
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
     @parameterized.expand(test_data_suite[:-2])
+    @pytest.mark.corstone_fvp
     @unittest.expectedFailure
     def test_layer_norm_u85_BI_xfails(
         self,
@@ -183,6 +188,7 @@ class TestLayerNorm(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite[-2:])
+    @pytest.mark.corstone_fvp
     def test_layer_norm_u85_BI(
         self,
         test_name: str,
