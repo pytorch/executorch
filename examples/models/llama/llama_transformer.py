@@ -232,22 +232,16 @@ class KVCache(nn.Module):
         max_seq_length: int,
         n_heads: int,
         head_dim: int,
-        transpose_cache: bool,
         enable_dynamic_shape: bool,
         dtype=torch.float32,
     ):
         super().__init__()
         self.max_seq_length = max_seq_length
-        self.is_transposed = transpose_cache
-        if transpose_cache:
-            cache_shape = (max_batch_size, n_heads, max_seq_length, head_dim)
-        else:
-            cache_shape = (max_batch_size, max_seq_length, n_heads, head_dim)
+        cache_shape = (max_batch_size, n_heads, max_seq_length, head_dim)
 
         self.max_batch_size = max_batch_size
         self.n_heads = n_heads
         self.head_dim = head_dim
-        self.transpose_cache = transpose_cache
         self.enable_dynamic_shape = enable_dynamic_shape
         self.register_buffer(
             "k_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")
@@ -259,12 +253,12 @@ class KVCache(nn.Module):
     def update(
         self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        # input_pos: [S], k_val: [B, H, S, D] or [B, S, H, D] depending on transpose_cache
+        # input_pos: [S], k_val: [B, H, S, D]
         if self.enable_dynamic_shape:
             start_pos = input_pos[0].item()
             torch._check_is_size(start_pos)
             torch._check(start_pos < self.max_seq_length)
-            dim_to_slice = 2 if self.transpose_cache else 1
+            dim_to_slice = 2
             seq_length = k_val.size(dim_to_slice)
             # Replace the entry in the cache for this token
             # The following lines are equivalent to:
@@ -283,12 +277,8 @@ class KVCache(nn.Module):
         else:
             k_out = self.k_cache
             v_out = self.v_cache
-            if self.transpose_cache:
-                k_out[:, :, input_pos] = k_val
-                v_out[:, :, input_pos] = v_val
-            else:
-                k_out[:, input_pos] = k_val
-                v_out[:, input_pos] = v_val
+            k_out[:, :, input_pos] = k_val
+            v_out[:, :, input_pos] = v_val
 
             return k_out, v_out
 
@@ -296,7 +286,6 @@ class KVCache(nn.Module):
 class SDPA(nn.Module):
     def __init__(
         self,
-        kv_cache: KVCache,
         dim: int,
         head_dim: int,
         n_rep: int,
@@ -304,7 +293,6 @@ class SDPA(nn.Module):
         enable_dynamic_shape: bool,
     ):
         super().__init__()
-        self.kv_cache = kv_cache
         self.dim = dim
         self.head_dim = head_dim
         self.n_rep = n_rep
@@ -314,18 +302,16 @@ class SDPA(nn.Module):
     def forward(
         self,
         input_pos: torch.Tensor,
-        q: torch.Tensor,  # Already have rotary embeddings. (bs, seqlen, n_local_heads, head_dim)
-        k: torch.Tensor,  # Already have rotary embeddings. (bs, seqlen, n_local_kv_heads, head_dim)
-        v: torch.Tensor,  # (bs, seqlen, n_local_kv_heads, head_dim)
+        q: torch.Tensor,  # Already have rotary embeddings. (bs, n_local_heads, seqlen, head_dim)
+        k: torch.Tensor,  # Already have rotary embeddings. (bs, n_local_kv_heads, seqlen, head_dim)
+        v: torch.Tensor,  # (bs, n_local_kv_heads, seqlen, head_dim)
         bsz,
         seqlen,
         mask: torch.Tensor,
     ) -> torch.Tensor:
-        q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-        k = k.transpose(1, 2)
-        v = v.transpose(1, 2)
 
-        k, v = self.kv_cache.update(input_pos, k, v)
+        # TODO(kimishpatel): Move this slicing logic to Attention block so that
+        # SDPA does not have to take input_pos as arg
         if self.enable_dynamic_shape:
             start_pos = input_pos[-1].item()
             torch._check_is_size(start_pos)
@@ -336,6 +322,8 @@ class SDPA(nn.Module):
         else:
             attn_mask = mask[None, None, input_pos]
 
+        # TODO(kimishpatel): This should not be necessary because scaled_dot_product_attention
+        # can natively support GQA now. But needs enable_gqa=True
         k = k.repeat_interleave(self.n_rep, dim=1)
         v = v.repeat_interleave(self.n_rep, dim=1)
         y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=0.0)
@@ -383,11 +371,9 @@ class Attention(nn.Module):
                 args.max_seq_len,
                 self.n_kv_heads,
                 self.head_dim,
-                not args.use_sdpa_with_kv_cache_op,  # if we are using the custom op don't transpose the cache. Expect untransposed q k v
                 args.enable_dynamic_shape,
             )
             self.SDPA = SDPA(
-                kv_cache=self.kv_cache,
                 dim=self.n_local_heads * self.head_dim,
                 head_dim=self.head_dim,
                 n_rep=self.n_rep,
@@ -414,14 +400,15 @@ class Attention(nn.Module):
         # RoPE relative positional embeddings
         q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
 
-        if self.use_kv_cache:
-            assert input_pos is not None
-            output = self.SDPA(input_pos, q, k, v, bsz, seqlen, self.mask)
-            return self.wo(output)
-
         q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
+
+        if self.use_kv_cache:
+            assert input_pos is not None
+            k, v = self.kv_cache.update(input_pos, k, v)
+            output = self.SDPA(input_pos, q, k, v, bsz, seqlen, self.mask)
+            return self.wo(output)
 
         # grouped multiquery attention: expand out keys and values
         k = k.repeat_interleave(self.n_rep, dim=1)

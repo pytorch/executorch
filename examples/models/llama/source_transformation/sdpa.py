@@ -22,19 +22,9 @@ from executorch.examples.models.llama.source_transformation.quantized_kv_cache i
 class SDPACustom(torch.nn.Module):
     def __init__(
         self,
-        kv_cache: Union[KVCache, QuantizedKVCache],
         dim: int,
     ):
         super().__init__()
-        # Custom op only supports float32 currently. Converting to/from float32 is
-        # faster than not having the op.
-        self.kv_cache = kv_cache
-        if not isinstance(kv_cache, QuantizedKVCache):
-            self.kv_cache = kv_cache.to(torch.float)
-        else:
-            assert (
-                kv_cache.cache_fp_type == torch.float32
-            ), "Only float32 is supported for custom SDPA"
         self.dim = dim
 
     def forward(
@@ -47,6 +37,10 @@ class SDPACustom(torch.nn.Module):
         seqlen,
         mask,
     ):
+        q = q.transpose(1, 2)  # (bs, seqlen, n_local_heads, head_dim)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+
         # Custom op only supports float32 currently. Converting to/from float32 is
         # faster than not having the op.
         input_dtype = q.dtype
@@ -54,13 +48,10 @@ class SDPACustom(torch.nn.Module):
         k = k.to(dtype=torch.float)
         v = v.to(dtype=torch.float)
 
-        k_cache = self.kv_cache.k_cache
-        v_cache = self.kv_cache.v_cache
-        k_cache, v_cache = self.kv_cache.update(input_pos, k, v)
         output = torch.ops.llama.custom_sdpa(
             q,
-            k_cache,
-            v_cache,
+            k,
+            v,
             input_pos[0].item(),
             None,  # Attention mask
             0,  # dropout probability. Ignored by the code
@@ -75,7 +66,7 @@ def _replace_sdpa_with_custom_op(module: torch.nn.Module):
             setattr(
                 module,
                 name,
-                SDPACustom(child.kv_cache, child.dim),
+                SDPACustom(child.dim),
             )
         else:
             _replace_sdpa_with_custom_op(child)
