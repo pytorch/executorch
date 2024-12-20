@@ -10,7 +10,10 @@
 #
 
 import unittest
+
 from typing import Tuple
+
+import pytest
 
 import torch
 from executorch.backends.arm.test import common, conftest
@@ -145,6 +148,7 @@ class TestFull(unittest.TestCase):
 
     # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(AddVariableFull.test_parameters)
+    @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
     def test_full_u55_BI(self, test_tensor: Tuple):
         self._test_full_tosa_u55_pipeline(
@@ -154,6 +158,7 @@ class TestFull(unittest.TestCase):
 
     # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(AddVariableFull.test_parameters)
+    @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
     def test_full_u85_BI(self, test_tensor: Tuple):
         self._test_full_tosa_u85_pipeline(

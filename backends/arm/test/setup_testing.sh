@@ -20,8 +20,9 @@ fvp_model=FVP_Corstone_SSE-300_Ethos-U55
 # Put in backends/arm/test/res to be used by unit tests.
 function build_semihosting_executorch_runner() {
     target_board=$1
+    system_config=$2
     build_test_dir=${build_root_test_dir}_${target_board}
-    echo "[${FUNCNAME[0]}] Configuring ${target_board}"
+    echo "[${FUNCNAME[0]}] Configuring ${target_board} with system config ${system_config}"
     if [[ ${target_board} == "corstone-300" ]]; then
         local target_cpu=cortex-m55
     elif [[ ${target_board} == "corstone-320" ]]; then
@@ -36,15 +37,14 @@ function build_semihosting_executorch_runner() {
     cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}          \
           -DCMAKE_BUILD_TYPE=RelWithDebInfo                  \
           -DTARGET_CPU=${target_cpu}                         \
-          -DTARGET_BOARD=${target_board}                     \
           -DSEMIHOSTING=ON                                   \
           -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=${build_test_dir} \
           -B ${build_test_dir}                               \
           -DETHOS_SDK_PATH:PATH=${ethos_u_root_dir}          \
           -DET_DIR_PATH:PATH=${et_root_dir}                  \
           -DET_BUILD_DIR_PATH:PATH=${et_build_dir}           \
-          -DPYTHON_EXECUTABLE=$(which python3)
-
+          -DPYTHON_EXECUTABLE=$(which python3)               \
+          -DSYSTEM_CONFIG=${system_config}
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
     n=$(nproc)
@@ -53,6 +53,7 @@ function build_semihosting_executorch_runner() {
     find ${build_test_dir} -name "arm_executor_runner"
 }
 
-build_semihosting_executorch_runner corstone-300
+# Use most optimal system_configs for testing
+build_semihosting_executorch_runner corstone-300 Ethos_U55_High_End_Embedded
 
-build_semihosting_executorch_runner corstone-320
+build_semihosting_executorch_runner corstone-320 Ethos_U85_SYS_DRAM_Mid
