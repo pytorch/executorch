@@ -55,6 +55,7 @@ from .source_transformation.quantize import (
     get_quant_weight_transform,
 )
 from .source_transformation.quantized_kv_cache import (
+    replace_kv_cache_with_custom_kv_cache,
     replace_kv_cache_with_quantized_kv_cache,
 )
 from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
@@ -1045,6 +1046,7 @@ def _get_source_transforms(  # noqa
         transforms.append(materialze_broadcast_of_rope_freq_cis)
 
     if args.use_sdpa_with_kv_cache:
+        transforms.append(replace_kv_cache_with_custom_kv_cache)
         transforms.append(replace_sdpa_with_custom_op)
 
     if args.quantize_kv_cache:
