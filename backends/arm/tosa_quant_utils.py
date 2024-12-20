@@ -57,6 +57,11 @@ def insert_rescale_ops_to_int32(
     the graph upstream for DQ nodes.
     """
 
+    # pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
+    from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+        get_input_qparams,
+    )
+
     tensors = inputs.copy()
 
     # Reshape tensor according to TOSA dim order
@@ -64,7 +69,8 @@ def insert_rescale_ops_to_int32(
         dim_order = tensor.dim_order
         tensor.shape = [tensor.shape[i] for i in dim_order]
 
-    qargs = list(cast(dict[int, QuantArgs], node.meta["input_qparams"]).values())
+    input_qparams = get_input_qparams(node)  # pyre-ignore[16]
+    qargs = input_qparams.values()
 
     # Scale the int8 quantized input to a common scale in the integer
     # domain
@@ -84,7 +90,7 @@ def insert_rescale_ops_to_int32(
     return rescaled_nodes, min_scale
 
 
-def insert_rescale_node_back_to_int8(
+def insert_rescale_op_to_int8(
     tosa_graph: ts.TosaSerializer,
     last_tensor: TosaArg,
     scale: float,
@@ -102,9 +108,15 @@ def insert_rescale_node_back_to_int8(
     in the node meta dict as opposed to 'rescale_node_back_to_int8' which search
     the graph downstream for Q nodes.
     """
-    assert len(node.meta["output_qparams"]) == 1
+    # pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
+    from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+        get_output_qparams,
+    )
 
-    qargs_out = cast(dict[int, QuantArgs], node.meta["output_qparams"])[0]
+    output_qparams = get_output_qparams(node)  # pyre-ignore[16]
+    assert len(output_qparams) == 1, "More than one output not supported"
+
+    qargs_out = output_qparams[0]
     output_rescale_scale = scale / qargs_out.scale
 
     # Rescale Back to INT8
@@ -135,6 +147,17 @@ class QuantArgs(NamedTuple):
 
     def dequantize_value(self, qx: int) -> float:
         return (qx - self.zp) * self.scale
+
+    def __eq__(self, other):
+        if isinstance(other, QuantArgs):
+            return (
+                self.scale == other.scale
+                and self.zp == other.zp
+                and self.qmin == other.qmin
+                and self.qmax == other.qmax
+                and self.dtype == other.dtype
+            )
+        return False
 
     @classmethod
     def from_operator(cls, op, args):
