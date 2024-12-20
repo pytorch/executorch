@@ -85,7 +85,7 @@ in the example), and a list of dynamic shapes (covered later).
 
 
     example_args = (torch.randn(1, 3, 256, 256),)
-    aten_dialect: ExportedProgram = export(SimpleConv(), example_args)
+    aten_dialect: ExportedProgram = export(SimpleConv(), example_args, strict=True)
     print(aten_dialect)
 
 
@@ -152,7 +152,7 @@ different than the ones we used while tracing, we will run into an error:
 
 
     example_args = (torch.randn(3, 3), torch.randn(3, 3))
-    aten_dialect: ExportedProgram = export(Basic(), example_args)
+    aten_dialect: ExportedProgram = export(Basic(), example_args, strict=True)
 
     # Works correctly
     print(aten_dialect.module()(torch.ones(3, 3), torch.ones(3, 3)))
@@ -225,7 +225,7 @@ To express that some input shapes are dynamic, we can insert dynamic
     dim1_x = Dim("dim1_x", min=1, max=10)
     dynamic_shapes = {"x": {1: dim1_x}, "y": {1: dim1_x}}
     aten_dialect: ExportedProgram = export(
-        Basic(), example_args, dynamic_shapes=dynamic_shapes
+        Basic(), example_args, dynamic_shapes=dynamic_shapes, strict=True
     )
     print(aten_dialect)
 
@@ -404,7 +404,7 @@ model properly for a specific backend.
     print("Quantized Graph")
     print(converted_graph)
 
-    aten_dialect: ExportedProgram = export(converted_graph, example_args)
+    aten_dialect: ExportedProgram = export(converted_graph, example_args, strict=True)
     print("ATen Dialect Graph")
     print(aten_dialect)
 
@@ -519,7 +519,7 @@ The lowering is done through the ``to_edge`` API.
     from executorch.exir import EdgeProgramManager, to_edge
 
     example_args = (torch.randn(1, 3, 256, 256),)
-    aten_dialect: ExportedProgram = export(SimpleConv(), example_args)
+    aten_dialect: ExportedProgram = export(SimpleConv(), example_args, strict=True)
 
     edge_program: EdgeProgramManager = to_edge(aten_dialect)
     print("Edge Dialect Graph")
@@ -575,10 +575,10 @@ there is only one program, it will by default be saved to the name "forward".
 
 
     encode_args = (torch.randn(1, 10),)
-    aten_encode: ExportedProgram = export(Encode(), encode_args)
+    aten_encode: ExportedProgram = export(Encode(), encode_args, strict=True)
 
     decode_args = (torch.randn(1, 5),)
-    aten_decode: ExportedProgram = export(Decode(), decode_args)
+    aten_decode: ExportedProgram = export(Decode(), decode_args, strict=True)
 
     edge_program: EdgeProgramManager = to_edge(
         {"encode": aten_encode, "decode": aten_decode}
@@ -595,19 +595,6 @@ there is only one program, it will by default be saved to the name "forward".
 
  .. code-block:: none
 
-    Edge Dialect graph of encode
-    ExportedProgram:
-        class GraphModule(torch.nn.Module):
-            def forward(self, x: "f32[1, 10]"):
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:261 in forward, code: return torch.nn.functional.linear(x, torch.randn(5, 10))
-                aten_randn_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_randn_default([5, 10], device = device(type='cpu'), pin_memory = False)
-                aten_permute_copy_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
-                aten_mm_default: "f32[1, 5]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
-                return (aten_mm_default,)
-            
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
-    Range constraints: {}
-
     Edge Dialect graph of decode
     ExportedProgram:
         class GraphModule(torch.nn.Module):
@@ -616,6 +603,19 @@ there is only one program, it will by default be saved to the name "forward".
                 aten_randn_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_randn_default([10, 5], device = device(type='cpu'), pin_memory = False)
                 aten_permute_copy_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
                 aten_mm_default: "f32[1, 10]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
+                return (aten_mm_default,)
+            
+    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
+    Range constraints: {}
+
+    Edge Dialect graph of encode
+    ExportedProgram:
+        class GraphModule(torch.nn.Module):
+            def forward(self, x: "f32[1, 10]"):
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:261 in forward, code: return torch.nn.functional.linear(x, torch.randn(5, 10))
+                aten_randn_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_randn_default([5, 10], device = device(type='cpu'), pin_memory = False)
+                aten_permute_copy_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
+                aten_mm_default: "f32[1, 5]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
                 return (aten_mm_default,)
             
     Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
@@ -643,7 +643,7 @@ rather than the ``torch.ops.aten`` namespace.
 
 
     example_args = (torch.randn(1, 3, 256, 256),)
-    aten_dialect: ExportedProgram = export(SimpleConv(), example_args)
+    aten_dialect: ExportedProgram = export(SimpleConv(), example_args, strict=True)
     edge_program: EdgeProgramManager = to_edge(aten_dialect)
     print("Edge Dialect Graph")
     print(edge_program.exported_program())
@@ -756,7 +756,7 @@ lowering process.
 
     # Export and lower the module to Edge Dialect
     example_args = (torch.ones(1),)
-    aten_dialect: ExportedProgram = export(LowerableModule(), example_args)
+    aten_dialect: ExportedProgram = export(LowerableModule(), example_args, strict=True)
     edge_program: EdgeProgramManager = to_edge(aten_dialect)
     to_be_lowered_module = edge_program.exported_program()
 
@@ -854,7 +854,7 @@ can compose this lowered module with another module.
 
 
     example_args = (torch.ones(1),)
-    aten_dialect: ExportedProgram = export(ComposedModule(), example_args)
+    aten_dialect: ExportedProgram = export(ComposedModule(), example_args, strict=True)
     edge_program: EdgeProgramManager = to_edge(aten_dialect)
     exported_program = edge_program.exported_program()
     print("Edge Dialect graph")
@@ -948,7 +948,7 @@ partition those nodes into subgraphs, and then create a
 
 
     example_args = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
-    aten_dialect: ExportedProgram = export(Foo(), example_args)
+    aten_dialect: ExportedProgram = export(Foo(), example_args, strict=True)
     edge_program: EdgeProgramManager = to_edge(aten_dialect)
     exported_program = edge_program.exported_program()
     print("Edge Dialect graph")
@@ -1070,7 +1070,7 @@ call ``to_backend`` on it:
 
 
     example_args = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
-    aten_dialect: ExportedProgram = export(Foo(), example_args)
+    aten_dialect: ExportedProgram = export(Foo(), example_args, strict=True)
     edge_program: EdgeProgramManager = to_edge(aten_dialect)
     exported_program = edge_program.exported_program()
     delegated_program = edge_program.to_backend(AddMulPartitionerDemo())
@@ -1225,7 +1225,7 @@ to be run.
 
 Here is an example for an entire end-to-end workflow:
 
-.. GENERATED FROM PYTHON SOURCE LINES 561-593
+.. GENERATED FROM PYTHON SOURCE LINES 561-595
 
 .. code-block:: default
 
@@ -1248,7 +1248,9 @@ Here is an example for an entire end-to-end workflow:
     pre_autograd_aten_dialect = export_for_training(M(), example_args).module()
     # Optionally do quantization:
     # pre_autograd_aten_dialect = convert_pt2e(prepare_pt2e(pre_autograd_aten_dialect, CustomBackendQuantizer))
-    aten_dialect: ExportedProgram = export(pre_autograd_aten_dialect, example_args)
+    aten_dialect: ExportedProgram = export(
+        pre_autograd_aten_dialect, example_args, strict=True
+    )
     edge_program: exir.EdgeProgramManager = exir.to_edge(aten_dialect)
     # Optionally do delegation:
     # edge_program = edge_program.to_backend(CustomBackendPartitioner)
@@ -1268,7 +1270,7 @@ Here is an example for an entire end-to-end workflow:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 594-609
+.. GENERATED FROM PYTHON SOURCE LINES 596-611
 
 Conclusion
 ----------
@@ -1289,7 +1291,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 3.104 seconds)
+   **Total running time of the script:** (0 minutes 3.227 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
