@@ -82,13 +82,11 @@ def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
 class SDPASimple(torch.nn.Module):
     def __init__(
         self,
-        kv_cache: KVCache,
         dim: int,
         head_dim: int,
         n_rep: int,
     ):
         super().__init__()
-        self.kv_cache = kv_cache
         self.dim = dim
         self.head_dim = head_dim
         self.n_rep = n_rep
@@ -103,11 +101,6 @@ class SDPASimple(torch.nn.Module):
         seqlen,
         mask,
     ):
-        q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-        k = k.transpose(1, 2)
-        v = v.transpose(1, 2)
-
-        k, v = self.kv_cache.update(input_pos, k, v)
         attn_mask = mask[None, None, input_pos]
 
         k = k.repeat_interleave(self.n_rep, dim=1)
@@ -141,12 +134,10 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
 class SDPAFlex(torch.nn.Module):
     def __init__(
         self,
-        kv_cache: KVCache,
         dim: int,
         n_rep: int,
     ):
         super().__init__()
-        self.kv_cache = kv_cache
         self.dim = dim
         self.n_rep = n_rep
 
@@ -160,9 +151,10 @@ class SDPAFlex(torch.nn.Module):
         seqlen,
         mask,
     ):
-        q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-
-        k, v = self.kv_cache.update(input_pos, k, v)
+        """
+        q: (bs, n_heads, seqlen, head_dim)
+        k, v: (bs, n_local_heads, seqlen, head_dim)
+        """
         k = repeat_kv(k, self.n_rep)
         v = repeat_kv(v, self.n_rep)
         attn_mask = mask[input_pos]
@@ -182,7 +174,7 @@ def replace_sdpa_with_simple_sdpa(module: torch.nn.Module):
             setattr(
                 module,
                 name,
-                SDPASimple(child.kv_cache, child.dim, child.head_dim, child.n_rep),
+                SDPASimple(child.dim, child.head_dim, child.n_rep),
             )
         else:
             replace_sdpa_with_simple_sdpa(child)
@@ -195,7 +187,7 @@ def replace_sdpa_with_flex_sdpa(module: torch.nn.Module):
             setattr(
                 module,
                 name,
-                SDPAFlex(child.kv_cache, child.dim, child.n_rep),
+                SDPAFlex(child.dim, child.n_rep),
             )
         else:
             replace_sdpa_with_flex_sdpa(child)
@@ -227,13 +219,11 @@ class SDPACoreML(torch.nn.Module):
 
     def __init__(
         self,
-        kv_cache: KVCache,
         dim: int,
         head_dim: int,
         n_rep: int,
     ):
         super().__init__()
-        self.kv_cache = kv_cache
         self.dim = dim
         self.head_dim = head_dim
         self.n_rep = n_rep
@@ -248,11 +238,6 @@ class SDPACoreML(torch.nn.Module):
         seqlen,
         mask,
     ):
-        q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-        k = k.transpose(1, 2)
-        v = v.transpose(1, 2)
-
-        k, v = self.kv_cache.update(input_pos, k, v)
         attn_mask = mask[None, None, input_pos]
 
         if self.n_rep > 1:
@@ -270,7 +255,7 @@ def replace_sdpa_with_coreml_sdpa(module: torch.nn.Module):
             setattr(
                 module,
                 name,
-                SDPACoreML(child.kv_cache, child.dim, child.head_dim, child.n_rep),
+                SDPACoreML(child.dim, child.head_dim, child.n_rep),
             )
         else:
             replace_sdpa_with_coreml_sdpa(child)
@@ -357,6 +342,9 @@ class KVCacheSimple(torch.nn.Module):
     def update(
         self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # can we combine this with KVCacheCoreML?
+        k_val = k_val.transpose(1, 2)
+        v_val = v_val.transpose(1, 2)
         k_out = torch.ops.aten.index_put_(self.past_k_caches, [None, input_pos], k_val)
         v_out = torch.ops.aten.index_put_(self.past_v_caches, [None, input_pos], v_val)
 
