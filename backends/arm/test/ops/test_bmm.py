@@ -8,6 +8,8 @@ import unittest
 
 from typing import Tuple
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
@@ -146,6 +148,7 @@ class TestBMM(unittest.TestCase):
         self._test_bmm_tosa_BI_pipeline(self.BMMSingleInput(), test_data)
 
     @parameterized.expand(BMM.test_parameters)
+    @pytest.mark.corstone_fvp
     @unittest.expectedFailure
     def test_bmm_u55_BI_xfails(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
@@ -154,6 +157,7 @@ class TestBMM(unittest.TestCase):
         )
 
     @parameterized.expand(BMM.test_parameters[:1])
+    @pytest.mark.corstone_fvp
     def test_bmm_u85_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
         self._test_bmm_ethosu_BI_pipeline(
@@ -161,6 +165,7 @@ class TestBMM(unittest.TestCase):
         )
 
     @parameterized.expand(BMM.test_parameters[1:])
+    @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
     def test_bmm_u85_BI_xfails(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
@@ -170,6 +175,7 @@ class TestBMM(unittest.TestCase):
 
     # Expected to fail with error: Warning, unsupported fusing of TOSA Rescale previous operator is of type: Memcpy
     @parameterized.expand(BMMSingleInput.test_parameters)
+    @pytest.mark.corstone_fvp
     @unittest.expectedFailure
     def test_bmm_single_input_u55_BI_xfails(self, operand1: torch.Tensor):
         test_data = (operand1,)
@@ -178,6 +184,7 @@ class TestBMM(unittest.TestCase):
         )
 
     @parameterized.expand(BMMSingleInput.test_parameters)
+    @pytest.mark.corstone_fvp
     def test_bmm_single_input_u85_BI(self, operand1: torch.Tensor):
         test_data = (operand1,)
         self._test_bmm_ethosu_BI_pipeline(

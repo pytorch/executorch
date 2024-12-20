@@ -15,6 +15,7 @@ from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     BOOL,
     DOUBLE,
     INT,
+    OLD_STRING,
     OPT_AT_DOUBLE_ARRAY_REF,
     OPT_AT_INT_ARRAY_REF,
     OPT_AT_TENSOR,
@@ -192,8 +193,8 @@ class CorrectnessTestGen:
                 ret_str += "std::nullopt;"
             else:
                 ret_str += f"{str(data)};"
-        elif cpp_type == STRING:
-            ret_str += f'c10::string_view("{data}");'
+        elif cpp_type == STRING or cpp_type == OLD_STRING:
+            ret_str += f'std::string_view("{data}");'
         elif (
             cpp_type == OPT_SCALAR_TYPE
             or cpp_type == OPT_LAYOUT

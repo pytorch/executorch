@@ -75,13 +75,7 @@ void add_permute_node(
   int32_t out_c_aligned = utils::align_up_4(out_channels);
   int32_t in_c_aligned = utils::align_up_4(in_channels);
 
-  const struct Block final {
-    ivec4 out_ndims;
-    ivec2 ch_info;
-  } params{
-      out_dims,
-      {out_c_aligned, in_c_aligned},
-  };
+  const ivec2 ch_info = {out_c_aligned, in_c_aligned};
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
@@ -90,14 +84,16 @@ void add_permute_node(
       graph.create_local_wg_size(out),
       {{out, vkapi::MemoryAccessType::WRITE},
        {in, vkapi::MemoryAccessType::READ}},
-      {t_out->logical_limits_ubo(),
-       t_out->sizes_ubo(),
-       graph.create_params_buffer(params)},
+      {},
       // Specialization Constants
       {},
       // Resizing Logic
       nullptr,
-      {}));
+      {},
+      {{graph.logical_limits_pc_of(out),
+        graph.sizes_pc_of(out),
+        PushConstantDataInfo(&out_dims, sizeof(out_dims)),
+        PushConstantDataInfo(&ch_info, sizeof(ch_info))}}));
 }
 
 void add_permute_node(

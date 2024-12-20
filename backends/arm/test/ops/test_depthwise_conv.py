@@ -8,6 +8,8 @@ import unittest
 
 from typing import Tuple
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.ops.test_conv1d import Conv1d
@@ -260,6 +262,7 @@ class TestDepthwiseConv(unittest.TestCase):
     )  # Works
 
     @parameterized.expand(testsuite_conv2d, skip_on_empty=True)
+    @pytest.mark.corstone_fvp
     @unittest.expectedFailure
     def test_dw_conv2d_u55_BI(
         self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
@@ -275,6 +278,7 @@ class TestDepthwiseConv(unittest.TestCase):
     # Expected to fail as conv1d needs transpose which is not supported
     # on u55.
     @parameterized.expand(testsuite_conv1d, skip_on_empty=True)
+    @pytest.mark.corstone_fvp
     @unittest.expectedFailure
     def test_dw_conv1d_u55_BI(
         self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
@@ -288,6 +292,7 @@ class TestDepthwiseConv(unittest.TestCase):
         )
 
     @parameterized.expand(testsuite_conv1d + testsuite_conv2d_u85)
+    @pytest.mark.corstone_fvp
     def test_dw_conv_u85_BI(
         self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
     ):
@@ -301,6 +306,7 @@ class TestDepthwiseConv(unittest.TestCase):
 
     # All test cases except 3x3_1x3x256x256_gp3_st1 have numerical issues on FVP. MLETORCH-520
     @parameterized.expand(testsuite_conv2d_u85_xfails)
+    @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
     def test_dw_conv_u85_BI_xfails(
         self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
