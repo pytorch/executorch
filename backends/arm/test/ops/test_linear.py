@@ -10,6 +10,8 @@ import unittest
 
 from typing import Tuple
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common, conftest
 
@@ -228,6 +230,7 @@ class TestLinear(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite_rank1)
+    @pytest.mark.corstone_fvp
     def test_linear_tosa_u55_BI(
         self,
         test_name: str,
