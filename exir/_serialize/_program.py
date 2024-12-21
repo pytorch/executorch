@@ -11,7 +11,7 @@ import json
 import re
 
 from dataclasses import dataclass
-from typing import ClassVar, List, Optional, Tuple
+from typing import ClassVar, List, Literal, Optional, Tuple
 
 from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
@@ -21,12 +21,7 @@ from executorch.exir._serialize._flatbuffer import (
     _program_json_to_flatbuffer,
 )
 
-from executorch.exir._serialize.utils import (
-    aligned_size,
-    HEADER_BYTEORDER,
-    pad_to,
-    padding_required,
-)
+from executorch.exir._serialize.padding import aligned_size, pad_to, padding_required
 
 from executorch.exir.schema import (
     BackendDelegateDataReference,
@@ -38,6 +33,12 @@ from executorch.exir.schema import (
     SubsegmentOffsets,
 )
 from executorch.exir.tensor import ALIGNMENT
+
+
+# Byte order of numbers written to program headers. Always little-endian
+# regardless of the host system, since all commonly-used modern CPUs are little
+# endian.
+_HEADER_BYTEORDER: Literal["little"] = "little"
 
 
 def _program_to_json(program: Program) -> str:
@@ -90,11 +91,11 @@ def _insert_flatbuffer_header(
         return flatbuffer_data
 
     # We will need to adjust the root object offset after inserting the header.
-    root_offset = int.from_bytes(flatbuffer_data[0:4], byteorder=HEADER_BYTEORDER)
+    root_offset = int.from_bytes(flatbuffer_data[0:4], byteorder=_HEADER_BYTEORDER)
 
     return (
         # New root offset.
-        (root_offset + len(header_data)).to_bytes(4, byteorder=HEADER_BYTEORDER)
+        (root_offset + len(header_data)).to_bytes(4, byteorder=_HEADER_BYTEORDER)
         # Existing magic bytes.
         + flatbuffer_data[4:8]
         # Provided header + padding.
@@ -159,9 +160,11 @@ class _ExtendedHeader:
 
         return _ExtendedHeader(
             magic=data[0:4],
-            length=int.from_bytes(data[4:8], byteorder=HEADER_BYTEORDER),
-            program_size=int.from_bytes(data[8:16], byteorder=HEADER_BYTEORDER),
-            segment_base_offset=int.from_bytes(data[16:24], byteorder=HEADER_BYTEORDER),
+            length=int.from_bytes(data[4:8], byteorder=_HEADER_BYTEORDER),
+            program_size=int.from_bytes(data[8:16], byteorder=_HEADER_BYTEORDER),
+            segment_base_offset=int.from_bytes(
+                data[16:24], byteorder=_HEADER_BYTEORDER
+            ),
         )
 
     def is_valid(self) -> bool:
@@ -187,12 +190,12 @@ class _ExtendedHeader:
             # fields to this header in the future. Always use the proper size
             # (i.e., ignore self.length) since there's no reason to create an
             # invalid header.
-            + self.EXPECTED_LENGTH.to_bytes(4, byteorder=HEADER_BYTEORDER)
+            + self.EXPECTED_LENGTH.to_bytes(4, byteorder=_HEADER_BYTEORDER)
             # uint64_t: Size of the flatbuffer data, including this header.
-            + self.program_size.to_bytes(8, byteorder=HEADER_BYTEORDER)
+            + self.program_size.to_bytes(8, byteorder=_HEADER_BYTEORDER)
             # uint64_t: Offset to the start of the first segment, or zero if
             # there are no segments.
-            + self.segment_base_offset.to_bytes(8, byteorder=HEADER_BYTEORDER)
+            + self.segment_base_offset.to_bytes(8, byteorder=_HEADER_BYTEORDER)
         )
         return data
 

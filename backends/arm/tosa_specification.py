@@ -72,9 +72,9 @@ class TosaSpecification:
     def create_from_string(repr: str) -> "TosaSpecification":
         """
         Creates a TOSA specification class from a string representation:
-        TOSA-0.80.0+MI
-        TOSA-0.80.0+BI+8k
-        TOSA-0.80.0+BI+u55   # Ethos-U55 extension to handle TOSA subset
+        TOSA-0.80+MI
+        TOSA-0.80+BI+8k
+        TOSA-0.80+BI+u55   # Ethos-U55 extension to handle TOSA subset
         TOSA-0.90.0+MI
         TOSA-1.00.0+INT+FP+int4+cf
         """

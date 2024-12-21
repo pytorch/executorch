@@ -2,13 +2,6 @@
 
 # pyre-strict
 
-from typing import Literal
-
-# Byte order of numbers written to program headers. Always little-endian
-# regardless of the host system, since all commonly-used modern CPUs are little
-# endian.
-HEADER_BYTEORDER: Literal["little"] = "little"
-
 
 def pad_to(data: bytes, length: int) -> bytes:
     """Returns the input followed by enough zero bytes to become the requested length.
