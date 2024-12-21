@@ -657,6 +657,8 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
     # export_to_edge
     builder_exported = _prepare_for_llama_export(args).export()
 
+    builder_exported.run_canonical_optimizations()
+
     if args.export_only:
         exit()
 

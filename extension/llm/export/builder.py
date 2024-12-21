@@ -37,6 +37,8 @@ from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuant
 from torch.export import export_for_training
 from torch.nn.attention import SDPBackend
 
+from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
+
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
@@ -108,6 +110,7 @@ class LLMEdgeManager:
         self.calibration_seq_length = calibration_seq_length
         self.calibration_data = calibration_data
         self.tokenizer_path = tokenizer_path
+        self.canonical_passes = [RemoveRedundantTransposes()]
 
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
         """
@@ -211,6 +214,13 @@ class LLMEdgeManager:
                 torch.export.save(exported_module, self.args.output_name)
 
         return self
+
+    def run_canonical_optimizations(self):
+        for pass_instance in self.canonical_passes:
+            logging.info(f"Running canonical pass: {pass_instance.__class__.__name__}")
+            res = pass_instance(self.pre_autograd_graph_module)
+            assert res.graph_module is not None, "Pass returned None"
+            self.pre_autograd_graph_module = res.graph_module
 
     def pt2e_calibrate(
         self,
