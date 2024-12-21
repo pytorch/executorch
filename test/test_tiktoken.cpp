@@ -26,8 +26,7 @@ TEST(TiktokenTest, TestDecodeWithoutLoad) {
 
 TEST(TiktokenTest, TestLoad) {
   Tiktoken tokenizer;
-  auto resources = std::getenv("RESOURCES_PATH");
-  auto path = resources + std::string("/test_tiktoken.model");
+  auto path = RESOURCES_PATH + std::string("/test_tiktoken.model");
   auto error = tokenizer.load(path);
   EXPECT_EQ(error, Error::Ok);
 }
@@ -40,8 +39,7 @@ TEST(TiktokenTest, TestLoadInvalidPath) {
 
 TEST(TiktokenTest, TestEncode) {
   Tiktoken tokenizer;
-  auto resources = std::getenv("RESOURCES_PATH");
-  auto path = resources + std::string("/test_tiktoken.model");
+  auto path = RESOURCES_PATH + std::string("/test_tiktoken.model");
   auto error = tokenizer.load(path);
   EXPECT_EQ(error, Error::Ok);
   std::string text = "Hello world!";
@@ -56,8 +54,7 @@ TEST(TiktokenTest, TestEncode) {
 
 TEST(TiktokenTest, TestDecode) {
   Tiktoken tokenizer;
-  auto resources = std::getenv("RESOURCES_PATH");
-  auto path = resources + std::string("/test_tiktoken.model");
+  auto path = RESOURCES_PATH + std::string("/test_tiktoken.model");
   auto error = tokenizer.load(path);
   EXPECT_EQ(error, Error::Ok);
   std::vector<uint64_t> tokens = {128000, 9906, 1917, 0};

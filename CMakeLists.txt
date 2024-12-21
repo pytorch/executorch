@@ -20,6 +20,7 @@ set(CMAKE_CXX_STANDARD 17)
 project(Tokenizers)
 
 option(TOKENIZERS_BUILD_TEST "Build tests" OFF)
+option(TOKENIZERS_BUILD_TOOLS "Build tools" OFF)
 
 # Ignore weak attribute warning
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-attributes")
@@ -28,23 +29,31 @@ set(ABSL_ENABLE_INSTALL ON)
 set(ABSL_PROPAGATE_CXX_STD ON)
 set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-add_subdirectory(third-party/abseil-cpp)
-add_subdirectory(third-party/re2)
-add_subdirectory(third-party/sentencepiece)
+add_subdirectory(${CMAKE_SOURCE_DIR}/third-party/abseil-cpp)
+add_subdirectory(${CMAKE_SOURCE_DIR}/third-party/re2)
+add_subdirectory(${CMAKE_SOURCE_DIR}/third-party/sentencepiece)
 set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
-add_library(tokenizers STATIC src/sentencepiece.cpp src/tiktoken.cpp)
+file(GLOB tokenizers_source_files ${CMAKE_SOURCE_DIR}/src/*.cpp)
+file(GLOB unicode_source_files ${CMAKE_SOURCE_DIR}/third-party/llama.cpp-unicode/src/*.cpp)
+add_library(tokenizers STATIC ${tokenizers_source_files} ${unicode_source_files})
 
 # Using abseil from sentencepiece/third_party
 target_include_directories(
-  tokenizers PUBLIC third-party/sentencepiece/src third-party/sentencepiece
-                    include third-party/re2)
+  tokenizers PUBLIC
+  ${CMAKE_SOURCE_DIR}/include
+  ${CMAKE_SOURCE_DIR}/third-party/sentencepiece
+  ${CMAKE_SOURCE_DIR}/third-party/sentencepiece/src
+  ${CMAKE_SOURCE_DIR}/third-party/re2
+  ${CMAKE_SOURCE_DIR}/third-party/json/single_include
+  ${CMAKE_SOURCE_DIR}/third-party/llama.cpp-unicode/include)
 
 target_link_libraries(tokenizers PUBLIC sentencepiece-static re2::re2)
 
 # Build test
 if(TOKENIZERS_BUILD_TEST)
-  include(FetchContent)
+    enable_testing()
+    include(FetchContent)
   # CMAKE
   FetchContent_Declare(
     googletest
@@ -56,18 +65,25 @@ if(TOKENIZERS_BUILD_TEST)
       CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(googletest)
 
-  set(ENV{RESOURCES_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/test/resources)
-  add_executable(sentencepiece_test test/test_sentencepiece.cpp)
-  target_include_directories(
-    sentencepiece_test
-    PUBLIC third-party/sentencepiece/src third-party/sentencepiece include
-           GTEST_INCLUDE_PATH)
-  target_link_libraries(sentencepiece_test PUBLIC tokenizers gtest_main)
+  file(GLOB test_source_files ${CMAKE_SOURCE_DIR}/test/test_*.cpp)
+  foreach(test_source_file ${test_source_files})
+      get_filename_component(test_name ${test_source_file} NAME_WE)
+      message(STATUS "Configuring unit test ${test_name}")
+      add_executable(${test_name} ${test_source_file})
+      target_include_directories(${test_name} PRIVATE
+        GTEST_INCLUDE_PATH
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/third-party/sentencepiece
+        ${CMAKE_SOURCE_DIR}/third-party/re2
+        ${CMAKE_SOURCE_DIR}/third-party/json/single_include
+        )
+      target_link_libraries(${test_name} gtest_main tokenizers)
+      target_compile_definitions(${test_name} PRIVATE RESOURCES_PATH="${CMAKE_SOURCE_DIR}/test/resources")
+      add_test(${test_name} "${test_name}")
+  endforeach()
+endif()
 
-  # tiktoken tests
-  add_executable(tiktoken_test test/test_base64.cpp test/test_tiktoken.cpp)
-  target_include_directories(
-    tiktoken_test PUBLIC third-party/re2 third-party/abseil-cpp include
-                         GTEST_INCLUDE_PATH)
-  target_link_libraries(tiktoken_test PUBLIC tokenizers gtest_main)
+# Build tools
+if(TOKENIZERS_BUILD_TOOLS)
+  add_subdirectory(tools/tokenize_tool)
 endif()
