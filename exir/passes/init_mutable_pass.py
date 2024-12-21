@@ -5,10 +5,12 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from typing import List
+
 from executorch.exir.pass_base import ExportPass
 
 
-class CachePosToInitializedMutableBufferPass(ExportPass):
+class InitializedMutableBufferPass(ExportPass):
     """
     If the buffer has the name "cache_pos", such as in an kv_cache
     module with `self.register_buffer("cache_pos", torch.arange(10))`,
@@ -17,11 +19,13 @@ class CachePosToInitializedMutableBufferPass(ExportPass):
     an initialized state.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, patterns: List[str]) -> None:
         super().__init__()
+        self.patterns = patterns
 
     def placeholder(self, name: str, arg, meta):
-        if "cache_pos" in name:
-            meta["et_init_buffer"] = True
+        for pattern in self.patterns:
+            if pattern in name:
+                meta["et_init_buffer"] = True
 
         return super().placeholder(name, arg, meta)

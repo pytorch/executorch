@@ -396,7 +396,9 @@ class LLMEdgeManager:
 
         return self
 
-    def to_executorch(self, passes: Optional[List[PassType]]) -> "LLMEdgeManager":
+    def to_executorch(
+        self, passes: Optional[List[PassType]] = None
+    ) -> "LLMEdgeManager":
         """
         Lower the model to executorch and get an ExecutorchProgram.
         """

@@ -23,9 +23,7 @@ import pkg_resources
 import torch
 
 from executorch.devtools.etrecord import generate_etrecord
-from executorch.exir.passes.cache_pos_init_mutable_pass import (
-    CachePosToInitializedMutableBufferPass,
-)
+from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 
@@ -765,7 +763,7 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
 
     additional_passes = []
     if args.model in TORCHTUNE_DEFINED_MODELS:
-        additional_passes = [CachePosToInitializedMutableBufferPass()]
+        additional_passes = [InitializedMutableBufferPass(["cache_pos"])]
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
             raise ValueError("Unable to generate etrecord due to missing edge manager.")
