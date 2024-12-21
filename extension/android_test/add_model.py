@@ -13,7 +13,7 @@ class Add(torch.nn.Module):
 
 
 # 1. torch.export: Defines the program with the ATen operator set.
-aten_dialect = export(Add(), (torch.ones(1), torch.ones(1)))
+aten_dialect = export(Add(), (torch.ones(1), torch.ones(1)), strict=True)
 
 # 2. to_edge: Make optimizations for Edge devices
 edge_program = to_edge(aten_dialect)

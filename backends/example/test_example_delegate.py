@@ -60,7 +60,7 @@ class TestExampleDelegate(unittest.TestCase):
 
         quantized_gm = m
         exported_program = to_edge(
-            export(quantized_gm, copy.deepcopy(example_inputs)),
+            export(quantized_gm, copy.deepcopy(example_inputs), strict=True),
             compile_config=EDGE_COMPILE_CONFIG,
         )
 
@@ -92,7 +92,7 @@ class TestExampleDelegate(unittest.TestCase):
 
         quantized_gm = m
         exported_program = to_edge(
-            export(quantized_gm, copy.deepcopy(example_inputs)),
+            export(quantized_gm, copy.deepcopy(example_inputs), strict=True),
             compile_config=EDGE_COMPILE_CONFIG,
         )
 
