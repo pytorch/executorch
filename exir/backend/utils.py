@@ -416,6 +416,16 @@ def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
             if len(user_tags) > 0:
                 node.meta["delegation_tag"] = user_tags.pop()
 
+def is_shape_dynamic(node: torch.fx.Node) -> bool:
+    """
+    Check if the node shape is dynamic.
+    """
+    return "val" in node.meta and any(
+        isinstance(d, torch.SymInt) for d in node.meta["val"].shape
+    )
+
+    # Shape is dynamic if any of the dimensions don't evaluate to a static value
+
 
 # TODO - style: use templated types
 class DelegateMappingBuilder:
