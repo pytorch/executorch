@@ -26,11 +26,6 @@ on:
         required: false
         type: string
         default: apple_iphone_15
-      delegates:
-        description: Backend delegates
-        required: false
-        type: string
-        default: xnnpack
       benchmark_configs:
         description: The list of configs used the benchmark
         required: false
@@ -47,11 +42,6 @@ on:
         required: false
         type: string
         default: apple_iphone_15
-      delegates:
-        description: Backend delegates
-        required: false
-        type: string
-        default: xnnpack
       benchmark_configs:
         description: The list of configs used the benchmark
         required: false
@@ -63,12 +53,16 @@ concurrency:
 
 jobs:
   set-parameters:
-    runs-on: linux.2xlarge
+    runs-on: ubuntu-22.04
     outputs:
-      models: ${{ steps.set-parameters.outputs.models }}
-      devices: ${{ steps.set-parameters.outputs.devices }}
-      delegates: ${{ steps.set-parameters.outputs.delegates }}
+      benchmark_configs: ${{ steps.set-parameters.outputs.benchmark_configs }}
     steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: 'false'
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
       - name: Set parameters
         id: set-parameters
         shell: bash
@@ -76,11 +70,10 @@ jobs:
           # Separate default values from the workflow dispatch. To ensure defaults are accessible
           # during scheduled runs and to provide flexibility for different defaults between
           # on-demand and periodic benchmarking.
-          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'stories110M,mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l' || 'stories110M' }}
+          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'llama,mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l,meta-llama/Llama-3.2-1B,meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8,meta-llama/Llama-3.2-1B-Instruct-QLORA_INT4_EO8' || 'llama' }}
           CRON_DEFAULT_DEVICES: apple_iphone_15
-          CRON_DEFAULT_DELEGATES: ${{ github.event_name == 'schedule' && 'xnnpack,coreml,mps' || 'xnnpack' }}
         run: |
-          set -ex
+          set -eux
           MODELS="${{ inputs.models }}"
           if [ -z "$MODELS" ]; then
             MODELS="$CRON_DEFAULT_MODELS"
@@ -89,40 +82,19 @@ jobs:
           if [ -z "$DEVICES" ]; then
             DEVICES="$CRON_DEFAULT_DEVICES"
           fi
-          DELEGATES="${{ inputs.delegates }}"
-          if [ -z "$DELEGATES" ]; then
-            DELEGATES="$CRON_DEFAULT_DELEGATES"
-          fi
 
-          # Mapping devices to their corresponding device-pool-arn
-          declare -A DEVICE_POOL_ARNS
-          DEVICE_POOL_ARNS[apple_iphone_15]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/3b5acd2e-92e2-4778-b651-7726bafe129d"
+          PYTHONPATH="${PWD}" python .ci/scripts/gather_benchmark_configs.py \
+            --os "ios" \
+            --models $MODELS \
+            --devices $DEVICES
 
-          # Resolve device names with their corresponding ARNs
-          if [[ ! $(echo "$DEVICES" | jq empty 2>/dev/null) ]]; then
-            DEVICES=$(echo "$DEVICES" | jq -Rc 'split(",")')
-          fi
-          declare -a MAPPED_ARNS=()
-          for DEVICE in $(echo "$DEVICES" | jq -r '.[]'); do
-            if [[ -z "${DEVICE_POOL_ARNS[$DEVICE]}" ]]; then
-              echo "Error: No ARN found for device '$DEVICE'. Abort." >&2
-              exit 1
-            fi
-            MAPPED_ARNS+=("${DEVICE_POOL_ARNS[$DEVICE]}")
-          done
-
-          echo "models=$(echo $MODELS | jq -Rc 'split(",")')" >> $GITHUB_OUTPUT
-          MAPPED_ARNS_JSON=$(printf '%s\n' "${MAPPED_ARNS[@]}" | jq -R . | jq -s .)
-          echo "devices=$(echo "$MAPPED_ARNS_JSON" | jq -c .)" >> $GITHUB_OUTPUT
-          echo "delegates=$(echo $DELEGATES | jq -Rc 'split(",")')" >> $GITHUB_OUTPUT
+          echo "benchmark_configs is: ${{ steps.set-parameters.outputs.benchmark_configs }}"
 
   prepare-test-specs:
     runs-on: linux.2xlarge
     needs: set-parameters
     strategy:
-      matrix:
-          model: ${{ fromJson(needs.set-parameters.outputs.models) }}
-          delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
+      matrix: ${{ fromJson(needs.set-parameters.outputs.benchmark_configs) }}
       fail-fast: false
     steps:
       - uses: actions/checkout@v3
@@ -132,8 +104,10 @@ jobs:
         working-directory: extension/benchmark/apple/Benchmark
         run: |
           set -eux
+
+          echo "DEBUG: ${{ matrix.model }}"
           # The model will be exported in the next step to this S3 path
-          MODEL_PATH="https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/model.zip"
+          MODEL_PATH="https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}/model.zip"
           # We could write a script to properly use jinja here, but there is only one variable,
           # so let's just sed it
           sed -i -e 's,{{ model_path }},'"${MODEL_PATH}"',g' default-ios-device-farm-appium-test-spec.yml.j2
@@ -146,7 +120,7 @@ jobs:
         with:
           s3-bucket: gha-artifacts
           s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}
+            ${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}
           retention-days: 1
           if-no-files-found: error
           path: extension/benchmark/apple/Benchmark/default-ios-device-farm-appium-test-spec.yml
@@ -155,10 +129,9 @@ jobs:
     name: export-models
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     needs: set-parameters
+    secrets: inherit
     strategy:
-      matrix:
-          model: ${{ fromJson(needs.set-parameters.outputs.models) }}
-          delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
+      matrix: ${{ fromJson(needs.set-parameters.outputs.benchmark_configs) }}
       fail-fast: false
     with:
       # NB: Need to use our AWS MacOS runner to upload large models to S3
@@ -168,6 +141,7 @@ jobs:
       timeout: 60
       upload-artifact: ios-models
       upload-artifact-to-s3: true
+      secrets-env: EXECUTORCH_HF_TOKEN
       script: |
         set -eux
 
@@ -179,39 +153,151 @@ jobs:
         GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
           .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
 
-        if [[ ${{ matrix.delegate }} == "coreml" ]]; then
+        if [[ ${{ matrix.config }} == *"coreml"* ]]; then
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
             backends/apple/coreml/scripts/install_requirements.sh
         fi
 
-        if [[ ${{ matrix.delegate }} == "mps" ]]; then
+        if [[ ${{ matrix.config }} == *"mps"* ]]; then
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
             backends/apple/mps/install_requirements.sh
         fi
 
-        ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded/${{ matrix.model }}_${{ matrix.delegate }}
+        # Install requirements for export_llama
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/models/llama/install_requirements.sh
+
+        pip install -U "huggingface_hub[cli]"
+        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        ${CONDA_RUN} pip install accelerate sentencepiece
+        pip list
+
+        ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded/${{ matrix.model }}_${{ matrix.config }}
         echo "::endgroup::"
 
-        echo "::group::Exporting ${{ matrix.delegate }} model: ${{ matrix.model }}"
+        echo "::group::Exporting ${{ matrix.config }} model: ${{ matrix.model }}"
         BUILD_MODE="cmake"
-        DTYPE="fp32"
 
-        if [[ ${{ matrix.model }} =~ ^stories* ]]; then
+        if [[ ${{ matrix.model }} =~ ^[^/]+/[^/]+$ ]]; then
+          # HuggingFace model. Assume the pattern is always like "<org>/<repo>"
+          HF_MODEL_REPO=${{ matrix.model }}
+          OUT_ET_MODEL_NAME="$(echo "$HF_MODEL_REPO" | awk -F'/' '{print $2}' | sed 's/_/-/g' | tr '[:upper:]' '[:lower:]')_${{ matrix.config }}"
+
+          if [[ "$HF_MODEL_REPO" == meta-llama/* ]]; then
+            # Llama models on Hugging Face
+            if [[ ${{ matrix.config }} == "llama3_spinquant" ]]; then
+              # SpinQuant
+              # Download prequantized chceckpoint from Hugging Face
+              DOWNLOADED_PATH=$(
+                bash .ci/scripts/download_hf_hub.sh \
+                  --model_id "${HF_MODEL_REPO}" \
+                  --files "tokenizer.model" "params.json" "consolidated.00.pth"
+              )
+              # Export using ExecuTorch's model definition
+              ${CONDA_RUN} python -m examples.models.llama.export_llama \
+                --model "llama3_2" \
+                --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
+                --params "${DOWNLOADED_PATH}/params.json" \
+                --use_sdpa_with_kv_cache \
+                -X \
+                --xnnpack-extended-ops \
+                --preq_mode 8da4w_output_8da8w \
+                --preq_group_size 32 \
+                --max_seq_length 2048 \
+                --output_name "${OUT_ET_MODEL_NAME}.pte" \
+                -kv \
+                -d fp32 \
+                --preq_embedding_quantize 8,0 \
+                --use_spin_quant native \
+                --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+              ls -lh "${OUT_ET_MODEL_NAME}.pte"
+            elif [[ ${{ matrix.config }} == "llama3_qlora" ]]; then
+              # QAT + LoRA
+              # Download prequantized chceckpoint from Hugging Face
+              DOWNLOADED_PATH=$(
+                bash .ci/scripts/download_hf_hub.sh \
+                  --model_id "${HF_MODEL_REPO}" \
+                  --files "tokenizer.model" "params.json" "consolidated.00.pth"
+              )
+              # Export using ExecuTorch's model definition
+              ${CONDA_RUN} python -m examples.models.llama.export_llama \
+                --model "llama3_2" \
+                --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
+                --params "${DOWNLOADED_PATH}/params.json" \
+                -qat \
+                -lora 16 \
+                --preq_mode 8da4w_output_8da8w \
+                --preq_group_size 32 \
+                --preq_embedding_quantize 8,0 \
+                --use_sdpa_with_kv_cache \
+                -kv \
+                -X \
+                --xnnpack-extended-ops \
+                -d fp32 \
+                --max_seq_length 2048 \
+                --output_name "${OUT_ET_MODEL_NAME}.pte" \
+                --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+              ls -lh "${OUT_ET_MODEL_NAME}.pte"
+            elif [[ ${{ matrix.config }} == "llama3_fb16" ]]; then
+              # Original BF16 version, without any quantization
+              DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model" "params.json" "consolidated.00.pth")
+              ${CONDA_RUN} python -m examples.models.llama.export_llama \
+                --model "llama3_2" \
+                --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
+                --params "${DOWNLOADED_PATH}/params.json" \
+                -kv \
+                --use_sdpa_with_kv_cache \
+                -X \
+                -d bf16 \
+                --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
+                --output_name="${OUT_ET_MODEL_NAME}.pte"
+              ls -lh "${OUT_ET_MODEL_NAME}.pte"
+            elif [[ ${{ matrix.config }} == "llama3_coreml_ane" ]]; then
+              # ANE
+              DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model" "params.json" "consolidated.00.pth")
+              ${CONDA_RUN} python -m examples.models.llama.export_llama \
+                --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
+                --params "${DOWNLOADED_PATH}/params.json" \
+                -E "4,32" \
+                -kv \
+                --disable_dynamic_shape \
+                --coreml \
+                --coreml-ios 18 \
+                --coreml-quantize c4w \
+                --coreml-compute-units cpu_and_ne \
+                --output_name="${OUT_ET_MODEL_NAME}.pte"
+              ls -lh "${OUT_ET_MODEL_NAME}.pte"
+            else
+              # By default, test with the Hugging Face model and the xnnpack recipe
+              DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model")
+              ${CONDA_RUN} python -m extension.export_util.export_hf_model -hfm="$HF_MODEL_REPO" -o "$OUT_ET_MODEL_NAME"
+              ls -lh "${OUT_ET_MODEL_NAME}.pte"
+            fi
+          else
+            echo "Unsupported model ${{ matrix.model }}"
+            exit 1
+          fi
+
+          zip -j model.zip "${OUT_ET_MODEL_NAME}.pte" "${DOWNLOADED_PATH}/tokenizer.model"
+          ls -lh model.zip
+          mkdir -p "${ARTIFACTS_DIR_NAME}"
+          mv model.zip "${ARTIFACTS_DIR_NAME}"
+        elif [[ ${{ matrix.model }} == "llama" ]]; then
           # Install requirements for export_llama
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
             bash examples/models/llama/install_requirements.sh
 
           # Test llama2
-          if [[ ${{ matrix.delegate }} == "xnnpack" ]]; then
+          if [[ ${{ matrix.config }} == *"xnnpack"* ]]; then
             DELEGATE_CONFIG="xnnpack+custom+qe"
-          elif [[ ${{ matrix.delegate }} == "coreml" ]]; then
+          elif [[ ${{ matrix.config }} == *"coreml"* ]]; then
             DELEGATE_CONFIG="coreml"
-          elif [[ ${{ matrix.delegate }} == "mps" ]]; then
+          elif [[ ${{ matrix.config }} == *"mps"* ]]; then
             DELEGATE_CONFIG="mps"
           fi
+          DTYPE="fp32"
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
             bash .ci/scripts/test_llama.sh \
-              -model "${{ matrix.model }}" \
+              -model "stories110M" \
               -build_tool "${BUILD_MODE}" \
               -dtype "${DTYPE}" \
               -mode "${DELEGATE_CONFIG}" \
@@ -221,7 +307,7 @@ jobs:
             bash .ci/scripts/test_model.sh \
               "${{ matrix.model }}" \
               "${BUILD_MODE}" \
-              "${{ matrix.delegate }}" \
+              "${{ matrix.config }}" \
               "${ARTIFACTS_DIR_NAME}"
         fi
         echo "::endgroup::"
@@ -336,10 +422,7 @@ jobs:
       contents: read
     uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
     strategy:
-      matrix:
-        model: ${{ fromJson(needs.set-parameters.outputs.models) }}
-        delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
-        device: ${{ fromJson(needs.set-parameters.outputs.devices) }}
+      matrix: ${{ fromJson(needs.set-parameters.outputs.benchmark_configs) }}
       fail-fast: false
     with:
       # Due to scheduling a job may be pushed beyond the default 60m threshold
@@ -350,11 +433,11 @@ jobs:
       test-infra-ref: ''
       # This is the ARN of ExecuTorch project on AWS
       project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
-      device-pool-arn: ${{ matrix.device }}
+      device-pool-arn: ${{ matrix.device_arn }}
       # Uploaded to S3 from the previous job
       ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/Benchmark.ipa
       ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/Benchmark.xctestrun.zip
-      test-spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.delegate }}/default-ios-device-farm-appium-test-spec.yml
+      test-spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}/default-ios-device-farm-appium-test-spec.yml
 
   upload-benchmark-results:
     needs:

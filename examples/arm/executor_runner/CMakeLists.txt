@@ -10,7 +10,6 @@ option(SEMIHOSTING "Enable semihosting" OFF)
 option(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE "Set ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE to specify memory alloction pool size" OFF)
 option(ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE "Set ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE to specify temp alloction pool size" OFF)
 
-
 if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
   message(
     FATAL_ERROR
@@ -18,8 +17,6 @@ if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
       "model is built into the binary."
   )
 endif()
-
-set(TARGET_BOARD "corstone-300" CACHE STRING "Target board")
 
 # Example ExecuTorch demo for bare metal Cortex-M based systems
 set(ET_DIR_PATH
@@ -47,6 +44,10 @@ set(PYTHON_EXECUTABLE
     CACHE PATH "Define to override python executable used"
 )
 
+# Selects timing adapter values matching system_config.
+# Default is Ethos_U55_High_End_Embedded, simulating optimal hardware for the Corestone-300.
+set(SYSTEM_CONFIG "Ethos_U55_High_End_Embedded" CACHE STRING "System config")
+
 get_filename_component(ET_BUILD_DIR_PATH ${ET_BUILD_DIR_PATH} REALPATH)
 get_filename_component(ET_DIR_PATH ${ET_DIR_PATH} REALPATH)
 get_filename_component(ET_INCLUDE_PATH ${ET_INCLUDE_PATH} REALPATH)
@@ -59,15 +60,14 @@ endif()
 # Corstone-300, that includes ethosu_core_driver and bare-metal bringup
 # libraries. We link against ethosu_target_init which includes all of these
 # dependencies.
-
-if(TARGET_BOARD STREQUAL "corstone-300")
+if(SYSTEM_CONFIG STREQUAL "Ethos_U55_High_End_Embedded")
   add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target)
+  set(TARGET_BOARD "corstone-300")
   target_compile_definitions(ethosu_target_common INTERFACE
       # ETHOSU_MODEL=0 place pte file/data in SRAM area
       # ETHOSU_MODEL=1 place pte file/data in DDR area
       ETHOSU_MODEL=1
       # Configure NPU architecture timing adapters
-      # Ethos_U55_High_End_Embedded
       # This is just example numbers and you should make this match your hardware
       # SRAM
       ETHOSU_TA_MAXR_0=8
@@ -98,14 +98,90 @@ if(TARGET_BOARD STREQUAL "corstone-300")
       ETHOSU_TA_HISTBIN_1=0
       ETHOSU_TA_HISTCNT_1=0
       )
-elseif(TARGET_BOARD STREQUAL "corstone-320")
-  add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-320 target)
+elseif(SYSTEM_CONFIG STREQUAL "Ethos_U55_Deep_Embedded")
+  add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target)
+  set(TARGET_BOARD "corstone-300")
   target_compile_definitions(ethosu_target_common INTERFACE
       # ETHOSU_MODEL=0 place pte file/data in SRAM area
       # ETHOSU_MODEL=1 place pte file/data in DDR area
       ETHOSU_MODEL=1
       # Configure NPU architecture timing adapters
-      # Ethos_U85_SYS_DRAM_Mid
+      # This is just example numbers and you should make this match your hardware
+      # SRAM
+      ETHOSU_TA_MAXR_0=4
+      ETHOSU_TA_MAXW_0=4
+      ETHOSU_TA_MAXRW_0=0
+      ETHOSU_TA_RLATENCY_0=8
+      ETHOSU_TA_WLATENCY_0=8
+      ETHOSU_TA_PULSE_ON_0=3999
+      ETHOSU_TA_PULSE_OFF_0=1
+      ETHOSU_TA_BWCAP_0=4000
+      ETHOSU_TA_PERFCTRL_0=0
+      ETHOSU_TA_PERFCNT_0=0
+      ETHOSU_TA_MODE_0=1
+      ETHOSU_TA_HISTBIN_0=0
+      ETHOSU_TA_HISTCNT_0=0
+      # Flash
+      ETHOSU_TA_MAXR_1=2
+      ETHOSU_TA_MAXW_1=0
+      ETHOSU_TA_MAXRW_1=0
+      ETHOSU_TA_RLATENCY_1=32
+      ETHOSU_TA_WLATENCY_1=0
+      ETHOSU_TA_PULSE_ON_1=360
+      ETHOSU_TA_PULSE_OFF_1=40
+      ETHOSU_TA_BWCAP_1=25
+      ETHOSU_TA_PERFCTRL_1=0
+      ETHOSU_TA_PERFCNT_1=0
+      ETHOSU_TA_MODE_1=1
+      ETHOSU_TA_HISTBIN_1=0
+      ETHOSU_TA_HISTCNT_1=0
+      )
+elseif(SYSTEM_CONFIG STREQUAL "Ethos_U85_SYS_DRAM_Low")
+  add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-320 target)
+  set(TARGET_BOARD "corstone-320")
+  target_compile_definitions(ethosu_target_common INTERFACE
+      # ETHOSU_MODEL=0 place pte file/data in SRAM area
+      # ETHOSU_MODEL=1 place pte file/data in DDR area
+      ETHOSU_MODEL=1
+      # Configure NPU architecture timing adapters
+      # This is just example numbers and you should make this match your hardware
+      # SRAM
+      ETHOSU_TA_MAXR_0=8
+      ETHOSU_TA_MAXW_0=8
+      ETHOSU_TA_MAXRW_0=0
+      ETHOSU_TA_RLATENCY_0=16
+      ETHOSU_TA_WLATENCY_0=16
+      ETHOSU_TA_PULSE_ON_0=3999
+      ETHOSU_TA_PULSE_OFF_0=1
+      ETHOSU_TA_BWCAP_0=4000
+      ETHOSU_TA_PERFCTRL_0=0
+      ETHOSU_TA_PERFCNT_0=0
+      ETHOSU_TA_MODE_0=1
+      ETHOSU_TA_HISTBIN_0=0
+      ETHOSU_TA_HISTCNT_0=0
+      # DRAM
+      ETHOSU_TA_MAXR_1=24
+      ETHOSU_TA_MAXW_1=12
+      ETHOSU_TA_MAXRW_1=0
+      ETHOSU_TA_RLATENCY_1=250
+      ETHOSU_TA_WLATENCY_1=125
+      ETHOSU_TA_PULSE_ON_1=4000
+      ETHOSU_TA_PULSE_OFF_1=1000
+      ETHOSU_TA_BWCAP_1=2344
+      ETHOSU_TA_PERFCTRL_1=0
+      ETHOSU_TA_PERFCNT_1=0
+      ETHOSU_TA_MODE_1=1
+      ETHOSU_TA_HISTBIN_1=0
+      ETHOSU_TA_HISTCNT_1=0
+      )
+elseif(SYSTEM_CONFIG STREQUAL "Ethos_U85_SYS_DRAM_Mid" OR SYSTEM_CONFIG STREQUAL "Ethos_U85_SYS_DRAM_High")
+  add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-320 target)
+  set(TARGET_BOARD "corstone-320")
+  target_compile_definitions(ethosu_target_common INTERFACE
+      # ETHOSU_MODEL=0 place pte file/data in SRAM area
+      # ETHOSU_MODEL=1 place pte file/data in DDR area
+      ETHOSU_MODEL=1
+      # Configure NPU architecture timing adapters
       # This is just example numbers and you should make this match your hardware
       # SRAM
       ETHOSU_TA_MAXR_0=8
@@ -137,7 +213,7 @@ elseif(TARGET_BOARD STREQUAL "corstone-320")
       ETHOSU_TA_HISTCNT_1=0
       )
 else()
-  message(FATAL_ERROR "Unsupported TARGET_BOARD: ${TARGET_BOARD}")
+  message(FATAL_ERROR "Unsupported SYSTEM_CONFIG: ${SYSTEM_CONFIG}")
 endif()
 
 # Dependencies from the ExecuTorch build
@@ -220,10 +296,8 @@ target_sources(
 # Include the target's bare-metal linker script
 ethosu_eval_link_options(arm_executor_runner)
 
-# Need whole-archive to ensure C++ ctor's are called - this may be wasteful for
-# bin size as we link in a number of other symbols
-target_link_libraries(
-  arm_executor_runner
+set(arm_executor_runner_link)
+list(APPEND arm_executor_runner_link
   extension_runner_util
   ethosu_target_init
   executorch
@@ -236,6 +310,44 @@ target_link_libraries(
   "-Wl,--no-whole-archive"
   -Xlinker -Map=arm_executor_runner.map
 )
+
+if(EXECUTORCH_ENABLE_EVENT_TRACER)
+  target_compile_options(arm_executor_runner PUBLIC -DET_EVENT_TRACER_ENABLED)
+
+  add_library(etdump STATIC IMPORTED)
+  set_property(
+      TARGET etdump
+      PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/lib/libetdump.a"
+  )
+
+  if(CMAKE_BUILD_TYPE MATCHES "Debug")
+    set(FLATCCRT_LIB flatccrt_d)
+  else()
+    set(FLATCCRT_LIB flatccrt)
+  endif()
+
+  add_library(${FLATCCRT_LIB} STATIC IMPORTED)
+  set_property(
+      TARGET ${FLATCCRT_LIB}
+      PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/lib/lib${FLATCCRT_LIB}.a"
+  )
+
+  list(APPEND arm_executor_runner_link
+    etdump
+    ${FLATCCRT_LIB}
+  )
+endif()
+
+# Need whole-archive to ensure C++ ctor's are called - this may be wasteful for
+# bin size as we link in a number of other symbols
+target_link_libraries(
+  arm_executor_runner
+  ${arm_executor_runner_link}
+)
+
+target_link_options( arm_executor_runner PUBLIC LINKER:-Map=arm_executor_runner.map )
 
 # ET headers and generated headers includes
 target_include_directories(

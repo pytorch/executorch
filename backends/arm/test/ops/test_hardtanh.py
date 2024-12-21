@@ -6,7 +6,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+
 from typing import Tuple
+
+import pytest
 
 import torch
 
@@ -52,7 +55,7 @@ class TestHardTanh(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check(["torch.ops.aten.hardtanh.default"])
@@ -73,7 +76,7 @@ class TestHardTanh(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
@@ -124,12 +127,14 @@ class TestHardTanh(unittest.TestCase):
         self._test_hardtanh_tosa_BI_pipeline(self.HardTanh(), (test_data,))
 
     @parameterized.expand(test_data_suite)
+    @pytest.mark.corstone_fvp
     def test_hardtanh_tosa_u55_BI(self, test_name: str, test_data: torch.Tensor):
         self._test_hardtanh_tosa_ethosu_BI_pipeline(
             common.get_u55_compile_spec(), self.HardTanh(), (test_data,)
         )
 
     @parameterized.expand(test_data_suite)
+    @pytest.mark.corstone_fvp
     def test_hardtanh_tosa_u85_BI(self, test_name: str, test_data: torch.Tensor):
         self._test_hardtanh_tosa_ethosu_BI_pipeline(
             common.get_u85_compile_spec(), self.HardTanh(), (test_data,)

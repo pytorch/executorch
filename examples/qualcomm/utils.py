@@ -4,6 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# TODO: reenable pyre after fixing the issues
+# pyre-ignore-all-errors
+
 import argparse
 import os
 import subprocess
@@ -278,7 +281,7 @@ def build_executorch_binary(
         None: The function writes the output to a specified .pte file.
     """
     if quant_dtype is not None:
-        captured_model = torch.export.export(model, inputs).module()
+        captured_model = torch.export.export(model, inputs, strict=True).module()
         if qat_training_data:
             quantizer = custom_quantizer or make_quantizer(
                 quant_dtype=quant_dtype, is_qat=True

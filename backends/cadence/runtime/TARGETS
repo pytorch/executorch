@@ -1,3 +1,4 @@
+load(":targets.bzl", "define_common_targets")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 oncall("odai_jarvis")
@@ -22,3 +23,5 @@ python_library(
         "//executorch/exir:lib",
     ],
 )
+
+define_common_targets()
