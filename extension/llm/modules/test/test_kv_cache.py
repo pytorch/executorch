@@ -10,6 +10,8 @@ from typing import Callable, Tuple
 
 import torch
 from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir.capture._config import ExecutorchBackendConfig
+from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 
 from executorch.extension.export_util.utils import save_pte_program
 from executorch.extension.llm.modules.kv_cache import KVCache as InferenceKVCache
@@ -171,7 +173,10 @@ class KVCacheTest(unittest.TestCase):
                 _check_ir_validity=False,
             ),
         )
-        et_program = edge_program.to_executorch()
+        et_config = ExecutorchBackendConfig(
+            passes=[InitializedMutableBufferPass(["cache_pos"])],
+        )
+        et_program = edge_program.to_executorch(config=et_config)
 
         runtime = Runtime.get()
         program = runtime.load_program(et_program.buffer)
@@ -192,7 +197,10 @@ class KVCacheTest(unittest.TestCase):
                 _check_ir_validity=False,
             ),
         )
-        et_program = edge_program.to_executorch()
+        et_config = ExecutorchBackendConfig(
+            passes=[InitializedMutableBufferPass(["cache_pos"])],
+        )
+        et_program = edge_program.to_executorch(config=et_config)
 
         with tempfile.TemporaryDirectory() as tempdir:
             pte_path = save_pte_program(et_program, "test_et_kv_cache", tempdir)
