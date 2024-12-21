@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <iostream>
+
 #include <executorch/kernels/portable/cpu/util/repeat_util.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -213,6 +215,18 @@ ET_NODISCARD Error get_broadcast_target_size(
     Tensor::SizesType* out_sizes,
     const size_t out_sizes_len,
     size_t* out_dim) {
+  std::cout << "a_size: ";
+  for (const auto& s : a_size) {
+    std::cout << s << " ";
+  }
+  std::cout << std::endl;
+
+  std::cout << "b_size: ";
+  for (const auto& s : b_size) {
+    std::cout << s << " ";
+  }
+  std::cout << std::endl;
+
   ET_CHECK_OR_RETURN_ERROR(
       tensors_are_broadcastable_between(a_size, b_size),
       InvalidArgument,

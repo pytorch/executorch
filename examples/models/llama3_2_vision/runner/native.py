@@ -45,6 +45,20 @@ class NativeLlamaRunner(TorchTuneLlamaRunner):
             use_kv_cache=args.kv_cache,
             vocab_size=params["vocab_size"],
         )
+
+        import torch
+
+        self.encoder_input = torch.load(
+            "/home/jackzhxng/torchrepos3/executorch/vision_encoder_output.pt"
+        )[0].to(
+            torch.float32
+        )  # Only support one image at the moment.
+
+        encoder_sequence_length = self.encoder_input.shape[1]
+        self.encoder_mask = torch.ones(
+            1, args.max_len, encoder_sequence_length, dtype=torch.bool
+        )
+
         # Save the loaded model bytes to prevent data from going out of
         # scope after the `with` and getting cleaned up by Python's
         # garbage collector.
@@ -65,7 +79,10 @@ class NativeLlamaRunner(TorchTuneLlamaRunner):
         mask: Optional[torch.LongTensor] = None,
     ) -> torch.Tensor:
         return (
-            self.model.forward((tokens, input_pos, mask))
+            self.model.forward(
+                (tokens, input_pos, mask, self.encoder_input, self.encoder_mask)
+            )
+            # self.model.forward((tokens, input_pos, mask))
             if self.use_kv_cache
             else self.model.forward((tokens,))
         )[0]
