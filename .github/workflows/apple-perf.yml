@@ -1,4 +1,4 @@
-name: apple-perf
+name: apple-perf-test
 
 on:
   schedule:
