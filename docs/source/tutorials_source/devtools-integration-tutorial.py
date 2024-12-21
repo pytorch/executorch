@@ -89,10 +89,7 @@ class Net(nn.Module):
 
 model = Net()
 
-aten_model: ExportedProgram = export(
-    model,
-    (torch.randn(1, 1, 32, 32),),
-)
+aten_model: ExportedProgram = export(model, (torch.randn(1, 1, 32, 32),), strict=True)
 
 edge_program_manager: EdgeProgramManager = to_edge(
     aten_model, compile_config=EdgeCompileConfig(_check_ir_validity=True)
@@ -141,7 +138,7 @@ from torch.export import export
 
 # Step 1: ExecuTorch Program Export
 m_name = "forward"
-method_graphs = {m_name: export(model, (torch.randn(1, 1, 32, 32),))}
+method_graphs = {m_name: export(model, (torch.randn(1, 1, 32, 32),), strict=True)}
 
 # Step 2: Construct Method Test Suites
 inputs = [[torch.randn(1, 1, 32, 32)] for _ in range(2)]

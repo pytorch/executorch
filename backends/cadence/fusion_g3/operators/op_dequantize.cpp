@@ -6,18 +6,20 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/util/reduce_util.h>
-#include <executorch/runtime/kernel/kernel_includes.h>
-#include <xa_nnlib_kernels_api.h>
 #include <algorithm>
 #include <cinttypes>
 #include <cmath>
 
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using torch::executor::Error;
-using torch::executor::KernelRuntimeContext;
+#include <xa_nnlib_kernels_api.h>
+
+#include <executorch/kernels/portable/cpu/util/reduce_util.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+
+using ::executorch::aten::Scalar;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::KernelRuntimeContext;
 
 template <typename T>
 using optional = exec_aten::optional<T>;
@@ -185,7 +187,7 @@ void dequantize_impl(
       if (axis == NULL) {
 // calculate the dequantized output, cast scale to float to match fbgemm
 // behavior
-#define ASYM_DEQUANTIZE_IMPL_TESNOR(IN_CTYPE, OUT_CTYPE, out_dtype)            \
+#define ASYM_DEQUANTIZE_IMPL_TENSOR(IN_CTYPE, OUT_CTYPE, out_dtype)            \
   case ScalarType::out_dtype: {                                                \
     /* Hoist these function calls out of our inner loop because they might not \
      * get inlined without LTO, particularly in ATen mode. */                  \
@@ -201,7 +203,7 @@ void dequantize_impl(
 #define ASYM_CALCULATE_INT_TYPE_TENSOR(IN_CTYPE, in_dtype)               \
   case ScalarType::in_dtype:                                             \
     switch (out.scalar_type()) {                                         \
-      ET_FORALL_FLOAT_TYPES_WITH(IN_CTYPE, ASYM_DEQUANTIZE_IMPL_TESNOR); \
+      ET_FORALL_FLOAT_TYPES_WITH(IN_CTYPE, ASYM_DEQUANTIZE_IMPL_TENSOR); \
       default:                                                           \
         ET_CHECK_MSG(                                                    \
             false,                                                       \
@@ -219,7 +221,7 @@ void dequantize_impl(
                 static_cast<int8_t>(input.scalar_type()));
         }
 #undef ASYM_CALCULATE_INT_TYPE_TENSOR
-#undef ASYM_DEQUANTIZE_IMPL_TESNOR
+#undef ASYM_DEQUANTIZE_IMPL_TENSOR
       } else {
         // a list contains all dimensions except axis
         int64_t dims[input.dim() - 1];
