@@ -247,10 +247,7 @@ class TestMPS(unittest.TestCase):
             )
 
             executorch_program = to_edge(
-                export(
-                    delegated_program,
-                    sample_inputs,
-                ),
+                export(delegated_program, sample_inputs, strict=True),
                 compile_config=exir.EdgeCompileConfig(
                     _check_ir_validity=False,
                     _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.

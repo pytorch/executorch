@@ -9,27 +9,49 @@ from executorch.exir.schema import ScalarType
 
 @dataclass
 class TensorLayout:
-    """
-    Tensor layout information for externally-serialized tensors.
+    """Tensor layout information for externally-serialized tensors.
+
+    Attributes:
+        scalar_type: type of the elements in the tensor.
+        sizes: size of each dim in the tensor.
+        dim_order: specifies the order the dimensions are laid out in memory,
+            from outer to inner.
     """
 
     scalar_type: ScalarType
     sizes: List[int]
-    dim_order: List[bytes]
+    dim_order: List[int]
 
 
 @dataclass
-class SerializationInfo:
-    # A sequence of tensor data buffers.
-    tensor_buffers: Sequence[bytes]
+class TensorEntry:
+    """Represents a single tensor in `DataPayload`, specifying its location
+    and metadata.
 
-    # A map from tensor name (fqn) to tensor index inside `tensor_buffers`.
-    # Note: multiple tensor names may map to the same index as `tensor_buffers`
-    # is likely deduplicated.
-    fqn_to_buffer_index: Dict[str, int]
+    Attributes:
+       buffer_index: The index inside `DataPayload.buffers` that this
+            TensorEntry refers to.
+       layout: Metadata about the tensor.
+    """
 
-    # A map from tensor name (fqn) to TensorLayout.
-    fqn_to_tensor_layout: Dict[str, TensorLayout]
+    buffer_index: int
+    layout: TensorLayout
+
+
+@dataclass
+class DataPayload:
+    """Contains the data and metadata required for serialization. Having an
+    index-based arrangement instead of Dict[str, bytes] allows the caller to
+    deduplicate buffers and point multiple fully qualified names (FQNs) to the
+    same entry.
+
+    Attributes:
+        buffers: a sequence of tensor buffers.
+        fqn_to_buffer: a map from buffer name (fully qualified name) to TensorEntry.
+    """
+
+    buffers: Sequence[bytes]
+    fqn_to_data: Dict[str, TensorEntry]
 
 
 class DataSerializer(ABC):
@@ -40,17 +62,9 @@ class DataSerializer(ABC):
     """
 
     @abstractmethod
-    def __init__(self) -> None:
-        """
-        This initializer may be overridden in derived classes to hold
-        the data required for serialization, eg. configurations.
-        """
-        pass
-
-    @abstractmethod
-    def serialize_tensors(
+    def serialize(
         self,
-        serialization_info: SerializationInfo,
+        data: DataPayload,
     ) -> Cord:
         """
         Serializes a list of tensors emitted by ExecuTorch into a binary blob.
@@ -65,16 +79,16 @@ class DataSerializer(ABC):
         raise NotImplementedError("serialize_data")
 
     @abstractmethod
-    def deserialize_tensors(self, blob: Cord) -> SerializationInfo:
+    def deserialize(self, blob: Cord) -> DataPayload:
         """
         Deserializes a blob into a list of tensors. Reverses the effect of
-        serialize_tensors.
+        serialize.
 
         Args:
             blob: A binary blob that contains the serialized data.
 
         Returns:
-            SerializationInfo: tensor buffers and tensor layout information
+            DataPayload: tensor buffers and tensor layout information
             deserialized from `blob`.
         """
         raise NotImplementedError("deserialize_data")

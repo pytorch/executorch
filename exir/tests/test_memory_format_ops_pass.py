@@ -269,7 +269,7 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
         _to_dim_order_op_str = "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
 
         before_epm = to_edge(
-            export(toy_model, sample_input),
+            export(toy_model, sample_input, strict=True),
             compile_config=EdgeCompileConfig(_skip_dim_order=False),
         )
 

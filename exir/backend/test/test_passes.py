@@ -18,7 +18,6 @@ from torch.testing import FileCheck
 
 class TestPasses(unittest.TestCase):
     def test_duplicate_constant_node_pass(self):
-
         class ReuseConstData(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -30,7 +29,9 @@ class TestPasses(unittest.TestCase):
                 return y, z
 
         model = export_for_training(ReuseConstData(), (torch.ones(2, 2),)).module()
-        edge = exir.to_edge(torch.export.export(model, (torch.ones(2, 2),)))
+        edge = exir.to_edge(
+            torch.export.export(model, (torch.ones(2, 2),), strict=True)
+        )
 
         const_nodes = [
             node.name
