@@ -76,6 +76,7 @@ def get_graphs() -> List[torch.fx.GraphModule]:
                         v,
                         mask,
                     ),
+                    strict=True,
                 ),
                 compile_config=get_xnnpack_edge_compile_config(),
             )

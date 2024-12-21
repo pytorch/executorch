@@ -1,4 +1,4 @@
-load("@fbcode//target_determinator/macros:ci.bzl", "ci")
+load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
 load("@fbsource//tools/build_defs:fb_xplat_cxx_binary.bzl", "fb_xplat_cxx_binary")
 load("@fbsource//tools/build_defs:fb_xplat_cxx_test.bzl", "fb_xplat_cxx_test")
 load("@fbsource//tools/build_defs:platform_defs.bzl", "ANDROID", "MACOSX", "CXX")
