@@ -56,33 +56,16 @@ class SDPACustom(torch.nn.Module):
 
         k_cache = self.kv_cache.k_cache
         v_cache = self.kv_cache.v_cache
-        if hasattr(self.kv_cache, "quantized_cache_dtype"):
-            # updated quantize cache, scale and zero points
-            # returns dequantized kv cache
-            # Not most optimal. Optimizations to follow next
-            k_cache, v_cache = self.kv_cache.update(input_pos, k, v)
-            output = torch.ops.llama.custom_sdpa(
-                q,
-                k_cache,
-                v_cache,
-                input_pos[0].item(),
-                None,  # Attention mask
-                0,  # dropout probability. Ignored by the code
-                True,  # is_causal
-            )
-        else:
-            output = torch.ops.llama.sdpa_with_kv_cache(
-                q,
-                k,
-                v,
-                k_cache,
-                v_cache,
-                input_pos[0].item(),
-                seqlen,
-                None,  # Attention mask
-                0,  # dropout probability. Ignored by the code
-                True,  # is_causal
-            )
+        k_cache, v_cache = self.kv_cache.update(input_pos, k, v)
+        output = torch.ops.llama.custom_sdpa(
+            q,
+            k_cache,
+            v_cache,
+            input_pos[0].item(),
+            None,  # Attention mask
+            0,  # dropout probability. Ignored by the code
+            True,  # is_causal
+        )
         return output.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
 
 
@@ -106,7 +89,6 @@ def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
 
 
 class SDPASimple(torch.nn.Module):
-
     def __init__(
         self,
         kv_cache: KVCache,
@@ -166,7 +148,6 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
 
 
 class SDPAFlex(torch.nn.Module):
-
     def __init__(
         self,
         kv_cache: KVCache,
