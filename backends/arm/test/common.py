@@ -93,6 +93,7 @@ def get_u55_compile_spec(
     quantize_io=False,
     custom_path=None,
     reorder_inputs=None,
+    unquantized_nodes_to_cpu=False,
 ) -> list[CompileSpec]:
     """
     Default compile spec for Ethos-U55 tests.
@@ -102,6 +103,7 @@ def get_u55_compile_spec(
         quantize_io=quantize_io,
         custom_path=custom_path,
         reorder_inputs=reorder_inputs,
+        unquantized_nodes_to_cpu=unquantized_nodes_to_cpu,
     ).build()
 
 
@@ -110,6 +112,7 @@ def get_u85_compile_spec(
     quantize_io=False,
     custom_path=None,
     reorder_inputs=None,
+    unquantized_nodes_to_cpu=False,
 ) -> list[CompileSpec]:
     """
     Default compile spec for Ethos-U85 tests.
@@ -119,6 +122,7 @@ def get_u85_compile_spec(
         quantize_io=quantize_io,
         custom_path=custom_path,
         reorder_inputs=reorder_inputs,
+        unquantized_nodes_to_cpu=unquantized_nodes_to_cpu,
     ).build()
 
 
@@ -127,6 +131,7 @@ def get_u55_compile_spec_unbuilt(
     quantize_io=False,
     custom_path=None,
     reorder_inputs=None,
+    unquantized_nodes_to_cpu=False,
 ) -> ArmCompileSpecBuilder:
     """Get the ArmCompileSpecBuilder for the Ethos-U55 tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -143,6 +148,7 @@ def get_u55_compile_spec_unbuilt(
             extra_flags="--debug-force-regor --output-format=raw",
         )
         .set_quantize_io(is_option_enabled("quantize_io") or quantize_io)
+        .set_unquantized_nodes_to_cpu(unquantized_nodes_to_cpu)
         .set_permute_memory_format(permute_memory_to_nhwc)
         .dump_intermediate_artifacts_to(artifact_path)
         .set_input_order(reorder_inputs)
@@ -155,6 +161,7 @@ def get_u85_compile_spec_unbuilt(
     quantize_io=False,
     custom_path=None,
     reorder_inputs=None,
+    unquantized_nodes_to_cpu=False,
 ) -> list[CompileSpec]:
     """Get the ArmCompileSpecBuilder for the Ethos-U85 tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -169,6 +176,7 @@ def get_u85_compile_spec_unbuilt(
             extra_flags="--output-format=raw",
         )
         .set_quantize_io(is_option_enabled("quantize_io") or quantize_io)
+        .set_unquantized_nodes_to_cpu(unquantized_nodes_to_cpu)
         .set_permute_memory_format(permute_memory_to_nhwc)
         .dump_intermediate_artifacts_to(artifact_path)
         .set_input_order(reorder_inputs)
