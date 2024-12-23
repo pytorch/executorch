@@ -405,6 +405,8 @@
 
 - op: unsqueeze_copy.out
 
+- op: upsample_bilinear2d.vec_out
+
 - op: upsample_nearest2d.out
 
 - op: upsample_nearest2d.vec_out
