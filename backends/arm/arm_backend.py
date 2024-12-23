@@ -52,6 +52,7 @@ class ArmCompileSpecBuilder:
         # TODO MLETORCH-265 Remove permute_nhwc flag
         self.permute_nhwc = False
         self.quantize_io = False
+        self.unquantized_nodes_to_cpu = False
         self.tosa_version = None
         self.input_order = None
 
@@ -146,6 +147,16 @@ class ArmCompileSpecBuilder:
         self.input_order = input_order
         return self
 
+    def set_unquantized_nodes_to_cpu(
+        self, unquantized_nodes_to_cpu: bool = False
+    ) -> "ArmCompileSpecBuilder":
+        """
+        For models with operations that are not quantized,
+        this option keeps the unquantized operators on the CPU.
+        """
+        self.unquantized_nodes_to_cpu = unquantized_nodes_to_cpu
+        return self
+
     def build(self) -> List[CompileSpec]:
         """
         Generate a list of compile spec objects from the builder
@@ -184,6 +195,11 @@ class ArmCompileSpecBuilder:
 
         if self.quantize_io:
             self.compile_spec.append(CompileSpec("quantize_io", "True".encode()))
+
+        if self.unquantized_nodes_to_cpu:
+            self.compile_spec.append(
+                CompileSpec("unquantized_nodes_to_cpu", "True".encode())
+            )
 
         return self.compile_spec
 

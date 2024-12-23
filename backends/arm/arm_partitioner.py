@@ -12,6 +12,9 @@ from typing import Callable, final, List, Optional, Tuple
 import torch
 from executorch.backends.arm.arm_backend import ArmBackend  # usort: skip
 from executorch.backends.arm._passes.tag_io_quant_pass import TagIOQuantPass
+from executorch.backends.arm._passes.tag_unquantized_nodes_pass import (
+    TagUnquantizedNodesPass,
+)
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     TOSASupportedOperators,
 )
@@ -52,15 +55,17 @@ class ArmPartitioner(Partitioner):
 
         logger.info(f"Partitioning for {tosa_spec}")
 
+        passes = []
         for spec in self.delegation_spec.compile_specs:
             if spec.key == "quantize_io" and spec.value.decode() == "True":
                 # Exclude IO quantization from the partition
-                passes = PassManager(
-                    passes=[
-                        TagIOQuantPass(),
-                    ]
-                )
-                passes(exported_program.graph_module)
+                passes.append(TagIOQuantPass())
+            if spec.key == "unquantized_nodes_to_cpu" and spec.value.decode() == "True":
+                # Exclude unquantized nodes from the partition
+                passes.append(TagUnquantizedNodesPass())
+
+        passes = PassManager(passes=passes)
+        passes(exported_program.graph_module)
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
