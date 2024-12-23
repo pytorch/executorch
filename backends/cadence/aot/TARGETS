@@ -40,6 +40,7 @@ python_library(
         ":utils",
         ":ops_registrations",
         ":replace_ops",
+        ":memory_planning",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot/quantizer:fusion_pass",
         "//executorch/backends/cadence/aot/quantizer:quantizer",
