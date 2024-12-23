@@ -113,6 +113,9 @@ Tensor& where_out(
             ctx,
             (out_shape[0] * out_shape[1] * out_shape[2] * out_shape[3]) *
                 sizeof(int));
+
+        ET_KERNEL_CHECK(ctx, p_scratch != nullptr, MemoryAllocationFailed, out);
+
         const unsigned char* p_brd_cond = (const unsigned char*)p_scratch;
         xa_nn_broadcast_8_8(
             (WORD8* __restrict__)p_brd_cond,

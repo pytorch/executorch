@@ -122,9 +122,14 @@ Tensor& pow_Tensor_Tensor_out(
       WORD32* __restrict__ ptr1 =
           (WORD32* __restrict__)kernels::allocate_temp_memory(
               ctx, num_elm * sizeof(int));
+
+      ET_KERNEL_CHECK(ctx, ptr1 != nullptr, MemoryAllocationFailed, out);
+
       WORD32* __restrict__ ptr2 =
           (WORD32* __restrict__)kernels::allocate_temp_memory(
               ctx, num_elm * sizeof(int));
+
+      ET_KERNEL_CHECK(ctx, ptr2 != nullptr, MemoryAllocationFailed, out);
 
       WORD32* __restrict__ pin1 =
           (WORD32* __restrict__)a.const_data_ptr<float>();
@@ -158,6 +163,8 @@ Tensor& pow_Tensor_Tensor_out(
           (FLOAT32* __restrict__)kernels::allocate_temp_memory(
               ctx, num_elm * sizeof(int));
 
+      ET_KERNEL_CHECK(ctx, ptr1 != nullptr, MemoryAllocationFailed, out);
+
       FLOAT32* __restrict__ pin1 =
           (FLOAT32* __restrict__)a.const_data_ptr<float>();
 
@@ -184,6 +191,8 @@ Tensor& pow_Tensor_Tensor_out(
       WORD32* __restrict__ ptr1 =
           (WORD32* __restrict__)kernels::allocate_temp_memory(
               ctx, num_elm * sizeof(int));
+
+      ET_KERNEL_CHECK(ctx, ptr1 != nullptr, MemoryAllocationFailed, out);
 
       WORD32* __restrict__ pin1 =
           (WORD32* __restrict__)b.const_data_ptr<float>();

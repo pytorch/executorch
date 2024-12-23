@@ -359,6 +359,10 @@ Tensor& clamp_tensor_out(
               ctx,
               (out_shape[0] * out_shape[1] * out_shape[2] * out_shape[3]) *
                   sizeof(int));
+
+          ET_KERNEL_CHECK(
+              ctx, p_scratch != nullptr, MemoryAllocationFailed, out);
+
           const FLOAT32* p_brd_cond = (const FLOAT32*)p_scratch;
           xa_nn_broadcast_32_32(
               (WORD32*)p_brd_cond, out_shape, (WORD32*)inp_data, inp_shape, 4);

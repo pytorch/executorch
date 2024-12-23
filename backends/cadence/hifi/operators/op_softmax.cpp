@@ -101,8 +101,13 @@ Tensor& softmax_out(
 
     int* p_out =
         (int*)kernels::allocate_temp_memory(ctx, out.numel() * sizeof(int));
+
+    ET_KERNEL_CHECK(ctx, p_out != nullptr, MemoryAllocationFailed, out);
+
     int* p_out1 =
         (int*)kernels::allocate_temp_memory(ctx, out.numel() * sizeof(int));
+
+    ET_KERNEL_CHECK(ctx, p_out1 != nullptr, MemoryAllocationFailed, out);
 
     WORD32 ret_val = xa_nn_transpose_32_32(
         p_out,
