@@ -8,7 +8,7 @@
 set -euo pipefail
 
 SOURCE_ROOT_DIR=""
-OUTPUT="cmake-out"
+OUTPUT="cmake-out-apple"
 MODE="Release"
 TOOLCHAIN=""
 PYTHON=$(which python3)
@@ -76,7 +76,7 @@ usage() {
   echo "SOURCE_ROOT_DIR defaults to the current directory if not provided."
   echo
   echo "Options:"
-  echo "  --output=DIR         Output directory. Default: 'cmake-out'"
+  echo "  --output=DIR         Output directory. Default: 'cmake-out-apple'"
   echo "  --Debug              Use Debug build mode. Default: Uses Release build mode."
   echo "  --toolchain=FILE     Cmake toolchain file. Default: '\$SOURCE_ROOT_DIR/third-party/ios-cmake/ios.toolchain.cmake'"
   echo "  --python=FILE        Python executable path. Default: Path of python3 found in the current \$PATH"
@@ -188,7 +188,7 @@ echo "Exporting headers"
 mkdir -p "$HEADERS_PATH"
 
 # Set BUCK2 to the path of the buck2 executable in $OUTPUT/*/buck2-bin/buck2-*
-BUCK2=$(find . -type f -path '*/buck2-bin/buck2-*' | head -n 1)
+BUCK2=$(find ${SOURCE_ROOT_DIR}/buck2-bin -type f -name "buck2-*" | head -n 1)
 if [[ -z "$BUCK2" ]]; then
   echo "Could not find buck2 executable in any buck2-bin directory under $OUTPUT"
   BUCK2=$(which buck2)
