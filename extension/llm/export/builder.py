@@ -342,7 +342,7 @@ class LLMEdgeManager:
                     logging.info(
                         "No calibration provided, using dummy input to calibrate..."
                     )
-                    m(*self.example_inputs)
+                    m(*self.example_inputs, **self.example_kwarg_inputs)
                 m = convert_pt2e(m)
                 DuplicateDynamicQuantChainPass()(m)
                 self.pre_autograd_graph_module = m
