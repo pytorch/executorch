@@ -22,7 +22,6 @@ from . import (  # noqa
     op_max,
     op_max_pool2d,
     op_min,
-    op_mm,
     op_mul,
     op_permute,
     op_quant,
