@@ -412,7 +412,7 @@ jobs:
 
           ls -lah artifacts
 
-      - name: Download the list of benchmark artifacts from S3
+      - name: Download the list of benchmark configs from S3
         env:
           BENCHMARK_CONFIGS_S3_DIR: s3://gha-artifacts/${{ github.repository }}/${{ github.run_id }}/artifacts/benchmark-configs/
         shell: bash

@@ -5,6 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import glob
 import json
 import logging
 import os
@@ -307,9 +308,33 @@ def extract_job_id(artifacts_filename: str) -> int:
     return int(m.group("job_id"))
 
 
+def read_benchmark_configs(benchmark_configs: str) -> Dict[str, Dict[str, str]]:
+    """
+    Read all the benchmark configs that we can find
+    """
+    benchmark_configs = {}
+
+    for file in glob.glob(f"{benchmark_configs}/*.json"):
+        filename = os.path.basename(file)
+        with open(file) as f:
+            try:
+                benchmark_configs[filename] = json.load(f)
+            except json.JSONDecodeError as e:
+                warning(f"Fail to load benchmark config {file}: {e}")
+
+    return benchmark_configs
+
+
+def get_benchmark_configs(benchmark_configs: Dict[str, Dict[str, str]]) -> str:
+    """
+    Get the correct benchmark config for this benchmark run
+    """
+
+
 def transform(
     app_type: str,
     benchmark_results: List,
+    benchmark_configs: Dict[str, Dict[str, str]],
     repo: str,
     head_branch: str,
     workflow_name: str,
@@ -359,11 +384,6 @@ def transform(
             for r in benchmark_results
         ]
     elif schema_version == "v3":
-        quantization = (
-            r["benchmarkModel"]["quantization"]
-            if r["benchmarkModel"]["quantization"]
-            else "unknown"
-        )
         # From https://github.com/pytorch/pytorch/wiki/How-to-integrate-with-PyTorch-OSS-benchmark-database
         return [
             {
@@ -373,6 +393,7 @@ def transform(
                     "dtype": quantization,
                     "extra_info": {
                         "app_type": app_type,
+                        "benchmark_configs": 
                     },
                 },
                 "model": {
@@ -412,6 +433,7 @@ def main() -> None:
         "v2": [],
         "v3": [],
     }
+    benchmark_configs = read_benchmark_configs(args.benchmark_configs)
 
     with open(args.artifacts) as f:
         for artifact in json.load(f):
@@ -442,6 +464,7 @@ def main() -> None:
                     results = transform(
                         app_type,
                         benchmark_results,
+                        benchmark_configs,
                         args.repo,
                         args.head_branch,
                         args.workflow_name,
