@@ -337,7 +337,6 @@ def read_benchmark_config(
     try:
         with request.urlopen(artifact_s3_url) as data:
             for line in data.read().decode("utf8").splitlines():
-                print(line)
                 m = BENCHMARK_CONFIG_REGEX.match(line)
                 if not m:
                     continue
@@ -356,8 +355,6 @@ def read_benchmark_config(
                         return json.load(f)
                     except json.JSONDecodeError as e:
                         warning(f"Fail to load benchmark config {filename}: {e}")
-
-        print(">>>>>>>")
     except error.HTTPError:
         warning(f"Fail to read the test spec output at {artifact_s3_url}")
 
@@ -486,9 +483,6 @@ def main() -> None:
                 benchmark_config = read_benchmark_config(
                     artifact_s3_url, args.benchmark_configs
                 )
-                print(benchmark_config)
-
-            continue
 
             if app_type == "ANDROID_APP":
                 benchmark_results = extract_android_benchmark_results(
