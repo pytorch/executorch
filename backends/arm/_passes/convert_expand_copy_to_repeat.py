@@ -8,7 +8,6 @@
 
 from typing import cast
 
-from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -25,14 +24,14 @@ class ConvertExpandCopyToRepeatPass(ExportPass):
         if op != self.expand_copy:
             return super().call_operator(op, args, kwargs, meta)
 
-        _, shape, _ = extract_tensor_meta(meta.data)
+        input_shape = args[0].data.shape
         multiples = cast(list[int], args[1])
         expanded_rank = len(multiples)
 
-        # Expanded shape is 'shape' front-padded with ones.
-        padding = expanded_rank - len(shape)
+        # Expanded shape is 'input_shape' front-padded with ones.
+        padding = expanded_rank - len(input_shape)
         extended_shape = [
-            shape[i] if i >= 0 else 1 for i in range(-padding, len(shape))
+            input_shape[i] if i >= 0 else 1 for i in range(-padding, len(input_shape))
         ]
 
         # To convert expand arg to repeat arg, non-repeated dims should have
