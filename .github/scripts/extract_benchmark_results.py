@@ -5,6 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import glob
 import json
 import logging
 import os
@@ -22,6 +23,7 @@ logging.basicConfig(level=logging.INFO)
 
 BENCHMARK_RESULTS_FILENAME = "benchmark_results.json"
 ARTIFACTS_FILENAME_REGEX = re.compile(r"(android|ios)-artifacts-(?P<job_id>\d+).json")
+BENCHMARK_CONFIG_REGEX = re.compile(r"The benchmark config is (?P<benchmark_config>.+)")
 
 # iOS-related regexes and variables
 IOS_TEST_SPEC_REGEX = re.compile(
@@ -51,7 +53,7 @@ class ValidateArtifacts(Action):
         parser.error(f"{values} is not a valid JSON file (*.json)")
 
 
-class ValidateOutputDir(Action):
+class ValidateDir(Action):
     def __call__(
         self,
         parser: ArgumentParser,
@@ -81,7 +83,7 @@ def parse_args() -> Any:
         "--output-dir",
         type=str,
         required=True,
-        action=ValidateOutputDir,
+        action=ValidateDir,
         help="the directory to keep the benchmark results",
     )
     parser.add_argument(
@@ -113,6 +115,13 @@ def parse_args() -> Any:
         type=int,
         required=True,
         help="which retry of the workflow this is",
+    )
+    parser.add_argument(
+        "--benchmark-configs",
+        type=str,
+        required=True,
+        action=ValidateDir,
+        help="the directory to keep the benchmark configs",
     )
 
     return parser.parse_args()
@@ -300,9 +309,60 @@ def extract_job_id(artifacts_filename: str) -> int:
     return int(m.group("job_id"))
 
 
+def read_all_benchmark_configs() -> Dict[str, Dict[str, str]]:
+    """
+    Read all the benchmark configs that we can find
+    """
+    benchmark_configs = {}
+
+    for file in glob.glob(f"{benchmark_configs}/*.json"):
+        filename = os.path.basename(file)
+        with open(file) as f:
+            try:
+                benchmark_configs[filename] = json.load(f)
+            except json.JSONDecodeError as e:
+                warning(f"Fail to load benchmark config {file}: {e}")
+
+    return benchmark_configs
+
+
+def read_benchmark_config(
+    artifact_s3_url: str, benchmark_configs_dir: str
+) -> Dict[str, str]:
+    """
+    Get the correct benchmark config for this benchmark run
+    """
+    try:
+        with request.urlopen(artifact_s3_url) as data:
+            for line in data.read().decode("utf8").splitlines():
+                m = BENCHMARK_CONFIG_REGEX.match(line)
+                if not m:
+                    continue
+
+                benchmark_config = m.group("benchmark_config")
+                filename = os.path.join(
+                    benchmark_configs_dir, f"{benchmark_config}.json"
+                )
+
+                if not os.path.exists(filename):
+                    warning(f"There is no benchmark config {filename}")
+                    continue
+
+                with open(filename) as f:
+                    try:
+                        return json.load(f)
+                    except json.JSONDecodeError as e:
+                        warning(f"Fail to load benchmark config {filename}: {e}")
+    except error.HTTPError:
+        warning(f"Fail to read the test spec output at {artifact_s3_url}")
+
+    return {}
+
+
 def transform(
     app_type: str,
     benchmark_results: List,
+    benchmark_config: Dict[str, str],
     repo: str,
     head_branch: str,
     workflow_name: str,
@@ -352,29 +412,25 @@ def transform(
             for r in benchmark_results
         ]
     elif schema_version == "v3":
-        quantization = (
-            r["benchmarkModel"]["quantization"]
-            if r["benchmarkModel"]["quantization"]
-            else "unknown"
-        )
+        v3_benchmark_results = []
         # From https://github.com/pytorch/pytorch/wiki/How-to-integrate-with-PyTorch-OSS-benchmark-database
         return [
             {
                 "benchmark": {
                     "name": "ExecuTorch",
                     "mode": "inference",
-                    "dtype": quantization,
                     "extra_info": {
                         "app_type": app_type,
+                        # Just keep a copy of the benchmark config here
+                        "benchmark_config": json.dumps(benchmark_config),
                     },
                 },
                 "model": {
-                    "name": r["benchmarkModel"]["name"],
+                    "name": benchmark_config.get("model", r["benchmarkModel"]["name"]),
                     "type": "OSS model",
-                    "backend": r["benchmarkModel"].get("backend", ""),
-                    "extra_info": {
-                        "quantization": quantization,
-                    },
+                    "backend": benchmark_config.get(
+                        "config", r["benchmarkModel"].get("backend", "")
+                    ),
                 },
                 "metric": {
                     "name": r["metric"],
@@ -405,6 +461,7 @@ def main() -> None:
         "v2": [],
         "v3": [],
     }
+    benchmark_config = {}
 
     with open(args.artifacts) as f:
         for artifact in json.load(f):
@@ -419,6 +476,11 @@ def main() -> None:
             job_name = artifact["job_name"]
             artifact_type = artifact["type"]
             artifact_s3_url = artifact["s3_url"]
+
+            if artifact_type == "TESTSPEC_OUTPUT":
+                benchmark_config = read_benchmark_config(
+                    artifact_s3_url, args.benchmark_configs
+                )
 
             if app_type == "ANDROID_APP":
                 benchmark_results = extract_android_benchmark_results(
@@ -435,6 +497,7 @@ def main() -> None:
                     results = transform(
                         app_type,
                         benchmark_results,
+                        benchmark_config,
                         args.repo,
                         args.head_branch,
                         args.workflow_name,
