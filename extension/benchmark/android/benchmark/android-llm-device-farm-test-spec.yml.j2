@@ -8,6 +8,8 @@ phases:
 
   pre_test:
     commands:
+      # The benchmark config is {{ benchmark_config_id }}
+
       # Download the model from S3
       - curl -s --fail '{{ model_path }}' -o model.zip
       - unzip model.zip && ls -la

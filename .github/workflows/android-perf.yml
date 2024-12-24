@@ -100,7 +100,7 @@ jobs:
       - name: Prepare the spec
         shell: bash
         env:
-          BENCHMARK_CONFIGS: ${{ toJSON(matrix) }}
+          BENCHMARK_CONFIG: ${{ toJSON(matrix) }}
         working-directory: extension/benchmark/android/benchmark
         run: |
           set -eux
@@ -110,13 +110,18 @@ jobs:
           # We could write a script to properly use jinja here, but there is only one variable,
           # so let's just sed it
           sed -i -e 's,{{ model_path }},'"${MODEL_PATH}"',g' android-llm-device-farm-test-spec.yml.j2
-          cp android-llm-device-farm-test-spec.yml.j2 android-llm-device-farm-test-spec.yml
 
+          BENCHMARK_CONFIG_ID="${{ matrix.model }}_${{ matrix.config }}"
+          # The config for this benchmark runs, we save it in the test spec so that it can be fetched
+          # later by the upload script
+          sed -i -e 's,{{ benchmark_config_id }},'"${BENCHMARK_CONFIG_ID}"',g' android-llm-device-farm-test-spec.yml.j2
+
+          cp android-llm-device-farm-test-spec.yml.j2 android-llm-device-farm-test-spec.yml
           # Just print the test spec for debugging
           cat android-llm-device-farm-test-spec.yml
 
-          # Also dump the benchmark configs so that we can use it later in the dashboard
-          echo "${BENCHMARK_CONFIGS}" > ${{ matrix.model }}_${{ matrix.config }}.json
+          # Save the benchmark configs so that we can use it later in the dashboard
+          echo "${BENCHMARK_CONFIG}" > "${BENCHMARK_CONFIG_ID}.json"
 
       - name: Upload the spec
         uses: seemethere/upload-artifact-s3@v5
@@ -414,14 +419,14 @@ jobs:
 
       - name: Download the list of benchmark configs from S3
         env:
-          BENCHMARK_CONFIGS_S3_DIR: s3://gha-artifacts/${{ github.repository }}/${{ github.run_id }}/artifacts/benchmark-configs/
+          BENCHMARK_CONFIGS_DIR: s3://gha-artifacts/${{ github.repository }}/${{ github.run_id }}/artifacts/benchmark-configs/
         shell: bash
         run: |
           set -eux
 
           mkdir -p benchmark-configs
           pushd benchmark-configs
-          ${CONDA_RUN} aws s3 sync "${BENCHMARK_CONFIGS_S3_DIR}" .
+          ${CONDA_RUN} aws s3 sync "${BENCHMARK_CONFIGS_DIR}" .
           popd
 
           ls -lah benchmark-configs
