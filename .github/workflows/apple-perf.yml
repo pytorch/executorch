@@ -321,7 +321,6 @@ jobs:
     with:
       runner: macos-latest-xlarge
       python-version: '3.11'
-      xcode-version: '16.0'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       upload-artifact: ios-apps
@@ -329,6 +328,9 @@ jobs:
       timeout: 90
       script: |
         set -eux
+
+        echo "Setting XCode version"
+        sudo xcode-select -switch /Applications/Xcode_16.1.app
 
         echo "::group::Setting up CI environment"
         .ci/scripts/setup-conda.sh
