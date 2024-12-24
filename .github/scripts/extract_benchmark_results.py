@@ -51,7 +51,7 @@ class ValidateArtifacts(Action):
         parser.error(f"{values} is not a valid JSON file (*.json)")
 
 
-class ValidateOutputDir(Action):
+class ValidateDir(Action):
     def __call__(
         self,
         parser: ArgumentParser,
@@ -81,7 +81,7 @@ def parse_args() -> Any:
         "--output-dir",
         type=str,
         required=True,
-        action=ValidateOutputDir,
+        action=ValidateDir,
         help="the directory to keep the benchmark results",
     )
     parser.add_argument(
@@ -113,6 +113,13 @@ def parse_args() -> Any:
         type=int,
         required=True,
         help="which retry of the workflow this is",
+    )
+    parser.add_argument(
+        "--benchmark-configs",
+        type=str,
+        required=True,
+        action=ValidateDir,
+        help="the directory to keep the benchmark configs",
     )
 
     return parser.parse_args()

@@ -99,6 +99,8 @@ jobs:
 
       - name: Prepare the spec
         shell: bash
+        env:
+          BENCHMARK_CONFIGS: ${{ toJSON(matrix) }}
         working-directory: extension/benchmark/android/benchmark
         run: |
           set -eux
@@ -113,6 +115,9 @@ jobs:
           # Just print the test spec for debugging
           cat android-llm-device-farm-test-spec.yml
 
+          # Also dump the benchmark configs so that we can use it later in the dashboard
+          echo "${BENCHMARK_CONFIGS}" > ${{ matrix.model }}_${{ matrix.config }}.json
+
       - name: Upload the spec
         uses: seemethere/upload-artifact-s3@v5
         with:
@@ -122,6 +127,16 @@ jobs:
           retention-days: 1
           if-no-files-found: error
           path: extension/benchmark/android/benchmark/android-llm-device-farm-test-spec.yml
+
+      - name: Update the benchmark configs
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifacts/benchmark-configs/
+          retention-days: 1
+          if-no-files-found: error
+          path: extension/benchmark/android/benchmark/${{ matrix.model }}_${{ matrix.config }}.json
 
   export-models:
     name: export-models
@@ -397,6 +412,20 @@ jobs:
 
           ls -lah artifacts
 
+      - name: Download the list of benchmark artifacts from S3
+        env:
+          BENCHMARK_CONFIGS_S3_DIR: s3://gha-artifacts/${{ github.repository }}/${{ github.run_id }}/artifacts/benchmark-configs/
+        shell: bash
+        run: |
+          set -eux
+
+          mkdir -p benchmark-configs
+          pushd benchmark-configs
+          ${CONDA_RUN} aws s3 sync "${BENCHMARK_CONFIGS_S3_DIR}" .
+          popd
+
+          ls -lah benchmark-configs
+
       - name: Extract the benchmark results JSON
         shell: bash
         run: |
@@ -414,7 +443,8 @@ jobs:
               --head-branch ${{ github.head_ref || github.ref_name }} \
               --workflow-name "${{ github.workflow }}" \
               --workflow-run-id ${{ github.run_id }} \
-              --workflow-run-attempt ${{ github.run_attempt }}
+              --workflow-run-attempt ${{ github.run_attempt }} \
+              --benchmark-configs benchmark-configs
           done
 
           for SCHEMA in v2 v3; do
