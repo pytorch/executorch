@@ -316,7 +316,7 @@ jobs:
     name: build-benchmark-app
     uses: maxim-lobanov/setup-xcode@v1
     with:
-      xcode-version: '16.0'
+      xcode-version: '15.3'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     needs:
       - set-parameters
