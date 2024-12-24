@@ -30,7 +30,6 @@ class SliceVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
 
         # aten.slice_copy supports slicing in 1d at a time.

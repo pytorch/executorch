@@ -145,7 +145,7 @@ class QuantArgs(NamedTuple):
             self.qmax,
         ).to(self.dtype)
 
-    def dequantize_value(self, qx: int) -> float:
+    def dequantize_value(self, qx: torch.Tensor) -> torch.Tensor:
         return (qx - self.zp) * self.scale
 
     def __eq__(self, other):
