@@ -8,7 +8,8 @@ phases:
 
   pre_test:
     commands:
-      # The benchmark config is {{ benchmark_config_id }}
+      # Print this so that the upload script can read and process the benchmark config
+      echo "The benchmark config is {{ benchmark_config_id }}"
 
       # Download the model from S3
       - curl -s --fail '{{ model_path }}' -o model.zip

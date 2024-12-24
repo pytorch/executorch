@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO)
 BENCHMARK_RESULTS_FILENAME = "benchmark_results.json"
 ARTIFACTS_FILENAME_REGEX = re.compile(r"(android|ios)-artifacts-(?P<job_id>\d+).json")
 BENCHMARK_CONFIG_REGEX = re.compile(
-    r"# The benchmark config is (?P<benchmark_config>.+)"
+    r"The benchmark config is (?P<benchmark_config>.+)"
 )
 
 # iOS-related regexes and variables
@@ -337,7 +337,8 @@ def read_benchmark_config(
     try:
         with request.urlopen(artifact_s3_url) as data:
             for line in data.read().decode("utf8").splitlines():
-                m = IOS_TEST_SPEC_REGEX.match(line)
+                print(line)
+                m = BENCHMARK_CONFIG_REGEX.match(line)
                 if not m:
                     continue
 
@@ -356,6 +357,7 @@ def read_benchmark_config(
                     except json.JSONDecodeError as e:
                         warning(f"Fail to load benchmark config {filename}: {e}")
 
+        print(">>>>>>>")
     except error.HTTPError:
         warning(f"Fail to read the test spec output at {artifact_s3_url}")
 
@@ -484,6 +486,9 @@ def main() -> None:
                 benchmark_config = read_benchmark_config(
                     artifact_s3_url, args.benchmark_configs
                 )
+                print(benchmark_config)
+
+            continue
 
             if app_type == "ANDROID_APP":
                 benchmark_results = extract_android_benchmark_results(
