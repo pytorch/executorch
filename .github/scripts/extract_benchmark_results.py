@@ -23,9 +23,7 @@ logging.basicConfig(level=logging.INFO)
 
 BENCHMARK_RESULTS_FILENAME = "benchmark_results.json"
 ARTIFACTS_FILENAME_REGEX = re.compile(r"(android|ios)-artifacts-(?P<job_id>\d+).json")
-BENCHMARK_CONFIG_REGEX = re.compile(
-    r"The benchmark config is (?P<benchmark_config>.+)"
-)
+BENCHMARK_CONFIG_REGEX = re.compile(r"The benchmark config is (?P<benchmark_config>.+)")
 
 # iOS-related regexes and variables
 IOS_TEST_SPEC_REGEX = re.compile(
