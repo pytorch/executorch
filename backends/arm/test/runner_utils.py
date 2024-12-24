@@ -178,7 +178,7 @@ class RunnerUtil:
         self.output_name: str = None
         self.qp_input: list[QuantizationParams] = None
         self.qp_output: QuantizationParams = None
-        self.timeout = 120
+        self.timeout = 480
         self.target_board: str = None
 
         self._has_init_run = False
@@ -316,7 +316,7 @@ class RunnerUtil:
         result = _run_cmd(command_args[self.target_board], check=False)
         if result.returncode != 0:
             raise RuntimeError(
-                f"Failed to run {command_args[self.target_board]}\nError: {result.stderr.decode()}"
+                f"Failed to run {command_args[self.target_board]}\nOutput:\n{result.stdout.decode()}\nError: {result.stderr.decode()}"
             )
         result_stdout = result.stdout.decode()
 
