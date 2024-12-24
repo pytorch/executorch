@@ -6,10 +6,14 @@
 
 import argparse
 import os
+import sys
+
+if os.getcwd() not in sys.path:
+    sys.path.append(os.getcwd())
 
 import torch
 from executorch.backends.mediatek import Precision
-from executorch.examples.mediatek.aot_utils.oss_utils.utils import (
+from aot_utils.oss_utils.utils import (
     build_executorch_binary,
 )
 from executorch.examples.models.mobilenet_v2 import MV2Model

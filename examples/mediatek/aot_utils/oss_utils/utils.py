@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
-from typing import Optional
+from typing import Optional, Dict
 
 import torch
 from executorch import exir
@@ -23,6 +23,8 @@ def build_executorch_binary(
     file_name,
     dataset,
     quant_dtype: Optional[Precision] = None,
+    skip_op_name: Optional[set] = None,
+    skip_op_type: Optional[set] = None
 ):
     if quant_dtype is not None:
         quantizer = NeuropilotQuantizer()
@@ -44,14 +46,12 @@ def build_executorch_binary(
     from executorch.exir.program._program import to_edge_transform_and_lower
 
     edge_compile_config = exir.EdgeCompileConfig(_check_ir_validity=False)
-    # skipped op names are used for deeplabV3 model
     neuro_partitioner = NeuropilotPartitioner(
         [],
-        op_names_to_skip={
-            "aten_convolution_default_106",
-            "aten_convolution_default_107",
-        },
+        op_types_to_skip=skip_op_type,
+        op_names_to_skip=skip_op_name,
     )
+
     edge_prog = to_edge_transform_and_lower(
         aten_dialect,
         compile_config=edge_compile_config,
