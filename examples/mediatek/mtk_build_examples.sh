@@ -39,7 +39,6 @@ main() {
           -DBUCK2="$BUCK_PATH" \
           -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake" \
           -DANDROID_ABI=arm64-v8a \
-          -DANDROID_PLATFORM=android-26 \
           -DANDROID_NATIVE_API_LEVEL=23 \
           -DEXECUTORCH_BUILD_NEURON=ON \
           -DNEURON_BUFFER_ALLOCATOR_LIB="$NEURON_BUFFER_ALLOCATOR_LIB" \
