@@ -8,7 +8,7 @@
 
 import unittest
 from dataclasses import dataclass
-from typing import Any, Tuple
+from typing import Any, Dict, List, Tuple
 
 import torch
 
@@ -26,11 +26,24 @@ from torch.testing import FileCheck
 from torch.utils._pytree import tree_flatten
 
 
+MemoryFormatOps2Str: Dict[torch._ops.OpOverload, List[str]] = {
+    torch.ops.aten._to_copy.default: (
+        "torch.ops.aten._to_copy.default",
+        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default",
+    ),
+    torch.ops.aten.empty.memory_format: (
+        "torch.ops.aten.empty.memory_format",
+        "executorch_exir_dialects_edge__ops_dim_order_ops__empty_dim_order_default",
+    ),
+}
+
+
 @dataclass
 class MemoryFormatTestSet:
     module: torch.nn.Module
     sample_input: Tuple[Any, ...]
     target_memory_format: torch.memory_format
+    op: torch._ops.OpOverload
     _load_for_executorch_from_buffer: Any
     op_level_check: bool = True
     use_xnnpack: bool = False
@@ -54,6 +67,28 @@ class SimpleToCopyChannelsLastModule(torch.nn.Module):
         return x.to(dtype=torch.double, memory_format=torch.channels_last)
 
 
+class SimpleEmptyContiguoustModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        empty_tensor = torch.empty(x.size(), memory_format=torch.contiguous_format)
+        x = x.to(memory_format=torch.contiguous_format)
+        empty_tensor.copy_(x)
+        return empty_tensor
+
+
+class SimpleEmptyChannelLastModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        empty_tensor = torch.empty(x.size(), memory_format=torch.channels_last)
+        x = x.to(memory_format=torch.channels_last)
+        empty_tensor.copy_(x)
+        return empty_tensor
+
+
 class PropagateToCopyChannalsLastModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -69,7 +104,9 @@ class MemoryFormatOpsPassTestUtils:
     def memory_format_test_runner(
         test_class: unittest.TestCase, test_set: MemoryFormatTestSet
     ):
-        before = export(test_set.module, test_set.sample_input).run_decompositions({})
+        before = export(
+            test_set.module, test_set.sample_input, strict=True
+        ).run_decompositions({})
 
         if test_set.use_xnnpack:
             epm = to_edge_transform_and_lower(
@@ -86,9 +123,7 @@ class MemoryFormatOpsPassTestUtils:
 
         # check memory format ops, if needed
         if test_set.op_level_check:
-            aten_op_str = "torch.ops.aten._to_copy.default"
-            edge_op_str = "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
-
+            aten_op_str, edge_op_str = MemoryFormatOps2Str[test_set.op]
             # check op strings before
             FileCheck().check_count(aten_op_str, 1, exactly=True).check_not(
                 edge_op_str
@@ -126,6 +161,7 @@ class MemoryFormatOpsPassTestUtils:
         runtime_output = executorch_module.run_method(
             "forward", tuple(inputs_flattened)
         )[0]
+
         test_class.assertTrue(
             torch.allclose(
                 runtime_output, expected, atol=test_set.atol, rtol=test_set.rtol

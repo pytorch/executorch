@@ -49,7 +49,7 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=module.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .to_edge()
@@ -63,7 +63,7 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=module.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -80,7 +80,9 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
 
     def test_MI_artifact(self):
         model = Linear(20, 30)
-        tmp_file = os.path.join(tempfile.mkdtemp(), "tosa_dump_MI.txt")
+        tmp_file = common.get_time_formatted_path(
+            tempfile.mkdtemp(), self._testMethodName
+        )
         self._tosa_MI_pipeline(model, dump_file=tmp_file)
         assert os.path.exists(tmp_file), f"File {tmp_file} was not created"
         if self._is_tosa_marker_in_file(tmp_file):
@@ -89,7 +91,9 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
 
     def test_BI_artifact(self):
         model = Linear(20, 30)
-        tmp_file = os.path.join(tempfile.mkdtemp(), "tosa_dump_BI.txt")
+        tmp_file = common.get_time_formatted_path(
+            tempfile.mkdtemp(), self._testMethodName
+        )
         self._tosa_BI_pipeline(model, dump_file=tmp_file)
         assert os.path.exists(tmp_file), f"File {tmp_file} was not created"
         if self._is_tosa_marker_in_file(tmp_file):
@@ -107,7 +111,9 @@ class TestNumericalDiffPrints(unittest.TestCase):
                 model,
                 example_inputs=model.get_inputs(),
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+MI",
+                    permute_memory_to_nhwc=True,
+                    custom_path=tempfile.mkdtemp("diff_print_test"),
                 ),
             )
             .export()
@@ -132,7 +138,7 @@ def test_dump_ops_and_dtypes():
         ArmTester(
             model,
             example_inputs=model.get_inputs(),
-            compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+            compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
         )
         .quantize()
         .dump_dtype_distribution()
@@ -153,7 +159,7 @@ def test_dump_ops_and_dtypes_parseable():
         ArmTester(
             model,
             example_inputs=model.get_inputs(),
-            compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+            compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
         )
         .quantize()
         .dump_dtype_distribution(print_table=False)
@@ -181,7 +187,7 @@ class TestCollateTosaTests(unittest.TestCase):
             ArmTester(
                 model,
                 example_inputs=model.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -210,7 +216,7 @@ def test_dump_tosa_ops(caplog):
         ArmTester(
             model,
             example_inputs=model.get_inputs(),
-            compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+            compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
         )
         .quantize()
         .export()

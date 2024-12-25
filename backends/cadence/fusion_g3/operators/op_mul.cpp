@@ -6,18 +6,19 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <xa_nnlib_kernels_api.h>
+
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
-#include <xa_nnlib_kernels_api.h>
 
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using executorch::runtime::canCast;
-using torch::executor::Error;
-using torch::executor::KernelRuntimeContext;
+using ::executorch::aten::Scalar;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::canCast;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::KernelRuntimeContext;
 
 namespace cadence {
 namespace impl {
@@ -58,42 +59,64 @@ Tensor& mul_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "mul.out";
 
-  const exec_aten::ArrayRef<Tensor::SizesType> a_size = a.sizes();
-  const exec_aten::ArrayRef<Tensor::SizesType> b_size = b.sizes();
-  const exec_aten::ArrayRef<Tensor::SizesType> out_size = out.sizes();
-
   int kTensorDimensionLimit = 5;
 
   int inp1_shape[kTensorDimensionLimit];
   int inp2_shape[kTensorDimensionLimit];
   int out_shape[kTensorDimensionLimit];
 
-  /* input shapes and output shapes */
-  for (auto i = 0; i < a_size.size(); i++) {
-    inp1_shape[i] = a_size[i];
+  bool broadcast = 0;
+
+  int max_dim = a.dim() > b.dim() ? a.dim() : b.dim();
+  max_dim = out.dim() > max_dim ? out.dim() : max_dim;
+
+  bool optimized = 1;
+
+  /* Added change to work with input dimensions more than 5 */
+  for (int i = 0; i < max_dim; i++) {
+    out_shape[i] = 1;
+    inp1_shape[i] = 1;
+    inp2_shape[i] = 1;
   }
 
-  for (auto i = 0; i < b_size.size(); i++) {
-    inp2_shape[i] = b_size[i];
-  }
+  int offset_out = max_dim - out.dim();
+  int offset_inp1 = max_dim - a.dim();
+  int offset_inp2 = max_dim - b.dim();
 
-  for (auto i = 0; i < out_size.size(); i++) {
-    out_shape[i] = out_size[i];
+  for (int i = 0; i < out.dim(); i++) {
+    out_shape[i + offset_out] = out.size(i);
+  }
+  for (int i = 0; i < a.dim(); i++) {
+    inp1_shape[i + offset_inp1] = a.size(i);
+  }
+  for (int i = 0; i < b.dim(); i++) {
+    inp2_shape[i + offset_inp2] = b.size(i);
   }
 
   /*find broadcast*/
-  const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
-  const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
-  const bool broadcast = (a_is_broadcasted || b_is_broadcasted);
+  for (int i = 0; i < out.dim(); i++) {
+    if (((inp1_shape[i]) != (out_shape[i])) ||
+        ((inp2_shape[i]) != (out_shape[i]))) {
+      broadcast = 1;
+    }
+  }
 
-  int max_dim = a.dim() > b.dim() ? a.dim() : b.dim();
+  if ((broadcast == 1) && (max_dim > kTensorDimensionLimit)) {
+    optimized = 0;
+  }
 
-  if (compute_type == ScalarType::Int) {
+  if ((compute_type == ScalarType::Int) && (optimized)) {
     const int* const inp1_data = a.const_data_ptr<int>();
     const int* const inp2_data = b.const_data_ptr<int>();
     int* const out_data = out.mutable_data_ptr<int>();
 
-    if (broadcast) {
+    if (a.numel() == 1) {
+      xa_nn_elm_mul_scalar_32x32_32(
+          out_data, inp2_data, inp1_data[0], out.numel());
+    } else if (b.numel() == 1) {
+      xa_nn_elm_mul_scalar_32x32_32(
+          out_data, inp1_data, inp2_data[0], out.numel());
+    } else if (broadcast) {
       xa_nn_elm_mul_broadcast_5D_32x32_32(
           out_data,
           out_shape,
@@ -105,12 +128,18 @@ Tensor& mul_out(
     } else {
       xa_nn_elm_mul_32x32_32(out_data, inp1_data, inp2_data, out.numel());
     }
-  } else if (compute_type == ScalarType::Float) {
+  } else if ((compute_type == ScalarType::Float) && (optimized)) {
     const float* const inp1_data = a.const_data_ptr<float>();
     const float* const inp2_data = b.const_data_ptr<float>();
     float* const out_data = out.mutable_data_ptr<float>();
 
-    if (broadcast) {
+    if (a.numel() == 1) {
+      xa_nn_elm_mul_scalar_f32xf32_f32(
+          out_data, inp2_data, inp1_data[0], out.numel());
+    } else if (b.numel() == 1) {
+      xa_nn_elm_mul_scalar_f32xf32_f32(
+          out_data, inp1_data, inp2_data[0], out.numel());
+    } else if (broadcast) {
       xa_nn_elm_mul_broadcast_5D_f32xf32_f32(
           out_data,
           out_shape,
@@ -139,7 +168,6 @@ Tensor& mul_out(
           torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16);
     });
   }
-
   return out;
 }
 

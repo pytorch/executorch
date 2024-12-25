@@ -13,7 +13,7 @@
 
 import logging
 import os
-from typing import final, List, Optional
+from typing import cast, final, List, Optional
 
 import serializer.tosa_serializer as ts
 from executorch.backends.arm.arm_vela import vela_compile
@@ -32,6 +32,7 @@ from executorch.backends.arm.tosa_utils import dbg_fail, dbg_tosa_dump
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
+from torch.fx import Node
 
 # TOSA backend debug functionality
 logger = logging.getLogger(__name__)
@@ -89,7 +90,7 @@ class ArmCompileSpecBuilder:
         if extra_flags is not None:
             self.compiler_flags.append(extra_flags)
 
-        base_tosa_version = "TOSA-0.80.0+BI"
+        base_tosa_version = "TOSA-0.80+BI"
         if "u55" in config:
             # Add the Ethos-U55 extension marker
             base_tosa_version += "+u55"
@@ -135,7 +136,9 @@ class ArmCompileSpecBuilder:
         self.quantize_io = quantize_io
         return self
 
-    def set_input_order(self, input_order: str = None) -> "ArmCompileSpecBuilder":
+    def set_input_order(
+        self, input_order: Optional[str] = None
+    ) -> "ArmCompileSpecBuilder":
         """
         Reorder the inputs coming in. This may be required when inputs > 1.
         And while using the U55/U85 CompileSpec.
@@ -267,6 +270,7 @@ class ArmBackend(BackendDetails):
         node_visitors = get_node_visitors(edge_program, tosa_spec)
         input_count = 0
         for node in graph_module.graph.nodes:
+            node = cast(Node, node)
             if node.op == "call_function":
                 process_call_function(node, tosa_graph, node_visitors, tosa_spec)
             elif node.op == "placeholder":
@@ -286,9 +290,6 @@ class ArmBackend(BackendDetails):
                     "The rank of the input order is not equal to amount of input tensors"
                 )
 
-        # TODO: It would be awesome if this dump could somehow be done on top level and not here.
-        # Problem is that the desc.json has to be created on the tosa_graph object, which we can't
-        # access from top level.
         if artifact_path:
             tag = _get_first_delegation_tag(graph_module)
             dbg_tosa_dump(
@@ -309,6 +310,4 @@ class ArmBackend(BackendDetails):
         else:
             raise RuntimeError(f"Unknown format {output_format}")
 
-        # Continueing from above. Can I put tosa_graph into this function?
-        # debug_handle_map = ...
         return PreprocessResult(processed_bytes=binary)

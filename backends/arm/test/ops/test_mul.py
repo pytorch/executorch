@@ -7,8 +7,10 @@
 
 import unittest
 
+import pytest
+
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
@@ -16,9 +18,9 @@ from parameterized import parameterized
 test_data_sute = [
     # (test_name, input, other,) See torch.mul() for info
     (
-        "op_mul_rank1_ones",
-        torch.ones(5),
-        torch.ones(5),
+        "op_mul_rank1_rand",
+        torch.rand(5) * 3.7,
+        torch.rand(5) * 1.5,
     ),
     (
         "op_mul_rank2_rand",
@@ -32,23 +34,23 @@ test_data_sute = [
     ),
     (
         "op_mul_rank4_randn",
-        torch.randn(5, 10, 25, 20),
-        torch.randn(5, 10, 25, 20),
+        torch.randn(1, 10, 25, 20),
+        torch.randn(1, 10, 25, 20),
     ),
     (
         "op_mul_rank4_ones_mul_negative",
         torch.ones(1, 10, 25, 20),
-        (-1) * torch.ones(5, 10, 25, 20),
+        (-1) * torch.ones(1, 10, 25, 20),
     ),
     (
         "op_mul_rank4_negative_large_rand",
-        (-200) * torch.rand(5, 10, 25, 20),
-        torch.rand(5, 1, 1, 20),
+        (-200) * torch.rand(1, 10, 25, 20),
+        torch.rand(1, 1, 1, 20),
     ),
     (
         "op_mul_rank4_large_randn",
-        200 * torch.randn(5, 10, 25, 20),
-        torch.rand(5, 10, 25, 1),
+        200 * torch.randn(1, 10, 25, 20),
+        torch.rand(1, 10, 25, 1),
     ),
 ]
 
@@ -71,7 +73,7 @@ class TestMul(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+MI", permute_memory_to_nhwc=True
                 ),
             )
             .export()
@@ -92,7 +94,7 @@ class TestMul(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+BI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+BI", permute_memory_to_nhwc=True
                 ),
             )
             .quantize()
@@ -112,7 +114,7 @@ class TestMul(unittest.TestCase):
         module: torch.nn.Module,
         test_data: tuple[torch.Tensor, torch.Tensor],
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -126,7 +128,10 @@ class TestMul(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(test_data_sute)
     def test_mul_tosa_MI(
@@ -150,6 +155,7 @@ class TestMul(unittest.TestCase):
         self._test_mul_tosa_BI_pipeline(self.Mul(), test_data)
 
     @parameterized.expand(test_data_sute)
+    @pytest.mark.corstone_fvp
     def test_mul_u55_BI(
         self,
         test_name: str,
@@ -162,6 +168,7 @@ class TestMul(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_sute)
+    @pytest.mark.corstone_fvp
     def test_mul_u85_BI(
         self,
         test_name: str,

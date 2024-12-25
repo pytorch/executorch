@@ -44,7 +44,7 @@ class TestEdgeDialectVerifier(unittest.TestCase):
                 torch._check(z < 4)
                 return x[z : z + y.shape[0]]
 
-        ep = torch.export.export(M(), (torch.randn(10), torch.tensor([3])))
+        ep = torch.export.export(M(), (torch.randn(10), torch.tensor([3])), strict=True)
 
         compile_config_with_disable_ir_validity = EdgeCompileConfig(
             _check_ir_validity=False
@@ -82,7 +82,7 @@ class TestEdgeDialectVerifier(unittest.TestCase):
 
         example_input = (torch.zeros([2, 2]),)
 
-        export_model = export(m, example_input)
+        export_model = export(m, example_input, strict=True)
 
         compile_config_without_edge_op = EdgeCompileConfig(
             _use_edge_ops=False, _skip_dim_order=False
@@ -117,8 +117,9 @@ class TestEdgeDialectVerifier(unittest.TestCase):
 
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 t1 = x.to(dtype=torch.double, memory_format=torch.channels_last)
-                t2 = t1 + t1
-                return t1 * t2
+                t2 = torch.empty(t1.size(), memory_format=torch.channels_last)
+                t2.copy_(t1)
+                return t2
 
         m = Model().eval()
 
@@ -130,7 +131,7 @@ class TestEdgeDialectVerifier(unittest.TestCase):
             ),
         )
 
-        export_model = export(m, example_input)
+        export_model = export(m, example_input, strict=True)
 
         compile_config_with_dim_order = EdgeCompileConfig(_skip_dim_order=False)
         compile_config_with_stride = EdgeCompileConfig(_skip_dim_order=True)

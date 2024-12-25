@@ -10,6 +10,9 @@ load("@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl", "d
 # if necessary.
 _EDGE_DIALECT_OPS = (
     op_target(
+        name = "op__empty_dim_order",
+    ),
+    op_target(
         name = "op__to_dim_order_copy",
         deps = [
             "//executorch/kernels/aten/cpu/util:copy_ops_util",

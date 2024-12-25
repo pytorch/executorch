@@ -11,7 +11,6 @@ from typing import Any, Iterable, List, Literal, Optional, Tuple, Union
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
-import numpy as np
 import serializer.tosa_serializer as ts
 
 import torch.fx
@@ -22,25 +21,22 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
-from executorch.backends.arm.test.common import (
-    arm_test_options,
-    current_time_formated,
-    get_option,
-    get_target_board,
-)
+from executorch.backends.arm.test.common import get_target_board
 
-from executorch.backends.arm.test.runner_utils import (
-    _get_input_quantization_params,
-    _get_output_node,
-    _get_output_quantization_params,
-    dbg_tosa_fb_to_json,
-    RunnerUtil,
+from executorch.backends.arm.test.runner_utils import dbg_tosa_fb_to_json, RunnerUtil
+from executorch.backends.arm.test.tester.analyze_output_utils import (
+    dump_error_output,
+    print_error_diffs,
 )
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.devtools.backend_debug import get_delegation_info
-from executorch.exir import EdgeCompileConfig, ExecutorchProgramManager
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    ExecutorchProgramManager,
+)
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.lowered_backend_module import LoweredBackendModule
@@ -133,10 +129,15 @@ class ToExecutorch(tester.ToExecutorch):
         super().__init__(dynamic_shapes)
         self.tosa_test_util = tosa_test_util
 
+    def run(self, artifact: EdgeProgramManager, inputs=None):
+        self.executorch_program = artifact.to_executorch(self.config)
+        if module := getattr(
+            artifact.exported_program().graph_module, "lowered_module_0", None
+        ):
+            self.buffer = module.processed_bytes
+
     def run_artifact(self, inputs):
-        tosa_output = self.tosa_test_util.run_tosa_ref_model(
-            inputs=inputs,
-        )
+        tosa_output = self.tosa_test_util.run_tosa_graph(self.buffer, inputs)
         return tosa_output
 
 
@@ -273,6 +274,7 @@ class ArmTester(Tester):
         atol=1e-03,
         rtol=1e-03,
         qtol=0,
+        error_callbacks=None,
     ):
         """
         Compares the run_artifact output of 'stage' with the output of a reference stage.
@@ -314,12 +316,15 @@ class ArmTester(Tester):
             target_board,
         )
 
+        quantization_scale = None
         if is_quantized:
             reference_stage = self.stages[self.stage_name(tester.Quantize)]
-            quantization_scale = self.runner_util.qp_output.scale
+            # bool output is quantized with none quantized output so allow
+            # self.runner_util.qp_output to be none
+            if self.runner_util.qp_output is not None:
+                quantization_scale = self.runner_util.qp_output.scale
         else:
             reference_stage = self.stages[self.stage_name(InitialModel)]
-            quantization_scale = None
 
         logger.info(
             f"Comparing Stage '{self.stage_name(test_stage)}' with Stage '{self.stage_name(reference_stage)}'"
@@ -353,7 +358,7 @@ class ArmTester(Tester):
             logger.info(f"Run #{run_iteration}, input shapes: {input_shape_str}")
 
             reference_output = reference_stage.run_artifact(reference_input)
-            test_output = tuple(test_stage.run_artifact(test_input))
+            test_output = test_stage.run_artifact(test_input)
             if (
                 is_nhwc
                 and test_stage == self.stages[self.stage_name(tester.ToExecutorch)]
@@ -361,7 +366,13 @@ class ArmTester(Tester):
                 test_output = self.transpose_data_format(test_output, "NCHW")
 
             self._compare_outputs(
-                reference_output, test_output, quantization_scale, atol, rtol, qtol
+                reference_output,
+                test_output,
+                quantization_scale,
+                atol,
+                rtol,
+                qtol,
+                error_callbacks,
             )
 
         return self
@@ -499,7 +510,7 @@ class ArmTester(Tester):
         inputs_transposed = list(data)
         for i in range(len(data)):
             if hasattr(data[i], "shape") and len(data[i].shape) == 4:
-                inputs_transposed[i] = np.transpose(data[i], dim_order)
+                inputs_transposed[i] = torch.permute(data[i], dim_order)
         return tuple(inputs_transposed)
 
     def _compare_outputs(
@@ -510,40 +521,25 @@ class ArmTester(Tester):
         atol=1e-03,
         rtol=1e-03,
         qtol=0,
+        error_callbacks=None,
     ):
         try:
             super()._compare_outputs(
                 reference_output, stage_output, quantization_scale, atol, rtol, qtol
             )
         except AssertionError as e:
-            # Capture assertion error and print more info
-            banner = "=" * 40 + "TOSA debug info" + "=" * 40
-            logger.error(banner)
-            path_to_tosa_files = self.runner_util.intermediate_path
-
-            export_stage = self.stages.get(self.stage_name(tester.Export), None)
-            quantize_stage = self.stages.get(self.stage_name(tester.Quantize), None)
-            if export_stage is not None and quantize_stage is not None:
-                output_node = _get_output_node(export_stage.artifact)
-                qp_input = _get_input_quantization_params(export_stage.artifact)
-                qp_output = _get_output_quantization_params(
-                    export_stage.artifact, output_node
+            if error_callbacks is None:
+                error_callbacks = [print_error_diffs, dump_error_output]
+            for callback in error_callbacks:
+                callback(
+                    self,
+                    reference_output,
+                    stage_output,
+                    quantization_scale=None,
+                    atol=1e-03,
+                    rtol=1e-03,
+                    qtol=0,
                 )
-                logger.error(f"{qp_input=}")
-                logger.error(f"{qp_output=}")
-
-            logger.error(f"{path_to_tosa_files=}")
-            import os
-
-            torch.save(
-                stage_output,
-                os.path.join(path_to_tosa_files, "torch_tosa_output.pt"),
-            )
-            torch.save(
-                reference_output,
-                os.path.join(path_to_tosa_files, "torch_ref_output.pt"),
-            )
-            logger.error(f"{atol=}, {rtol=}, {qtol=}")
             raise e
 
 
@@ -626,9 +622,6 @@ def _get_tosa_operator_distribution(
 
 
 def _dump_str(to_print: str, path_to_dump: Optional[str] = None):
-    default_dump_path = get_option(arm_test_options.dump_path)
-    if not path_to_dump and default_dump_path:
-        path_to_dump = default_dump_path / f"ArmTester_{current_time_formated()}.log"
     if path_to_dump:
         with open(path_to_dump, "a") as fp:
             fp.write(to_print)

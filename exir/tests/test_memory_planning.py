@@ -14,6 +14,7 @@ import executorch.exir as exir
 
 import torch
 from executorch.exir import ExecutorchBackendConfig, to_edge
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.memory_planning import (
     filter_nodes,
     get_node_tensor_specs,
@@ -21,7 +22,7 @@ from executorch.exir.memory_planning import (
     naive,
     Verifier,
 )
-from executorch.exir.pass_base import PassResult
+from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import (  # noqa
     MemoryPlanningPass,
@@ -238,12 +239,7 @@ def maketest(
             #  torch._tensor.Tensor]` is not a function.
             inputs = eager_module.get_random_inputs()
             graph_module = (
-                to_edge(
-                    export(
-                        eager_module,
-                        inputs,
-                    )
-                )
+                to_edge(export(eager_module, inputs, strict=True))
                 .exported_program()
                 .graph_module
             )
@@ -490,10 +486,7 @@ class TestMisc(unittest.TestCase):
         expected_bufsizes: List[int],
     ) -> None:
         edge_program = to_edge(
-            export(
-                MultiplePoolsToyModel(),
-                (torch.ones(1),),
-            )
+            export(MultiplePoolsToyModel(), (torch.ones(1),), strict=True)
         )
 
         edge_program.to_executorch(
@@ -537,7 +530,8 @@ class TestMisc(unittest.TestCase):
                 return torch.nn.functional.sigmoid(self.linear(x) + self.constant + 1)
 
         def count_planned_inputs(
-            nodes: List[Node], graph_signature: Any  # pyre-ignore
+            nodes: List[Node],
+            graph_signature: Any,  # pyre-ignore
         ) -> Tuple[int, int]:
             num_mem_planned_placeholders = 0
             num_placeholders = 0
@@ -554,7 +548,9 @@ class TestMisc(unittest.TestCase):
         model = Simple()
         inputs = (torch.randn(5, 5),)
 
-        ep_no_input_planning = to_edge(export(model, inputs)).to_executorch(
+        ep_no_input_planning = to_edge(
+            export(model, inputs, strict=True)
+        ).to_executorch(
             config=ExecutorchBackendConfig(
                 memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
@@ -574,7 +570,7 @@ class TestMisc(unittest.TestCase):
             5,  # x, self.constant, linear weight, linear bias, '1' scalar promoted to tensor
         )
 
-        ep_input_planning = to_edge(export(model, inputs)).to_executorch(
+        ep_input_planning = to_edge(export(model, inputs, strict=True)).to_executorch(
             config=ExecutorchBackendConfig(
                 memory_planning_pass=MemoryPlanningPass(alloc_graph_input=True),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
@@ -593,3 +589,65 @@ class TestMisc(unittest.TestCase):
             num_placeholders,
             5,
         )
+
+    def test_placeholder_lifetime(self) -> None:
+        class TestModel(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.linear = torch.nn.Linear(5, 5)
+
+            def forward(self, a, b, x):
+                a = a + b
+                b = a + b
+                y = self.linear(x)
+                return a, b, y
+
+        model = TestModel()
+        example_inputs = (torch.rand(1, 6, 2), torch.rand(1, 6, 2), torch.randn(5, 5))
+        exported_model = torch.export.export(model, example_inputs, strict=True)
+        edge = to_edge(exported_model)
+
+        class TestPass(ExportPass):
+            def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+                permute_dims = [1, 0, 2]
+                for node in graph_module.graph.nodes:
+                    if node.op == "placeholder" and str(node) == "a":
+                        inverse_dims = [
+                            permute_dims.index(x) for x in range(len(permute_dims))
+                        ]
+
+                        with graph_module.graph.inserting_after(node):
+                            permute = graph_module.graph.call_function(
+                                exir_ops.edge.aten.permute_copy.default,
+                                args=(node, inverse_dims),
+                            )
+                            permute.meta = node.meta.copy()
+                            node.meta["val"] = node.meta["val"].permute(permute_dims)
+                            node.replace_all_uses_with(
+                                permute, lambda x, permute=permute: x is not permute
+                            )
+                            break
+                return PassResult(graph_module, True)
+
+        edge = edge.transform([TestPass()])
+        et = edge.to_executorch()
+        et_program = et.executorch_program
+        inputs = et_program.execution_plan[0].inputs
+        self.assertNotEqual(
+            et_program.execution_plan[0]  # pyre-ignore
+            .values[inputs[0]]
+            .val.allocation_info.memory_offset_low,
+            et_program.execution_plan[0]  # pyre-ignore
+            .values[inputs[1]]
+            .val.allocation_info.memory_offset_low,
+        )
+
+        constants = 0
+        for node in et.exported_program().graph_module.graph.nodes:
+            if node.op == "placeholder" and node.meta.get("spec"):
+                meta_spec = node.meta["spec"]
+                if meta_spec.const is True:
+                    constants += 1
+                    self.assertIsNone(node.meta["spec"].mem_offset)
+                    self.assertIsNone(node.meta["spec"].mem_id)
+        self.assertEqual(constants, 2)

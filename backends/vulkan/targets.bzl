@@ -1,4 +1,4 @@
-load("@fbcode//target_determinator/macros:ci.bzl", "ci")
+load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
 load("@fbcode_macros//build_defs:native_rules.bzl", "buck_genrule")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//tools/build_defs:platform_defs.bzl", "ANDROID", "CXX", "FBCODE")
@@ -43,6 +43,7 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
             "DEFAULT": "",
             "ovr_config//os:android": "--optimize",
             "ovr_config//os:linux": "--replace-u16vecn",
+            "ovr_config//os:windows": "--optimize --spv_debug",
         })
     )
 

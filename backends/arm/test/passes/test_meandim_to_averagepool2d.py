@@ -46,7 +46,7 @@ class TestMeandimToAveragePool2dPass(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=module.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -63,13 +63,17 @@ class TestMeandimToAveragePool2dPass(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=module.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
             .to_edge()
-            .check(["executorch_exir_dialects_edge__ops_aten_mean_dim"])
+            .check(["aten_sum_dim_int_list"])
+            .check(["aten_full_default"])
+            .check(["aten_mul_tensor"])
             .run_passes(test_pass_stage)
-            .check(["executorch_exir_dialects_edge__ops_aten_mean_dim"])
+            .check(["aten_sum_dim_int_list"])
+            .check(["aten_full_default"])
+            .check(["aten_mul_tensor"])
             .check_not(["executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"])
         )

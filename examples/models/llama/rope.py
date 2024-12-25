@@ -8,16 +8,15 @@
 # Different RoPE implementations
 
 import math
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 
 # ======================== Stock Implementation ========================
 
 
-def apply_scaling(freqs: torch.Tensor):
+def apply_scaling(freqs: torch.Tensor, scale_factor: int):
     # Values obtained from grid search
-    scale_factor = 8
     low_freq_factor = 1
     high_freq_factor = 4
     old_context_len = 8192  # original llama3 length
@@ -41,14 +40,19 @@ def apply_scaling(freqs: torch.Tensor):
 
 
 def precompute_freqs_cis(
-    dim: int, end: int, theta: float = 10000.0, use_scaled: bool = False
+    dim: int,
+    end: int,
+    theta: float = 10000.0,
+    use_scaled: bool = False,
+    scale_factor: Optional[int] = None,
 ):
     freqs = 1.0 / (
         theta ** (torch.arange(0, dim, 2, device="cpu")[: (dim // 2)].float() / dim)
     )
     t = torch.arange(end, device=freqs.device)  # pyre-ignore
     if use_scaled:
-        freqs = apply_scaling(freqs)  # pyre-ignore
+        assert scale_factor is not None
+        freqs = apply_scaling(freqs, scale_factor)  # pyre-ignore
     freqs = torch.outer(t, freqs).float()
     freqs_cos = torch.cos(freqs)
     freqs_sin = torch.sin(freqs)
@@ -90,6 +94,22 @@ def apply_rotary_emb(
     xk_out = torch.stack([xk_out_r, xk_out_i], dim=-1).flatten(3)
 
     return xq_out.type_as(xq), xk_out.type_as(xk)
+
+
+def apply_rotary_emb_to_k(
+    xk: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
+) -> torch.Tensor:
+    xk_r, xk_i = xk.float().reshape(xk.shape[:-1] + (-1, 2)).unbind(-1)
+
+    freqs_cos = reshape_for_broadcast(freqs_cos, xk_r)
+    freqs_sin = reshape_for_broadcast(freqs_sin, xk_r)
+
+    xk_out_r = xk_r * freqs_cos - xk_i * freqs_sin
+    xk_out_i = xk_r * freqs_sin + xk_i * freqs_cos
+
+    xk_out = torch.stack([xk_out_r, xk_out_i], dim=-1).flatten(3)
+
+    return xk_out.type_as(xk)
 
 
 class RotaryEmbedding(torch.nn.Module):
@@ -160,3 +180,28 @@ def hf_apply_rotary_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed, k_embed
+
+
+def hf_apply_rotary_emb_to_k(k, cos, sin, position_ids=None, unsqueeze_dim=1):
+    """Applies Rotary Position Embedding to the key tensors.
+
+    Args:
+        k (`torch.Tensor`): The key tensor.
+        cos (`torch.Tensor`): The cosine part of the rotary embedding.
+        sin (`torch.Tensor`): The sine part of the rotary embedding.
+        position_ids (`torch.Tensor`, *optional*):
+            Deprecated and unused.
+        unsqueeze_dim (`int`, *optional*, defaults to 1):
+            The 'unsqueeze_dim' argument specifies the dimension along which to unsqueeze cos[position_ids] and
+            sin[position_ids] so that they can be properly broadcasted to the dimensions of k. For example, note
+            that cos[position_ids] and sin[position_ids] have the shape [batch_size, seq_len, head_dim]. Then, if
+            k have the shape [batch_size, heads, seq_len, head_dim], then setting unsqueeze_dim=1 makes
+            cos[position_ids] and sin[position_ids] broadcastable to the shapes of k. Similarly, if k have
+            the shape [batch_size, seq_len, heads, head_dim], then set unsqueeze_dim=2.
+    Returns:
+        `torch.Tensor` the key tensor rotated using the Rotary Position Embedding.
+    """
+    cos = cos.unsqueeze(unsqueeze_dim)
+    sin = sin.unsqueeze(unsqueeze_dim)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return k_embed

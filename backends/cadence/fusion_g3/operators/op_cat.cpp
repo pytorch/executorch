@@ -6,26 +6,24 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
-#include <executorch/runtime/kernel/kernel_includes.h>
-#include <xa_nnlib_kernels_api.h>
 #include <cstring>
 
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using torch::executor::Error;
-using torch::executor::KernelRuntimeContext;
+#include <xa_nnlib_kernels_api.h>
+
+#include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::KernelRuntimeContext;
 
 /* ScalarType in Executorch do not have support for below data types.
  * So, creating a placeholder for these data types. Once, ScalarTypes is
  * updated to have support for below data types, these can be removed and
  * operator need to be updated accordingly
  */
-enum datatype {
-  Ushort = 20,
-  Uint = 23,
-};
+enum datatype { Ushort = 20, Uint = 23 };
 
 namespace cadence {
 namespace impl {
@@ -118,8 +116,7 @@ Tensor& cat_out(
         tensors.size(),
         (int)dim,
         sizeof(char));
-  }
-  if (out.scalar_type() == (ScalarType)Uint) {
+  } else if (out.scalar_type() == (ScalarType)Uint) {
     xa_nn_cat(
         out_data,
         out_shapes,
@@ -164,7 +161,6 @@ Tensor& cat_out(
     if (all_1d_empty) {
       return out;
     }
-
     const size_t outer = executorch::runtime::getLeadingDims(out, dim);
     const size_t dim_stride = executorch::runtime::getTrailingDims(out, dim);
     const size_t ninputs = tensors.size();

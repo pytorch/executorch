@@ -22,13 +22,13 @@ def define_common_targets():
                 "op_fallback.cpp",
                 "op_fast_hadamard_transform.cpp",
                 "op_sdpa.cpp",
-                "op_update_quantized_cache.cpp",
+                "op_update_cache.cpp",
             ],
             exported_headers = [
                 "op_fallback.h",
                 "op_fast_hadamard_transform.h",
                 "op_sdpa.h",
-                "op_update_quantized_cache.h",
+                "op_update_cache.h",
             ],
             preprocessor_flags = get_vec_preprocessor_flags(),
             exported_deps = [
@@ -81,7 +81,7 @@ def define_common_targets():
     runtime.python_library(
         name = "custom_ops_aot_py",
         srcs = [
-            "sdpa_with_kv_cache.py",
+            "custom_ops.py",
         ],
         visibility = [
             "//executorch/...",

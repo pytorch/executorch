@@ -172,11 +172,21 @@ class SoftmaxModule(torch.nn.Module):
     can_delegate = False
 
 
+class MultipleOutputsModule(torch.nn.Module):
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return (x * y, x.sum(dim=-1, keepdim=True))
+
+    example_input = (torch.randn(10, 4, 5), torch.randn(10, 4, 5))
+    can_delegate = True
+
+
 models = {
     "add": AddModule,
     "add2": AddModule2,
     "add3": AddModule3,
     "softmax": SoftmaxModule,
+    "MultipleOutputsModule": MultipleOutputsModule,
 }
 
 calibration_data = {
@@ -248,12 +258,14 @@ def get_compile_spec(
     target: str,
     intermediates: Optional[str] = None,
     reorder_inputs: Optional[str] = None,
+    system_config: Optional[str] = None,
+    memory_mode: Optional[str] = None,
 ) -> ArmCompileSpecBuilder:
     spec_builder = None
     if target == "TOSA":
         spec_builder = (
             ArmCompileSpecBuilder()
-            .tosa_compile_spec("TOSA-0.80.0+BI")
+            .tosa_compile_spec("TOSA-0.80+BI")
             .set_permute_memory_format(True)
         )
     elif "ethos-u55" in target:
@@ -261,9 +273,9 @@ def get_compile_spec(
             ArmCompileSpecBuilder()
             .ethosu_compile_spec(
                 target,
-                system_config="Ethos_U55_High_End_Embedded",
-                memory_mode="Shared_Sram",
-                extra_flags="--debug-force-regor --output-format=raw",
+                system_config=system_config,
+                memory_mode=memory_mode,
+                extra_flags="--debug-force-regor --output-format=raw --verbose-operators --verbose-cycle-estimate",
             )
             .set_permute_memory_format(True)
             .set_quantize_io(True)
@@ -274,9 +286,9 @@ def get_compile_spec(
             ArmCompileSpecBuilder()
             .ethosu_compile_spec(
                 target,
-                system_config="Ethos_U85_SYS_DRAM_Mid",
-                memory_mode="Shared_Sram",
-                extra_flags="--output-format=raw",
+                system_config=system_config,
+                memory_mode=memory_mode,
+                extra_flags="--output-format=raw --verbose-operators --verbose-cycle-estimate",
             )
             .set_permute_memory_format(True)
             .set_quantize_io(True)
@@ -431,6 +443,18 @@ def get_args():
         default=None,
         help="Provide the order of the inputs. This can be required when inputs > 1.",
     )
+    parser.add_argument(
+        "--system_config",
+        required=False,
+        default=None,
+        help="System configuration to select from the Vela configuration file (see vela.ini). This option must match the selected target, default is for an optimal system 'Ethos_U55_High_End_Embedded'/'Ethos_U85_SYS_DRAM_High'",
+    )
+    parser.add_argument(
+        "--memory_mode",
+        required=False,
+        default=None,
+        help="Memory mode to select from the Vela configuration file (see vela.ini). Default is 'Shared_Sram' for Ethos-U55 targets and 'Sram_Only' for Ethos-U85 targets",
+    )
     args = parser.parse_args()
 
     if args.evaluate and (
@@ -460,6 +484,22 @@ def get_args():
         and models[args.model_name].can_delegate is False
     ):
         raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
+
+    if args.system_config is None:
+        if "u55" in args.target:
+            args.system_config = "Ethos_U55_High_End_Embedded"
+        elif "u85" in args.target:
+            args.system_confg = "Ethos_U85_SYS_DRAM_Mid"
+        else:
+            raise RuntimeError(f"Invalid target name {args.target}")
+
+    if args.memory_mode is None:
+        if "u55" in args.target:
+            args.memory_mode = "Shared_Sram"
+        elif "u85" in args.target:
+            args.memory_mode = "Sram_Only"
+        else:
+            raise RuntimeError(f"Invalid target name {args.target}")
 
     return args
 
@@ -494,7 +534,11 @@ if __name__ == "__main__":
         # As we can target multiple output encodings from ArmBackend, one must
         # be specified.
         compile_spec = get_compile_spec(
-            args.target, args.intermediates, args.reorder_inputs
+            args.target,
+            args.intermediates,
+            args.reorder_inputs,
+            args.system_config,
+            args.memory_mode,
         )
         edge = to_edge_transform_and_lower(
             exported_program,

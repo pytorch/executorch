@@ -33,13 +33,17 @@ from executorch.exir.passes import (
     MemoryFormatOpsPass,
     OpReplacePass,
 )
+from executorch.exir.passes.external_constants_pass import external_constants_pass
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
-from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
+from executorch.exir.passes.remove_graph_asserts_pass import (
+    RemoveGraphAssertsPass,
+    RemoveNonCoreAtenOpGraphAssertsPass,
+)
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
 from executorch.exir.passes.replace_view_copy_with_view_pass import (
@@ -75,7 +79,23 @@ from torch.utils import _pytree as pytree
 
 Val = Any
 
+from typing import Any, Callable
+
 from torch.library import Library
+
+try:
+    from executorch.exir.program.fb.logger import et_logger
+except ImportError:
+    # Define a stub decorator that does nothing
+    def et_logger(api_name: str) -> Callable[[Any], Any]:
+        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+            def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+                return func(self, *args, **kwargs)
+
+            return wrapper
+
+        return decorator
+
 
 # This is the reserved namespace that is used to register ops to that will
 # be prevented from being decomposed during to_edge_transform_and_lower.
@@ -705,13 +725,20 @@ def _generate_edge_program(
     program: ExportedProgram,
     ops_set_to_not_decompose: Optional[List[torch._ops.OpOverload]] = None,
 ) -> ExportedProgram:
+
+    # Remove invalid assert ops, such as _assert_tensor_metadata
+    gm = program.graph_module
+    gm_res = RemoveNonCoreAtenOpGraphAssertsPass()(gm)
+    assert gm_res is not None
+    gm = gm_res.graph_module
+
     if config._check_ir_validity:
         try:
             EXIRATenDialectVerifier(
                 edge_compile_config=config,
                 class_only=False,
                 exception_list=ops_set_to_not_decompose,
-            )(program.graph_module)
+            )(gm)
         except ExportError as e:
             logging.info(f"Input program {name} is not in ATen dialect.")
             raise e
@@ -728,7 +755,6 @@ def _generate_edge_program(
         if not config._skip_dim_order:
             passes.append(MemoryFormatOpsPass())
 
-    gm = program.graph_module
     for p in passes:
         gm_res = p(gm)
         assert gm_res is not None
@@ -864,9 +890,10 @@ def _sanity_check_graph_for_non_decomp_ops(
     generate_error=False,
     partitioner_name=None,
 ):
-    warning_str = f"Found {ops_set_to_not_decompose} in edge dialect program {name}."
+    warning_str_end = ""
     if partitioner_name is not None:
-        warning_str += f" This op was registered by the partitioner {partitioner_name} to not be decomposed."
+        warning_str_end += f"This op was registered by the partitioner {partitioner_name} to not be decomposed.\n"
+    warning_str_end += f"The following ops: {ops_set_to_not_decompose} were specified to not be decomposed in {name}."
 
     # Check that the ops that were registered to not be decomposed are not present in the
     # graph anymore as the transform passes and backends should have consumed them by now.
@@ -878,6 +905,10 @@ def _sanity_check_graph_for_non_decomp_ops(
         if (
             node.op == "call_function" and node.target in ops_set_to_not_decompose
         ) and is_op_supported:
+            warning_str = (
+                f"Node {node} with op {node.target} was not decomposed or delegated.\n"
+                + warning_str_end
+            )
             if generate_error:
                 raise RuntimeError(warning_str)
             else:
@@ -888,6 +919,10 @@ def _sanity_check_graph_for_non_decomp_ops(
             if (
                 node.op == "call_function" and node.target in ops_set_to_not_decompose
             ) and is_op_supported:
+                warning_str = (
+                    f"Node {node} with op {node.target} was not decomposed or delegated.\n"
+                    + warning_str_end
+                )
                 if generate_error:
                     raise RuntimeError(warning_str)
                 else:
@@ -957,6 +992,7 @@ def _gen_edge_manager_for_partitioners(
     return edge_manager
 
 
+@et_logger("to_edge_transform_and_lower")
 def to_edge_transform_and_lower(
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     transform_passes: Optional[
@@ -1110,6 +1146,7 @@ def to_edge_with_preserved_ops(
     )
 
 
+@et_logger("to_edge")
 def to_edge(
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     constant_methods: Optional[Dict[str, Any]] = None,
@@ -1204,8 +1241,10 @@ class EdgeProgramManager:
         """
         Returns the ExportedProgram specified by 'method_name'.
         """
+
         return self._edge_programs[method_name]
 
+    @et_logger("transform")
     def transform(
         self,
         passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]]],
@@ -1253,6 +1292,7 @@ class EdgeProgramManager:
             new_programs, copy.deepcopy(self._config_methods), compile_config
         )
 
+    @et_logger("to_backend")
     def to_backend(
         self, partitioner: Union[Partitioner, Dict[str, Partitioner]]
     ) -> "EdgeProgramManager":
@@ -1296,6 +1336,7 @@ class EdgeProgramManager:
             new_edge_programs, copy.deepcopy(self._config_methods), config
         )
 
+    @et_logger("to_executorch")
     def to_executorch(
         self,
         config: Optional[ExecutorchBackendConfig] = None,
@@ -1349,6 +1390,9 @@ class EdgeProgramManager:
                 )
             else:
                 new_gm_res = memory_planning_pass(new_gm)  # pyre-ignore[29]
+
+            if config.external_constants:
+                new_gm_res = external_constants_pass(new_gm_res)
             assert new_gm_res is not None
             new_gm = new_gm_res.graph_module
 
@@ -1497,3 +1541,17 @@ class ExecutorchProgramManager:
         reducing the peak memory usage.
         """
         self._pte_data.write_to_file(open_file)
+
+    def save(self, path: str) -> None:
+        """
+        Saves the serialized ExecuTorch binary to the file at `path`.
+        """
+        if path[-4:] != ".pte":
+            logging.error(f"Path {path} does not end with .pte")
+            raise ValueError(f"Path {path} does not end with .pte")
+        try:
+            with open(path, "wb") as file:
+                self.write_to_file(file)
+                logging.info(f"Saved exported program to {path}")
+        except Exception as e:
+            logging.error(f"Error while saving to {path}: {e}")

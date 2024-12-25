@@ -110,6 +110,12 @@ else
   COREML=OFF
 fi
 
+if [[ "${MODE}" =~ .*quantize_kv.* ]]; then
+  QUANTIZE_KV_CACHE=ON
+else
+  QUANTIZE_KV_CACHE=OFF
+fi
+
 echo "COREML option ${COREML}"
 
 if [[ "${MODE}" =~ .*qnn.* ]]; then
@@ -202,7 +208,7 @@ prepare_artifacts_upload() {
 PARAMS="params.json"
 CHECKPOINT_FILE_NAME=""
 touch "${PARAMS}"
-if [[ "${MODEL_NAME}" == "stories110M" ]]; then
+if [[ "${MODEL_NAME}" == "llama" ]] || [[ "${MODEL_NAME}" == "stories"* ]] || [[ "${MODEL_NAME}" == "tinyllama" ]]; then
   CHECKPOINT_FILE_NAME="stories110M.pt"
   download_stories_model_artifacts
 else
@@ -248,6 +254,9 @@ if [[ "${QNN}" == "ON" ]]; then
   if [[ "${PT2E_QUANTIZE}" == "qnn_16a16w" ]]; then
     EXPORT_ARGS+=" --tokenizer_path tokenizer.model --pt2e_quantize qnn_16a16w --calibration_tasks wikitext --calibration_limit 1 --calibration_seq_length 128 --calibration_data Once "
   fi
+fi
+if [[ "${QUANTIZE_KV_CACHE}" == "ON" ]]; then
+  EXPORT_ARGS="${EXPORT_ARGS} --quantize_kv_cache"
 fi
 # Add dynamically linked library location
 $PYTHON_EXECUTABLE -m examples.models.llama.export_llama ${EXPORT_ARGS}

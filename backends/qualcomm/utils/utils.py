@@ -166,7 +166,6 @@ def qnn_capture_config():
 def qnn_edge_config() -> exir.EdgeCompileConfig:
     return exir.EdgeCompileConfig(
         _check_ir_validity=False,
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
     )
 
 
@@ -338,7 +337,7 @@ def capture_program(
     inputs: Tuple[torch.Tensor],
     custom_pass_config: FrozenSet[str] = frozenset(),
 ) -> exir.ExirExportedProgram:
-    ep = torch.export.export(module, inputs)
+    ep = torch.export.export(module, inputs, strict=True)
     decomposed_ep = ep.run_decompositions(get_decomp_table())
     # We choose call_operator by target in ConvertBinaryOpsWithScalar
     # because it is the same source_fn_stack for MultiheadAttention
@@ -552,7 +551,7 @@ def skip_annotation(
 
     fp_node_id_set = fp_node_id_set if fp_node_id_set is not None else set()
     fp_node_op_set = fp_node_op_set if fp_node_op_set is not None else set()
-    graph_module = torch.export.export(nn_module, sample_input).module()
+    graph_module = torch.export.export(nn_module, sample_input, strict=True).module()
     # define node support type
     capability_partitioner = CapabilityBasedPartitioner(
         graph_module,
@@ -665,7 +664,7 @@ def from_context_binary(  # noqa: C901
                 ).default(inputs)
 
         model = Model()
-        prog = torch.export.export(model, tuple(inputs.values()))
+        prog = torch.export.export(model, tuple(inputs.values()), strict=True)
         # bookkeeping for variables' life cycle
         return {
             "custom_op": custom_op,

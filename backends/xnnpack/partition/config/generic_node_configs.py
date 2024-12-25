@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import logging
 from typing import cast, List, Optional
 
@@ -287,9 +289,13 @@ class MaxPool2dConfig(GenericNodePartitionerConfig):
         if not self.check_common_constraints(node, ep):
             return False
 
+        # Ceil mode is supported via op padding, which must be statically known.
         is_ceil_mode = len(node.args) >= 6 and cast(bool, node.args[5])
-        if is_ceil_mode:
-            why(node, reason="ceil mode is not supported")
+        is_dynamic = "val" in node.meta and any(
+            isinstance(d, torch.SymInt) for d in node.meta["val"].shape
+        )
+        if is_ceil_mode and is_dynamic:
+            why(node, reason="ceil mode is not supported for dynamic shapes")
             return False
         return True
 
@@ -302,6 +308,21 @@ class MaxPool2dConfig(GenericNodePartitionerConfig):
 
 class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
     target_name = "upsample_bilinear2d.vec"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        XNNPACK's static_resize_bilinear does not support dynamic output sizes
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        is_output_dynamic = "val" in node.meta and any(
+            isinstance(d, torch.SymInt) for d in node.meta["val"].shape
+        )
+        if is_output_dynamic:
+            why(node, reason="dynamic output sizes are not supported")
+            return False
+        return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]

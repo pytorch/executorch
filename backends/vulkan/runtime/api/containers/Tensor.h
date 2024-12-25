@@ -229,6 +229,46 @@ class vTensor final {
   vTensor(vTensor&& other) = default;
   vTensor& operator=(vTensor&& other) = default;
 
+  enum class Attribute : uint8_t {
+    SIZES,
+    STRIDES,
+    LOGICAL_LIMITS,
+    NUMEL,
+  };
+
+  class UniformData {
+    utils::ivec4 sizes_v;
+    utils::ivec4 strides_v;
+    // See the comments documenting logical_limits() for more context.
+    TextureLimits logical_limits;
+    // Contains the number of elements in the tensor according to the canonical
+    // sizes.
+    size_t numel;
+
+    friend class vTensor;
+
+    UniformData(
+        const std::vector<int64_t>& sizes,
+        const std::vector<int64_t>& strides,
+        const TextureLimits& logical_limits,
+        const size_t numel)
+        : sizes_v(utils::make_whcn_ivec4(sizes)),
+          strides_v(utils::make_whcn_ivec4(strides)),
+          logical_limits(logical_limits),
+          numel(numel) {}
+
+   public:
+    /*
+     * Write tensor's metadata into dst, at the given dst_offset. max_dst_size
+     * is the size of dst and is used to avoid out of bounds writes.
+     */
+    uint32_t write_attribute(
+        void* dst,
+        const uint32_t dst_offset,
+        const uint32_t max_dst_size,
+        const Attribute attr);
+  };
+
  private:
   /*
    * "Core" tensor metadata. They are the minimum amount of information required
@@ -274,9 +314,6 @@ class vTensor final {
 
   // strides of the tensor in NCHW dimension order
   std::vector<int64_t> strides_;
-  // Contains the number of elements in the tensor according to the canonical
-  // sizes.
-  size_t numel_;
 
   /*
    * The below metadata members are derived from the above, and are typically
@@ -293,24 +330,38 @@ class vTensor final {
   // Contains the number of elements in the tensor according to the padded
   // sizes.
   size_t padded_numel_;
-  // See the comments documenting logical_limits() for more context.
-  TextureLimits logical_limits_;
 
   /*
-   * Utility GPU buffers that can be passed to shaders in order to convey tensor
-   * metadata. These buffers will be initialized the first time they are
-   * accessed via the corresponding *_ubo() function, and their contents will be
-   * updated whenever virtual_resize() is called.
+   * Utility GPU buffer that can be passed to shaders in order to convey tensor
+   * metadata. Uniform buffer will be initialized only the first time a ubo is
+   * requested. Buffer offsets will be initialized the first time they are
+   * accessed via the corresponding *_ubo() function. Uniform buffer's contents
+   * will be updated whenever virtual_resize() is called.
    *
    * Refer to the comments for the corresponding *_ubo() functions for more
    * context about the data contained in each buffer.
    */
-  ParamsBuffer sizes_uniform_;
-  ParamsBuffer strides_uniform_;
-  ParamsBuffer numel_uniform_;
-  ParamsBuffer logical_limits_uniform_;
+  ParamsBuffer uniforms_;
+  uint32_t uniforms_size_;
+  uint32_t sizes_uniform_offset_;
+  uint32_t unsqueezed_strides_offset_;
+  uint32_t numel_uniform_offset_;
+  uint32_t logical_limits_uniform_offset_;
+
+  // Size allocated for each uniform
+  // each uniform is assumed to be a vec of 4 ints to maintain 16 byte alignemnt
+  constexpr static size_t kSizePerUniform = sizeof(utils::ivec4);
+  // Total size of tensor's uniform buffer
+  constexpr static size_t kMaxUniformBufferSize =
+      4 * // we have 4 uniforms that are passed on to shaders
+      kSizePerUniform;
+
+  // Initial value of uniform buffer offsets
+  constexpr static uint32_t kUniformOffsetUnset = kMaxUniformBufferSize;
 
   vTensorStorage storage_;
+
+  std::shared_ptr<UniformData> uniform_data_;
 
  public:
   /*
@@ -377,7 +428,7 @@ class vTensor final {
    * instead of the original sizes.
    */
   inline const utils::ivec3& logical_limits() const {
-    return logical_limits_.limits;
+    return uniform_data_->logical_limits.limits;
   }
 
   /*
@@ -487,7 +538,7 @@ class vTensor final {
   const vkapi::BufferBindInfo numel_ubo();
 
   inline size_t numel() const {
-    return numel_;
+    return uniform_data_->numel;
   }
 
   inline size_t nbytes() const {
@@ -575,7 +626,18 @@ class vTensor final {
   inline bool is_view_of(const vTensor& other) const {
     return storage_.is_copy_of(other.storage_);
   }
+
+  const std::shared_ptr<UniformData>& get_uniform_data() const {
+    return uniform_data_;
+  }
 };
+
+static constexpr vTensor::Attribute kTensorSizes = vTensor::Attribute::SIZES;
+static constexpr vTensor::Attribute kTensorStrides =
+    vTensor::Attribute::STRIDES;
+static constexpr vTensor::Attribute kTensorLogicalLimits =
+    vTensor::Attribute::LOGICAL_LIMITS;
+static constexpr vTensor::Attribute kTensorNumel = vTensor::Attribute::NUMEL;
 
 } // namespace api
 } // namespace vkcompute
