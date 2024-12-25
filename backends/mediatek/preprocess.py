@@ -20,6 +20,8 @@ from executorch.exir.backend.backend_details import (
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 SKIP_COMPILE_SPEC_KEYS = {"ImportForever"}
+REQUIRED_COMPILE_SPEC_KEYS = {"platform-config"}
+SUPPORTED_PLATFORM_CONFIGS = {"mt6989", "mt6991"}
 
 
 @final
@@ -29,6 +31,28 @@ class NeuropilotBackend(BackendDetails):
     def preprocess(
         cls, edge_program: ExportedProgram, module_compile_spec: List[CompileSpec]
     ) -> PreprocessResult:
+
+        # Validate CompileSpec settings
+        compile_spec_keys = [spec.key for spec in module_compile_spec]
+        if len(compile_spec_keys) != len(set(compile_spec_keys)):
+            raise RuntimeError(
+                "Unsupported duplicated keys in the CompileSpec settings."
+            )
+        if not REQUIRED_COMPILE_SPEC_KEYS.issubset(set(compile_spec_keys)):
+            raise RuntimeError(
+                "Following keys are required in the CompileSpec settings: {}."
+                "".format(REQUIRED_COMPILE_SPEC_KEYS)
+            )
+        platform = [
+            spec.value.decode("utf-8")
+            for spec in module_compile_spec
+            if spec.key == "platform-config"
+        ][0]
+        if platform not in SUPPORTED_PLATFORM_CONFIGS:
+            raise ValueError(
+                "Unsupported value of platform-config CompileSpec. Given {} but expected to be one "
+                "of {}.".format(platform, SUPPORTED_PLATFORM_CONFIGS)
+            )
 
         name_to_node_mappings = {node.name: node for node in edge_program.graph.nodes}
         input_names = edge_program.graph_signature.user_inputs
@@ -44,8 +68,7 @@ class NeuropilotBackend(BackendDetails):
             if name_to_node_mappings[name].meta["val"].dtype == torch.float32
         ]
 
-        # This default compile options are only for mt6989 SOC
-        compile_options = ["--arch=mdla5.1,edpa1.0", "--relax-fp32", "--opt=3"]
+        compile_options = ["--relax-fp32", "--opt=3"]
         for spec in module_compile_spec:
             if spec.key in SKIP_COMPILE_SPEC_KEYS:
                 continue

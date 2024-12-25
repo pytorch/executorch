@@ -350,10 +350,11 @@ def export_to_et_ir(
 
         print("Delegating Edge Program to Neuropilot Backend")
         compile_spec = [
-            CompileSpec("gno", struct.pack("3s", b"LTS")),
-            CompileSpec("gno-exp", struct.pack("0s", b"")),
-            CompileSpec("gno-non-4d-tiling", struct.pack("0s", b"")),
+            CompileSpec("gno", b"LTS"),
+            CompileSpec("gno-exp", b""),
+            CompileSpec("gno-non-4d-tiling", b""),
             CompileSpec("ImportForever", struct.pack("?", True)),
+            CompileSpec("platform-config", b"mt6989"),
         ]
         partitioner = NeuropilotPartitioner(compile_spec)
         delegated_program = edge_program.to_backend(partitioner)
