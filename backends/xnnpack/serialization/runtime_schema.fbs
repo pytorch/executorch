@@ -136,6 +136,7 @@ union XNodeUnion {
   XNNStaticSlice,
   XNNScaledDotProductAttention,
   XNNBatchMatrixMultiply: _XNNNode2x1,
+  XNNConcatenate5: _XNNCat,
 }
 
 union XValueUnion {
@@ -209,6 +210,7 @@ table _XNNCat {
   input4_id: uint;
   output_id: uint;
   flags: uint;
+  input5_id: uint;
 }
 
 table XNNELU {
