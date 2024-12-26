@@ -79,7 +79,7 @@ class KernelType(IntEnum):
 
 
 def _get_operators(model_file: str) -> List[str]:
-    from executorch.codegen.tools.selective_build import (
+    from executorch.codegen.tools.selective_build import (  # type: ignore[import-not-found]
         _get_program_from_buffer,
         _get_program_operators,
     )
@@ -96,7 +96,7 @@ def _get_operators(model_file: str) -> List[str]:
 
 def _get_kernel_metadata_for_model(model_file: str) -> Dict[str, List[str]]:
 
-    from executorch.codegen.tools.selective_build import (
+    from executorch.codegen.tools.selective_build import (  # type: ignore[import-not-found]
         _get_io_metadata_for_program_operators,
         _get_program_from_buffer,
         _IOMetaData,
@@ -159,7 +159,7 @@ def _dump_yaml(
     include_all_operators: bool = False,
 ):
     # no debug info yet
-    output = {}
+    output: dict[str, Any] = {}
     operators: Dict[str, Dict[str, object]] = {}
     for op_name in op_list:
         op = SelectiveBuildOperator.from_yaml_dict(
@@ -208,7 +208,7 @@ def gen_oplist(
     assert output_path, "Need to provide output_path for dumped yaml file."
     op_set = set()
     source_name = None
-    et_kernel_metadata = {}
+    et_kernel_metadata = {}  # type: ignore[var-annotated]
     if root_ops:
         # decide delimiter
         delimiter = "," if "," in root_ops else " "
