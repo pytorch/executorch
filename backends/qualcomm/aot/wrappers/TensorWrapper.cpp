@@ -69,6 +69,7 @@ TensorWrapper::TensorWrapper(
     std::unique_ptr<QuantizeParamsWrapper> quantize_param_wrapper,
     std::uint32_t rank,
     const std::uint32_t dims[],
+    const std::uint8_t dynamic_dims[],
     std::uint32_t bytes,
     const void* data,
     bool copy_data)
@@ -77,49 +78,55 @@ TensorWrapper::TensorWrapper(
       dims_(dims, dims + rank),
       bytes_(bytes),
       owned_data_(nullptr) {
-  // "version" is the only exception that we don't need QNN_VER_PTR wrapper.
-  tensor_.version = QNN_TENSOR_VERSION_1;
+  if (dynamic_dims != nullptr) {
+    dynamic_dims_ = std::vector<uint8_t>(dynamic_dims, dynamic_dims + rank);
+  }
+  // "version" is the only exception that we don't need QNN_TENSOR_VER_PTR
+  // wrapper.
+  tensor_.version = QNN_TENSOR_VERSION_2;
 
   // Don't assign .id because it's an output field.
-  QNN_VER_PTR(tensor_)->name = qnn_tensor_name_.c_str();
-  QNN_VER_PTR(tensor_)->dimensions = dims_.data();
-  QNN_VER_PTR(tensor_)->type = tensor_type;
-  QNN_VER_PTR(tensor_)->dataFormat = QNN_TENSOR_DATA_FORMAT_FLAT_BUFFER;
-  QNN_VER_PTR(tensor_)->dataType = data_type;
-  QNN_VER_PTR(tensor_)->quantizeParams =
+  QNN_TENSOR_VER_PTR(tensor_)->name = qnn_tensor_name_.c_str();
+  QNN_TENSOR_VER_PTR(tensor_)->dimensions = dims_.data();
+  QNN_TENSOR_VER_PTR(tensor_)->isDynamicDimensions =
+      dynamic_dims_.empty() ? nullptr : dynamic_dims_.data();
+  QNN_TENSOR_VER_PTR(tensor_)->type = tensor_type;
+  QNN_TENSOR_VER_PTR(tensor_)->dataFormat = QNN_TENSOR_DATA_FORMAT_FLAT_BUFFER;
+  QNN_TENSOR_VER_PTR(tensor_)->dataType = data_type;
+  QNN_TENSOR_VER_PTR(tensor_)->quantizeParams =
       quantize_param_wrapper_->CreateQuantizeParams();
-  QNN_VER_PTR(tensor_)->rank = rank;
-  QNN_VER_PTR(tensor_)->memType = QNN_TENSORMEMTYPE_RAW;
+  QNN_TENSOR_VER_PTR(tensor_)->rank = rank;
+  QNN_TENSOR_VER_PTR(tensor_)->memType = QNN_TENSORMEMTYPE_RAW;
 
   if (data != nullptr) {
-    QNN_VER_PTR(tensor_)->clientBuf.dataSize = bytes;
+    QNN_TENSOR_VER_PTR(tensor_)->clientBuf.dataSize = bytes;
 
     if (tensor_type != QNN_TENSOR_TYPE_STATIC) {
-      QNN_VER_PTR(tensor_)->clientBuf.data = nullptr;
+      QNN_TENSOR_VER_PTR(tensor_)->clientBuf.data = nullptr;
     } else if (copy_data) {
       owned_data_ = std::make_unique<char[]>(bytes);
       const char* src_data = static_cast<const char*>(data);
       std::memcpy(owned_data_.get(), src_data, bytes);
-      QNN_VER_PTR(tensor_)->clientBuf.data = owned_data_.get();
+      QNN_TENSOR_VER_PTR(tensor_)->clientBuf.data = owned_data_.get();
     } else {
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-      QNN_VER_PTR(tensor_)->clientBuf.data = const_cast<void*>(data);
+      QNN_TENSOR_VER_PTR(tensor_)->clientBuf.data = const_cast<void*>(data);
     }
   }
 }
 
 Error TensorWrapper::FillDataBuffer(const void* data, bool copy_data) {
   if (data != nullptr) {
-    QNN_VER_PTR(tensor_)->memType = QNN_TENSORMEMTYPE_RAW;
-    QNN_VER_PTR(tensor_)->clientBuf.dataSize = bytes_;
+    QNN_TENSOR_VER_PTR(tensor_)->memType = QNN_TENSORMEMTYPE_RAW;
+    QNN_TENSOR_VER_PTR(tensor_)->clientBuf.dataSize = bytes_;
     if (copy_data) {
       owned_data_ = std::make_unique<char[]>(bytes_);
       const char* src_data = static_cast<const char*>(data);
       std::memcpy(owned_data_.get(), src_data, bytes_);
-      QNN_VER_PTR(tensor_)->clientBuf.data = owned_data_.get();
+      QNN_TENSOR_VER_PTR(tensor_)->clientBuf.data = owned_data_.get();
     } else {
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-      QNN_VER_PTR(tensor_)->clientBuf.data = const_cast<void*>(data);
+      QNN_TENSOR_VER_PTR(tensor_)->clientBuf.data = const_cast<void*>(data);
     }
   } else {
     QNN_EXECUTORCH_LOG_WARN("Data pointer is nullptr");
@@ -133,26 +140,26 @@ Error TensorWrapper::AllocateDataBuffer() {
     return Error::Internal;
   }
   owned_data_ = std::unique_ptr<char[]>(static_data_buffer);
-  QNN_VER_PTR(tensor_)->memType = QNN_TENSORMEMTYPE_RAW;
-  QNN_VER_PTR(tensor_)->clientBuf.dataSize = bytes_;
-  QNN_VER_PTR(tensor_)->clientBuf.data = owned_data_.get();
+  QNN_TENSOR_VER_PTR(tensor_)->memType = QNN_TENSORMEMTYPE_RAW;
+  QNN_TENSOR_VER_PTR(tensor_)->clientBuf.dataSize = bytes_;
+  QNN_TENSOR_VER_PTR(tensor_)->clientBuf.data = owned_data_.get();
 
   return Error::Ok;
 }
 
 void TensorWrapper::UpdateQnnTensorMeta(const Qnn_Tensor_t& tensor_src) {
-  QNN_VER_PTR(tensor_)->id = QNN_VER_PTR(tensor_src)->id;
+  QNN_TENSOR_VER_PTR(tensor_)->id = QNN_TENSOR_VER_PTR(tensor_src)->id;
 }
 
 Error TensorWrapper::SetName(const std::string& name) {
   qnn_tensor_name_ = name;
-  QNN_VER_PTR(tensor_)->name = qnn_tensor_name_.c_str();
+  QNN_TENSOR_VER_PTR(tensor_)->name = qnn_tensor_name_.c_str();
   return Error::Ok;
 }
 
 Error TensorWrapper::SetMemHandle(Qnn_MemHandle_t mem_handle) {
-  QNN_VER_PTR(tensor_)->memType = QNN_TENSORMEMTYPE_MEMHANDLE;
-  QNN_VER_PTR(tensor_)->memHandle = mem_handle;
+  QNN_TENSOR_VER_PTR(tensor_)->memType = QNN_TENSORMEMTYPE_MEMHANDLE;
+  QNN_TENSOR_VER_PTR(tensor_)->memHandle = mem_handle;
   return Error::Ok;
 }
 
@@ -164,6 +171,7 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(
     std::unique_ptr<QuantizeParamsWrapper> quantize_param_wrapper,
     std::uint32_t rank,
     const std::uint32_t dims[],
+    const std::uint8_t dynamic_dims[],
     std::uint32_t bytes,
     const void* data,
     bool copy_data) {
@@ -178,6 +186,7 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(
       std::move(quantize_param_wrapper),
       rank,
       dims,
+      dynamic_dims,
       bytes,
       data,
       copy_data);
@@ -189,6 +198,7 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(
     std::unique_ptr<QuantizeParamsWrapper> quantize_param_wrapper,
     std::uint32_t rank,
     const std::uint32_t dims[],
+    const std::uint8_t dynamic_dims[],
     std::uint32_t bytes,
     const void* data,
     bool copy_data) {
@@ -199,6 +209,7 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(
       std::move(quantize_param_wrapper),
       rank,
       dims,
+      dynamic_dims,
       bytes,
       data,
       copy_data);
@@ -207,14 +218,18 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(
 // Factory functions to create TensorWrappers
 std::shared_ptr<TensorWrapper> CreateTensorWrapper(const Qnn_Tensor_t& tensor) {
   return CreateTensorWrapper(
-      std::string(QNN_VER_PTR(tensor)->name),
-      QNN_VER_PTR(tensor)->type,
-      QNN_VER_PTR(tensor)->dataType,
-      CreateQuantizationParamWrapper(QNN_VER_PTR(tensor)->quantizeParams),
-      QNN_VER_PTR(tensor)->rank,
-      QNN_VER_PTR(tensor)->dimensions,
-      QNN_VER_PTR(tensor)->clientBuf.dataSize,
-      QNN_VER_PTR(tensor)->clientBuf.data);
+      std::string(QNN_TENSOR_VER_PTR(tensor)->name),
+      QNN_TENSOR_VER_PTR(tensor)->type,
+      QNN_TENSOR_VER_PTR(tensor)->dataType,
+      CreateQuantizationParamWrapper(
+          QNN_TENSOR_VER_PTR(tensor)->quantizeParams),
+      QNN_TENSOR_VER_PTR(tensor)->rank,
+      QNN_TENSOR_VER_PTR(tensor)->dimensions,
+      tensor.version == QNN_TENSOR_VERSION_2
+          ? QNN_TENSOR_VER_PTR(tensor)->isDynamicDimensions
+          : nullptr,
+      QNN_TENSOR_VER_PTR(tensor)->clientBuf.dataSize,
+      QNN_TENSOR_VER_PTR(tensor)->clientBuf.data);
 }
 } // namespace qnn
 } // namespace backends

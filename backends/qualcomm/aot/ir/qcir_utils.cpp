@@ -124,7 +124,7 @@ flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
 
   int32_t axis = 0;
   uint32_t bitwidth = 0;
-  auto param = QNN_VER_PTR(tensor)->quantizeParams;
+  auto param = QNN_TENSOR_VER_PTR(tensor)->quantizeParams;
   auto quant_type = type_map.at(param.quantizationEncoding);
   std::vector<qcir::ScaleOffset> data;
   std::vector<float> scales;
@@ -238,17 +238,23 @@ flatbuffers::Offset<qcir::Tensor> ToTensor(
     const uint64_t data_offset,
     flatbuffers::FlatBufferBuilder* builder) {
   std::vector<uint32_t> shape(
-      QNN_VER_PTR(tensor)->dimensions,
-      QNN_VER_PTR(tensor)->dimensions + QNN_VER_PTR(tensor)->rank);
+      QNN_TENSOR_VER_PTR(tensor)->dimensions,
+      QNN_TENSOR_VER_PTR(tensor)->dimensions +
+          QNN_TENSOR_VER_PTR(tensor)->rank);
+  std::vector<uint8_t> dynamic_dims(
+      QNN_TENSOR_VER_PTR(tensor)->isDynamicDimensions,
+      QNN_TENSOR_VER_PTR(tensor)->isDynamicDimensions +
+          QNN_TENSOR_VER_PTR(tensor)->rank);
 
   return qcir::CreateTensorDirect(
       *builder,
-      QNN_VER_PTR(tensor)->name,
+      QNN_TENSOR_VER_PTR(tensor)->name,
       &shape,
-      ToTensorType(QNN_VER_PTR(tensor)->type),
-      ToDataType(QNN_VER_PTR(tensor)->dataType),
+      &dynamic_dims,
+      ToTensorType(QNN_TENSOR_VER_PTR(tensor)->type),
+      ToDataType(QNN_TENSOR_VER_PTR(tensor)->dataType),
       ToQuantizeParam(tensor, builder),
-      QNN_VER_PTR(tensor)->clientBuf.dataSize,
+      QNN_TENSOR_VER_PTR(tensor)->clientBuf.dataSize,
       data_offset);
 }
 
@@ -257,15 +263,19 @@ Qnn_Tensor_t ToTensor(const tensor_type& tensor, const uint8_t* data_ptr) {
     return type < QNN_TENSOR_TYPE_STATIC;
   };
 
-  Qnn_Tensor_t t = QNN_TENSOR_INIT;
-  QNN_VER_PTR(t)->name = tensor->name()->c_str();
-  QNN_VER_PTR(t)->type = ToTensorType(tensor->type());
-  QNN_VER_PTR(t)->dataType = ToDataType(tensor->dtype());
-  QNN_VER_PTR(t)->quantizeParams = ToQuantizeParam(tensor);
-  QNN_VER_PTR(t)->rank = tensor->shape()->size();
-  QNN_VER_PTR(t)->dimensions = const_cast<uint32_t*>(tensor->shape()->data());
-  QNN_VER_PTR(t)->clientBuf.dataSize = tensor->size();
-  QNN_VER_PTR(t)->clientBuf.data = is_io_tensor(QNN_VER_PTR(t)->type)
+  Qnn_Tensor_t t({.version = QNN_TENSOR_VERSION_2, .v2 = QNN_TENSOR_V2_INIT});
+  QNN_TENSOR_VER_PTR(t)->name = tensor->name()->c_str();
+  QNN_TENSOR_VER_PTR(t)->type = ToTensorType(tensor->type());
+  QNN_TENSOR_VER_PTR(t)->dataType = ToDataType(tensor->dtype());
+  QNN_TENSOR_VER_PTR(t)->quantizeParams = ToQuantizeParam(tensor);
+  QNN_TENSOR_VER_PTR(t)->rank = tensor->shape()->size();
+  QNN_TENSOR_VER_PTR(t)->dimensions =
+      const_cast<uint32_t*>(tensor->shape()->data());
+  QNN_TENSOR_VER_PTR(t)->isDynamicDimensions =
+      const_cast<uint8_t*>(tensor->dynamic_dims()->data());
+  QNN_TENSOR_VER_PTR(t)->clientBuf.dataSize = tensor->size();
+  QNN_TENSOR_VER_PTR(t)->clientBuf.data =
+      is_io_tensor(QNN_TENSOR_VER_PTR(t)->type)
       ? nullptr
       : static_cast<void*>(const_cast<uint8_t*>(data_ptr));
   return t;

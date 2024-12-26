@@ -105,6 +105,7 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(
     py::dict& quant_info,
     std::uint32_t rank,
     const std::vector<uint32_t>& dims,
+    const std::vector<uint8_t>& dynamic_dims,
     py::array& data,
     bool copy_data) {
   std::unique_ptr<QuantizeParamsWrapper> quantize_param_wrapper =
@@ -117,6 +118,7 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(
       std::move(quantize_param_wrapper),
       rank,
       dims.data(),
+      dynamic_dims.data(),
       0,
       data.size() == 0 ? nullptr : data.data(),
       copy_data);
@@ -228,22 +230,27 @@ PYBIND11_MODULE(PyQnnWrapperAdaptor, m) {
             py::list input_tensors_list;
             py::list output_tensors_list;
             result["version"] = op_config.version;
-            result["name"] = op_config.v1.name;
-            result["packageName"] = op_config.v1.packageName;
-            result["typeName"] = op_config.v1.typeName;
-            result["numOfParams"] = op_config.v1.numOfParams;
-            for (size_t i = 0; i < op_config.v1.numOfParams; ++i) {
-              params_list.append(op_config.v1.params[i]);
+            result["name"] = QNN_OP_VER_PTR(op_config)->name;
+            result["packageName"] = QNN_OP_VER_PTR(op_config)->packageName;
+            result["typeName"] = QNN_OP_VER_PTR(op_config)->typeName;
+            result["numOfParams"] = QNN_OP_VER_PTR(op_config)->numOfParams;
+            for (size_t i = 0; i < QNN_OP_VER_PTR(op_config)->numOfParams;
+                 ++i) {
+              params_list.append(QNN_OP_VER_PTR(op_config)->params[i]);
             }
             result["params"] = params_list;
-            result["numOfInputs"] = op_config.v1.numOfInputs;
-            for (size_t i = 0; i < op_config.v1.numOfInputs; ++i) {
-              input_tensors_list.append(op_config.v1.inputTensors[i]);
+            result["numOfInputs"] = QNN_OP_VER_PTR(op_config)->numOfInputs;
+            for (size_t i = 0; i < QNN_OP_VER_PTR(op_config)->numOfInputs;
+                 ++i) {
+              input_tensors_list.append(
+                  QNN_OP_VER_PTR(op_config)->inputTensors[i]);
             }
             result["inputTensors"] = input_tensors_list;
-            result["numOfOutputs"] = op_config.v1.numOfOutputs;
-            for (size_t i = 0; i < op_config.v1.numOfOutputs; ++i) {
-              output_tensors_list.append(op_config.v1.outputTensors[i]);
+            result["numOfOutputs"] = QNN_OP_VER_PTR(op_config)->numOfOutputs;
+            for (size_t i = 0; i < QNN_OP_VER_PTR(op_config)->numOfOutputs;
+                 ++i) {
+              output_tensors_list.append(
+                  QNN_OP_VER_PTR(op_config)->outputTensors[i]);
             }
             result["outputTensors"] = output_tensors_list;
             return result;
@@ -259,6 +266,7 @@ PYBIND11_MODULE(PyQnnWrapperAdaptor, m) {
                     py::dict&,
                     std::uint32_t,
                     const std::vector<uint32_t>&,
+                    const std::vector<uint8_t>&,
                     py::array&,
                     bool>(&CreateTensorWrapper)));
 
@@ -376,14 +384,6 @@ PYBIND11_MODULE(PyQnnWrapperAdaptor, m) {
 
   py::class_<Qnn_Tensor_t>(m, "Qnn_Tensor_t")
       .def_readonly("version", &Qnn_Tensor_t::version)
-      .def_property_readonly(
-          "v1",
-          [](Qnn_Tensor_t& t) -> Qnn_TensorV1_t& {
-            if (t.version == QNN_TENSOR_VERSION_1) {
-              return t.v1;
-            }
-            throw std::runtime_error("Tensor version is not V1.");
-          })
       .def_property_readonly("v2", [](Qnn_Tensor_t& t) -> Qnn_TensorV2_t& {
         if (t.version == QNN_TENSOR_VERSION_2) {
           return t.v2;
@@ -399,21 +399,28 @@ PYBIND11_MODULE(PyQnnWrapperAdaptor, m) {
           Qnn_TensorVersion_t::QNN_TENSOR_VERSION_UNDEFINED)
       .export_values();
 
-  py::class_<Qnn_TensorV1_t>(m, "QnnTensorV1")
-      .def_readonly("id", &Qnn_TensorV1_t::id)
-      .def_readonly("name", &Qnn_TensorV1_t::name)
-      .def_readonly("type", &Qnn_TensorV1_t::type)
-      .def_readonly("dataFormat", &Qnn_TensorV1_t::dataFormat)
-      .def_readonly("dataType", &Qnn_TensorV1_t::dataType)
-      .def_readonly("quantizeParams", &Qnn_TensorV1_t::quantizeParams)
-      .def_readonly("rank", &Qnn_TensorV1_t::rank)
+  py::class_<Qnn_TensorV2_t>(m, "Qnn_TensorV2_t")
+      .def_readonly("id", &Qnn_TensorV2_t::id)
+      .def_readonly("name", &Qnn_TensorV2_t::name)
+      .def_readonly("type", &Qnn_TensorV2_t::type)
+      .def_readonly("dataFormat", &Qnn_TensorV2_t::dataFormat)
+      .def_readonly("dataType", &Qnn_TensorV2_t::dataType)
+      .def_readonly("quantizeParams", &Qnn_TensorV2_t::quantizeParams)
+      .def_readonly("rank", &Qnn_TensorV2_t::rank)
       // change dimensions pointer to vector(begin to rank)
       .def_property_readonly(
           "dimensions",
-          [](const Qnn_TensorV1_t& t) {
+          [](const Qnn_TensorV2_t& t) {
             return std::vector<uint32_t>(t.dimensions, t.dimensions + t.rank);
           })
-      .def_readonly("memType", &Qnn_TensorV1_t::memType);
+      .def_property_readonly(
+          "isDynamicDimensions",
+          [](const Qnn_TensorV2_t& t) {
+            return t.dimensions == nullptr
+                ? std::vector<uint32_t>()
+                : std::vector<uint32_t>(t.dimensions, t.dimensions + t.rank);
+          })
+      .def_readonly("memType", &Qnn_TensorV2_t::memType);
 
   py::enum_<Qnn_TensorMemType_t>(m, "Qnn_TensorMemType_t")
       .value(
