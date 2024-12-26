@@ -29,24 +29,24 @@ set(ABSL_ENABLE_INSTALL ON)
 set(ABSL_PROPAGATE_CXX_STD ON)
 set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-add_subdirectory(${CMAKE_SOURCE_DIR}/third-party/abseil-cpp)
-add_subdirectory(${CMAKE_SOURCE_DIR}/third-party/re2)
-add_subdirectory(${CMAKE_SOURCE_DIR}/third-party/sentencepiece)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/abseil-cpp)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece)
 set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
-file(GLOB tokenizers_source_files ${CMAKE_SOURCE_DIR}/src/*.cpp)
-file(GLOB unicode_source_files ${CMAKE_SOURCE_DIR}/third-party/llama.cpp-unicode/src/*.cpp)
+file(GLOB tokenizers_source_files ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+file(GLOB unicode_source_files ${CMAKE_CURRENT_SOURCE_DIR}/third-party/llama.cpp-unicode/src/*.cpp)
 add_library(tokenizers STATIC ${tokenizers_source_files} ${unicode_source_files})
 
 # Using abseil from sentencepiece/third_party
 target_include_directories(
   tokenizers PUBLIC
-  ${CMAKE_SOURCE_DIR}/include
-  ${CMAKE_SOURCE_DIR}/third-party/sentencepiece
-  ${CMAKE_SOURCE_DIR}/third-party/sentencepiece/src
-  ${CMAKE_SOURCE_DIR}/third-party/re2
-  ${CMAKE_SOURCE_DIR}/third-party/json/single_include
-  ${CMAKE_SOURCE_DIR}/third-party/llama.cpp-unicode/include)
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/json/single_include
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/llama.cpp-unicode/include)
 
 target_link_libraries(tokenizers PUBLIC sentencepiece-static re2::re2)
 
@@ -65,20 +65,20 @@ if(TOKENIZERS_BUILD_TEST)
       CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(googletest)
 
-  file(GLOB test_source_files ${CMAKE_SOURCE_DIR}/test/test_*.cpp)
+  file(GLOB test_source_files ${CMAKE_CURRENT_SOURCE_DIR}/test/test_*.cpp)
   foreach(test_source_file ${test_source_files})
       get_filename_component(test_name ${test_source_file} NAME_WE)
       message(STATUS "Configuring unit test ${test_name}")
       add_executable(${test_name} ${test_source_file})
       target_include_directories(${test_name} PRIVATE
         GTEST_INCLUDE_PATH
-        ${CMAKE_SOURCE_DIR}/include
-        ${CMAKE_SOURCE_DIR}/third-party/sentencepiece
-        ${CMAKE_SOURCE_DIR}/third-party/re2
-        ${CMAKE_SOURCE_DIR}/third-party/json/single_include
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece
+        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2
+        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/json/single_include
         )
       target_link_libraries(${test_name} gtest_main tokenizers)
-      target_compile_definitions(${test_name} PRIVATE RESOURCES_PATH="${CMAKE_SOURCE_DIR}/test/resources")
+      target_compile_definitions(${test_name} PRIVATE RESOURCES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/test/resources")
       add_test(${test_name} "${test_name}")
   endforeach()
 endif()
