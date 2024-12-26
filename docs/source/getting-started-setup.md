@@ -199,6 +199,9 @@ The ExecuTorch repo uses CMake to build its C++ code. Here, we'll configure it t
   ./install_requirements.sh --clean
   (mkdir cmake-out && cd cmake-out && cmake ..)
 
+  # Go to work directory.
+  cd ..
+
   # Build the executor_runner target
   cmake --build cmake-out --target executor_runner -j9
   ```
