@@ -38,9 +38,10 @@ Error SPTokenizer::load(const std::string &tokenizer_path) {
   const auto status = _processor->Load(tokenizer_path);
   if (!status.ok()) {
     fprintf(stderr,
-            "couldn't load %s\n. It is likely that the tokenizer artifact is "
+            "couldn't load %s. \nError message: \n%s\n"
+            "It is likely that the tokenizer artifact is "
             "broken or of a different format.",
-            tokenizer_path.c_str());
+            tokenizer_path.c_str(), status.error_message());
     return Error::LoadFailure;
   }
   // load vocab_size, bos_tok, eos_tok
