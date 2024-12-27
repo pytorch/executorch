@@ -39,9 +39,9 @@ def build_executorch_binary(
         for data in dataset:
             annotated_model(*data)
         quantized_model = convert_pt2e(annotated_model, fold_quantize=False)
-        aten_dialect = torch.export.export(quantized_model, inputs)
+        aten_dialect = torch.export.export(quantized_model, inputs, strict=True)
     else:
-        aten_dialect = torch.export.export(model, inputs)
+        aten_dialect = torch.export.export(model, inputs, strict=True)
 
     from executorch.exir.program._program import to_edge_transform_and_lower
 
