@@ -1600,7 +1600,7 @@ Error defineConcatenate2Node(
 }
 
 /*
-Defines serialized concatenate2 node into the subgraph,
+Defines serialized concatenate3 node into the subgraph,
 using the remapped ids to map the serialized ids,
 to the new ids generated when defining the tensor value
 */
@@ -1633,7 +1633,7 @@ Error defineConcatenate3Node(
 }
 
 /*
-Defines serialized concatenate2 node into the subgraph,
+Defines serialized concatenate4 node into the subgraph,
 using the remapped ids to map the serialized ids,
 to the new ids generated when defining the tensor value
 */
@@ -1660,6 +1660,41 @@ Error defineConcatenate4Node(
       status == xnn_status_success,
       Internal,
       "Failed to create cat4 node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
+/*
+Defines serialized concatenate5 node into the subgraph,
+using the remapped ids to map the serialized ids,
+to the new ids generated when defining the tensor value
+*/
+Error defineConcatenate5Node(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node,
+    const fb_xnnpack::XNNGraph* graph) noexcept {
+  MAYBE_UNUSED(graph);
+
+  auto graph_node = node->xnode_union_as_XNNConcatenate5();
+
+  xnn_status status = xnn_define_concatenate5(
+      subgraph_ptr,
+      graph_node->axis(),
+      remapped_ids.at(graph_node->input1_id()),
+      remapped_ids.at(graph_node->input2_id()),
+      remapped_ids.at(graph_node->input3_id()),
+      remapped_ids.at(graph_node->input4_id()),
+      remapped_ids.at(graph_node->input5_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create cat5 node %i with code: %s",
       node->debug_handle(),
       xnn_status_to_string(status));
 
@@ -1832,6 +1867,7 @@ DefineNodeFunc getDefineNodeFunc(fb_xnnpack::XNodeUnion nodeType) {
     _DEFINE(Concatenate2)
     _DEFINE(Concatenate3)
     _DEFINE(Concatenate4)
+    _DEFINE(Concatenate5)
     _DEFINE(StaticSlice)
     _DEFINE(ScaledDotProductAttention)
     _DEFINE(BatchMatrixMultiply)

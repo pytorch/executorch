@@ -4,6 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# TODO: reenable pyre after fixing the issues
+# pyre-ignore-all-errors
+
 import codecs
 import getpass
 import json
@@ -105,7 +108,6 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:
     def annotate_single_in_single_out(
         node: Node, quantization_config: QuantizationConfig
     ) -> None:
-
         input_qspec_map = {}
         input_act = node.args[0]
         input_qspec_map[input_act] = quantization_config.input_activation
@@ -353,7 +355,7 @@ class SingleLlama:
 
         with torch.no_grad():
             fx_graph_module = torch.export.export(
-                self.llama_model, self.inputs
+                self.llama_model, self.inputs, strict=True
             ).module()
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
         print("Quantizing the model...")
@@ -492,6 +494,7 @@ def inference(args, pre_gen_pte=""):
             f"model_mode {args.model_mode} is not implemented yet."
         )
 
+    assert args.tokenizer_bin is not None, "Need tokenizer model for interence"
     runner_args = " ".join(
         [
             f"--model_path {pte_filename}.pte",
@@ -562,8 +565,7 @@ def inference(args, pre_gen_pte=""):
             print(f"Results[{idx}]:\n{output}")
 
 
-# flake8: noqa: C901
-if __name__ == "__main__":
+def main():
     parser = setup_common_args_and_variables()
     parser.add_argument(
         "-a",
@@ -597,7 +599,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tokenizer_bin",
         help="Pass llama2 tokenizer binary.",
-        required=True,
+        required=False,
         type=str,
     )
 
@@ -680,3 +682,8 @@ if __name__ == "__main__":
                 conn.send(json.dumps({"Error": str(e)}))
         else:
             raise Exception(e)
+
+
+# flake8: noqa: C901
+if __name__ == "__main__":
+    main()

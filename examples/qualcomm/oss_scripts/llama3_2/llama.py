@@ -4,6 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# TODO: reenable pyre after fixing the issues
+# pyre-ignore-all-errors
+
 import getpass
 import json
 import logging
@@ -218,7 +221,7 @@ class SingleLlama:
             ] + [n.target]:
                 n.meta[QCOM_QUANTIZED_IO] = sharding_type
 
-    def quantize(self, quant_dtype, custom_annotations=()):
+    def quantize(self, quant_dtype, args, custom_annotations=()):
         self.quant_dtype = quant_dtype
         quantizer = make_quantizer(
             quant_dtype=quant_dtype,
@@ -233,7 +236,7 @@ class SingleLlama:
 
         with torch.no_grad():
             fx_graph_module = torch.export.export(
-                self.llama_model, self.inputs
+                self.llama_model, self.inputs, strict=True
             ).module()
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
         logging.info("Quantizing the model...")
@@ -386,7 +389,8 @@ def compile(args):
     if args.ptq != None:
         start_quantize_ts = time.time()
         single_llama.quantize(
-            quant_dtype,
+            quant_dtype=quant_dtype,
+            args=args,
             custom_annotations=(
                 custom_annotate_llama_last_conv_16a8w,
                 matmul_annotate_func,
@@ -486,8 +490,7 @@ def inference(args, pre_gen_pte=""):
             logging.info(f"Results[{idx}]:\n{output}")
 
 
-# flake8: noqa: C901
-if __name__ == "__main__":
+def main():
     parser = setup_common_args_and_variables()
     parser.add_argument(
         "-a",
@@ -605,3 +608,8 @@ if __name__ == "__main__":
                 conn.send(json.dumps({"Error": str(e)}))
         else:
             raise Exception(e)
+
+
+# flake8: noqa: C901
+if __name__ == "__main__":
+    main()

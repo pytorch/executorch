@@ -6,18 +6,20 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
-#include <executorch/kernels/portable/cpu/vec_ops.h>
-#include <executorch/runtime/kernel/kernel_includes.h>
-#include <xa_nnlib_kernels_api.h>
 #include <cmath>
 #include <tuple>
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using IntArrayRef = exec_aten::ArrayRef<int64_t>;
-using torch::executor::Error;
-using torch::executor::KernelRuntimeContext;
+#include <xa_nnlib_kernels_api.h>
+
+#include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
+#include <executorch/kernels/portable/cpu/vec_ops.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+
+using ::executorch::aten::IntArrayRef;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::KernelRuntimeContext;
 
 namespace cadence {
 namespace impl {

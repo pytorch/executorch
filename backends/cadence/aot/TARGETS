@@ -40,6 +40,7 @@ python_library(
         ":utils",
         ":ops_registrations",
         ":replace_ops",
+        ":memory_planning",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot/quantizer:fusion_pass",
         "//executorch/backends/cadence/aot/quantizer:quantizer",
@@ -372,5 +373,39 @@ python_unittest(
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/backends/cadence/aot:reorder_ops",
         "//executorch/exir/dialects:lib",
+    ],
+)
+
+
+python_library(
+    name = "memory_planning",
+    srcs = [
+        "memory_planning.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/tabulate:tabulate",
+        ":memory_constraints",
+        ":pass_utils",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory_planning",
+        "//executorch/exir:tensor",
+        "//executorch/exir/passes:lib",
+    ],
+)
+
+
+python_library(
+    name = "memory_constraints",
+    srcs = [
+        "memory_constraints.py",
+    ],
+    deps = [
+        ":pass_utils",
+        ":utils",
+        "//caffe2:torch",
+        "//executorch/exir:memory",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir:tensor",
     ],
 )

@@ -146,12 +146,6 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
 endif()
 
-option(EXECUTORCH_DO_NOT_USE_CXX11_ABI "Define _GLIBCXX_USE_CXX11_ABI=0 if ON"
-       OFF
-)
-if(EXECUTORCH_DO_NOT_USE_CXX11_ABI)
-  add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
-endif()
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
 # they can be properly gc'd. -s: strip symbol. -fno-exceptions -fno-rtti:
 # disables exceptions and runtime type.
@@ -256,6 +250,17 @@ endif()
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   set(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
+endif()
+
+if(NOT DEFINED FXDIV_SOURCE_DIR)
+  set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
+    ${CMAKE_POSITION_INDEPENDENT_CODE}
+  )
+  set(FXDIV_SOURCE_DIR "backends/xnnpack/third-party/FXdiv")
+  add_subdirectory("${FXDIV_SOURCE_DIR}")
+  set(CMAKE_POSITION_INDEPENDENT_CODE
+      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
+  )
 endif()
 
 if(EXECUTORCH_BUILD_CPUINFO)
@@ -663,10 +668,17 @@ if(EXECUTORCH_BUILD_XNNPACK)
 endif()
 
 if(EXECUTORCH_BUILD_DEVTOOLS)
-  set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
-      ON
-      CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE
-  )
+  if(NOT EXECUTORCH_BUILD_ARM_BAREMETAL)
+    set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
+        ON
+        CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE
+    )
+  else()
+    set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
+        OFF
+        CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE
+    )
+  endif()
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
 endif()
 
@@ -755,13 +767,6 @@ if(EXECUTORCH_BUILD_PYBIND)
       -frtti
       -fexceptions
   )
-  if(EXECUTORCH_DO_NOT_USE_CXX11_ABI)
-      # libtorch is built with the old ABI, so we need to do the same for any
-      # .cpp files that include torch, c10, or ATen targets. Note that PyTorch
-      # nightly binary is built with _GLIBCXX_USE_CXX11_ABI set to 0 while its
-      # CI build sets this to 1 (default)
-    list(APPEND _pybind_compile_options -D_GLIBCXX_USE_CXX11_ABI=0)
-  endif()
 
   # util lib
   add_library(

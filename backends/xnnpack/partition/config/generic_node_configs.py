@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import logging
 from typing import cast, List, Optional
 
@@ -172,17 +174,17 @@ class CatConfig(GenericNodePartitionerConfig):
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        Only support concatenation of 2 - 4 tensors
+        Only support concatenation of 2 - 5 tensors
         """
         if not self.check_common_constraints(node, ep):
             return False
 
         num_tensors = len(node.all_input_nodes)
 
-        if not (num_tensors >= 2 and num_tensors <= 4):
+        if not (num_tensors >= 2 and num_tensors <= 5):
             why(
                 node,
-                reason=f"only support concatenation of 2 - 4 tensors, got {num_tensors} tensors",
+                reason=f"only support concatenation of 2 - 5 tensors, got {num_tensors} tensors",
             )
             return False
 
@@ -287,9 +289,13 @@ class MaxPool2dConfig(GenericNodePartitionerConfig):
         if not self.check_common_constraints(node, ep):
             return False
 
+        # Ceil mode is supported via op padding, which must be statically known.
         is_ceil_mode = len(node.args) >= 6 and cast(bool, node.args[5])
-        if is_ceil_mode:
-            why(node, reason="ceil mode is not supported")
+        is_dynamic = "val" in node.meta and any(
+            isinstance(d, torch.SymInt) for d in node.meta["val"].shape
+        )
+        if is_ceil_mode and is_dynamic:
+            why(node, reason="ceil mode is not supported for dynamic shapes")
             return False
         return True
 
