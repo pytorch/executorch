@@ -53,11 +53,16 @@ class NativeLlamaRunner(TorchTuneLlamaRunner):
         )[0].to(
             torch.float32
         )  # Only support one image at the moment.
+        print(self.encoder_input.shape)
 
         encoder_sequence_length = self.encoder_input.shape[1]
         self.encoder_mask = torch.ones(
-            1, args.max_len, encoder_sequence_length, dtype=torch.bool
-        )
+            1, args.max_len, 8192, dtype=torch.bool
+        ) # 8192 for encoder max seq len, not seq len.
+        self.encoder_mask = self.encoder_mask[:, :7]
+        print(f"encoder_mask: {self.encoder_mask.shape}")
+        # TODO: make demo_config.json contain the encoder params.
+        self.prefill = False
 
         # Save the loaded model bytes to prevent data from going out of
         # scope after the `with` and getting cleaned up by Python's
@@ -78,7 +83,7 @@ class NativeLlamaRunner(TorchTuneLlamaRunner):
         input_pos: Optional[torch.Tensor] = None,
         mask: Optional[torch.LongTensor] = None,
     ) -> torch.Tensor:
-        return (
+        ret =  (
             self.model.forward(
                 (tokens, input_pos, mask, self.encoder_input, self.encoder_mask)
             )
@@ -86,6 +91,11 @@ class NativeLlamaRunner(TorchTuneLlamaRunner):
             if self.use_kv_cache
             else self.model.forward((tokens,))
         )[0]
+        if not self.prefill:
+            self.prefill = True
+            self.encoder_input = torch.full_like(self.encoder_input, torch.nan)
+            self.encoder_mask = self.encoder_mask[:,-1:]
+        return ret
 
 
 def build_args_parser() -> argparse.ArgumentParser:

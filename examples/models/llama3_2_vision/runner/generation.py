@@ -46,6 +46,7 @@ class TorchTuneLlamaRunner(LlamaRunner):
         echo: bool = False,
     ) -> List[int]:
         # Prefill
+        print("Prefilling...")
         seq_len = len(prompt_tokens)
         input_pos = self.input_pos[None, :seq_len]
         mask = self.causal_mask[None, :seq_len]
@@ -63,6 +64,7 @@ class TorchTuneLlamaRunner(LlamaRunner):
                     [prompt_tokens], dtype=torch.long, device=self.device
                 ),
             )
+        print("Generating...")
 
         # Only need the last logit.
         current_token = next_token(logits[:, -1, :], temperature, top_p)

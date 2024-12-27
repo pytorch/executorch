@@ -33,6 +33,23 @@ class EagerLlamaRunner(TorchTuneLlamaRunner):
             vocab_size=params["vocab_size"],
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
+
+        self.encoder_input = torch.load(
+            "/home/jackzhxng/torchrepos3/executorch/vision_encoder_output.pt"
+        )[0].to(
+            torch.float32
+        )  # Only support one image at the moment.
+        print(self.encoder_input.shape)
+
+        encoder_sequence_length = self.encoder_input.shape[1]
+        self.encoder_mask = torch.ones(
+            1, args.max_seq_length, 8192, dtype=torch.bool
+        ) # 8192 for encoder max seq len, not seq len.
+        self.encoder_mask = self.encoder_mask[:, :7]
+        print(f"encoder_mask: {self.encoder_mask.shape}")
+        # TODO: make demo_config.json contain the encoder params.
+        self.prefill = False
+        
         manager: LLMEdgeManager = _prepare_for_llama_export(args)
         self.model = manager.model.eval().to(device=self.device)
 
@@ -42,7 +59,13 @@ class EagerLlamaRunner(TorchTuneLlamaRunner):
         input_pos: Optional[torch.LongTensor] = None,
         mask: Optional[torch.LongTensor] = None,
     ) -> torch.Tensor:
-        return self.model.forward(tokens=tokens, input_pos=input_pos, mask=mask)
+        ret = self.model.forward(tokens=tokens, input_pos=input_pos, mask=mask, encoder_input=self.encoder_input, encoder_mask=self.encoder_mask)
+        if not self.prefill:
+            self.prefill = True
+            self.encoder_input = torch.full_like(self.encoder_input, torch.nan)
+            self.encoder_mask = self.encoder_mask[:,-1:]
+        return ret
+        # return self.model.forward(tokens=tokens, input_pos=input_pos, mask=mask)
 
 
 def main() -> None:

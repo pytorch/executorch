@@ -105,6 +105,7 @@ class KVCache(TuneKVCache):
                 f", but found new key tensors with batch size {k_val.shape[0]}!"
             )
 
+        # print(self.cache_pos[0], seq_len, self.max_seq_len)
         assert (self.cache_pos[0] + seq_len) <= self.max_seq_len
 
         k_out = self.k_cache
