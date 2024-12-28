@@ -523,7 +523,8 @@ class TestEmit(unittest.TestCase):
         program = (
             to_edge(export(f, (x, x), strict=True))
             # .to_edge(self.compile_config)  # TODO(larryliu): fix cat
-            .to_executorch().executorch_program
+            .to_executorch()
+            .executorch_program
         )
 
         self.assertEqual(len(program.execution_plan[0].chains[0].instructions), 1)
