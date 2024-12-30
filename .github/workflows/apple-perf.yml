@@ -125,6 +125,7 @@ jobs:
           BENCHMARK_CONFIG_FILENAME=$(echo "${BENCHMARK_CONFIG_ID}" | sed -e 's/[^A-Za-z0-9._-]/_/g')
           # Save the benchmark configs so that we can use it later in the dashboard
           echo "${BENCHMARK_CONFIG}" > "${BENCHMARK_CONFIG_FILENAME}.json"
+          echo "benchmark-config-filename=${BENCHMARK_CONFIG_FILENAME}" >> $GITHUB_OUTPUT
 
       - name: Upload the spec
         uses: seemethere/upload-artifact-s3@v5
@@ -144,7 +145,7 @@ jobs:
             ${{ github.repository }}/${{ github.run_id }}/artifacts/benchmark-configs/
           retention-days: 1
           if-no-files-found: error
-          path: extension/benchmark/apple/Benchmark/${{ matrix.model }}_${{ matrix.config }}.json
+          path: extension/benchmark/apple/Benchmark/${{ steps.prepare.outputs.benchmark-config-filename }}.json
 
   export-models:
     name: export-models
