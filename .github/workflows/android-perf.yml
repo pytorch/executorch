@@ -111,7 +111,7 @@ jobs:
           # so let's just sed it
           sed -i -e 's,{{ model_path }},'"${MODEL_PATH}"',g' android-llm-device-farm-test-spec.yml.j2
 
-          BENCHMARK_CONFIG_ID="${{ matrix.model }}_${{ matrix.config }}"
+          BENCHMARK_CONFIG_ID=$(echo "${{ matrix.model }}_${{ matrix.config }}" | sed -e 's/[^A-Za-z0-9._-]/_/g')
           # The config for this benchmark runs, we save it in the test spec so that it can be fetched
           # later by the upload script
           sed -i -e 's,{{ benchmark_config_id }},'"${BENCHMARK_CONFIG_ID}"',g' android-llm-device-farm-test-spec.yml.j2
