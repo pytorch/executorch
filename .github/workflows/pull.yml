@@ -521,4 +521,6 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        # placeholder for mediatek to add more tests
+        bash .ci/scripts/setup-mediatek-deps.sh
+        bash .ci/scripts/build-mediatek-sdk.sh
+        bash .ci/scripts/test_model.sh "mv3" "buck2" "mediatek"
