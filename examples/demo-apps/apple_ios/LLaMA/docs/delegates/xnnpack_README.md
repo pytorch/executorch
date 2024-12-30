@@ -34,7 +34,11 @@ Install dependencies
 ```
 ./install_requirements.sh
 ```
+Optional: Use the --pybind flag to install with pybindings.
 
+```
+./install_requirements.sh --pybind xnnpack
+```
 ## Prepare Models
 In this demo app, we support text-only inference with up-to-date Llama models and image reasoning inference with LLaVA 1.5.
 * You can request and download model weights for Llama through Meta official [website](https://llama.meta.com/).
