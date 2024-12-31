@@ -112,7 +112,7 @@ jobs:
           # so let's just sed it
           sed -i -e 's,{{ model_path }},'"${MODEL_PATH}"',g' android-llm-device-farm-test-spec.yml.j2
 
-          BENCHMARK_CONFIG_ID="${{ matrix.model }}_${{ matrix.config }}"
+          BENCHMARK_CONFIG_ID=$(echo "${{ matrix.model }}_${{ matrix.config }}" | sed -e 's/[^A-Za-z0-9._-]/_/g')
           # The config for this benchmark runs, we save it in the test spec so that it can be fetched
           # later by the upload script
           sed -i -e 's,{{ benchmark_config_id }},'"${BENCHMARK_CONFIG_ID}"',g' android-llm-device-farm-test-spec.yml.j2
@@ -121,10 +121,9 @@ jobs:
           # Just print the test spec for debugging
           cat android-llm-device-farm-test-spec.yml
 
-          BENCHMARK_CONFIG_FILENAME=$(echo "${BENCHMARK_CONFIG_ID}" | sed -e 's/[^A-Za-z0-9._-]/_/g')
           # Save the benchmark configs so that we can use it later in the dashboard
-          echo "${BENCHMARK_CONFIG}" > "${BENCHMARK_CONFIG_FILENAME}.json"
-          echo "benchmark-config-filename=${BENCHMARK_CONFIG_FILENAME}" >> $GITHUB_OUTPUT
+          echo "${BENCHMARK_CONFIG}" > "${BENCHMARK_CONFIG_ID}.json"
+          echo "benchmark-config-id=${BENCHMARK_CONFIG_ID}" >> $GITHUB_OUTPUT
 
       - name: Upload the spec
         uses: seemethere/upload-artifact-s3@v5
@@ -144,7 +143,7 @@ jobs:
             ${{ github.repository }}/${{ github.run_id }}/artifacts/benchmark-configs/
           retention-days: 1
           if-no-files-found: error
-          path: extension/benchmark/android/benchmark/${{ steps.prepare.outputs.benchmark-config-filename }}.json
+          path: extension/benchmark/android/benchmark/${{ steps.prepare.outputs.benchmark-config-id }}.json
 
   export-models:
     name: export-models
