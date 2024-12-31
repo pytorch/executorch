@@ -18,14 +18,17 @@ phases:
       # Copy the model to sdcard. This prints too much progress info when the files
       # are large, so it's better to just silent them
       - adb -s $DEVICEFARM_DEVICE_UDID push *.bin /sdcard > /dev/null && echo OK
+      - adb -s $DEVICEFARM_DEVICE_UDID push *.model /sdcard > /dev/null && echo OK
       - adb -s $DEVICEFARM_DEVICE_UDID push *.pte /sdcard > /dev/null && echo OK
 
       # Prepare the model and the tokenizer
       - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /sdcard/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mkdir -p /data/local/tmp/minibench/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.bin /data/local/tmp/minibench/"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.model /data/local/tmp/minibench/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.pte /data/local/tmp/minibench/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/minibench/*.bin"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/minibench/*.model"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/minibench/*.pte"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /data/local/tmp/minibench/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "run-as org.pytorch.minibench rm -rf files"
