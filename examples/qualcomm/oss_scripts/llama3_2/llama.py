@@ -120,6 +120,7 @@ def _prefill_calibrate(
     # TODO: change criteria & support batch inputs if necessary
     token_list = sp_model.encode(user_prompts, bos=True, eos=False)
     token_list = torch.tensor(token_list)[:max_cache_len].reshape(1, -1)
+    token_list = torch.where(token_list > 30000, torch.tensor(30000), token_list)
     last_prompt_pos = token_list.numel()
     if last_prompt_pos < max_cache_len:
         token_list = torch.cat(
@@ -168,6 +169,10 @@ def calibrate(
     else:
         raise RuntimeError("Get wrong inputs")
 
+def get_first_node(node):
+    if isinstance(node, tuple):
+        return get_first_node(node[0])
+    return node
 
 class SingleLlama:
     def __init__(self, llama_model, pte_filename) -> None:
@@ -199,9 +204,10 @@ class SingleLlama:
             if (
                 n.op == "placeholder"
                 and len(users := list(n.users)) == 1
-                and users[0].meta["val"].size()[-2:] in input_cache_shape
-            ):
-                n.meta[QCOM_QUANTIZED_IO] = kv_type
+                # and users[0].meta["val"].size()[-2:] in input_cache_shape
+            ):  
+                if get_first_node(users[0].meta["val"]).size()[-2:] in input_cache_shape:
+                    n.meta[QCOM_QUANTIZED_IO] = kv_type
             elif n.op == "output":
                 for a in n.args[0]:
                     # single head, kv mode
@@ -330,13 +336,15 @@ def compile(args, pte_filename):
         prefill_config = copy.copy(kv_config)
         prefill_config.max_seq_len = args.prefill_seq_len
         prefill_config.use_kv_cache = False
-
-    state_dict = torch.load(
-        args.checkpoint, weights_only=True, map_location="cpu", mmap=True
-    )
+    
+    # TODO: Currently, we do not load the checkpoint for FLLM
+    if args.model_arch_device == "meta":
+        state_dict = torch.load(
+            args.checkpoint, weights_only=True, map_location="cpu", mmap=True
+        )
 
     llama_instance_list = []
-    with torch.device("meta"):
+    with torch.device(args.model_arch_device):
         if args.model_mode == "kv":
             llama_instance_list.append(
                 LlamaModel(kv_config, output_new_cache_only=True)
@@ -355,15 +363,17 @@ def compile(args, pte_filename):
         else:
             raise RuntimeError(f"No such model_mode {args.model_mode}.")
 
-    if "model" in state_dict:
-        state_dict = state_dict["model"]
+    # TODO: Currently, we do not load the checkpoint for FLLM
+    if args.model_arch_device == "meta":
+        if "model" in state_dict:
+            state_dict = state_dict["model"]
 
-    for llama_instance in llama_instance_list:
-        llama_instance.load_state_dict(
-            state_dict,
-            strict=False,
-            assign=True,
-        )
+        for llama_instance in llama_instance_list:
+            llama_instance.load_state_dict(
+                state_dict,
+                strict=False,
+                assign=True,
+            )
     end_load_ts = time.time()
     logging.info(f"Time for loading checkpoint: {end_load_ts - start_ts}")
 
@@ -687,6 +697,14 @@ def main():
         help="Ouput sequence length for llama. Use this option for kv or hybrid mode",
         default=512,
         type=int,
+    )
+
+    parser.add_argument(
+        "--model_arch_device",
+        help="Specify the device for the model architecture. Use 'meta' for phone LLM (default) and 'cpu' for frane LLM.",
+        default="meta",
+        choices=["meta", "cpu"],
+        type=str,
     )
 
     args = parser.parse_args()

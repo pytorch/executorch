@@ -263,14 +263,15 @@ Error Runner::generate(
 
   ET_CHECK_MSG(!prompt.empty(), "prompt cannot be null");
 
-  if (!system_prompt.empty()) {
-    prompt_.append("<|start_header_id|>system<|end_header_id|>\n\n");
-    prompt_.append(system_prompt);
-    prompt_.append("<|eot_id|>\n");
-  }
-  prompt_.append("<|start_header_id|>user<|end_header_id|>\n\n");
+  // Only use prompt provided by user
+  // if (!system_prompt.empty()) {
+  //   prompt_.append("<|start_header_id|>system<|end_header_id|>\n\n");
+  //   prompt_.append(system_prompt);
+  //   prompt_.append("<|eot_id|>\n");
+  // }
+  // prompt_.append("<|start_header_id|>user<|end_header_id|>\n\n");
   prompt_.append(prompt);
-  prompt_.append("<|eot_id|><|start_header_id|>assistant<|end_header_id|>");
+  // prompt_.append("<|eot_id|><|start_header_id|>assistant<|end_header_id|>");
 
   if (token_callback) {
     token_callback("<|begin_of_text|>");
@@ -280,6 +281,13 @@ Error Runner::generate(
   seq_len = (seq_len > 0 && seq_len <= max_seq_len) ? seq_len : max_seq_len;
   Result<std::vector<uint64_t>> encode_res =
       tokenizer_->encode(prompt_, n_bos_, 0);
+  if (encode_res.ok()) {
+      for (auto& id : encode_res.get()) {
+        if (id > 30000) {
+          id = static_cast<uint64_t>(30000);
+        }
+      }
+    } 
   ET_CHECK_OK_OR_RETURN_ERROR(
       encode_res.error(), "failed to encode prompt %s", prompt_.c_str());
 

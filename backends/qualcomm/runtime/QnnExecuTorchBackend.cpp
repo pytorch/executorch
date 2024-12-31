@@ -11,7 +11,8 @@
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
-
+#include <chrono>
+#include <iostream>
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -33,6 +34,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
     BackendInitContext& context,
     FreeableBuffer* processed,
     ArrayRef<CompileSpec> compile_specs) const {
+  auto start = std::chrono::high_resolution_clock::now();
   // covert SizedBuffer to qnn ExecuTorch option
   QnnExecuTorchContextBinary qnn_context_blob;
   const qnn_delegate::QnnExecuTorchOptions* qnn_executorch_options = nullptr;
@@ -108,6 +110,11 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
   add_cached_delegate(signature, qnn_manager);
   // This backend does not need its processed data after Init.
   processed->Free();
+  auto end = std::chrono::high_resolution_clock::now();
+  auto int_s = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+  std::cout << "[Time consuming during init in QnnBackend] Init Time: " << int_s.count() << " milliseconds"
+            << std::endl;
   return qnn_manager;
 }
 

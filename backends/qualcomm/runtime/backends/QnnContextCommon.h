@@ -12,7 +12,7 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnDeviceCommon.h>
-
+#include <executorch/backends/qualcomm/runtime/backends/QnnProfiler.h>
 #include <memory>
 namespace executorch {
 namespace backends {

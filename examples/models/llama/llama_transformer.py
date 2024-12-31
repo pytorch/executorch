@@ -123,6 +123,9 @@ class ModelArgs:
     quantization_args: Optional[dict] = None
     lora_args: Optional[dict] = None
 
+    use_layer_norm_op: bool = False
+    use_rms_norm_op: bool = False
+
     def __post_init__(self):
         if self.n_kv_heads is None:
             self.n_kv_heads = self.n_heads
