@@ -89,21 +89,33 @@ phases:
       - |
         BIN_FOUND="$(adb -s $DEVICEFARM_DEVICE_UDID shell find /data/local/tmp/minibench/ -name '*.bin')"
         if [ -z "$BIN_FOUND" ]; then
-          echo "No tokenizer files found in /data/local/tmp/minibench/"
+          echo "No *.bin tokenizer files found in /data/local/tmp/minibench/"
         else
-          echo "tokenizer files found in /data/local/tmp/minibench/"
+          echo "*.bin tokenizer files found in /data/local/tmp/minibench/"
+        fi
+
+        MODEL_FOUND="$(adb -s $DEVICEFARM_DEVICE_UDID shell find /data/local/tmp/minibench/ -name '*.model')"
+        if [ -z "$MODEL_FOUND" ]; then
+          echo "No *.model tokenizer files found in /data/local/tmp/minibench/"
+        else
+          echo "*.model tokenizer files found in /data/local/tmp/minibench/"
         fi
 
       - echo "Run benchmark"
       - |
         adb -s $DEVICEFARM_DEVICE_UDID shell am force-stop org.pytorch.minibench
-        if [ -z "$BIN_FOUND" ]; then
-          adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.BenchmarkActivity \
-            --es "model_dir" "/data/local/tmp/minibench"
-        else
+
+        if [ -n "$BIN_FOUND" ]; then
           adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.LlmBenchmarkActivity \
             --es "model_dir" "/data/local/tmp/minibench" \
             --es "tokenizer_path" "/data/local/tmp/minibench/tokenizer.bin"
+        elif [ -n "$MODEL_FOUND" ]; then
+          adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.LlmBenchmarkActivity \
+            --es "model_dir" "/data/local/tmp/minibench" \
+            --es "tokenizer_path" "/data/local/tmp/minibench/tokenizer.model"
+        else
+          adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.BenchmarkActivity \
+            --es "model_dir" "/data/local/tmp/minibench"
         fi
 
 
