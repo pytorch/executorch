@@ -1617,7 +1617,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         )
         sample_input = module.get_random_input()
         edge_prog = to_edge(
-            torch.export.export(module, sample_input),
+            torch.export.export(module, sample_input, strict=True),
         )
         update_spill_fill_size(edge_prog.exported_program())
         exec_prog = edge_prog.to_executorch()
@@ -1957,7 +1957,7 @@ class TestQNNQuantizedUtils(TestQNN):
         self.assertEqual(len(exported_progs), 1)
         # lower all graph again, the skipped operators will be left in CPU
         exec_prog = to_edge(
-            torch.export.export(graph_module, sample_input),
+            torch.export.export(graph_module, sample_input, strict=True),
         ).to_executorch()
         self.verify_output(module, sample_input, exec_prog)
 
@@ -2004,7 +2004,7 @@ class TestQNNQuantizedUtils(TestQNN):
         self.assertEqual(len(exported_progs), 2)
         # lower all graph again, the skipped operators will be left in CPU
         exec_prog = exec_prog = to_edge(
-            torch.export.export(graph_module, sample_input),
+            torch.export.export(graph_module, sample_input, strict=True),
         ).to_executorch()
         self.verify_output(module, sample_input, exec_prog)
 
@@ -2041,7 +2041,7 @@ class TestQNNQuantizedUtils(TestQNN):
         self.assertEqual(len(exported_progs), 5)
         # lower all graph again, the skipped operators will be delegated with fp16
         exec_prog = to_edge(
-            torch.export.export(graph_module, sample_input),
+            torch.export.export(graph_module, sample_input, strict=True),
         ).to_executorch()
         self.verify_output(module, sample_input, exec_prog)
 
@@ -2086,7 +2086,7 @@ class TestQNNQuantizedUtils(TestQNN):
         )
         sample_input = module.get_random_input()
         edge_prog = to_edge(
-            torch.export.export(module, sample_input),
+            torch.export.export(module, sample_input, strict=True),
         )
         update_spill_fill_size(edge_prog.exported_program())
         exec_prog = edge_prog.to_executorch()
@@ -2721,7 +2721,6 @@ class TestExampleOssScript(TestQNN):
 
 
 class TestExampleQaihubScript(TestQNN):
-
     def required_envs(self, conditions=None) -> bool:
         conditions = [] if conditions is None else conditions
         return all(

@@ -10,6 +10,9 @@ phases:
   # The pre-test phase includes commands that setup your test environment.
   pre_test:
     commands:
+      # Print this so that the upload script can read and process the benchmark config
+      - echo "The benchmark config is {{ benchmark_config_id }}"
+
       # Download the model from S3
       - curl -s --fail '{{ model_path }}' -o model.zip
       - unzip model.zip && ls -la

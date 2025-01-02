@@ -104,7 +104,7 @@ class TestRPCDemos(unittest.TestCase):
         simple_net = self.get_a_simple_net()
         simple_net_input = simple_net.get_example_inputs()
         exported_program = to_edge(
-            export(simple_net, simple_net_input),
+            export(simple_net, simple_net_input, strict=True),
             compile_config=exir.EdgeCompileConfig(
                 _check_ir_validity=False,
             ),
@@ -124,7 +124,9 @@ class TestRPCDemos(unittest.TestCase):
 
         composite_model = CompositeModule()
 
-        exec_prog = to_edge(export(composite_model, simple_net_input)).to_executorch()
+        exec_prog = to_edge(
+            export(composite_model, simple_net_input, strict=True)
+        ).to_executorch()
 
         executorch_module = _load_for_executorch_from_buffer(exec_prog.buffer)
 
@@ -159,7 +161,7 @@ class TestRPCDemos(unittest.TestCase):
         model = Model()
         inputs = (torch.ones(2, 2), torch.ones(2, 2), torch.ones(2, 2))
 
-        exported_program = to_edge(export(model, inputs))
+        exported_program = to_edge(export(model, inputs, strict=True))
 
         # First lower to demo backend
         demo_backend_lowered = exported_program.to_backend(AddMulPartitionerDemo())

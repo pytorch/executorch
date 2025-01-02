@@ -130,7 +130,9 @@ def export_module_to_program(
         def forward(self, *args, **kwargs):
             return self.fn(*args, **kwargs)
 
-    exported_program = export(WrapperModule(getattr(eager_module, method)), args=inputs)
+    exported_program = export(
+        WrapperModule(getattr(eager_module, method)), args=inputs, strict=True
+    )
 
     edge_config = EdgeCompileConfig(_check_ir_validity=False)
     et_config = exir.ExecutorchBackendConfig(
@@ -167,7 +169,7 @@ def export_module_to_program(
         composite_module(*inputs)
 
         executorch_program = to_edge(
-            export(composite_module, args=inputs)
+            export(composite_module, args=inputs, strict=True)
         ).to_executorch(config=et_config)
 
     return executorch_program.buffer
