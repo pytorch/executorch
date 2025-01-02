@@ -6,25 +6,32 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <cmath>
-#include <tuple>
-
-#include <xa_nnlib_kernels_api.h>
-
 #include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
 #include <executorch/kernels/portable/cpu/vec_ops.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <xa_nnlib_kernels_api.h>
+#include <cmath>
+#include <tuple>
 
-using ::executorch::aten::IntArrayRef;
-using ::executorch::aten::ScalarType;
-using ::executorch::aten::Tensor;
-using ::executorch::runtime::Error;
-using ::executorch::runtime::KernelRuntimeContext;
+using Tensor = exec_aten::Tensor;
+using ScalarType = exec_aten::ScalarType;
+using IntArrayRef = exec_aten::ArrayRef<int64_t>;
+using torch::executor::Error;
+using torch::executor::KernelRuntimeContext;
 
 namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
+
+#define XT_KERNEL_CHECK(ctx, out, kernel, ...) \
+  const auto ret = kernel(__VA_ARGS__);        \
+  ET_KERNEL_CHECK_MSG(                         \
+      ctx,                                     \
+      ret == 0,                                \
+      InvalidArgument,                         \
+      out,                                     \
+      "Failed to run kernel: " #kernel "(" #__VA_ARGS__ ")");
 
 namespace {
 
@@ -118,7 +125,9 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
   (void)ctx;
 
   std::tuple<Tensor&, Tensor&, Tensor&> ret_val(out, mean_out, rstd_out);
+  int kTensorDimensionLimit = executorch::runtime::kTensorDimensionLimit;
 
+#ifdef OP_ARG_CHECK
   ET_KERNEL_CHECK(
       ctx,
       torch::executor::check_layer_norm_args(
@@ -156,7 +165,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
         InvalidArgument,
         ret_val);
   }
-  int kTensorDimensionLimit = executorch::runtime::kTensorDimensionLimit;
+
   Tensor::SizesType mean_rstd_sizes[kTensorDimensionLimit];
   size_t mean_rstd_ndim = 0;
   torch::executor::get_layer_norm_out_target_size(
@@ -181,6 +190,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
           rstd_out, {mean_rstd_sizes, mean_rstd_ndim}) == Error::Ok,
       InvalidArgument,
       ret_val);
+#endif
 
   int input_shape[kTensorDimensionLimit];
   for (int i = 0; i < input.dim(); i++) {
@@ -218,7 +228,10 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
       }
     }
 
-    xa_nn_native_layer_norm_f32_f32(
+    XT_KERNEL_CHECK(
+        ctx,
+        ret_val,
+        xa_nn_native_layer_norm_f32_f32,
         out_data,
         mean_data,
         rstd_data,
