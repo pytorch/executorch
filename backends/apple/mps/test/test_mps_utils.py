@@ -219,7 +219,7 @@ class TestMPS(unittest.TestCase):
             dynamic_shapes=dynamic_shapes,
             edge_compile_config=EdgeCompileConfig(
                 _check_ir_validity=False,
-                _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
+                _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
             ),
         )
 
