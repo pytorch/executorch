@@ -16,12 +16,13 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import torch
-from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
+from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder, CompileSpec
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
+from executorch.backends.arm.tosa_specification import TosaSpecification
 
 from executorch.backends.arm.util.arm_model_evaluator import (
     GenericModelEvaluator,
@@ -88,6 +89,7 @@ def get_model_and_inputs_from_name(model_name: str) -> Tuple[torch.nn.Module, An
 def quantize(
     model: torch.nn.Module,
     model_name: str,
+    tosa_spec: TosaSpecification,
     example_inputs: Tuple[torch.Tensor],
     evaluator_name: str | None,
     evaluator_config: Dict[str, Any] | None,
@@ -95,7 +97,7 @@ def quantize(
     """This is the official recommended flow for quantization in pytorch 2.0 export"""
     logging.info("Quantizing Model...")
     logging.debug(f"Original model: {model}")
-    quantizer = ArmQuantizer()
+    quantizer = ArmQuantizer(tosa_spec)
 
     # if we set is_per_channel to True, we also need to add out_variant of quantize_per_channel/dequantize_per_channel
     operator_config = get_symmetric_quantization_config(is_per_channel=False)
@@ -260,7 +262,7 @@ def get_compile_spec(
     reorder_inputs: Optional[str] = None,
     system_config: Optional[str] = None,
     memory_mode: Optional[str] = None,
-) -> ArmCompileSpecBuilder:
+) -> list[CompileSpec]:
     spec_builder = None
     if target == "TOSA":
         spec_builder = ArmCompileSpecBuilder().tosa_compile_spec("TOSA-0.80+BI")
@@ -513,17 +515,6 @@ if __name__ == "__main__":
 
     # Quantize if required
     model_int8 = None
-    if args.quantize:
-        model = quantize(
-            model, args.model_name, example_inputs, args.evaluate, args.evaluate_config
-        )
-        model_int8 = model
-        # Wrap quantized model back into an exported_program
-        exported_program = torch.export.export_for_training(model, example_inputs)
-
-    if args.intermediates:
-        os.makedirs(args.intermediates, exist_ok=True)
-
     if args.delegate:
         # As we can target multiple output encodings from ArmBackend, one must
         # be specified.
@@ -534,6 +525,23 @@ if __name__ == "__main__":
             args.system_config,
             args.memory_mode,
         )
+        if args.quantize:
+            tosa_spec = TosaSpecification.create_from_compilespecs(compile_spec)
+            model = quantize(
+                model,
+                args.model_name,
+                tosa_spec,
+                example_inputs,
+                args.evaluate,
+                args.evaluate_config,
+            )
+            model_int8 = model
+            # Wrap quantized model back into an exported_program
+            exported_program = torch.export.export_for_training(model, example_inputs)
+
+            if args.intermediates:
+                os.makedirs(args.intermediates, exist_ok=True)
+
         edge = to_edge_transform_and_lower(
             exported_program,
             partitioner=[ArmPartitioner(compile_spec)],
@@ -542,7 +550,25 @@ if __name__ == "__main__":
                 _skip_dim_order=True,
             ),
         )
+
     else:
+        if args.quantize:
+            tosa_spec = TosaSpecification.create_from_string("TOSA-0.80.0+BI")
+            model = quantize(
+                model,
+                args.model_name,
+                tosa_spec,
+                example_inputs,
+                args.evaluate,
+                args.evaluate_config,
+            )
+            model_int8 = model
+            # Wrap quantized model back into an exported_program
+            exported_program = torch.export.export_for_training(model, example_inputs)
+
+            if args.intermediates:
+                os.makedirs(args.intermediates, exist_ok=True)
+
         edge = to_edge_transform_and_lower(
             exported_program,
             compile_config=EdgeCompileConfig(

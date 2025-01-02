@@ -50,7 +50,7 @@ class ArmCompileSpecBuilder:
         self.output_format = None
         self.path_for_intermediates = None
         self.quantize_io = False
-        self.tosa_version = None
+        self.tosa_spec = None
         self.input_order = None
 
     def ethosu_compile_spec(
@@ -92,11 +92,13 @@ class ArmCompileSpecBuilder:
         if "u55" in config:
             # Add the Ethos-U55 extension marker
             base_tosa_version += "+u55"
-        self.tosa_version = TosaSpecification.create_from_string(base_tosa_version)
+        self.tosa_spec = TosaSpecification.create_from_string(base_tosa_version)
 
         return self
 
-    def tosa_compile_spec(self, tosa_version: str) -> "ArmCompileSpecBuilder":
+    def tosa_compile_spec(
+        self, tosa_spec: str | TosaSpecification
+    ) -> "ArmCompileSpecBuilder":
         """
         Generate compile spec for TOSA flatbuffer output
         """
@@ -104,7 +106,12 @@ class ArmCompileSpecBuilder:
             self.output_format is None
         ), f"Output format already set: {self.output_format}"
         self.output_format = "tosa"
-        self.tosa_version = TosaSpecification.create_from_string(tosa_version)
+        if isinstance(tosa_spec, TosaSpecification):
+            self.tosa_spec = tosa_spec
+        elif isinstance(tosa_spec, str):
+            self.tosa_spec = TosaSpecification.create_from_string(tosa_spec)
+        else:
+            raise RuntimeError(f"Invalid type for {tosa_spec}!")
         return self
 
     def dump_intermediate_artifacts_to(
@@ -138,12 +145,10 @@ class ArmCompileSpecBuilder:
         """
         Generate a list of compile spec objects from the builder
         """
-        assert self.tosa_version
+        assert self.tosa_spec
 
         # Always supply a TOSA version
-        self.compile_spec = [
-            CompileSpec("tosa_version", str(self.tosa_version).encode())
-        ]
+        self.compile_spec = [CompileSpec("tosa_version", str(self.tosa_spec).encode())]
 
         if self.output_format == "vela":
             self.compile_spec += [
@@ -253,7 +258,7 @@ class ArmBackend(BackendDetails):
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
         tosa_graph = ts.TosaSerializer(artifact_path)
-        graph_module = ArmPassManager().transform_to_backend_pipeline(
+        graph_module = ArmPassManager(tosa_spec).transform_to_backend_pipeline(
             exported_program=edge_program
         )
 
