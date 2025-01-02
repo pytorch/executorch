@@ -6,22 +6,19 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/fusion_g3/operators/operators.h>
-
-#include <xa_nnlib_kernels_api.h>
-
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
+#include <xa_nnlib_kernels_api.h>
 
-using ::executorch::aten::Scalar;
-using ::executorch::aten::ScalarType;
-using ::executorch::aten::Tensor;
-using ::executorch::runtime::canCast;
-using ::executorch::runtime::Error;
-using ::executorch::runtime::KernelRuntimeContext;
+using exec_aten::Scalar;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
+using executorch::runtime::canCast;
+using torch::executor::Error;
+using torch::executor::KernelRuntimeContext;
 
 namespace cadence {
 namespace impl {
@@ -47,6 +44,7 @@ Tensor& add_out(
   ScalarType common_type =
       executorch::runtime::promoteTypes(a.scalar_type(), b.scalar_type());
 
+#ifdef OP_ARG_CHECK
   // Check Common Dtype
   ET_KERNEL_CHECK(
       ctx,
@@ -70,12 +68,12 @@ Tensor& add_out(
       torch::executor::resize_to_broadcast_target_size(a, b, out) == Error::Ok,
       InvalidArgument,
       out);
+#endif
 
   // Compute Dtype
   ScalarType compute_type =
       torch::executor::native::utils::get_compute_type(common_type);
 
-  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "add.out";
 
   int kTensorDimensionLimit = 5;
@@ -261,6 +259,7 @@ Tensor& add_scalar_out(
       torch::executor::native::utils::promote_type_with_scalar(
           a.scalar_type(), b);
 
+#ifdef OP_ARG_CHECK
   // Check Common Dtype
   ET_KERNEL_CHECK(
       ctx,
@@ -284,7 +283,7 @@ Tensor& add_scalar_out(
       executorch::runtime::resize_tensor(out, a.sizes()) == Error::Ok,
       InvalidArgument,
       out);
-
+#endif
   // Compute Dtype
   ScalarType compute_type =
       torch::executor::native::utils::get_compute_type(common_type);
@@ -332,7 +331,7 @@ Tensor& add_scalar_out(
         alpha_val,
         out.numel());
 
-  } else {
+  } else {  
     ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
       torch::executor::native::utils::
           apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
