@@ -319,7 +319,7 @@ jobs:
       - set-parameters
     secrets: inherit
     with:
-      runner: macos-latest-xlarge
+      runner: macos-15-xlarge
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -330,7 +330,7 @@ jobs:
         set -eux
 
         echo "Setting XCode version"
-        sudo xcode-select -switch /Applications/Xcode_16_1.app
+        sudo xcode-select -switch /Applications/Xcode_16.2.app
 
         echo "::group::Setting up CI environment"
         .ci/scripts/setup-conda.sh
