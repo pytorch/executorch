@@ -335,7 +335,8 @@ class TestEmit(unittest.TestCase):
 
         program = (
             to_edge(export(f, (torch.randn(2, 3, 5),), strict=True))
-            .to_executorch().executorch_program
+            .to_executorch()
+            .executorch_program
         )
         exir.print_program.pretty_print(program)
 
@@ -522,8 +523,7 @@ class TestEmit(unittest.TestCase):
         program = (
             to_edge(export(f, (x, x), strict=True))
             # .to_edge(self.compile_config)  # TODO(larryliu): fix cat
-            .to_executorch()
-            .executorch_program
+            .to_executorch().executorch_program
         )
 
         self.assertEqual(len(program.execution_plan[0].chains[0].instructions), 1)
