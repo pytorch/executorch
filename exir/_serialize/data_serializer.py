@@ -40,18 +40,19 @@ class TensorEntry:
 
 @dataclass
 class DataPayload:
-    """Contains the data and metadata required for serialization. Having an
-    index-based arrangement instead of Dict[str, bytes] allows the caller to
-    deduplicate buffers and point multiple fully qualified names (FQNs) to the
-    same entry.
+    """Contains the data and metadata required for serialization.
+
+    Having an index-based arrangement instead of embedding the buffers in
+    TensorEntry allows the caller to deduplicate buffers and point multiple
+    fully qualified names (FQNs) to the same entry.
 
     Attributes:
         buffers: a sequence of tensor buffers.
-        fqn_to_buffer: a map from buffer name (fully qualified name) to TensorEntry.
+        fqn_to_tensor: a map from fully qualified names to serializable tensors.
     """
 
     buffers: Sequence[bytes]
-    fqn_to_data: Dict[str, TensorEntry]
+    fqn_to_tensor: Dict[str, TensorEntry]
 
 
 class DataSerializer(ABC):
@@ -70,8 +71,8 @@ class DataSerializer(ABC):
         Serializes a list of tensors emitted by ExecuTorch into a binary blob.
 
         Args:
-            serialization_info: the tensor buffers and tensor layout
-            information required for serialization.
+            data: the tensor buffers and tensor layout information required for
+            serialization.
 
         Returns:
             A binary blob that contains the serialized data.
