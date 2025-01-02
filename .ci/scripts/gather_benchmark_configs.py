@@ -34,8 +34,7 @@ BENCHMARK_CONFIGS = {
     ],
     "android": [
         "qnn_q8",
-        # TODO: Add support for llama3 htp
-        # "llama3_qnn_htp",
+        "llama3_qnn_htp",
     ],
     "ios": [
         "coreml_fp16",
