@@ -43,13 +43,13 @@ shared u16vec2 pos_shared[gl_WorkGroupSize.x * gl_WorkGroupSize.y * gl_WorkGroup
  * size is only 1x1, making it easier to re-use loaded texels from t_kernel.
  */
 void main() {
-  const uint16_t out_limits_y_scaled = uint16_t((out_limits.y + TILE_SIZE - 1) / TILE_SIZE);
+  const uvec2 out_limits_scaled = (out_limits.xy + TILE_SIZE - 1) / TILE_SIZE;
   const uint shared_mem_stride = gl_WorkGroupSize.x * gl_WorkGroupSize.y * gl_WorkGroupSize.z;
 
   const u16vec3 gpos = u16vec3(
-    gl_GlobalInvocationID.x / (out_limits_y_scaled * out_limits.z),
-    (gl_GlobalInvocationID.x / out_limits.z) % out_limits_y_scaled,
-    gl_GlobalInvocationID.x % out_limits.z);
+    gl_GlobalInvocationID.x % out_limits_scaled.x,
+    (gl_GlobalInvocationID.x / out_limits_scaled.x) % out_limits_scaled.y,
+    gl_GlobalInvocationID.x / (out_limits_scaled.x * out_limits_scaled.y));
 
   // Output position for TILE_SIZE = 2
   // +--------+--------+
