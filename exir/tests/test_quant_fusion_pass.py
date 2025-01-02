@@ -163,7 +163,9 @@ class TestQuantFusionPass(unittest.TestCase):
             exactly=True,
         ).check("executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor").check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default"
-        ).check("executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor").check(
+        ).check(
+            "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor"
+        ).check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_add_default"
         ).check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default"
@@ -175,9 +177,7 @@ class TestQuantFusionPass(unittest.TestCase):
         # check that we are using out variant of add and slice_copy
         FileCheck().check("torch.ops.quantized_decomposed.add.out").check(
             "torch.ops.aten.slice_copy.Tensor_out"
-        ).run(
-            m.exported_program().graph_module.code
-        )
+        ).run(m.exported_program().graph_module.code)
 
     def test_cat(self) -> None:
         class M(torch.nn.Module):
