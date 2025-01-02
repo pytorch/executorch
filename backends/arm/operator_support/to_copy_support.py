@@ -25,8 +25,8 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
     targets = [exir_ops.edge.aten._to_copy.default]
 
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80.0+BI"),
-        TosaSpecification.create_from_string("TOSA-0.80.0+MI"),
+        TosaSpecification.create_from_string("TOSA-0.80+BI"),
+        TosaSpecification.create_from_string("TOSA-0.80+MI"),
     ]
 
     SupportedTypeDict = dict[torch.dtype, list[torch.dtype]]
