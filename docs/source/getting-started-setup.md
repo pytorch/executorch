@@ -98,7 +98,19 @@ Alternatively, if you would like to experiment with ExecuTorch quickly and easil
    Use the [`--pybind` flag](https://github.com/pytorch/executorch/blob/main/install_requirements.sh#L26-L29) to install with pybindings and dependencies for other backends.
    ```bash
    ./install_requirements.sh --pybind <coreml | mps | xnnpack>
+
+   # Example: pybindings with CoreML *only*
+   ./install_requirements.sh --pybind coreml
+
+   # Example: pybinds with CoreML *and* XNNPACK
+   ./install_requirements.sh --pybind coreml xnnpack
    ```
+
+   By default, `./install_requirements.sh` command installs pybindings for XNNPACK. To disable any pybindings altogether:
+   ```bash
+   ./install_requirements.sh --pybind off
+   ```
+
 After setting up your environment, you are ready to convert your PyTorch programs
 to ExecuTorch.
 
