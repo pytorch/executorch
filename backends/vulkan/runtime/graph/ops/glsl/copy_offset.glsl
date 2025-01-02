@@ -17,7 +17,11 @@ layout(std430) buffer;
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 
-${layout_declare_ubo(B, "ivec3", "range", "ivec3", "src_offset", "ivec3", "dst_offset")}
+layout(push_constant) uniform restrict Block {
+  ivec3 range;
+  ivec3 src_offset;
+  ivec3 dst_offset;
+};
 
 #include "indexing_utils.h"
 
