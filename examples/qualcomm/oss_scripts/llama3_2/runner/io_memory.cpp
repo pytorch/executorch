@@ -64,8 +64,8 @@ HybridMemory::HybridMemory(
     const std::string& kv_forward_name)
     : Memory(modules),
       shard_layers_({num_layers}),
-      prefill_cache_len_(prefill_cache_len),
       kv_cache_len_(kv_cache_len),
+      prefill_cache_len_(prefill_cache_len),
       vocab_size_(vocab_size),
       num_layers_(num_layers),
       head_dim_(head_dim),
@@ -332,7 +332,8 @@ void HybridMemory::prepare_prefill_io(
   input_tensors_[prefill_forward_name_][0].push_back(prefill_attn_mask_.get());
   // [O]: logits
   int logit_index = 0;
-  Result<TensorInfo> logits = methods_meta[0]->output_tensor_meta(0);
+  Result<TensorInfo> logits =
+      methods_meta[modules_.size() - 1]->output_tensor_meta(logit_index);
   prefill_logits_ = std::make_unique<TensorImpl>(
       logits->scalar_type(),
       logits->sizes().size(),
