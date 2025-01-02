@@ -115,44 +115,6 @@ def define_common_targets():
     all_op_targets = aten_op_targets
 
     runtime.cxx_library(
-        name = "aten_headers_for_executorch",
-        srcs = [],
-        visibility = ["//executorch/kernels/optimized/..."],
-        exported_deps = select({
-            "DEFAULT": [],
-            "ovr_config//cpu:arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
-            ] if not runtime.is_oss else [],
-            # fbsource//third-party/sleef:sleef currently fails to
-            # link with missing symbols, hence the fbcode-specific dep below.
-        }),
-        fbcode_exported_deps = [
-            "//caffe2:aten-headers-cpu",
-            "//caffe2:generated-config-header",
-            "//caffe2/c10/core:base",
-        ] + select({
-            "DEFAULT": [],
-            "ovr_config//cpu:x86_64": [
-                "third-party//sleef:sleef",
-            ]
-        }),
-        xplat_exported_deps = [
-            "//xplat/caffe2:aten_header",
-            "//xplat/caffe2:generated_aten_config_header",
-            "//xplat/caffe2/c10:c10",
-        ],
-        exported_preprocessor_flags = select({
-            "ovr_config//cpu:x86_64": [
-                "-DCPU_CAPABILITY=AVX2",
-                "-DCPU_CAPABILITY_AVX2",
-                "-DHAVE_AVX2_CPU_DEFINITION",
-            ] + get_sleef_preprocessor_flags(),
-            "ovr_config//cpu:arm64": get_sleef_preprocessor_flags(),
-            "DEFAULT": [],
-        }) + ["-DSTANDALONE_TORCH_HEADER"],
-    )
-
-    runtime.cxx_library(
         name = "binary_ops",
         exported_headers = ["binary_ops.h"],
         visibility = ["//executorch/kernels/optimized/cpu/..."],
