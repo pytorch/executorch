@@ -53,18 +53,18 @@ void main() {
   // +--------+--------+
   // | pos[2] | pos[3] |
   // +--------+--------+
-  u16vec3 pos[TILE_SIZE * TILE_SIZE];
+  u16vec2 pos[TILE_SIZE * TILE_SIZE];
   for (int y = 0, i = 0; y < TILE_SIZE; ++y) {
     for (int x = 0; x < TILE_SIZE; ++x) {
-      pos[i] = u16vec3(
-          gpos.x * TILE_SIZE + x, gpos.y * TILE_SIZE + y, gpos.z);
+      pos[i] = u16vec2(
+          gpos.x * TILE_SIZE + x, gpos.y * TILE_SIZE + y);
       i++;
     }
   }
 
   // If the top left position is out of bounds, then this invocation will have
   // no work to do.
-  if (any(greaterThanEqual(pos[0], out_limits))) {
+  if (any(greaterThanEqual(u16vec3(pos[0], gpos.z), out_limits))) {
     return;
   }
 
@@ -138,8 +138,8 @@ void main() {
   }
 
   for (int i = 0; i < TILE_SIZE * TILE_SIZE; ++i) {
-    if (all(lessThan(pos[i], out_limits))) {
-      imageStore(t_out, pos[i], op(sum[i], out_min, out_max));
+    if (all(lessThan(u16vec3(pos[i], gpos.z), out_limits))) {
+      imageStore(t_out, u16vec3(pos[i], gpos.z), op(sum[i], out_min, out_max));
     }
   }
 }
