@@ -659,7 +659,7 @@ utils::GPUMemoryLayout vTensor::estimate_memory_layout() const {
 
 const vkapi::BufferBindInfo vTensor::sizes_ubo() {
   if (!uniforms_.buffer()) {
-    uniforms_ = ParamsBuffer(storage_.context_, kMaxUniformBufferSize);
+    uniforms_ = ParamsBuffer(storage_.context_, kMaxUniformBufferSize, true);
   }
   if (sizes_uniform_offset_ == kUniformOffsetUnset) {
     VK_CHECK_COND(
@@ -674,7 +674,7 @@ const vkapi::BufferBindInfo vTensor::sizes_ubo() {
 
 const vkapi::BufferBindInfo vTensor::strides_ubo() {
   if (!uniforms_.buffer()) {
-    uniforms_ = ParamsBuffer(storage_.context_, kMaxUniformBufferSize);
+    uniforms_ = ParamsBuffer(storage_.context_, kMaxUniformBufferSize, true);
   }
   if (unsqueezed_strides_offset_ == kUniformOffsetUnset) {
     VK_CHECK_COND(
@@ -691,7 +691,7 @@ const vkapi::BufferBindInfo vTensor::strides_ubo() {
 
 const vkapi::BufferBindInfo vTensor::logical_limits_ubo() {
   if (!uniforms_.buffer()) {
-    uniforms_ = ParamsBuffer(storage_.context_, kMaxUniformBufferSize);
+    uniforms_ = ParamsBuffer(storage_.context_, kMaxUniformBufferSize, true);
   }
   if (logical_limits_uniform_offset_ == kUniformOffsetUnset) {
     VK_CHECK_COND(
@@ -707,7 +707,7 @@ const vkapi::BufferBindInfo vTensor::logical_limits_ubo() {
 
 const vkapi::BufferBindInfo vTensor::numel_ubo() {
   if (!uniforms_.buffer()) {
-    uniforms_ = ParamsBuffer(storage_.context_, kMaxUniformBufferSize);
+    uniforms_ = ParamsBuffer(storage_.context_, kMaxUniformBufferSize, true);
   }
   if (numel_uniform_offset_ == kUniformOffsetUnset) {
     VK_CHECK_COND(
