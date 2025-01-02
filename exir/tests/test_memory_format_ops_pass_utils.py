@@ -104,7 +104,9 @@ class MemoryFormatOpsPassTestUtils:
     def memory_format_test_runner(
         test_class: unittest.TestCase, test_set: MemoryFormatTestSet
     ):
-        before = export(test_set.module, test_set.sample_input).run_decompositions({})
+        before = export(
+            test_set.module, test_set.sample_input, strict=True
+        ).run_decompositions({})
 
         if test_set.use_xnnpack:
             epm = to_edge_transform_and_lower(

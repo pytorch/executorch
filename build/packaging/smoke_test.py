@@ -65,7 +65,7 @@ def export_linear_model() -> bytes:
 
     # Export the pytorch model and process for ExecuTorch.
     print("Exporting program...")
-    exported_program = export(LinearModel(), example_inputs)
+    exported_program = export(LinearModel(), example_inputs, strict=True)
     print("Lowering to edge...")
     edge_program = to_edge(exported_program)
     print("Creating ExecuTorch program...")
