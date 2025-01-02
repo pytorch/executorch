@@ -70,24 +70,30 @@ def define_common_targets():
         fbcode_exported_deps = [
             "//caffe2:aten-headers-cpu",
             "//caffe2:generated-config-header",
-            "//caffe2/c10/core:base",
+            "//caffe2/c10/core:base_headers",
         ] + select({
             "DEFAULT": [],
             "ovr_config//cpu:x86_64": [
                 "third-party//sleef:sleef",
             ]
         }),
+        fbcode_exported_preprocessor_flags = [
+            # We don't -DCPU_CAPABILITY=AVX2 because that trips
+            # -Wmacro-redefined, and we only care about getting
+            # reasonable vectorization and Sleef support.
+            "-DCPU_CAPABILITY_AVX2",
+            "-DHAVE_AVX2_CPU_DEFINITION",
+            "-DSTANDALONE_TORCH_HEADER",
+        ] + get_sleef_preprocessor_flags(),
         xplat_exported_deps = [
             "//xplat/caffe2:aten_header",
             "//xplat/caffe2:generated_aten_config_header",
-            "//xplat/caffe2/c10:c10",
+            "//xplat/caffe2/c10:c10_headers",
         ],
         exported_preprocessor_flags = select({
-            "ovr_config//cpu:x86_64": [
-                "-DCPU_CAPABILITY=AVX2",
-                "-DCPU_CAPABILITY_AVX2",
-                "-DHAVE_AVX2_CPU_DEFINITION",
-            ] + get_sleef_preprocessor_flags(),
+            # Intentionally punting on non-fbcode x86 sleef support
+            # for now because of fbsource//third-party/sleef:sleef
+            # linker failure.
             "ovr_config//cpu:arm64": get_sleef_preprocessor_flags(),
             "DEFAULT": [],
         }) + ["-DSTANDALONE_TORCH_HEADER"],
