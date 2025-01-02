@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import logging
 import operator
 from collections import defaultdict
@@ -415,6 +417,17 @@ def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
             # tag the data node with the same tag as the last user
             if len(user_tags) > 0:
                 node.meta["delegation_tag"] = user_tags.pop()
+
+
+def is_shape_dynamic(node: torch.fx.Node) -> bool:
+    """
+    Check if the node shape is dynamic.
+    """
+
+    # Shape is dynamic if any of the dimensions don't evaluate to a static value
+    return "val" in node.meta and any(
+        isinstance(d, torch.SymInt) for d in node.meta["val"].shape
+    )
 
 
 # TODO - style: use templated types

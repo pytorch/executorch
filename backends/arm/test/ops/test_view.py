@@ -43,6 +43,7 @@ class TestView(unittest.TestCase):
             (torch.rand(1, 1, 5, 10), (1, 1, 50, 1)),
             (torch.rand(5, 10, 1, 1), (1, 25, 2)),
             (torch.rand(2, 50, 1, 1), (1, 100)),
+            (torch.rand(2, 3, 2, 3), (2, 3, 3, 2)),
         ]
 
         def forward(self, x: torch.Tensor, new_shape):
@@ -55,7 +56,7 @@ class TestView(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check_count({"torch.ops.aten.view.default": 1})
@@ -73,7 +74,7 @@ class TestView(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
