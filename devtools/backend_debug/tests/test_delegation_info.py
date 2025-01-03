@@ -31,7 +31,7 @@ class TestUtils(unittest.TestCase):
 
         m = Model()
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
-        edge = to_edge(torch.export.export(m, inputs)).to_backend(
+        edge = to_edge(torch.export.export(m, inputs, strict=True)).to_backend(
             AddMulPartitionerDemo()
         )
         delegation_info = get_delegation_info(edge.exported_program().graph_module)

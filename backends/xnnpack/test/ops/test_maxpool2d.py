@@ -4,10 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
+import itertools
 import unittest
 
 import torch
-from executorch.backends.xnnpack.test.tester import Tester
+from executorch.backends.xnnpack.test.tester import Export, Tester
+from torch.export.dynamic_shapes import Dim
 
 
 class TestMaxPool2d(unittest.TestCase):
@@ -38,10 +42,12 @@ class TestMaxPool2d(unittest.TestCase):
         def forward(self, x):
             return self.max_pool2d_module(x)[1]
 
-    class MaxPool2dUnsupportedCeilMode(torch.nn.Module):
-        def __init__(self):
+    class MaxPool2dCeilMode(torch.nn.Module):
+        def __init__(self, kernel_size=3, stride=1, padding=0, dilation=1):
             super().__init__()
-            self.max_pool2d_module = torch.nn.MaxPool2d(2, stride=2, ceil_mode=True)
+            self.max_pool2d_module = torch.nn.MaxPool2d(
+                kernel_size, stride, padding, dilation, ceil_mode=True
+            )
 
         def forward(self, x):
             return self.max_pool2d_module(x)
@@ -93,13 +99,77 @@ class TestMaxPool2d(unittest.TestCase):
             )
         )
 
-    def test_fp32_maxpool2d_unsupported_ceilmode(self):
+    def test_fp32_maxpool2d_ceilmode(self):
+        input_sizes = [[17, 32], [32, 37]]
+        kernel_sizes = [2, 3, 12]
+        strides = [1, 2, 4]
+        padding = [0, 1, 5]
+        dilations = [1, 2, 3]
+
+        for input_size, kernel_size, stride, pad, dilation in itertools.product(
+            input_sizes, kernel_sizes, strides, padding, dilations
+        ):
+            # Check XNNPACK and PyTorch constraints
+            if pad > ((kernel_size - 1) * dilation + 1) / 2:
+                continue
+            if stride > kernel_size:
+                continue
+            if any(
+                (size + 2 * pad - dilation * (kernel_size - 1) - 1) // stride + 1 <= 0
+                for size in input_size
+            ):  # Output size too small
+                continue
+
+            inputs = (torch.randn(1, 1, input_size[0], input_size[1]),)
+            (
+                Tester(
+                    self.MaxPool2dCeilMode(kernel_size, stride, pad, dilation), inputs
+                )
+                .export()
+                .check_count({"torch.ops.aten.max_pool2d.default": 1})
+                .to_edge_transform_and_lower()
+                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                .check_not(
+                    [
+                        "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default"
+                    ]
+                )
+                .to_executorch()
+                .serialize()
+                .run_method_and_compare_outputs()
+            )
+
+    def test_fp32_maxpool2d_unsupported_dynamic_ceilmode(self):
         """
-        MaxPool2d with ceil mode is not generally supported (see maxpool2d constraint).
+        MaxPool2d with ceil mode is supported with dynamic shape (see maxpool2d constraint).
+        """
+        inputs = (torch.randn(1, 32, 23, 23),)
+        dim3 = Dim("_dim3", min=11, max=50)
+        dynamic_shapes = {"x": {3: 2 * dim3 - 1}}
+        (
+            Tester(self.MaxPool2dCeilMode(), inputs)
+            .export(Export(dynamic_shapes=dynamic_shapes))
+            .check_count({"torch.ops.aten.max_pool2d.default": 1})
+            .to_edge_transform_and_lower()
+            # We expect it not be be delegated.
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1
+                }
+            )
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    def test_fp32_maxpool2d_unsupported_stride(self):
+        """
+        XNNPACK MaxPool2d requires stride <= kernel_size.
         """
         inputs = (torch.randn(1, 32, 23, 23),)
         (
-            Tester(self.MaxPool2dUnsupportedCeilMode(), inputs)
+            Tester(self.MaxPool2d(kernel_size=2, stride=3), inputs)
             .export()
             .check_count({"torch.ops.aten.max_pool2d.default": 1})
             .to_edge_transform_and_lower()

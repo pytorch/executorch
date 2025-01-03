@@ -30,8 +30,7 @@ def get_exported_program() -> ExportedProgram:
 
     linear = Linear()
     exported_program = export(
-        linear,
-        args=(torch.randn(10, 10),),
+        linear, args=(torch.randn(10, 10),), strict=True
     ).run_decompositions()
     return exported_program
 
