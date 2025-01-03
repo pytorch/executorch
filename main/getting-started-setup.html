@@ -589,6 +589,16 @@ git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w
 </div>
 <p>Use the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/install_requirements.sh#L26-L29"><code class="docutils literal notranslate"><span class="pre">--pybind</span></code> flag</a> to install with pybindings and dependencies for other backends.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_requirements.sh<span class="w"> </span>--pybind<span class="w"> </span>&lt;coreml<span class="w"> </span><span class="p">|</span><span class="w"> </span>mps<span class="w"> </span><span class="p">|</span><span class="w"> </span>xnnpack&gt;
+
+<span class="c1"># Example: pybindings with CoreML *only*</span>
+./install_requirements.sh<span class="w"> </span>--pybind<span class="w"> </span>coreml
+
+<span class="c1"># Example: pybinds with CoreML *and* XNNPACK</span>
+./install_requirements.sh<span class="w"> </span>--pybind<span class="w"> </span>coreml<span class="w"> </span>xnnpack
+</pre></div>
+</div>
+<p>By default, <code class="docutils literal notranslate"><span class="pre">./install_requirements.sh</span></code> command installs pybindings for XNNPACK. To disable any pybindings altogether:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_requirements.sh<span class="w"> </span>--pybind<span class="w"> </span>off
 </pre></div>
 </div>
 <p>After setting up your environment, you are ready to convert your PyTorch programs
