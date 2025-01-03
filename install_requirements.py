@@ -170,6 +170,23 @@ subprocess.run(
     check=True,
 )
 
+LOCAL_REQUIREMENTS = [
+    "third-party/ao",  # We need the latest kernels for fast iteration, so not relying on pypi.
+]
+
+# Install packages directly from local copy instead of pypi.
+# This is usually not recommended.
+subprocess.run(
+    [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        *LOCAL_REQUIREMENTS,
+    ],
+    check=True,
+)
+
 #
 # Install executorch pip package. This also makes `flatc` available on the path.
 # The --extra-index-url may be necessary if pyproject.toml has a dependency on a
