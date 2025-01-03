@@ -72,6 +72,15 @@ kernels_portable.xcframework
 kernels_quantized.xcframework
 ```
 
+#### MLState
+The prebuilt frameworks do not work with CoreML models that use MLState, which is used in LLM models exported for iOS18.  When executing the *.pte file, you will see an error like:
+
+```
+The input feature for X must be an MLState, but it was not.
+```
+
+If you encounter this issue, build the frameworks locally (option 2) using **XCode 16.0** or higher.
+
 ## Adding Models and Resources
 
 Place your exported model files (`.pte`) and any other resources (e.g., `tokenizer.bin`) into the `extension/benchmark/apple/Benchmark/Resources` directory:

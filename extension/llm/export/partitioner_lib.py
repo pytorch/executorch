@@ -158,11 +158,7 @@ def get_coreml_partitioner(
         op_linear_quantizer_config=op_linear_quantizer_config,
     )
 
-    # ExecuTorch does not build CoreML delegate runtime to handle state
-    # when using OSS scripts, so we define take_over_mutable_buffer = False,
-    # even when target is iOS18
-    # take_over_mutable_buffer = minimum_deployment_target >= ct.target.iOS18
-    take_over_mutable_buffer = False
+    take_over_mutable_buffer = minimum_deployment_target >= ct.target.iOS18
     return CoreMLPartitioner(  # pyre-fixme[16]
         compile_specs=compile_specs,
         take_over_mutable_buffer=take_over_mutable_buffer,
