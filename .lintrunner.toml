@@ -292,9 +292,9 @@ include_patterns = [
     # TODO(https://github.com/pytorch/executorch/issues/7441): Gradually start enabling all folders.
     # 'backends/**/*.py',
     'build/**/*.py',
-    # 'codegen/**/*.py',
+    'codegen/**/*.py',
     # 'devtools/**/*.py',
-    # 'docs/**/*.py',
+    'docs/**/*.py',
     # 'examples/**/*.py',
     # 'exir/**/*.py',
     # 'extension/**/*.py',
