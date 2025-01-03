@@ -303,7 +303,7 @@ include_patterns = [
     'runtime/**/*.py',
     'scripts/**/*.py',
     # 'test/**/*.py',
-    # 'util/**/*.py',
+    'util/**/*.py',
     '*.py',
 ]
 exclude_patterns = [
