@@ -84,7 +84,7 @@ in the example), and a list of dynamic shapes (covered later).
             return self.relu(a)
 
 
-    example_args = (torch.randn(1, 3, 256, 256),)
+    example_args: tuple[torch.Tensor] = (torch.randn(1, 3, 256, 256),)
     aten_dialect: ExportedProgram = export(SimpleConv(), example_args, strict=True)
     print(aten_dialect)
 
@@ -135,7 +135,7 @@ By default, the exporting flow will trace the program assuming that all input
 shapes are static, so if we run the program with inputs shapes that are
 different than the ones we used while tracing, we will run into an error:
 
-.. GENERATED FROM PYTHON SOURCE LINES 91-115
+.. GENERATED FROM PYTHON SOURCE LINES 91-118
 
 .. code-block:: default
 
@@ -151,8 +151,11 @@ different than the ones we used while tracing, we will run into an error:
             return x + y
 
 
-    example_args = (torch.randn(3, 3), torch.randn(3, 3))
-    aten_dialect: ExportedProgram = export(Basic(), example_args, strict=True)
+    example_args_2: tuple[torch.Tensor, torch.Tensor] = (
+        torch.randn(3, 3),
+        torch.randn(3, 3),
+    )
+    aten_dialect = export(Basic(), example_args_2, strict=True)
 
     # Works correctly
     print(aten_dialect.module()(torch.ones(3, 3), torch.ones(3, 3)))
@@ -175,7 +178,7 @@ different than the ones we used while tracing, we will run into an error:
             [2., 2., 2.],
             [2., 2., 2.]])
     Traceback (most recent call last):
-      File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 111, in <module>
+      File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 114, in <module>
         print(aten_dialect.module()(torch.ones(3, 2), torch.ones(3, 2)))
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 822, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
@@ -200,32 +203,23 @@ different than the ones we used while tracing, we will run into an error:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 116-118
+.. GENERATED FROM PYTHON SOURCE LINES 119-121
 
 To express that some input shapes are dynamic, we can insert dynamic
  shapes to the exporting flow. This is done through the ``Dim`` API:
 
-.. GENERATED FROM PYTHON SOURCE LINES 118-138
+.. GENERATED FROM PYTHON SOURCE LINES 121-132
 
 .. code-block:: default
 
 
     from torch.export import Dim
 
-
-    class Basic(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-
-        def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-            return x + y
-
-
-    example_args = (torch.randn(3, 3), torch.randn(3, 3))
+    example_args_2 = (torch.randn(3, 3), torch.randn(3, 3))
     dim1_x = Dim("dim1_x", min=1, max=10)
     dynamic_shapes = {"x": {1: dim1_x}, "y": {1: dim1_x}}
-    aten_dialect: ExportedProgram = export(
-        Basic(), example_args, dynamic_shapes=dynamic_shapes, strict=True
+    aten_dialect = export(
+        Basic(), example_args_2, dynamic_shapes=dynamic_shapes, strict=True
     )
     print(aten_dialect)
 
@@ -240,7 +234,7 @@ To express that some input shapes are dynamic, we can insert dynamic
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, x: "f32[3, s0]", y: "f32[3, s0]"):
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:127 in forward, code: return x + y
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:100 in forward, code: return x + y
                 add: "f32[3, s0]" = torch.ops.aten.add.Tensor(x, y);  x = y = None
                 return (add,)
             
@@ -251,7 +245,7 @@ To express that some input shapes are dynamic, we can insert dynamic
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 139-147
+.. GENERATED FROM PYTHON SOURCE LINES 133-141
 
 Note that that the inputs ``arg0_1`` and ``arg1_1`` now have shapes (3, s0),
 with ``s0`` being a symbol representing that this dimension can be a range
@@ -262,7 +256,7 @@ the range [1, 10], which was specified by our dynamic shapes.
 
 Now let's try running the model with different shapes:
 
-.. GENERATED FROM PYTHON SOURCE LINES 147-165
+.. GENERATED FROM PYTHON SOURCE LINES 141-159
 
 .. code-block:: default
 
@@ -299,7 +293,7 @@ Now let's try running the model with different shapes:
             [2., 2.],
             [2., 2.]])
     Traceback (most recent call last):
-      File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 154, in <module>
+      File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 148, in <module>
         print(aten_dialect.module()(torch.ones(3, 15), torch.ones(3, 15)))
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 822, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
@@ -321,7 +315,7 @@ Now let's try running the model with different shapes:
         raise RuntimeError(
     RuntimeError: Expected input at *args[0].shape[1] to be <= 10, but got 15
     Traceback (most recent call last):
-      File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 160, in <module>
+      File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 154, in <module>
         print(aten_dialect.module()(torch.ones(3, 3), torch.ones(3, 2)))
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 822, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
@@ -346,7 +340,7 @@ Now let's try running the model with different shapes:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 166-176
+.. GENERATED FROM PYTHON SOURCE LINES 160-170
 
 Addressing Untraceable Code
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -359,7 +353,7 @@ or the
 `torch.export tutorial <https://pytorch.org/tutorials/intermediate/torch_export_tutorial.html>`__
 would be the best place to look.
 
-.. GENERATED FROM PYTHON SOURCE LINES 178-195
+.. GENERATED FROM PYTHON SOURCE LINES 172-189
 
 Performing Quantization
 -----------------------
@@ -379,7 +373,7 @@ instead of ``prepare_fx`` and ``convert_fx``. It differs in that
 will annotate the nodes in the graph with information needed to quantize the
 model properly for a specific backend.
 
-.. GENERATED FROM PYTHON SOURCE LINES 195-220
+.. GENERATED FROM PYTHON SOURCE LINES 189-214
 
 .. code-block:: default
 
@@ -398,13 +392,13 @@ model properly for a specific backend.
     )
 
     quantizer = XNNPACKQuantizer().set_global(get_symmetric_quantization_config())
-    prepared_graph = prepare_pt2e(pre_autograd_aten_dialect, quantizer)
+    prepared_graph = prepare_pt2e(pre_autograd_aten_dialect, quantizer)  # type: ignore[arg-type]
     # calibrate with a sample dataset
     converted_graph = convert_pt2e(prepared_graph)
     print("Quantized Graph")
     print(converted_graph)
 
-    aten_dialect: ExportedProgram = export(converted_graph, example_args, strict=True)
+    aten_dialect = export(converted_graph, example_args, strict=True)
     print("ATen Dialect Graph")
     print(aten_dialect)
 
@@ -486,13 +480,13 @@ model properly for a specific backend.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 221-224
+.. GENERATED FROM PYTHON SOURCE LINES 215-218
 
 More information on how to quantize a model, and how a backend can implement a
 ``Quantizer`` can be found
 `here <https://pytorch.org/docs/main/quantization.html#prototype-pytorch-2-export-quantization>`__.
 
-.. GENERATED FROM PYTHON SOURCE LINES 226-242
+.. GENERATED FROM PYTHON SOURCE LINES 220-236
 
 Lowering to Edge Dialect
 ------------------------
@@ -511,7 +505,7 @@ Note that this dialect is still backend (or target) agnostic.
 
 The lowering is done through the ``to_edge`` API.
 
-.. GENERATED FROM PYTHON SOURCE LINES 242-252
+.. GENERATED FROM PYTHON SOURCE LINES 236-246
 
 .. code-block:: default
 
@@ -519,7 +513,7 @@ The lowering is done through the ``to_edge`` API.
     from executorch.exir import EdgeProgramManager, to_edge
 
     example_args = (torch.randn(1, 3, 256, 256),)
-    aten_dialect: ExportedProgram = export(SimpleConv(), example_args, strict=True)
+    aten_dialect = export(SimpleConv(), example_args, strict=True)
 
     edge_program: EdgeProgramManager = to_edge(aten_dialect)
     print("Edge Dialect Graph")
@@ -551,14 +545,14 @@ The lowering is done through the ``to_edge`` API.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 253-257
+.. GENERATED FROM PYTHON SOURCE LINES 247-251
 
 ``to_edge()`` returns an ``EdgeProgramManager`` object, which contains the
 exported programs which will be placed on this device. This data structure
 allows users to export multiple programs and combine them into one binary. If
 there is only one program, it will by default be saved to the name "forward".
 
-.. GENERATED FROM PYTHON SOURCE LINES 257-282
+.. GENERATED FROM PYTHON SOURCE LINES 251-274
 
 .. code-block:: default
 
@@ -580,9 +574,7 @@ there is only one program, it will by default be saved to the name "forward".
     decode_args = (torch.randn(1, 5),)
     aten_decode: ExportedProgram = export(Decode(), decode_args, strict=True)
 
-    edge_program: EdgeProgramManager = to_edge(
-        {"encode": aten_encode, "decode": aten_decode}
-    )
+    edge_program = to_edge({"encode": aten_encode, "decode": aten_decode})
     for method in edge_program.methods:
         print(f"Edge Dialect graph of {method}")
         print(edge_program.exported_program(method))
@@ -595,24 +587,11 @@ there is only one program, it will by default be saved to the name "forward".
 
  .. code-block:: none
 
-    Edge Dialect graph of encode
-    ExportedProgram:
-        class GraphModule(torch.nn.Module):
-            def forward(self, x: "f32[1, 10]"):
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:261 in forward, code: return torch.nn.functional.linear(x, torch.randn(5, 10))
-                aten_randn_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_randn_default([5, 10], device = device(type='cpu'), pin_memory = False)
-                aten_permute_copy_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
-                aten_mm_default: "f32[1, 5]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
-                return (aten_mm_default,)
-            
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
-    Range constraints: {}
-
     Edge Dialect graph of decode
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, x: "f32[1, 5]"):
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:266 in forward, code: return torch.nn.functional.linear(x, torch.randn(10, 5))
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:260 in forward, code: return torch.nn.functional.linear(x, torch.randn(10, 5))
                 aten_randn_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_randn_default([10, 5], device = device(type='cpu'), pin_memory = False)
                 aten_permute_copy_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
                 aten_mm_default: "f32[1, 10]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
@@ -621,11 +600,24 @@ there is only one program, it will by default be saved to the name "forward".
     Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
     Range constraints: {}
 
+    Edge Dialect graph of encode
+    ExportedProgram:
+        class GraphModule(torch.nn.Module):
+            def forward(self, x: "f32[1, 10]"):
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:255 in forward, code: return torch.nn.functional.linear(x, torch.randn(5, 10))
+                aten_randn_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_randn_default([5, 10], device = device(type='cpu'), pin_memory = False)
+                aten_permute_copy_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
+                aten_mm_default: "f32[1, 5]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
+                return (aten_mm_default,)
+            
+    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
+    Range constraints: {}
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 283-292
+
+.. GENERATED FROM PYTHON SOURCE LINES 275-284
 
 We can also run additional passes on the exported program through
 the ``transform`` API. An in-depth documentation on how to write
@@ -637,14 +629,14 @@ result in a valid Edge Dialect graph (specifically one thing to point out is
 that the operators are now in the ``executorch.exir.dialects.edge`` namespace,
 rather than the ``torch.ops.aten`` namespace.
 
-.. GENERATED FROM PYTHON SOURCE LINES 292-317
+.. GENERATED FROM PYTHON SOURCE LINES 284-309
 
 .. code-block:: default
 
 
     example_args = (torch.randn(1, 3, 256, 256),)
-    aten_dialect: ExportedProgram = export(SimpleConv(), example_args, strict=True)
-    edge_program: EdgeProgramManager = to_edge(aten_dialect)
+    aten_dialect = export(SimpleConv(), example_args, strict=True)
+    edge_program = to_edge(aten_dialect)
     print("Edge Dialect Graph")
     print(edge_program.exported_program())
 
@@ -706,14 +698,14 @@ rather than the ``torch.ops.aten`` namespace.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 318-322
+.. GENERATED FROM PYTHON SOURCE LINES 310-314
 
 Note: if you see error like ``torch._export.verifier.SpecViolationError:
 Operator torch._ops.aten._native_batch_norm_legit_functional.default is not
 Aten Canonical``,
 please file an issue in https://github.com/pytorch/executorch/issues and we're happy to help!
 
-.. GENERATED FROM PYTHON SOURCE LINES 325-340
+.. GENERATED FROM PYTHON SOURCE LINES 317-332
 
 Delegating to a Backend
 -----------------------
@@ -731,7 +723,7 @@ There are three ways for using this API:
 3. We can partition the module into subgraphs that are lowerable, and then
    lower those subgraphs to a backend.
 
-.. GENERATED FROM PYTHON SOURCE LINES 342-348
+.. GENERATED FROM PYTHON SOURCE LINES 334-340
 
 Lowering the Whole Module
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -740,7 +732,7 @@ To lower an entire module, we can pass ``to_backend`` the backend name, the
 module to be lowered, and a list of compile specs to help the backend with the
 lowering process.
 
-.. GENERATED FROM PYTHON SOURCE LINES 348-385
+.. GENERATED FROM PYTHON SOURCE LINES 340-377
 
 .. code-block:: default
 
@@ -756,8 +748,8 @@ lowering process.
 
     # Export and lower the module to Edge Dialect
     example_args = (torch.ones(1),)
-    aten_dialect: ExportedProgram = export(LowerableModule(), example_args, strict=True)
-    edge_program: EdgeProgramManager = to_edge(aten_dialect)
+    aten_dialect = export(LowerableModule(), example_args, strict=True)
+    edge_program = to_edge(aten_dialect)
     to_be_lowered_module = edge_program.exported_program()
 
     from executorch.exir.backend.backend_api import LoweredBackendModule, to_backend
@@ -768,7 +760,7 @@ lowering process.
     )
 
     # Lower the module
-    lowered_module: LoweredBackendModule = to_backend(
+    lowered_module: LoweredBackendModule = to_backend(  # type: ignore[call-arg]
         "BackendWithCompilerDemo", to_be_lowered_module, []
     )
     print(lowered_module)
@@ -795,7 +787,7 @@ lowering process.
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, x: "f32[1]"):
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:355 in forward, code: return torch.sin(x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:347 in forward, code: return torch.sin(x)
                 aten_sin_default: "f32[1]" = executorch_exir_dialects_edge__ops_aten_sin_default(x);  x = None
                 return (aten_sin_default,)
             
@@ -806,7 +798,7 @@ lowering process.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 386-394
+.. GENERATED FROM PYTHON SOURCE LINES 378-386
 
 In this call, ``to_backend`` will return a ``LoweredBackendModule``. Some
 important attributes of the ``LoweredBackendModule`` are:
@@ -817,7 +809,7 @@ important attributes of the ``LoweredBackendModule`` are:
   this program in the runtime
 - ``original_module``: the original exported module
 
-.. GENERATED FROM PYTHON SOURCE LINES 396-401
+.. GENERATED FROM PYTHON SOURCE LINES 388-393
 
 Compose the Lowered Module into Another Module
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -825,7 +817,7 @@ Compose the Lowered Module into Another Module
 In cases where we want to reuse this lowered module in multiple programs, we
 can compose this lowered module with another module.
 
-.. GENERATED FROM PYTHON SOURCE LINES 401-436
+.. GENERATED FROM PYTHON SOURCE LINES 393-428
 
 .. code-block:: default
 
@@ -854,8 +846,8 @@ can compose this lowered module with another module.
 
 
     example_args = (torch.ones(1),)
-    aten_dialect: ExportedProgram = export(ComposedModule(), example_args, strict=True)
-    edge_program: EdgeProgramManager = to_edge(aten_dialect)
+    aten_dialect = export(ComposedModule(), example_args, strict=True)
+    edge_program = to_edge(aten_dialect)
     exported_program = edge_program.exported_program()
     print("Edge Dialect graph")
     print(exported_program)
@@ -888,7 +880,7 @@ can compose this lowered module with another module.
                 lowered_module_1 = self.lowered_module_0
                 executorch_call_delegate_1: "f32[1]" = torch.ops.higher_order.executorch_call_delegate(lowered_module_1, executorch_call_delegate);  lowered_module_1 = None
             
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:409 in forward, code: return torch.add(torch.add(a, b), self.bias)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:401 in forward, code: return torch.add(torch.add(a, b), self.bias)
                 aten_add_tensor: "f32[1]" = executorch_exir_dialects_edge__ops_aten_add_Tensor(executorch_call_delegate, executorch_call_delegate_1)
                 aten_add_tensor_1: "f32[1]" = executorch_exir_dialects_edge__ops_aten_add_Tensor(aten_add_tensor, c_non_lowerable_bias);  aten_add_tensor = c_non_lowerable_bias = None
                 return (executorch_call_delegate, executorch_call_delegate_1, aten_add_tensor_1)
@@ -902,7 +894,7 @@ can compose this lowered module with another module.
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, x: "f32[1]"):
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:355 in forward, code: return torch.sin(x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:347 in forward, code: return torch.sin(x)
                 aten_sin_default: "f32[1]" = executorch_exir_dialects_edge__ops_aten_sin_default(x);  x = None
                 return (aten_sin_default,)
             
@@ -913,14 +905,14 @@ can compose this lowered module with another module.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 437-441
+.. GENERATED FROM PYTHON SOURCE LINES 429-433
 
 Notice that there is now a ``torch.ops.higher_order.executorch_call_delegate`` node in the
 graph, which is calling ``lowered_module_0``. Additionally, the contents of
 ``lowered_module_0`` are the same as the ``lowered_module`` we created
 previously.
 
-.. GENERATED FROM PYTHON SOURCE LINES 443-451
+.. GENERATED FROM PYTHON SOURCE LINES 435-443
 
 Partition and Lower Parts of a Module
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -931,7 +923,7 @@ backend-specific partitioner to tag nodes in the module which are lowerable,
 partition those nodes into subgraphs, and then create a
 ``LoweredBackendModule`` for each of those subgraphs.
 
-.. GENERATED FROM PYTHON SOURCE LINES 451-478
+.. GENERATED FROM PYTHON SOURCE LINES 443-470
 
 .. code-block:: default
 
@@ -947,16 +939,16 @@ partition those nodes into subgraphs, and then create a
             return z
 
 
-    example_args = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
-    aten_dialect: ExportedProgram = export(Foo(), example_args, strict=True)
-    edge_program: EdgeProgramManager = to_edge(aten_dialect)
+    example_args_3 = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+    aten_dialect = export(Foo(), example_args_3, strict=True)
+    edge_program = to_edge(aten_dialect)
     exported_program = edge_program.exported_program()
     print("Edge Dialect graph")
     print(exported_program)
 
     from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 
-    delegated_program = to_backend(exported_program, AddMulPartitionerDemo())
+    delegated_program = to_backend(exported_program, AddMulPartitionerDemo())  # type: ignore[call-arg]
     print("Delegated program")
     print(delegated_program)
     print(delegated_program.graph_module.lowered_module_0.original_module)
@@ -974,19 +966,19 @@ partition those nodes into subgraphs, and then create a
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, a: "f32[2, 2]", x: "f32[2, 2]", b: "f32[2, 2]"):
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:455 in forward, code: y = torch.mm(a, x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:447 in forward, code: y = torch.mm(a, x)
                 aten_mm_default: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_mm_default(a, x)
             
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:456 in forward, code: z = y + b
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:448 in forward, code: z = y + b
                 aten_add_tensor: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_add_Tensor(aten_mm_default, b);  aten_mm_default = None
             
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:457 in forward, code: a = z - a
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:449 in forward, code: a = z - a
                 aten_sub_tensor: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_sub_Tensor(aten_add_tensor, a);  aten_add_tensor = a = None
             
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:458 in forward, code: y = torch.mm(a, x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:450 in forward, code: y = torch.mm(a, x)
                 aten_mm_default_1: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_mm_default(aten_sub_tensor, x);  aten_sub_tensor = x = None
             
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:459 in forward, code: z = y + b
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:451 in forward, code: z = y + b
                 aten_add_tensor_1: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_add_Tensor(aten_mm_default_1, b);  aten_mm_default_1 = b = None
                 return (aten_add_tensor_1,)
             
@@ -1003,7 +995,7 @@ partition those nodes into subgraphs, and then create a
                 executorch_call_delegate_1 = torch.ops.higher_order.executorch_call_delegate(lowered_module_1, a, x, b);  lowered_module_1 = None
                 getitem_1: "f32[2, 2]" = executorch_call_delegate_1[0];  executorch_call_delegate_1 = None
             
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:457 in forward, code: a = z - a
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:449 in forward, code: a = z - a
                 aten_sub_tensor: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_sub_Tensor(getitem_1, a);  getitem_1 = a = None
             
                 # No stacktrace found for following nodes
@@ -1017,10 +1009,10 @@ partition those nodes into subgraphs, and then create a
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, aten_sub_tensor: "f32[2, 2]", x: "f32[2, 2]", b: "f32[2, 2]"):
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:458 in forward, code: y = torch.mm(a, x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:450 in forward, code: y = torch.mm(a, x)
                 aten_mm_default_1: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_mm_default(aten_sub_tensor, x);  aten_sub_tensor = x = None
             
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:459 in forward, code: z = y + b
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:451 in forward, code: z = y + b
                 aten_add_tensor_1: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_add_Tensor(aten_mm_default_1, b);  aten_mm_default_1 = b = None
                 return [aten_add_tensor_1]
             
@@ -1030,10 +1022,10 @@ partition those nodes into subgraphs, and then create a
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, a: "f32[2, 2]", x: "f32[2, 2]", b: "f32[2, 2]"):
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:455 in forward, code: y = torch.mm(a, x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:447 in forward, code: y = torch.mm(a, x)
                 aten_mm_default: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_mm_default(a, x);  a = x = None
             
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:456 in forward, code: z = y + b
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:448 in forward, code: z = y + b
                 aten_add_tensor: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_add_Tensor(aten_mm_default, b);  aten_mm_default = b = None
                 return [aten_add_tensor]
             
@@ -1044,7 +1036,7 @@ partition those nodes into subgraphs, and then create a
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 479-485
+.. GENERATED FROM PYTHON SOURCE LINES 471-477
 
 Notice that there are now 2 ``torch.ops.higher_order.executorch_call_delegate`` nodes in the
 graph, one containing the operations `add, mul` and the other containing the
@@ -1053,25 +1045,15 @@ operations `mul, add`.
 Alternatively, a more cohesive API to lower parts of a module is to directly
 call ``to_backend`` on it:
 
-.. GENERATED FROM PYTHON SOURCE LINES 485-506
+.. GENERATED FROM PYTHON SOURCE LINES 477-488
 
 .. code-block:: default
 
 
 
-    class Foo(torch.nn.Module):
-        def forward(self, a, x, b):
-            y = torch.mm(a, x)
-            z = y + b
-            a = z - a
-            y = torch.mm(a, x)
-            z = y + b
-            return z
-
-
-    example_args = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
-    aten_dialect: ExportedProgram = export(Foo(), example_args, strict=True)
-    edge_program: EdgeProgramManager = to_edge(aten_dialect)
+    example_args_3 = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+    aten_dialect = export(Foo(), example_args_3, strict=True)
+    edge_program = to_edge(aten_dialect)
     exported_program = edge_program.exported_program()
     delegated_program = edge_program.to_backend(AddMulPartitionerDemo())
 
@@ -1096,7 +1078,7 @@ call ``to_backend`` on it:
                 executorch_call_delegate_1 = torch.ops.higher_order.executorch_call_delegate(lowered_module_1, a, x, b);  lowered_module_1 = None
                 getitem_1: "f32[2, 2]" = executorch_call_delegate_1[0];  executorch_call_delegate_1 = None
             
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:491 in forward, code: a = z - a
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:449 in forward, code: a = z - a
                 aten_sub_tensor: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_sub_Tensor(getitem_1, a);  getitem_1 = a = None
             
                 # No stacktrace found for following nodes
@@ -1111,7 +1093,7 @@ call ``to_backend`` on it:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 507-519
+.. GENERATED FROM PYTHON SOURCE LINES 489-501
 
 Running User-Defined Passes and Memory Planning
 -----------------------------------------------
@@ -1126,7 +1108,7 @@ backend-specific memory planning pass if it exists. More information on
 writing a custom memory planning pass can be found
 `here <../compiler-memory-planning.html>`__
 
-.. GENERATED FROM PYTHON SOURCE LINES 519-535
+.. GENERATED FROM PYTHON SOURCE LINES 501-516
 
 .. code-block:: default
 
@@ -1144,7 +1126,6 @@ writing a custom memory planning pass can be found
     print("ExecuTorch Dialect")
     print(executorch_program.exported_program())
 
-    import executorch.exir as exir
 
 
 
@@ -1161,31 +1142,31 @@ writing a custom memory planning pass can be found
                 # No stacktrace found for following nodes
                 alloc: "f32[2, 2]" = executorch_exir_memory_alloc(((2, 2), torch.float32))
             
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:489 in forward, code: y = torch.mm(a, x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:447 in forward, code: y = torch.mm(a, x)
                 aten_mm_default: "f32[2, 2]" = torch.ops.aten.mm.out(a, x, out = alloc);  alloc = None
             
                 # No stacktrace found for following nodes
                 alloc_1: "f32[2, 2]" = executorch_exir_memory_alloc(((2, 2), torch.float32))
             
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:490 in forward, code: z = y + b
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:448 in forward, code: z = y + b
                 aten_add_tensor: "f32[2, 2]" = torch.ops.aten.add.out(aten_mm_default, b, out = alloc_1);  aten_mm_default = alloc_1 = None
             
                 # No stacktrace found for following nodes
                 alloc_2: "f32[2, 2]" = executorch_exir_memory_alloc(((2, 2), torch.float32))
             
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:491 in forward, code: a = z - a
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:449 in forward, code: a = z - a
                 aten_sub_tensor: "f32[2, 2]" = torch.ops.aten.sub.out(aten_add_tensor, a, out = alloc_2);  aten_add_tensor = a = alloc_2 = None
             
                 # No stacktrace found for following nodes
                 alloc_3: "f32[2, 2]" = executorch_exir_memory_alloc(((2, 2), torch.float32))
             
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:492 in forward, code: y = torch.mm(a, x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:450 in forward, code: y = torch.mm(a, x)
                 aten_mm_default_1: "f32[2, 2]" = torch.ops.aten.mm.out(aten_sub_tensor, x, out = alloc_3);  aten_sub_tensor = x = alloc_3 = None
             
                 # No stacktrace found for following nodes
                 alloc_4: "f32[2, 2]" = executorch_exir_memory_alloc(((2, 2), torch.float32))
             
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:493 in forward, code: z = y + b
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:451 in forward, code: z = y + b
                 aten_add_tensor_1: "f32[2, 2]" = torch.ops.aten.add.out(aten_mm_default_1, b, out = alloc_4);  aten_mm_default_1 = b = alloc_4 = None
                 return (aten_add_tensor_1,)
             
@@ -1196,7 +1177,7 @@ writing a custom memory planning pass can be found
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 536-552
+.. GENERATED FROM PYTHON SOURCE LINES 517-533
 
 Notice that in the graph we now see operators like ``torch.ops.aten.sub.out``
 and ``torch.ops.aten.div.out`` rather than ``torch.ops.aten.sub.Tensor`` and
@@ -1215,7 +1196,7 @@ We also insert ``alloc`` nodes into the graph containing calls to a special
 needed to allocate each tensor output by the out-variant operator.
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 554-561
+.. GENERATED FROM PYTHON SOURCE LINES 535-542
 
 Saving to a File
 ----------------
@@ -1225,7 +1206,7 @@ to be run.
 
 Here is an example for an entire end-to-end workflow:
 
-.. GENERATED FROM PYTHON SOURCE LINES 561-595
+.. GENERATED FROM PYTHON SOURCE LINES 542-574
 
 .. code-block:: default
 
@@ -1248,13 +1229,11 @@ Here is an example for an entire end-to-end workflow:
     pre_autograd_aten_dialect = export_for_training(M(), example_args).module()
     # Optionally do quantization:
     # pre_autograd_aten_dialect = convert_pt2e(prepare_pt2e(pre_autograd_aten_dialect, CustomBackendQuantizer))
-    aten_dialect: ExportedProgram = export(
-        pre_autograd_aten_dialect, example_args, strict=True
-    )
-    edge_program: exir.EdgeProgramManager = exir.to_edge(aten_dialect)
+    aten_dialect = export(pre_autograd_aten_dialect, example_args, strict=True)
+    edge_program = to_edge(aten_dialect)
     # Optionally do delegation:
     # edge_program = edge_program.to_backend(CustomBackendPartitioner)
-    executorch_program: exir.ExecutorchProgramManager = edge_program.to_executorch(
+    executorch_program = edge_program.to_executorch(
         ExecutorchBackendConfig(
             passes=[],  # User-defined passes
         )
@@ -1270,7 +1249,7 @@ Here is an example for an entire end-to-end workflow:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 596-611
+.. GENERATED FROM PYTHON SOURCE LINES 575-590
 
 Conclusion
 ----------
@@ -1291,7 +1270,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 3.133 seconds)
+   **Total running time of the script:** (0 minutes 3.158 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:

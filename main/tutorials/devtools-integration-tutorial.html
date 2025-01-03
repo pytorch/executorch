@@ -693,7 +693,7 @@ finding the raw runtime data of an <code class="docutils literal notranslate"><s
     <span class="c1"># Via EventBlocks</span>
     <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">event_block</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;native_call_addmm.out&quot;</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">event</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">event</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">raw</span> <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">perf_data</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
 
     <span class="c1"># Via Dataframe</span>
     <span class="n">df</span> <span class="o">=</span> <span class="n">event_block</span><span class="o">.</span><span class="n">to_dataframe</span><span class="p">()</span>
@@ -724,11 +724,12 @@ slowest <code class="docutils literal notranslate"><span class="pre">convolution
     <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">df</span><span class="o">.</span><span class="n">event_name</span> <span class="o">==</span> <span class="s2">&quot;native_call_convolution.out&quot;</span><span class="p">]</span>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
         <span class="n">slowest</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">df</span><span class="p">[</span><span class="s2">&quot;p50&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">idxmax</span><span class="p">()]</span>
-        <span class="nb">print</span><span class="p">(</span><span class="n">slowest</span><span class="o">.</span><span class="n">event_name</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">slowest</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">slowest</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
         <span class="nb">print</span><span class="p">()</span>
-        <a href="https://docs.python.org/3/library/pprint.html#pprint.pprint" title="pprint.pprint" class="sphx-glr-backref-module-pprint sphx-glr-backref-type-py-function"><span class="n">pp</span><span class="o">.</span><span class="n">pprint</span></a><span class="p">(</span><span class="n">slowest</span><span class="o">.</span><span class="n">stack_traces</span><span class="p">)</span>
+        <a href="https://docs.python.org/3/library/pprint.html#pprint.pprint" title="pprint.pprint" class="sphx-glr-backref-module-pprint sphx-glr-backref-type-py-function"><span class="n">pp</span><span class="o">.</span><span class="n">pprint</span></a><span class="p">(</span><span class="n">slowest</span><span class="o">.</span><span class="n">stack_traces</span> <span class="k">if</span> <span class="n">slowest</span><span class="o">.</span><span class="n">stack_traces</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
         <span class="nb">print</span><span class="p">()</span>
-        <a href="https://docs.python.org/3/library/pprint.html#pprint.pprint" title="pprint.pprint" class="sphx-glr-backref-module-pprint sphx-glr-backref-type-py-function"><span class="n">pp</span><span class="o">.</span><span class="n">pprint</span></a><span class="p">(</span><span class="n">slowest</span><span class="o">.</span><span class="n">module_hierarchy</span><span class="p">)</span>
+        <a href="https://docs.python.org/3/library/pprint.html#pprint.pprint" title="pprint.pprint" class="sphx-glr-backref-module-pprint sphx-glr-backref-type-py-function"><span class="n">pp</span><span class="o">.</span><span class="n">pprint</span></a><span class="p">(</span><span class="n">slowest</span><span class="o">.</span><span class="n">module_hierarchy</span> <span class="k">if</span> <span class="n">slowest</span><span class="o">.</span><span class="n">module_hierarchy</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>If a user wants the total runtime of a module, they can use
@@ -757,7 +758,7 @@ to analyze the model run results.</p>
 <li><p><a class="reference external" href="../etdump.html">ETDump</a></p></li>
 <li><p><a class="reference external" href="../model-inspector.html">Inspector</a></p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.599 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.849 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-devtools-integration-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/19eb0a842fd17829284e2ef09d1cda78/devtools-integration-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">devtools-integration-tutorial.py</span></code></a></p>
