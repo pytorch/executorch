@@ -12,7 +12,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 install_executorch_and_backend_lib() {
   echo "Installing executorch and xnnpack backend"
-  rm -rf cmake-android-out && mkdir cmake-android-out
+  clean_executorch_install_folders
+  mkdir cmake-android-out
   ANDROID_NDK=/opt/ndk
   BUCK2=buck2
   ANDROID_ABI=arm64-v8a

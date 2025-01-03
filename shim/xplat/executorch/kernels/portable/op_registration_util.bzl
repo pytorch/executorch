@@ -1002,6 +1002,9 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_repeat_interleave",
+    ),
+    op_target(
         name = "op_replication_pad1d",
         deps = [
             "//executorch/kernels/portable/cpu/util:padding_util",
@@ -1224,6 +1227,12 @@ ATEN_OPS = (
         name = "op_unsqueeze_copy",
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
+    op_target(
+        name = "op_upsample_bilinear2d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:upsample_util",
         ],
     ),
     op_target(
