@@ -38,6 +38,12 @@ OPERATORS = [
     "native_layer_norm",
     "quantize",
     "softmax",
+    "sub",
+    "div",
+    "exp",
+    "mean",
+    "slice",
+    "permute"
 ]
 
 def define_common_targets():
