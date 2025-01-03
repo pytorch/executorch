@@ -22,6 +22,7 @@ import distutils.file_util
 import glob
 import os
 import sys
+from typing import Any
 
 import pytorch_sphinx_theme
 
@@ -103,7 +104,7 @@ myst_enable_extensions = [
 
 myst_heading_anchors = 4
 
-sphinx_gallery_conf = {
+sphinx_gallery_conf: dict[str, Any] = {
     "examples_dirs": ["tutorials_source"],
     "ignore_pattern": "template_tutorial.py",
     "gallery_dirs": ["tutorials"],
@@ -197,7 +198,7 @@ from custom_directives import (
     SupportedDevices,
     SupportedProperties,
 )
-from docutils.parsers import rst
+from docutils.parsers import rst  # type: ignore[import-untyped]
 
 # Register custom directives
 
