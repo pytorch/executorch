@@ -66,7 +66,7 @@
 	url = https://github.com/pybind/pybind11.git
 [submodule "backends/cadence/fusion_g3/third-party/nnlib/nnlib-FusionG3"]
 	path = backends/cadence/fusion_g3/third-party/nnlib/nnlib-FusionG3
-	url = https://github.com/foss-xtensa/nnlib-FusionG3/
+	url = https://github.com/foss-xtensa/nnlib-FusionG3.git
 [submodule "third-party/ao"]
 	path = third-party/ao
 	url = https://github.com/pytorch/ao.git
