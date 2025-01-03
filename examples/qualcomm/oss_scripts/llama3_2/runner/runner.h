@@ -21,6 +21,8 @@
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
+#include <executorch/devtools/etdump/etdump_flatcc.h>
+
 
 namespace example {
 
@@ -30,7 +32,8 @@ class Runner {
       const std::vector<std::string>& models_path,
       const std::string& tokenizer_path,
       const float temperature,
-      const int eval_mode);
+      const int eval_mode,     
+      const bool gen_etdump);
 
   struct Stats {
     // Scaling factor for timestamps - in this case, we use ms.
@@ -69,6 +72,7 @@ class Runner {
   void stop();
   std::vector<executorch::runtime::Result<executorch::runtime::MethodMeta>>
   get_methods_meta(std::string& method_name);
+  void gen_etdump_data();
 
  private:
   template <typename T>
@@ -93,6 +97,11 @@ class Runner {
   float temperature_;
   std::unique_ptr<executorch::extension::llm::Tokenizer> tokenizer_;
   std::unique_ptr<executorch::extension::llm::Sampler> sampler_;
+  torch::executor::ETDumpGen*  prefill_dump_ = nullptr;
+  torch::executor::ETDumpGen*  decode_dump_ = nullptr;
+  bool gen_etdump_ = false;
+  std::string prefill_etdump_path_;
+  std::string decode_etdump_path_;
   Stats stats_;
   std::unique_ptr<Memory> io_mem_;
   EvalMode eval_mode_;
