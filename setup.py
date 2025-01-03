@@ -145,7 +145,7 @@ class Version:
                     open(os.path.join(cls._root_dir(), "version.txt")).read().strip()
                 )
                 if cls.git_hash():
-                    version += "+" + cls.git_hash()[:7]
+                    version += "+" + cls.git_hash()[:7]  # type: ignore[index]
             cls.__string_attr = version
         return cls.__string_attr
 
