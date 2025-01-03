@@ -60,21 +60,6 @@ void DispatchNode::encode(ComputeGraph* graph) {
 
   std::unique_lock<std::mutex> cmd_lock = context->dispatch_lock();
 
-  context->report_shader_dispatch_start(
-      shader_.kernel_name,
-      global_workgroup_size_,
-      local_workgroup_size_,
-      node_id_);
-
-  vkapi::DescriptorSet descriptor_set =
-      context->get_descriptor_set(shader_, local_workgroup_size_, spec_vars_);
-
-  uint32_t idx = 0;
-  idx = bind_values_to_descriptor_set(
-      graph, args_, pipeline_barrier, descriptor_set, idx);
-
-  bind_params_to_descriptor_set(params_, descriptor_set, idx);
-
   std::array<uint8_t, kMaxPushConstantSize> push_constants_data;
   uint32_t push_constants_offset = 0;
 
@@ -84,6 +69,22 @@ void DispatchNode::encode(ComputeGraph* graph) {
         push_constants_offset,
         kMaxPushConstantSize);
   }
+
+  context->report_shader_dispatch_start(
+      shader_.kernel_name,
+      global_workgroup_size_,
+      local_workgroup_size_,
+      node_id_);
+
+  vkapi::DescriptorSet descriptor_set = context->get_descriptor_set(
+      shader_, local_workgroup_size_, spec_vars_, push_constants_offset);
+
+  uint32_t idx = 0;
+  idx = bind_values_to_descriptor_set(
+      graph, args_, pipeline_barrier, descriptor_set, idx);
+
+  bind_params_to_descriptor_set(params_, descriptor_set, idx);
+
   context->register_shader_dispatch(
       descriptor_set,
       pipeline_barrier,
