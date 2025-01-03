@@ -157,7 +157,7 @@ class TestScalars(unittest.TestCase):
     def test_MI(self, test_name: str, op: torch.nn.Module, x, y):
         expected_exception = None
         if any(token in test_name for token in ("Sub_int", "Sub__int")):
-            expected_exception = ValueError
+            expected_exception = (AssertionError, ValueError)
         elif test_name.endswith("_st"):
             expected_exception = AttributeError
 

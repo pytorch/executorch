@@ -38,7 +38,6 @@ class AddVisitor_080_BI(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         # Specification (0.80) states that input and output types
         # should all be the same
@@ -96,7 +95,6 @@ class AddVisitor_080_MI(AddVisitor_080_BI):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         # Specification (0.80) states that input and output types
         # should all be the same
@@ -104,7 +102,7 @@ class AddVisitor_080_MI(AddVisitor_080_BI):
 
         if inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]:
             # Call the inherited define_node for handling integers
-            super().define_node(node, tosa_graph, inputs, output, is_quant_node)
+            super().define_node(node, tosa_graph, inputs, output)
         else:
             # FP32 Add lowering
             assert inputs[0].dtype == ts.DType.FP32

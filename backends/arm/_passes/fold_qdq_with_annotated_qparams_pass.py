@@ -6,14 +6,20 @@
 
 import copy
 
-from typing import cast, Iterable
+from typing import cast, Dict, Iterable, Set, Tuple
 
 from executorch.backends.arm.tosa_quant_utils import QuantArgs
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import (
+    Argument,
+    ExportPass,
+    NodeMetadata,
+    PassResult,
+    ProxyValue,
+)
 from torch.fx import GraphModule, Node
 
 q_op: EdgeOpOverload = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
@@ -80,6 +86,46 @@ class FoldAndAnnotateQParamsPass(ExportPass):
         super().__init__()
         self.targeted_ops = targeted_ops
 
+    def fold_and_annotate_arg(
+        self, graph_module: GraphModule, node: Node, arg_list: list[Node], i: int
+    ) -> None:
+        input_qparams = None
+        nodes_to_remove = set()
+        for arg in arg_list:
+            if not isinstance(arg, Node):
+                return
+            """
+             Make sure arg has requires_grad set to False
+             For parameters that are not quantized, sometimes (i.e. convolution)
+             the Parameter(FakeTensor(...)) has requires_grad set to True, which
+             causes the retracing of the graph to fail with:
+
+             E       RuntimeError: isDifferentiableType(variable.scalar_type()) INTERNAL ASSERT FAILED at "/Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/functions/utils.h":74, please report a bug to PyTorch.
+             E
+             E       While executing %aten_convolution_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%quantized_decomposed_quantize_per_tensor_default, %b__frozen_param0, %p__param_constant1, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+             E       Original traceback:
+             E         File "/Users/perast01/src/executorch/backends/arm/test/ops/test_conv2d.py", line 110, in forward
+             E           x = conv(x)
+            """
+            if arg.op == "placeholder":
+                arg.meta["val"].requires_grad = False
+
+            arg_quant_params = None
+            if arg.target == dq_op:
+                arg_quant_params = QuantArgs.from_operator(arg.target, arg.args)
+                # add arg to nodes_to_remove to fold the dq-node
+                nodes_to_remove.add(arg)
+            if input_qparams is not None and input_qparams != arg_quant_params:
+                # Two args are quantized differently
+                raise RuntimeError("Input qparams does not match!")
+            input_qparams = arg_quant_params
+        if input_qparams is not None:
+            node.meta["input_qparams"][i] = input_qparams
+            for n in nodes_to_remove:
+                assert n.target == dq_op
+                n.replace_all_uses_with(n.args[0])
+                graph_module.graph.erase_node(n)
+
     def call(self, graph_module: GraphModule) -> PassResult:
 
         # Loop over the graph nodes and find any node in the 'targeted_ops' list.
@@ -98,36 +144,11 @@ class FoldAndAnnotateQParamsPass(ExportPass):
             n.meta["input_qparams"] = {}
             n.meta["output_qparams"] = {}
             for i, arg in enumerate(n.args):
-                if not isinstance(arg, Node):
-                    continue
+                if isinstance(arg, list):
+                    self.fold_and_annotate_arg(graph_module, n, arg, i)
 
-                # Make sure arg has requires_grad set to False
-                # For parameters that are not quantized, sometimes (i.e. convolution)
-                # the Parameter(FakeTensor(...)) has requires_grad set to True, which
-                # causes the retracing of the graph to fail with:
-                #
-                # E       RuntimeError: isDifferentiableType(variable.scalar_type()) INTERNAL ASSERT FAILED at "/Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/functions/utils.h":74, please report a bug to PyTorch.
-                # E
-                # E       While executing %aten_convolution_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%quantized_decomposed_quantize_per_tensor_default, %b__frozen_param0, %p__param_constant1, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
-                # E       Original traceback:
-                # E         File "/Users/perast01/src/executorch/backends/arm/test/ops/test_conv2d.py", line 110, in forward
-                # E           x = conv(x)
-                #
-                if arg.op == "placeholder":
-                    arg.meta["val"].requires_grad = False
-
-                if arg.target != dq_op:
-                    continue
-
-                # arg.target for argument i is a dequant node, extract the information
-                n.meta["input_qparams"][i] = QuantArgs.from_operator(
-                    arg.target, arg.args
-                )
-
-                # arg.args[0] is the tensor input, replace the input usage
-                tensor_input = cast(Node, arg.args[0])
-                n.replace_input_with(arg, tensor_input)
-                graph_module.graph.erase_node(arg)
+                elif isinstance(arg, Node):
+                    self.fold_and_annotate_arg(graph_module, n, [arg], i)
 
             # Copy the users, since we are modifying it.
             users_copy = copy.copy(n.users)
@@ -181,3 +202,39 @@ class QuantizeFullArgument(ExportPass):
                 modified = True
 
         return PassResult(graph_module, modified)
+
+
+class RetraceFoldedDtypesPass(ExportPass):
+    """
+    FoldAndAnnotateQParamsPass folds dq and q nodes. When the graph is retraced
+    some operators are retraced to types that cannot be handled by TOSA. One
+    such example is sum.dim_IntList:
+        q (int8) -> dq (fp32) -> sum (fp32) -> q (int8) ...
+    After folding it becomes:
+        q (int8)              -> sum (int64) ->         ...
+    This pass changes types of ops in self.targeted_ops, such as sum, so that
+    the output type of that matches the type of the output_qparams.
+    """
+
+    targeted_ops: Set[EdgeOpOverload] = {
+        exir_ops.edge.aten.sum.dim_IntList,
+    }
+
+    def call_operator(
+        self,
+        op,  # pyre-ignore
+        args: Tuple[Argument, ...],
+        kwargs: Dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        if op not in self.targeted_ops:
+            return super().call_operator(op, args, kwargs, meta)
+
+        node_kwargs = kwargs.copy()
+        output_qparams = meta["output_qparams"]
+        if len(output_qparams) == 0:
+            return super().call_operator(op, args, kwargs, meta)
+
+        output_dtype = output_qparams[0].dtype
+        node_kwargs["dtype"] = output_dtype
+        return super().call_operator(op, args, node_kwargs, meta)

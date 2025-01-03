@@ -31,7 +31,6 @@ class FullVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
 
         shape = tosa_shape(inputs[0].special, output.dim_order)
