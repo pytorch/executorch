@@ -27,7 +27,9 @@ from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
 from executorch.exir.print_program import pretty_print
 
-from executorch.test.models.linear_model import LinearModel
+from executorch.test.models.linear_model import (  # type: ignore[import-not-found]
+    LinearModel,
+)
 from torch.export import export
 
 
