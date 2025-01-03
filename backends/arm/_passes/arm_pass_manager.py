@@ -40,6 +40,7 @@ from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPa
 from executorch.backends.arm._passes.meandim_to_averagepool_pass import (
     ConvertMeanDimToAveragePool,
 )
+from executorch.backends.arm._passes.mm_to_bmm_pass import ConvertMmToBmmPass
 from executorch.backends.arm._passes.remove_clone_pass import RemoveClonePass
 from executorch.backends.arm._passes.scalars_to_attribute_pass import (
     ScalarsToAttributePass,
@@ -85,6 +86,7 @@ class ArmPassManager(PassManager):
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSoftmaxesPass())
         self.add_pass(DecomposeLinearPass())
+        self.add_pass(ConvertMmToBmmPass())
         self.add_pass(QuantizeFullArgument())
         self.add_pass(
             FoldAndAnnotateQParamsPass(
