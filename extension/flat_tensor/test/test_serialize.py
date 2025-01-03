@@ -4,15 +4,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import typing
 import unittest
-from typing import List
 
 from executorch.exir._serialize.data_serializer import (
+    DataPayload,
     DataSerializer,
-    SerializationInfo,
+    TensorEntry,
     TensorLayout,
 )
+
+from executorch.exir._serialize.padding import aligned_size
 
 from executorch.exir.schema import ScalarType
 from executorch.extension.flat_tensor.serialize.flat_tensor_schema import TensorMetadata
@@ -24,34 +25,42 @@ from executorch.extension.flat_tensor.serialize.serialize import (
     FlatTensorSerializer,
 )
 
-# Test artifacts
+# Test artifacts.
 TEST_TENSOR_BUFFER = [b"\x11" * 4, b"\x22" * 32]
 TEST_TENSOR_MAP = {
-    "fqn1": 0,
-    "fqn2": 0,
-    "fqn3": 1,
+    "fqn1": TensorEntry(
+        buffer_index=0,
+        layout=TensorLayout(
+            scalar_type=ScalarType.FLOAT,
+            sizes=[1, 1, 1],
+            dim_order=[0, 1, 2],
+        ),
+    ),
+    "fqn2": TensorEntry(
+        buffer_index=0,
+        layout=TensorLayout(
+            scalar_type=ScalarType.FLOAT,
+            sizes=[1, 1, 1],
+            dim_order=[0, 1, 2],
+        ),
+    ),
+    "fqn3": TensorEntry(
+        buffer_index=1,
+        layout=TensorLayout(
+            scalar_type=ScalarType.INT,
+            sizes=[2, 2, 2],
+            dim_order=[0, 1],
+        ),
+    ),
 }
-
-TEST_TENSOR_LAYOUT = {
-    "fqn1": TensorLayout(
-        scalar_type=ScalarType.FLOAT,
-        sizes=[1, 1, 1],
-        dim_order=typing.cast(List[bytes], [0, 1, 2]),
-    ),
-    "fqn2": TensorLayout(
-        scalar_type=ScalarType.FLOAT,
-        sizes=[1, 1, 1],
-        dim_order=typing.cast(List[bytes], [0, 1, 2]),
-    ),
-    "fqn3": TensorLayout(
-        scalar_type=ScalarType.INT,
-        sizes=[2, 2, 2],
-        dim_order=typing.cast(List[bytes], [0, 1]),
-    ),
-}
+TEST_DATA_PAYLOAD = DataPayload(
+    buffers=TEST_TENSOR_BUFFER,
+    fqn_to_tensor=TEST_TENSOR_MAP,
+)
 
 
 class TestSerialize(unittest.TestCase):
+    # TODO(T211851359): improve test coverage.
     def check_tensor_metadata(
         self, tensor_layout: TensorLayout, tensor_metadata: TensorMetadata
     ) -> None:
@@ -63,23 +72,34 @@ class TestSerialize(unittest.TestCase):
         config = FlatTensorConfig()
         serializer: DataSerializer = FlatTensorSerializer(config)
 
-        data = bytes(
-            serializer.serialize_tensors(
-                SerializationInfo(
-                    TEST_TENSOR_BUFFER, TEST_TENSOR_MAP, TEST_TENSOR_LAYOUT
-                )
-            )
-        )
+        data = bytes(serializer.serialize(TEST_DATA_PAYLOAD))
 
         # Check header.
         header = FlatTensorHeader.from_bytes(data[0 : FlatTensorHeader.EXPECTED_LENGTH])
         self.assertTrue(header.is_valid())
 
-        self.assertEqual(header.flatbuffer_offset, 48)
-        self.assertEqual(header.flatbuffer_size, 288)
-        self.assertEqual(header.segment_base_offset, 336)
-        self.assertEqual(header.data_size, 48)
+        # Header is aligned to config.segment_alignment, which is where the flatbuffer starts.
+        self.assertEqual(
+            header.flatbuffer_offset,
+            aligned_size(FlatTensorHeader.EXPECTED_LENGTH, config.segment_alignment),
+        )
 
+        # Flatbuffer is non-empty.
+        self.assertTrue(header.flatbuffer_size > 0)
+
+        # Segment base offset is aligned to config.segment_alignment.
+        expected_segment_base_offset = aligned_size(
+            header.flatbuffer_offset + header.flatbuffer_size, config.segment_alignment
+        )
+        self.assertTrue(header.segment_base_offset, expected_segment_base_offset)
+
+        # TEST_TENSOR_BUFFER is aligned to config.segment_alignment.
+        expected_segment_data_size = aligned_size(
+            sum(len(buffer) for buffer in TEST_TENSOR_BUFFER), config.segment_alignment
+        )
+        self.assertEqual(header.segment_data_size, expected_segment_data_size)
+
+        # Confirm the flatbuffer magic is present.
         self.assertEqual(
             data[header.flatbuffer_offset + 4 : header.flatbuffer_offset + 8], b"FT01"
         )
@@ -97,17 +117,17 @@ class TestSerialize(unittest.TestCase):
         tensors = flat_tensor.tensors
         self.assertEqual(len(tensors), 3)
         self.assertEqual(tensors[0].fully_qualified_name, "fqn1")
-        self.check_tensor_metadata(TEST_TENSOR_LAYOUT["fqn1"], tensors[0])
+        self.check_tensor_metadata(TEST_TENSOR_MAP["fqn1"].layout, tensors[0])
         self.assertEqual(tensors[0].segment_index, 0)
         self.assertEqual(tensors[0].offset, 0)
 
         self.assertEqual(tensors[1].fully_qualified_name, "fqn2")
-        self.check_tensor_metadata(TEST_TENSOR_LAYOUT["fqn2"], tensors[1])
+        self.check_tensor_metadata(TEST_TENSOR_MAP["fqn2"].layout, tensors[1])
         self.assertEqual(tensors[1].segment_index, 0)
         self.assertEqual(tensors[1].offset, 0)
 
         self.assertEqual(tensors[2].fully_qualified_name, "fqn3")
-        self.check_tensor_metadata(TEST_TENSOR_LAYOUT["fqn3"], tensors[2])
+        self.check_tensor_metadata(TEST_TENSOR_MAP["fqn3"].layout, tensors[2])
         self.assertEqual(tensors[2].segment_index, 0)
         self.assertEqual(tensors[2].offset, config.tensor_alignment)
 
@@ -117,6 +137,11 @@ class TestSerialize(unittest.TestCase):
         self.assertEqual(segments[0].size, config.tensor_alignment * 3)
 
         # Check segment data.
+        self.assertEqual(
+            header.segment_base_offset + header.segment_data_size, len(data)
+        )
+        self.assertTrue(segments[0].size <= header.segment_data_size)
+
         segment_data = data[
             header.segment_base_offset : header.segment_base_offset + segments[0].size
         ]

@@ -38,7 +38,10 @@ class GraphBuilder(ExportPass):
         self.tracer: ExportPass.ExportTracer = self.ExportTracer(
             self, torch.fx.graph.CodeGen()
         )
-        self.fake_tensor_mode = FakeTensorMode(allow_fallback_kernels=False)
+        self.fake_tensor_mode = FakeTensorMode(
+            allow_fallback_kernels=False,
+            allow_non_fake_inputs=True,
+        )
         self.tracer.fake_tensor_mode = self.fake_tensor_mode
 
         # This will be called to create nodes in tracer.

@@ -34,8 +34,8 @@ runtime.python_library(
         "_flatbuffer.py",
         "_program.py",
         "_serialize.py",
-        "utils.py",
         "data_serializer.py",
+        "padding.py",
     ],
     resources = {
         "//executorch/schema:program.fbs": "program.fbs",

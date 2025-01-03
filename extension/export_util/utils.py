@@ -136,9 +136,12 @@ def save_pte_program(
         filename = os.path.join(output_dir, f"{model_name}.pte")
 
     try:
+        # Write program to file.
         with open(filename, "wb") as file:
             prog.write_to_file(file)
             logging.info(f"Saved exported program to {filename}")
+        # Write data to file/s.
+        prog.write_data_to_file(outdir=output_dir)
     except Exception as e:
         logging.error(f"Error while saving to {filename}: {e}")
 

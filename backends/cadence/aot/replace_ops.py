@@ -579,7 +579,7 @@ class ReplacePadWithCatPass(ExportPass):
                 arg_shape[:dim] + (left_padding_size,) + arg_shape[dim + 1 :]
             )
             left_padding_node = super().call_operator(
-                torch.ops.aten.full.default,
+                exir_ops.edge.aten.full.default,
                 (
                     left_padding_shape,
                     value,
@@ -596,7 +596,7 @@ class ReplacePadWithCatPass(ExportPass):
                 arg_shape[:dim] + (right_padding_size,) + arg_shape[dim + 1 :]
             )
             right_padding_node = super().call_operator(
-                torch.ops.aten.full.default,
+                exir_ops.edge.aten.full.default,
                 (
                     right_padding_shape,
                     value,
@@ -726,7 +726,7 @@ class ReplaceAtenConvolutionWithJarvisConvolutionPass(ExportPass):
 
             flipped_weight = (
                 super().call_operator(
-                    torch.ops.aten.flip.default,
+                    exir_ops.edge.aten.flip.default,
                     (
                         transposed_weight,
                         [-1] if transposed_weight.to_tensor().dim() == 3 else [-1, -2],

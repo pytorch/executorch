@@ -13,8 +13,9 @@ from executorch.exir._serialize import _serialize_pte_binary
 
 from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize.data_serializer import (
+    DataPayload,
     DataSerializer,
-    SerializationInfo,
+    TensorEntry,
     TensorLayout,
 )
 
@@ -29,6 +30,7 @@ def serialize(
     data_serializer: DataSerializer,
 ) -> Tuple[Cord, Dict[str, Cord]]:
     """Serialize the output from Emitter into ExecuTorch artifacts; PTE and PTD files."""
+
     # Serialize PTE file.
     pte: Cord = _serialize_pte_binary(
         program=emitter_output.program,
@@ -42,7 +44,7 @@ def serialize(
     # Serialize PTD files.
     ptd_files: Dict[str, Cord] = {}
 
-    # Find all external tensors and organize into {fqn: Tensor}.
+    # Find all external tensors and organize into {fqn: TensorLayout}.
     fqn_to_tensor_layout: Dict[str, TensorLayout] = {}
     for plan in emitter_output.program.execution_plan:
         for evalue in plan.values:
@@ -54,22 +56,31 @@ def serialize(
                     and tensor.extra_tensor_info.location is TensorDataLocation.EXTERNAL
                 ):
                     fqn_to_tensor_layout[
-                        tensor.extra_tensor_info.fully_qualified_name  # pyre-ignore Undefined attribute [16]
+                        tensor.extra_tensor_info.fully_qualified_name
                     ] = TensorLayout(tensor.scalar_type, tensor.sizes, tensor.dim_order)
+
     if len(fqn_to_tensor_layout) > 0:
         assert emitter_output.external_constant_map is not None
         for (
             file,
-            fqn_map,
+            fqn_to_index,
         ) in (
             # pyre-ignore Undefined attribute [16]: Optional type has no attribute `items`.
             emitter_output.external_constant_map.items()
         ):
-            ptd_files[file] = data_serializer.serialize_tensors(
-                SerializationInfo(
-                    emitter_output.external_constant_buffer,
-                    fqn_map,
-                    fqn_to_tensor_layout,
+            # Create a TensorEntry for each external tensor.
+            fqn_to_tensor_entry: Dict[str, TensorEntry] = {}
+            for fqn, index in fqn_to_index.items():
+                assert fqn in fqn_to_tensor_layout
+                fqn_to_tensor_entry[fqn] = TensorEntry(
+                    buffer_index=index,
+                    layout=fqn_to_tensor_layout[fqn],
+                )
+
+            ptd_files[file] = data_serializer.serialize(
+                DataPayload(
+                    buffers=emitter_output.external_constant_buffer,
+                    fqn_to_tensor=fqn_to_tensor_entry,
                 )
             )
 

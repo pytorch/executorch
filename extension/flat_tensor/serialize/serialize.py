@@ -2,21 +2,21 @@ import json
 import os
 import tempfile
 from dataclasses import dataclass
-from typing import ClassVar, Dict, List, Optional
+from typing import ClassVar, Dict, List, Literal, Optional
 
 import pkg_resources
 from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
 
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
-from executorch.exir._serialize.data_serializer import DataSerializer, SerializationInfo
+from executorch.exir._serialize.data_serializer import DataPayload, DataSerializer
 
-from executorch.exir._serialize.utils import (
-    _aligned_size,
-    _HEADER_BYTEORDER,
-    _pad_to,
-    _padding_required,
-)
+from executorch.exir._serialize.padding import aligned_size, pad_to, padding_required
+
+# Byte order of numbers written to flat tensor headers. Always little-endian
+# regardless of the host system, since all commonly-used modern CPUs are little
+# endian.
+_HEADER_BYTEORDER: Literal["little"] = "little"
 
 from executorch.extension.flat_tensor.serialize.flat_tensor_schema import (
     DataSegment,
@@ -26,6 +26,7 @@ from executorch.extension.flat_tensor.serialize.flat_tensor_schema import (
 
 
 def _convert_to_flatbuffer(flat_tensor: FlatTensor) -> Cord:
+    """Converts a FlatTensor to a flatbuffer and returns the serialized data."""
     flat_tensor_json = json.dumps(flat_tensor, cls=_DataclassEncoder)
     with tempfile.TemporaryDirectory() as d:
         schema_path = os.path.join(d, "flat_tensor.fbs")
@@ -49,6 +50,7 @@ def _convert_to_flatbuffer(flat_tensor: FlatTensor) -> Cord:
 
 
 def _convert_to_flat_tensor(flatbuffer: bytes) -> FlatTensor:
+    """Converts a flatbuffer to a FlatTensor and returns the dataclass."""
     with tempfile.TemporaryDirectory() as d:
         schema_path = os.path.join(d, "flat_tensor.fbs")
         with open(schema_path, "wb") as schema_file:
@@ -83,7 +85,7 @@ class FlatTensorConfig:
 class FlatTensorHeader:
     # Class constants.
     # The magic bytes that should be at the beginning of the header.
-    EXPECTED_MAGIC: ClassVar[bytes] = b"FT01"
+    EXPECTED_MAGIC: ClassVar[bytes] = b"FH01"
     EXPECTED_LENGTH: ClassVar[int] = (
         # Header magic
         4
@@ -109,7 +111,7 @@ class FlatTensorHeader:
     # are no segments.
     segment_base_offset: int
     # Size of all the segment data, in bytes.
-    data_size: int
+    segment_data_size: int
 
     # The magic bytes read from or to be written to the binary header.
     magic: bytes = EXPECTED_MAGIC
@@ -145,7 +147,7 @@ class FlatTensorHeader:
             segment_base_offset=int.from_bytes(
                 data[24:32], byteorder=_HEADER_BYTEORDER
             ),
-            data_size=int.from_bytes(data[32:40], byteorder=_HEADER_BYTEORDER),
+            segment_data_size=int.from_bytes(data[32:40], byteorder=_HEADER_BYTEORDER),
         )
 
     def is_valid(self) -> bool:
@@ -180,67 +182,79 @@ class FlatTensorHeader:
             # there are no segments.
             + self.segment_base_offset.to_bytes(8, byteorder=_HEADER_BYTEORDER)
             # uint64_t: Size of all the segment data, in bytes.
-            + self.data_size.to_bytes(8, byteorder=_HEADER_BYTEORDER)
+            + self.segment_data_size.to_bytes(8, byteorder=_HEADER_BYTEORDER)
         )
         return data
 
 
 class FlatTensorSerializer(DataSerializer):
+    """A concrete implementation of the DataSerializer interface that
+    serializes and deserializes data to/from the FlatTensor format.
+    """
+
     def __init__(self, config: Optional[FlatTensorConfig] = None) -> None:
+        """FlatTensorConfig holds information required for serialization,
+        eg. alignment.
+        """
         if config is None:
             self.config = FlatTensorConfig()
         else:
             self.config = config
 
-    def serialize_tensors(
+    def serialize(
         self,
-        serialization_info: SerializationInfo,
+        data: DataPayload,
     ) -> Cord:
+        """Serializes a list of tensor metadata and tensors into a blob."""
+
         flat_tensor_metadata: List[TensorMetadata] = []
         flat_tensor_data: Cord = Cord()
 
         # {idx, offset}
         saved_offsets: Dict[int, int] = {}
 
-        for fqn, idx in serialization_info.fqn_to_buffer_index.items():
-            tensor_layout = serialization_info.fqn_to_tensor_layout.get(fqn, None)
-            assert tensor_layout is not None
+        for fqn, tensor_entry in data.fqn_to_tensor.items():
+            assert tensor_entry.layout is not None
             # Check index into the tensor buffers is valid.
-            assert idx < len(serialization_info.tensor_buffers)
+            assert tensor_entry.buffer_index < len(
+                data.buffers
+            ), f"Invalid index {tensor_entry.buffer_index} is greater than tensor buffer size {len(data.buffers)}."
 
-            # Check if the tensor has already been saved.
-            offset = saved_offsets.get(idx, -1)
+            # Check if the tensor has already been appended to the flat_tensor_data.
+            offset = saved_offsets.get(tensor_entry.buffer_index, -1)
             if offset == -1:
                 if len(flat_tensor_data) > 0:
                     # Add padding to round off the previous tensor offset.
-                    pad_length = _padding_required(
+                    pad_length = padding_required(
                         len(flat_tensor_data), self.config.tensor_alignment
                     )
                     flat_tensor_data.append(b"\x00" * pad_length)
                 # Add to saved offsets.
                 offset = len(flat_tensor_data)
-                saved_offsets[idx] = offset
+                saved_offsets[tensor_entry.buffer_index] = offset
                 # Append to flat_tensor_data at the offset.
-                flat_tensor_data.append(serialization_info.tensor_buffers[idx])
+                flat_tensor_data.append(data.buffers[tensor_entry.buffer_index])
 
             flat_tensor_metadata.append(
                 TensorMetadata(
                     fully_qualified_name=fqn,
-                    scalar_type=tensor_layout.scalar_type,
-                    sizes=tensor_layout.sizes,
-                    dim_order=tensor_layout.dim_order,
+                    scalar_type=tensor_entry.layout.scalar_type,
+                    sizes=tensor_entry.layout.sizes,
+                    dim_order=tensor_entry.layout.dim_order,
                     segment_index=0,
                     offset=offset,
                 )
             )
-        # Pad to segment alignment.
-        segment_pad_length = _padding_required(
+
+        # Pad flat_tensor_data to segment alignment.
+        segment_pad_length = padding_required(
             len(flat_tensor_data), self.config.segment_alignment
         )
         if segment_pad_length > 0:
             flat_tensor_data.append(b"\x00" * segment_pad_length)
 
-        # Organize the tensors and segments.
+        # Create FlatTensor, which describes of the contents of the file and
+        # points to all the data segments. It will be serialized to flatbuffer.
         flat_tensor = FlatTensor(
             version=0,
             tensor_alignment=self.config.tensor_alignment,
@@ -249,30 +263,32 @@ class FlatTensorSerializer(DataSerializer):
         )
 
         flatbuffer_payload = _convert_to_flatbuffer(flat_tensor)
-        padded_flatbuffer_length: int = _aligned_size(
+        padded_flatbuffer_length: int = aligned_size(
             input_size=len(flatbuffer_payload),
             alignment=self.config.tensor_alignment,
         )
 
-        padded_header_length: int = _aligned_size(
+        padded_header_length: int = aligned_size(
             input_size=FlatTensorHeader.EXPECTED_LENGTH,
             alignment=self.config.tensor_alignment,
         )
 
-        segment_base_offset = _aligned_size(
+        segment_base_offset = aligned_size(
             padded_flatbuffer_length + padded_header_length,
             self.config.segment_alignment,
         )
 
+        # Create FlatTensorHeader, which stores the offsets and sizes of the
+        # FlatTensor flatbuffer and the segment data.
         header_data: bytes = FlatTensorHeader(
             flatbuffer_offset=padded_header_length,
             flatbuffer_size=len(flatbuffer_payload),
             segment_base_offset=segment_base_offset,
-            data_size=len(flat_tensor_data),
+            segment_data_size=len(flat_tensor_data),
         ).to_bytes()
 
         # Pad header and payload to segment alignment.
-        header_data = _pad_to(header_data, padded_header_length)
+        header_data = pad_to(header_data, padded_header_length)
         flatbuffer_payload.append(
             b"\x00" * (padded_flatbuffer_length - len(flatbuffer_payload))
         )
@@ -285,8 +301,8 @@ class FlatTensorSerializer(DataSerializer):
 
         return payload
 
-    def deserialize_tensors(self, blob: Cord) -> SerializationInfo:
+    def deserialize(self, blob: Cord) -> DataPayload:
         """
-        Deserializes a blob into a list of tensor metadata and tensors.
+        Deserializes a flat_tensor blob into a list of tensor metadata and tensors.
         """
         raise NotImplementedError("deserialize_data")
