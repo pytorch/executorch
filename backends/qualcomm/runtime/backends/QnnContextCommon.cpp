@@ -7,7 +7,6 @@
  */
 
 #include <executorch/backends/qualcomm/runtime/backends/QnnContextCommon.h>
-
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -46,13 +45,13 @@ Error QnnContext::Configure() {
   if (cache_->GetCacheState() == QnnBackendCache::DESERIALIZE) {
     const QnnExecuTorchContextBinary& qnn_context_blob =
         cache_->GetQnnContextBlob();
-    auto binary_info = GetBinaryInfo(qnn_context_blob.buffer);
+
     error = qnn_interface.qnn_context_create_from_binary(
         backend_->GetHandle(),
         device_->GetHandle(),
         temp_context_config.empty() ? nullptr : temp_context_config.data(),
-        const_cast<uint8_t*>(binary_info->data()->data()),
-        binary_info->data()->size(),
+        static_cast<uint8_t*>(qnn_context_blob.buffer),
+        qnn_context_blob.nbytes,
         &handle_,
         /*profile=*/nullptr);
     if (error != QNN_SUCCESS) {
@@ -94,9 +93,17 @@ Error QnnContext::GetContextBinary(
   Qnn_ErrorHandle_t error =
       qnn_interface.qnn_context_get_binary_size(handle_, &binary_size);
   if (error == QNN_SUCCESS) {
-    binary_buffer_.resize(binary_size);
+    // create our own protocol here
+    qnn_context_custom_protocol_ = QnnContextCustomProtocol(binary_size);
+    qnn_context_custom_protocol_.BuildContextCustomBuffer();
+    auto [context_buffer_ptr, context_buffer_size] =
+        qnn_context_custom_protocol_.GetCustomProtocolBuffer();
     error = qnn_interface.qnn_context_get_binary(
-        handle_, binary_buffer_.data(), binary_size, &bytes_written);
+        handle_,
+        static_cast<uint8_t*>(context_buffer_ptr) +
+            qnn_context_custom_protocol_.GetContextBinaryOffset(),
+        binary_size,
+        &bytes_written);
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_ERROR(
           "Can't get graph binary to be saved to "
@@ -113,17 +120,8 @@ Error QnnContext::GetContextBinary(
         return Error::Internal;
       }
 
-      auto signature = []() {
-        return std::to_string(std::chrono::high_resolution_clock::now()
-                                  .time_since_epoch()
-                                  .count());
-      };
-      builder_.Reset();
-      auto binary_info = qnn_delegate::CreateBinaryInfoDirect(
-          builder_, signature().c_str(), &binary_buffer_);
-      builder_.Finish(binary_info);
-      qnn_executorch_context_binary.buffer = builder_.GetBufferPointer();
-      qnn_executorch_context_binary.nbytes = builder_.GetSize();
+      qnn_executorch_context_binary.buffer = context_buffer_ptr;
+      qnn_executorch_context_binary.nbytes = context_buffer_size;
     }
   } else {
     QNN_EXECUTORCH_LOG_ERROR(

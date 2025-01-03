@@ -211,8 +211,15 @@ class LlamaDecoderLayer(nn.Module):
             config=config, output_new_cache_only=output_new_cache_only
         )
         self.feed_forward = FeedForward(config)
-        self.attention_norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
-        self.ffn_norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
+        if config.use_layer_norm_op:
+            self.attention_norm = torch.nn.LayerNorm(self.dim, eps=config.norm_eps)
+            self.ffn_norm = torch.nn.LayerNorm(self.dim, eps=config.norm_eps)
+        elif config.use_rms_norm_op:
+            self.attention_norm = torch.nn.RMSNorm(self.dim, eps=config.norm_eps)
+            self.ffn_norm = torch.nn.RMSNorm(self.dim, eps=config.norm_eps)
+        else:
+            self.attention_norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
+            self.ffn_norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
 
     def forward(
         self,
@@ -257,7 +264,13 @@ class LlamaModel(nn.Module):
                 for _ in range(config.n_layers)
             ]
         )
-        self.norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
+        if config.use_layer_norm_op:
+            self.norm = torch.nn.LayerNorm(config.dim, eps=config.norm_eps)
+        elif config.use_rms_norm_op:
+            self.norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
+        else:
+            self.norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
+        
         self.output = nn.Linear(config.dim, config.vocab_size, bias=False)
         self.tok_embeddings = nn.Embedding(config.vocab_size, config.dim)
         freqs_cos, freqs_sin = precompute_freqs_cis(

@@ -116,6 +116,13 @@ target_sources(
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnBackendFactory.cpp
 )
 
+# qnn_custom_protocol
+target_sources(
+  qnn_custom_protocol
+  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnCustomProtocol.h
+  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnCustomProtocol.cpp
+)
+
 set(qnn_header_basenames
     QnnBackend.h
     QnnCommon.h

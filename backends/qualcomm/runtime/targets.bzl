@@ -30,7 +30,6 @@ def define_common_targets():
         exported_deps = [
             "fbsource//third-party/toolchains:log",
             "//executorch/backends/qualcomm:schema",
-            "//executorch/backends/qualcomm:qc_binary_info_schema",
             "//executorch/runtime/core:core",
         ],
     )
@@ -69,7 +68,6 @@ def define_common_targets():
                 "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
                 ":logging",
                 "//executorch/backends/qualcomm:schema",
-                "//executorch/backends/qualcomm:qc_binary_info_schema",
                 "//executorch/backends/qualcomm/aot/ir:qcir_utils",
                 "//executorch/backends/qualcomm/aot/wrappers:wrappers",
                 "//executorch/runtime/backend:interface",
