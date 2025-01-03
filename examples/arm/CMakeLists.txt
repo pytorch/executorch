@@ -57,3 +57,8 @@ generate_bindings_for_kernels(
 gen_operators_lib(
   LIB_NAME "arm_portable_ops_lib" KERNEL_LIBS portable_kernels DEPS executorch
 )
+
+if(EXECUTORCH_ENABLE_EVENT_TRACER)
+  target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
+  target_compile_options(portable_ops_lib INTERFACE -DET_EVENT_TRACER_ENABLED)
+endif()

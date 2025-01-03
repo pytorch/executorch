@@ -88,7 +88,9 @@ def partition_module_to_coreml(module):
 
 def lower_module_to_coreml(module, compile_specs, example_inputs):
     module = module.eval()
-    edge = to_edge(export(module, example_inputs), compile_config=_EDGE_COMPILE_CONFIG)
+    edge = to_edge(
+        export(module, example_inputs, strict=True), compile_config=_EDGE_COMPILE_CONFIG
+    )
     # All of the subsequent calls on the edge_dialect_graph generated above (such as delegation or
     # to_executorch()) are done in place and the graph is also modified in place. For debugging purposes
     # we would like to keep a copy of the original edge dialect graph and hence we create a deepcopy of
@@ -107,7 +109,8 @@ def lower_module_to_coreml(module, compile_specs, example_inputs):
 def export_lowered_module_to_executorch_program(lowered_module, example_inputs):
     lowered_module(*example_inputs)
     exec_prog = to_edge(
-        export(lowered_module, example_inputs), compile_config=_EDGE_COMPILE_CONFIG
+        export(lowered_module, example_inputs, strict=True),
+        compile_config=_EDGE_COMPILE_CONFIG,
     ).to_executorch(config=exir.ExecutorchBackendConfig(extract_delegate_segments=True))
 
     return exec_prog
@@ -170,7 +173,7 @@ def main():
 
     if args.use_partitioner:
         model.eval()
-        exir_program_aten = torch.export.export(model, example_inputs)
+        exir_program_aten = torch.export.export(model, example_inputs, strict=True)
 
         edge_program_manager = exir.to_edge(exir_program_aten)
         edge_copy = copy.deepcopy(edge_program_manager)

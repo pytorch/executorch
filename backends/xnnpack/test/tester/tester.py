@@ -194,7 +194,7 @@ class Export(Stage):
         inputs: Tuple[torch.Tensor],
     ) -> None:
         self.exported_program = export(
-            artifact, inputs, dynamic_shapes=self.dynamic_shapes
+            artifact, inputs, dynamic_shapes=self.dynamic_shapes, strict=True
         )
 
     @property
