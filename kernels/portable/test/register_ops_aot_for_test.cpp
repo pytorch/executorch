@@ -47,6 +47,31 @@ Tensor& upsample_bilinear2d_vec_out_no_context(
 
   return ret;
 }
+
+Tensor& upsample_nearest2d_vec_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& in,
+    const exec_aten::OptionalArrayRef<int64_t> output_size,
+    const exec_aten::OptionalArrayRef<double> scale_factors,
+    Tensor& out);
+
+Tensor& upsample_nearest2d_vec_out_no_context(
+    const Tensor& in,
+    const exec_aten::OptionalArrayRef<int64_t> output_size,
+    const exec_aten::OptionalArrayRef<double> scale_factors,
+    Tensor& out) {
+  KernelRuntimeContext ctx;
+  auto& ret =
+      upsample_nearest2d_vec_out(ctx, in, output_size, scale_factors, out);
+
+  if (ctx.failure_state() != Error::Ok) {
+    throw std::runtime_error(
+        std::string("Kernel failed with error: ") +
+        std::to_string((int)ctx.failure_state()));
+  }
+
+  return ret;
+}
 // NOLINTEND(facebook-hte-ConstantArgumentPassByValue,
 // facebook-hte-ParameterMightThrowOnCopy)
 
@@ -54,6 +79,9 @@ TORCH_LIBRARY(et_test, m) {
   m.def(
       "upsample_bilinear2d.vec_out(Tensor input, SymInt[]? output_size, bool align_corners, float[]? scale_factors, *, Tensor(a!) out) -> Tensor(a!)",
       WRAP_TO_ATEN(upsample_bilinear2d_vec_out_no_context, 4));
+  m.def(
+      "upsample_nearest2d.vec_out(Tensor input, SymInt[]? output_size, float[]? scale_factors, *, Tensor(a!) out) -> Tensor(a!)",
+      WRAP_TO_ATEN(upsample_nearest2d_vec_out_no_context, 3));
 }
 
 } // namespace native

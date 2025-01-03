@@ -21,6 +21,7 @@ runtime.cxx_library(
     deps = [
         "//executorch/extension/aten_util:aten_bridge",
         "//executorch/kernels/portable/cpu:op_upsample_bilinear2d",
+        "//executorch/kernels/portable/cpu:op_upsample_nearest2d",
         "//executorch/runtime/core/exec_aten:lib",
     ],
     external_deps = [
@@ -32,6 +33,19 @@ python_unittest(
     name = "op_upsample_bilinear2d_test",
     srcs = [
         "op_upsample_bilinear2d_test.py",
+    ],
+    preload_deps = [
+        ":aot_ops_test_lib",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+python_unittest(
+    name = "op_upsample_nearest2d_test",
+    srcs = [
+        "op_upsample_nearest2d_test.py",
     ],
     preload_deps = [
         ":aot_ops_test_lib",
