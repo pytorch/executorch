@@ -28,6 +28,7 @@ def define_common_targets():
             "//executorch/extension/llm/tokenizer:bpe_tokenizer",
             "//executorch/extension/evalue_util:print_evalue",
             "//executorch/backends/qualcomm/runtime:runtime",
+            "//executorch/devtools/etdump:etdump_flatcc",
         ],
         external_deps = [
             "gflags",

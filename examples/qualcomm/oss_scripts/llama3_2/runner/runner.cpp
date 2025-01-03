@@ -41,7 +41,8 @@ Runner::Runner(
     const std::vector<std::string>& models_path,
     const std::string& tokenizer_path,
     const float temperature,
-    const int eval_mode)
+    const int eval_mode, 
+    const bool gen_etdump)
     : n_bos_(1),
       n_eos_(1),
       tokenizer_path_(tokenizer_path),
@@ -54,6 +55,26 @@ Runner::Runner(
   }
   ET_LOG(Info, "creating runner: tokenizer_path=%s", tokenizer_path_.c_str());
   ET_LOG(Info, "eval mode=%d", eval_mode);
+  if (gen_etdump) {
+    gen_etdump_ = true;
+    switch(eval_mode) {
+      case 0:
+        prefill_dump_ = new torch::executor::ETDumpGen();
+        break;
+      case 1:
+        decode_dump_ = new torch::executor::ETDumpGen();
+        break;
+      case 2:
+        prefill_dump_ = new torch::executor::ETDumpGen();
+        decode_dump_ = new torch::executor::ETDumpGen();
+        break;
+      default:
+        ET_CHECK_MSG(false, "Unsupported eval mode");
+        break;
+    }
+    prefill_etdump_path_ = "prefill_etdump.etdp";
+    decode_etdump_path_ = "decode_etdump.etdp";
+  }
 }
 
 bool Runner::is_loaded() const {
@@ -91,9 +112,15 @@ Error Runner::load() {
 
   for (std::shared_ptr<Module>& module : modules_) {
     if (!prefill_forward_name_.empty()) {
+      if (gen_etdump_) {
+        ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(prefill_forward_name_, prefill_dump_));
+      }
       ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(prefill_forward_name_));
     }
     if (!kv_forward_name_.empty()) {
+      if (gen_etdump_) {
+        ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(kv_forward_name_, decode_dump_));
+      }
       ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(kv_forward_name_));
     }
   }
@@ -395,12 +422,32 @@ Error Runner::generate(
 
   stats_.num_prompt_tokens = num_prompt_tokens;
   stats_.num_generated_tokens = pos - num_prompt_tokens;
+  if (gen_etdump_)
+      gen_etdump_data();
   printReport(stats_);
   if (stats_callback) {
     stats_callback(stats_);
   }
 
   return Error::Ok;
+}
+
+void Runner::gen_etdump_data(){
+    //dump the prefill and decode etdump data
+    if (prefill_dump_ != nullptr ) {
+      torch::executor::etdump_result result = prefill_dump_->get_etdump_data();
+      FILE* ptr = fopen(prefill_etdump_path_.c_str(), "w+");
+      fwrite(result.buf, 1, result.size, ptr);
+      fclose(ptr);
+      prefill_dump_->reset();
+    }
+    if (decode_dump_ != nullptr ) {
+      torch::executor::etdump_result result = decode_dump_->get_etdump_data();
+      FILE* ptr = fopen(decode_etdump_path_.c_str(), "w+");
+      fwrite(result.buf, 1, result.size, ptr);
+      fclose(ptr);
+      decode_dump_->reset();
+    }
 }
 
 namespace {
