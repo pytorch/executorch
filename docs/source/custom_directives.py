@@ -102,7 +102,7 @@ class SupportedDevices(BaseShield):
     required_arguments = 1
     final_argument_whitespace = True
 
-    def run(self) -> List[nodes.Node]:
+    def run(self, params, alt, _) -> List[nodes.Node]:
         devices = _parse_devices(self.arguments[0])
         alt = f"This feature supports the following devices: {devices}"
         params = {
@@ -121,7 +121,7 @@ class SupportedProperties(BaseShield):
     required_arguments = 1
     final_argument_whitespace = True
 
-    def run(self) -> List[nodes.Node]:
+    def run(self, params, alt, _) -> List[nodes.Node]:
         properties = _parse_properties(self.arguments[0])
         alt = f"This API supports the following properties: {properties}"
         params = {
