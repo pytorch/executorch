@@ -220,6 +220,8 @@ Tensor& div_out(KernelRuntimeContext& ctx,
     }
     else
     {
+        ScalarType common_type = get_common_type(a.scalar_type(), b.scalar_type());
+        ScalarType compute_type = torch::executor::native::utils::get_compute_type(common_type);
 
         ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
             torch::executor::native::utils::
@@ -540,6 +542,8 @@ Tensor& div_scalar_out(KernelRuntimeContext& ctx,
     }
     else
     {
+        ScalarType common_type = executorch::runtime::isFloatingType(a.scalar_type()) ? a.scalar_type() : ScalarType::Float;
+        ScalarType compute_type = torch::executor::native::utils::get_compute_type(common_type);
         ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
             const CTYPE_COMPUTE val_b = torch::executor::native::utils::
             scalar_to<CTYPE_COMPUTE>(b);
