@@ -64,16 +64,16 @@ class TestSerialize(unittest.TestCase):
             header.flatbuffer_offset,
             aligned_size(FlatTensorHeader.EXPECTED_LENGTH, config.segment_alignment),
         )
-        
+
         # Flatbuffer is non-empty.
         self.assertTrue(header.flatbuffer_size > 0)
-        
+
         # Segment base offset is aligned to config.segment_alignment.
         expected_segment_base_offset = aligned_size(
             header.flatbuffer_offset + header.flatbuffer_size, config.segment_alignment
         )
         self.assertTrue(header.segment_base_offset, expected_segment_base_offset)
-        
+
         # TEST_TENSOR_BUFFER is aligned to config.segment_alignment.
         self.assertEqual(header.segment_data_size, config.segment_alignment)
 
