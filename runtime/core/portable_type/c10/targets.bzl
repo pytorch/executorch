@@ -67,7 +67,7 @@ def define_common_targets():
             # fbsource//third-party/sleef:sleef currently fails to
             # link with missing symbols, hence the fbcode-specific dep below.
         }),
-        fbcode_exported_deps = [
+        fbcode_exported_deps = ([
             "//caffe2:aten-headers-cpu",
             "//caffe2:generated-config-header",
             "//caffe2/c10/core:base_headers",
@@ -76,7 +76,7 @@ def define_common_targets():
             "ovr_config//cpu:x86_64": [
                 "third-party//sleef:sleef",
             ]
-        }),
+        }) if not runtime.is_oss else [],
         fbcode_exported_preprocessor_flags = [
             # We don't -DCPU_CAPABILITY=AVX2 because that trips
             # -Wmacro-redefined, and we only care about getting
