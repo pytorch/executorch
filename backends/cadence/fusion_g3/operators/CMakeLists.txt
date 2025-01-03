@@ -57,6 +57,7 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_where.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/dtype_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/normalization_ops_util.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_floathbf16.cpp"
 )
 add_library(aten_ops_cadence ${_aten_ops__srcs})
 target_link_libraries(aten_ops_cadence PUBLIC executorch)
