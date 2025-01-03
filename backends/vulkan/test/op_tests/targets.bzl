@@ -82,24 +82,6 @@ def define_common_targets(is_fbcode = False):
         default_outs = ["."],
     )
 
-    pt_operator_library(
-        name = "all_aten_ops",
-        check_decl = False,
-        include_all_operators = True,
-    )
-
-    runtime.cxx_library(
-        name = "all_aten_ops_lib",
-        srcs = [],
-        define_static_target = False,
-        exported_deps = get_pt_ops_deps(
-            name = "pt_ops_full",
-            deps = [
-                ":all_aten_ops",
-            ],
-        ),
-    )
-
     runtime.cxx_binary(
         name = "compute_graph_op_tests_bin",
         srcs = [
@@ -109,7 +91,7 @@ def define_common_targets(is_fbcode = False):
         deps = [
             "//third-party/googletest:gtest_main",
             "//executorch/backends/vulkan:vulkan_graph_runtime",
-            ":all_aten_ops_lib",
+            runtime.external_dep_location("libtorch"),
         ],
     )
 
@@ -125,7 +107,7 @@ def define_common_targets(is_fbcode = False):
         deps = [
             "//third-party/benchmark:benchmark",
             "//executorch/backends/vulkan:vulkan_graph_runtime",
-            ":all_aten_ops_lib",
+            runtime.external_dep_location("libtorch"),
         ],
     )
 

@@ -57,7 +57,7 @@ class TestQuantFusionPass(unittest.TestCase):
         )
         m = _convert_to_reference_decomposed_fx(m)
         config = EdgeCompileConfig(_check_ir_validity=False)
-        m = to_edge(export(m, example_inputs), compile_config=config)
+        m = to_edge(export(m, example_inputs, strict=True), compile_config=config)
         # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
         m = m.transform([QuantFusionPass(_fix_node_meta_val=True)])
         # check that we are using functional variant of q/dq/add
@@ -96,7 +96,7 @@ class TestQuantFusionPass(unittest.TestCase):
         m(*example_inputs)
         m = _convert_to_reference_decomposed_fx(m)
         config = EdgeCompileConfig(_check_ir_validity=False)
-        m = to_edge(export(m, example_inputs), compile_config=config)
+        m = to_edge(export(m, example_inputs, strict=True), compile_config=config)
         # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
         m = m.transform([QuantFusionPass(_fix_node_meta_val=True)])
         # check that we are using functional variant of q/dq/add/reshape
@@ -151,7 +151,7 @@ class TestQuantFusionPass(unittest.TestCase):
         )
         m = _convert_to_reference_decomposed_fx(m)
         config = EdgeCompileConfig(_check_ir_validity=False)
-        m = to_edge(export(m, example_inputs), compile_config=config)
+        m = to_edge(export(m, example_inputs, strict=True), compile_config=config)
         # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
         m = m.transform([QuantFusionPass(_fix_node_meta_val=True)])
         # check that we are using functional variant of q/dq/add/slice
@@ -198,7 +198,7 @@ class TestQuantFusionPass(unittest.TestCase):
         m(*example_inputs)
         m = _convert_to_reference_decomposed_fx(m)
         config = EdgeCompileConfig(_check_ir_validity=False)
-        m = to_edge(export(m, example_inputs), compile_config=config)
+        m = to_edge(export(m, example_inputs, strict=True), compile_config=config)
         # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
         m = m.transform([QuantFusionPass()])
         # check that we are using functional variant of q/dq/cat
@@ -293,7 +293,9 @@ class TestQuantFusionPass(unittest.TestCase):
                 _check_ir_validity=False,
                 _use_edge_ops=True,
             )
-            m = to_edge(export(m, example_inputs), compile_config=compile_config)
+            m = to_edge(
+                export(m, example_inputs, strict=True), compile_config=compile_config
+            )
             # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
             m = m.transform([QuantFusionPass(_fix_node_meta_val=True)])
             # check that we are using functional variant of q/dq/cat
@@ -349,7 +351,9 @@ class TestQuantFusionPass(unittest.TestCase):
                 _check_ir_validity=False,
                 _use_edge_ops=True,
             )
-            m = to_edge(export(m, example_inputs), compile_config=compile_config)
+            m = to_edge(
+                export(m, example_inputs, strict=True), compile_config=compile_config
+            )
             # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
             m = m.transform([QuantFusionPass(_fix_node_meta_val=True)])
             # check that we are using functional variant of q/dq/cat
