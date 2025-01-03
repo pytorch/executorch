@@ -18,16 +18,10 @@ from executorch.backends.cadence.aot.memory_planning import (
 )
 from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
 from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
-
-from executorch.backends.cadence.aot.replace_ops import ReplaceSafeSoftmaxWithSoftmax
 from executorch.backends.cadence.aot.utils import (
     get_default_memory_config,
     MemoryConfig,
-    model_gm_has_SDPA,
     model_is_quantized,
-)
-from executorch.backends.transforms.decompose_sdpa import (
-    DecomposeScaledDotProductAttention,
 )
 from executorch.devtools import generate_etrecord
 from executorch.exir import (
@@ -90,16 +84,6 @@ def convert_pt2(
         .run_decompositions(decomp_table)
         .module()
     )
-
-    if model_gm_has_SDPA(model_gm):
-        # Decompose SDPA
-        DecomposeScaledDotProductAttention(False)(model_gm)
-
-        # Swap _safe_softmax with _softmax (see https://github.com/pytorch/pytorch/pull/133882
-        # for details).
-        result = ReplaceSafeSoftmaxWithSoftmax()(model_gm)
-        assert result is not None
-        model_gm = result.graph_module
 
     # Prepare
     prepared_model = prepare_pt2e(model_gm, quantizer)
