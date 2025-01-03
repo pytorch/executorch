@@ -28,10 +28,10 @@ class Sub(NodeVisitor):
         out_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             out_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
         sub_output_tensors = [output_tensor_wrapper]
 
@@ -43,10 +43,10 @@ class Sub(NodeVisitor):
 
             input_tensor_wrapper = self.define_tensor(
                 input_node,
+                node,
                 input_tensor,
                 tensor_type,
                 nodes_to_wrappers,
-                is_input_tensor=True,
             )
             sub_input_tensors.append(input_tensor_wrapper)
 

@@ -340,7 +340,7 @@ class SingleLlama:
                     ] * (self.llama_meta["get_max_seq_len"] - 1):
                         a.meta[QCOM_QUANTIZED_IO] = kv_type
 
-    def quantize(self, quant_dtype, custom_annotations=()):
+    def quantize(self, args, quant_dtype, custom_annotations=()):
         self.quant_dtype = quant_dtype
         quantizer = make_quantizer(
             quant_dtype=quant_dtype,
@@ -471,6 +471,7 @@ def compile(args):
 
     start_quantize_ts = time.time()
     single_llama.quantize(
+        args,
         quant_dtype,
         custom_annotations=(
             annotate_matmul_16a8w,

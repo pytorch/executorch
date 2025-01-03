@@ -173,16 +173,19 @@ class NodeVisitor:
         )
 
     def get_quant_encoding_conf(
-        self, node: torch.fx.Node, is_input_tensor: bool = False
+        self, node: torch.fx.Node, target_node: torch.fx.Node
     ) -> Tuple[Any, Dict]:
         if not node.meta.get(QCOM_QUANT_ATTRS, None):
             return (
                 PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
                 {},
             )
+        is_input_tensor = node != target_node
         quant_attrs = (
-            node.meta[QCOM_REQUANTIZE]
-            if QCOM_REQUANTIZE in node.meta and is_input_tensor
+            node.meta[QCOM_REQUANTIZE][target_node.name]
+            if QCOM_REQUANTIZE in node.meta
+            and is_input_tensor
+            and target_node.name in node.meta[QCOM_REQUANTIZE]
             else node.meta[QCOM_QUANT_ATTRS]
         )
         if quant_attrs[QCOM_ENCODING] in PER_CHANNEL_ENCODING:
@@ -282,11 +285,11 @@ class NodeVisitor:
 
     def define_tensor(
         self,
-        node: torch.fx.Node,
+        tensor_source_node: torch.fx.Node,
+        target_build_node: torch.fx.Node,
         tensor: torch.Tensor,
         tensor_type: PyQnnWrapper.Qnn_TensorType_t,
         nodes_to_wrappers: Dict[str, Dict[int, PyQnnWrapper.TensorWrapper]],
-        is_input_tensor: bool,
         node_name: str = None,
         wrapper_idx: int = 0,
     ) -> PyQnnWrapper.TensorWrapper:
@@ -294,28 +297,32 @@ class NodeVisitor:
         Covert torch.Tensor to TensorWrapper
 
         Args:
-            node: EdgeIR Node
+            tensor_source_node: EdgeIR Node
+            target_build_node: Current node to build
             tensor: EdgeIR Tensor
             tensor_type: QNN tensor type
             nodes_to_wrappers: Set contains edge_graph values(node targets)
-            is_input_tensor: Whether tensor is a fake input tensor relatively to
-                             the op builder that is calling this function
         """
         if node_name is None:
-            node_name = node.name
+            node_name = tensor_source_node.name
 
         if cached := nodes_to_wrappers[node_name].get(wrapper_idx, None):
             return cached
 
-        tensor_name = f"{node.name}_{wrapper_idx}"
-        if is_graph_input(node, self.edge_program):
-            tensor_name = "input_" + str(self.external_ids[node]) + "_" + tensor_name
-        if is_graph_output(node):
+        tensor_name = f"{tensor_source_node.name}_{wrapper_idx}"
+        if is_graph_input(tensor_source_node, self.edge_program):
+            tensor_name = (
+                "input_"
+                + str(self.external_ids[tensor_source_node])
+                + "_"
+                + tensor_name
+            )
+        if is_graph_output(tensor_source_node):
             tensor_name = "output_" + tensor_name
         dims = [1] if len(tensor.size()) == 0 else tensor.size()
-        tensor_type = self.get_tensor_type(node, tensor_type)
+        tensor_type = self.get_tensor_type(tensor_source_node, tensor_type)
         quant_encoding, quant_configs = self.get_quant_encoding_conf(
-            node, is_input_tensor
+            tensor_source_node, target_build_node
         )
         dtype = self.get_data_type(tensor, quant_configs)
         if isinstance(tensor, torch._subclasses.fake_tensor.FakeTensor):
@@ -334,7 +341,7 @@ class NodeVisitor:
             if quant_configs:
                 tensor = self.get_quant_tensor_value(
                     tensor,
-                    node.meta[QCOM_QUANT_ATTRS],
+                    tensor_source_node.meta[QCOM_QUANT_ATTRS],
                     quant_configs,
                 )
             tensor_wrapper = PyQnnWrapper.TensorWrapper(

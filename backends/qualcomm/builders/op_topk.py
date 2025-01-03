@@ -33,10 +33,10 @@ class TopK(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
         k = cast(int, node.args[1])
@@ -63,20 +63,20 @@ class TopK(NodeVisitor):
         node.meta["quant_attrs"] = input_node.meta.get("quant_attrs")
         output_val_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_val_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         # topk output_1 is index, do not quantize it.
         node.meta.pop("quant_attrs", None)
         output_index_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_idx_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
             wrapper_idx=1,
         )
         topk_output_tensors = [output_val_tensor_wrapper, output_index_tensor_wrapper]

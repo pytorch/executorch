@@ -85,7 +85,7 @@ void HybridMemory::prepare_kv_io(
   // atten_mask
   ptr->logits.resize(vocab_size_);
   ptr->attention_mask.resize(
-      max_seq_len_, -255); // attention mask shape should be [1, ctx_length]
+      max_seq_len_, 0); // attention mask shape should be [1, ctx_length]
   // kv
   int32_t k_in_size = (head_dim_ + 1) * (max_seq_len_ - 1);
   int32_t k_out_size = num_heads_ * head_dim_;
@@ -255,9 +255,9 @@ void HybridMemory::prepare_prefill_io(
   for (int i = 0; i < cache_len; ++i) {
     for (int j = 0; j < cache_len; ++j) {
       if (i < j) {
-        ptr->prefill_atten_mask[i * cache_len + j] = -255;
-      } else {
         ptr->prefill_atten_mask[i * cache_len + j] = 0;
+      } else {
+        ptr->prefill_atten_mask[i * cache_len + j] = 65535;
       }
     }
   }
@@ -326,7 +326,7 @@ void HybridMemory::update_io(
   // update position_ids
   ptr->input_pos = static_cast<int32_t>(pos);
   // update causal mask for next token
-  ptr->attention_mask[seq_len - pos] = 0;
+  ptr->attention_mask[seq_len - pos] = 65535;
 
   // update v_cache
   for (int i = 0; i < v_cache_in_.size(); i++) {
