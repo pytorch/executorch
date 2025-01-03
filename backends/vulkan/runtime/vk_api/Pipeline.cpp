@@ -205,17 +205,29 @@ bool operator==(const SpecVarList& lhs, const SpecVarList& rhs) {
 
 PipelineLayout::PipelineLayout(
     VkDevice device,
-    VkDescriptorSetLayout descriptor_layout)
+    VkDescriptorSetLayout descriptor_layout,
+    const uint32_t push_constants_size)
     : device_(device), handle_{VK_NULL_HANDLE} {
-  // TODO: Enable push constants
+  VkPushConstantRange pc_range{
+      VK_SHADER_STAGE_COMPUTE_BIT, // stageFlags
+      0u, // offset
+      push_constants_size, // size
+  };
+  uint32_t num_push_constants = 0u;
+  VkPushConstantRange* pc_ranges_ptr = nullptr;
+  if (push_constants_size > 0u) {
+    num_push_constants = 1u;
+    pc_ranges_ptr = &pc_range;
+  }
+
   const VkPipelineLayoutCreateInfo pipeline_layout_create_info{
       VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, // sType
       nullptr, // pNext
       0u, // flags
       1u, // setLayoutCount
       &descriptor_layout, // pSetLayouts
-      0u, // pushConstantRangeCount
-      nullptr, // pPushConstantRanges
+      num_push_constants, // pushConstantRangeCount
+      pc_ranges_ptr, // pPushConstantRanges
   };
 
   VK_CHECK(vkCreatePipelineLayout(
@@ -344,12 +356,19 @@ PipelineLayoutCache::~PipelineLayoutCache() {
 }
 
 VkPipelineLayout PipelineLayoutCache::retrieve(
-    const PipelineLayoutCache::Key& key) {
+    const VkDescriptorSetLayout layout,
+    const uint32_t push_constants_size) {
+  PipelineLayoutCache::Key key{layout, push_constants_size};
   std::lock_guard<std::mutex> lock(cache_mutex_);
 
   auto it = cache_.find(key);
   if (cache_.cend() == it) {
-    it = cache_.insert({key, PipelineLayoutCache::Value(device_, key)}).first;
+    it = cache_
+             .insert(
+                 {key,
+                  PipelineLayoutCache::Value(
+                      device_, layout, push_constants_size)})
+             .first;
   }
 
   return it->second.handle();
