@@ -327,7 +327,7 @@ Tensor& add_scalar_out(
         alpha_val,
         out.numel());
 
-  } else {  
+  } else {
     ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
       torch::executor::native::utils::
           apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(

@@ -43,23 +43,24 @@ Tensor& cat_out(
     exec_aten::ArrayRef<Tensor> tensors,
     int64_t dim,
     Tensor& out) {
-
   if (dim < 0) {
     dim += out.dim();
   }
 
-#ifdef OPT_ARG_CHECK
+  int kTensorDimensionLimit = executorch::runtime::kTensorDimensionLimit;
+  
+#ifdef OP_ARG_CHECK
   ET_KERNEL_CHECK(
       ctx,
       torch::executor::check_cat_args(tensors, dim, out),
       InvalidArgument,
       out);
-  
+
   Tensor::SizesType expected_out_size[kTensorDimensionLimit];
   size_t expected_out_dim = 0;
   torch::executor::get_cat_out_target_size(
       tensors, dim, expected_out_size, &expected_out_dim);
-  
+
   ET_KERNEL_CHECK(
       ctx,
       executorch::runtime::resize_tensor(
@@ -81,7 +82,6 @@ Tensor& cat_out(
     return out;
   }
 
-  int kTensorDimensionLimit = executorch::runtime::kTensorDimensionLimit;
 
   const signed char* inp_tensors[tensors.size()];
   const int* inp_tensors_shapes[tensors.size()];

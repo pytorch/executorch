@@ -168,7 +168,8 @@ T quantize_val(
 }
 
 /* Local function which calls the kernels based on the output datatype */
-Tensor & quantize_impl(KernelRuntimeContext& ctx,
+Tensor& quantize_impl(
+    KernelRuntimeContext& ctx,
     Tensor& out,
     const Tensor& input,
     float* scale_data,
@@ -210,10 +211,10 @@ Tensor & quantize_impl(KernelRuntimeContext& ctx,
   if (is_asym_quant) {
     if (out.scalar_type() == ScalarType::Byte) {
       uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_quantize_f32_asym8u,
+          xa_nn_elm_quantize_f32_asym8u,
           out_data,
           input_data,
           inp_shape,
@@ -225,11 +226,11 @@ Tensor & quantize_impl(KernelRuntimeContext& ctx,
           quant_max);
     } else if (out.scalar_type() == ScalarType::Char) {
       int8_t* out_data = out.mutable_data_ptr<int8_t>();
-        
-		XT_KERNEL_CHECK(
+
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_quantize_f32_asym8,
+          xa_nn_elm_quantize_f32_asym8,
           out_data,
           input_data,
           inp_shape,
@@ -241,10 +242,10 @@ Tensor & quantize_impl(KernelRuntimeContext& ctx,
           quant_max);
     } else if (out.scalar_type() == (ScalarType)Ushort) {
       uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_quantize_f32_asym16u,
+          xa_nn_elm_quantize_f32_asym16u,
           out_data,
           input_data,
           inp_shape,
@@ -256,10 +257,10 @@ Tensor & quantize_impl(KernelRuntimeContext& ctx,
           quant_max);
     } else if (out.scalar_type() == ScalarType::Short) {
       int16_t* out_data = out.mutable_data_ptr<int16_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_quantize_f32_asym16,
+          xa_nn_elm_quantize_f32_asym16,
           out_data,
           input_data,
           inp_shape,
@@ -271,10 +272,10 @@ Tensor & quantize_impl(KernelRuntimeContext& ctx,
           quant_max);
     } else if (out.scalar_type() == (ScalarType)Bits4u) {
       uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_quantize_f32_asym4u,
+          xa_nn_elm_quantize_f32_asym4u,
           out_data,
           input_data,
           inp_shape,
@@ -286,10 +287,10 @@ Tensor & quantize_impl(KernelRuntimeContext& ctx,
           quant_max);
     } else if (out.scalar_type() == (ScalarType)Bits4) {
       int8_t* out_data = out.mutable_data_ptr<int8_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_quantize_f32_asym4,
+          xa_nn_elm_quantize_f32_asym4,
           out_data,
           input_data,
           inp_shape,
@@ -423,10 +424,10 @@ Tensor & quantize_impl(KernelRuntimeContext& ctx,
   } else {
     if (out.scalar_type() == ScalarType::Byte) {
       uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_quantize_f32_sym8u,
+          xa_nn_elm_quantize_f32_sym8u,
           out_data,
           input_data,
           inp_shape,
@@ -437,10 +438,10 @@ Tensor & quantize_impl(KernelRuntimeContext& ctx,
           quant_max);
     } else if (out.scalar_type() == ScalarType::Char) {
       int8_t* out_data = out.mutable_data_ptr<int8_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_quantize_f32_sym8,
+          xa_nn_elm_quantize_f32_sym8,
           out_data,
           input_data,
           inp_shape,
@@ -451,10 +452,10 @@ Tensor & quantize_impl(KernelRuntimeContext& ctx,
           quant_max);
     } else if (out.scalar_type() == (ScalarType)Ushort) {
       uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_quantize_f32_sym16u,
+          xa_nn_elm_quantize_f32_sym16u,
           out_data,
           input_data,
           inp_shape,
@@ -465,10 +466,10 @@ Tensor & quantize_impl(KernelRuntimeContext& ctx,
           quant_max);
     } else if (out.scalar_type() == ScalarType::Short) {
       int16_t* out_data = out.mutable_data_ptr<int16_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_quantize_f32_sym16,
+          xa_nn_elm_quantize_f32_sym16,
           out_data,
           input_data,
           inp_shape,
@@ -479,10 +480,10 @@ Tensor & quantize_impl(KernelRuntimeContext& ctx,
           quant_max);
     } else if (out.scalar_type() == (ScalarType)Bits4u) {
       uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_quantize_f32_sym4u,
+          xa_nn_elm_quantize_f32_sym4u,
           out_data,
           input_data,
           inp_shape,
@@ -493,10 +494,10 @@ Tensor & quantize_impl(KernelRuntimeContext& ctx,
           quant_max);
     } else if (out.scalar_type() == (ScalarType)Bits4) {
       int8_t* out_data = out.mutable_data_ptr<int8_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_quantize_f32_sym4,
+          xa_nn_elm_quantize_f32_sym4,
           out_data,
           input_data,
           inp_shape,
@@ -647,7 +648,8 @@ Tensor& quantize_per_tensor_out(
 
   float scale_data = (float)scale;
   int zero_point_data = (int)zero_point;
-  quantize_impl(context,
+  quantize_impl(
+      context,
       out,
       input,
       &scale_data,
@@ -723,7 +725,8 @@ Tensor& quantize_per_tensor_tensor_args_out(
   return res;
 }
 
-Tensor& quantize_per_channel_out(KernelRuntimeContext& context,
+Tensor& quantize_per_channel_out(
+    KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
     const Tensor& zero_point,
@@ -770,7 +773,7 @@ Tensor& quantize_per_channel_out(KernelRuntimeContext& context,
       "zero_point.numel() %zd != input.size(axis) %zd",
       zero_point.numel(),
       input.size(axis));
-	  
+
   check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
 #endif
 
@@ -787,7 +790,8 @@ Tensor& quantize_per_channel_out(KernelRuntimeContext& context,
 
   int* axis_ptr = (int*)&axis;
 
-  quantize_impl(context,
+  quantize_impl(
+      context,
       out,
       input,
       scale_data,
@@ -799,7 +803,8 @@ Tensor& quantize_per_channel_out(KernelRuntimeContext& context,
   return out;
 }
 
-Tensor& quantize_per_token_out(KernelRuntimeContext& context,
+Tensor& quantize_per_token_out(
+    KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
     const Tensor& zero_point,
@@ -844,8 +849,16 @@ Tensor& quantize_per_token_out(KernelRuntimeContext& context,
       "Failed to resize out Tensor in quantize_per_channel_out");
 #endif
 
-  return quantize_per_channel_out(context,
-      reshaped_input, scale, zero_point, 0, quant_min, quant_max, dtype, out);
+  return quantize_per_channel_out(
+      context,
+      reshaped_input,
+      scale,
+      zero_point,
+      0,
+      quant_min,
+      quant_max,
+      dtype,
+      out);
 }
 
 } // namespace native
