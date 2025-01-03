@@ -710,6 +710,7 @@ setup(
     # include. See also setuptools/discovery.py for custom finders.
     package_dir={
         "executorch/backends": "backends",
+        "executorch/codegen": "codegen",
         # TODO(mnachin T180504136): Do not put examples/models
         # into core pip packages. Refactor out the necessary utils
         # or core models files into a separate package.
