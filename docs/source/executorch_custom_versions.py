@@ -24,7 +24,7 @@ version_file_names = [
     "pytorch.txt",
 ]
 
-variables = {}
+variables: dict[str, str] = {}
 
 
 def read_version_files():
