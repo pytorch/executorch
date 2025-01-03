@@ -35,7 +35,7 @@ Tensor& exp_out(RuntimeContext& ctx,
                 const Tensor& in,
                 Tensor& out)
 {
-#ifdef OPT_ARG_CHECK
+#ifdef OP_ARG_CHECK
     ET_KERNEL_CHECK(ctx, executorch::runtime::tensor_is_floating_type(out), InvalidArgument, out);
 
     // Resize for dynamic shape

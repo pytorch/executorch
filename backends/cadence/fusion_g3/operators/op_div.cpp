@@ -263,7 +263,7 @@ Tensor& div_out_mode(KernelRuntimeContext& ctx,
     ScalarType common_type = executorch::runtime::
                         promoteTypes(a.scalar_type(), b.scalar_type());
 
-#ifdef OPT_ARG_CHECK
+#ifdef OP_ARG_CHECK
     // Check Common Dtype
     ET_KERNEL_CHECK(
       ctx,
@@ -483,7 +483,7 @@ Tensor& div_scalar_out(KernelRuntimeContext& ctx,
     ScalarType common_type = torch::executor::native::utils::
                      promote_type_with_scalar(a.scalar_type(), b);
 
-#ifdef OPT_ARG_CHECK
+#ifdef OP_ARG_CHECK
     // Check Common Dtype
     ET_KERNEL_CHECK(ctx, common_type == out.scalar_type(), InvalidArgument, out);
 
@@ -582,7 +582,7 @@ Tensor& div_scalar_mode_out(KernelRuntimeContext& ctx,
     ScalarType common_type = torch::executor::native::utils::
                      promote_type_with_scalar(a.scalar_type(), b);
 
-#ifdef OPT_ARG_CHECK
+#ifdef OP_ARG_CHECK
     // Check Common Dtype
     ET_KERNEL_CHECK(
       ctx,

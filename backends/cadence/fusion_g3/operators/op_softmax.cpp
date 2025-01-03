@@ -51,14 +51,14 @@ Tensor& _softmax_out(
       InvalidArgument,
       out);
 
-    ET_KERNEL_CHECK(
-        ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
-  
-    ET_KERNEL_CHECK(
-        ctx,
-        executorch::runtime::tensors_have_same_dim_order(in, out),
-        InvalidArgument,
-        out);
+  ET_KERNEL_CHECK(
+      ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      executorch::runtime::tensors_have_same_dim_order(in, out),
+      InvalidArgument,
+      out);
 #endif
 
   int inp_shapes[in.dim()];
@@ -72,14 +72,14 @@ Tensor& _softmax_out(
     float* const out_data = out.mutable_data_ptr<float>();
     int axis = dim;
     XT_KERNEL_CHECK(
-      ctx,
-      out,
-      xa_nn_softmax_f32_f32,
-      out_data,
-      inp_data,
-      inp_shapes,
-      in.dim(),
-      &axis);
+        ctx,
+        out,
+        xa_nn_softmax_f32_f32,
+        out_data,
+        inp_data,
+        inp_shapes,
+        in.dim(),
+        &axis);
   } else {
     ET_SWITCH_FLOATH_TYPES(in.scalar_type(), ctx, "_softmax.out", CTYPE, [&]() {
       const CTYPE* const in_data = in.const_data_ptr<CTYPE>();

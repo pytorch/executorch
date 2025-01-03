@@ -92,7 +92,8 @@ void check_dequantize_per_tensor_args(
 } // namespace
 
 /* Local function which calls the kernels based on the input datatype */
-Tensor & dequantize_impl(KernelRuntimeContext& ctx,
+Tensor& dequantize_impl(
+    KernelRuntimeContext& ctx,
     Tensor& out,
     const Tensor& input,
     float* scale_data,
@@ -132,82 +133,82 @@ Tensor & dequantize_impl(KernelRuntimeContext& ctx,
   if (is_asym_dequant) {
     if (input.scalar_type() == ScalarType::Byte) {
       const uint8_t* input_data = input.const_data_ptr<uint8_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-        xa_nn_elm_dequantize_asym8u_f32,
-        out_data,
-        input_data,
-        inp_shape,
-        input.dim(),
-        axis,
-        zero_point_data,
-        scale_data);
+          xa_nn_elm_dequantize_asym8u_f32,
+          out_data,
+          input_data,
+          inp_shape,
+          input.dim(),
+          axis,
+          zero_point_data,
+          scale_data);
     } else if (input.scalar_type() == ScalarType::Char) {
       const int8_t* input_data = input.const_data_ptr<int8_t>();
-		XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-        xa_nn_elm_dequantize_asym8_f32,
-        out_data,
-        input_data,
-        inp_shape,
-        input.dim(),
-        axis,
-        zero_point_data,
-        scale_data);
+          xa_nn_elm_dequantize_asym8_f32,
+          out_data,
+          input_data,
+          inp_shape,
+          input.dim(),
+          axis,
+          zero_point_data,
+          scale_data);
     } else if (input.scalar_type() == (ScalarType)Ushort) {
       const uint16_t* input_data = input.const_data_ptr<uint16_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-        xa_nn_elm_dequantize_asym16u_f32,
-        out_data,
-        input_data,
-        inp_shape,
-        input.dim(),
-        axis,
-        zero_point_data,
-        scale_data);
+          xa_nn_elm_dequantize_asym16u_f32,
+          out_data,
+          input_data,
+          inp_shape,
+          input.dim(),
+          axis,
+          zero_point_data,
+          scale_data);
     } else if (input.scalar_type() == ScalarType::Short) {
       const int16_t* input_data = input.const_data_ptr<int16_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-        xa_nn_elm_dequantize_asym16_f32,
-        out_data,
-        input_data,
-        inp_shape,
-        input.dim(),
-        axis,
-        zero_point_data,
-        scale_data);
+          xa_nn_elm_dequantize_asym16_f32,
+          out_data,
+          input_data,
+          inp_shape,
+          input.dim(),
+          axis,
+          zero_point_data,
+          scale_data);
     } else if (input.scalar_type() == (ScalarType)Bits4u) {
       const uint8_t* input_data = input.const_data_ptr<uint8_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-        xa_nn_elm_dequantize_asym4u_f32,
-        out_data,
-        input_data,
-        inp_shape,
-        input.dim(),
-        axis,
-        zero_point_data,
-        scale_data);
+          xa_nn_elm_dequantize_asym4u_f32,
+          out_data,
+          input_data,
+          inp_shape,
+          input.dim(),
+          axis,
+          zero_point_data,
+          scale_data);
     } else if (input.scalar_type() == (ScalarType)Bits4) {
       const int8_t* input_data = input.const_data_ptr<int8_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		xa_nn_elm_dequantize_asym4_f32,
-        out_data,
-        input_data,
-        inp_shape,
-        input.dim(),
-        axis,
-        zero_point_data,
-        scale_data);
+          xa_nn_elm_dequantize_asym4_f32,
+          out_data,
+          input_data,
+          inp_shape,
+          input.dim(),
+          axis,
+          zero_point_data,
+          scale_data);
     } else {
       if (axis == NULL) {
 // calculate the dequantized output, cast scale to float to match fbgemm
@@ -343,10 +344,10 @@ Tensor & dequantize_impl(KernelRuntimeContext& ctx,
   } else {
     if (input.scalar_type() == ScalarType::Byte) {
       const uint8_t* input_data = input.const_data_ptr<uint8_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_dequantize_sym8u_f32,
+          xa_nn_elm_dequantize_sym8u_f32,
           out_data,
           input_data,
           inp_shape,
@@ -358,19 +359,19 @@ Tensor & dequantize_impl(KernelRuntimeContext& ctx,
       XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_dequantize_sym8_f32,
-        out_data,
-        input_data,
-        inp_shape,
-        input.dim(),
-        axis,
-        scale_data);
+          xa_nn_elm_dequantize_sym8_f32,
+          out_data,
+          input_data,
+          inp_shape,
+          input.dim(),
+          axis,
+          scale_data);
     } else if (input.scalar_type() == (ScalarType)Ushort) {
       const uint16_t* input_data = input.const_data_ptr<uint16_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_dequantize_sym16u_f32,
+          xa_nn_elm_dequantize_sym16u_f32,
           out_data,
           input_data,
           inp_shape,
@@ -379,10 +380,10 @@ Tensor & dequantize_impl(KernelRuntimeContext& ctx,
           scale_data);
     } else if (input.scalar_type() == ScalarType::Short) {
       const int16_t* input_data = input.const_data_ptr<int16_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_dequantize_sym16_f32,
+          xa_nn_elm_dequantize_sym16_f32,
           out_data,
           input_data,
           inp_shape,
@@ -391,10 +392,10 @@ Tensor & dequantize_impl(KernelRuntimeContext& ctx,
           scale_data);
     } else if (input.scalar_type() == (ScalarType)Bits4u) {
       const uint8_t* input_data = input.const_data_ptr<uint8_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_dequantize_sym4u_f32,
+          xa_nn_elm_dequantize_sym4u_f32,
           out_data,
           input_data,
           inp_shape,
@@ -403,10 +404,10 @@ Tensor & dequantize_impl(KernelRuntimeContext& ctx,
           scale_data);
     } else if (input.scalar_type() == (ScalarType)Bits4) {
       const int8_t* input_data = input.const_data_ptr<int8_t>();
-        XT_KERNEL_CHECK(
+      XT_KERNEL_CHECK(
           ctx,
           out,
-		  xa_nn_elm_dequantize_sym4_f32,
+          xa_nn_elm_dequantize_sym4_f32,
           out_data,
           input_data,
           inp_shape,
@@ -558,7 +559,8 @@ Tensor & dequantize_impl(KernelRuntimeContext& ctx,
  * https://github.com/pytorch/pytorch/pull/87093#discussion_r1000841181 for more
  * info.
  */
-Tensor& dequantize_per_tensor_out(KernelRuntimeContext& context,
+Tensor& dequantize_per_tensor_out(
+    KernelRuntimeContext& context,
     const Tensor& input,
     double scale,
     int64_t zero_point,
@@ -572,7 +574,7 @@ Tensor& dequantize_per_tensor_out(KernelRuntimeContext& context,
   ET_CHECK_MSG(
       err == torch::executor::Error::Ok,
       "Failed to resize out Tensor in dequantize_per_tensor_out");
-	  
+
   check_dequantize_per_tensor_args(
       input, quant_min, quant_max, dtype, out_dtype, out);
 #endif
@@ -580,12 +582,14 @@ Tensor& dequantize_per_tensor_out(KernelRuntimeContext& context,
   float scale_data = (float)scale;
   int zero_point_data = (int)zero_point;
 
-  dequantize_impl(context, out, input, &scale_data, &zero_point_data, NULL, out_dtype);
+  dequantize_impl(
+      context, out, input, &scale_data, &zero_point_data, NULL, out_dtype);
 
   return out;
 }
 
-Tensor& dequantize_per_tensor_tensor_args_out(KernelRuntimeContext& context,
+Tensor& dequantize_per_tensor_tensor_args_out(
+    KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
     const Tensor& zero_point,
@@ -613,7 +617,8 @@ Tensor& dequantize_per_tensor_tensor_args_out(KernelRuntimeContext& context,
       ssize_t(zero_point.numel()));
 #endif
 
-  dequantize_per_tensor_out(context,
+  dequantize_per_tensor_out(
+      context,
       input,
       scale.const_data_ptr<double>()[0],
       zero_point.const_data_ptr<int64_t>()[0],
@@ -626,7 +631,8 @@ Tensor& dequantize_per_tensor_tensor_args_out(KernelRuntimeContext& context,
   return out;
 }
 
-Tensor& dequantize_per_channel_out(KernelRuntimeContext& context,
+Tensor& dequantize_per_channel_out(
+    KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
     const exec_aten::optional<Tensor>& opt_zero_points,
@@ -636,14 +642,13 @@ Tensor& dequantize_per_channel_out(KernelRuntimeContext& context,
     ScalarType dtype,
     exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
-
   if (axis < 0) {
     axis += executorch::runtime::nonzero_dim(input);
   }
-	/* if the arguments are passed properly to the operator disable the Macro - "OP_ARG_CHECK"
-	 * if not the case, enable the Macro - "OP_ARG_CHECK", to have the checks only in 
-	 * operator level(As there are no checks in kernel).
-	 */
+  /* if the arguments are passed properly to the operator disable the Macro -
+   * "OP_ARG_CHECK" if not the case, enable the Macro - "OP_ARG_CHECK", to have
+   * the checks only in operator level(As there are no checks in kernel).
+   */
 #ifdef OP_ARG_CHECK
   torch::executor::Error err = resize_tensor(out, input.sizes());
 
@@ -705,12 +710,14 @@ Tensor& dequantize_per_channel_out(KernelRuntimeContext& context,
   for (int i = 0; i < scale.numel(); i++) {
     scale_data[i] = (float)scale_dt[i];
   }
-  dequantize_impl(context, out, input, scale_data, zero_point_ptr, axis_ptr, out_dtype);
+  dequantize_impl(
+      context, out, input, scale_data, zero_point_ptr, axis_ptr, out_dtype);
 
   return out;
 }
 
-Tensor& dequantize_per_token_out(KernelRuntimeContext& context,
+Tensor& dequantize_per_token_out(
+    KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
     const Tensor& zero_points,
@@ -757,7 +764,8 @@ Tensor& dequantize_per_token_out(KernelRuntimeContext& context,
       "Failed to resize out Tensor in dequantize_per_channel_out");
 #endif
 
-  return dequantize_per_channel_out(context,
+  return dequantize_per_channel_out(
+      context,
       reshaped_input,
       scale,
       zero_points,

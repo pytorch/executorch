@@ -42,7 +42,7 @@ Tensor& mul_out(
   ScalarType common_type =
       executorch::runtime::promoteTypes(a.scalar_type(), b.scalar_type());
 
-#ifdef OPT_ARG_CHECK
+#ifdef OP_ARG_CHECK
   // Check Common Dtype
   ET_KERNEL_CHECK(
       ctx, canCast(common_type, out.scalar_type()), InvalidArgument, out);
@@ -119,9 +119,8 @@ Tensor& mul_out(
     const int* const inp2_data = b.const_data_ptr<int>();
     int* const out_data = out.mutable_data_ptr<int>();
 
-    if (a.numel() == 1)
-    {
-        XT_KERNEL_CHECK(
+    if (a.numel() == 1) {
+      XT_KERNEL_CHECK(
           ctx,
           out,
           xa_nn_elm_mul_scalar_32x32_32,
@@ -129,10 +128,8 @@ Tensor& mul_out(
           inp2_data,
           inp1_data[0],
           out.numel());
-    }
-    else if (b.numel() == 1)
-    {
-        XT_KERNEL_CHECK(
+    } else if (b.numel() == 1) {
+      XT_KERNEL_CHECK(
           ctx,
           out,
           xa_nn_elm_mul_scalar_32x32_32,
@@ -140,37 +137,35 @@ Tensor& mul_out(
           inp1_data,
           inp2_data[0],
           out.numel());
-    }
-    else if (broadcast) {
+    } else if (broadcast) {
       XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_elm_mul_broadcast_5D_32x32_32,
-        out_data,
-        out_shape,
-        inp1_data,
-        inp1_shape,
-        inp2_data,
-        inp2_shape,
-        max_dim);
+          ctx,
+          out,
+          xa_nn_elm_mul_broadcast_5D_32x32_32,
+          out_data,
+          out_shape,
+          inp1_data,
+          inp1_shape,
+          inp2_data,
+          inp2_shape,
+          max_dim);
     } else {
       XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_elm_mul_32x32_32,
-        out_data,
-        inp1_data,
-        inp2_data,
-        out.numel());
+          ctx,
+          out,
+          xa_nn_elm_mul_32x32_32,
+          out_data,
+          inp1_data,
+          inp2_data,
+          out.numel());
     }
-  } else if((compute_type == ScalarType::Float) && (optimized)) {
+  } else if ((compute_type == ScalarType::Float) && (optimized)) {
     const float* const inp1_data = a.const_data_ptr<float>();
     const float* const inp2_data = b.const_data_ptr<float>();
     float* const out_data = out.mutable_data_ptr<float>();
-    
-    if (a.numel() == 1)
-    {
-        XT_KERNEL_CHECK(
+
+    if (a.numel() == 1) {
+      XT_KERNEL_CHECK(
           ctx,
           out,
           xa_nn_elm_mul_scalar_f32xf32_f32,
@@ -178,10 +173,8 @@ Tensor& mul_out(
           inp2_data,
           inp1_data[0],
           out.numel());
-    }
-    else if (b.numel() == 1)
-    {
-        XT_KERNEL_CHECK(
+    } else if (b.numel() == 1) {
+      XT_KERNEL_CHECK(
           ctx,
           out,
           xa_nn_elm_mul_scalar_f32xf32_f32,
@@ -189,28 +182,27 @@ Tensor& mul_out(
           inp1_data,
           inp2_data[0],
           out.numel());
-    }
-    else if (broadcast) {
+    } else if (broadcast) {
       XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_elm_mul_broadcast_5D_f32xf32_f32,
-        out_data,
-        out_shape,
-        inp1_data,
-        inp1_shape,
-        inp2_data,
-        inp2_shape,
-        max_dim);
+          ctx,
+          out,
+          xa_nn_elm_mul_broadcast_5D_f32xf32_f32,
+          out_data,
+          out_shape,
+          inp1_data,
+          inp1_shape,
+          inp2_data,
+          inp2_shape,
+          max_dim);
     } else {
       XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_elm_mul_f32xf32_f32,
-        out_data,
-        inp1_data,
-        inp2_data,
-        out.numel());
+          ctx,
+          out,
+          xa_nn_elm_mul_f32xf32_f32,
+          out_data,
+          inp1_data,
+          inp2_data,
+          out.numel());
     }
   } else {
     ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
@@ -230,7 +222,6 @@ Tensor& mul_out(
     });
   }
   return out;
-
 }
 
 Tensor& mul_scalar_out(
@@ -243,7 +234,7 @@ Tensor& mul_scalar_out(
       torch::executor::native::utils::promote_type_with_scalar(
           a.scalar_type(), b);
 
-#ifdef OPT_ARG_CHECK
+#ifdef OP_ARG_CHECK
   // Check Common Dtype
   ET_KERNEL_CHECK(ctx, common_type == out.scalar_type(), InvalidArgument, out);
 
@@ -264,7 +255,7 @@ Tensor& mul_scalar_out(
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "mul.Scalar_out";
-  if (compute_type  == ScalarType::Int) {
+  if (compute_type == ScalarType::Int) {
     const int* const inp1_data = a.const_data_ptr<int>();
     int inp2_val;
     torch::executor::native::utils::extract_scalar(b, &inp2_val);
