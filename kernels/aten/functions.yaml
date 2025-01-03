@@ -313,6 +313,8 @@
 
 - op: repeat.out
 
+- op: repeat_interleave.Tensor_out
+
 - op: reflection_pad1d.out
 
 - op: reflection_pad2d.out
@@ -402,6 +404,8 @@
 - op: unsqueeze_copy.dim_out
 
 - op: unsqueeze_copy.out
+
+- op: upsample_bilinear2d.vec_out
 
 - op: upsample_nearest2d.out
 

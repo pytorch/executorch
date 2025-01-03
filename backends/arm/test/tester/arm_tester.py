@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-import tempfile
 
 from collections import Counter
 from pprint import pformat
@@ -12,7 +11,6 @@ from typing import Any, Iterable, List, Literal, Optional, Tuple, Union
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
-import numpy as np
 import serializer.tosa_serializer as ts
 
 import torch.fx
@@ -25,12 +23,10 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 )
 from executorch.backends.arm.test.common import get_target_board
 
-from executorch.backends.arm.test.runner_utils import (
-    _get_input_quantization_params,
-    _get_output_node,
-    _get_output_quantization_params,
-    dbg_tosa_fb_to_json,
-    RunnerUtil,
+from executorch.backends.arm.test.runner_utils import dbg_tosa_fb_to_json, RunnerUtil
+from executorch.backends.arm.test.tester.analyze_output_utils import (
+    dump_error_output,
+    print_error_diffs,
 )
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 
@@ -278,6 +274,7 @@ class ArmTester(Tester):
         atol=1e-03,
         rtol=1e-03,
         qtol=0,
+        error_callbacks=None,
     ):
         """
         Compares the run_artifact output of 'stage' with the output of a reference stage.
@@ -319,12 +316,15 @@ class ArmTester(Tester):
             target_board,
         )
 
+        quantization_scale = None
         if is_quantized:
             reference_stage = self.stages[self.stage_name(tester.Quantize)]
-            quantization_scale = self.runner_util.qp_output.scale
+            # bool output is quantized with none quantized output so allow
+            # self.runner_util.qp_output to be none
+            if self.runner_util.qp_output is not None:
+                quantization_scale = self.runner_util.qp_output.scale
         else:
             reference_stage = self.stages[self.stage_name(InitialModel)]
-            quantization_scale = None
 
         logger.info(
             f"Comparing Stage '{self.stage_name(test_stage)}' with Stage '{self.stage_name(reference_stage)}'"
@@ -366,7 +366,13 @@ class ArmTester(Tester):
                 test_output = self.transpose_data_format(test_output, "NCHW")
 
             self._compare_outputs(
-                reference_output, test_output, quantization_scale, atol, rtol, qtol
+                reference_output,
+                test_output,
+                quantization_scale,
+                atol,
+                rtol,
+                qtol,
+                error_callbacks,
             )
 
         return self
@@ -504,7 +510,7 @@ class ArmTester(Tester):
         inputs_transposed = list(data)
         for i in range(len(data)):
             if hasattr(data[i], "shape") and len(data[i].shape) == 4:
-                inputs_transposed[i] = np.transpose(data[i], dim_order)
+                inputs_transposed[i] = torch.permute(data[i], dim_order)
         return tuple(inputs_transposed)
 
     def _compare_outputs(
@@ -515,42 +521,25 @@ class ArmTester(Tester):
         atol=1e-03,
         rtol=1e-03,
         qtol=0,
+        error_callbacks=None,
     ):
         try:
             super()._compare_outputs(
                 reference_output, stage_output, quantization_scale, atol, rtol, qtol
             )
         except AssertionError as e:
-            # Capture assertion error and print more info
-            banner = "=" * 40 + "TOSA debug info" + "=" * 40
-            logger.error(banner)
-            path_to_tosa_files = self.runner_util.intermediate_path
-            if path_to_tosa_files is None:
-                path_to_tosa_files = tempfile.mkdtemp(prefix="executorch_result_dump_")
-
-            export_stage = self.stages.get(self.stage_name(tester.Export), None)
-            quantize_stage = self.stages.get(self.stage_name(tester.Quantize), None)
-            if export_stage is not None and quantize_stage is not None:
-                output_node = _get_output_node(export_stage.artifact)
-                qp_input = _get_input_quantization_params(export_stage.artifact)
-                qp_output = _get_output_quantization_params(
-                    export_stage.artifact, output_node
+            if error_callbacks is None:
+                error_callbacks = [print_error_diffs, dump_error_output]
+            for callback in error_callbacks:
+                callback(
+                    self,
+                    reference_output,
+                    stage_output,
+                    quantization_scale=None,
+                    atol=1e-03,
+                    rtol=1e-03,
+                    qtol=0,
                 )
-                logger.error(f"Input QuantArgs: {qp_input}")
-                logger.error(f"Output QuantArgs: {qp_output}")
-
-            logger.error(f"{path_to_tosa_files=}")
-            import os
-
-            torch.save(
-                stage_output,
-                os.path.join(path_to_tosa_files, "torch_tosa_output.pt"),
-            )
-            torch.save(
-                reference_output,
-                os.path.join(path_to_tosa_files, "torch_ref_output.pt"),
-            )
-            logger.error(f"{atol=}, {rtol=}, {qtol=}")
             raise e
 
 
