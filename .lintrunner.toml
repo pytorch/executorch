@@ -302,7 +302,7 @@ include_patterns = [
     'profiler/**/*.py',
     'runtime/**/*.py',
     'scripts/**/*.py',
-    # 'test/**/*.py',
+    'test/**/*.py',
     'util/**/*.py',
     '*.py',
 ]
