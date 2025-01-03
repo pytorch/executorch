@@ -296,6 +296,12 @@ utils::uvec3 create_conv2d_global_wg_size(
         utils::div_up(image_extents[0u], 2u),
         utils::div_up(image_extents[1u], 2u),
         image_extents[2u]};
+  } else if (method == Conv2dMethod::Depthwise) {
+    const utils::uvec3 image_extents = graph.logical_limits_of(out);
+    return {
+        utils::div_up(image_extents[0u], 1u),
+        utils::div_up(image_extents[1u], 2u),
+        image_extents[2u]};
   } else {
     return graph.create_global_wg_size(out);
   }
