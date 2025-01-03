@@ -76,7 +76,7 @@ def define_common_targets():
             "ovr_config//cpu:x86_64": [
                 "third-party//sleef:sleef",
             ]
-        }) if not runtime.is_oss else [],
+        })) if not runtime.is_oss else [],
         fbcode_exported_preprocessor_flags = [
             # We don't -DCPU_CAPABILITY=AVX2 because that trips
             # -Wmacro-redefined, and we only care about getting
