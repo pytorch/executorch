@@ -14,3 +14,21 @@ runtime.python_library(
         "//executorch/...",
     ],
 )
+
+runtime.python_library(
+    name = "serialize",
+    srcs = [
+        "serialize.py",
+    ],
+    resources = [
+        "flat_tensor.fbs",
+        "scalar_type.fbs",
+    ],
+    visibility = [
+        "//executorch/...",
+    ],
+    deps = [
+        ":schema",
+        "//executorch/exir/_serialize:lib",
+    ],
+)
