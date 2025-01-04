@@ -26,10 +26,10 @@ function(generate_program_schema _schema_srcs _schema_name)
   foreach(fbs_file ${_schema_srcs})
     string(REGEX REPLACE "[.]fbs$" "_generated.h" generated "${fbs_file}")
     list(APPEND _schema_outputs
-         "${_program_schema__include_dir}/executorch/${generated}"
+         "${_program_schema__include_dir}/executorch/schema/${generated}"
     )
   endforeach()
-
+  
   # Generate the headers from the .fbs files.
   add_custom_command(
     OUTPUT ${_schema_outputs}
