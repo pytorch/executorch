@@ -370,11 +370,17 @@ void add_conv2d_node(
       weight_data,
       clamp_out);
 
+  utils::uvec3 wg_size = create_conv2d_global_wg_size(graph, method, out);
+
+  if (method == Conv2dMethod::Pointwise) {
+    wg_size = {wg_size[0] * wg_size[1] * wg_size[2], 1, 1};
+  }
+
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       shader,
-      create_conv2d_global_wg_size(graph, method, out),
-      graph.create_local_wg_size(out),
+      wg_size,
+      graph.create_local_wg_size(wg_size),
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
        {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
