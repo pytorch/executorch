@@ -70,7 +70,7 @@ def define_common_targets():
         fbcode_exported_deps = ([
             "//caffe2:aten-headers-cpu",
             "//caffe2:generated-config-header",
-            "//caffe2/c10/core:base_headers",
+            "//caffe2/c10:c10_headers",
         ] + select({
             "DEFAULT": [],
             "ovr_config//cpu:x86_64": [

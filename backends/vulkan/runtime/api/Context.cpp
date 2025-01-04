@@ -90,12 +90,13 @@ void Context::report_shader_dispatch_end() {
 vkapi::DescriptorSet Context::get_descriptor_set(
     const vkapi::ShaderInfo& shader_descriptor,
     const utils::uvec3& local_workgroup_size,
-    const vkapi::SpecVarList& additional_constants) {
+    const vkapi::SpecVarList& additional_constants,
+    const uint32_t push_constants_size) {
   VkDescriptorSetLayout shader_layout =
       shader_layout_cache().retrieve(shader_descriptor.kernel_layout);
 
   VkPipelineLayout pipeline_layout =
-      pipeline_layout_cache().retrieve(shader_layout);
+      pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
 
   vkapi::SpecVarList spec_constants = {
       SV(local_workgroup_size[0u]),
@@ -105,7 +106,7 @@ vkapi::DescriptorSet Context::get_descriptor_set(
   spec_constants.append(additional_constants);
 
   VkPipeline pipeline = pipeline_cache().retrieve(
-      {pipeline_layout_cache().retrieve(shader_layout),
+      {pipeline_layout_cache().retrieve(shader_layout, push_constants_size),
        shader_cache().retrieve(shader_descriptor),
        spec_constants});
 
@@ -151,7 +152,7 @@ void Context::register_shader_dispatch(
     const VkDescriptorSetLayout shader_layout =
         shader_layout_cache().retrieve(shader_descriptor.kernel_layout);
     const VkPipelineLayout pipeline_layout =
-        pipeline_layout_cache().retrieve(shader_layout);
+        pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
     cmd_.set_push_constants(
         pipeline_layout, push_constants_data, push_constants_size);
   }
