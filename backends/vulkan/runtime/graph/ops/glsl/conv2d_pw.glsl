@@ -40,7 +40,12 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
  * size is only 1x1, making it easier to re-use loaded texels from t_kernel.
  */
 void main() {
-  const u16vec3 gpos = u16vec3(gl_GlobalInvocationID);
+  const uint16_t out_limits_y_scaled = uint16_t((out_limits.y + TILE_SIZE - 1) / TILE_SIZE);
+
+  const u16vec3 gpos = u16vec3(
+    gl_GlobalInvocationID.x / (out_limits_y_scaled * out_limits.z),
+    (gl_GlobalInvocationID.x / out_limits.z) % out_limits_y_scaled,
+    gl_GlobalInvocationID.x % out_limits.z);
 
   // Output position for TILE_SIZE = 2
   // +--------+--------+
