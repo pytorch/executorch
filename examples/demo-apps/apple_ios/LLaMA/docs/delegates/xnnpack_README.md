@@ -141,7 +141,7 @@ Note: You should only use this step if the prebuilt package doesn't work for you
 If you need to manually build the package, run the following command in your terminal
 ```
 # Install a compatible version of Buck2
-BUCK2_RELEASE_DATE="2024-05-15"
+BUCK2_RELEASE_DATE="2024-12-16"
 BUCK2_ARCHIVE="buck2-aarch64-apple-darwin.zst"
 BUCK2=".venv/bin/buck2"
 
