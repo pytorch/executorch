@@ -145,7 +145,7 @@ class Version:
                     open(os.path.join(cls._root_dir(), "version.txt")).read().strip()
                 )
                 if cls.git_hash():
-                    version += "+" + cls.git_hash()[:7]
+                    version += "+" + cls.git_hash()[:7]  # type: ignore[index]
             cls.__string_attr = version
         return cls.__string_attr
 
@@ -710,6 +710,7 @@ setup(
     # include. See also setuptools/discovery.py for custom finders.
     package_dir={
         "executorch/backends": "backends",
+        "executorch/codegen": "codegen",
         # TODO(mnachin T180504136): Do not put examples/models
         # into core pip packages. Refactor out the necessary utils
         # or core models files into a separate package.

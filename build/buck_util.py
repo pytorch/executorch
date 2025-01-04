@@ -24,7 +24,10 @@ class Buck2Runner:
         """Runs buck2 with the given args and returns its stdout as a sequence of lines."""
         try:
             cp: subprocess.CompletedProcess = subprocess.run(
-                [self._path] + args, capture_output=True, cwd=BUCK_CWD, check=True
+                [self._path] + args,  # type: ignore[operator]
+                capture_output=True,
+                cwd=BUCK_CWD,
+                check=True,
             )
             return [line.strip().decode("utf-8") for line in cp.stdout.splitlines()]
         except subprocess.CalledProcessError as ex:

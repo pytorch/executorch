@@ -31,7 +31,7 @@ def get_operators(model_file: str) -> List[Operator]:
 
 def dump_yaml(model_file: str, output_file: str) -> None:
     ops = get_operators(model_file)
-    m = []
+    m = []  # type: ignore[var-annotated]
     for op in ops:
         if op.name.startswith("aten::"):
             schemas = torch._C._jit_get_schemas_for_operator(op.name)
