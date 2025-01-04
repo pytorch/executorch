@@ -40,6 +40,11 @@
     - arg_meta: null
       kernel_name: torch::executor::opt_sigmoid_out
 
+- op: gelu.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::opt_gelu_out
+
 - op: le.Scalar_out
   kernels:
     - arg_meta: null
