@@ -44,8 +44,7 @@ def merge(functions_yaml_path: str, fallback_yaml_path: Optional[str], output_di
         Returns:
             str: canonical name of the operator
         """
-        # pyre-ignore
-        opname = func["op"] if "op" in func else func["func"].split("(")[0]
+        opname = func["op"] if "op" in func else func["func"].split("(")[0]  # type: ignore
         if "::" not in opname:
             opname = "aten::" + opname
         return opname
