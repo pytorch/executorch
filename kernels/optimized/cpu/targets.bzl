@@ -29,7 +29,7 @@ _OPTIMIZED_ATEN_OPS = (
     op_target(
         name = "op_gelu",
         deps = [
-            ":aten_headers_for_executorch",
+            "//executorch/runtime/core/portable_type/c10:aten_headers_for_executorch",
         ],
     ),
     op_target(
