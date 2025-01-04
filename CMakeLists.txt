@@ -361,7 +361,7 @@ if(NOT "${_repo_dir_name}" STREQUAL "executorch")
       "fix for this restriction."
   )
 endif()
-set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/..)
+set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -544,6 +544,7 @@ endif()
 target_include_directories(
   executorch_core PUBLIC ${_common_include_directories}
 )
+target_compile_definitions(executorch_core PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 target_compile_options(executorch_core PUBLIC ${_common_compile_options})
 if(MAX_KERNEL_NUM)
   target_compile_definitions(
@@ -564,6 +565,7 @@ if(EXECUTORCH_BUILD_PYBIND AND APPLE)
   target_include_directories(
     executorch_core_shared PUBLIC ${_common_include_directories}
   )
+  target_compile_definitions(executorch_core_shared PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
   target_compile_options(
     executorch_core_shared PUBLIC ${_common_compile_options}
   )
@@ -584,6 +586,7 @@ endif()
 add_library(executorch ${_executorch__srcs})
 target_link_libraries(executorch PRIVATE executorch_core)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
+target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 target_compile_options(executorch PUBLIC ${_common_compile_options})
 target_link_options_shared_lib(executorch)
 
@@ -617,6 +620,12 @@ endif()
 
 # Install `executorch` library as well as `executorch-config.cmake` under
 # ${CMAKE_INSTALL_PREFIX}/
+install(DIRECTORY runtime/core/  DESTINATION include/executorch/runtime/core FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY runtime/kernel/  DESTINATION include/executorch/runtime/kernel FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY runtime/platform/  DESTINATION include/executorch/runtime/platform FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY extension/kernel_util/  DESTINATION include/executorch/extension/kernel_util FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY extension/tensor/  DESTINATION include/executorch/extension/tensor FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY extension/threadpool/  DESTINATION include/executorch/extension/threadpool FILES_MATCHING PATTERN "*.h")
 install(
   TARGETS executorch executorch_core
   DESTINATION lib
@@ -775,6 +784,8 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_include_directories(
     util PUBLIC ${_common_include_directories} ${TORCH_INCLUDE_DIRS}
   )
+  target_compile_definitions(util PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
+
   target_compile_options(util PUBLIC ${_pybind_compile_options})
   target_link_libraries(util PRIVATE torch c10 executorch extension_tensor)
 
