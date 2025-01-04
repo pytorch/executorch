@@ -10,9 +10,10 @@
 #include <cmath>
 #include <tuple>
 
+#include <ATen/cpu/vec/functional.h>
+#include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/cpu/moments_utils.h>
 #include <executorch/kernels/optimized/vec/functional.h>
-#include <executorch/kernels/optimized/vec/vec.h>
 #include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
 
 namespace torch {
@@ -33,7 +34,7 @@ void layer_norm(
     Tensor& out,
     Tensor& mean,
     Tensor& rstd) {
-  using Vec = executorch::vec::Vectorized<CTYPE>;
+  using Vec = at::vec::Vectorized<CTYPE>;
 
   const size_t dim = input.dim() - normalized_shape.size();
   const size_t dim_size = input.size(dim);
@@ -93,7 +94,7 @@ void layer_norm(
         dst_ptr[j] = (src_ptr[j] * scale + offset) * gamma_v + beta_v;
       }
     } else {
-      executorch::vec::map3<CTYPE>(
+      at::vec::map3<CTYPE>(
           [scale, offset](Vec x, Vec gamma, Vec beta) {
             return (x * Vec(scale) + Vec(offset)) * gamma + beta;
           },

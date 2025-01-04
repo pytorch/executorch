@@ -132,6 +132,9 @@ def define_libs(is_fbcode=False):
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
+        exported_deps = [
+            "//executorch/runtime/core/portable_type/c10:aten_headers_for_executorch",
+        ],
         cxx_platform_deps = select({
             "DEFAULT": [
                 (
