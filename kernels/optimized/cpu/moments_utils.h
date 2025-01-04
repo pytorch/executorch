@@ -12,7 +12,7 @@
 // for use in optimized ExecuTorch ops. Template specializations of BFloat16
 // are excluded.
 
-#include <executorch/kernels/optimized/vec/vec.h>
+#include <ATen/cpu/vec/vec.h>
 
 #include <executorch/kernels/optimized/utils/math_utils.h>
 #include <executorch/runtime/platform/compiler.h>
@@ -47,12 +47,12 @@ void AddMoments(
 template <typename T>
 ET_INLINE void AddMomentsVec(
     int64_t m0_add,
-    const executorch::vec::Vectorized<T>& m1_add,
-    const executorch::vec::Vectorized<T>& m2_add,
+    const at::vec::Vectorized<T>& m1_add,
+    const at::vec::Vectorized<T>& m2_add,
     int64_t& m0,
-    executorch::vec::Vectorized<T>& m1,
-    executorch::vec::Vectorized<T>& m2) {
-  using Vec = executorch::vec::Vectorized<T>;
+    at::vec::Vectorized<T>& m1,
+    at::vec::Vectorized<T>& m2) {
+  using Vec = at::vec::Vectorized<T>;
   const int64_t n = m0 + m0_add;
   const T c =
       n == 0 ? static_cast<T>(0) : static_cast<T>(m0_add) / static_cast<T>(n);
@@ -67,11 +67,11 @@ template <typename T>
 inline void UpdateMomentsVec(
     int64_t m0,
     const T* X_ptr,
-    const std::array<executorch::vec::Vectorized<acc_t<T>>, kChunkSize>& c_vecs,
+    const std::array<at::vec::Vectorized<acc_t<T>>, kChunkSize>& c_vecs,
     int64_t& m0_stk0,
-    executorch::vec::Vectorized<acc_t<T>>& m1_stk0,
-    executorch::vec::Vectorized<acc_t<T>>& m2_stk0) {
-  using Vec = executorch::vec::Vectorized<acc_t<T>>;
+    at::vec::Vectorized<acc_t<T>>& m1_stk0,
+    at::vec::Vectorized<acc_t<T>>& m2_stk0) {
+  using Vec = at::vec::Vectorized<acc_t<T>>;
   Vec m1_vec(0);
   Vec m2_vec(0);
   for (int64_t j = 0; j < m0; ++j) {
@@ -92,13 +92,13 @@ std::pair<acc_t<T>, acc_t<T>>
 RowwiseMomentsImpl(const T* X, int64_t N, int64_t ddof = 0) {
   using T_ACC = acc_t<T>;
 
-  constexpr int64_t kVecSize = executorch::vec::Vectorized<T>::size();
-  constexpr int64_t kAccVecSize = executorch::vec::Vectorized<T_ACC>::size();
+  constexpr int64_t kVecSize = at::vec::Vectorized<T>::size();
+  constexpr int64_t kAccVecSize = at::vec::Vectorized<T_ACC>::size();
   const int64_t n = N / kVecSize;
   const int64_t m = executorch::utils::divup(n, kChunkSize);
   const int64_t depth = executorch::utils::CeilLog2(m);
 
-  using Vec = executorch::vec::Vectorized<T_ACC>;
+  using Vec = at::vec::Vectorized<T_ACC>;
   const Vec kZeroVec(T_ACC(0));
   std::array<int64_t, kMaxDepth> m0_stk;
   std::array<Vec, kMaxDepth> m1_stk;
@@ -168,7 +168,7 @@ RowwiseMomentsImpl(const T* X, int64_t N, int64_t ddof = 0) {
 template <typename T>
 std::pair<acc_t<T>, acc_t<T>>
 RowwiseMoments(const T* X, int64_t N, int64_t ddof = 0) {
-  using Vec = executorch::vec::Vectorized<T>;
+  using Vec = at::vec::Vectorized<T>;
   constexpr int64_t kVecSize = Vec::size();
   const int64_t n = N / kVecSize;
   const int64_t m = executorch::utils::divup(n, kChunkSize);
