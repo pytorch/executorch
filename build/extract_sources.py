@@ -85,7 +85,7 @@ class Target:
         base_dict: Optional[dict] = None,
     ) -> None:
         self._state: Target._InitState = Target._InitState.UNINITIALIZED
-        self._sources = frozenset()
+        self._sources: frozenset[str] = frozenset()
 
         self.name = name
         # Extend the base lists with the target-specific entries.
