@@ -15,8 +15,8 @@
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
-using torch::executor::KernelRuntimeContext;
 using torch::executor::Error;
+using torch::executor::KernelRuntimeContext;
 
 namespace cadence {
 namespace impl {
@@ -63,32 +63,38 @@ int prepare_data(
   return num_axis_dims;
 }
 
-Tensor& mean_dim_out(KernelRuntimeContext& ctx,
-                     const Tensor& in,
-                     exec_aten::optional<exec_aten::ArrayRef<int64_t>> dim_list,
-                     bool keepdim,
-                     exec_aten::optional<ScalarType> dtype,
-                     Tensor& out)
-{
-    (void)ctx;
+Tensor& mean_dim_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& in,
+    exec_aten::optional<exec_aten::ArrayRef<int64_t>> dim_list,
+    bool keepdim,
+    exec_aten::optional<ScalarType> dtype,
+    Tensor& out) {
+  (void)ctx;
 
 #ifdef OP_ARG_CHECK
-    ET_KERNEL_CHECK(
+  ET_KERNEL_CHECK(
       ctx,
       torch::executor::check_mean_dim_args(in, dim_list, keepdim, dtype, out),
       InvalidArgument,
       out);
 
-    ET_KERNEL_CHECK(
-      ctx, executorch::runtime::tensors_have_same_dim_order(in, out),
-      InvalidArgument, out);
-
-    ET_KERNEL_CHECK(ctx, executorch::runtime::tensor_is_default_dim_order(in),
-                 InvalidArgument, out);
-
-    ET_KERNEL_CHECK(
+  ET_KERNEL_CHECK(
       ctx,
-      torch::executor::resize_reduction_out(in, dim_list, keepdim, out) == Error::Ok,
+      executorch::runtime::tensors_have_same_dim_order(in, out),
+      InvalidArgument,
+      out);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      executorch::runtime::tensor_is_default_dim_order(in),
+      InvalidArgument,
+      out);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      torch::executor::resize_reduction_out(in, dim_list, keepdim, out) ==
+          Error::Ok,
       InvalidArgument,
       out);
 #endif
@@ -138,16 +144,18 @@ Tensor& mean_dim_out(KernelRuntimeContext& ctx,
       out_shape[0] = 1;
     }
 
-   int scratch_size = 1;
-  for (int i = 0; i < num_inp_dims; i++) {
-  scratch_size *= inp_shape[i];
-  }
+    int scratch_size = 1;
+    for (int i = 0; i < num_inp_dims; i++) {
+      scratch_size *= inp_shape[i];
+    }
 
-    void* __restrict__ p_scratch_in = (void* __restrict__)malloc(scratch_size * sizeof(float));
+    void* __restrict__ p_scratch_in =
+        (void* __restrict__)malloc(scratch_size * sizeof(float));
 
-    XT_KERNEL_CHECK(ctx,
-		out,
-		xa_nn_mean_f32_f32,
+    XT_KERNEL_CHECK(
+        ctx,
+        out,
+        xa_nn_mean_f32_f32,
         p_out,
         out_shape,
         num_out_dims,
@@ -157,30 +165,33 @@ Tensor& mean_dim_out(KernelRuntimeContext& ctx,
         p_axis,
         num_axis_dims,
         p_scratch_in);
-  }
-    else
-    {
-        ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, "mean.out", CTYPE_IN, [&] {
-        ET_SWITCH_FLOATH_TYPES(out.scalar_type(), ctx, "mean.out", CTYPE_OUT, [&] {
-          CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-          const size_t num = torch::executor::get_reduced_dim_product(in, dim_list);
-          for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
-            CTYPE_OUT sum = 0;
-            if (in.numel() > 0) {
-              sum = torch::executor::map_reduce_over_dim_list<CTYPE_IN, CTYPE_OUT>(
-                  [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
-                  [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
-                  in,
-                  dim_list,
-                  out_ix);
+  } else {
+    ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, "mean.out", CTYPE_IN, [&] {
+      ET_SWITCH_FLOATH_TYPES(
+          out.scalar_type(), ctx, "mean.out", CTYPE_OUT, [&] {
+            CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
+            const size_t num =
+                torch::executor::get_reduced_dim_product(in, dim_list);
+            for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
+              CTYPE_OUT sum = 0;
+              if (in.numel() > 0) {
+                sum = torch::executor::
+                    map_reduce_over_dim_list<CTYPE_IN, CTYPE_OUT>(
+                        [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
+                        [](CTYPE_OUT outv, CTYPE_OUT acc) {
+                          return acc + outv;
+                        },
+                        in,
+                        dim_list,
+                        out_ix);
+              }
+              out_data[out_ix] = sum / static_cast<float>(num);
             }
-            out_data[out_ix] = sum / static_cast<float>(num);
-          }
-        });
-        });
-    }
+          });
+    });
+  }
 
-    return out;
+  return out;
 }
 
 } // namespace native

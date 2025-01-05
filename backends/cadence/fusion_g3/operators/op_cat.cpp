@@ -48,7 +48,7 @@ Tensor& cat_out(
   }
 
   int kTensorDimensionLimit = executorch::runtime::kTensorDimensionLimit;
-  
+
 #ifdef OP_ARG_CHECK
   ET_KERNEL_CHECK(
       ctx,
@@ -81,7 +81,6 @@ Tensor& cat_out(
   if (all_1d_empty) {
     return out;
   }
-
 
   const signed char* inp_tensors[tensors.size()];
   const int* inp_tensors_shapes[tensors.size()];

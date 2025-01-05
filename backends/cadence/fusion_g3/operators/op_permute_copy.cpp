@@ -14,19 +14,19 @@ using torch::executor::KernelRuntimeContext;
 using SizesType = exec_aten::SizesType;
 using Tensor = exec_aten::Tensor;
 using IntArrayRef = exec_aten::ArrayRef<int64_t>;
-using torch::executor::Error;
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
+using torch::executor::Error;
 
 /* ScalarType in Executorch do not have support for below data types.
  * So, creating a placeholder for these data types. Once, ScalarTypes is
- * updated to have support for below data types, these can be removed and 
+ * updated to have support for below data types, these can be removed and
  * operator need to be updated accordingly
  */
- enum datatype {
- Ushort = 20,
- Uint = 23,
- };
+enum datatype {
+  Ushort = 20,
+  Uint = 23,
+};
 
 namespace cadence {
 namespace impl {
@@ -61,167 +61,156 @@ void increment_coordinate_permuted(
 
 } // namespace
 
-Tensor& permute_copy_out(KernelRuntimeContext& ctx,
-                         const Tensor& in,
-                         IntArrayRef dims,
-                         Tensor& out)
-{
-    (void)ctx;
-    int kTensorDimensionLimit = 5;
-	/* if the arguments are passed properly to the operator disable the Macro - "OP_ARG_CHECK"
-	 * if not the case, enable the Macro - "OP_ARG_CHECK", to have the checks only in 
-	 * operator level(As there are no checks in kernel).
-	 */
+Tensor& permute_copy_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& in,
+    IntArrayRef dims,
+    Tensor& out) {
+  (void)ctx;
+  int kTensorDimensionLimit = 5;
+  /* if the arguments are passed properly to the operator disable the Macro -
+   * "OP_ARG_CHECK" if not the case, enable the Macro - "OP_ARG_CHECK", to have
+   * the checks only in operator level(As there are no checks in kernel).
+   */
 #ifdef OP_ARG_CHECK
-    ET_KERNEL_CHECK(
-      ctx, torch::executor::check_permute_copy_args(in, dims, out), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      torch::executor::check_permute_copy_args(in, dims, out),
+      InvalidArgument,
+      out);
 
-    ET_KERNEL_CHECK(
-      ctx, executorch::runtime::tensors_have_same_dim_order(in, out),
-      InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      executorch::runtime::tensors_have_same_dim_order(in, out),
+      InvalidArgument,
+      out);
 
-    Tensor::SizesType expected_out_size[kTensorDimensionLimit];
-    size_t expected_out_dim = 0;
-    torch::executor::get_permute_copy_out_target_size(
+  Tensor::SizesType expected_out_size[kTensorDimensionLimit];
+  size_t expected_out_dim = 0;
+  torch::executor::get_permute_copy_out_target_size(
       in, dims, expected_out_size, &expected_out_dim);
 
-    ET_KERNEL_CHECK(
+  ET_KERNEL_CHECK(
       ctx,
-      executorch::runtime::resize_tensor(out,
-      {expected_out_size, expected_out_dim}) == Error::Ok,
+      executorch::runtime::resize_tensor(
+          out, {expected_out_size, expected_out_dim}) == Error::Ok,
       InvalidArgument,
       out);
 #endif
 
-    const exec_aten::ArrayRef<Tensor::SizesType> in_size = in.sizes();
-    const exec_aten::ArrayRef<Tensor::SizesType> out_size = out.sizes();
+  const exec_aten::ArrayRef<Tensor::SizesType> in_size = in.sizes();
+  const exec_aten::ArrayRef<Tensor::SizesType> out_size = out.sizes();
 
-    int inp_shape[kTensorDimensionLimit];
-    int out_shape[kTensorDimensionLimit];
+  int inp_shape[kTensorDimensionLimit];
+  int out_shape[kTensorDimensionLimit];
 
-    /* input shapes and output shapes */
-    for(auto i = 0; i < in_size.size(); i++)
-    {
-        inp_shape[i] = in_size[i];
-    }
+  /* input shapes and output shapes */
+  for (auto i = 0; i < in_size.size(); i++) {
+    inp_shape[i] = in_size[i];
+  }
 
-    for(auto i = 0; i < out_size.size(); i++)
-    {
-        out_shape[i] = out_size[i];
-    }
+  for (auto i = 0; i < out_size.size(); i++) {
+    out_shape[i] = out_size[i];
+  }
 
-    int permute_vec[in.dim()];
-    for(int i = 0; i < in.dim(); i++)
-    {
-         permute_vec[i] = (int)dims[i];
-    }
-    signed char *out_data = out.mutable_data_ptr<signed char>();
-    const signed char* const inp_data = in.const_data_ptr<signed char>();
+  int permute_vec[in.dim()];
+  for (int i = 0; i < in.dim(); i++) {
+    permute_vec[i] = (int)dims[i];
+  }
+  signed char* out_data = out.mutable_data_ptr<signed char>();
+  const signed char* const inp_data = in.const_data_ptr<signed char>();
 
-    if((out.scalar_type() == ScalarType::Int) && (in.dim() <= 5))
-    {
-        XT_KERNEL_CHECK(
-          ctx,
-          out,
-          xa_nn_permute,
-          out_data,
-          out_shape,
-          inp_data,
-          inp_shape,
-          permute_vec,
-          in.dim(),
-          sizeof(int));
-    }
-    else if((out.scalar_type() == ScalarType::Short) && (in.dim() <= 5))
-    {
-        XT_KERNEL_CHECK(
-          ctx,
-          out,
-          xa_nn_permute,
-          out_data,
-          out_shape,
-          inp_data,
-          inp_shape,
-          permute_vec, 
-          in.dim(),
-          sizeof(short));
-    }
-    else if((out.scalar_type() == ScalarType::Char) && (in.dim() <= 5))
-    {
-        XT_KERNEL_CHECK(
-          ctx,
-          out,
-          xa_nn_permute,
-          out_data,
-          out_shape,
-          inp_data,
-          inp_shape,
-          permute_vec,
-          in.dim(),
-          sizeof(char));
-        
-    }
-    else if((out.scalar_type() == (ScalarType)Uint) && (in.dim() <= 5))
-    {
-        XT_KERNEL_CHECK(
-          ctx,
-          out,
-          xa_nn_permute,
-          out_data,
-          out_shape,
-          inp_data,
-          inp_shape,
-          permute_vec,
-          in.dim(),
-          sizeof(int));
-    }
-    else if((out.scalar_type() == (ScalarType)Ushort) && (in.dim() <= 5))
-    {
-        XT_KERNEL_CHECK(
-          ctx,
-          out,
-          xa_nn_permute,
-          out_data,
-          out_shape,
-          inp_data,
-          inp_shape,
-          permute_vec,
-          in.dim(),
-          sizeof(short));
-    }
-    else if((out.scalar_type() == ScalarType::Byte) && (in.dim() <= 5))
-    {
-        XT_KERNEL_CHECK(
-          ctx,
-          out,
-          xa_nn_permute,
-          out_data,
-          out_shape,
-          inp_data,
-          inp_shape,
-          permute_vec,
-          in.dim(),
-          sizeof(char)); 
-    }  
-    else
-    {
-        const auto in_type = out.scalar_type();
-        size_t in_coord[5] = {0};
-        size_t trailing_dims_memo[kTensorDimensionLimit];
-        executorch::runtime::memoizeTrailingDims(in, trailing_dims_memo);
-        // in and out must be the same dtype
-        ET_SWITCH_ALL_TYPES(in_type, ctx, "permute_copy.out", CTYPE, [&] {
-            const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
-            CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
+  if ((out.scalar_type() == ScalarType::Int) && (in.dim() <= 5)) {
+    XT_KERNEL_CHECK(
+        ctx,
+        out,
+        xa_nn_permute,
+        out_data,
+        out_shape,
+        inp_data,
+        inp_shape,
+        permute_vec,
+        in.dim(),
+        sizeof(int));
+  } else if ((out.scalar_type() == ScalarType::Short) && (in.dim() <= 5)) {
+    XT_KERNEL_CHECK(
+        ctx,
+        out,
+        xa_nn_permute,
+        out_data,
+        out_shape,
+        inp_data,
+        inp_shape,
+        permute_vec,
+        in.dim(),
+        sizeof(short));
+  } else if ((out.scalar_type() == ScalarType::Char) && (in.dim() <= 5)) {
+    XT_KERNEL_CHECK(
+        ctx,
+        out,
+        xa_nn_permute,
+        out_data,
+        out_shape,
+        inp_data,
+        inp_shape,
+        permute_vec,
+        in.dim(),
+        sizeof(char));
 
-            for (size_t i = 0; i < out.numel(); ++i) {
-              out_data[i] =
-                  in_data[executorch::runtime::coordinateToIndexWithTrailingDimsMemo(
-                      in, in_coord, trailing_dims_memo)];
-              increment_coordinate_permuted(in, in_coord, dims);
-        }
-        });
-    }
+  } else if ((out.scalar_type() == (ScalarType)Uint) && (in.dim() <= 5)) {
+    XT_KERNEL_CHECK(
+        ctx,
+        out,
+        xa_nn_permute,
+        out_data,
+        out_shape,
+        inp_data,
+        inp_shape,
+        permute_vec,
+        in.dim(),
+        sizeof(int));
+  } else if ((out.scalar_type() == (ScalarType)Ushort) && (in.dim() <= 5)) {
+    XT_KERNEL_CHECK(
+        ctx,
+        out,
+        xa_nn_permute,
+        out_data,
+        out_shape,
+        inp_data,
+        inp_shape,
+        permute_vec,
+        in.dim(),
+        sizeof(short));
+  } else if ((out.scalar_type() == ScalarType::Byte) && (in.dim() <= 5)) {
+    XT_KERNEL_CHECK(
+        ctx,
+        out,
+        xa_nn_permute,
+        out_data,
+        out_shape,
+        inp_data,
+        inp_shape,
+        permute_vec,
+        in.dim(),
+        sizeof(char));
+  } else {
+    const auto in_type = out.scalar_type();
+    size_t in_coord[5] = {0};
+    size_t trailing_dims_memo[kTensorDimensionLimit];
+    executorch::runtime::memoizeTrailingDims(in, trailing_dims_memo);
+    // in and out must be the same dtype
+    ET_SWITCH_ALL_TYPES(in_type, ctx, "permute_copy.out", CTYPE, [&] {
+      const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
+      CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
+
+      for (size_t i = 0; i < out.numel(); ++i) {
+        out_data[i] =
+            in_data[executorch::runtime::coordinateToIndexWithTrailingDimsMemo(
+                in, in_coord, trailing_dims_memo)];
+        increment_coordinate_permuted(in, in_coord, dims);
+      }
+    });
+  }
 
   return out;
 }
