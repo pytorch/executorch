@@ -299,7 +299,7 @@ include_patterns = [
     # 'exir/**/*.py',
     # 'extension/**/*.py',
     'kernels/**/*.py',
-    # 'profiler/**/*.py',
+    'profiler/**/*.py',
     'runtime/**/*.py',
     'scripts/**/*.py',
     # 'test/**/*.py',
@@ -310,6 +310,7 @@ exclude_patterns = [
     'third-party/**',
     '**/third-party/**',
     'scripts/check_binary_dependencies.py',
+    'profiler/test/test_profiler_e2e.py',
 ]
 command = [
     'python',
