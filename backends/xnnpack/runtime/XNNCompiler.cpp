@@ -342,7 +342,7 @@ Error defineTensor(
         auto qparams = qtensor_value->quant_params_as_PerTensorQuant();
         ET_LOG(
             Debug,
-            "define quant tensor (per tensor): buffer_ptr: %p, scale: %f, zp: %u\n",
+            "define quant tensor (per tensor): buffer_ptr: %p, scale: %f, zp: %d\n",
             buffer_ptr,
             qparams->scale(),
             qparams->zero_point());
