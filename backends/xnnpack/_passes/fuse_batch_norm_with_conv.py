@@ -5,12 +5,18 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
+from typing import cast, List
 
 import torch
 
+from executorch.backends.transforms import get_shape
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 
-from executorch.backends.xnnpack.utils.utils import get_param_tensor, is_param_node
+from executorch.backends.xnnpack.utils.utils import (
+    get_input_node,
+    get_param_tensor,
+    is_param_node,
+)
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
@@ -133,6 +139,16 @@ class FuseBatchNormWithConvPass(XNNPACKPass):
         """
         Determine whether a batch norm node can be fused with a preceding conv node.
         """
+
+        is_transpose = conv.args[6]
+        kernel_node = get_input_node(conv, 1)
+        kernel_shape = get_shape(kernel_node)
+        stride = cast(List[int], conv.args[3])
+
+        if is_transpose and (
+            kernel_shape[-1] != stride[0] or kernel_shape[-2] != stride[1]
+        ):
+            return False
 
         # All the users of batchnorm node must be getitem ops. batchnorm
         # returns a 3-element tuple. Each user must only access the first

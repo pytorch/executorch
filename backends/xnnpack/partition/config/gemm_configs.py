@@ -9,6 +9,7 @@ from itertools import chain
 from typing import cast, List, Optional, Tuple
 
 import torch
+from executorch.backends.xnnpack.operators.quant_params import QuantParams
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
@@ -327,11 +328,23 @@ class ConvolutionConfig(GEMMConfig):
             why(node, "Only support 1D + 2D Conv")
             return False  # Only support 1D + 2D Conv
 
-        transposed = cast(bool, node.args[6])
-        if transposed:
-            why(node, "Transposed Conv is not supported")
-            return False  # Currently don't support transposed conv
+        kernel_node = get_input_node(node, 1)
+        weight_quant_params = QuantParams.from_weights(kernel_node, ep)
 
+        is_transpose = node.args[6]
+        groups = cast(int, node.args[8])
+        if (
+            is_transpose
+            and weight_quant_params is not None
+            and weight_quant_params.per_channel
+            and groups > 1
+        ):
+            why(
+                node,
+                "XNNPACK does not support per input channel quantization"
+                "for transpose convolutions with groups > 1",
+            )
+            return False
         return True
 
     def supported_precision_types(self):

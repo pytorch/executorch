@@ -23,6 +23,9 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
         OpSequencesAddConv2d(0, 0).eval(): 0,
         OpSequencesAddConv2d(1, 1).eval(): 2,
         OpSequencesAddConv2d(2, 2).eval(): 2,
+        OpSequencesAddConv2d(0, 0, True).eval(): 0,
+        OpSequencesAddConv2d(1, 1, True).eval(): 2,
+        OpSequencesAddConv2d(2, 2, True).eval(): 2,
     }
     to_copy_name = "executorch_exir_dialects_edge__ops_aten__to_copy_default"
     quant_name = "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default"
