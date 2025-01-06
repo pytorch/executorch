@@ -6,11 +6,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/cadence/fusion_g3/operators/tensor_util.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 #include <xa_nnlib_kernels_api.h>
+
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
@@ -22,15 +24,6 @@ namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
-
-#define XT_KERNEL_CHECK(ctx, out, kernel, ...) \
-  const auto ret = kernel(__VA_ARGS__);        \
-  ET_KERNEL_CHECK_MSG(                         \
-      ctx,                                     \
-      ret == 0,                                \
-      InvalidArgument,                         \
-      out,                                     \
-      "Failed to run kernel: " #kernel "(" #__VA_ARGS__ ")");
 
 Tensor& sub_out(
     KernelRuntimeContext& ctx,
