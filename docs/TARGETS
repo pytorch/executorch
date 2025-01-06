@@ -1,7 +1,7 @@
 load("@fbcode_macros//build_defs:native_rules.bzl", "buck_filegroup", "buck_sh_test")
 load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 
-oncall("pytorch_r2p")
+oncall("executorch")
 
 python_binary(
     name = "sphinx",
