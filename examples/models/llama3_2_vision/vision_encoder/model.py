@@ -14,8 +14,12 @@ from executorch.extension.llm.modules._position_embeddings import (
     replace_tile_positional_embedding,
     replace_tiled_token_positional_embedding,
 )
+from executorch.extension.llm.modules.attention import (
+    replace_mha_with_inference_mha,
+    replace_sdpa_with_custom_op,
+)
 from torchtune.models.llama3_2_vision._component_builders import llama3_2_vision_encoder
-from executorch.extension.llm.modules.attention import replace_mha_with_inference_mha, replace_sdpa_with_custom_op
+
 
 @dataclass
 class VisionEncoderConfig:
@@ -47,7 +51,11 @@ demo_config: VisionEncoderConfig = VisionEncoderConfig(
 
 
 class FlamingoVisionEncoderModel(EagerModelBase):
-    def __init__(self, config: Optional[VisionEncoderConfig] = None, enable_source_transforms = True):
+    def __init__(
+        self,
+        config: Optional[VisionEncoderConfig] = None,
+        enable_source_transforms=True,
+    ):
         super().__init__()
         if config is None:
             config = demo_config

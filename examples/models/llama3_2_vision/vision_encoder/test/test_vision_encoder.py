@@ -11,25 +11,25 @@ import tempfile
 import unittest
 
 import torch
+from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
+    DuplicateDynamicQuantChainPass,
+)
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+    XnnpackDynamicallyQuantizedPartitioner,
+)
 
 from executorch.examples.models.llama3_2_vision.vision_encoder import (
     FlamingoVisionEncoderModel,
 )
-from torch.testing import assert_close
-from executorch.exir import to_edge, to_edge_transform_and_lower, EdgeCompileConfig
-from torch._inductor.package import package_aoti
-from torch.nn.attention import SDPBackend
+from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
-from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
-    DuplicateDynamicQuantChainPass
-)
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-                    XnnpackDynamicallyQuantizedPartitioner,
-)
+from torch.nn.attention import SDPBackend
+from torch.testing import assert_close
+
 
 class FlamingoVisionEncoderTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -38,15 +38,30 @@ class FlamingoVisionEncoderTest(unittest.TestCase):
     def test_flamingo_vision_encoder_et(self) -> None:
         with torch.no_grad():
             vision_model = FlamingoVisionEncoderModel(enable_source_transforms=False)
-            encoder_no_source_transform_outputs = vision_model.model.forward(*vision_model.get_example_inputs())
+            encoder_no_source_transform_outputs = vision_model.model.forward(
+                *vision_model.get_example_inputs()
+            )
             vision_model.source_transofrm()
             encoder = vision_model.model
-            encoder_source_transform_outputs = encoder.forward(*vision_model.get_example_inputs())
-            assert_close(encoder_source_transform_outputs, encoder_no_source_transform_outputs)
+            encoder_source_transform_outputs = encoder.forward(
+                *vision_model.get_example_inputs()
+            )
+            assert_close(
+                encoder_source_transform_outputs, encoder_no_source_transform_outputs
+            )
 
-            with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad(), tempfile.TemporaryDirectory() as tmpdir:
-                training_output = torch.export.export_for_training(encoder, vision_model.get_example_inputs(), dynamic_shapes=vision_model.get_dynamic_shapes())
-                assert_close(encoder(*vision_model.get_example_inputs()), training_output.module()(*vision_model.get_example_inputs()))
+            with torch.nn.attention.sdpa_kernel(
+                [SDPBackend.MATH]
+            ), torch.no_grad(), tempfile.TemporaryDirectory() as tmpdir:
+                training_output = torch.export.export_for_training(
+                    encoder,
+                    vision_model.get_example_inputs(),
+                    dynamic_shapes=vision_model.get_dynamic_shapes(),
+                )
+                assert_close(
+                    encoder(*vision_model.get_example_inputs()),
+                    training_output.module()(*vision_model.get_example_inputs()),
+                )
 
                 dynamic_quantizer = XNNPACKQuantizer()
                 operator_config_dynamic = get_symmetric_quantization_config(
@@ -58,11 +73,19 @@ class FlamingoVisionEncoderTest(unittest.TestCase):
                 convert = convert_pt2e(prepare)
                 DuplicateDynamicQuantChainPass()(convert)
 
-                export_output = torch.export.export(convert, vision_model.get_example_inputs(), dynamic_shapes=vision_model.get_dynamic_shapes())
+                export_output = torch.export.export(
+                    convert,
+                    vision_model.get_example_inputs(),
+                    dynamic_shapes=vision_model.get_dynamic_shapes(),
+                )
 
-                edge = to_edge_transform_and_lower(export_output, partitioner=[
-                    XnnpackDynamicallyQuantizedPartitioner(),
-                ], compile_config=EdgeCompileConfig(_check_ir_validity=False))
+                edge = to_edge_transform_and_lower(
+                    export_output,
+                    partitioner=[
+                        XnnpackDynamicallyQuantizedPartitioner(),
+                    ],
+                    compile_config=EdgeCompileConfig(_check_ir_validity=False),
+                )
                 edge.to_executorch()
 
     def test_flamingo_vision_encoder_aoti(self) -> None:
