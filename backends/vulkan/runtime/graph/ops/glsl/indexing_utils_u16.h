@@ -13,10 +13,7 @@
 
 u16vec3 idx_to_u16pos_x_wise(uint idx, int size_x, int size_y) {
   const uint div_by_x = idx / size_x;
-  return u16vec3(
-      idx % size_x,
-      div_by_x % size_y,
-      div_by_x / size_y);
+  return u16vec3(idx % size_x, div_by_x % size_y, div_by_x / size_y);
 }
 
 #endif // INDEXING_UTILS_U16_H
