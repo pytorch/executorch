@@ -37,7 +37,7 @@ from executorch.backends.arm._passes.decompose_softmaxes_pass import (
 from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     FoldAndAnnotateQParamsPass,
-    QuantizeFullArgument,
+    QuantizeOperatorArguments,
     RetraceFoldedDtypesPass,
 )
 from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
@@ -88,7 +88,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMeanDimToAveragePoolPass())
 
         self.add_pass(AnnotateDecomposedMatmulPass())
-        self.add_pass(QuantizeFullArgument())
+        self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass())
         self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(InsertTableOpsPass(exported_program))
@@ -124,7 +124,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSoftmaxesPass())
 
         self.add_pass(AnnotateDecomposedMatmulPass())
-        self.add_pass(QuantizeFullArgument())
+        self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass())
         self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(InsertTableOpsPass(exported_program))

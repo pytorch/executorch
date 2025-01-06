@@ -186,6 +186,8 @@ _parent_shared_qspec = [
     torch.ops.aten.full.default,
     torch.ops.aten.flatten.using_ints,
     torch.ops.aten.dropout.default,
+    torch.ops.aten.clamp.default,
+    torch.ops.aten.clamp.Tensor,
     operator.getitem,
 ]
 
