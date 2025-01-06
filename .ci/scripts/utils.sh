@@ -111,6 +111,7 @@ cmake_install_executorch_lib() {
   clean_executorch_install_folders
   retry cmake -DBUCK2="$BUCK" \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
+          -DCMAKE_PREFIX_PATH="$($PYTHON -c 'import torch as _; print(_.__path__[0])')" \
           -DCMAKE_BUILD_TYPE=Release \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .

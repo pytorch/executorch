@@ -44,6 +44,8 @@ author = "ExecuTorch Contributors"
 import os
 import sys
 
+FBCODE = "fbcode" in os.getcwd()
+
 extensions = [
     "breathe",
     "sphinx.ext.autodoc",
@@ -60,8 +62,12 @@ extensions = [
     "myst_parser",
     "sphinx_design",
     "sphinx_gallery.gen_gallery",
-    "executorch_custom_versions",
 ]
+
+if not FBCODE:
+    extensions += [
+        "executorch_custom_versions",
+    ]
 
 this_file_dir = os.path.abspath(os.path.dirname(__file__))
 doxygen_xml_dir = os.path.join(
