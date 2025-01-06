@@ -1581,6 +1581,24 @@ class TestQNNFloatingPointUtils(TestQNN):
             skip_node_op_set={"aten.add.Tensor"},
         )
 
+    def test_qnn_backend_spill_fill_buffer_size(self):
+        module = LargeTensorLinear()  # noqa: F405
+        sample_input = (torch.randn(1, 256, 512),)
+        edge_prog = capture_program(module, sample_input)
+
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=True,
+            use_multi_contexts=True,
+        )
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+        )
+        partitioner = QnnPartitioner(compiler_specs)
+        edge_prog.exported_program = to_backend(edge_prog.exported_program, partitioner)
+        max_sf_size = update_spill_fill_size(edge_prog.exported_program)
+        self.assertNotEqual(0, max_sf_size)
+
     def test_qnn_backend_multi_contexts(self):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
@@ -2006,6 +2024,25 @@ class TestQNNQuantizedUtils(TestQNN):
             torch.export.export(graph_module, sample_input, strict=True),
         ).to_executorch()
         self.verify_output(module, sample_input, exec_prog)
+
+    def test_qnn_backend_spill_fill_buffer_size(self):
+        module = LargeTensorLinear()  # noqa: F405
+        sample_input = (torch.randn(1, 256, 512),)
+        module = self.get_qdq_module(module, sample_input)
+        edge_prog = capture_program(module, sample_input)
+
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=False,
+            use_multi_contexts=True,
+        )
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+        )
+        partitioner = QnnPartitioner(compiler_specs)
+        edge_prog.exported_program = to_backend(edge_prog.exported_program, partitioner)
+        max_sf_size = update_spill_fill_size(edge_prog.exported_program)
+        self.assertNotEqual(0, max_sf_size)
 
     def test_qnn_backend_graph_level_mixed_precision(self):
         module = SimpleModel()  # noqa: F405
