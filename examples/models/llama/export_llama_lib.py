@@ -659,11 +659,12 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
     if args.export_only:
         exit()
 
-    builder_exported_to_edge = builder_exported.pt2e_quantize(
-        quantizers
-    ).export_to_edge()
+    # builder_exported_to_edge = builder_exported.pt2e_quantize(
+    #     quantizers
+    # ).export_to_edge()
 
-    modelname = builder_exported_to_edge.modelname
+    # modelname = builder_exported_to_edge.modelname
+    modelname = builder_exported.modelname
 
     # to_backend
     partitioners = []
@@ -768,6 +769,7 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
 
+    breakpoint()
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
             raise ValueError("Unable to generate etrecord due to missing edge manager.")
@@ -793,14 +795,19 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
             )
             logging.info("Generated etrecord.bin")
     else:
-        builder = builder_exported_to_edge.to_backend(partitioners)
+        builder_lowered = builder_exported.pt2e_quantize(
+            quantizers
+        ).to_edge_transform_and_lower(
+            partitioners
+        )
+        # builder = builder_exported_to_edge.to_backend(partitioners)
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
             # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
             canonicalize_program(builder.edge_manager.exported_program())
 
-        builder = builder.to_executorch()
+        builder = builder_lowered.to_executorch()
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
