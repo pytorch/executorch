@@ -18,7 +18,7 @@
 
 #define op(X, A, B) ${OPERATOR}
 
-#include "indexing_utils.h"
+#include "indexing_utils_u16.h"
 
 layout(std430) buffer;
 
@@ -45,10 +45,7 @@ void main() {
   // since work size is calculated by x * ((y + B_Y - 1) / B_Y) * z
   const uint out_limits_y_scaled = (out_limits.y + BATCH_SIZE_Y - 1) / BATCH_SIZE_Y;
 
-  u16vec3 pos = u16vec3(
-    gl_GlobalInvocationID.x % out_limits.x,
-    ((gl_GlobalInvocationID.x / out_limits.x) % out_limits_y_scaled),
-    gl_GlobalInvocationID.x / (out_limits.x * out_limits_y_scaled));
+  u16vec3 pos = idx_to_u16pos_x_wise(gl_GlobalInvocationID.x, out_limits.x, out_limits_y_scaled);
 
   // scale pos.y by batch size, because that's the top pixel to be processed
   pos.y *= uint16_t(BATCH_SIZE_Y);
