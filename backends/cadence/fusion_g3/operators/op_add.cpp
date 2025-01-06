@@ -10,6 +10,7 @@
 
 #include <xa_nnlib_kernels_api.h>
 
+#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
@@ -27,15 +28,6 @@ namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
-
-#define XT_KERNEL_CHECK(ctx, out, kernel, ...) \
-  const auto ret = kernel(__VA_ARGS__);        \
-  ET_KERNEL_CHECK_MSG(                         \
-      ctx,                                     \
-      ret == 0,                                \
-      InvalidArgument,                         \
-      out,                                     \
-      "Failed to run kernel: " #kernel "(" #__VA_ARGS__ ")");
 
 Tensor& add_out(
     KernelRuntimeContext& ctx,
