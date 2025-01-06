@@ -9,7 +9,7 @@
 import json
 import typing
 from dataclasses import dataclass, field
-from typing import List
+from typing import Any, Dict, List, Optional
 
 import executorch.exir.memory as memory
 import torch
@@ -52,7 +52,7 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
     allocations at that timestep.
     """
     nodes = graph.nodes
-    memory_timeline = [None] * len(nodes)
+    memory_timeline: List[Optional[MemoryTimeline]] = [None for _ in range(len(nodes))]
     for _, node in enumerate(nodes):
         if node.op == "output":
             continue
@@ -72,11 +72,11 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
             stack_trace = node.meta.get("stack_trace")
             fqn = _get_module_hierarchy(node)
             for j in range(start, end + 1):
-                if memory_timeline[j] is None:
-                    # pyre-ignore
-                    memory_timeline[j] = MemoryTimeline()
-                # pyre-ignore
-                memory_timeline[j].allocations.append(
+                memory_timeline_j = memory_timeline[j]
+                if memory_timeline_j is None:
+                    memory_timeline_j = MemoryTimeline()
+                assert memory_timeline_j
+                memory_timeline_j.allocations.append(
                     Allocation(
                         node.name,
                         node.target,
@@ -87,8 +87,7 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
                         stack_trace,
                     )
                 )
-    # pyre-ignore
-    return memory_timeline
+    return memory_timeline  # type: ignore[return-value]
 
 
 def _validate_memory_planning_is_done(exported_program: ExportedProgram):
@@ -129,7 +128,7 @@ def generate_memory_trace(
 
     memory_timeline = create_tensor_allocation_info(exported_program.graph)
     root = {}
-    trace_events = []
+    trace_events: List[Dict[str, Any]] = []
     root["traceEvents"] = trace_events
 
     tid = 0
@@ -138,7 +137,7 @@ def generate_memory_trace(
         if memory_timeline_event is None:
             continue
         for allocation in memory_timeline_event.allocations:
-            e = {}
+            e: Dict[str, Any] = {}
             e["name"] = allocation.name
             e["cat"] = "memory_allocation"
             e["ph"] = "X"
