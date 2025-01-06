@@ -134,5 +134,5 @@ def define_op_target(name, deps):
 
 def is_op_disabled(name):
     # TODO (gjcomer) Enable ops with sleef dependency in OSS
-    disabled_ops = ["op_gelu", "op_log_softmax"]
+    disabled_ops = ["op_log_softmax"]
     return name in disabled_ops
