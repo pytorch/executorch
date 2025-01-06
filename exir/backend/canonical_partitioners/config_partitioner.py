@@ -17,7 +17,9 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
+from torch.fx import GraphModule
 from torch.fx.passes.infra.partitioner import Partition
+from executorch.exir.graph_module import get_control_flow_submodules
 
 
 def format_target_name(target_name: str) -> str:
@@ -160,11 +162,11 @@ class ConfigerationBasedPartitioner(Partitioner):
         return (do_not_decomp, filter_fn)
 
     def get_matched_nodes_from_configs(
-        self, ep: ExportedProgram
+        self, ep: ExportedProgram, gm: Optional[GraphModule] = None
     ) -> List[List[torch.fx.Node]]:
         # gather supported nodes
         matched_nodes = []
-        gm = ep.graph_module
+        gm = gm or ep.graph_module
         for node in gm.graph.nodes:
             if node.op == "call_function":
                 target = format_target_name(node.target.__name__)
@@ -175,17 +177,19 @@ class ConfigerationBasedPartitioner(Partitioner):
 
         return matched_nodes
 
-    def generate_partitions(self, ep: ExportedProgram) -> List[Partition]:
-        matched_nodes = self.get_matched_nodes_from_configs(ep)
+    def generate_partitions(self, ep: ExportedProgram, gm: Optional[GraphModule] = None) -> List[Partition]:
+        gm = gm or ep.graph_module
+        matched_nodes = self.get_matched_nodes_from_configs(ep, gm)
         # create partitions
         partitions = generate_partitions_from_list_of_nodes(
-            ep.graph_module,
+            gm,
             matched_nodes,
         )
         return partitions
 
-    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
-        partitions = self.generate_partitions(exported_program)
+    def partition(self, exported_program: ExportedProgram, graph_module: Optional[GraphModule] = None) -> PartitionResult:
+        graph_module = graph_module or exported_program.graph_module
+        partitions = self.generate_partitions(exported_program, graph_module)
 
         # tag nodes
         partition_tags: Dict[str, DelegationSpec] = {}
@@ -198,6 +202,10 @@ class ConfigerationBasedPartitioner(Partitioner):
                     )
                 node.meta["delegation_tag"] = delegation_tag
                 partition_tags[delegation_tag] = self.delegation_spec
+
+        for _, submodule, _ in get_control_flow_submodules(graph_module):
+            # pyre-ignore
+            self.partition(exported_program, submodule)
 
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags

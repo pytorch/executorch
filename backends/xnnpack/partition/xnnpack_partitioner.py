@@ -21,6 +21,7 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     ConfigerationBasedPartitioner,
 )
 from executorch.exir.backend.partitioner import DelegationSpec
+from torch.fx import GraphModule
 from torch.fx.passes.infra.partitioner import Partition
 
 logging.basicConfig(level=logging.WARNING)
@@ -65,25 +66,25 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
         self.per_op_mode = per_op_mode
         super().__init__(delegation_spec, initialized_configs)
 
-    def generate_partitions(self, ep: ExportedProgram) -> List[Partition]:
+    def generate_partitions(self, ep: ExportedProgram, gm: Optional[GraphModule] = None) -> List[Partition]:
         """
         generate_partitions is different if partitioner is set to per_op_mode
         for per_op_mode we only need to generate unmerged partitions instead
         of using the default generate_partitions method.
         """
         if self.per_op_mode:
-            return self.generate_per_op_partitions(ep)
+            return self.generate_per_op_partitions(ep, gm)
         else:
-            return super().generate_partitions(ep)
+            return super().generate_partitions(ep, gm)
 
-    def generate_per_op_partitions(self, ep: ExportedProgram) -> List[Partition]:
+    def generate_per_op_partitions(self, ep: ExportedProgram, gm: Optional[GraphModule] = None) -> List[Partition]:
         """
         Uses configs to generate per_op_partitions. That is no partitions are
         merged together. All partitions (node + deps) returned by PartitionerConfigs
         are put into their own partition.
         """
         partitions = []
-        matched_nodes = self.get_matched_nodes_from_configs(ep)
+        matched_nodes = self.get_matched_nodes_from_configs(ep, gm)
         partition_id = itertools.count()
         nodes_seen = {}
         for match in matched_nodes:
