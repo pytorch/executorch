@@ -13,6 +13,7 @@ from executorch.extension.llm.modules.kv_cache import KVCache as InferenceKVCach
 from torch import nn
 from torchtune.modules.attention_utils import _MaskType, _sdpa_or_flex_attention
 from torchtune.modules.kv_cache import KVCache
+from executorch.examples.models.llama.source_transformation.sdpa import SDPACustom
 
 logger = logging.getLogger(__name__)
 
@@ -310,7 +311,9 @@ class MultiHeadAttention(nn.Module):
             self.kv_cache.v_cache.copy_(v)
             self.kv_cache.cache_pos.copy_(cache_pos)
 
-        output = self._sdpa(q, k, v, b, s_x, mask=mask)
+        if input_pos is None:
+            input_pos = torch.tensor(0)
+        output = self._sdpa(input_pos, q, k, v, b, s_x, mask=mask)
         return self.output_proj(output)
 
 
@@ -364,6 +367,7 @@ class SDPA(nn.Module):
             k = k.unsqueeze(2).expand(expand_shape).flatten(1, 2)
             v = v.unsqueeze(2).expand(expand_shape).flatten(1, 2)
 
+
         output = self._attention_fn(
             q,
             k,
@@ -410,4 +414,22 @@ def replace_mha_with_inference_mha(module: torch.nn.Module) -> torch.nn.Module:
     separates out the inference-related parts for further optimization.
     """
     _replace_mha_with_inference_mha(module)
+    return module
+
+
+def _replace_sdpa_with_custom_op(module: torch.nn.Module):
+    for name, child in module.named_children():
+        if isinstance(child, SDPA):
+            setattr(
+                module,
+                name,
+                SDPACustom(is_causal=child.is_causal),
+            )
+        else:
+            _replace_sdpa_with_custom_op(child)
+
+
+def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
+    from executorch.extension.llm.custom_ops import custom_ops
+    _replace_sdpa_with_custom_op(module)
     return module

@@ -15,7 +15,7 @@ from executorch.extension.llm.modules._position_embeddings import (
     replace_tiled_token_positional_embedding,
 )
 from torchtune.models.llama3_2_vision._component_builders import llama3_2_vision_encoder
-
+from executorch.extension.llm.modules.attention import replace_mha_with_inference_mha, replace_sdpa_with_custom_op
 
 @dataclass
 class VisionEncoderConfig:
@@ -47,7 +47,7 @@ demo_config: VisionEncoderConfig = VisionEncoderConfig(
 
 
 class FlamingoVisionEncoderModel(EagerModelBase):
-    def __init__(self, config: Optional[VisionEncoderConfig] = None):
+    def __init__(self, config: Optional[VisionEncoderConfig] = None, enable_source_transforms = True):
         super().__init__()
         if config is None:
             config = demo_config
@@ -64,8 +64,8 @@ class FlamingoVisionEncoderModel(EagerModelBase):
             max_num_tiles=config.max_num_tiles,
             in_channels=config.in_channels,
         )
-        self.model = replace_tile_positional_embedding(self.model)
-        self.model = replace_tiled_token_positional_embedding(self.model)
+        if enable_source_transforms:
+            self.source_transofrm()
         self.image = torch.randn(
             1, 1, 4, 3, self.config.tile_size, self.config.tile_size
         )
@@ -74,6 +74,12 @@ class FlamingoVisionEncoderModel(EagerModelBase):
             self.image,
             self.aspect_ratio,
         )
+
+    def source_transofrm(self):
+        self.model = replace_tile_positional_embedding(self.model)
+        self.model = replace_tiled_token_positional_embedding(self.model)
+        self.model = replace_mha_with_inference_mha(self.model)
+        self.model = replace_sdpa_with_custom_op(self.model)
 
     def get_eager_model(self, **kwargs):
         return self.model
