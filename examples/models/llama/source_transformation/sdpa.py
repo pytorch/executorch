@@ -9,7 +9,7 @@
 # Example script for exporting Llama2 to flatbuffer
 
 import math
-from typing import Tuple, Union, Optional
+from typing import Optional, Tuple, Union
 
 import torch
 
@@ -24,7 +24,7 @@ class SDPACustom(torch.nn.Module):
         self,
         kv_cache: Optional[Union[KVCache, QuantizedKVCache]] = None,
         dim: int = -1,
-        is_causal = True,
+        is_causal=True,
     ):
         super().__init__()
         # Custom op only supports float32 currently. Converting to/from float32 is
@@ -48,8 +48,8 @@ class SDPACustom(torch.nn.Module):
         k: torch.Tensor,
         v: torch.Tensor,
         bsz,
-        seqlen = None,
-        mask = None,
+        seqlen=None,
+        mask=None,
     ):
         # Custom op only supports float32 currently. Converting to/from float32 is
         # faster than not having the op.
