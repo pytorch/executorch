@@ -9,11 +9,11 @@ from typing import Optional
 
 import torch
 import torchtune.modules.attention as TorchTuneAttention
+from executorch.examples.models.llama.source_transformation.sdpa import SDPACustom
 from executorch.extension.llm.modules.kv_cache import KVCache as InferenceKVCache
 from torch import nn
 from torchtune.modules.attention_utils import _MaskType, _sdpa_or_flex_attention
 from torchtune.modules.kv_cache import KVCache
-from executorch.examples.models.llama.source_transformation.sdpa import SDPACustom
 
 logger = logging.getLogger(__name__)
 
@@ -367,7 +367,6 @@ class SDPA(nn.Module):
             k = k.unsqueeze(2).expand(expand_shape).flatten(1, 2)
             v = v.unsqueeze(2).expand(expand_shape).flatten(1, 2)
 
-
         output = self._attention_fn(
             q,
             k,
@@ -431,5 +430,6 @@ def _replace_sdpa_with_custom_op(module: torch.nn.Module):
 
 def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
     from executorch.extension.llm.custom_ops import custom_ops
+
     _replace_sdpa_with_custom_op(module)
     return module
