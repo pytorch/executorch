@@ -89,7 +89,7 @@ class ArmPassManager(PassManager):
 
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
-        self.add_pass(FoldAndAnnotateQParamsPass())
+        self.add_pass(FoldAndAnnotateQParamsPass())  # type: ignore[call-arg]
         self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(InsertTableOpsPass(exported_program))
 
@@ -125,7 +125,7 @@ class ArmPassManager(PassManager):
 
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
-        self.add_pass(FoldAndAnnotateQParamsPass())
+        self.add_pass(FoldAndAnnotateQParamsPass())  # type: ignore[call-arg]
         self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(InsertTableOpsPass(exported_program))
 

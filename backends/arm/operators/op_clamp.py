@@ -4,10 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree
 
-from numbers import Number
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore
 
 import torch
 from executorch.backends.arm.operators.node_visitor import (
@@ -41,7 +40,7 @@ class ClampVisitor_080_BI(NodeVisitor):
         max_int: int,
         min_fp32: float,
         max_fp32: float,
-    ):
+    ) -> None:
         attr = ts.TosaSerializerAttribute()
         attr.ClampAttribute(
             tosa_graph.builder,
@@ -53,22 +52,27 @@ class ClampVisitor_080_BI(NodeVisitor):
         tosa_graph.addOperator(TosaOp.Op().CLAMP, [input_name], [output_name], attr)
 
     def _get_min_max_arguments(
-        self,
-        node: Node,
-        dtype_min: Number,
-        dtype_max: Number,
-    ) -> Tuple[Number, Number]:
+        self, node: Node, dtype_min: int | float, dtype_max: int | float
+    ) -> Tuple[int | float, int | float]:
+
+        def cast_type(value: Any) -> int | float:
+            if isinstance(value, int):
+                return value
+            else:
+                # Attempt to cast to float
+                return float(value)
+
         assert 2 <= len(node.args) <= 3
 
         min_arg = dtype_min
         max_arg = dtype_max
 
         if node.args[1] is not None:
-            min_arg = node.args[1]
+            min_arg = cast_type(node.args[1])
 
         if len(node.args) > 2:
             if node.args[2] is not None:
-                max_arg = node.args[2]
+                max_arg = cast_type(node.args[2])
 
         return min_arg, max_arg
 
@@ -92,8 +96,8 @@ class ClampVisitor_080_BI(NodeVisitor):
             tosa_graph,
             inputs[0].name,
             output.name,
-            min_int8,
-            max_int8,
+            int(min_int8),
+            int(max_int8),
             0,
             0,
         )
