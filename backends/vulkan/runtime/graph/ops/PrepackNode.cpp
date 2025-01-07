@@ -75,8 +75,8 @@ void PrepackNode::encode(ComputeGraph* graph) {
 
   {
     vkapi::PipelineBarrier pipeline_barrier{};
-    vkapi::DescriptorSet descriptor_set =
-        context->get_descriptor_set(shader_, local_workgroup_size_, spec_vars_);
+    vkapi::DescriptorSet descriptor_set = context->get_descriptor_set(
+        shader_, local_workgroup_size_, spec_vars_, 0u);
 
     uint32_t idx = 0;
     bind_tensor_to_descriptor_set(

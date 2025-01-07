@@ -12,22 +12,28 @@ from typing import Callable, cast, Optional
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
+from executorch.backends.cadence.aot.memory_planning import (
+    CadenceMemoryPlanning,
+    print_memory_planning_info,
+)
 from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
 from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
-
-from executorch.backends.cadence.aot.replace_ops import ReplaceSafeSoftmaxWithSoftmax
-from executorch.backends.cadence.aot.utils import model_gm_has_SDPA, model_is_quantized
-from executorch.backends.transforms.decompose_sdpa import (
-    DecomposeScaledDotProductAttention,
+from executorch.backends.cadence.aot.utils import (
+    get_default_memory_config,
+    MemoryConfig,
+    model_is_quantized,
 )
 from executorch.devtools import generate_etrecord
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
+    ExecutorchBackendConfig,
     ExecutorchProgramManager,
     to_edge,
 )
 from executorch.exir.pass_base import PassResult
+from executorch.exir.passes import ToOutVarPass
+from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
 from torch._inductor.decomposition import remove_decompositions
 from torch.ao.quantization.pt2e.export_utils import model_is_exported
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
@@ -79,16 +85,6 @@ def convert_pt2(
         .module()
     )
 
-    if model_gm_has_SDPA(model_gm):
-        # Decompose SDPA
-        DecomposeScaledDotProductAttention(False)(model_gm)
-
-        # Swap _safe_softmax with _softmax (see https://github.com/pytorch/pytorch/pull/133882
-        # for details).
-        result = ReplaceSafeSoftmaxWithSoftmax()(model_gm)
-        assert result is not None
-        model_gm = result.graph_module
-
     # Prepare
     prepared_model = prepare_pt2e(model_gm, quantizer)
 
@@ -135,7 +131,10 @@ def quantize_pt2(
     Prepare, convert and fuse the model using the given quantizer.
     Returns a GraphModule with the quantized model.
     """
-    # Quantizer
+    # Make the model inference mode by calling model.eval()
+    model.eval()
+
+    # Instantiate the quantizer to CadenceQuantizer if not supplied
     if not quantizer:
         quantizer = CadenceQuantizer()
 
@@ -176,7 +175,7 @@ def export_program(
     torch._C._set_mkldnn_enabled(False)
 
     # else: capture the model and return it.
-    expo_program = export(model, inputs)
+    expo_program = export(model, inputs, strict=True)
 
     if dump_graphs:
         logging.info("Exported graph:")
@@ -263,6 +262,10 @@ def export_to_executorch_gen_etrecord(
     inputs: tuple[object, ...],
     output_dir: Optional[str] = None,
     opt_level: int = 1,
+    mem_algo: int = 0,
+    alloc_graph_input: bool = True,
+    alloc_graph_output: bool = True,
+    memory_config: Optional[MemoryConfig] = None,
     dump_graphs: bool = False,
 ) -> ExecutorchProgramManager:
     cadence_passes = get_cadence_passes(opt_level)
@@ -281,8 +284,36 @@ def export_to_executorch_gen_etrecord(
         cadence_prog_manager.exported_program().graph_module,
     )
 
+    if memory_config is None:
+        memory_config = get_default_memory_config()
+
+    memory_planning_pass = CadenceMemoryPlanning(
+        memory_config,
+        opt_level=opt_level,
+        mem_algo=mem_algo,
+        alloc_graph_input=alloc_graph_input,
+        alloc_graph_output=alloc_graph_output,
+    )
+
     # Get executorch program after Cadence specific passes
-    exec_prog: ExecutorchProgramManager = cadence_prog_manager.to_executorch()
+    exec_prog: ExecutorchProgramManager = cadence_prog_manager.to_executorch(
+        ExecutorchBackendConfig(
+            memory_planning_pass=memory_planning_pass,
+            emit_stacktrace=False,
+            to_out_var_pass=ToOutVarPass(),
+            extract_delegate_segments=False,
+            sym_shape_eval_pass=HintBasedSymShapeEvalPass(),
+        ),
+    )
+
+    print_memory_planning_info(
+        exec_prog,
+        memory_config,
+        opt_level,
+        alloc_graph_input,
+        alloc_graph_output,
+    )
+
     if output_dir:
         _gen_etrecord(edge_prog_manager, exec_prog, Path(output_dir))
     else:

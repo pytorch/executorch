@@ -9,6 +9,9 @@ python_binary(
     name = "llama",
     srcs = ["llama.py"],
     main_function = "executorch.examples.qualcomm.oss_scripts.llama3_2.llama.main",
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:model_sharding_py",
+    ],
     deps = [
         "//executorch/examples/qualcomm/oss_scripts/llama2:static_llama",
         "//caffe2:torch",

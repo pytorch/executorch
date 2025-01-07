@@ -113,7 +113,7 @@ def create_program(
     # variant, along with some other transformations.
     for method_name, method_input in input_map.items():
         wrapped_mod = WrapperModule(getattr(eager_module, method_name))
-        exported_methods[method_name] = export(wrapped_mod, method_input)
+        exported_methods[method_name] = export(wrapped_mod, method_input, strict=True)
 
     exec_prog = to_edge(exported_methods).to_executorch(config=et_config)
 
@@ -136,7 +136,6 @@ def make_test(  # noqa: C901
     load_fn: Callable = runtime._load_for_executorch_from_buffer
 
     def wrapper(tester: unittest.TestCase) -> None:
-
         ######### TEST CASES #########
 
         def test_e2e(tester):
@@ -154,7 +153,6 @@ def make_test(  # noqa: C901
             tester.assertEqual(str(expected), str(executorch_output))
 
         def test_multiple_entry(tester):
-
             program, inputs = create_program(ModuleMulti())
             executorch_module = load_fn(program.buffer)
 
@@ -268,7 +266,7 @@ def make_test(  # noqa: C901
             )
             m = _convert_to_reference_decomposed_fx(m)
             config = EdgeCompileConfig(_check_ir_validity=False)
-            m = to_edge(export(m, example_inputs), compile_config=config)
+            m = to_edge(export(m, example_inputs, strict=True), compile_config=config)
             m = m.transform([QuantFusionPass(_fix_node_meta_val=True)])
 
             exec_prog = m.to_executorch()

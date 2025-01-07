@@ -49,6 +49,7 @@ struct PhysicalDevice final {
   bool has_unified_memory;
   bool has_timestamps;
   float timestamp_period;
+  size_t min_ubo_alignment;
 
   explicit PhysicalDevice(VkPhysicalDevice);
 };
