@@ -321,6 +321,7 @@ command = [
     '--config=.mypy.ini',
     '--show-disable',
     '--',
+    '--explicit-package-bases',
     '@{{PATHSFILE}}'
 ]
 init_command = [
