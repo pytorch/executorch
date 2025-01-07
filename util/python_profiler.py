@@ -12,17 +12,19 @@ import pstats
 import re
 from pstats import Stats
 
-from snakeviz.stats import json_stats, table_rows
-from tornado import template
+from snakeviz.stats import json_stats, table_rows  # type: ignore[import-not-found]
+from tornado import template  # type: ignore[import-not-found]
 
 module_found = True
+snakeviz_templates_dir: str = ""
+
 try:
-    import snakeviz
+    import snakeviz  # type: ignore[import-not-found]
+
+    snakeviz_dir = os.path.dirname(os.path.abspath(snakeviz.__file__))
+    snakeviz_templates_dir = os.path.join(snakeviz_dir, "templates")
 except ImportError:
     module_found = False
-
-snakeviz_dir = os.path.dirname(os.path.abspath(snakeviz.__file__))
-snakeviz_templates_dir = os.path.join(snakeviz_dir, "templates")
 
 
 def _from_pstat_to_static_html(stats: Stats, html_filename: str):

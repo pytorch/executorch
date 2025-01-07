@@ -302,8 +302,8 @@ include_patterns = [
     'profiler/**/*.py',
     'runtime/**/*.py',
     'scripts/**/*.py',
-    # 'test/**/*.py',
-    # 'util/**/*.py',
+    'test/**/*.py',
+    'util/**/*.py',
     '*.py',
 ]
 exclude_patterns = [
