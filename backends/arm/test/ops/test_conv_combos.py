@@ -353,8 +353,7 @@ class TestConvCombos(unittest.TestCase):
         model = ComboBlockBottleneckResidual()
         self._test_conv_combo_tosa_MI_pipeline(model, model.get_inputs())
 
-    # TODO: Investigate flakyness (MLTORCH-307)
-    @unittest.skip(reason="Skiped due to flakyness (MLTORCH-307)")
+    @pytest.mark.flaky  # TODO: Investigate flakyness (MLTORCH-307)
     def test_block_bottleneck_residual_tosa_BI(self):
         model = ComboBlockBottleneckResidual()
         self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())

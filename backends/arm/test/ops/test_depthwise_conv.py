@@ -252,8 +252,8 @@ class TestDepthwiseConv(unittest.TestCase):
     def test_dw_conv_tosa_MI(self, test_name: str, model: torch.nn.Module):
         self._test_dw_conv_tosa_MI_pipeline(model, model.get_inputs())
 
-    # TODO: Investigate flakyness (MLTORCH-307)
     @parameterized.expand(testsuite_conv1d + testsuite_conv2d)
+    @pytest.mark.flaky  # TODO: Investigate flakyness (MLTORCH-307)
     def test_dw_conv_tosa_BI(self, test_name: str, model: torch.nn.Module):
         self._test_dw_conv_tosa_BI_pipeline(model, model.get_inputs())
 
