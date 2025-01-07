@@ -31,6 +31,7 @@ from executorch.backends.qualcomm.utils.constants import QCOM_QUANTIZED_IO
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     convert_linear_to_conv2d,
+    generate_composite_llama_program,
     generate_htp_compiler_spec,
     generate_multi_graph_program,
     generate_qnn_executorch_compiler_spec,
@@ -365,7 +366,7 @@ class SingleLlama:
             if num_sharding > 0:
                 update_spill_fill_size(edge_prog_mgr.exported_program())
             exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
-            with open(f"{work_space}/{self.pte_filename}.pte", "wb") as file:
+            with open(f"{work_space}/{pte_filename}.pte", "wb") as file:
                 exec_prog_mgr.write_to_file(file)
 
     def get_example_inputs(self, use_kv_cache=True):
@@ -435,7 +436,7 @@ def compile(args, pte_filename):
 
     use_fp16 = True
     fixed_point_type = {"kv_type": torch.float32, "io_type": torch.float32}
-    if args.ptq != None:
+    if args.ptq:
         use_fp16 = False
         fixed_point_type["kv_type"] = torch.uint8
         if args.ptq == "8a8w":
@@ -464,7 +465,7 @@ def compile(args, pte_filename):
             llama_instance_list[i].eval(), pte_filename
         )
 
-    if args.ptq != None:
+    if args.ptq:
         start_quantize_ts = time.time()
         for llama_instance in llama_instance_list:
             llama_instance.quantize(
@@ -481,6 +482,7 @@ def compile(args, pte_filename):
         logging.info(f"Time for quantizing: {end_quantize_ts - start_quantize_ts}")
 
     start_lowering_ts = time.time()
+    quant_attrs = None
 
     if len(llama_instance_list) == 1:
         llama_instance_list[0].lowering_modules(
@@ -515,7 +517,9 @@ def compile(args, pte_filename):
                 edge_progs[i].exported_program.graph_module,
                 fixed_point_type,
             )
-        backend_options = generate_htp_compiler_spec(use_fp16=use_fp16)
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=use_fp16, use_multi_contexts=args.num_sharding > 0
+        )
         graph_names = ["prefill_forward", "kv_forward"]
         compiler_specs = [
             generate_qnn_executorch_compiler_spec(
@@ -527,10 +531,17 @@ def compile(args, pte_filename):
             )
             for graph_name in graph_names
         ]
+        skip_node_op_set = {"llama.fallback.default"}
         exported_programs = [
-            to_backend(edge_prog.exported_program, QnnPartitioner(compiler_specs[i]))
+            to_backend(
+                edge_prog.exported_program,
+                QnnPartitioner(compiler_specs[i], skip_node_op_set=skip_node_op_set),
+            )
             for i, edge_prog in enumerate(edge_progs)
         ]
+        if args.num_sharding > 0:
+            for exported_program in exported_programs:
+                update_spill_fill_size(exported_program)
 
         executorch_config = ExecutorchBackendConfig(
             # For shared buffer, user must pass the memory address
@@ -544,14 +555,117 @@ def compile(args, pte_filename):
             extract_delegate_segments=True,
         )
 
-        prog_mgr = generate_multi_graph_program(
-            compiler_specs=compiler_specs[0],
-            exported_programs=exported_programs,
-            backend_config=executorch_config,
-            constant_methods=llama_instance_list[1].llama_meta,  # kv method meta
-        )
-        with open(f"{args.artifact}/{pte_filename}.pte", "wb") as file:
-            prog_mgr.write_to_file(file)
+        lower_module_dict = {name: [] for name in graph_names}
+        call_delegate_inputs_dict = {name: [] for name in graph_names}
+        call_delegate_node_name_dict = {name: [] for name in graph_names}
+        outputs_dict = {name: [] for name in graph_names}
+        input_nodes_dict = {name: [] for name in graph_names}
+        for prog, graph_name in zip(exported_programs, graph_names):
+            for node in prog.graph_module.graph.nodes:
+                if (
+                    node.op == "call_function"
+                    and "executorch_call_delegate" in node.name
+                ):
+                    call_delegate_node_name_dict[graph_name].append(node.name)
+                    call_delegate_inputs_list = []
+                    for arg in node.args:
+                        if arg.op == "call_function":
+                            while "getitem" not in arg.name:
+                                arg = arg.args[0]
+                            call_delegate_inputs_list.append(
+                                (arg.args[0].name, arg.args[1])
+                            )
+                        elif arg.op == "placeholder":
+                            call_delegate_inputs_list.append((arg.name, None))
+                        # No extra needs to do for get_attr node
+                    call_delegate_inputs_dict[graph_name].append(
+                        call_delegate_inputs_list
+                    )
+                elif node.op == "output":
+                    for arg in node.args[0]:
+                        outputs_dict[graph_name].append((arg.args[0].name, arg.args[1]))
+
+        if args.num_sharding > 0:
+            bundle_progs_list = []
+            for num in range(args.num_sharding - 1, -1, -1):
+                processed_bytes = []
+                for prog, graph_name in zip(exported_programs, graph_names):
+                    processed_bytes.append(
+                        getattr(
+                            prog.graph_module, f"lowered_module_{num}"
+                        ).processed_bytes
+                    )
+
+                    call_delegate_node = [
+                        list(node.users.keys())[0]
+                        for node in prog.graph_module.graph.nodes
+                        if node.op == "get_attr"
+                        and node.name == f"lowered_module_{num}"
+                    ]
+                    input_nodes_dict[graph_name] = [
+                        node
+                        for node in call_delegate_node[0].args
+                        if node.op == "placeholder"
+                    ]
+
+                prog_mgr, bundle_progs = generate_multi_graph_program(
+                    compiler_specs=compiler_specs[0],
+                    processed_bytes=processed_bytes,
+                    input_nodes_dict=input_nodes_dict,
+                    backend_config=executorch_config,
+                    constant_methods=llama_instance_list[
+                        1
+                    ].llama_meta,  # kv method meta
+                )
+                bundle_progs_list.append(bundle_progs)
+                for graph_name in graph_names:
+                    lower_module_dict[graph_name].append(
+                        prog_mgr.exported_program(graph_name).graph_module._modules.get(
+                            "lowered_module_0"
+                        )
+                    )
+
+            exec_prog = generate_composite_llama_program(
+                graph_names=graph_names,
+                sample_inputs_list=sample_inputs_list,
+                lower_module_dict=lower_module_dict,
+                call_delegate_node_name_dict=call_delegate_node_name_dict,
+                call_delegate_inputs_dict=call_delegate_inputs_dict,
+                outputs_dict=outputs_dict,
+                backend_config=executorch_config,
+                constant_methods=llama_instance_list[1].llama_meta,  # kv method meta
+            )
+            with open(f"{args.artifact}/{pte_filename}.pte", "wb") as file:
+                exec_prog.write_to_file(file)
+        else:
+            processed_bytes = []
+            input_nodes_dict = {name: [] for name in graph_names}
+            output_nodes_dict = {name: [] for name in graph_names}
+            for prog, graph_name in zip(exported_programs, graph_names):
+                processed_bytes.append(
+                    prog.graph_module.lowered_module_0.processed_bytes
+                )
+                input_nodes_dict[graph_name] = [
+                    node
+                    for node in prog.graph_module.graph.nodes
+                    if node.op == "placeholder"
+                ]
+                output_nodes_dict[graph_name] = [
+                    node
+                    for node in prog.graph_module.graph.nodes
+                    if node.op == "output"
+                ]
+
+            prog_mgr, _ = generate_multi_graph_program(
+                compiler_specs=compiler_specs[0],
+                processed_bytes=processed_bytes,
+                input_nodes_dict=input_nodes_dict,
+                output_nodes_dict=output_nodes_dict,
+                backend_config=executorch_config,
+                constant_methods=llama_instance_list[1].llama_meta,  # kv method meta
+            )
+            with open(f"{args.artifact}/{pte_filename}.pte", "wb") as file:
+                prog_mgr.write_to_file(file)
 
     end_lowering_ts = time.time()
     logging.info(f"Time for compiling: {end_lowering_ts - start_lowering_ts}")
