@@ -6,7 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/fusion_g3/operators/tensor_util.h>
+#include <executorch/backends/cadence/fusion_g3/operators/operators.h>
+#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
 #include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
@@ -14,11 +15,11 @@
 #include <xa_nnlib_kernels_api.h>
 #include <cmath>
 
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using torch::executor::Error;
-using torch::executor::KernelRuntimeContext;
+using ::executorch::aten::Scalar;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::KernelRuntimeContext;
 
 namespace cadence {
 namespace impl {
@@ -54,7 +55,7 @@ Tensor& _softmax_out(
 #endif
 
   int inp_shapes[in.dim()];
-  const exec_aten::ArrayRef<Tensor::SizesType> in_size = in.sizes();
+  const ::executorch::aten::ArrayRef<Tensor::SizesType> in_size = in.sizes();
   for (int i = 0; i < in.dim(); i++) {
     inp_shapes[i] = in_size[i];
   }

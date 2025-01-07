@@ -6,18 +6,22 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/fusion_g3/operators/tensor_util.h>
-#include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
-#include <executorch/runtime/kernel/kernel_includes.h>
+#include <executorch/backends/cadence/fusion_g3/operators/operators.h>
+
 #include <xa_nnlib_kernels_api.h>
 
-using torch::executor::KernelRuntimeContext;
-using SizesType = exec_aten::SizesType;
-using Tensor = exec_aten::Tensor;
-using IntArrayRef = exec_aten::ArrayRef<int64_t>;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using torch::executor::Error;
+#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
+
+#include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+
+using ::executorch::runtime::KernelRuntimeContext;
+using SizesType = ::executorch::aten::SizesType;
+using Tensor = ::executorch::aten::Tensor;
+using IntArrayRef = ::executorch::aten::ArrayRef<int64_t>;
+using ::executorch::aten::Scalar;
+using ::executorch::aten::ScalarType;
+using ::executorch::runtime::Error;
 
 /* ScalarType in Executorch do not have support for below data types.
  * So, creating a placeholder for these data types. Once, ScalarTypes is
@@ -90,8 +94,8 @@ Tensor& permute_copy_out(
       out);
 #endif
 
-  const exec_aten::ArrayRef<Tensor::SizesType> in_size = in.sizes();
-  const exec_aten::ArrayRef<Tensor::SizesType> out_size = out.sizes();
+  const ::executorch::aten::ArrayRef<Tensor::SizesType> in_size = in.sizes();
+  const ::executorch::aten::ArrayRef<Tensor::SizesType> out_size = out.sizes();
 
   int inp_shape[kTensorDimensionLimit];
   int out_shape[kTensorDimensionLimit];

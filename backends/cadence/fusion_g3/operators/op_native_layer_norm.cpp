@@ -6,7 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/fusion_g3/operators/tensor_util.h>
+#include <executorch/backends/cadence/fusion_g3/operators/operators.h>
+#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
 #include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
 #include <executorch/kernels/portable/cpu/vec_ops.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -14,11 +15,11 @@
 #include <cmath>
 #include <tuple>
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using IntArrayRef = exec_aten::ArrayRef<int64_t>;
-using torch::executor::Error;
-using torch::executor::KernelRuntimeContext;
+using Tensor = ::executorch::aten::Tensor;
+using ScalarType = ::executorch::aten::ScalarType;
+using IntArrayRef = ::executorch::aten::ArrayRef<int64_t>;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::KernelRuntimeContext;
 
 namespace cadence {
 namespace impl {
@@ -31,8 +32,8 @@ template <typename CTYPE>
 void layer_norm(
     const Tensor& input,
     IntArrayRef normalized_shape,
-    const exec_aten::optional<Tensor>& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const ::executorch::aten::optional<Tensor>& weight,
+    const ::executorch::aten::optional<Tensor>& bias,
     CTYPE eps,
     Tensor& out,
     Tensor& mean,
@@ -108,8 +109,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     IntArrayRef normalized_shape,
-    const exec_aten::optional<Tensor>& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const ::executorch::aten::optional<Tensor>& weight,
+    const ::executorch::aten::optional<Tensor>& bias,
     double eps,
     Tensor& out,
     Tensor& mean_out,

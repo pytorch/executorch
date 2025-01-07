@@ -6,16 +6,17 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/fusion_g3/operators/tensor_util.h>
+#include <executorch/backends/cadence/fusion_g3/operators/operators.h>
+#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
 #include <executorch/kernels/portable/cpu/pattern/pattern.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <xa_nnlib_kernels_api.h>
 #include <cmath>
 
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using torch::executor::Error;
+using ::executorch::aten::Scalar;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::Error;
 using torch::executor::RuntimeContext;
 
 namespace cadence {

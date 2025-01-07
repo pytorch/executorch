@@ -6,17 +6,18 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/fusion_g3/operators/tensor_util.h>
+#include <executorch/backends/cadence/fusion_g3/operators/operators.h>
+#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <xa_nnlib_kernels_api.h>
 #include <cstring>
 
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using torch::executor::Error;
-using torch::executor::KernelRuntimeContext;
+using ::executorch::aten::Scalar;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::KernelRuntimeContext;
 
 /* ScalarType in Executorch do not have support for below data types.
  * So, creating a placeholder for these data types. Once, ScalarTypes is
@@ -32,7 +33,7 @@ namespace native {
 
 Tensor& cat_out(
     KernelRuntimeContext& ctx,
-    exec_aten::ArrayRef<Tensor> tensors,
+    ::executorch::aten::ArrayRef<Tensor> tensors,
     int64_t dim,
     Tensor& out) {
   if (dim < 0) {
@@ -80,7 +81,7 @@ Tensor& cat_out(
   int inp_shapes_size[tensors.size()];
 
   int temp_sizes[tensors.size()][kTensorDimensionLimit];
-  exec_aten::ArrayRef<Tensor::SizesType> temp_size;
+  ::executorch::aten::ArrayRef<Tensor::SizesType> temp_size;
 
   for (int i = 0; i < tensors.size(); i++) {
     inp_tensors[i] = tensors[i].const_data_ptr<signed char>();
@@ -95,7 +96,7 @@ Tensor& cat_out(
 
   signed char* out_data = out.mutable_data_ptr<signed char>();
 
-  const exec_aten::ArrayRef<Tensor::SizesType> out_size = out.sizes();
+  const ::executorch::aten::ArrayRef<Tensor::SizesType> out_size = out.sizes();
   int out_shapes[kTensorDimensionLimit];
   for (int i = 0; i < out_size.size(); i++) // output shapes
   {

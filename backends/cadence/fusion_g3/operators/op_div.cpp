@@ -6,21 +6,24 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/fusion_g3/operators/tensor_util.h>
+#include <executorch/backends/cadence/fusion_g3/operators/operators.h>
+
+#include <xa_nnlib_kernels_api.h>
+
+#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
-#include <xa_nnlib_kernels_api.h>
 #include <cmath>
 
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using executorch::runtime::canCast;
-using torch::executor::Error;
-using torch::executor::KernelRuntimeContext;
+using ::executorch::aten::Scalar;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::canCast;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::KernelRuntimeContext;
 
 namespace cadence {
 namespace impl {
@@ -226,7 +229,7 @@ Tensor& div_out_mode(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
-    exec_aten::optional<exec_aten::string_view> mode,
+    ::executorch::aten::optional<::executorch::aten::string_view> mode,
     Tensor& out) {
   if (!mode.has_value()) {
     return div_out(ctx, a, b, out);
@@ -542,7 +545,7 @@ Tensor& div_scalar_mode_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
-    exec_aten::optional<exec_aten::string_view> mode,
+    ::executorch::aten::optional<::executorch::aten::string_view> mode,
     Tensor& out) {
   if (!mode.has_value()) {
     return div_scalar_out(ctx, a, b, out);

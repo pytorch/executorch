@@ -6,18 +6,21 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/fusion_g3/operators/tensor_util.h>
+#include <executorch/backends/cadence/fusion_g3/operators/operators.h>
+
+#include <xa_nnlib_kernels_api.h>
+
+#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
-#include <xa_nnlib_kernels_api.h>
 
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using torch::executor::Error;
-using torch::executor::KernelRuntimeContext;
+using ::executorch::aten::Scalar;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::KernelRuntimeContext;
 
 namespace cadence {
 namespace impl {
@@ -27,7 +30,8 @@ namespace native {
 int prepare_data(
     const Tensor& in,
     Tensor& out,
-    exec_aten::optional<exec_aten::ArrayRef<int64_t>> dim_list,
+    ::executorch::aten::optional<::executorch::aten::ArrayRef<int64_t>>
+        dim_list,
     int* inp_shape,
     int* out_shape,
     int* p_axis,
@@ -58,9 +62,10 @@ int prepare_data(
 Tensor& mean_dim_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    exec_aten::optional<exec_aten::ArrayRef<int64_t>> dim_list,
+    ::executorch::aten::optional<::executorch::aten::ArrayRef<int64_t>>
+        dim_list,
     bool keepdim,
-    exec_aten::optional<ScalarType> dtype,
+    ::executorch::aten::optional<ScalarType> dtype,
     Tensor& out) {
   (void)ctx;
 
