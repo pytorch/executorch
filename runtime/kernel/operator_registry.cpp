@@ -74,7 +74,8 @@ Error register_kernels_internal(const Span<const Kernel> kernels) {
     return Error::Internal;
   }
   // for debugging purpose
-  const char* lib_name = et_pal_get_shared_library_name(kernels.data());
+  ET_UNUSED const char* lib_name =
+      et_pal_get_shared_library_name(kernels.data());
 
   for (const auto& kernel : kernels) {
     // Linear search. This is fine if the number of kernels is small.
