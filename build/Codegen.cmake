@@ -11,13 +11,14 @@
 # arguments.
 function(gen_selected_ops)
   set(arg_names LIB_NAME OPS_SCHEMA_YAML ROOT_OPS INCLUDE_ALL_OPS)
-  cmake_parse_arguments(GEN "" "" "${arg_names}" ${ARGN})
+  cmake_parse_arguments(GEN "${options}" "" "${arg_names}" ${ARGN})
 
   message(STATUS "Generating operator lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   message(STATUS "  OPS_SCHEMA_YAML: ${GEN_OPS_SCHEMA_YAML}")
   message(STATUS "  ROOT_OPS: ${GEN_ROOT_OPS}")
   message(STATUS "  INCLUDE_ALL_OPS: ${GEN_INCLUDE_ALL_OPS}")
+  message(STATUS "  ADD_EXCEPTION_BOUNDARY: ${GEN_ADD_EXCEPTION_BOUNDARTY}")
 
   set(_oplist_yaml
       ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_operators.yaml
@@ -59,13 +60,15 @@ endfunction()
 # Invoked as generate_bindings_for_kernels( LIB_NAME lib_name FUNCTIONS_YAML
 # functions_yaml CUSTOM_OPS_YAML custom_ops_yaml )
 function(generate_bindings_for_kernels)
+  set(options ADD_EXCEPTION_BOUNDARY)
   set(arg_names LIB_NAME FUNCTIONS_YAML CUSTOM_OPS_YAML)
-  cmake_parse_arguments(GEN "" "${arg_names}" "" ${ARGN})
+  cmake_parse_arguments(GEN "${options}" "${arg_names}" "" ${ARGN})
 
   message(STATUS "Generating kernel bindings:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   message(STATUS "  FUNCTIONS_YAML: ${GEN_FUNCTIONS_YAML}")
   message(STATUS "  CUSTOM_OPS_YAML: ${GEN_CUSTOM_OPS_YAML}")
+  message(STATUS "  ADD_EXCEPTION_BOUNDARY: ${GEN_ADD_EXCEPTION_BOUNDARY}")
 
   # Command to generate selected_operators.yaml from custom_ops.yaml.
   file(GLOB_RECURSE _codegen_templates "${EXECUTORCH_ROOT}/codegen/templates/*")
@@ -93,7 +96,10 @@ function(generate_bindings_for_kernels)
       --tags-path=${site-packages-out}/torchgen/packaged/ATen/native/tags.yaml
       --aten-yaml-path=${site-packages-out}/torchgen/packaged/ATen/native/native_functions.yaml
       --op-selection-yaml-path=${_oplist_yaml}
-  )
+    )
+  if(GEN_ADD_EXCEPTION_BOUNDARY)
+    set(_gen_command "${_gen_command} --add-exception-boundary")
+  endif()
 
   set(_gen_command_sources
       ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
