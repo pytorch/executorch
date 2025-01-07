@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -180,6 +180,47 @@ conv1d_3_1x3x224_st2_pd1 = Conv1d(
     batches=1,
 )
 
+conv1d_7_1x3x16_st2_pd1_dl2 = Conv1d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=7,
+    stride=2,
+    padding=1,
+    dilation=2,
+    length=16,
+    batches=1,
+)
+conv1d_7_1x3x15_st1_pd0_dl1 = Conv1d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=7,
+    stride=1,
+    padding=0,
+    dilation=1,
+    length=15,
+    batches=1,
+)
+conv1d_5_1x3x14_st5_pd0_dl1 = Conv1d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=5,
+    stride=5,
+    padding=0,
+    dilation=1,
+    length=14,
+    batches=1,
+)
+conv1d_5_1x3x9_st5_pd0_dl1 = Conv1d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=5,
+    stride=5,
+    padding=0,
+    dilation=1,
+    length=9,
+    batches=1,
+)
+
 two_conv1d_nobias = Conv1d(
     nbr_conv=2,
     length=256,
@@ -214,6 +255,10 @@ testsuite = [
     ("2_1x2x14_st2", conv1d_2_1x2x14_st2),
     ("5_3x2x128_st1", conv1d_5_3x2x128_st1),
     ("3_1x3x224_st2_pd1", conv1d_3_1x3x224_st2_pd1),
+    ("7_1x3x16_st2_pd1_dl2_needs_adjust_pass", conv1d_7_1x3x16_st2_pd1_dl2),
+    ("7_1x3x15_st1_pd0_dl1_needs_adjust_pass", conv1d_7_1x3x15_st1_pd0_dl1),
+    ("5_1x3x14_st5_pd0_dl1_needs_adjust_pass", conv1d_5_1x3x14_st5_pd0_dl1),
+    ("5_1x3x9_st5_pd0_dl1_needs_adjust_pass", conv1d_5_1x3x9_st5_pd0_dl1),
     ("two_conv1d_nobias", two_conv1d_nobias),
     ("two_conv1d", two_conv1d),
 ]
