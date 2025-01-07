@@ -79,12 +79,12 @@ BUCK_PLATFORM_MAP = {
             # MUSL
             "5d7af382acbe0dde70f0e9b0a0bc36deea906077ec1ffe80d3fa280490109051",
             # GNU
-            "08d4382de22fab275978abc7c27c001d7823eb2f"
+            "08d4382de22fab275978abc7c27c001d7823eb2f",
         ],
     ),
     ("darwin", "aarch64"): BuckInfo(
         archive_name="buck2-aarch64-apple-darwin.zst",
-        target_versions=["f3b7a37732803ed090cd8a37f00cc0090"],
+        target_versions=["f3b7a37732803ed090cd8a37f00cc000"],
     ),
     ("darwin", "x86_64"): BuckInfo(
         archive_name="buck2-x86_64-apple-darwin.zst",
