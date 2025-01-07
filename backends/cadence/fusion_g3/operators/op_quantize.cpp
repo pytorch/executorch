@@ -10,50 +10,26 @@
 #include <cinttypes>
 #include <cmath>
 
+#include <executorch/backends/cadence/fusion_g3/operators/operators.h>
+
 #include <xa_nnlib_kernels_api.h>
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
 #include <executorch/backends/cadence/fusion_g3/operators/tensor_util.h>
->>>>>>> 897987e42 (copied XT_KERNEL_CHECK to a header file and included the header file in the operators at backends\cadence\fusion_f3\operators folder)
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-<<<<<<< HEAD
-using ::executorch::aten::ArrayRef;
-using ::executorch::aten::optional;
+using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
-=======
-=======
->>>>>>> d411838ef (added operators for sub, slice, permute, exp, mean, div. Disabled argument checks in the operators using macro)
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using torch::executor::Error;
-using torch::executor::KernelRuntimeContext;
-<<<<<<< HEAD
->>>>>>> 92b58ef81 (Resolved Linter errors)
-=======
->>>>>>> d411838ef (added operators for sub, slice, permute, exp, mean, div. Disabled argument checks in the operators using macro)
 
 /* ScalarType in Executorch do not have support for below data types.
  * So, creating a placeholder for these data types. Once, ScalarTypes is
  * updated to have support for below data types, these can be removed and
  * operator need to be updated accordingly
  */
-<<<<<<< HEAD
 enum datatype { Ushort = 20, Bits4u = 21, Bits4 = 22 };
-=======
- enum datatype {
- Ushort = 20,
- Bits4u = 21,
- Bits4 = 22
- };
->>>>>>> 92b58ef81 (Resolved Linter errors)
 
 /**
  * For an input tensor, use the scale and zero_point arguments to quantize it.
@@ -172,7 +148,8 @@ Tensor& quantize_impl(
     int* axis,
     int quant_min,
     int quant_max) {
-  const exec_aten::ArrayRef<Tensor::SizesType> input_size = input.sizes();
+  const ::executorch::aten::ArrayRef<Tensor::SizesType> input_size =
+      input.sizes();
 
   int kTensorDimensionLimit = 5;
 
@@ -350,8 +327,9 @@ Tensor& quantize_impl(
           }
         }
 
-        exec_aten::optional<exec_aten::ArrayRef<int64_t>> optional_dim_list{
-            exec_aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
+        ::executorch::aten::optional<::executorch::aten::ArrayRef<int64_t>>
+            optional_dim_list{::executorch::aten::ArrayRef<int64_t>{
+                dims, size_t(input.dim() - 1)}};
 
 // Actual quantization logic
 // input, out are the input and output tensors
@@ -554,8 +532,9 @@ Tensor& quantize_impl(
           }
         }
 
-        exec_aten::optional<exec_aten::ArrayRef<int64_t>> optional_dim_list{
-            exec_aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
+        ::executorch::aten::optional<::executorch::aten::ArrayRef<int64_t>>
+            optional_dim_list{::executorch::aten::ArrayRef<int64_t>{
+                dims, size_t(input.dim() - 1)}};
 
 // Actual quantization logic
 // input, out are the input and output tensors
@@ -820,11 +799,11 @@ Tensor& quantize_per_token_out(
   Tensor reshaped_input = at::from_blob(
       input.mutable_data_ptr(), sizes, at::TensorOptions(input.scalar_type()));
 #else
-  std::array<exec_aten::DimOrderType, 2> input_dim_order{0, 1};
-  std::array<exec_aten::SizesType, 2> input_sizes;
+  std::array<::executorch::aten::DimOrderType, 2> input_dim_order{0, 1};
+  std::array<::executorch::aten::SizesType, 2> input_sizes;
   input_sizes[0] = num_tokens;
   input_sizes[1] = input.size(input.dim() - 1);
-  std::array<exec_aten::StridesType, 2> input_strides;
+  std::array<::executorch::aten::StridesType, 2> input_strides;
   executorch::runtime::dim_order_to_stride_nocheck(
       input_sizes.data(), input_dim_order.data(), 2, input_strides.data());
   void* input_data = input.mutable_data_ptr();
@@ -859,8 +838,4 @@ Tensor& quantize_per_token_out(
 } // namespace native
 } // namespace G3
 } // namespace impl
-<<<<<<< HEAD
 } // namespace cadence
-=======
-} // namespace cadence
->>>>>>> 7bd011ff5 (Updated name space of the operators by appending cadence)
