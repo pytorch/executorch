@@ -6,12 +6,12 @@
 
 # pyre-unsafe
 
-from typing import cast, Optional
+from typing import cast
 
 import torch.fx
+from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
-from torch._ops import OpOverload
 
 
 def conv_remainder(input_length, pad, dilation, weight, stride):
@@ -20,48 +20,6 @@ def conv_remainder(input_length, pad, dilation, weight, stride):
     and kernel size.
     """
     return (input_length + 2 * pad - dilation * (weight - 1) - 1) % stride
-
-
-def insert_q_dq_pair(
-    graph: torch.fx.Graph,
-    anchor: torch.fx.Node,
-    q_params: tuple,
-):
-    with graph.inserting_after(anchor):
-        q = create_node(
-            graph=graph,
-            op_target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            args=(),  # We add the argument last
-        )
-        q.meta = anchor.meta
-
-    with graph.inserting_after(q):
-        dq = create_node(
-            graph=graph,
-            op_target=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-            args=(q,) + q_params,
-        )
-        dq.meta = q.meta
-
-    anchor.replace_all_uses_with(dq)
-    # We add this last so the replace all uses above does not replace the quantized
-    # node's first use
-    q.args = (anchor,) + q_params
-    return dq
-
-
-def create_node(
-    graph: torch.fx.Graph,
-    op_target: OpOverload,
-    args: tuple = (),
-    kwargs: Optional[dict] = None,
-):
-    return graph.create_node(
-        "call_function",
-        op_target,
-        args=args,
-        kwargs=kwargs or {},
-    )
 
 
 class SizeAdjustConv2DPass(ExportPass):
@@ -152,9 +110,7 @@ class SizeAdjustConv2DPass(ExportPass):
             with graph_module.graph.inserting_before(node):
                 last_node = cast(torch.fx.Node, input_node)
                 for args in slice_args:
-                    slice_node = graph.create_node(
-                        "call_function", self.slice_op, (last_node,) + args
-                    )
+                    slice_node = create_node(graph, self.slice_op, (last_node,) + args)
                     last_node = slice_node
                 conv_node.replace_input_with(cast(torch.fx.Node, input_node), last_node)
                 modified_graph = True
