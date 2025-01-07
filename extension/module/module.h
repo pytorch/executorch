@@ -162,7 +162,8 @@ class Module {
   ET_NODISCARD
   runtime::Error load_method(
       const std::string& method_name,
-      torch::executor::EventTracer* event_tracer = nullptr);
+      torch::executor::EventTracer* event_tracer = nullptr,
+      runtime::HierarchicalAllocator* planned_memory_allocator = nullptr);
 
   /**
    * Load the 'forward' method from the program and set up memory management if
