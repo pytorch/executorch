@@ -66,21 +66,34 @@ if not python_is_compatible():
     sys.exit(1)
 
 # Parse options.
-EXECUTORCH_BUILD_PYBIND = "OFF"
+
+EXECUTORCH_BUILD_PYBIND = ""
 CMAKE_ARGS = os.getenv("CMAKE_ARGS", "")
 CMAKE_BUILD_ARGS = os.getenv("CMAKE_BUILD_ARGS", "")
 USE_PYTORCH_NIGHTLY = True
 
-for arg in sys.argv[1:]:
+args = sys.argv[1:]
+for arg in args:
     if arg == "--pybind":
-        EXECUTORCH_BUILD_PYBIND = "ON"
+        pass
     elif arg in ["coreml", "mps", "xnnpack"]:
-        if EXECUTORCH_BUILD_PYBIND == "ON":
+        if "--pybind" in args:
             arg_upper = arg.upper()
+            EXECUTORCH_BUILD_PYBIND = "ON"
             CMAKE_ARGS += f" -DEXECUTORCH_BUILD_{arg_upper}=ON"
         else:
             print(f"Error: {arg} must follow --pybind")
             sys.exit(1)
+    elif arg == "off":
+        if "--pybind" in args:
+            if EXECUTORCH_BUILD_PYBIND == "ON":
+                print("Cannot turnoff pybind option as it is already set.")
+                sys.exit(1)
+            EXECUTORCH_BUILD_PYBIND = "OFF"
+        else:
+            print(f"Error: {arg} must follow --pybind")
+            sys.exit(1)
+
     elif arg == "--clean":
         print("Cleaning build artifacts...")
         print("Cleaning pip-out/...")
@@ -100,6 +113,13 @@ for arg in sys.argv[1:]:
         print(f"Error: Unknown option {arg}")
         sys.exit(1)
 
+# If --pybind is not set explicitly for backends (e.g., --pybind xnnpack)
+# or is not turned off explicitly (--pybind off)
+# then install XNNPACK by default.
+if EXECUTORCH_BUILD_PYBIND == "":
+    EXECUTORCH_BUILD_PYBIND = "ON"
+    CMAKE_ARGS += " -DEXECUTORCH_BUILD_XNNPACK=ON"
+
 # Use ClangCL on Windows.
 # ClangCL is an alias to Clang that configures it to work in an MSVC-compatible
 # mode. Using it on Windows to avoid compiler compatibility issues for MSVC.
@@ -112,7 +132,7 @@ if os.name == "nt":
 # NOTE: If a newly-fetched version of the executorch repo changes the value of
 # NIGHTLY_VERSION, you should re-run this script to install the necessary
 # package versions.
-NIGHTLY_VERSION = "dev20241112"
+NIGHTLY_VERSION = "dev20241218"
 
 # The pip repository that hosts nightly torch packages.
 TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
@@ -124,7 +144,7 @@ EXIR_REQUIREMENTS = [
     # been installed on CI before this step, so pip won't reinstall them
     f"torch==2.6.0.{NIGHTLY_VERSION}" if USE_PYTORCH_NIGHTLY else "torch",
     (
-        f"torchvision==0.20.0.{NIGHTLY_VERSION}"
+        f"torchvision==0.22.0.{NIGHTLY_VERSION}"
         if USE_PYTORCH_NIGHTLY
         else "torchvision"
     ),  # For testing.
@@ -135,7 +155,7 @@ EXIR_REQUIREMENTS = [
 # TODO: Make each example publish its own requirements.txt
 EXAMPLES_REQUIREMENTS = [
     "timm==1.0.7",
-    f"torchaudio==2.5.0.{NIGHTLY_VERSION}" if USE_PYTORCH_NIGHTLY else "torchaudio",
+    f"torchaudio==2.6.0.{NIGHTLY_VERSION}" if USE_PYTORCH_NIGHTLY else "torchaudio",
     "torchsr==1.0.4",
     "transformers==4.46.1",
 ]
@@ -166,6 +186,23 @@ subprocess.run(
         *REQUIREMENTS_TO_INSTALL,
         "--extra-index-url",
         TORCH_NIGHTLY_URL,
+    ],
+    check=True,
+)
+
+LOCAL_REQUIREMENTS = [
+    "third-party/ao",  # We need the latest kernels for fast iteration, so not relying on pypi.
+]
+
+# Install packages directly from local copy instead of pypi.
+# This is usually not recommended.
+subprocess.run(
+    [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        *LOCAL_REQUIREMENTS,
     ],
     check=True,
 )

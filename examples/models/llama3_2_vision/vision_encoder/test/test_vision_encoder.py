@@ -32,11 +32,11 @@ class FlamingoVisionEncoderTest(unittest.TestCase):
             encoder,
             model.get_example_inputs(),
             dynamic_shapes=model.get_dynamic_shapes(),
+            strict=True,
         )
         with tempfile.TemporaryDirectory() as tmpdir:
             path = torch._inductor.aoti_compile_and_package(
                 ep,
-                model.get_example_inputs(),
                 package_path=os.path.join(tmpdir, "vision_encoder.pt2"),
             )
             print(path)
