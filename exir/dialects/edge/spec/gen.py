@@ -327,14 +327,14 @@ class EdgeOpYamlInfo:
                 "type_constraint": type_constraint_yaml,
             }
             return yaml_dict
-        except BaseException:
+        except BaseException as e:
             print(
                 "Operator {} inherited from {} failed convert to yaml".format(
                     self.func_name, self.inherits
                 )
             )
             print(self)
-            return {}
+            raise e
 
     def __str__(self) -> str:
         my_str: str = "\nop_yaml_info: \n"
@@ -440,7 +440,8 @@ def gen_op_yaml(op_name: str) -> Optional[EdgeOpYamlInfo]:
     except BaseException as e:
         # Can not find operator schema, or can not find operator based on op_name.
         # Return None to append it into unsupport_funcs and skip.
-        raise RuntimeError(f"Can not find operator schema for {op_name}") from e
+        print(f"Can not find operator schema for {op_name}")
+        raise e
 
     valid_type_combinations = try_all_dtypes_input_samples(op_name)
 
@@ -465,7 +466,7 @@ def gen_op_yaml(op_name: str) -> Optional[EdgeOpYamlInfo]:
         # Append it to unsupported_funcs.
         print("Failed to create yaml file for current function:", op_name)
         print("Error msg:", str(e))
-        return
+        raise e
 
     return op_yaml_info
 

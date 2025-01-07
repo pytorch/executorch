@@ -118,9 +118,7 @@ def export_module_to_program(
     eager_module = module_class().eval()
     inputs = ()
     if hasattr(eager_module, "get_random_inputs"):
-        # pyre-fixme[29]: `Union[nn.modules.module.Module, torch._tensor.Tensor]` is
-        #  not a function.
-        inputs = eager_module.get_random_inputs()
+        inputs = eager_module.get_random_inputs()  # type: ignore[operator]
 
     class WrapperModule(torch.nn.Module):
         def __init__(self, fn):
@@ -130,7 +128,9 @@ def export_module_to_program(
         def forward(self, *args, **kwargs):
             return self.fn(*args, **kwargs)
 
-    exported_program = export(WrapperModule(getattr(eager_module, method)), args=inputs)
+    exported_program = export(
+        WrapperModule(getattr(eager_module, method)), args=inputs, strict=True
+    )
 
     edge_config = EdgeCompileConfig(_check_ir_validity=False)
     et_config = exir.ExecutorchBackendConfig(
@@ -151,7 +151,7 @@ def export_module_to_program(
         ).to_executorch(config=et_config)
     else:
         edge: exir.EdgeProgramManager = to_edge(exported_program)
-        lowered_module = to_backend(
+        lowered_module = to_backend(  # type: ignore[call-arg]
             backend_id, edge.exported_program(), compile_specs=[]
         )
 
@@ -167,7 +167,7 @@ def export_module_to_program(
         composite_module(*inputs)
 
         executorch_program = to_edge(
-            export(composite_module, args=inputs)
+            export(composite_module, args=inputs, strict=True)
         ).to_executorch(config=et_config)
 
     return executorch_program.buffer

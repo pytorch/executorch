@@ -8,6 +8,9 @@ phases:
 
   pre_test:
     commands:
+      # Print this so that the upload script can read and process the benchmark config
+      - echo "The benchmark config is {{ benchmark_config_id }}"
+
       # Download the model from S3
       - curl -s --fail '{{ model_path }}' -o model.zip
       - unzip model.zip && ls -la
@@ -15,14 +18,17 @@ phases:
       # Copy the model to sdcard. This prints too much progress info when the files
       # are large, so it's better to just silent them
       - adb -s $DEVICEFARM_DEVICE_UDID push *.bin /sdcard > /dev/null && echo OK
+      - adb -s $DEVICEFARM_DEVICE_UDID push *.model /sdcard > /dev/null && echo OK
       - adb -s $DEVICEFARM_DEVICE_UDID push *.pte /sdcard > /dev/null && echo OK
 
       # Prepare the model and the tokenizer
       - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /sdcard/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mkdir -p /data/local/tmp/minibench/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.bin /data/local/tmp/minibench/"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.model /data/local/tmp/minibench/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.pte /data/local/tmp/minibench/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/minibench/*.bin"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/minibench/*.model"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/minibench/*.pte"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /data/local/tmp/minibench/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "run-as org.pytorch.minibench rm -rf files"
@@ -83,21 +89,33 @@ phases:
       - |
         BIN_FOUND="$(adb -s $DEVICEFARM_DEVICE_UDID shell find /data/local/tmp/minibench/ -name '*.bin')"
         if [ -z "$BIN_FOUND" ]; then
-          echo "No tokenizer files found in /data/local/tmp/minibench/"
+          echo "No *.bin tokenizer files found in /data/local/tmp/minibench/"
         else
-          echo "tokenizer files found in /data/local/tmp/minibench/"
+          echo "*.bin tokenizer files found in /data/local/tmp/minibench/"
+        fi
+
+        MODEL_FOUND="$(adb -s $DEVICEFARM_DEVICE_UDID shell find /data/local/tmp/minibench/ -name '*.model')"
+        if [ -z "$MODEL_FOUND" ]; then
+          echo "No *.model tokenizer files found in /data/local/tmp/minibench/"
+        else
+          echo "*.model tokenizer files found in /data/local/tmp/minibench/"
         fi
 
       - echo "Run benchmark"
       - |
         adb -s $DEVICEFARM_DEVICE_UDID shell am force-stop org.pytorch.minibench
-        if [ -z "$BIN_FOUND" ]; then
-          adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.BenchmarkActivity \
-            --es "model_dir" "/data/local/tmp/minibench"
-        else
+
+        if [ -n "$BIN_FOUND" ]; then
           adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.LlmBenchmarkActivity \
             --es "model_dir" "/data/local/tmp/minibench" \
             --es "tokenizer_path" "/data/local/tmp/minibench/tokenizer.bin"
+        elif [ -n "$MODEL_FOUND" ]; then
+          adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.LlmBenchmarkActivity \
+            --es "model_dir" "/data/local/tmp/minibench" \
+            --es "tokenizer_path" "/data/local/tmp/minibench/tokenizer.model"
+        else
+          adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.BenchmarkActivity \
+            --es "model_dir" "/data/local/tmp/minibench"
         fi
 
 
