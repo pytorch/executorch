@@ -28,7 +28,17 @@ BufferBindInfo::BufferBindInfo(
     const uint32_t offset_p)
     : handle(buffer_p.handle()),
       offset(buffer_p.mem_offset() + offset_p),
-      range(buffer_p.mem_range()) {}
+      range(buffer_p.mem_range() - offset_p) {}
+
+BufferBindInfo::BufferBindInfo(
+    const VulkanBuffer& buffer_p,
+    const uint32_t offset_p,
+    const uint32_t range_p)
+    : handle(buffer_p.handle()),
+      offset(buffer_p.mem_offset() + offset_p),
+      range(range_p) {
+  VK_CHECK_COND(range_p <= (buffer_p.mem_range() - offset_p));
+}
 
 //
 // ParamsBindList

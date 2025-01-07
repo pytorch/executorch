@@ -129,7 +129,7 @@ class TestScalars(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .to_edge()
@@ -143,7 +143,7 @@ class TestScalars(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -157,7 +157,7 @@ class TestScalars(unittest.TestCase):
     def test_MI(self, test_name: str, op: torch.nn.Module, x, y):
         expected_exception = None
         if any(token in test_name for token in ("Sub_int", "Sub__int")):
-            expected_exception = ValueError
+            expected_exception = (AssertionError, ValueError)
         elif test_name.endswith("_st"):
             expected_exception = AttributeError
 

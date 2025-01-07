@@ -39,7 +39,7 @@ class TestPrintProgram(unittest.TestCase):
         warp_model = WrapModule()
         example_inputs = (torch.rand(1, 32, 16, 16),)
 
-        exir_exported_program = to_edge(export(warp_model, example_inputs))
+        exir_exported_program = to_edge(export(warp_model, example_inputs, strict=True))
         number_of_stack_trace = 0
         for node in exir_exported_program.exported_program().graph.nodes:
             node_info = inspect_node(

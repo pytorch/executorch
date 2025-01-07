@@ -145,12 +145,6 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
 endif()
 
-option(EXECUTORCH_DO_NOT_USE_CXX11_ABI "Define _GLIBCXX_USE_CXX11_ABI=0 if ON"
-       OFF
-)
-if(EXECUTORCH_DO_NOT_USE_CXX11_ABI)
-  add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
-endif()
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
 # they can be properly gc'd. -s: strip symbol. -fno-exceptions -fno-rtti:
 # disables exceptions and runtime type.
@@ -772,13 +766,6 @@ if(EXECUTORCH_BUILD_PYBIND)
       -frtti
       -fexceptions
   )
-  if(EXECUTORCH_DO_NOT_USE_CXX11_ABI)
-      # libtorch is built with the old ABI, so we need to do the same for any
-      # .cpp files that include torch, c10, or ATen targets. Note that PyTorch
-      # nightly binary is built with _GLIBCXX_USE_CXX11_ABI set to 0 while its
-      # CI build sets this to 1 (default)
-    list(APPEND _pybind_compile_options -D_GLIBCXX_USE_CXX11_ABI=0)
-  endif()
 
   # util lib
   add_library(

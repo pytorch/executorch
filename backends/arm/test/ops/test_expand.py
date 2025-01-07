@@ -9,7 +9,10 @@
 #
 
 import unittest
+
 from typing import Sequence, Tuple
+
+import pytest
 
 import torch
 
@@ -47,7 +50,7 @@ class TestSimpleExpand(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check_count({"torch.ops.aten.expand.default": 1})
@@ -65,7 +68,7 @@ class TestSimpleExpand(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
@@ -111,6 +114,7 @@ class TestSimpleExpand(unittest.TestCase):
 
     # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(Expand.test_parameters)
+    @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
     def test_expand_u55_BI(self, test_input, multiples):
         self._test_expand_ethosu_BI_pipeline(
@@ -119,6 +123,7 @@ class TestSimpleExpand(unittest.TestCase):
 
     # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(Expand.test_parameters)
+    @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
     def test_expand_u85_BI(self, test_input, multiples):
         self._test_expand_ethosu_BI_pipeline(
