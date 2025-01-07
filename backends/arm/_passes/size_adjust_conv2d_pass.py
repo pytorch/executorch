@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -16,7 +16,8 @@ from torch._ops import OpOverload
 
 def conv_remainder(input_length, pad, dilation, weight, stride):
     """
-    Returns the size
+    Returns the remainder of input_length; given the padding, dilation, stride,
+    and kernel size.
     """
     return (input_length + 2 * pad - dilation * (weight - 1) - 1) % stride
 
@@ -65,9 +66,51 @@ def create_node(
 
 class SizeAdjustConv2DPass(ExportPass):
     """
-    Adjust the convolution input size to match perfectly with the
-    weight size, padding, stride and dilation parameters.
-    This is done by inserting a slice op to remove the uneven end of the input.
+    Adjust the convolution input size to match the kernel size, padding, stride,
+    and dilation parameters. Pytorch allows the input and kernel shape to not
+    "match", in which case the remaining rows/columns are truncated. However,
+    matching the size is a requirement in the TOSA specification. In case the
+    input and kernel shape do not match, the following is done to meet the
+    specification:
+
+      1) The padding is truncated (done in the node visitor)
+      2) (if neccessary) The input is truncated (done in this pass)."
+
+    A simple example would be a 2x2 kernel (no padding, stride=2) and a 5x5
+    input:
+
+    ┌───┬───┬───┬───┬───┐    ┌───┬───┬───┬───┬───┐    ┌───┬───┬───┬───┬───┐
+    │ X │ X │   │   │   │    │   │   │ X │ X │   │    │   │   │   │   │ - │
+    ├───┼───┼───┼───┼───┤    ├───┼───┼───┼───┼───┤    ├───┼───┼───┼───┼───┤
+    │ X │ X │   │   │   │    │   │   │ X │ X │   │    │   │   │   │   │ - │
+    ├───┼───┼───┼───┼───┤    ├───┼───┼───┼───┼───┤    ├───┼───┼───┼───┼───┤
+    │   │   │   │   │   │ -> │   │   │   │   │   │ -> │ X │ X │   │   │   │ ->
+    ├───┼───┼───┼───┼───┤    ├───┼───┼───┼───┼───┤    ├───┼───┼───┼───┼───┤
+    │   │   │   │   │   │    │   │   │   │   │   │    │ X │ X │   │   │   │
+    ├───┼───┼───┼───┼───┤    ├───┼───┼───┼───┼───┤    ├───┼───┼───┼───┼───┤
+    │   │   │   │   │   │    │   │   │   │   │   │    │   │   │   │   │   │
+    └───┴───┴───┴───┴───┘    └───┴───┴───┴───┴───┘    └───┴───┴───┴───┴───┘
+         First pass               second pass              third pass
+
+    ┌───┬───┬───┬───┬───┐    ┌───┬───┬───┬───┬───┐
+    │   │   │   │   │   │    │   │   │   │   │ - │
+    ├───┼───┼───┼───┼───┤    ├───┼───┼───┼───┼───┤
+    │   │   │   │   │   │    │   │   │   │   │ - │
+    ├───┼───┼───┼───┼───┤    ├───┼───┼───┼───┼───┤
+    │   │   │ X │ X │   │ -> │   │   │   │   │ - │
+    ├───┼───┼───┼───┼───┤    ├───┼───┼───┼───┼───┤
+    │   │   │ X │ X │   │    │   │   │   │   │ - │
+    ├───┼───┼───┼───┼───┤    ├───┼───┼───┼───┼───┤
+    │   │   │   │   │   │    │ - │ - │ - │ - │ - │
+    └───┴───┴───┴───┴───┘    └───┴───┴───┴───┴───┘
+         Fourth pass            Unvisited cells
+
+    Cells that are never visited are marked with `-` and are never considered
+    when the kernel traverses over the input, hence they can be removed.
+
+    To match the shape of the kernel (and all parameters) with the input, a
+    slice op is inserted to remove the remaining edges (rows and columns) of the
+    input.
     """
 
     conv2d_op = exir_ops.edge.aten.convolution.default
