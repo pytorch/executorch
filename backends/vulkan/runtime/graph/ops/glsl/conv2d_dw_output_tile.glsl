@@ -100,7 +100,7 @@ void main() {
     }
 
     // accumulate dot product in 1st sum only until tile size
-    if (i < int(TILE_SIZE)) {
+    if (i < TILE_SIZE) {
       for (int j = 0; j < TILE_SIZE; j++, kx++) {
         prev_kernel_line[j] = texelFetch(t_kernel, ivec2(kx, pos.z), 0);
         for (int s = 0; s < BATCH_SIZE_X; s++) {
