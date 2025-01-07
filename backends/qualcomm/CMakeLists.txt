@@ -76,7 +76,6 @@ include_directories(
 
 set(_qnn_schema__srcs
   backends/qualcomm/serialization/qc_compiler_spec.fbs
-  backends/qualcomm/serialization/qc_binary_info.fbs
 )
 set(_qnn_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
 # Paths to headers generated from the .fbs files.
@@ -116,6 +115,7 @@ add_library(qcir_utils STATIC)
 add_library(qnn_backend STATIC)
 add_library(qnn_backend_cache STATIC)
 add_library(qnn_context STATIC)
+add_library(qnn_custom_protocol STATIC)
 add_library(qnn_device STATIC)
 add_library(qnn_executorch_backend SHARED)
 add_library(qnn_executorch_header INTERFACE)
@@ -155,6 +155,7 @@ target_link_libraries(qnn_executorch_logging PRIVATE qnn_schema)
 target_link_libraries(qnn_profiler PRIVATE qnn_executorch_logging)
 target_link_libraries(qnn_logger PRIVATE qnn_implementation ${android_log})
 target_link_libraries(qnn_backend PRIVATE qnn_implementation qnn_logger)
+target_link_libraries(qnn_custom_protocol PRIVATE qcir_utils)
 target_link_libraries(
   qnn_device PRIVATE qnn_executorch_logging qnn_implementation qnn_logger
 )
@@ -177,7 +178,7 @@ target_link_libraries(
   qnn_factory
   PUBLIC qnn_header
   PRIVATE qnn_schema qnn_backend qnn_device qnn_context qnn_graph
-          qnn_mem_manager
+          qnn_mem_manager qnn_custom_protocol
 )
 target_link_libraries(
   qnn_manager PRIVATE qnn_factory wrappers qnn_schema utils shared_buffer

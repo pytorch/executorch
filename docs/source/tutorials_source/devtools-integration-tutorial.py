@@ -89,10 +89,7 @@ class Net(nn.Module):
 
 model = Net()
 
-aten_model: ExportedProgram = export(
-    model,
-    (torch.randn(1, 1, 32, 32),),
-)
+aten_model: ExportedProgram = export(model, (torch.randn(1, 1, 32, 32),), strict=True)
 
 edge_program_manager: EdgeProgramManager = to_edge(
     aten_model, compile_config=EdgeCompileConfig(_check_ir_validity=True)
@@ -141,7 +138,7 @@ from torch.export import export
 
 # Step 1: ExecuTorch Program Export
 m_name = "forward"
-method_graphs = {m_name: export(model, (torch.randn(1, 1, 32, 32),))}
+method_graphs = {m_name: export(model, (torch.randn(1, 1, 32, 32),), strict=True)}
 
 # Step 2: Construct Method Test Suites
 inputs = [[torch.randn(1, 1, 32, 32)] for _ in range(2)]
@@ -235,7 +232,7 @@ for event_block in inspector.event_blocks:
     # Via EventBlocks
     for event in event_block.events:
         if event.name == "native_call_addmm.out":
-            print(event.name, event.perf_data.raw)
+            print(event.name, event.perf_data.raw if event.perf_data else "")
 
     # Via Dataframe
     df = event_block.to_dataframe()
@@ -267,11 +264,12 @@ for event_block in inspector.event_blocks:
     df = df[df.event_name == "native_call_convolution.out"]
     if len(df) > 0:
         slowest = df.loc[df["p50"].idxmax()]
-        print(slowest.event_name)
+        assert slowest
+        print(slowest.name)
         print()
-        pp.pprint(slowest.stack_traces)
+        pp.pprint(slowest.stack_traces if slowest.stack_traces else "")
         print()
-        pp.pprint(slowest.module_hierarchy)
+        pp.pprint(slowest.module_hierarchy if slowest.module_hierarchy else "")
 
 ######################################################################
 # If a user wants the total runtime of a module, they can use

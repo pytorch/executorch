@@ -8,6 +8,8 @@
 import logging
 import unittest
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common, conftest
 
@@ -55,7 +57,7 @@ class TestMobileNetV2(unittest.TestCase):
                 self.mv2,
                 example_inputs=self.model_inputs,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+MI", permute_memory_to_nhwc=True
                 ),
             )
             .export()
@@ -70,7 +72,7 @@ class TestMobileNetV2(unittest.TestCase):
                 self.mv2,
                 example_inputs=self.model_inputs,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+BI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+BI", permute_memory_to_nhwc=True
                 ),
             )
             .quantize()
@@ -83,6 +85,8 @@ class TestMobileNetV2(unittest.TestCase):
             .run_method_and_compare_outputs(atol=1.0, qtol=1, inputs=self.model_inputs)
         )
 
+    @pytest.mark.slow
+    @pytest.mark.corstone_fvp
     def test_mv2_u55_BI(self):
         tester = (
             ArmTester(
@@ -101,6 +105,8 @@ class TestMobileNetV2(unittest.TestCase):
                 atol=1.0, qtol=1, inputs=self.model_inputs, target_board="corstone-300"
             )
 
+    @pytest.mark.slow
+    @pytest.mark.corstone_fvp
     def test_mv2_u85_BI(self):
         tester = (
             ArmTester(

@@ -1,8 +1,9 @@
 import torch
-from torch._subclasses import FakeTensor
 
 from executorch.exir.pass_base import ExportPass
+from torch._subclasses import FakeTensor
 from torch.fx.passes.infra.pass_base import PassResult
+
 
 def _normalize_dims(tensor: FakeTensor, dim_0: int, dim_1: int):
     """
@@ -16,6 +17,7 @@ def _normalize_dims(tensor: FakeTensor, dim_0: int, dim_1: int):
         dim_1 = ndim + dim_1
     assert dim_0 < ndim and dim_1 < ndim, f"Invalid dimensions: {dim_0}, {dim_1}"
     return dim_0, dim_1
+
 
 class RemoveRedundantTransposes(ExportPass):
     """
@@ -36,10 +38,14 @@ class RemoveRedundantTransposes(ExportPass):
 
     NB: Does not work for inplace ops or functionalized _copy suffix ops
     """
+
     def call(self, graph_module: torch.fx.GraphModule):
         graph_changed = False
         for node in graph_module.graph.nodes:
-            if node.op == 'call_function' and node.target == torch.ops.aten.transpose.int:
+            if (
+                node.op == "call_function"
+                and node.target == torch.ops.aten.transpose.int
+            ):
                 # Check if the next node is also a transpose node
                 tranpose_users = list(node.users.keys())
                 dim_0 = node.args[1]
@@ -47,25 +53,36 @@ class RemoveRedundantTransposes(ExportPass):
                 dim_0, dim_1 = _normalize_dims(node.args[0].meta["val"], dim_0, dim_1)
 
                 for user in tranpose_users:
-                    if user.op == 'call_function' and user.target == torch.ops.aten.transpose.int:
+                    if (
+                        user.op == "call_function"
+                        and user.target == torch.ops.aten.transpose.int
+                    ):
                         # Get the arguments of the current and next transpose nodes
                         user_dim_0 = user.args[1]
                         user_dim_1 = user.args[2]
-                        user_dim_0, user_dim_1 = _normalize_dims(user.args[0].meta["val"], user_dim_0, user_dim_1)
-                        
+                        user_dim_0, user_dim_1 = _normalize_dims(
+                            user.args[0].meta["val"], user_dim_0, user_dim_1
+                        )
+
                         # Check if the two transpose nodes undo each other
                         if dim_0 == user_dim_0 and dim_1 == user_dim_1:
                             graph_changed = True
                             user.replace_all_uses_with(node.args[0])
 
         for node in graph_module.graph.nodes:
-            if node.op == 'call_function' and node.target == torch.ops.aten.permute.default:
+            if (
+                node.op == "call_function"
+                and node.target == torch.ops.aten.permute.default
+            ):
                 # Check if the next node is also a transpose node
                 permute_users = list(node.users.keys())
                 dim_list = node.args[1]
 
                 for user in permute_users:
-                    if user.op == 'call_function' and user.target == torch.ops.aten.permute.default:
+                    if (
+                        user.op == "call_function"
+                        and user.target == torch.ops.aten.permute.default
+                    ):
                         # Get the arguments of the current and next transpose nodes
                         user_dim_list = user.args[1]
 

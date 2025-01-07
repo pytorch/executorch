@@ -30,6 +30,8 @@ build_type="Release"
 extra_build_flags=""
 build_only=false
 reorder_inputs=""
+system_config=""
+memory_mode=""
 
 help() {
     echo "Usage: $(basename $0) [options]"
@@ -45,6 +47,9 @@ help() {
     echo "  --build_only                           Only build, don't run FVP"
     echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scrach dir if you not using default"
     echo "  --reorder_inputs=<FLAGS>               Reorder the inputs. This can be required when inputs > 1."
+    echo "  --system_config=<CONFIG>               System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
+    echo "                                            NOTE: If given, this option must match the given target. This option also sets timing adapter values customized for specific hardware, see ./executor_runner/CMakeLists.txt."
+    echo "  --memory_mode=<MODE>                   Memory mode to select from the Vela configuration file (see vela.ini), e.g. Shared_Sram/Sram_Only. Default: 'Shared_Sram' for Ethos-U55 targets, 'Sram_Only' for Ethos-U85 targets"
     exit 0
 }
 
@@ -62,6 +67,8 @@ for arg in "$@"; do
       --build_only) build_only=true ;;
       --scratch-dir=*) root_dir="${arg#*=}";;
       --reorder_inputs=*) reorder_inputs="${arg#*=}";;
+      --system_config=*) system_config="${arg#*=}";;
+      --memory_mode=*) memory_mode="${arg#*=}";;
       *)
       ;;
     esac
@@ -85,11 +92,30 @@ setup_path_script=${root_dir}/setup_path.sh
 et_root_dir=$(cd ${script_dir}/../.. && pwd)
 et_build_dir=${et_root_dir}/cmake-out
 
+# Set target based variables
 fvp_model=FVP_Corstone_SSE-300_Ethos-U55
 if [[ ${target} =~ "ethos-u85" ]]
 then
     echo "target is ethos-u85 variant so switching to CS320 FVP"
     fvp_model=FVP_Corstone_SSE-320
+fi
+
+if [[ ${system_config} == "" ]]
+then
+    system_config="Ethos_U55_High_End_Embedded"
+    if [[ ${target} =~ "ethos-u85" ]]
+    then
+        system_config="Ethos_U85_SYS_DRAM_Mid"
+    fi
+fi
+
+if [[ ${memory_mode} == "" ]]
+then
+    memory_mode="Shared_Sram"
+    if [[ ${target} =~ "ethos-u85" ]]
+    then
+        memory_mode="Sram_Only"
+    fi
 fi
 
 toolchain_cmake=${script_dir}/ethos-u-setup/arm-none-eabi-gcc.cmake
@@ -125,7 +151,7 @@ function generate_pte_file() {
     # We are using the aot_lib from build_quantization_aot_lib below
     SO_LIB=$(find cmake-out-aot-lib -name libquantized_ops_aot_lib.${SO_EXT})
 
-    local ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --reorder_inputs=${reorder_inputs} --output ${output_folder} --so_library=$SO_LIB"
+    local ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --reorder_inputs=${reorder_inputs} --output ${output_folder} --so_library=$SO_LIB --system_config=${system_config} --memory_mode=${memory_mode}"
     echo "CALL ${ARM_AOT_CMD}" >&2
     ${ARM_AOT_CMD} 1>&2
 
@@ -271,10 +297,8 @@ function build_executorch_runner() {
     local pte=${1}
     if [[ ${target} == *"ethos-u55"*  ]]; then
         local target_cpu=cortex-m55
-      local target_board=corstone-300
     else
         local target_cpu=cortex-m85
-      local target_board=corstone-320
     fi
     echo "--------------------------------------------------------------------------------"
     echo "Build Arm Baremetal executor_runner for ${target} - '${executor_runner_path}/cmake-out'"
@@ -291,7 +315,6 @@ function build_executorch_runner() {
       -DCMAKE_BUILD_TYPE=${build_type}            \
       -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}   \
       -DTARGET_CPU=${target_cpu}                  \
-      -DTARGET_BOARD=${target_board}              \
       -DET_DIR_PATH:PATH=${et_root_dir}           \
       -DET_BUILD_DIR_PATH:PATH=${et_build_dir}    \
       -DET_PTE_FILE_PATH:PATH="${pte}"            \
@@ -299,6 +322,7 @@ function build_executorch_runner() {
       -DETHOSU_TARGET_NPU_CONFIG=${target}        \
       ${build_with_etdump_flags}                  \
       -DPYTHON_EXECUTABLE=$(which python3)        \
+      -DSYSTEM_CONFIG=${system_config}            \
       ${extra_build_flags}                        \
       -B ${executor_runner_path}/cmake-out
 

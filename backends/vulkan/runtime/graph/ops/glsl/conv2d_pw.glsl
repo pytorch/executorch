@@ -34,13 +34,22 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 #extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
 
+// shared memory to hold calculated positions, this would reduce register usage thus improving performance.
+shared u16vec2 pos_shared[gl_WorkGroupSize.x * gl_WorkGroupSize.y * gl_WorkGroupSize.z * TILE_SIZE * TILE_SIZE];
+
 /*
  * Computes a 2D pointwise convolution of an NxN output tile. Calculating an
  * output tile for pointwise convolution is more efficient because the kernel
  * size is only 1x1, making it easier to re-use loaded texels from t_kernel.
  */
 void main() {
-  const u16vec3 gpos = u16vec3(gl_GlobalInvocationID);
+  const uvec2 out_limits_scaled = (out_limits.xy + TILE_SIZE - 1) / TILE_SIZE;
+  const uint shared_mem_stride = gl_WorkGroupSize.x * gl_WorkGroupSize.y * gl_WorkGroupSize.z;
+
+  const u16vec3 gpos = u16vec3(
+    gl_GlobalInvocationID.x % out_limits_scaled.x,
+    (gl_GlobalInvocationID.x / out_limits_scaled.x) % out_limits_scaled.y,
+    gl_GlobalInvocationID.x / (out_limits_scaled.x * out_limits_scaled.y));
 
   // Output position for TILE_SIZE = 2
   // +--------+--------+
@@ -48,18 +57,19 @@ void main() {
   // +--------+--------+
   // | pos[2] | pos[3] |
   // +--------+--------+
-  u16vec3 pos[TILE_SIZE * TILE_SIZE];
+  u16vec2 pos[TILE_SIZE * TILE_SIZE];
   for (int y = 0, i = 0; y < TILE_SIZE; ++y) {
     for (int x = 0; x < TILE_SIZE; ++x) {
-      pos[i] = u16vec3(
-          gpos.x * TILE_SIZE + x, gpos.y * TILE_SIZE + y, gpos.z);
+      pos[i] = u16vec2(
+          gpos.x * TILE_SIZE + x, gpos.y * TILE_SIZE + y);
+      pos_shared[(shared_mem_stride * i) + gl_LocalInvocationIndex] = pos[i];
       i++;
     }
   }
 
   // If the top left position is out of bounds, then this invocation will have
   // no work to do.
-  if (any(greaterThanEqual(pos[0], out_limits))) {
+  if (any(greaterThanEqual(u16vec3(pos[0], gpos.z), out_limits))) {
     return;
   }
 
@@ -68,7 +78,7 @@ void main() {
   // the top-left element is in a region added by padding.
   u16vec2 ipos[TILE_SIZE * TILE_SIZE];
   for (int i = 0; i < TILE_SIZE * TILE_SIZE; ++i) {
-    ipos[i] = pos[i].xy * u16vec2(stride) - u16vec2(padding);
+    ipos[i] = pos[i] * u16vec2(stride) - u16vec2(padding);
   }
 
   vec4 sum[TILE_SIZE * TILE_SIZE];
@@ -133,8 +143,9 @@ void main() {
   }
 
   for (int i = 0; i < TILE_SIZE * TILE_SIZE; ++i) {
-    if (all(lessThan(pos[i], out_limits))) {
-      imageStore(t_out, pos[i], op(sum[i], out_min, out_max));
+    const u16vec2 pos = pos_shared[(shared_mem_stride * i) + gl_LocalInvocationIndex];
+    if (all(lessThan(u16vec3(pos, gpos.z), out_limits))) {
+      imageStore(t_out, u16vec3(pos, gpos.z), op(sum[i], out_min, out_max));
     }
   }
 }

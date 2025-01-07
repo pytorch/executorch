@@ -1,12 +1,13 @@
-import unittest
 import os
+import unittest
 
 import torch
-from torch.testing import FileCheck
-
-from torch.export import export_for_training
 
 from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
+
+from torch.export import export_for_training
+from torch.testing import FileCheck
+
 
 class RemoveRedundantTransposesPassTest(unittest.TestCase):
     def _export(self, model, example_inputs):
@@ -18,9 +19,7 @@ class RemoveRedundantTransposesPassTest(unittest.TestCase):
 
     def _check(self, model, example_inputs, key, before_count, after_count):
         gm = self._export(model, example_inputs)
-        FileCheck().check_count(key, before_count, exactly=True).run(
-            gm.code
-        )
+        FileCheck().check_count(key, before_count, exactly=True).run(gm.code)
         pass_res = RemoveRedundantTransposes()(gm)
         FileCheck().check_count(key, after_count, exactly=True).run(
             pass_res.graph_module.code
@@ -43,7 +42,7 @@ class RemoveRedundantTransposesPassTest(unittest.TestCase):
             def forward(self, x):
                 x = torch.transpose(x, 1, 2)
                 x = torch.transpose(x, 1, 2)
-                x =  x + 1
+                x = x + 1
 
                 x = torch.transpose(x, 2, 3)
                 x = torch.transpose(x, 2, 3)
@@ -66,7 +65,7 @@ class RemoveRedundantTransposesPassTest(unittest.TestCase):
             def forward(self, x):
                 x = torch.transpose(x, 1, 2)
                 x = torch.transpose(x, 1, 2)
-                x =  x + 1
+                x = x + 1
 
                 x = torch.transpose(x, 2, 3)
                 x = torch.transpose(x, 1, 2)
@@ -86,7 +85,7 @@ class RemoveRedundantTransposesPassTest(unittest.TestCase):
             def forward(self, x):
                 x_1 = torch.transpose(x, 1, 2)
                 x_2 = torch.transpose(x_1, 1, 2)
-                x_2 =  x_2 + 1
+                x_2 = x_2 + 1
 
                 x = x_1 + 2
                 x = torch.transpose(x, 1, 2)
@@ -113,7 +112,7 @@ class RemoveRedundantTransposesPassTest(unittest.TestCase):
             def forward(self, x):
                 x = torch.permute(x, [0, 2, 1, 3])
                 x = torch.permute(x, [0, 2, 1, 3])
-                x =  x + 1
+                x = x + 1
 
                 x = torch.permute(x, [0, 1, 3, 2])
                 x = torch.permute(x, [0, 1, 3, 2])
@@ -136,7 +135,7 @@ class RemoveRedundantTransposesPassTest(unittest.TestCase):
             def forward(self, x):
                 x = torch.permute(x, [0, 2, 1, 3])
                 x = torch.permute(x, [0, 2, 1, 3])
-                x =  x + 1
+                x = x + 1
 
                 x = torch.permute(x, [0, 1, 3, 2])
                 x = torch.permute(x, [0, 2, 1, 3])
@@ -156,7 +155,7 @@ class RemoveRedundantTransposesPassTest(unittest.TestCase):
             def forward(self, x):
                 x_1 = torch.permute(x, [0, 2, 1, 3])
                 x_2 = torch.permute(x_1, [0, 2, 1, 3])
-                x_2 =  x_2 + 1
+                x_2 = x_2 + 1
 
                 x = x_1 + 2
                 x = torch.permute(x, [0, 2, 1, 3])

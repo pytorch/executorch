@@ -287,3 +287,74 @@ TEST_F(OpMaxPool2DWithIndicesOutTest, SanityTest3D) {
   EXPECT_TENSOR_CLOSE(out, out_expected);
   EXPECT_TENSOR_CLOSE(indices, indices_expected);
 }
+
+TEST_F(OpMaxPool2DWithIndicesOutTest, CeilMode) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfFloat.make(
+      {2, 7, 7}, {-7, -9,  -6,  -8,  -9, -9,  -6,  -10, -7,  -6,  -10, -7, -10,
+                  -7, -8,  -10, -6,  -8, -8,  -10, -9,  -8,  -6,  -8,  -9, -8,
+                  -8, -8,  -6,  -9,  -9, -8,  -8,  -8,  -8,  -7,  -7,  -6, -7,
+                  -8, -6,  -8,  -9,  -7, -6,  -10, -6,  -9,  -6,
+
+                  -7, -8,  -10, -10, -8, -8,  -10, -10, -6,  -10, -10, -7, -8,
+                  -6, -10, -8,  -8,  -8, -9,  -6,  -9,  -7,  -10, -7,  -6, -9,
+                  -8, -9,  -7,  -8,  -7, -10, -6,  -6,  -6,  -7,  -10, -8, -9,
+                  -6, -9,  -9,  -8,  -8, -8,  -9,  -9,  -10, -8});
+
+  ::std::vector<int64_t> kernel_size_vec = {2, 2};
+  exec_aten::ArrayRef<int64_t> kernel_size = exec_aten::ArrayRef<int64_t>(
+      kernel_size_vec.data(), kernel_size_vec.size());
+  ::std::vector<int64_t> stride_vec = {2, 2};
+  exec_aten::ArrayRef<int64_t> stride =
+      exec_aten::ArrayRef<int64_t>(stride_vec.data(), stride_vec.size());
+  ::std::vector<int64_t> padding_vec = {0, 0};
+  exec_aten::ArrayRef<int64_t> padding =
+      exec_aten::ArrayRef<int64_t>(padding_vec.data(), padding_vec.size());
+  ::std::vector<int64_t> dilation_vec = {1, 1};
+  exec_aten::ArrayRef<int64_t> dilation =
+      exec_aten::ArrayRef<int64_t>(dilation_vec.data(), dilation_vec.size());
+
+  bool ceil_mode = true;
+  exec_aten::Tensor out = tfFloat.zeros({2, 4, 4});
+  exec_aten::Tensor indices = tfLong.zeros({2, 4, 4});
+  exec_aten::Tensor out_expected = tfFloat.make(
+      {2, 4, 4},
+      {-7, -6,  -7, -6, -6, -6, -8, -8, -6, -6, -6, -8, -7, -6, -6, -6,
+
+       -6, -10, -7, -6, -7, -6, -6, -9, -7, -7, -6, -6, -8, -8, -9, -8});
+
+  op_max_pool2d_with_indices_out(
+      self, kernel_size, stride, padding, dilation, ceil_mode, out, indices);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+
+  ceil_mode = false;
+  out = tfFloat.zeros({2, 3, 3});
+  indices = tfLong.zeros({2, 3, 3});
+  out_expected = tfFloat.make(
+      {2, 3, 3},
+      {-7,
+       -6,
+       -7,
+       -6,
+       -6,
+       -8,
+       -6,
+       -6,
+       -6,
+
+       -6,
+       -10,
+       -7,
+       -7,
+       -6,
+       -6,
+       -7,
+       -7,
+       -6});
+
+  op_max_pool2d_with_indices_out(
+      self, kernel_size, stride, padding, dilation, ceil_mode, out, indices);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
