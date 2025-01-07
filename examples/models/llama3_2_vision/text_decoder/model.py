@@ -184,12 +184,12 @@ class Llama3_2Decoder(EagerModelBase):
             return {
                 "input_pos": contiguous_input_pos,
                 "mask": contiguous_mask,
-                "encoder_input": torch.randn(
-                    1, self.encoder_max_seq_len, self.model_.dim, dtype=self.dtype
-                ),
-                "encoder_mask": torch.ones(
-                    [1, self.n_tokens, self.encoder_max_seq_len], dtype=torch.bool
-                ),
+                # "encoder_input": torch.randn(
+                #     1, self.encoder_max_seq_len, self.model_.dim, dtype=self.dtype
+                # ),
+                # "encoder_mask": torch.ones(
+                #     [1, self.n_tokens, self.encoder_max_seq_len], dtype=torch.bool
+                # ),
             }
         else:
             return None
@@ -201,8 +201,8 @@ class Llama3_2Decoder(EagerModelBase):
         if self.use_kv_cache:
             dynamic_shapes = {
                 "tokens": {0: batch_size, 1: dim_seq_len},
-                "encoder_input": None,
-                "encoder_mask": {0: 1, 1: dim_seq_len, 2: None},
+                # "encoder_input": None,
+                # "encoder_mask": {0: 1, 1: dim_seq_len, 2: None},
                 "mask": {0: batch_size, 1: dim_seq_len, 2: None},
                 "input_pos": {0: batch_size, 1: dim_seq_len},
             }
