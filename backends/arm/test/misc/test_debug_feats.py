@@ -52,8 +52,7 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
                 compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .dump_artifact(dump_file)
             .dump_artifact()
         )
