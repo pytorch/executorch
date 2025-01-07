@@ -6,18 +6,21 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/util/reduce_util.h>
-#include <executorch/runtime/kernel/kernel_includes.h>
-#include <xa_nnlib_kernels_api.h>
 #include <algorithm>
 #include <cinttypes>
 #include <cmath>
 
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using torch::executor::Error;
-using torch::executor::KernelRuntimeContext;
+#include <xa_nnlib_kernels_api.h>
+
+#include <executorch/kernels/portable/cpu/util/reduce_util.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+
+using ::executorch::aten::ArrayRef;
+using ::executorch::aten::optional;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::KernelRuntimeContext;
 
 /* ScalarType in Executorch do not have support for below data types.
  * So, creating a placeholder for these data types. Once, ScalarTypes is
@@ -142,7 +145,7 @@ void quantize_impl(
     int* axis,
     int quant_min,
     int quant_max) {
-  const exec_aten::ArrayRef<Tensor::SizesType> input_size = input.sizes();
+  const ArrayRef<Tensor::SizesType> input_size = input.sizes();
 
   int kTensorDimensionLimit = 5;
 
@@ -301,8 +304,8 @@ void quantize_impl(
           }
         }
 
-        exec_aten::optional<exec_aten::ArrayRef<int64_t>> optional_dim_list{
-            exec_aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
+        optional<ArrayRef<int64_t>> optional_dim_list{
+            ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
 
 // Actual quantization logic
 // input, out are the input and output tensors
@@ -487,8 +490,8 @@ void quantize_impl(
           }
         }
 
-        exec_aten::optional<exec_aten::ArrayRef<int64_t>> optional_dim_list{
-            exec_aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
+        optional<ArrayRef<int64_t>> optional_dim_list{
+            ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
 
 // Actual quantization logic
 // input, out are the input and output tensors
@@ -565,9 +568,9 @@ Tensor& quantize_per_tensor_out(
     int64_t quant_max,
     ScalarType dtype,
     Tensor& out) {
-  torch::executor::Error err = resize_tensor(out, input.sizes());
+  Error err = resize_tensor(out, input.sizes());
   ET_CHECK_MSG(
-      err == torch::executor::Error::Ok,
+      err == Error::Ok,
       "Failed to resize out Tensor in quantize_per_tensor_out");
 
   // check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
@@ -600,7 +603,7 @@ Tensor& quantize_per_tensor_tensor_args_out(
   // after ET_KERNEL_CHECK is fully implemented and properly allows non fatal
   // failures.
   if (scale.scalar_type() != ScalarType::Double) {
-    context.fail(torch::executor::Error::InvalidArgument);
+    context.fail(Error::InvalidArgument);
     return out;
   }
   ET_CHECK_MSG(
@@ -657,7 +660,7 @@ Tensor& quantize_per_channel_out(
     int64_t quant_max,
     ScalarType dtype,
     Tensor& out) {
-  torch::executor::Error err = resize_tensor(out, input.sizes());
+  Error err = resize_tensor(out, input.sizes());
 
   // normalize axis
   ET_CHECK_MSG(
@@ -671,7 +674,7 @@ Tensor& quantize_per_channel_out(
   }
 
   ET_CHECK_MSG(
-      err == torch::executor::Error::Ok,
+      err == Error::Ok,
       "Failed to resize out Tensor in quantize_per_channel_out");
 
   ET_CHECK_MSG(
@@ -776,9 +779,9 @@ Tensor& quantize_per_token_out(
           input_strides.data(),
           executorch::runtime::TensorShapeDynamism::STATIC);
   Tensor reshaped_input(&reshaped_input_impl);
-  torch::executor::Error err = resize_tensor(out, input.sizes());
+  Error err = resize_tensor(out, input.sizes());
   ET_CHECK_MSG(
-      err == torch::executor::Error::Ok,
+      err == Error::Ok,
       "Failed to resize out Tensor in quantize_per_channel_out");
 #endif
 
