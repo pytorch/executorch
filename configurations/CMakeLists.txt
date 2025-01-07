@@ -44,6 +44,7 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     LIB_NAME "optimized_native_cpu_ops_lib" FUNCTIONS_YAML
     ${CMAKE_CURRENT_BINARY_DIR}/merged.yaml
   )
+  target_compile_options(optimized_native_cpu_ops_lib PRIVATE "-fexceptions")
   message("Generated files ${gen_command_sources}")
 
   # optimized_native_cpu_ops_lib: Register optimized op kernels into the runtime
