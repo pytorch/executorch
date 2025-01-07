@@ -82,7 +82,6 @@ def _kv_calibrate(
     _, atten_mask, _, k_caches, v_caches = example_inputs
 
     # TODO: change criteria & support batch inputs if necessary
-    pos = torch.tensor(0, dtype=torch.int32)
     max_cache_len = max_seq_len - 1
 
     token_list = []
@@ -114,10 +113,42 @@ def _kv_calibrate(
                 for i, v_cache in enumerate(v_caches)
             ]
 
-            pos += 1
-            atten_mask[0][-pos - 1] = 0
-            if pos >= len(token_list):
-                token_list.append(torch.argmax(logits[:, -1], dim=-1).item())
+    # token_list = sp_model.encode(user_prompts, bos=True, eos=False)
+	
+    user_token_list = [
+        # what is the capital of the united states
+        [128000, 128006, 882, 128007, 271, 12840, 374, 279, 6864, 315, 279, 29292, 5415, 128009, 128006, 78191, 128007, 271],
+        # what is 1 + 1
+        [128000, 128006, 882, 128007, 271, 12840, 374, 220, 16, 489, 220, 16, 128009, 128006, 78191, 128007, 271],
+        # what is the meaning of life
+        [128000, 128006, 882, 128007, 271, 12840, 374, 279, 7438, 315, 2324, 128009, 128006, 78191, 128007, 271],
+    ]
+    
+    for token_list in user_token_list:
+        _, atten_mask, _, k_caches, v_caches = copy.deepcopy(example_inputs)
+        pos = torch.tensor(0, dtype=torch.int32)
+        with torch.no_grad():
+            while token_list[-1] != sp_model.eos_id and pos < max_cache_len:
+                logits, new_k_caches, new_v_caches = module(
+                    torch.full((1, 1), token_list[pos], dtype=torch.int32),
+                    atten_mask,
+                    torch.full((1, 1), pos),
+                    *k_caches,
+                    *v_caches,
+                )
+                k_caches = [
+                    torch.cat([k_cache[:, :, 1:], new_k_caches[i]], dim=-1)
+                    for i, k_cache in enumerate(k_caches)
+                ]
+                v_caches = [
+                    torch.cat([v_cache[:, 1:, :], new_v_caches[i]], dim=1)
+                    for i, v_cache in enumerate(v_caches)
+                ]
+                
+                pos += 1
+                atten_mask[0][-pos - 1] = 0
+                if pos >= len(token_list):
+                    token_list.append(torch.argmax(logits[:, -1], dim=-1).item())
 
     print(f"kv calibration data:\n{tokenizer.decode(token_list)}")
 
@@ -328,7 +359,17 @@ class SingleLlama:
             max_seq_len=self.llama_meta["get_max_seq_len"],
         )
 
-        self.llama_model = convert_pt2e(fx_graph_module)
+        fx_graph_module = convert_pt2e(fx_graph_module)
+
+        logging.info("Evaluating the converted model...")
+        calibrate(
+            self.get_example_inputs(self.llama_meta["get_use_kv_cache"]),
+            args.prompt,
+            fx_graph_module,
+            tokenizer_model_path=args.tokenizer_model,
+            max_seq_len=self.llama_meta["get_max_seq_len"],
+        )
+        self.llama_model = fx_graph_module
 
     def lowering_modules(
         self,
