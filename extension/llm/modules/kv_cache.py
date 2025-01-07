@@ -111,11 +111,13 @@ class KVCache(TuneKVCache):
         v_out = self.v_cache
 
         if self.transpose_cache:
-            k_out[:, :, self.cache_pos[:seq_len]] = k_val
-            v_out[:, :, self.cache_pos[:seq_len]] = v_val
+            pos_mask = torch.arange(k_out.shape[2]) < seq_len
+            k_out[:, :, self.cache_pos[pos_mask]] = k_val
+            v_out[:, :, self.cache_pos[pos_mask]] = v_val
         else:
-            k_out[:, self.cache_pos[:seq_len]] = k_val
-            v_out[:, self.cache_pos[:seq_len]] = v_val
+            pos_mask = torch.arange(k_out.shape[1]) < seq_len
+            k_out[:, self.cache_pos[pos_mask], :] = k_val
+            v_out[:, self.cache_pos[pos_mask], :] = v_val
 
         # forward cache_pos seq_len positions along
         # cache_pos starts at (0, 1, 2, 3, 4, 5, ...)
@@ -124,7 +126,8 @@ class KVCache(TuneKVCache):
         # this allows us to track the current position in the cache
         # after the last update in a compile-friendly way without any dynamism
         # e.g. relying on an int size tracker, or re-creating cache_pos every time
-        self.cache_pos.add_(seq_len)
+        mask = (seq_len > 0) * 1
+        self.cache_pos.add_(seq_len * mask)
 
         return k_out, v_out
 

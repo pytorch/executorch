@@ -219,28 +219,29 @@ class AttentionTest(unittest.TestCase):
         self.et_mha.setup_cache(1, dtype=torch.float32, max_seq_len=self.max_seq_len)
         self.tt_mha.setup_cache(1, dtype=torch.float32, max_seq_len=self.max_seq_len)
 
-        # mask
         mask = self.causal_mask[self.input_pos, :]
-        # First run
+        # First run, for the value of the second parameter in the forward, it doesn't matter
+        # whether it is the same as the first (self attention) or if it is different (cross
+        # attention).
         et_res = self.et_mha(
             self.x, self.x, mask=mask, input_pos=self.input_pos
-        )  # Self attention with input pos.
+        )
         tt_res = self.tt_mha(
             self.x, self.x, mask=mask, input_pos=self.input_pos
-        )  # Self attention with input pos.
+        )
 
         self.assertTrue(torch.allclose(et_res, tt_res))
 
-        # Second run test kv cache read. Input pos is [10, 11, ..., 19]
+        # Second run test kv cache read. Input pos is [10, 11, ..., 19].
         next_input_pos = torch.arange(10, 20).unsqueeze(0)
 
         empty_y = torch.full_like(self.x, torch.nan)
         mask = self.causal_mask[next_input_pos, :]
         et_res = self.et_mha(
             self.x, empty_y, mask=mask, input_pos=next_input_pos
-        )  # Self attention with input pos.
+        )  # Cross attention with no y input, ET uses a tensor of empty values.
         tt_res = self.tt_mha(
             self.x, None, mask=mask, input_pos=next_input_pos
-        )  # Self attention with input pos.
+        )  # Cross attention with no y input, TorchTune uses None.
 
         assert_close(et_res, tt_res)
