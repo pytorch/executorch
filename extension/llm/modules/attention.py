@@ -364,11 +364,6 @@ class SDPA(nn.Module):
             k = k.unsqueeze(2).expand(expand_shape).flatten(1, 2)
             v = v.unsqueeze(2).expand(expand_shape).flatten(1, 2)
 
-        # print(f"q shape: {q.shape}")
-        # print(f"k shape: {k.shape}")
-        # print(f"v shape: {v.shape}")
-        # print(f"mask shape: {mask.shape}")
-
         output = self._attention_fn(
             q,
             k,
