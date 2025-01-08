@@ -33,7 +33,6 @@ class TransposeVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         output_rank = len(output.shape)
         perms = [dim % output_rank for dim in inputs[1].special]
