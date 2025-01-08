@@ -1655,8 +1655,12 @@ class TestQNNFloatingPointUtils(TestQNN):
             to_backend(edge_prog.exported_program, QnnPartitioner(compiler_specs[i]))
             for i, edge_prog in enumerate(edge_progs)
         ]
-        prog_mgr = generate_multi_graph_program(
-            compiler_specs=compiler_specs[0], exported_programs=exported_programs
+        prog_mgr, _ = generate_multi_graph_program(
+            compiler_specs=compiler_specs[0],
+            processed_bytes=[
+                prog.graph_module.lowered_module_0.processed_bytes
+                for prog in exported_programs
+            ],
         )
         for index, module in enumerate(modules):
             self.verify_output(
@@ -2120,9 +2124,12 @@ class TestQNNQuantizedUtils(TestQNN):
             to_backend(edge_prog.exported_program, QnnPartitioner(compiler_specs[i]))
             for i, edge_prog in enumerate(edge_progs)
         ]
-        prog_mgr = generate_multi_graph_program(
+        prog_mgr, _ = generate_multi_graph_program(
             compiler_specs=compiler_specs[0],
-            exported_programs=exported_programs,
+            processed_bytes=[
+                prog.graph_module.lowered_module_0.processed_bytes
+                for prog in exported_programs
+            ],
         )
         for index, module in enumerate(modules):
             self.verify_output(
