@@ -134,7 +134,7 @@ void HybridMemory::init_io() {
 
   auto init_kv = [&]() {
     ptr->kv_logits.resize(vocab_size_);
-    ptr->kv_attention_mask.resize((kv_cache_len_ + 1), -255);
+    ptr->kv_attention_mask.resize((kv_cache_len_ + 1), 0);
     ptr->k_cache.reserve(num_layers_);
     for (int layer = 0; layer < num_layers_; layer++) {
       ptr->k_cache.emplace_back();
@@ -315,9 +315,9 @@ void HybridMemory::prepare_prefill_io(
   for (int i = 0; i < prefill_cache_len_; ++i) {
     for (int j = 0; j < prefill_cache_len_; ++j) {
       if (i < j) {
-        ptr->prefill_atten_mask[i * prefill_cache_len_ + j] = -255;
-      } else {
         ptr->prefill_atten_mask[i * prefill_cache_len_ + j] = 0;
+      } else {
+        ptr->prefill_atten_mask[i * prefill_cache_len_ + j] = 65535;
       }
     }
   }
@@ -458,7 +458,7 @@ void HybridMemory::update_kv_io(
   // update position_ids
   ptr->input_pos = static_cast<int32_t>(pos);
   // update causal mask for next token
-  ptr->kv_attention_mask[kv_cache_len_ - pos] = 0;
+  ptr->kv_attention_mask[kv_cache_len_ - pos] = 65535;
 
   // update v_cache
   auto& v_cache_in = v_cache_in_[kv_forward_name_];
@@ -494,6 +494,15 @@ void HybridMemory::update_kv_io(
     }
     k_cache_in[i]->set_data(ptr_in + 1);
   }
+}
+
+void HybridMemory::update_prefill_io(
+    int64_t cur_token,
+    int64_t pos,
+    std::vector<std::vector<Tensor>>& output_tensors) {
+  (void)output_tensors;
+  IO* ptr = static_cast<IO*>(data_ptr_.get());
+  ptr->prefill_input_toks[pos] = static_cast<int32_t>(cur_token);
 }
 
 } // namespace example

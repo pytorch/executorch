@@ -28,7 +28,6 @@ class RshiftVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         input_shape = inputs[0].shape
         input_0_rank = len(input_shape)
