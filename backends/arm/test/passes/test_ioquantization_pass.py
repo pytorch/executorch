@@ -40,7 +40,27 @@ class TestIOQuantizationPass(unittest.TestCase):
             .quantize()
             .export()
             .to_edge()
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 3
+                }
+            )
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 3
+                }
+            )
             .partition()
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2
+                }
+            )
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 1
+                }
+            )
         )
         edge = tester.get_artifact()
         edge.transform(
