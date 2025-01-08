@@ -51,6 +51,11 @@ DEFINE_int32(
 DEFINE_double(logits_scale, 0.0, "Logits scale");
 DEFINE_int32(logits_offset, 0, "Logits offset");
 
+DEFINE_bool(
+    gen_etdump,
+    false,
+    "false: Disable ET dump/ True: Enable ET dump (default: false)");
+
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -61,7 +66,8 @@ int main(int argc, char** argv) {
       FLAGS_logits_scale,
       FLAGS_logits_offset,
       FLAGS_temperature,
-      FLAGS_eval_mode);
+      FLAGS_eval_mode,
+      FLAGS_gen_etdump);
   std::vector<char> buf;
   buf.reserve(5 * FLAGS_seq_len); // assume each token is around 5 char
   std::ofstream fout(FLAGS_output_path.c_str());

@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # model sharding with custom op
-set(CUSTOM_OP_SRCS_FILE 
+set(CUSTOM_OP_SRCS_FILE
   "${EXECUTORCH_SOURCE_DIR}/extension/llm/custom_ops/op_fallback.cpp"
 )
 add_library(custom_ops ${CUSTOM_OP_SRCS_FILE})
@@ -45,7 +45,7 @@ list(
 # build qnn llama3.2 1b runner
 add_executable(qnn_llama3_2_runner ${_llama3_2_runner__srcs})
 target_include_directories(
-  qnn_llama3_2_runner PUBLIC ${_common_include_directories}
+  qnn_llama3_2_runner PUBLIC ${_common_include_directories} ${EXECUTORCH_SOURCE_DIR}/devtools/etdump
 )
 
 target_link_libraries(
@@ -58,6 +58,8 @@ target_link_libraries(
   gflags
   re2::re2
   custom_ops
+  etdump
+  ${FLATCCRT_LIB}
 )
 target_compile_options(
   qnn_llama3_2_runner PUBLIC ${_common_compile_options}

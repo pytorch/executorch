@@ -17,6 +17,7 @@
 #include <string>
 #include <unordered_map>
 
+#include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama3_2/runner/io_memory.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
@@ -32,7 +33,8 @@ class Runner {
       const float logits_scale,
       const int32_t logits_offset,
       const float temperature,
-      const int eval_mode);
+      const int eval_mode,
+      const bool gen_etdump);
 
   struct Stats {
     // Scaling factor for timestamps - in this case, we use ms.
@@ -71,6 +73,7 @@ class Runner {
   void stop();
   std::vector<executorch::runtime::Result<executorch::runtime::MethodMeta>>
   get_methods_meta(std::string& method_name);
+  void gen_etdump_data();
 
  private:
   template <typename T>
@@ -98,6 +101,11 @@ class Runner {
   float temperature_;
   std::unique_ptr<executorch::extension::llm::Tokenizer> tokenizer_;
   std::unique_ptr<executorch::extension::llm::Sampler> sampler_;
+  std::unique_ptr<torch::executor::ETDumpGen> prefill_dump_;
+  std::unique_ptr<torch::executor::ETDumpGen> decode_dump_;
+  bool gen_etdump_ = false;
+  std::string prefill_etdump_path_;
+  std::string decode_etdump_path_;
   Stats stats_;
   std::unique_ptr<Memory> io_mem_;
   EvalMode eval_mode_;
