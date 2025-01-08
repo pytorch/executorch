@@ -43,6 +43,10 @@ class Memory {
       int64_t cur_token,
       int64_t pos,
       std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) = 0;
+  virtual void update_prefill_io(
+      int64_t cur_token,
+      int64_t pos,
+      std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) = 0;
   void* get_mutable_ptr();
   std::vector<executorch::aten::Tensor> get_input_tensors(
       int shard_index,
@@ -97,17 +101,22 @@ class HybridMemory : public Memory {
       int64_t pos,
       std::vector<std::vector<executorch::aten::Tensor>>& output_tensors)
       override;
+  void update_prefill_io(
+      int64_t cur_token,
+      int64_t pos,
+      std::vector<std::vector<executorch::aten::Tensor>>& output_tensors)
+      override;
   struct IO {
     int32_t input_tok;
     int32_t input_pos;
     std::vector<std::vector<std::vector<uint8_t>>> k_cache;
     std::vector<std::vector<uint8_t>> v_cache;
     std::vector<std::vector<uint8_t>> k_cache_out;
-    std::vector<float> kv_attention_mask;
-    std::vector<float> kv_logits;
+    std::vector<uint16_t> kv_attention_mask;
+    std::vector<uint16_t> kv_logits;
     std::vector<int32_t> prefill_input_toks;
-    std::vector<float> prefill_atten_mask;
-    std::vector<float> prefill_logits;
+    std::vector<uint16_t> prefill_atten_mask;
+    std::vector<uint16_t> prefill_logits;
   };
 
  private:
