@@ -32,7 +32,6 @@ class UpsampleNearest2dVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         assert (
             inputs[0].shape is not None and output.shape is not None

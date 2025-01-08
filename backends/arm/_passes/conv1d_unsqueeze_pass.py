@@ -12,10 +12,8 @@ import torch
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_param_tensor,
-    insert_q_dq_pair,
     is_param_node,
 )
-from executorch.backends.arm.tosa_quant_utils import dq_op, q_op
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -27,10 +25,8 @@ class Conv1dUnsqueezePass(ExportPass):
     supports 2d and 3d convolution. This is done by modifying the graph to do the
     following:
     1) unsqueeze the convolution's input from 3d to 4d
-    2) if the input to unsqueeze is quantized, insert q/dq-pair after unsqueeze
-    3) perform a conv2d (with a modified version of the original conv1d args)
-    4) squeeze the output back down to 3d.
-    5) if all users of squeeze are quantized, insert q/dq-pair before squeeze
+    2) perform a conv2d (with a modified version of the original conv1d args)
+    3) squeeze the output back down to 3d.
     """
 
     def __init__(self, exported_program: ExportedProgram) -> None:
@@ -94,8 +90,6 @@ class Conv1dUnsqueezePass(ExportPass):
                         continue
 
                     kernel_node = node.args[1]
-                    if kernel_node.target == dq_op:
-                        kernel_node = kernel_node.args[0]
 
                     if not is_param_node(self.exported_program, kernel_node):
                         raise AssertionError(
@@ -131,11 +125,6 @@ class Conv1dUnsqueezePass(ExportPass):
                         )
                         node.replace_input_with(input_node, unsqueeze_before)
 
-                    # If Quantized we must insert unsqueeze --> q --> dq --> node
-                    if input_node.target == dq_op:
-                        q_params = input_node.args[1:]
-                        insert_q_dq_pair(graph, unsqueeze_before, q_params)
-
                     with graph.inserting_after(node):
                         squeeze_after = create_node(
                             graph,
@@ -150,13 +139,6 @@ class Conv1dUnsqueezePass(ExportPass):
                         ]
                         for user in original_users:
                             user.replace_input_with(node, squeeze_after)
-
-                        # If quantized, insert conv2d --> q --> dq --> squeeze
-                    if all(
-                        original_user.target == q_op for original_user in original_users
-                    ):
-                        q_params = original_users[0].args[1:]
-                        insert_q_dq_pair(graph, node, q_params)
 
         graph_module.recompile()
         # Since we are overriding "call", we need to call the parent's "call"
