@@ -299,7 +299,9 @@ class LlamaDecoderLayer(nn.Module):
 
 
 class LlamaModel(nn.Module):
-    def __init__(self, config: ModelArgs, output_new_cache_only=True):
+    def __init__(
+        self, config: ModelArgs, output_new_cache_only=True, use_i64_token=False
+    ):
         super().__init__()
         self.dim = config.dim
         self.head_dim = config.dim // config.n_heads
@@ -312,6 +314,7 @@ class LlamaModel(nn.Module):
         self.rope_freq_base = config.rope_freq_base
         self.use_kv_cache = config.use_kv_cache
         self.output_new_cache_only = output_new_cache_only
+        self.use_i64_token = use_i64_token
 
         self.layers = nn.ModuleList(
             [
@@ -390,10 +393,12 @@ class LlamaModel(nn.Module):
         return logits, output_k_cache, output_v_cache
 
     def get_example_inputs(self, use_kv_cache=True):
+        dtype = torch.int64 if self.use_i64_token else torch.int32
         if use_kv_cache:
             tokens = torch.randint(
-                self.vocab_size, (self.max_batch_size, 1), dtype=torch.int32
+                self.vocab_size, (self.max_batch_size, 1), dtype=dtype
             )
+
             pos_ids = torch.zeros((self.max_batch_size, 1), dtype=torch.int32)
             k_cache, v_cache = [], []
             atten_mask = torch.full((self.max_batch_size, self.max_seq_len), -255.0)
@@ -424,7 +429,7 @@ class LlamaModel(nn.Module):
             )
 
         max_promp = self.max_seq_len - 1
-        tokens = torch.arange(0, max_promp, 1, dtype=torch.int32).unsqueeze(0)
+        tokens = torch.arange(0, max_promp, 1, dtype=dtype).unsqueeze(0)
         atten_mask = torch.triu(torch.rand((max_promp, max_promp)), 1)
         atten_mask[atten_mask != 0] = -255
         return (
