@@ -8,6 +8,8 @@
 
 #include <executorch/backends/cadence/fusion_g3/operators/operators.h>
 
+#include <cmath>
+
 #include <xa_nnlib_kernels_api.h>
 
 #include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
@@ -16,7 +18,6 @@
 #include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
-#include <cmath>
 
 using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;

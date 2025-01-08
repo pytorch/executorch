@@ -7,13 +7,16 @@
  */
 
 #include <executorch/backends/cadence/fusion_g3/operators/operators.h>
+
+#include <cmath>
+#include <tuple>
+
+#include <xa_nnlib_kernels_api.h>
+
 #include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
 #include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
 #include <executorch/kernels/portable/cpu/vec_ops.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <xa_nnlib_kernels_api.h>
-#include <cmath>
-#include <tuple>
 
 using Tensor = ::executorch::aten::Tensor;
 using ScalarType = ::executorch::aten::ScalarType;

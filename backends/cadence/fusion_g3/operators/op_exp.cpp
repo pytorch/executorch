@@ -7,11 +7,14 @@
  */
 
 #include <executorch/backends/cadence/fusion_g3/operators/operators.h>
+
+#include <cmath>
+
+#include <xa_nnlib_kernels_api.h>
+
 #include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
 #include <executorch/kernels/portable/cpu/pattern/pattern.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <xa_nnlib_kernels_api.h>
-#include <cmath>
 
 using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;

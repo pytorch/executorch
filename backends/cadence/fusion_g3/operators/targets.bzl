@@ -43,8 +43,8 @@ OPERATORS = [
     "div",
     "exp",
     "mean",
-    "slice",
-    "permute"
+    "slice_copy",
+    "permute_copy"
 ]
 
 def define_common_targets():

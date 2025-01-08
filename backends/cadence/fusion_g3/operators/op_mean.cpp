@@ -146,8 +146,10 @@ Tensor& mean_dim_out(
       scratch_size *= inp_shape[i];
     }
 
-    void* __restrict__ p_scratch_in =
-        (void* __restrict__)malloc(scratch_size * sizeof(float));
+    executorch::runtime::Result<void*> temp_mem =
+        ctx.allocate_temp(scratch_size * sizeof(float));
+
+    void* __restrict__ p_scratch_in = (void* __restrict__)(temp_mem.get());
 
     XT_KERNEL_CHECK(
         ctx,

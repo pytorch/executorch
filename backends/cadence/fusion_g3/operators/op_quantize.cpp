@@ -6,11 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/cadence/fusion_g3/operators/operators.h>
+
 #include <algorithm>
 #include <cinttypes>
 #include <cmath>
-
-#include <executorch/backends/cadence/fusion_g3/operators/operators.h>
 
 #include <xa_nnlib_kernels_api.h>
 
