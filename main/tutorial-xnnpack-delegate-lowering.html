@@ -512,14 +512,14 @@ Before you begin it is recommended you go through the following:</div>
 </div>
 <div class="section" id="lowering-a-model-to-xnnpack">
 <h2>Lowering a model to XNNPACK<a class="headerlink" href="#lowering-a-model-to-xnnpack" title="Permalink to this heading">¶</a></h2>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">import</span> <span class="nn">torchvision.models</span> <span class="k">as</span> <span class="nn">models</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.models</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">models</span>
 
-<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span><span class="p">,</span> <span class="n">ExportedProgram</span>
-<span class="kn">from</span> <span class="nn">torchvision.models.mobilenetv2</span> <span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
-<span class="kn">from</span> <span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span> <span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">EdgeProgramManager</span><span class="p">,</span> <span class="n">ExecutorchProgramManager</span><span class="p">,</span> <span class="n">to_edge_transform_and_lower</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span><span class="p">,</span> <span class="n">ExportedProgram</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models.mobilenetv2</span><span class="w"> </span><span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">EdgeProgramManager</span><span class="p">,</span> <span class="n">ExecutorchProgramManager</span><span class="p">,</span> <span class="n">to_edge_transform_and_lower</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.backend_api</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_backend</span>
 
 
 <span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
@@ -565,22 +565,22 @@ Before you begin it is recommended you go through the following:</div>
 <div class="section" id="lowering-a-quantized-model-to-xnnpack">
 <h2>Lowering a Quantized Model to XNNPACK<a class="headerlink" href="#lowering-a-quantized-model-to-xnnpack" title="Permalink to this heading">¶</a></h2>
 <p>The XNNPACK delegate can also execute symmetrically quantized models. To understand the quantization flow and learn how to quantize models, refer to <span class="xref myst">Custom Quantization</span> note. For the sake of this tutorial, we will leverage the <code class="docutils literal notranslate"><span class="pre">quantize()</span></code> python helper function conveniently added to the <code class="docutils literal notranslate"><span class="pre">executorch/executorch/examples</span></code> folder.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export_for_training</span>
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">to_edge_transform_and_lower</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export_for_training</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">to_edge_transform_and_lower</span>
 
 <span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
 <span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
 
 <span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">export_for_training</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span> <span class="c1"># 2-stage export for quantization path</span>
 
-<span class="kn">from</span> <span class="nn">torch.ao.quantization.quantize_pt2e</span> <span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
-<span class="kn">from</span> <span class="nn">torch.ao.quantization.quantizer.xnnpack_quantizer</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.ao.quantization.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.ao.quantization.quantizer.xnnpack_quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">get_symmetric_quantization_config</span><span class="p">,</span>
     <span class="n">XNNPACKQuantizer</span><span class="p">,</span>
 <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">quantize</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">quantize</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;This is the official recommended flow for quantization in pytorch 2.0 export&quot;&quot;&quot;</span>
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Original model: </span><span class="si">{</span><span class="n">model</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="n">quantizer</span> <span class="o">=</span> <span class="n">XNNPACKQuantizer</span><span class="p">()</span>

@@ -485,43 +485,43 @@
 
 <span class="c1"># pyre-unsafe</span>
 
-<span class="kn">import</span> <span class="nn">json</span>
-<span class="kn">import</span> <span class="nn">os</span>
-<span class="kn">import</span> <span class="nn">pickle</span>
-<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">IO</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Union</span>
-<span class="kn">from</span> <span class="nn">zipfile</span> <span class="kn">import</span> <span class="n">BadZipFile</span><span class="p">,</span> <span class="n">ZipFile</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pickle</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">IO</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">zipfile</span><span class="w"> </span><span class="kn">import</span> <span class="n">BadZipFile</span><span class="p">,</span> <span class="n">ZipFile</span>
 
-<span class="kn">from</span> <span class="nn">executorch</span> <span class="kn">import</span> <span class="n">exir</span>
-<span class="kn">from</span> <span class="nn">executorch.devtools.bundled_program.core</span> <span class="kn">import</span> <span class="n">BundledProgram</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch</span><span class="w"> </span><span class="kn">import</span> <span class="n">exir</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">BundledProgram</span>
 
-<span class="kn">from</span> <span class="nn">executorch.devtools.bundled_program.schema.bundled_program_schema</span> <span class="kn">import</span> <span class="n">Value</span>
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.schema.bundled_program_schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">Value</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">EdgeProgramManager</span><span class="p">,</span>
     <span class="n">ExecutorchProgram</span><span class="p">,</span>
     <span class="n">ExecutorchProgramManager</span><span class="p">,</span>
     <span class="n">ExirExportedProgram</span><span class="p">,</span>
     <span class="n">ExportedProgram</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.emit._emitter</span> <span class="kn">import</span> <span class="n">_DelegateDebugIdentifierMap</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.emit._emitter</span><span class="w"> </span><span class="kn">import</span> <span class="n">_DelegateDebugIdentifierMap</span>
 
-<span class="kn">from</span> <span class="nn">executorch.exir.serde.export_serialize</span> <span class="kn">import</span> <span class="n">SerializedArtifact</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.serde.serialize</span> <span class="kn">import</span> <span class="n">deserialize</span><span class="p">,</span> <span class="n">serialize</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.serde.export_serialize</span><span class="w"> </span><span class="kn">import</span> <span class="n">SerializedArtifact</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.serde.serialize</span><span class="w"> </span><span class="kn">import</span> <span class="n">deserialize</span><span class="p">,</span> <span class="n">serialize</span>
 
 <span class="n">ProgramOutput</span> <span class="o">=</span> <span class="n">List</span><span class="p">[</span><span class="n">Value</span><span class="p">]</span>
 
 <span class="k">try</span><span class="p">:</span>
     <span class="c1"># breaking change introduced in python 3.11</span>
     <span class="c1"># pyre-ignore</span>
-    <span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">StrEnum</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">enum</span><span class="w"> </span><span class="kn">import</span> <span class="n">StrEnum</span>
 <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-    <span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">Enum</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">enum</span><span class="w"> </span><span class="kn">import</span> <span class="n">Enum</span>
 
-    <span class="k">class</span> <span class="nc">StrEnum</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+    <span class="k">class</span><span class="w"> </span><span class="nc">StrEnum</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
         <span class="k">pass</span>
 
 
-<span class="k">class</span> <span class="nc">ETRecordReservedFileNames</span><span class="p">(</span><span class="n">StrEnum</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ETRecordReservedFileNames</span><span class="p">(</span><span class="n">StrEnum</span><span class="p">):</span>
     <span class="n">ETRECORD_IDENTIFIER</span> <span class="o">=</span> <span class="s2">&quot;ETRECORD_V0&quot;</span>
     <span class="n">EDGE_DIALECT_EXPORTED_PROGRAM</span> <span class="o">=</span> <span class="s2">&quot;edge_dialect_exported_program&quot;</span>
     <span class="n">ET_DIALECT_GRAPH_MODULE</span> <span class="o">=</span> <span class="s2">&quot;et_dialect_graph_module&quot;</span>
@@ -531,7 +531,7 @@
 
 
 <span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">ETRecord</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ETRecord</span><span class="p">:</span>
     <span class="n">edge_dialect_program</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">graph_map</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">_debug_handle_map</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]]</span> <span class="o">=</span> <span class="kc">None</span>
@@ -541,7 +541,7 @@
     <span class="n">_reference_outputs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ProgramOutput</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span>
 
 
-<span class="k">def</span> <span class="nf">_handle_exported_program</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_handle_exported_program</span><span class="p">(</span>
     <span class="n">etrecord_zip</span><span class="p">:</span> <span class="n">ZipFile</span><span class="p">,</span> <span class="n">module_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">ep</span><span class="p">:</span> <span class="n">ExportedProgram</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ep</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">)</span>
@@ -562,7 +562,7 @@
     <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_handle_export_module</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_handle_export_module</span><span class="p">(</span>
     <span class="n">etrecord_zip</span><span class="p">:</span> <span class="n">ZipFile</span><span class="p">,</span>
     <span class="n">export_module</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
         <span class="n">ExirExportedProgram</span><span class="p">,</span>
@@ -592,7 +592,7 @@
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported graph module type. </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">export_module</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_handle_edge_dialect_exported_program</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_handle_edge_dialect_exported_program</span><span class="p">(</span>
     <span class="n">etrecord_zip</span><span class="p">:</span> <span class="n">ZipFile</span><span class="p">,</span> <span class="n">edge_dialect_exported_program</span><span class="p">:</span> <span class="n">ExportedProgram</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="n">serialized_artifact</span> <span class="o">=</span> <span class="n">serialize</span><span class="p">(</span><span class="n">edge_dialect_exported_program</span><span class="p">)</span>
@@ -616,7 +616,7 @@
     <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_get_reference_outputs</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_reference_outputs</span><span class="p">(</span>
     <span class="n">bundled_program</span><span class="p">:</span> <span class="n">BundledProgram</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ProgramOutput</span><span class="p">]]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
@@ -636,7 +636,7 @@
     <span class="k">return</span> <span class="n">reference_outputs</span>
 
 
-<div class="viewcode-block" id="generate_etrecord"><a class="viewcode-back" href="../../../../etrecord.html#executorch.devtools.etrecord._etrecord.generate_etrecord">[docs]</a><span class="k">def</span> <span class="nf">generate_etrecord</span><span class="p">(</span>
+<div class="viewcode-block" id="generate_etrecord"><a class="viewcode-back" href="../../../../etrecord.html#executorch.devtools.etrecord._etrecord.generate_etrecord">[docs]</a><span class="k">def</span><span class="w"> </span><span class="nf">generate_etrecord</span><span class="p">(</span>
     <span class="n">et_record</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span><span class="p">,</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">IO</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]],</span>
     <span class="n">edge_dialect_program</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">EdgeProgramManager</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">],</span>
     <span class="n">executorch_program</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
@@ -736,7 +736,7 @@
     <span class="p">)</span></div>
 
 
-<span class="k">def</span> <span class="nf">parse_etrecord</span><span class="p">(</span><span class="n">etrecord_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ETRecord</span><span class="p">:</span>  <span class="c1"># noqa: C901</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">parse_etrecord</span><span class="p">(</span><span class="n">etrecord_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ETRecord</span><span class="p">:</span>  <span class="c1"># noqa: C901</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Parses an `ETRecord` file and returns an `ETRecord` object that contains the deserialized graph</span>
 <span class="sd">    modules, program buffer, and a debug handle map.</span>

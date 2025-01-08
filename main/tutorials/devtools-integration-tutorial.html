@@ -534,25 +534,25 @@ the eager model. This is generated via <code class="docutils literal notranslate
 edge dialect model (<code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code>), the ExecuTorch dialect model
 (<code class="docutils literal notranslate"><span class="pre">ExecutorchProgramManager</span></code>), and an optional dictionary of additional models.</p>
 <p>In this tutorial, an example model (shown below) is used to demonstrate.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">copy</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
 
-<span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="nn">nn</span>
-<span class="kn">import</span> <span class="nn">torch.nn.functional</span> <span class="k">as</span> <span class="nn">F</span>
-<span class="kn">from</span> <span class="nn">executorch.devtools</span> <span class="kn">import</span> <span class="n">generate_etrecord</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_etrecord</span>
 
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">EdgeCompileConfig</span><span class="p">,</span>
     <span class="n">EdgeProgramManager</span><span class="p">,</span>
     <span class="n">ExecutorchProgramManager</span><span class="p">,</span>
     <span class="n">to_edge</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <a href="https://pytorch.org/docs/stable/export.html#torch.export.export" title="torch.export.export" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-function"><span class="n">export</span></a><span class="p">,</span> <a href="https://pytorch.org/docs/stable/export.html#torch.export.ExportedProgram" title="torch.export.ExportedProgram" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-class"><span class="n">ExportedProgram</span></a>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <a href="https://pytorch.org/docs/stable/export.html#torch.export.export" title="torch.export.export" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-function"><span class="n">export</span></a><span class="p">,</span> <a href="https://pytorch.org/docs/stable/export.html#torch.export.ExportedProgram" title="torch.export.ExportedProgram" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-class"><span class="n">ExportedProgram</span></a>
 
 
 <span class="c1"># Generate Model</span>
-<span class="k">class</span> <span class="nc">Net</span><span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="torch.nn.Module" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">nn</span><span class="o">.</span><span class="n">Module</span></a><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Net</span><span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="torch.nn.Module" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">nn</span><span class="o">.</span><span class="n">Module</span></a><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="torch.nn.Module" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">Net</span></a><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
         <span class="c1"># 1 input image channel, 6 output channels, 5x5 square convolution</span>
         <span class="c1"># kernel</span>
@@ -563,7 +563,7 @@ edge dialect model (<code class="docutils literal notranslate"><span class="pre"
         <span class="bp">self</span><span class="o">.</span><span class="n">fc2</span> <span class="o">=</span> <a href="https://pytorch.org/docs/stable/generated/torch.nn.Linear.html#torch.nn.Linear" title="torch.nn.Linear" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span></a><span class="p">(</span><span class="mi">120</span><span class="p">,</span> <span class="mi">84</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">fc3</span> <span class="o">=</span> <a href="https://pytorch.org/docs/stable/generated/torch.nn.Linear.html#torch.nn.Linear" title="torch.nn.Linear" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span></a><span class="p">(</span><span class="mi">84</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
         <span class="c1"># Max pooling over a (2, 2) window</span>
         <span class="n">x</span> <span class="o">=</span> <a href="https://pytorch.org/docs/stable/generated/torch.nn.functional.max_pool2d.html#torch.nn.functional.max_pool2d" title="torch.nn.functional.max_pool2d" class="sphx-glr-backref-module-torch-nn-functional sphx-glr-backref-type-py-function"><span class="n">F</span><span class="o">.</span><span class="n">max_pool2d</span></a><span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.nn.functional.relu.html#torch.nn.functional.relu" title="torch.nn.functional.relu" class="sphx-glr-backref-module-torch-nn-functional sphx-glr-backref-type-py-function"><span class="n">F</span><span class="o">.</span><span class="n">relu</span></a><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">conv1</span><span class="p">(</span><span class="n">x</span><span class="p">)),</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
         <span class="c1"># If the size is a square, you can specify with a single number</span>
@@ -604,16 +604,16 @@ lose debug data in the process.</p>
 <p>Next step is to generate an <code class="docutils literal notranslate"><span class="pre">ETDump</span></code>. <code class="docutils literal notranslate"><span class="pre">ETDump</span></code> contains runtime results
 from executing a <a class="reference external" href="../bundled-io.html">Bundled Program Model</a>.</p>
 <p>In this tutorial, a <cite>Bundled Program</cite> is created from the example model above.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">from</span> <span class="nn">executorch.devtools</span> <span class="kn">import</span> <span class="n">BundledProgram</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">BundledProgram</span>
 
-<span class="kn">from</span> <span class="nn">executorch.devtools.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
-<span class="kn">from</span> <span class="nn">executorch.devtools.bundled_program.serialize</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.serialize</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
-<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <a href="https://pytorch.org/docs/stable/export.html#torch.export.export" title="torch.export.export" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-function"><span class="n">export</span></a>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <a href="https://pytorch.org/docs/stable/export.html#torch.export.export" title="torch.export.export" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-function"><span class="n">export</span></a>
 
 <span class="c1"># Step 1: ExecuTorch Program Export</span>
 <a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">m_name</span></a> <span class="o">=</span> <span class="s2">&quot;forward&quot;</span>
@@ -660,7 +660,7 @@ the operators of the Edge Dialect Graph.</p>
 <p>Recall: An <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> is not required. If an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> is not provided,
 the Inspector will show runtime results without operator correlation.</p>
 <p>To visualize all runtime events, call Inspector’s <code class="docutils literal notranslate"><span class="pre">print_data_tabular</span></code>.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.devtools</span> <span class="kn">import</span> <span class="n">Inspector</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">Inspector</span>
 
 <a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">etrecord_path</span></a> <span class="o">=</span> <span class="s2">&quot;etrecord.bin&quot;</span>
 <a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">etdump_path</span></a> <span class="o">=</span> <span class="s2">&quot;etdump.etdp&quot;</span>
@@ -679,9 +679,9 @@ and <code class="docutils literal notranslate"><span class="pre">DataFrames</spa
 analysis about their model performance.</p>
 <p>Below are examples usages, with both <code class="docutils literal notranslate"><span class="pre">EventBlock</span></code> and <code class="docutils literal notranslate"><span class="pre">DataFrame</span></code> approaches.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Set Up</span>
-<span class="kn">import</span> <span class="nn">pprint</span> <span class="k">as</span> <span class="nn">pp</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pprint</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pp</span>
 
-<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 
 <span class="n">pd</span><span class="o">.</span><span class="n">set_option</span><span class="p">(</span><span class="s2">&quot;display.max_colwidth&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
 <span class="n">pd</span><span class="o">.</span><span class="n">set_option</span><span class="p">(</span><span class="s2">&quot;display.max_columns&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
@@ -758,7 +758,7 @@ to analyze the model run results.</p>
 <li><p><a class="reference external" href="../etdump.html">ETDump</a></p></li>
 <li><p><a class="reference external" href="../model-inspector.html">Inspector</a></p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.793 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.596 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-devtools-integration-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/19eb0a842fd17829284e2ef09d1cda78/devtools-integration-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">devtools-integration-tutorial.py</span></code></a></p>

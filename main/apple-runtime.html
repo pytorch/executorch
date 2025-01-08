@@ -516,31 +516,31 @@
 <h4>CLI<a class="headerlink" href="#cli" title="Permalink to this heading">¶</a></h4>
 <p>Add a package and target dependencies on ExecuTorch to your package file like this:</p>
 <div class="highlight-none notranslate highlight-swift"><div class="highlight"><pre><span></span><span class="c1">// swift-tools-version:5.9</span>
-<span class="kd">import</span> <span class="nc">PackageDescription</span>
+<span class="kd">import</span><span class="w"> </span><span class="nc">PackageDescription</span>
 
-<span class="kd">let</span> <span class="nv">package</span> <span class="p">=</span> <span class="n">Package</span><span class="p">(</span>
-  <span class="n">name</span><span class="p">:</span> <span class="s">&quot;YourPackageName&quot;</span><span class="p">,</span>
-  <span class="n">platforms</span><span class="p">:</span> <span class="p">[</span>
-    <span class="p">.</span><span class="n">iOS</span><span class="p">(.</span><span class="n">v17</span><span class="p">),</span>
-    <span class="p">.</span><span class="n">macOS</span><span class="p">(.</span><span class="n">v10_15</span><span class="p">),</span>
-  <span class="p">],</span>
-  <span class="n">products</span><span class="p">:</span> <span class="p">[</span>
-    <span class="p">.</span><span class="n">library</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="s">&quot;YourPackageName&quot;</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="p">[</span><span class="s">&quot;YourTargetName&quot;</span><span class="p">]),</span>
-  <span class="p">],</span>
-  <span class="n">dependencies</span><span class="p">:</span> <span class="p">[</span>
-    <span class="c1">// Use &quot;swiftpm-&lt;version&gt;.&lt;year_month_day&gt;&quot; branch name for a nightly build.</span>
-    <span class="p">.</span><span class="n">package</span><span class="p">(</span><span class="n">url</span><span class="p">:</span> <span class="s">&quot;https://github.com/pytorch/executorch.git&quot;</span><span class="p">,</span> <span class="n">branch</span><span class="p">:</span> <span class="s">&quot;swiftpm-0.4.0&quot;</span><span class="p">)</span>
-  <span class="p">],</span>
-  <span class="n">targets</span><span class="p">:</span> <span class="p">[</span>
-    <span class="p">.</span><span class="n">target</span><span class="p">(</span>
-      <span class="n">name</span><span class="p">:</span> <span class="s">&quot;YourTargetName&quot;</span><span class="p">,</span>
-      <span class="n">dependencies</span><span class="p">:</span> <span class="p">[</span>
-        <span class="p">.</span><span class="n">product</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="s">&quot;executorch&quot;</span><span class="p">,</span> <span class="n">package</span><span class="p">:</span> <span class="s">&quot;executorch&quot;</span><span class="p">),</span>
-        <span class="p">.</span><span class="n">product</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="s">&quot;backend_xnnpack&quot;</span><span class="p">,</span> <span class="n">package</span><span class="p">:</span> <span class="s">&quot;executorch&quot;</span><span class="p">),</span>
-        <span class="p">.</span><span class="n">product</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="s">&quot;kernels_portable&quot;</span><span class="p">,</span> <span class="n">package</span><span class="p">:</span> <span class="s">&quot;executorch&quot;</span><span class="p">),</span>
-        <span class="c1">// Add other backends and kernels as needed.</span>
-      <span class="p">]),</span>
-  <span class="p">]</span>
+<span class="kd">let</span><span class="w"> </span><span class="nv">package</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Package</span><span class="p">(</span>
+<span class="w">  </span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;YourPackageName&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="n">platforms</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">.</span><span class="n">iOS</span><span class="p">(.</span><span class="n">v17</span><span class="p">),</span>
+<span class="w">    </span><span class="p">.</span><span class="n">macOS</span><span class="p">(.</span><span class="n">v10_15</span><span class="p">),</span>
+<span class="w">  </span><span class="p">],</span>
+<span class="w">  </span><span class="n">products</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">.</span><span class="n">library</span><span class="p">(</span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;YourPackageName&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">targets</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s">&quot;YourTargetName&quot;</span><span class="p">]),</span>
+<span class="w">  </span><span class="p">],</span>
+<span class="w">  </span><span class="n">dependencies</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="c1">// Use &quot;swiftpm-&lt;version&gt;.&lt;year_month_day&gt;&quot; branch name for a nightly build.</span>
+<span class="w">    </span><span class="p">.</span><span class="n">package</span><span class="p">(</span><span class="n">url</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;https://github.com/pytorch/executorch.git&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">branch</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;swiftpm-0.4.0&quot;</span><span class="p">)</span>
+<span class="w">  </span><span class="p">],</span>
+<span class="w">  </span><span class="n">targets</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">.</span><span class="n">target</span><span class="p">(</span>
+<span class="w">      </span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;YourTargetName&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="n">dependencies</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">.</span><span class="n">product</span><span class="p">(</span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;executorch&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">package</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;executorch&quot;</span><span class="p">),</span>
+<span class="w">        </span><span class="p">.</span><span class="n">product</span><span class="p">(</span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;backend_xnnpack&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">package</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;executorch&quot;</span><span class="p">),</span>
+<span class="w">        </span><span class="p">.</span><span class="n">product</span><span class="p">(</span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;kernels_portable&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">package</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;executorch&quot;</span><span class="p">),</span>
+<span class="w">        </span><span class="c1">// Add other backends and kernels as needed.</span>
+<span class="w">      </span><span class="p">]),</span>
+<span class="w">  </span><span class="p">]</span>
 <span class="p">)</span>
 </pre></div>
 </div>
@@ -645,7 +645,7 @@ OTHER_LDFLAGS = $(inherited) \
 </pre></div>
 </div>
 <p>Or in Swift:</p>
-<div class="highlight-none notranslate highlight-swift"><div class="highlight"><pre><span></span><span class="kd">import</span> <span class="nc">ExecuTorch</span>
+<div class="highlight-none notranslate highlight-swift"><div class="highlight"><pre><span></span><span class="kd">import</span><span class="w"> </span><span class="nc">ExecuTorch</span>
 </pre></div>
 </div>
 <p><strong>Note:</strong> Importing the ExecuTorch umbrella header (or ExecuTorch module in Swift) provides access to the logging API only. You still need to import the other runtime headers explicitly as needed, e.g., <code class="docutils literal notranslate"><span class="pre">module.h</span></code>. There is no support for other runtime APIs in Objective-C or Swift beyond logging described below.</p>
@@ -708,39 +708,39 @@ OTHER_LDFLAGS = $(inherited) \
 </pre></div>
 </div>
 <p>Swift version:</p>
-<div class="highlight-none notranslate highlight-swift"><div class="highlight"><pre><span></span><span class="kd">import</span> <span class="nc">ExecuTorch</span>
-<span class="kd">import</span> <span class="nc">os</span><span class="p">.</span><span class="nc">log</span>
+<div class="highlight-none notranslate highlight-swift"><div class="highlight"><pre><span></span><span class="kd">import</span><span class="w"> </span><span class="nc">ExecuTorch</span>
+<span class="kd">import</span><span class="w"> </span><span class="nc">os</span><span class="p">.</span><span class="nc">log</span>
 
-<span class="kd">public</span> <span class="kd">class</span> <span class="bp">MyClass</span> <span class="p">{</span>
-  <span class="kd">public</span> <span class="kd">init</span><span class="p">()</span> <span class="p">{</span>
-    <span class="cp">#if</span> <span class="cp">DEBUG</span>
-    <span class="n">Log</span><span class="p">.</span><span class="n">shared</span><span class="p">.</span><span class="n">add</span><span class="p">(</span><span class="n">sink</span><span class="p">:</span> <span class="kc">self</span><span class="p">)</span>
-    <span class="cp">#endif</span>
-  <span class="p">}</span>
-  <span class="kd">deinit</span> <span class="p">{</span>
-    <span class="cp">#if</span> <span class="cp">DEBUG</span>
-    <span class="n">Log</span><span class="p">.</span><span class="n">shared</span><span class="p">.</span><span class="n">remove</span><span class="p">(</span><span class="n">sink</span><span class="p">:</span> <span class="kc">self</span><span class="p">)</span>
-    <span class="cp">#endif</span>
-  <span class="p">}</span>
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span><span class="w"> </span><span class="bp">MyClass</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">public</span><span class="w"> </span><span class="kd">init</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="cp">#if</span><span class="w"> </span><span class="cp">DEBUG</span>
+<span class="w">    </span><span class="n">Log</span><span class="p">.</span><span class="n">shared</span><span class="p">.</span><span class="n">add</span><span class="p">(</span><span class="n">sink</span><span class="p">:</span><span class="w"> </span><span class="kc">self</span><span class="p">)</span>
+<span class="w">    </span><span class="cp">#endif</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span><span class="kd">deinit</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="cp">#if</span><span class="w"> </span><span class="cp">DEBUG</span>
+<span class="w">    </span><span class="n">Log</span><span class="p">.</span><span class="n">shared</span><span class="p">.</span><span class="n">remove</span><span class="p">(</span><span class="n">sink</span><span class="p">:</span><span class="w"> </span><span class="kc">self</span><span class="p">)</span>
+<span class="w">    </span><span class="cp">#endif</span>
+<span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 
-<span class="cp">#if</span> <span class="cp">DEBUG</span>
-<span class="kd">extension</span> <span class="bp">MyClass</span><span class="p">:</span> <span class="n">LogSink</span> <span class="p">{</span>
-  <span class="kd">public</span> <span class="kd">func</span> <span class="nf">log</span><span class="p">(</span><span class="n">level</span><span class="p">:</span> <span class="n">LogLevel</span><span class="p">,</span> <span class="n">timestamp</span><span class="p">:</span> <span class="n">TimeInterval</span><span class="p">,</span> <span class="n">filename</span><span class="p">:</span> <span class="nb">String</span><span class="p">,</span> <span class="n">line</span><span class="p">:</span> <span class="nb">UInt</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="nb">String</span><span class="p">)</span> <span class="p">{</span>
-    <span class="kd">let</span> <span class="nv">logMessage</span> <span class="p">=</span> <span class="s">&quot;</span><span class="si">\(</span><span class="n">filename</span><span class="si">)</span><span class="s">:</span><span class="si">\(</span><span class="n">line</span><span class="si">)</span><span class="s"> </span><span class="si">\(</span><span class="n">message</span><span class="si">)</span><span class="s">&quot;</span>
-    <span class="k">switch</span> <span class="n">level</span> <span class="p">{</span>
-    <span class="k">case</span> <span class="p">.</span><span class="n">debug</span><span class="p">:</span>
-      <span class="n">os_log</span><span class="p">(.</span><span class="n">debug</span><span class="p">,</span> <span class="s">&quot;%{public}@&quot;</span><span class="p">,</span> <span class="n">logMessage</span><span class="p">)</span>
-    <span class="k">case</span> <span class="p">.</span><span class="n">info</span><span class="p">:</span>
-      <span class="n">os_log</span><span class="p">(.</span><span class="n">info</span><span class="p">,</span> <span class="s">&quot;%{public}@&quot;</span><span class="p">,</span> <span class="n">logMessage</span><span class="p">)</span>
-    <span class="k">case</span> <span class="p">.</span><span class="n">error</span><span class="p">:</span>
-      <span class="n">os_log</span><span class="p">(.</span><span class="n">error</span><span class="p">,</span> <span class="s">&quot;%{public}@&quot;</span><span class="p">,</span> <span class="n">logMessage</span><span class="p">)</span>
-    <span class="k">case</span> <span class="p">.</span><span class="n">fatal</span><span class="p">:</span>
-      <span class="n">os_log</span><span class="p">(.</span><span class="n">fault</span><span class="p">,</span> <span class="s">&quot;%{public}@&quot;</span><span class="p">,</span> <span class="n">logMessage</span><span class="p">)</span>
-    <span class="k">default</span><span class="p">:</span>
-      <span class="n">os_log</span><span class="p">(</span><span class="s">&quot;%{public}@&quot;</span><span class="p">,</span> <span class="n">logMessage</span><span class="p">)</span>
-    <span class="p">}</span>
-  <span class="p">}</span>
+<span class="cp">#if</span><span class="w"> </span><span class="cp">DEBUG</span>
+<span class="kd">extension</span><span class="w"> </span><span class="bp">MyClass</span><span class="p">:</span><span class="w"> </span><span class="n">LogSink</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">public</span><span class="w"> </span><span class="kd">func</span><span class="w"> </span><span class="nf">log</span><span class="p">(</span><span class="n">level</span><span class="p">:</span><span class="w"> </span><span class="n">LogLevel</span><span class="p">,</span><span class="w"> </span><span class="n">timestamp</span><span class="p">:</span><span class="w"> </span><span class="n">TimeInterval</span><span class="p">,</span><span class="w"> </span><span class="n">filename</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span><span class="w"> </span><span class="n">line</span><span class="p">:</span><span class="w"> </span><span class="nb">UInt</span><span class="p">,</span><span class="w"> </span><span class="n">message</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="nv">logMessage</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">&quot;</span><span class="si">\(</span><span class="n">filename</span><span class="si">)</span><span class="s">:</span><span class="si">\(</span><span class="n">line</span><span class="si">)</span><span class="s"> </span><span class="si">\(</span><span class="n">message</span><span class="si">)</span><span class="s">&quot;</span>
+<span class="w">    </span><span class="k">switch</span><span class="w"> </span><span class="n">level</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="p">.</span><span class="n">debug</span><span class="p">:</span>
+<span class="w">      </span><span class="n">os_log</span><span class="p">(.</span><span class="n">debug</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;%{public}@&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">logMessage</span><span class="p">)</span>
+<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="p">.</span><span class="n">info</span><span class="p">:</span>
+<span class="w">      </span><span class="n">os_log</span><span class="p">(.</span><span class="n">info</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;%{public}@&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">logMessage</span><span class="p">)</span>
+<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="p">.</span><span class="n">error</span><span class="p">:</span>
+<span class="w">      </span><span class="n">os_log</span><span class="p">(.</span><span class="n">error</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;%{public}@&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">logMessage</span><span class="p">)</span>
+<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="p">.</span><span class="n">fatal</span><span class="p">:</span>
+<span class="w">      </span><span class="n">os_log</span><span class="p">(.</span><span class="n">fault</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;%{public}@&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">logMessage</span><span class="p">)</span>
+<span class="w">    </span><span class="k">default</span><span class="p">:</span>
+<span class="w">      </span><span class="n">os_log</span><span class="p">(</span><span class="s">&quot;%{public}@&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">logMessage</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 <span class="cp">#endif</span>
 </pre></div>

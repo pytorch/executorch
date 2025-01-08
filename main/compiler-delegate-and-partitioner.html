@@ -530,7 +530,7 @@ will be sent to the <code class="docutils literal notranslate"><span class="pre"
 <p>During partition, the <code class="docutils literal notranslate"><span class="pre">exported_program</span></code> is not allowed to mutate the program, and it’s supposed to apply tag to each node. The
 <code class="docutils literal notranslate"><span class="pre">PartitionResult</span></code> includes both tagged exported program and the partition tags dictionary for <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> to look up the tag and
 link to the <code class="docutils literal notranslate"><span class="pre">backend_id</span></code> and <code class="docutils literal notranslate"><span class="pre">compile_spec</span></code></p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">partition</span><span class="p">(</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">partition</span><span class="p">(</span>
     <span class="n">exported_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PartitionResult</span><span class="p">:</span>
 </pre></div>
@@ -541,7 +541,7 @@ expected to return a compiled blob, or binary containing the desired program to 
 run in the backend. During serialization, the
 compiled blob will be serialized as part of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, and directly loaded to the device. The
 API for this process is:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">preprocess</span><span class="p">(</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">preprocess</span><span class="p">(</span>
     <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">compile_specs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PreprocessResult</span><span class="p">:</span>
@@ -654,17 +654,17 @@ which backend they should go, option 2 is better.</p>
 <p><em>Option 2: Have a partitioner which partitions for different backends</em></p>
 <p>Another option is to create a customized partitioner, say partitioner
 <code class="docutils literal notranslate"><span class="pre">backend_1_2_partitioner</span></code>, and inside the partitioner logic,</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">Backend_1_2_Partitioner</span><span class="p">(</span><span class="n">Partitioner</span><span class="p">):</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Backend_1_2_Partitioner</span><span class="p">(</span><span class="n">Partitioner</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Partitions all add/mul nodes regardless of order for Backend2</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">delegation_spec_1</span> <span class="o">=</span> <span class="n">DelegationSpec</span><span class="p">(</span><span class="s2">&quot;Backend1&quot;</span><span class="p">,</span> <span class="p">[])</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">delegation_spec_2</span> <span class="o">=</span> <span class="n">DelegationSpec</span><span class="p">(</span><span class="s2">&quot;Backend2&quot;</span><span class="p">,</span> <span class="p">[])</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">partition_tags</span> <span class="o">=</span> <span class="p">{}</span>
 
-    <span class="k">def</span> <span class="nf">partition</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">partition</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">exported_program</span><span class="p">:</span> <span class="n">ExportedProgram</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
 
@@ -688,7 +688,7 @@ which backend they should go, option 2 is better.</p>
 nodes from decomposed operators.</p>
 <p><strong>7. How do we link the node back to the source code?</strong>
 We provide an helper function</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.print_program</span> <span class="kn">import</span> <span class="n">inspect_node</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.print_program</span><span class="w"> </span><span class="kn">import</span> <span class="n">inspect_node</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="n">inspect_node</span><span class="p">(</span><span class="n">graph</span><span class="p">,</span> <span class="n">node</span><span class="p">))</span>
 </pre></div>

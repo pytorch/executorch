@@ -607,14 +607,14 @@ uname<span class="w"> </span>-m
 <div class="section" id="softmaxmodule">
 <h4>SoftmaxModule<a class="headerlink" href="#softmaxmodule" title="Permalink to this heading">¶</a></h4>
 <p>This is a very simple PyTorch module with just one <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Softmax.html#torch.nn.Softmax">Softmax</a> operator.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-<span class="k">class</span> <span class="nc">SoftmaxModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SoftmaxModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">softmax</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Softmax</span><span class="p">()</span>
 
-    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
         <span class="n">z</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">z</span>
 </pre></div>
@@ -630,11 +630,11 @@ uname<span class="w"> </span>-m
 <div class="section" id="addmodule">
 <h4>AddModule<a class="headerlink" href="#addmodule" title="Permalink to this heading">¶</a></h4>
 <p>Let’s write another simple PyTorch module with just one <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.add.html#torch.add">Add</a> operator.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">AddModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">AddModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
-    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="n">x</span>
 </pre></div>
 </div>
@@ -654,8 +654,8 @@ uname<span class="w"> </span>-m
 <h4>MobileNetV2 Module<a class="headerlink" href="#mobilenetv2-module" title="Permalink to this heading">¶</a></h4>
 <p><a class="reference external" href="https://arxiv.org/abs/1801.04381">MobileNetV2</a> is a commonly in-production used network for edge and mobile devices.
 It’s also available as a default model in <a class="reference external" href="https://github.com/pytorch/vision">torchvision</a>, so we can load it with the sample code below.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">torchvision.models</span> <span class="kn">import</span> <span class="n">mobilenet_v2</span>  <span class="c1"># @manual</span>
-<span class="kn">from</span> <span class="nn">torchvision.models.mobilenetv2</span> <span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">mobilenet_v2</span>  <span class="c1"># @manual</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models.mobilenetv2</span><span class="w"> </span><span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
 
 <span class="n">mv2</span> <span class="o">=</span> <span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span>
 </pre></div>
@@ -682,7 +682,7 @@ It’s also available as a default model in <a class="reference external" href="
 <h3>Delegated Workflow<a class="headerlink" href="#delegated-workflow" title="Permalink to this heading">¶</a></h3>
 <p>Working with Arm, we introduced a new Arm backend delegate for ExecuTorch. This backend is under active development and has a limited set of features available as of writing this.</p>
 <p>By including a following step during the ExecuTorch AoT export pipeline to generate the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, we can enable this backend delegate.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.backends.arm.arm_backend</span> <span class="kn">import</span> <span class="n">generate_ethosu_compile_spec</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.arm.arm_backend</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_ethosu_compile_spec</span>
 
 <span class="n">graph_module_edge</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span>
     <span class="n">model</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span>

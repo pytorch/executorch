@@ -485,29 +485,29 @@
 
 <span class="c1"># pyre-strict</span>
 
-<span class="kn">import</span> <span class="nn">copy</span>
-<span class="kn">import</span> <span class="nn">operator</span>
-<span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">defaultdict</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">operator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
-<span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">import</span> <span class="nn">torch.utils._pytree</span> <span class="k">as</span> <span class="nn">pytree</span>
-<span class="kn">from</span> <span class="nn">executorch.exir._serialize</span> <span class="kn">import</span> <span class="n">_serialize_pte_binary</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.backend.compile_spec_schema</span> <span class="kn">import</span> <span class="n">CompileSpec</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.delegate</span> <span class="kn">import</span> <span class="n">executorch_call_delegate</span><span class="p">,</span> <span class="n">get_lowered_module_name</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.emit</span> <span class="kn">import</span> <span class="n">emit_program</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.utils._pytree</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pytree</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize</span><span class="w"> </span><span class="kn">import</span> <span class="n">_serialize_pte_binary</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.compile_spec_schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">CompileSpec</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.delegate</span><span class="w"> </span><span class="kn">import</span> <span class="n">executorch_call_delegate</span><span class="p">,</span> <span class="n">get_lowered_module_name</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.emit</span><span class="w"> </span><span class="kn">import</span> <span class="n">emit_program</span>
 
-<span class="kn">from</span> <span class="nn">executorch.exir.graph_module</span> <span class="kn">import</span> <span class="n">_get_submodule</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.graph_module</span><span class="w"> </span><span class="kn">import</span> <span class="n">_get_submodule</span>
 
-<span class="kn">from</span> <span class="nn">executorch.exir.passes.memory_planning_pass</span> <span class="kn">import</span> <span class="n">MemoryPlanningPass</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.passes.spec_prop_pass</span> <span class="kn">import</span> <span class="n">make_spec</span><span class="p">,</span> <span class="n">SpecPropPass</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.schema</span> <span class="kn">import</span> <span class="n">Program</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.memory_planning_pass</span><span class="w"> </span><span class="kn">import</span> <span class="n">MemoryPlanningPass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.spec_prop_pass</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_spec</span><span class="p">,</span> <span class="n">SpecPropPass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">Program</span>
 
-<span class="kn">from</span> <span class="nn">executorch.exir.tracer</span> <span class="kn">import</span> <span class="n">Value</span>
-<span class="kn">from</span> <span class="nn">torch._library.fake_class_registry</span> <span class="kn">import</span> <span class="n">FakeScriptObject</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.tracer</span><span class="w"> </span><span class="kn">import</span> <span class="n">Value</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch._library.fake_class_registry</span><span class="w"> </span><span class="kn">import</span> <span class="n">FakeScriptObject</span>
 
-<span class="kn">from</span> <span class="nn">torch._subclasses</span> <span class="kn">import</span> <span class="n">FakeTensor</span>
-<span class="kn">from</span> <span class="nn">torch.export.exported_program</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch._subclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">FakeTensor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export.exported_program</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">ConstantArgument</span><span class="p">,</span>
     <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">ExportGraphSignature</span><span class="p">,</span>
@@ -519,7 +519,7 @@
     <span class="n">OutputSpec</span><span class="p">,</span>
     <span class="n">TensorArgument</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">torch.fx.passes.utils.fuser_utils</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.fx.passes.utils.fuser_utils</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">erase_nodes</span><span class="p">,</span>
     <span class="n">fuse_as_graphmodule</span><span class="p">,</span>
     <span class="n">insert_subgm</span><span class="p">,</span>
@@ -529,7 +529,7 @@
 <span class="p">)</span>
 
 
-<div class="viewcode-block" id="LoweredBackendModule"><a class="viewcode-back" href="../../../export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.LoweredBackendModule">[docs]</a><span class="k">class</span> <span class="nc">LoweredBackendModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<div class="viewcode-block" id="LoweredBackendModule"><a class="viewcode-back" href="../../../export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.LoweredBackendModule">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">LoweredBackendModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A subclass of nn.Module that is generated for modules containing</span>
 <span class="sd">    delegated functions. This is can be created by calling `to_backend`.</span>
@@ -542,7 +542,7 @@
     <span class="p">]</span>  <span class="c1"># A list of backend-specific objects with static metadata to configure the &quot;compilation&quot; process.</span>
     <span class="n">_original_exported_program</span><span class="p">:</span> <span class="n">ExportedProgram</span>  <span class="c1"># The original EXIR module</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
         <span class="n">backend_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -556,7 +556,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_compile_specs</span> <span class="o">=</span> <span class="n">compile_specs</span>
 
     <span class="c1"># pyre-ignore</span>
-    <span class="k">def</span> <span class="nf">__deepcopy__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">memo</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="s2">&quot;LoweredBackendModule&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__deepcopy__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">memo</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="s2">&quot;LoweredBackendModule&quot;</span><span class="p">:</span>
         <span class="c1"># Copy exported program</span>
         <span class="n">copied_program</span> <span class="o">=</span> <span class="n">ExportedProgram</span><span class="p">(</span>
             <span class="n">root</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_original_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">),</span>
@@ -586,35 +586,35 @@
         <span class="k">return</span> <span class="n">res</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">backend_id</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">backend_id</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the backends name.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend_id</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">processed_bytes</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">processed_bytes</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the delegate blob created from backend.preprocess</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_processed_bytes</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">compile_specs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compile_specs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns a list of backend-specific objects with static metadata to configure the &quot;compilation&quot; process.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compile_specs</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">original_module</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">original_module</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the original EXIR module</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_original_exported_program</span>
 
     <span class="c1"># TODO(chenlai): consolidate the seriailization config with serialize_to_flatbuffer api</span>
-<div class="viewcode-block" id="LoweredBackendModule.buffer"><a class="viewcode-back" href="../../../export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.LoweredBackendModule.buffer">[docs]</a>    <span class="k">def</span> <span class="nf">buffer</span><span class="p">(</span>
+<div class="viewcode-block" id="LoweredBackendModule.buffer"><a class="viewcode-back" href="../../../export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.LoweredBackendModule.buffer">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">buffer</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">extract_delegate_segments</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">segment_alignment</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">128</span><span class="p">,</span>
@@ -639,7 +639,7 @@
 
     <span class="c1"># TODO(chenlai): re-consider recapture instead of manually constructing the program because</span>
     <span class="c1"># the meta data construction is done manually.</span>
-    <span class="k">def</span> <span class="nf">program</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">program</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">emit_stacktrace</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">memory_planning</span><span class="p">:</span> <span class="n">MemoryPlanningPass</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># pyre-fixme[9]</span>
@@ -647,7 +647,7 @@
         <span class="c1"># Fix autodpes introuces cyclic dependencies:</span>
         <span class="c1"># program -&gt; verifier -&gt; lowered_backend_module -&gt; program</span>
         <span class="c1"># @manual</span>
-        <span class="kn">from</span> <span class="nn">executorch.exir.program._program</span> <span class="kn">import</span> <span class="p">(</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.program._program</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
             <span class="n">_get_updated_graph_signature</span><span class="p">,</span>
             <span class="n">_transform</span><span class="p">,</span>
         <span class="p">)</span>
@@ -815,7 +815,7 @@
 
     <span class="c1"># Used to patch each delegated function with a call_delegate call</span>
     <span class="c1"># @staticmethod</span>
-    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Value</span><span class="p">,</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Value</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
@@ -824,7 +824,7 @@
 
 
 <span class="c1"># TODO(zhxchen17) Try ExportPass</span>
-<span class="k">def</span> <span class="nf">_fixup_output_node</span><span class="p">(</span><span class="n">gm</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_fixup_output_node</span><span class="p">(</span><span class="n">gm</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;output&quot;</span><span class="p">:</span>
             <span class="k">with</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">inserting_before</span><span class="p">(</span><span class="n">node</span><span class="p">):</span>
@@ -844,7 +844,7 @@
             <span class="k">return</span>
 
 
-<span class="k">def</span> <span class="nf">arrange_graph_placeholders</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">arrange_graph_placeholders</span><span class="p">(</span>
     <span class="n">gm</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span> <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
@@ -910,7 +910,7 @@
 
 
 <span class="c1"># TODO Don&#39;t regenerate new signature manually.</span>
-<span class="k">def</span> <span class="nf">_get_new_signature</span><span class="p">(</span>  <span class="c1"># noqa: C901</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_new_signature</span><span class="p">(</span>  <span class="c1"># noqa: C901</span>
     <span class="n">original_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">gm</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
     <span class="n">call_module_node</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">,</span>
@@ -1132,7 +1132,7 @@
     <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">create_exported_program_from_submodule</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">create_exported_program_from_submodule</span><span class="p">(</span>
     <span class="n">submodule</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
     <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -1199,7 +1199,7 @@
     <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">create_submodule_from_nodes</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">create_submodule_from_nodes</span><span class="p">(</span>
     <span class="n">gm</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
     <span class="n">node_list</span><span class="p">:</span> <span class="n">NodeList</span><span class="p">,</span>
     <span class="n">tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -1287,7 +1287,7 @@
     <span class="k">return</span> <span class="n">sub_gm</span><span class="p">,</span> <span class="n">submodule_node</span>
 
 
-<span class="k">def</span> <span class="nf">get_lowered_submodules</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_lowered_submodules</span><span class="p">(</span>
     <span class="n">graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">LoweredBackendModule</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">]]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
@@ -1305,7 +1305,7 @@
     <span class="k">return</span> <span class="n">lowered_submodules</span>
 
 
-<span class="k">def</span> <span class="nf">get_lowered_backend_modules</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_lowered_backend_modules</span><span class="p">(</span>
     <span class="n">graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">LoweredBackendModule</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
@@ -1320,7 +1320,7 @@
     <span class="k">return</span> <span class="n">lowered_programs</span>
 
 
-<span class="k">def</span> <span class="nf">_unsafe_adjust_original_program</span><span class="p">(</span>  <span class="c1"># noqa: C901</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_unsafe_adjust_original_program</span><span class="p">(</span>  <span class="c1"># noqa: C901</span>
     <span class="n">original_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">call_delegate_node</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">,</span>
     <span class="n">input_specs_to_delete</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">InputSpec</span><span class="p">],</span>

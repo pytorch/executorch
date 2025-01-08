@@ -518,13 +518,13 @@
 <span class="sd">            [1., 1.]])]</span>
 <span class="sd">&quot;&quot;&quot;</span>
 
-<span class="kn">import</span> <span class="nn">functools</span>
-<span class="kn">from</span> <span class="nn">pathlib</span> <span class="kn">import</span> <span class="n">Path</span>
-<span class="kn">from</span> <span class="nn">types</span> <span class="kn">import</span> <span class="n">ModuleType</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">types</span><span class="w"> </span><span class="kn">import</span> <span class="n">ModuleType</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="k">try</span><span class="p">:</span>
-    <span class="kn">from</span> <span class="nn">executorch.extension.pybindings.portable_lib</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.extension.pybindings.portable_lib</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
         <span class="n">ExecuTorchModule</span><span class="p">,</span>
         <span class="n">MethodMeta</span><span class="p">,</span>
         <span class="n">Verification</span><span class="p">,</span>
@@ -533,20 +533,20 @@
     <span class="k">raise</span> <span class="ne">ModuleNotFoundError</span><span class="p">(</span>
         <span class="s2">&quot;Prebuilt &lt;site-packages&gt;/extension/pybindings/_portable_lib.so &quot;</span>
         <span class="s2">&quot;is not found. Please reinstall ExecuTorch from pip.&quot;</span>
-    <span class="p">)</span> <span class="kn">from</span> <span class="nn">e</span>
+    <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">e</span>
 
 
-<div class="viewcode-block" id="Method"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Method">[docs]</a><span class="k">class</span> <span class="nc">Method</span><span class="p">:</span>
+<div class="viewcode-block" id="Method"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Method">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">Method</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;An ExecuTorch method, loaded from a Program.</span>
 <span class="sd">    This can be used to execute the method with inputs.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">module</span><span class="p">:</span> <span class="n">ExecuTorchModule</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">module</span><span class="p">:</span> <span class="n">ExecuTorchModule</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="c1"># TODO: This class should be pybind to the C++ counterpart instead of hosting ExecuTorchModule.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_method_name</span> <span class="o">=</span> <span class="n">method_name</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_module</span> <span class="o">=</span> <span class="n">module</span>
 
-<div class="viewcode-block" id="Method.execute"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Method.execute">[docs]</a>    <span class="k">def</span> <span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
+<div class="viewcode-block" id="Method.execute"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Method.execute">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Executes the method with the given inputs.</span>
 
 <span class="sd">        Args:</span>
@@ -558,7 +558,7 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_module</span><span class="o">.</span><span class="n">run_method</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_method_name</span><span class="p">,</span> <span class="n">inputs</span><span class="p">)</span></div>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">metadata</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MethodMeta</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">metadata</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MethodMeta</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Gets the metadata for the method.</span>
 
 <span class="sd">        Returns:</span>
@@ -567,13 +567,13 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_module</span><span class="o">.</span><span class="n">method_meta</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_method_name</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="Program"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Program">[docs]</a><span class="k">class</span> <span class="nc">Program</span><span class="p">:</span>
+<div class="viewcode-block" id="Program"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Program">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">Program</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;An ExecuTorch program, loaded from binary PTE data.</span>
 
 <span class="sd">    This can be used to load the methods/models defined by the program.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module</span><span class="p">:</span> <span class="n">ExecuTorchModule</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module</span><span class="p">:</span> <span class="n">ExecuTorchModule</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="c1"># Hold the data so the program is not freed.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_data</span> <span class="o">=</span> <span class="n">data</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_module</span> <span class="o">=</span> <span class="n">module</span>
@@ -586,13 +586,13 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_methods</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">Method</span><span class="p">(</span><span class="n">method_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_module</span><span class="p">)</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">method_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">method_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns method names of the `Program` as a set of strings.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_methods</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
 
-<div class="viewcode-block" id="Program.load_method"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Program.load_method">[docs]</a>    <span class="k">def</span> <span class="nf">load_method</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Method</span><span class="p">]:</span>
+<div class="viewcode-block" id="Program.load_method"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Program.load_method">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">load_method</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Method</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Loads a method from the program.</span>
 
 <span class="sd">        Args:</span>
@@ -604,22 +604,22 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_methods</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span></div></div>
 
 
-<div class="viewcode-block" id="OperatorRegistry"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.OperatorRegistry">[docs]</a><span class="k">class</span> <span class="nc">OperatorRegistry</span><span class="p">:</span>
+<div class="viewcode-block" id="OperatorRegistry"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.OperatorRegistry">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">OperatorRegistry</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The registry of operators that are available to the runtime.&quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">legacy_module</span><span class="p">:</span> <span class="n">ModuleType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">legacy_module</span><span class="p">:</span> <span class="n">ModuleType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="c1"># TODO: Expose the kernel callables to Python.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span> <span class="o">=</span> <span class="n">legacy_module</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">operator_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">operator_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the names of all registered operators as a set of strings.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_get_operator_names</span><span class="p">())</span></div>
 
 
-<div class="viewcode-block" id="Runtime"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Runtime">[docs]</a><span class="k">class</span> <span class="nc">Runtime</span><span class="p">:</span>
+<div class="viewcode-block" id="Runtime"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Runtime">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">Runtime</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;An instance of the ExecuTorch runtime environment.</span>
 
 <span class="sd">    This can be used to concurrently load and execute any number of ExecuTorch</span>
@@ -628,19 +628,19 @@
 
 <div class="viewcode-block" id="Runtime.get"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Runtime.get">[docs]</a>    <span class="nd">@staticmethod</span>
     <span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-    <span class="k">def</span> <span class="nf">get</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="s2">&quot;Runtime&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="s2">&quot;Runtime&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Gets the Runtime singleton.&quot;&quot;&quot;</span>
-        <span class="kn">import</span> <span class="nn">executorch.extension.pybindings.portable_lib</span> <span class="k">as</span> <span class="nn">legacy_module</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">executorch.extension.pybindings.portable_lib</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">legacy_module</span>
 
         <span class="k">return</span> <span class="n">Runtime</span><span class="p">(</span><span class="n">legacy_module</span><span class="o">=</span><span class="n">legacy_module</span><span class="p">)</span></div>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">legacy_module</span><span class="p">:</span> <span class="n">ModuleType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">legacy_module</span><span class="p">:</span> <span class="n">ModuleType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="c1"># Public attributes.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">operator_registry</span> <span class="o">=</span> <span class="n">OperatorRegistry</span><span class="p">(</span><span class="n">legacy_module</span><span class="p">)</span>
         <span class="c1"># Private attributes.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span> <span class="o">=</span> <span class="n">legacy_module</span>
 
-<div class="viewcode-block" id="Runtime.load_program"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Runtime.load_program">[docs]</a>    <span class="k">def</span> <span class="nf">load_program</span><span class="p">(</span>
+<div class="viewcode-block" id="Runtime.load_program"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Runtime.load_program">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">load_program</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">data</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">bytes</span><span class="p">,</span> <span class="nb">bytearray</span><span class="p">,</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">Path</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
         <span class="o">*</span><span class="p">,</span>

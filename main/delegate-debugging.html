@@ -510,7 +510,7 @@
 <p>Identifiers are a means of connecting runtime results to the model graph; the interpretation of the identifiers is defined by the delegate author.</p>
 </div>
 <p><strong>Debug Handle Maps</strong> are constructed through the use of <strong>DelegateMappingBuilder</strong> and returned as a part of <code class="docutils literal notranslate"><span class="pre">PreprocessResult</span></code>.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">PreprocessResult</span><span class="p">:</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">PreprocessResult</span><span class="p">:</span>
     <span class="n">processed_bytes</span><span class="p">:</span> <span class="nb">bytes</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">()</span>
 
     <span class="n">debug_handle_map</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
@@ -534,7 +534,7 @@
 <p>With <strong>manual identifiers</strong>, users pass in a <strong>Delegate Debug Identifier</strong> when creating entries.
 With <strong>generated identifiers</strong>, the builder will auto-assign a <strong>Delegate Debug Identifier</strong>.</p>
 <p>To add an entry to the <strong>Debug Handle Map</strong>, use <code class="docutils literal notranslate"><span class="pre">insert_delegate_mapping_entry</span></code>. It associates one of <code class="docutils literal notranslate"><span class="pre">fx.Node(s)</span></code> or debug handles(s) (sourced from node.meta[“debug_handle”]) to an optional <strong>Delegate Debug Identifier</strong> (used for the manual identifiers). The identifier recorded is returned from the call.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">insert_delegate_mapping_entry</span><span class="p">(</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">insert_delegate_mapping_entry</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">nodes</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">Node</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Node</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">handles</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -543,7 +543,7 @@ With <strong>generated identifiers</strong>, the builder will auto-assign a <str
 </pre></div>
 </div>
 <p>To retrieve the <strong>Debug Handle Map</strong>, use <code class="docutils literal notranslate"><span class="pre">get_delegate_mapping</span></code>.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">get_delegate_mapping</span><span class="p">(</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">get_delegate_mapping</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">]],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]</span>
 </pre></div>
@@ -608,7 +608,7 @@ With <strong>generated identifiers</strong>, the builder will auto-assign a <str
 <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">parse_delegate_metadata</span><span class="p">(</span><span class="n">delegate_metadatas</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">bytes</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">parse_delegate_metadata</span><span class="p">(</span><span class="n">delegate_metadatas</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">bytes</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
     <span class="n">metadata_str</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">metadata_bytes</span> <span class="ow">in</span> <span class="n">delegate_metadatas</span><span class="p">:</span>
         <span class="n">metadata_str</span> <span class="o">+=</span> <span class="nb">str</span><span class="p">(</span><span class="n">metadata_bytes</span><span class="p">)</span>

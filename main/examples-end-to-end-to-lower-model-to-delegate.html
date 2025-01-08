@@ -505,7 +505,7 @@ the most streamlined procecss.</p></li>
 <p>This flow starts from a traced graph module with Edge Dialect representation. To
 lower it, we call the following function which returns a <code class="docutils literal notranslate"><span class="pre">LoweredBackendModule</span></code> (more documentation on this function can be found in the <a class="reference internal" href="export-to-executorch-api-reference.html"><span class="doc std std-doc">Export API reference</span></a>)</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># defined in backend_api.py</span>
-<span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">to_backend</span><span class="p">(</span>
     <span class="n">backend_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">compile_spec</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">],</span>
@@ -518,18 +518,18 @@ lowered module can be directly captured, or be put back in a parent module to be
 captured. Eventually the captured module is serialized in the flatbuffer’s model
 that can be loaded by the runtime.</p>
 <p>The following is an example of this flow:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
-<span class="kn">import</span> <span class="nn">executorch.exir</span> <span class="k">as</span> <span class="nn">exir</span>
-<span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.backend_api</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_backend</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">exir</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge</span>
 
 <span class="c1"># The submodule runs in a specific backend. In this example,  `BackendWithCompilerDemo` backend</span>
-<span class="k">class</span> <span class="nc">LowerableSubModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">LowerableSubModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
-    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 
 <span class="c1"># Convert the lowerable module to Edge IR Representation</span>
@@ -538,7 +538,7 @@ that can be loaded by the runtime.</p>
 <span class="n">to_be_lowered_exir_submodule</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">export</span><span class="p">(</span><span class="n">to_be_lowered</span><span class="p">,</span> <span class="n">example_input</span><span class="p">))</span>
 
 <span class="c1"># Import the backend implementation</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.backend.test.backend_with_compiler_demo</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.test.backend_with_compiler_demo</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">BackendWithCompilerDemo</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="n">lowered_module</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="s1">&#39;BackendWithCompilerDemo&#39;</span><span class="p">,</span> <span class="n">to_be_lowered_exir_submodule</span><span class="o">.</span><span class="n">exported_program</span><span class="p">(),</span> <span class="p">[])</span>
@@ -557,23 +557,23 @@ that can be loaded by the runtime.</p>
 <p>Alternatively, after flow 1, we can compose this lowered module with another
 module:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># This submodule runs in executor runtime</span>
-<span class="k">class</span> <span class="nc">NonLowerableSubModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bias</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">NonLowerableSubModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bias</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">bias</span> <span class="o">=</span> <span class="n">bias</span>
 
-    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
 
 
 <span class="c1"># The composite module, including lower part and non-lowerpart</span>
-<span class="k">class</span> <span class="nc">CompositeModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">CompositeModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">non_lowerable</span> <span class="o">=</span> <span class="n">NonLowerableSubModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.3</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">lowerable</span> <span class="o">=</span> <span class="n">lowered_module</span>
 
-    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
         <span class="n">a</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lowerable</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
         <span class="n">b</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lowerable</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
         <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">non_lowerable</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span>
@@ -596,7 +596,7 @@ module:</p>
 representation. To lower certain nodes in this graph module, we can use the
 overloaded <a class="reference external" href="https://github.com/pytorch/executorch/blob/d9eef24bb720804aa7b400b05241487510ae0dc2/exir/backend/backend_api.py#L39"><code class="docutils literal notranslate"><span class="pre">to_backend</span></code>
 function</a>.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">to_backend</span><span class="p">(</span>
     <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">partitioner</span><span class="p">:</span> <span class="n">Partitioner</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
@@ -610,21 +610,21 @@ Available helper partitioners are documented
 <a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="doc std std-doc">here</span></a>. These lowered modules
 will be inserted into the top-level module and serialized.</p>
 <p>The following is an example of the flow:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">executorch.exir</span> <span class="k">as</span> <span class="nn">exir</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.backend.test.op_partitioner_demo</span> <span class="kn">import</span> <span class="n">AddMulPartitionerDemo</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.program</span> <span class="kn">import</span> <span class="p">(</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">exir</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.backend_api</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_backend</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.test.op_partitioner_demo</span><span class="w"> </span><span class="kn">import</span> <span class="n">AddMulPartitionerDemo</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.program</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">EdgeProgramManager</span><span class="p">,</span>
     <span class="n">to_edge</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
-<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-<span class="k">class</span> <span class="nc">Model</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Model</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
-    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
         <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
         <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">*</span> <span class="n">y</span>
         <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">-</span> <span class="n">y</span>

@@ -485,14 +485,14 @@
 
 <span class="c1"># pyre-strict</span>
 
-<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">get_args</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_args</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Union</span>
 
-<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">torch.utils._pytree</span> <span class="kn">import</span> <span class="n">tree_flatten</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.utils._pytree</span><span class="w"> </span><span class="kn">import</span> <span class="n">tree_flatten</span>
 
-<span class="kn">from</span> <span class="nn">typing_extensions</span> <span class="kn">import</span> <span class="n">TypeAlias</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing_extensions</span><span class="w"> </span><span class="kn">import</span> <span class="n">TypeAlias</span>
 
 <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">The data types currently supported for element to be bundled. It should be</span>
@@ -525,12 +525,12 @@
 <span class="n">DataContainer</span><span class="p">:</span> <span class="n">TypeAlias</span> <span class="o">=</span> <span class="n">Union</span><span class="p">[</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span>
 
 
-<span class="k">class</span> <span class="nc">MethodTestCase</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MethodTestCase</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Test case with inputs and expected outputs</span>
 <span class="sd">    The expected_outputs are optional and only required if the user wants to verify model outputs after execution.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">inputs</span><span class="p">:</span> <span class="n">MethodInputType</span><span class="p">,</span>
         <span class="n">expected_outputs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">MethodOutputType</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -557,7 +557,7 @@
             <span class="c1"># pyre-ignore [6]: Misalign data type for between MethodTestCase attribute and sanity check.</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">expected_outputs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_flatten_and_sanity_check</span><span class="p">(</span><span class="n">expected_outputs</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_flatten_and_sanity_check</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_flatten_and_sanity_check</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">unflatten_data</span><span class="p">:</span> <span class="n">DataContainer</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">ConfigValue</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Flat the given data and check its legality</span>
@@ -587,7 +587,7 @@
 
 
 <div class="viewcode-block" id="MethodTestSuite"><a class="viewcode-back" href="../../../../bundled-io.html#executorch.devtools.bundled_program.config.MethodTestSuite">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">MethodTestSuite</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MethodTestSuite</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;All test info related to verify method</span>
 
 <span class="sd">    Attributes:</span>

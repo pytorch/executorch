@@ -590,13 +590,13 @@ If non-None, writes the string to that stream object. It can be</p>
 <p>Note: Python is dynamically-typed language and therefore cannot have proper method overloading as that requires the language to
 be able to discriminate between types at compile-time. &#64;to_backend.register will attach the function to to_backend() base on the type of the first
 argument (type annotation is required). However, it can’t take multiple types as arguments.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">to_backend</span><span class="p">(</span>
     <span class="n">backend_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">edge_graph_module</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">compile_specs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LoweredBackendModule</span><span class="p">:</span>
 
-<span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">to_backend</span><span class="p">(</span>
     <span class="n">graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
     <span class="n">partitioner</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">TPartitioner</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span>

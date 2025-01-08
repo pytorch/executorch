@@ -621,13 +621,13 @@ file which can be loaded by a desktop or mobile application at runtime.</p>
 <p>Create a file called export_nanogpt.py with the following contents:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># export_nanogpt.py</span>
 
-<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">to_edge</span>
-<span class="kn">from</span> <span class="nn">torch.nn.attention</span> <span class="kn">import</span> <span class="n">sdpa_kernel</span><span class="p">,</span> <span class="n">SDPBackend</span>
-<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span><span class="p">,</span> <span class="n">export_for_training</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">to_edge</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn.attention</span><span class="w"> </span><span class="kn">import</span> <span class="n">sdpa_kernel</span><span class="p">,</span> <span class="n">SDPBackend</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span><span class="p">,</span> <span class="n">export_for_training</span>
 
-<span class="kn">from</span> <span class="nn">model</span> <span class="kn">import</span> <span class="n">GPT</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">model</span><span class="w"> </span><span class="kn">import</span> <span class="n">GPT</span>
 
 <span class="c1"># Load the model.</span>
 <span class="n">model</span> <span class="o">=</span> <span class="n">GPT</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s1">&#39;gpt2&#39;</span><span class="p">)</span>
@@ -905,18 +905,18 @@ object <code class="docutils literal notranslate"><span class="pre">to_edge</spa
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># export_nanogpt.py</span>
 
 <span class="c1"># Load partitioner for Xnnpack backend</span>
-<span class="kn">from</span> <span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span> <span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
 
 <span class="c1"># Model to be delegated to specific backend should use specific edge compile config</span>
-<span class="kn">from</span> <span class="nn">executorch.backends.xnnpack.utils.configs</span> <span class="kn">import</span> <span class="n">get_xnnpack_edge_compile_config</span>
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">to_edge</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.utils.configs</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_xnnpack_edge_compile_config</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">to_edge</span>
 
-<span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
-<span class="kn">from</span> <span class="nn">torch.nn.attention</span> <span class="kn">import</span> <span class="n">sdpa_kernel</span><span class="p">,</span> <span class="n">SDPBackend</span>
-<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export_for_training</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn.attention</span><span class="w"> </span><span class="kn">import</span> <span class="n">sdpa_kernel</span><span class="p">,</span> <span class="n">SDPBackend</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export_for_training</span>
 
-<span class="kn">from</span> <span class="nn">model</span> <span class="kn">import</span> <span class="n">GPT</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">model</span><span class="w"> </span><span class="kn">import</span> <span class="n">GPT</span>
 
 <span class="c1"># Load the nanoGPT model.</span>
 <span class="n">model</span> <span class="o">=</span> <span class="n">GPT</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s1">&#39;gpt2&#39;</span><span class="p">)</span>
@@ -1052,14 +1052,14 @@ running with a representative input, and then call <code class="docutils literal
 quantized operators where available.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># export_nanogpt.py</span>
 
-<span class="kn">from</span> <span class="nn">executorch.backends.transforms.duplicate_dynamic_quant_chain</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.transforms.duplicate_dynamic_quant_chain</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">DuplicateDynamicQuantChainPass</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">torch.ao.quantization.quantizer.xnnpack_quantizer</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.ao.quantization.quantizer.xnnpack_quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">get_symmetric_quantization_config</span><span class="p">,</span>
     <span class="n">XNNPACKQuantizer</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">torch.ao.quantization.quantize_pt2e</span> <span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.ao.quantization.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
 </pre></div>
 </div>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Use dynamic, per-channel quantization.</span>
@@ -1087,7 +1087,7 @@ quantized operators where available.</p>
 </div>
 <p>Additionally, add or update the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> call to use <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code>. This instructs ExecuTorch to
 optimize the model for CPU execution via the XNNPACK backend.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span> <span class="kn">import</span> <span class="p">(</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">XnnpackPartitioner</span><span class="p">,</span>
 <span class="p">)</span>
 </pre></div>
@@ -1119,8 +1119,8 @@ structure the model in a way that is compatible with the target backend.</p>
 <div class="section" id="visualizing-the-delegation">
 <h3>Visualizing the Delegation<a class="headerlink" href="#visualizing-the-delegation" title="Permalink to this heading">¶</a></h3>
 <p>The <code class="docutils literal notranslate"><span class="pre">get_delegation_info()</span></code> method provides a summary of what happened to the model after the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> call:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.devtools.backend_debug</span> <span class="kn">import</span> <span class="n">get_delegation_info</span>
-<span class="kn">from</span> <span class="nn">tabulate</span> <span class="kn">import</span> <span class="n">tabulate</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.backend_debug</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_delegation_info</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tabulate</span><span class="w"> </span><span class="kn">import</span> <span class="n">tabulate</span>
 
 <span class="c1"># ... After call to to_backend(), but before to_executorch()</span>
 <span class="n">graph_module</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span>
@@ -1189,7 +1189,7 @@ structure the model in a way that is compatible with the target backend.</p>
 </table>
 <p>From the table, the operator <code class="docutils literal notranslate"><span class="pre">aten_view_copy_default</span></code> appears 96 times in delegate graphs and 122 times in non-delegated graphs.
 To see a more detailed view, use the <code class="docutils literal notranslate"><span class="pre">format_delegated_graph()</span></code> method to get a formatted str of printout of the whole graph or use <code class="docutils literal notranslate"><span class="pre">print_delegated_graph()</span></code> to print directly:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.utils</span> <span class="kn">import</span> <span class="n">format_delegated_graph</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">format_delegated_graph</span>
 <span class="n">graph_module</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">format_delegated_graph</span><span class="p">(</span><span class="n">graph_module</span><span class="p">))</span>
 </pre></div>
@@ -1224,8 +1224,8 @@ To see a more detailed view, use the <code class="docutils literal notranslate">
 <p>In your export script, after calling <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>, call <code class="docutils literal notranslate"><span class="pre">generate_etrecord()</span></code> with the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and the <code class="docutils literal notranslate"><span class="pre">ExecuTorchProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>. Make sure to copy the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code>, as the call to <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> mutates the graph in-place.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># export_nanogpt.py</span>
 
-<span class="kn">import</span> <span class="nn">copy</span>
-<span class="kn">from</span> <span class="nn">executorch.devtools</span> <span class="kn">import</span> <span class="n">generate_etrecord</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_etrecord</span>
 
 <span class="c1"># Make the deep copy immediately after to to_edge()</span>
 <span class="n">edge_manager_copy</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_manager</span><span class="p">)</span>
@@ -1292,7 +1292,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class
 <div class="section" id="analyze-with-inspector-apis">
 <h4>Analyze with Inspector APIs<a class="headerlink" href="#analyze-with-inspector-apis" title="Permalink to this heading">¶</a></h4>
 <p>Once you’ve collected debug artifacts ETDump (and optionally an ETRecord), you can use the Inspector API to view performance information.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.devtools</span> <span class="kn">import</span> <span class="n">Inspector</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">Inspector</span>
 
 <span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="s2">&quot;etdump.etdp&quot;</span><span class="p">)</span>
 <span class="c1"># If you also generated an ETRecord, then pass that in as well: `inspector = Inspector(etdump_path=&quot;etdump.etdp&quot;, etrecord=&quot;etrecord.bin&quot;)`</span>
@@ -1369,7 +1369,7 @@ implementation uses ExecuTorch tensor types, while the PyTorch wrapper uses ATen
 <p>To make it available to the ExecuTorch runtime, compile custom_linear.h/cpp into the binary target. You can also build the kernel as a dynamically loaded library (.so or .dylib) and link it as well.</p>
 <p>To make it available to PyTorch, package custom_linear.h, custom_linear.cpp and custom_linear_pytorch.cpp into a dynamically loaded library (.so or .dylib) and load it into the python environment.
 This is needed to make PyTorch aware of the custom operator at the time of export.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">load_library</span><span class="p">(</span><span class="s2">&quot;libcustom_linear.so&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -1381,7 +1381,7 @@ and <a class="reference internal" href="../kernel-library-custom-aten-kernel.htm
 <h3>Using a Custom Operator in a Model<a class="headerlink" href="#using-a-custom-operator-in-a-model" title="Permalink to this heading">¶</a></h3>
 <p>The custom operator can explicitly used in the PyTorch model, or you can write a transformation to replace instances of a core operator with the custom variant. For this example, you could find
 all instances of <code class="docutils literal notranslate"><span class="pre">torch.nn.Linear</span></code> and replace them with <code class="docutils literal notranslate"><span class="pre">CustomLinear</span></code>.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span>  <span class="nf">replace_linear_with_custom_linear</span><span class="p">(</span><span class="n">module</span><span class="p">):</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w">  </span><span class="nf">replace_linear_with_custom_linear</span><span class="p">(</span><span class="n">module</span><span class="p">):</span>
     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">module</span><span class="o">.</span><span class="n">named_children</span><span class="p">():</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">child</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">):</span>
             <span class="nb">setattr</span><span class="p">(</span>

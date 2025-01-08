@@ -571,10 +571,10 @@ All scalar types (such as float, int) are converted to Tensor.</p></li>
 <p>The Edge dialect is represented with <code class="docutils literal notranslate"><span class="pre">exir.EdgeProgramManager</span></code> Python class in
 memory. This contains one or multiple <code class="docutils literal notranslate"><span class="pre">torch.export.ExportedProgram</span></code>s which
 contain the graph representation of a method.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">from</span> <span class="nn">executorch</span> <span class="kn">import</span> <span class="n">exir</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch</span><span class="w"> </span><span class="kn">import</span> <span class="n">exir</span>
 
-<span class="k">class</span> <span class="nc">MyModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
     <span class="o">...</span>
 
 <span class="n">a</span> <span class="o">=</span> <span class="n">MyModule</span><span class="p">()</span>
@@ -620,7 +620,7 @@ Here’s an example of the dtype constraints:</p>
 consumes the file, and loads the constraints into EXIR Edge operators. This
 makes it convenient for developers to learn the supported dtypes of any argument
 in the Edge op schema. For example we can do:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.dialects._ops</span> <span class="kn">import</span> <span class="n">ops</span> <span class="k">as</span> <span class="n">exir_ops</span> <span class="c1"># import dialects ops</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.dialects._ops</span><span class="w"> </span><span class="kn">import</span> <span class="n">ops</span> <span class="k">as</span> <span class="n">exir_ops</span> <span class="c1"># import dialects ops</span>
 <span class="n">sigmoid</span> <span class="o">=</span> <span class="n">exir_ops</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">sigmoid</span><span class="o">.</span><span class="n">default</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">sigmoid</span><span class="o">.</span><span class="n">_schema</span><span class="p">)</span>
 <span class="c1"># aten::sigmoid(Tensor self) -&gt; Tensor</span>

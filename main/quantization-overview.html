@@ -496,13 +496,13 @@
 <p>This scheme represents 4-bit weight quantization with 8-bit dynamic quantization of activation during inference.</p>
 <p>Imported with <code class="docutils literal notranslate"><span class="pre">from</span> <span class="pre">torchao.quantization.quant_api</span> <span class="pre">import</span> <span class="pre">Int8DynActInt4WeightQuantizer</span></code>, this class uses a quantization instance constructed with a specified dtype precision and groupsize, to mutate a provided <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code>.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Source Quant</span>
-<span class="kn">from</span> <span class="nn">torchao.quantization.quant_api</span> <span class="kn">import</span> <span class="n">Int8DynActInt4WeightQuantizer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.quant_api</span><span class="w"> </span><span class="kn">import</span> <span class="n">Int8DynActInt4WeightQuantizer</span>
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">Int8DynActInt4WeightQuantizer</span><span class="p">(</span><span class="n">precision</span><span class="o">=</span><span class="n">torch_dtype</span><span class="p">,</span> <span class="n">groupsize</span><span class="o">=</span><span class="n">group_size</span><span class="p">)</span><span class="o">.</span><span class="n">quantize</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 
 <span class="c1"># Export to ExecuTorch</span>
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
-<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
 
 <span class="n">exported_model</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
 <span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">exported_model</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>

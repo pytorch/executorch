@@ -572,7 +572,7 @@
 <p>The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. For quantized model delegation, we quantize models using the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code>. <code class="docutils literal notranslate"><span class="pre">Quantizers</span></code> are backend specific, which means the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code> is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library. We will not go over the details of how to implement your custom quantizer, you can follow the docs <a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quantizer.html">here</a> to do so. However, we will provide a brief overview of how to quantize the model to leverage quantized execution of the XNNPACK delegate.</p>
 <div class="section" id="configuring-the-xnnpackquantizer">
 <h3>Configuring the XNNPACKQuantizer<a class="headerlink" href="#configuring-the-xnnpackquantizer" title="Permalink to this heading">¶</a></h3>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">torch.ao.quantization.quantizer.xnnpack_quantizer</span> <span class="kn">import</span> <span class="p">(</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torch.ao.quantization.quantizer.xnnpack_quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
   <span class="n">XNNPACKQuantizer</span><span class="p">,</span>
   <span class="n">get_symmetric_quantization_config</span><span class="p">,</span>
 <span class="p">)</span>
@@ -609,7 +609,7 @@
 <div class="section" id="quantizing-your-model-with-the-xnnpackquantizer">
 <h3>Quantizing your model with the XNNPACKQuantizer<a class="headerlink" href="#quantizing-your-model-with-the-xnnpackquantizer" title="Permalink to this heading">¶</a></h3>
 <p>After configuring our quantizer, we are now ready to quantize our model</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export_for_training</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export_for_training</span>
 
 <span class="n">exported_model</span> <span class="o">=</span> <span class="n">export_for_training</span><span class="p">(</span><span class="n">model_to_quantize</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
 <span class="n">prepared_model</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">exported_model</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
@@ -623,7 +623,7 @@
 </pre></div>
 </div>
 <p>You will now see the Q/DQ representation of the model, which means <code class="docutils literal notranslate"><span class="pre">torch.ops.quantized_decomposed.dequantize_per_tensor</span></code> are inserted at quantized operator inputs and <code class="docutils literal notranslate"><span class="pre">torch.ops.quantized_decomposed.quantize_per_tensor</span></code> are inserted at operator outputs. Example:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">_qdq_quantized_linear</span><span class="p">(</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">_qdq_quantized_linear</span><span class="p">(</span>
     <span class="n">x_i8</span><span class="p">,</span> <span class="n">x_scale</span><span class="p">,</span> <span class="n">x_zero_point</span><span class="p">,</span> <span class="n">x_quant_min</span><span class="p">,</span> <span class="n">x_quant_max</span><span class="p">,</span>
     <span class="n">weight_i8</span><span class="p">,</span> <span class="n">weight_scale</span><span class="p">,</span> <span class="n">weight_zero_point</span><span class="p">,</span> <span class="n">weight_quant_min</span><span class="p">,</span> <span class="n">weight_quant_max</span><span class="p">,</span>
     <span class="n">bias_fp32</span><span class="p">,</span>

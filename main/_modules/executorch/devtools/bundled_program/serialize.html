@@ -487,25 +487,25 @@
 
 <span class="c1"># TODO(T138924864): Refactor to unify the serialization for bundled program and executorch program.</span>
 
-<span class="kn">import</span> <span class="nn">json</span>
-<span class="kn">import</span> <span class="nn">os</span>
-<span class="kn">import</span> <span class="nn">tempfile</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
 
-<span class="kn">import</span> <span class="nn">executorch.devtools.bundled_program.schema</span> <span class="k">as</span> <span class="nn">bp_schema</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.schema</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">bp_schema</span>
 
 <span class="c1"># @manual=fbsource//third-party/pypi/setuptools:setuptools</span>
-<span class="kn">import</span> <span class="nn">pkg_resources</span>
-<span class="kn">from</span> <span class="nn">executorch.devtools.bundled_program.core</span> <span class="kn">import</span> <span class="n">BundledProgram</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pkg_resources</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">BundledProgram</span>
 
-<span class="kn">from</span> <span class="nn">executorch.exir._serialize._dataclass</span> <span class="kn">import</span> <span class="n">_DataclassEncoder</span><span class="p">,</span> <span class="n">_json_to_dataclass</span>
-<span class="kn">from</span> <span class="nn">executorch.exir._serialize._flatbuffer</span> <span class="kn">import</span> <span class="n">_flatc_compile</span><span class="p">,</span> <span class="n">_flatc_decompile</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize._dataclass</span><span class="w"> </span><span class="kn">import</span> <span class="n">_DataclassEncoder</span><span class="p">,</span> <span class="n">_json_to_dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize._flatbuffer</span><span class="w"> </span><span class="kn">import</span> <span class="n">_flatc_compile</span><span class="p">,</span> <span class="n">_flatc_decompile</span>
 
 <span class="c1"># The prefix of schema files used for bundled program</span>
 <span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span> <span class="o">=</span> <span class="s2">&quot;bundled_program_schema&quot;</span>
 <span class="n">SCALAR_TYPE_SCHEMA_NAME</span> <span class="o">=</span> <span class="s2">&quot;scalar_type&quot;</span>
 
 
-<span class="k">def</span> <span class="nf">write_schema</span><span class="p">(</span><span class="n">d</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">schema_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">write_schema</span><span class="p">(</span><span class="n">d</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">schema_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="n">schema_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.fbs&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">schema_name</span><span class="p">))</span>
     <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">schema_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">schema_file</span><span class="p">:</span>
         <span class="n">schema_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
@@ -513,20 +513,20 @@
         <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">serialize_from_bundled_program_to_json</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">serialize_from_bundled_program_to_json</span><span class="p">(</span>
     <span class="n">bundled_program</span><span class="p">:</span> <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledProgram</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
     <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">bundled_program</span><span class="p">,</span> <span class="bp">cls</span><span class="o">=</span><span class="n">_DataclassEncoder</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">deserialize_from_json_to_bundled_program</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">deserialize_from_json_to_bundled_program</span><span class="p">(</span>
     <span class="n">program_json</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledProgram</span><span class="p">:</span>
     <span class="n">program_json</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">program_json</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">_json_to_dataclass</span><span class="p">(</span><span class="n">program_json</span><span class="p">,</span> <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledProgram</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">convert_to_flatbuffer</span><span class="p">(</span><span class="n">program_json</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">convert_to_flatbuffer</span><span class="p">(</span><span class="n">program_json</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
     <span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">TemporaryDirectory</span><span class="p">()</span> <span class="k">as</span> <span class="n">d</span><span class="p">:</span>
         <span class="c1"># load given and common schema</span>
         <span class="n">write_schema</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">)</span>
@@ -542,7 +542,7 @@
             <span class="k">return</span> <span class="n">output_file</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
 
 
-<span class="k">def</span> <span class="nf">convert_from_flatbuffer</span><span class="p">(</span><span class="n">program_flatbuffer</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">convert_from_flatbuffer</span><span class="p">(</span><span class="n">program_flatbuffer</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
     <span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">TemporaryDirectory</span><span class="p">()</span> <span class="k">as</span> <span class="n">d</span><span class="p">:</span>
         <span class="n">write_schema</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">)</span>
         <span class="n">write_schema</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">SCALAR_TYPE_SCHEMA_NAME</span><span class="p">)</span>
@@ -558,7 +558,7 @@
 
 
 <span class="c1"># from bundled program to flatbuffer</span>
-<div class="viewcode-block" id="serialize_from_bundled_program_to_flatbuffer"><a class="viewcode-back" href="../../../../bundled-io.html#executorch.devtools.bundled_program.serialize.serialize_from_bundled_program_to_flatbuffer">[docs]</a><span class="k">def</span> <span class="nf">serialize_from_bundled_program_to_flatbuffer</span><span class="p">(</span>
+<div class="viewcode-block" id="serialize_from_bundled_program_to_flatbuffer"><a class="viewcode-back" href="../../../../bundled-io.html#executorch.devtools.bundled_program.serialize.serialize_from_bundled_program_to_flatbuffer">[docs]</a><span class="k">def</span><span class="w"> </span><span class="nf">serialize_from_bundled_program_to_flatbuffer</span><span class="p">(</span>
     <span class="n">bundled_program</span><span class="p">:</span> <span class="n">BundledProgram</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
@@ -586,7 +586,7 @@
 <span class="c1"># 2. the mis-exposion of schema.bundled_program. all classes in schema should not directly</span>
 <span class="c1">#    interact with user, but the deserialization api returns one.</span>
 <span class="c1"># TODO(T170042248): Solve the above issues.</span>
-<div class="viewcode-block" id="deserialize_from_flatbuffer_to_bundled_program"><a class="viewcode-back" href="../../../../bundled-io.html#executorch.devtools.bundled_program.serialize.deserialize_from_flatbuffer_to_bundled_program">[docs]</a><span class="k">def</span> <span class="nf">deserialize_from_flatbuffer_to_bundled_program</span><span class="p">(</span>
+<div class="viewcode-block" id="deserialize_from_flatbuffer_to_bundled_program"><a class="viewcode-back" href="../../../../bundled-io.html#executorch.devtools.bundled_program.serialize.deserialize_from_flatbuffer_to_bundled_program">[docs]</a><span class="k">def</span><span class="w"> </span><span class="nf">deserialize_from_flatbuffer_to_bundled_program</span><span class="p">(</span>
     <span class="n">flatbuffer</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledProgram</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>

@@ -485,26 +485,26 @@
 
 <span class="c1"># pyre-unsafe</span>
 
-<span class="kn">import</span> <span class="nn">copy</span>
-<span class="kn">import</span> <span class="nn">io</span>
-<span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">TextIO</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">TextIO</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
-<span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">import</span> <span class="nn">torch._export</span>
-<span class="kn">from</span> <span class="nn">executorch.exir._serialize</span> <span class="kn">import</span> <span class="n">_serialize_pte_binary</span>
-<span class="kn">from</span> <span class="nn">executorch.exir._serialize._cord</span> <span class="kn">import</span> <span class="n">Cord</span>
-<span class="kn">from</span> <span class="nn">executorch.exir._warnings</span> <span class="kn">import</span> <span class="n">experimental</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.backend.partitioner</span> <span class="kn">import</span> <span class="n">Partitioner</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.capture._config</span> <span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">ExecutorchBackendConfig</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.emit</span> <span class="kn">import</span> <span class="n">emit_program</span><span class="p">,</span> <span class="n">EmitterOutput</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.emit._emitter</span> <span class="kn">import</span> <span class="n">_DelegateDebugIdentifierMap</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.error</span> <span class="kn">import</span> <span class="n">ExportError</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.graph_module</span> <span class="kn">import</span> <span class="n">get_control_flow_submodules</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.pass_base</span> <span class="kn">import</span> <span class="n">PassBase</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.pass_manager</span> <span class="kn">import</span> <span class="n">PassType</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.passes</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch._export</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize</span><span class="w"> </span><span class="kn">import</span> <span class="n">_serialize_pte_binary</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize._cord</span><span class="w"> </span><span class="kn">import</span> <span class="n">Cord</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._warnings</span><span class="w"> </span><span class="kn">import</span> <span class="n">experimental</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.backend_api</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_backend</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">Partitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.capture._config</span><span class="w"> </span><span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">ExecutorchBackendConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.emit</span><span class="w"> </span><span class="kn">import</span> <span class="n">emit_program</span><span class="p">,</span> <span class="n">EmitterOutput</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.emit._emitter</span><span class="w"> </span><span class="kn">import</span> <span class="n">_DelegateDebugIdentifierMap</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.error</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExportError</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.graph_module</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_control_flow_submodules</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.pass_base</span><span class="w"> </span><span class="kn">import</span> <span class="n">PassBase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.pass_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">PassType</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">base_post_op_replace_passes</span><span class="p">,</span>
     <span class="n">base_pre_op_replace_passes</span><span class="p">,</span>
     <span class="n">dead_code_elimination_pass</span><span class="p">,</span>
@@ -512,38 +512,38 @@
     <span class="n">MemoryFormatOpsPass</span><span class="p">,</span>
     <span class="n">OpReplacePass</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.passes.external_constants_pass</span> <span class="kn">import</span> <span class="n">external_constants_pass</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.passes.insert_write_back_for_buffers_pass</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.external_constants_pass</span><span class="w"> </span><span class="kn">import</span> <span class="n">external_constants_pass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.insert_write_back_for_buffers_pass</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">insert_write_back_for_buffers_pass</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.passes.normalize_view_copy_base_pass</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.normalize_view_copy_base_pass</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">NormalizeViewCopyBasePass</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.passes.remove_graph_asserts_pass</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.remove_graph_asserts_pass</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">RemoveGraphAssertsPass</span><span class="p">,</span>
     <span class="n">RemoveNonCoreAtenOpGraphAssertsPass</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.passes.remove_mixed_type_operators</span> <span class="kn">import</span> <span class="n">RemoveMixedTypeOperators</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.passes.replace_aten_with_edge_pass</span> <span class="kn">import</span> <span class="n">aten_to_edge</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.passes.replace_view_copy_with_view_pass</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.remove_mixed_type_operators</span><span class="w"> </span><span class="kn">import</span> <span class="n">RemoveMixedTypeOperators</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.replace_aten_with_edge_pass</span><span class="w"> </span><span class="kn">import</span> <span class="n">aten_to_edge</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.replace_view_copy_with_view_pass</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">ReplaceViewCopyWithViewPass</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.passes.spec_prop_pass</span> <span class="kn">import</span> <span class="n">SpecPropPass</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.passes.weights_to_outputs_pass</span> <span class="kn">import</span> <span class="n">weights_to_outputs_pass</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.print_program</span> <span class="kn">import</span> <span class="n">pretty_print</span><span class="p">,</span> <span class="n">print_program</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.schema</span> <span class="kn">import</span> <span class="n">Program</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.tracer</span> <span class="kn">import</span> <span class="n">_default_decomposition_table</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.verification.verifier</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.spec_prop_pass</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpecPropPass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.weights_to_outputs_pass</span><span class="w"> </span><span class="kn">import</span> <span class="n">weights_to_outputs_pass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.print_program</span><span class="w"> </span><span class="kn">import</span> <span class="n">pretty_print</span><span class="p">,</span> <span class="n">print_program</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">Program</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.tracer</span><span class="w"> </span><span class="kn">import</span> <span class="n">_default_decomposition_table</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.verification.verifier</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">EXIRATenDialectVerifier</span><span class="p">,</span>
     <span class="n">EXIREdgeDialectVerifier</span><span class="p">,</span>
     <span class="n">get_aten_verifier</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">torch._export.passes</span> <span class="kn">import</span> <span class="n">ReplaceViewOpsWithViewCopyOpsPass</span>
-<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">ExportedProgram</span>
-<span class="kn">from</span> <span class="nn">torch.export._remove_auto_functionalized_pass</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch._export.passes</span><span class="w"> </span><span class="kn">import</span> <span class="n">ReplaceViewOpsWithViewCopyOpsPass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExportedProgram</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export._remove_auto_functionalized_pass</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">unsafe_remove_auto_functionalized_pass</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">torch.export.exported_program</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export.exported_program</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">ConstantArgument</span><span class="p">,</span>
     <span class="n">ExportGraphSignature</span><span class="p">,</span>
     <span class="n">InputKind</span><span class="p">,</span>
@@ -551,24 +551,24 @@
     <span class="n">OutputSpec</span><span class="p">,</span>
     <span class="n">TensorArgument</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">torch.fx</span> <span class="kn">import</span> <span class="n">_pytree</span> <span class="k">as</span> <span class="n">fx_pytree</span>
-<span class="kn">from</span> <span class="nn">torch.fx._compatibility</span> <span class="kn">import</span> <span class="n">compatibility</span>
-<span class="kn">from</span> <span class="nn">torch.fx.passes.infra.pass_manager</span> <span class="kn">import</span> <span class="n">PassManager</span>
-<span class="kn">from</span> <span class="nn">torch.utils</span> <span class="kn">import</span> <span class="n">_pytree</span> <span class="k">as</span> <span class="n">pytree</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.fx</span><span class="w"> </span><span class="kn">import</span> <span class="n">_pytree</span> <span class="k">as</span> <span class="n">fx_pytree</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.fx._compatibility</span><span class="w"> </span><span class="kn">import</span> <span class="n">compatibility</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.fx.passes.infra.pass_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">PassManager</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">_pytree</span> <span class="k">as</span> <span class="n">pytree</span>
 
 <span class="n">Val</span> <span class="o">=</span> <span class="n">Any</span>
 
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span>
 
-<span class="kn">from</span> <span class="nn">torch.library</span> <span class="kn">import</span> <span class="n">Library</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.library</span><span class="w"> </span><span class="kn">import</span> <span class="n">Library</span>
 
 <span class="k">try</span><span class="p">:</span>
-    <span class="kn">from</span> <span class="nn">executorch.exir.program.fb.logger</span> <span class="kn">import</span> <span class="n">et_logger</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.program.fb.logger</span><span class="w"> </span><span class="kn">import</span> <span class="n">et_logger</span>
 <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
     <span class="c1"># Define a stub decorator that does nothing</span>
-    <span class="k">def</span> <span class="nf">et_logger</span><span class="p">(</span><span class="n">api_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">],</span> <span class="n">Any</span><span class="p">]:</span>
-        <span class="k">def</span> <span class="nf">decorator</span><span class="p">(</span><span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
-            <span class="k">def</span> <span class="nf">wrapper</span><span class="p">(</span><span class="bp">self</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">et_logger</span><span class="p">(</span><span class="n">api_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">],</span> <span class="n">Any</span><span class="p">]:</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">decorator</span><span class="p">(</span><span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+            <span class="k">def</span><span class="w"> </span><span class="nf">wrapper</span><span class="p">(</span><span class="bp">self</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
                 <span class="k">return</span> <span class="n">func</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
 
             <span class="k">return</span> <span class="n">wrapper</span>
@@ -586,14 +586,14 @@
 <span class="n">transform_op_to_aten_op</span> <span class="o">=</span> <span class="p">{}</span>
 
 
-<span class="k">def</span> <span class="nf">_get_updated_range_constraints</span><span class="p">(</span><span class="n">gm</span><span class="p">):</span>
-    <span class="k">def</span> <span class="nf">get_shape_env</span><span class="p">(</span><span class="n">gm</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_updated_range_constraints</span><span class="p">(</span><span class="n">gm</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_shape_env</span><span class="p">(</span><span class="n">gm</span><span class="p">):</span>
         <span class="n">vals</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">]</span>
             <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span>
             <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;val&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="p">]</span>
-        <span class="kn">from</span> <span class="nn">torch._guards</span> <span class="kn">import</span> <span class="n">detect_fake_mode</span>  <span class="c1"># type: ignore[21]</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">torch._guards</span><span class="w"> </span><span class="kn">import</span> <span class="n">detect_fake_mode</span>  <span class="c1"># type: ignore[21]</span>
 
         <span class="n">fake_mode</span> <span class="o">=</span> <span class="n">detect_fake_mode</span><span class="p">(</span><span class="n">vals</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">fake_mode</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -619,7 +619,7 @@
     <span class="k">return</span> <span class="n">range_constraints</span>
 
 
-<span class="k">def</span> <span class="nf">_get_updated_graph_signature</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_updated_graph_signature</span><span class="p">(</span>
     <span class="n">old_signature</span><span class="p">:</span> <span class="n">ExportGraphSignature</span><span class="p">,</span>
     <span class="n">new_gm</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportGraphSignature</span><span class="p">:</span>
@@ -677,7 +677,7 @@
     <span class="k">return</span> <span class="n">new_signature</span>
 
 
-<span class="k">def</span> <span class="nf">_transform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">:</span> <span class="n">PassType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExportedProgram&quot;</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_transform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">:</span> <span class="n">PassType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExportedProgram&quot;</span><span class="p">:</span>
     <span class="n">pm</span> <span class="o">=</span> <span class="n">PassManager</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">passes</span><span class="p">))</span>
     <span class="n">res</span> <span class="o">=</span> <span class="n">pm</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
     <span class="n">transformed_gm</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">graph_module</span> <span class="k">if</span> <span class="n">res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph_module</span>
@@ -704,7 +704,7 @@
     <span class="k">return</span> <span class="n">transformed_ep</span>
 
 
-<span class="k">def</span> <span class="nf">_copy_module</span><span class="p">(</span><span class="n">new_prog</span><span class="p">,</span> <span class="n">new_gm</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_copy_module</span><span class="p">(</span><span class="n">new_prog</span><span class="p">,</span> <span class="n">new_gm</span><span class="p">):</span>
     <span class="n">new_prog</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">new_gm</span><span class="o">.</span><span class="n">meta</span><span class="p">)</span>
     <span class="n">new_prog</span><span class="o">.</span><span class="n">graph</span> <span class="o">=</span> <span class="n">new_gm</span><span class="o">.</span><span class="n">graph</span>
     <span class="n">submodules</span> <span class="o">=</span> <span class="p">[</span><span class="n">name</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">new_prog</span><span class="o">.</span><span class="n">named_children</span><span class="p">()]</span>
@@ -719,7 +719,7 @@
                 <span class="nb">setattr</span><span class="p">(</span><span class="n">new_prog</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">,</span> <span class="n">t</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">lift_constant_tensor_pass</span><span class="p">(</span><span class="n">ep</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">lift_constant_tensor_pass</span><span class="p">(</span><span class="n">ep</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Takes an ExportedProgram and returns the ExportedProgram modified in-place,</span>
 <span class="sd">    with the constant tensors as buffers.</span>
@@ -785,15 +785,15 @@
 
 
 <span class="c1"># Stub to ease migration from `transform` to private `_transform`</span>
-<span class="k">def</span> <span class="nf">transform_exported_program</span><span class="p">(</span><span class="n">ep</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">:</span> <span class="n">PassType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">transform_exported_program</span><span class="p">(</span><span class="n">ep</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">:</span> <span class="n">PassType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
     <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">ep</span><span class="p">,</span> <span class="s2">&quot;_transform&quot;</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">ep</span><span class="o">.</span><span class="n">_transform</span><span class="p">(</span><span class="o">*</span><span class="n">passes</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">ep</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="o">*</span><span class="n">passes</span><span class="p">)</span>
 
 
-<span class="k">class</span> <span class="nc">HackedUpExportedProgramDONOTUSE</span><span class="p">(</span><span class="n">ExportedProgram</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">HackedUpExportedProgramDONOTUSE</span><span class="p">(</span><span class="n">ExportedProgram</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">root</span><span class="p">,</span>
         <span class="n">graph</span><span class="p">,</span>
@@ -816,8 +816,8 @@
             <span class="n">verifier</span><span class="o">=</span><span class="n">verifier</span><span class="p">,</span>
         <span class="p">)</span>
 
-    <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-        <span class="kn">import</span> <span class="nn">torch._export.error</span> <span class="k">as</span> <span class="nn">error</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch._export.error</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">error</span>
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">call_spec</span><span class="o">.</span><span class="n">in_spec</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">user_args</span> <span class="o">=</span> <span class="n">args</span>
@@ -877,8 +877,8 @@
 
 
 <span class="nd">@compatibility</span><span class="p">(</span><span class="n">is_backward_compatible</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="k">class</span> <span class="nc">ExirExportedProgram</span><span class="p">:</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ExirExportedProgram</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">exported_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
         <span class="n">after_to_edge_passes</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
@@ -889,15 +889,15 @@
         <span class="c1"># to detect misusage of directly calling to_executorch without to_edge</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">after_to_edge_passes</span> <span class="o">=</span> <span class="n">after_to_edge_passes</span>
 
-    <span class="k">def</span> <span class="nf">transform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">:</span> <span class="n">PassType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExirExportedProgram&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">transform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">:</span> <span class="n">PassType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExirExportedProgram&quot;</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">_transform</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span>
 
-    <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">module</span><span class="p">()(</span><span class="o">*</span><span class="n">args</span><span class="p">)</span>
 
     <span class="c1"># TODO(ycao): Change this to a composable function.</span>
-    <span class="k">def</span> <span class="nf">to_edge</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_edge</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExirExportedProgram&quot;</span><span class="p">:</span>
         <span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">EdgeCompileConfig</span><span class="p">()</span>
@@ -907,10 +907,10 @@
 
         <span class="k">return</span> <span class="n">_to_edge</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">dump</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">dump</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="nb">print</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">to_executorch</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_executorch</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExecutorchBackendConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExecutorchProgram&quot;</span><span class="p">:</span>
@@ -949,7 +949,7 @@
         <span class="p">)</span>
         <span class="k">return</span> <span class="n">executorch_prog</span>
 
-    <span class="k">def</span> <span class="nf">__deepcopy__</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__deepcopy__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">memo</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExirExportedProgram&quot;</span><span class="p">:</span>
         <span class="n">new_eep</span> <span class="o">=</span> <span class="n">ExirExportedProgram</span><span class="p">(</span>
@@ -960,8 +960,8 @@
 
 
 <span class="nd">@compatibility</span><span class="p">(</span><span class="n">is_backward_compatible</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="k">class</span> <span class="nc">ExecutorchProgram</span><span class="p">:</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ExecutorchProgram</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">exir_exported_program</span><span class="p">:</span> <span class="n">ExirExportedProgram</span><span class="p">,</span>
         <span class="n">emit_stacktrace</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
@@ -984,7 +984,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_constant_tensor_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">constant_tensor_alignment</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_delegate_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegate_alignment</span>
 
-    <span class="k">def</span> <span class="nf">_get_pte_data</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Cord</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_pte_data</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Cord</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span> <span class="o">=</span> <span class="n">_serialize_pte_binary</span><span class="p">(</span>
                 <span class="n">program</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">program</span><span class="p">,</span>
@@ -996,7 +996,7 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the serialized ExecuTorch binary as a byte string.</span>
 
 <span class="sd">        Note that the call to `buffer` may allocate a very large amount of</span>
@@ -1010,7 +1010,7 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">program</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Program</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">program</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Program</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span> <span class="o">=</span> <span class="n">emit_program</span><span class="p">(</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emit_stacktrace</span>
@@ -1018,13 +1018,13 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">program</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">debug_handle_map</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">debug_handle_map</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">debug_handle_map</span>
         <span class="k">return</span> <span class="p">{}</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">delegate_map</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">delegate_map</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_DelegateDebugIdentifierMap</span><span class="p">]]]]:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="p">:</span>
@@ -1032,17 +1032,17 @@
         <span class="k">return</span> <span class="p">{}</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">graph_module</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">graph_module</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span>
 
     <span class="c1"># TODO (zhxchen17) Change this to property.</span>
-    <span class="k">def</span> <span class="nf">dump_graph_module</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">dump_graph_module</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span>
 
-    <span class="k">def</span> <span class="nf">dump_exported_program</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">dump_exported_program</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span>
 
-    <span class="k">def</span> <span class="nf">write_to_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">open_file</span><span class="p">:</span> <span class="n">io</span><span class="o">.</span><span class="n">BufferedIOBase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_to_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">open_file</span><span class="p">:</span> <span class="n">io</span><span class="o">.</span><span class="n">BufferedIOBase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Writes the serialized ExecuTorch binary to the file at `open_file`. Prefer to use this over</span>
 <span class="sd">        `buffer`, as it writes to file without copying into a contiguous block of memory first,</span>
@@ -1051,7 +1051,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_get_pte_data</span><span class="p">()</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">open_file</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_get_aten_to_edge_passes</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_aten_to_edge_passes</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">):</span>
     <span class="c1"># TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -&gt; debug_handle_generator. After enable</span>
     <span class="c1"># use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn&#39;t play</span>
     <span class="c1"># well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.</span>
@@ -1066,7 +1066,7 @@
     <span class="k">return</span> <span class="n">pre_op_replace_passes</span><span class="p">,</span> <span class="n">post_op_replace_passes</span>
 
 
-<span class="k">def</span> <span class="nf">_to_edge</span><span class="p">(</span><span class="n">ep</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExirExportedProgram&quot;</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_to_edge</span><span class="p">(</span><span class="n">ep</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExirExportedProgram&quot;</span><span class="p">:</span>
     <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">EXIRATenDialectVerifier</span><span class="p">()(</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
@@ -1143,7 +1143,7 @@
     <span class="k">return</span> <span class="n">new_ep</span>
 
 
-<span class="k">def</span> <span class="nf">pre_memory_planning_passes</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">pre_memory_planning_passes</span><span class="p">(</span>
     <span class="n">config</span><span class="p">:</span> <span class="n">ExecutorchBackendConfig</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">PassType</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
@@ -1178,7 +1178,7 @@
         <span class="p">]</span>
 
 
-<span class="k">def</span> <span class="nf">edge_to_executorch_passes</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">edge_to_executorch_passes</span><span class="p">(</span>
     <span class="n">config</span><span class="p">:</span> <span class="n">ExecutorchBackendConfig</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">PassType</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
@@ -1198,7 +1198,7 @@
     <span class="k">return</span> <span class="n">passes</span>
 
 
-<span class="k">def</span> <span class="nf">_generate_edge_program</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_generate_edge_program</span><span class="p">(</span>
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span>
     <span class="n">program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
@@ -1263,7 +1263,7 @@
     <span class="k">return</span> <span class="n">edge_program</span>
 
 
-<span class="k">def</span> <span class="nf">_replace_aten_ops_with_transformed_ops</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_replace_aten_ops_with_transformed_ops</span><span class="p">(</span>
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">partitioner</span><span class="p">,</span>
@@ -1307,7 +1307,7 @@
     <span class="k">return</span> <span class="n">ops_to_not_decompose</span>
 
 
-<span class="k">def</span> <span class="nf">_restore_transformed_ops_to_aten_ops</span><span class="p">(</span><span class="n">program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_restore_transformed_ops_to_aten_ops</span><span class="p">(</span><span class="n">program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">):</span>
     <span class="c1"># Iterate through the graph and replace back the transformed ops with their</span>
     <span class="c1"># corresponding aten ops.</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
@@ -1324,7 +1324,7 @@
 
 <span class="c1"># Returns the op in edge_no_decomp_namespace namespace for the aten</span>
 <span class="c1"># op that is passed in.</span>
-<span class="k">def</span> <span class="nf">_get_transformed_op</span><span class="p">(</span><span class="n">op_aten</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_transformed_op</span><span class="p">(</span><span class="n">op_aten</span><span class="p">):</span>
     <span class="n">op_name</span> <span class="o">=</span> <span class="n">op_aten</span><span class="o">.</span><span class="n">_schema</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;::&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
     <span class="n">overload_name</span> <span class="o">=</span> <span class="n">op_aten</span><span class="o">.</span><span class="n">_schema</span><span class="o">.</span><span class="n">overload_name</span>
     <span class="k">assert</span> <span class="nb">hasattr</span><span class="p">(</span>
@@ -1337,7 +1337,7 @@
 
 <span class="c1"># Registers the op in edge_no_decomp_namespace namespace for the aten</span>
 <span class="c1"># op that is passed in if it is not already cached in the table.</span>
-<span class="k">def</span> <span class="nf">_register_no_decomp_op</span><span class="p">(</span><span class="n">op_aten</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_register_no_decomp_op</span><span class="p">(</span><span class="n">op_aten</span><span class="p">):</span>
     <span class="c1"># Check if the op is already cached in the table. If not, then we need to</span>
     <span class="c1"># create a new op in the edge_no_decomp_namespace namespace.</span>
     <span class="k">if</span> <span class="n">aten_op_to_transform_op</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">op_aten</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span>
@@ -1361,7 +1361,7 @@
         <span class="n">transform_op_to_aten_op</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">aten_op_to_transform_op</span><span class="p">[</span><span class="n">op_aten</span><span class="p">])]</span> <span class="o">=</span> <span class="n">op_aten</span>
 
 
-<span class="k">def</span> <span class="nf">_sanity_check_graph_for_non_decomp_ops</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_sanity_check_graph_for_non_decomp_ops</span><span class="p">(</span>
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">ops_set_to_not_decompose</span><span class="p">,</span>
@@ -1408,7 +1408,7 @@
                     <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="n">warning_str</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_gen_edge_manager_for_partitioners</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_gen_edge_manager_for_partitioners</span><span class="p">(</span>
     <span class="n">partitioner</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Partitioner</span><span class="p">]],</span>
     <span class="n">aten_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">],</span>
     <span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span>
@@ -1472,7 +1472,7 @@
 
 
 <div class="viewcode-block" id="to_edge_transform_and_lower"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.to_edge_transform_and_lower">[docs]</a><span class="nd">@et_logger</span><span class="p">(</span><span class="s2">&quot;to_edge_transform_and_lower&quot;</span><span class="p">)</span>
-<span class="k">def</span> <span class="nf">to_edge_transform_and_lower</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">to_edge_transform_and_lower</span><span class="p">(</span>
     <span class="n">programs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]],</span>
     <span class="n">transform_passes</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
         <span class="n">Union</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">PassType</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">PassType</span><span class="p">]]]</span>
@@ -1582,7 +1582,7 @@
 <span class="sd">    This function will be combined with to_edge in the future.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 <span class="p">)</span>
-<span class="k">def</span> <span class="nf">to_edge_with_preserved_ops</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">to_edge_with_preserved_ops</span><span class="p">(</span>
     <span class="n">programs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]],</span>
     <span class="n">constant_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">compile_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -1626,7 +1626,7 @@
 
 
 <div class="viewcode-block" id="to_edge"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.to_edge">[docs]</a><span class="nd">@et_logger</span><span class="p">(</span><span class="s2">&quot;to_edge&quot;</span><span class="p">)</span>
-<span class="k">def</span> <span class="nf">to_edge</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">to_edge</span><span class="p">(</span>
     <span class="n">programs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]],</span>
     <span class="n">constant_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">compile_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -1662,7 +1662,7 @@
     <span class="k">return</span> <span class="n">EdgeProgramManager</span><span class="p">(</span><span class="n">edge_programs</span><span class="p">,</span> <span class="n">constant_methods</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="EdgeProgramManager"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager">[docs]</a><span class="k">class</span> <span class="nc">EdgeProgramManager</span><span class="p">:</span>
+<div class="viewcode-block" id="EdgeProgramManager"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">EdgeProgramManager</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Package of one or more `ExportedPrograms` in Edge dialect. Designed to simplify</span>
 <span class="sd">    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html</span>
@@ -1673,7 +1673,7 @@
 <span class="sd">    Manages the second link in the lowering chain of ATen -&gt; Edge -&gt; ExecuTorch.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">edge_programs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]],</span>
         <span class="n">constant_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -1703,20 +1703,20 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span> <span class="o">=</span> <span class="n">constant_methods</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">methods</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">methods</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the set of methods in this EdgeProgramManager.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">config_methods</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">config_methods</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the set of config methods in this EdgeProgramManager.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span> <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
 
-<div class="viewcode-block" id="EdgeProgramManager.exported_program"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.exported_program">[docs]</a>    <span class="k">def</span> <span class="nf">exported_program</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;forward&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+<div class="viewcode-block" id="EdgeProgramManager.exported_program"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.exported_program">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">exported_program</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;forward&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the ExportedProgram specified by &#39;method_name&#39;.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -1724,7 +1724,7 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span></div>
 
     <span class="nd">@et_logger</span><span class="p">(</span><span class="s2">&quot;transform&quot;</span><span class="p">)</span>
-    <span class="k">def</span> <span class="nf">transform</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">transform</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">passes</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">PassType</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">PassType</span><span class="p">]]],</span>
         <span class="n">compile_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -1772,7 +1772,7 @@
         <span class="p">)</span>
 
     <span class="nd">@et_logger</span><span class="p">(</span><span class="s2">&quot;to_backend&quot;</span><span class="p">)</span>
-    <span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_backend</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">partitioner</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Partitioner</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Partitioner</span><span class="p">]]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;EdgeProgramManager&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -1816,7 +1816,7 @@
         <span class="p">)</span>
 
     <span class="nd">@et_logger</span><span class="p">(</span><span class="s2">&quot;to_executorch&quot;</span><span class="p">)</span>
-    <span class="k">def</span> <span class="nf">to_executorch</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_executorch</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExecutorchBackendConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExecutorchProgramManager&quot;</span><span class="p">:</span>
@@ -1883,7 +1883,7 @@
         <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="ExecutorchProgramManager"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager">[docs]</a><span class="k">class</span> <span class="nc">ExecutorchProgramManager</span><span class="p">:</span>
+<div class="viewcode-block" id="ExecutorchProgramManager"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">ExecutorchProgramManager</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Package of one or more `ExportedPrograms` in Execution dialect. Designed to simplify</span>
 <span class="sd">    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html</span>
@@ -1895,7 +1895,7 @@
 <span class="sd">    Manages the final link in the lowering chain of ATen -&gt; Edge -&gt; ExecuTorch.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">execution_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">],</span>
         <span class="n">config_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -1943,26 +1943,26 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">methods</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">methods</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the set of methods in this ExecutorchProgramManager.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_execution_programs</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">config_methods</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">config_methods</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the set of config methods in this ExecutorchProgramManager.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span> <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
 
-<div class="viewcode-block" id="ExecutorchProgramManager.exported_program"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager.exported_program">[docs]</a>    <span class="k">def</span> <span class="nf">exported_program</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;forward&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+<div class="viewcode-block" id="ExecutorchProgramManager.exported_program"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager.exported_program">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">exported_program</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;forward&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the ExportedProgram specified by &#39;method_name&#39;.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_execution_programs</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span></div>
 
-<div class="viewcode-block" id="ExecutorchProgramManager.dump_executorch_program"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager.dump_executorch_program">[docs]</a>    <span class="k">def</span> <span class="nf">dump_executorch_program</span><span class="p">(</span>
+<div class="viewcode-block" id="ExecutorchProgramManager.dump_executorch_program"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager.dump_executorch_program">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">dump_executorch_program</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">out</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">TextIO</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -1983,24 +1983,24 @@
             <span class="n">print_program</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">program</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="p">)</span></div>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">debug_handle_map</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">debug_handle_map</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">debug_handle_map</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">delegate_map</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">delegate_map</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_DelegateDebugIdentifierMap</span><span class="p">]]]]:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">method_to_delegate_debug_id_map</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">executorch_program</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Program</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">executorch_program</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Program</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the object that represents the ExecuTorch binary before serialization.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">program</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the serialized ExecuTorch binary as a byte string.</span>
 
 <span class="sd">        Note that the call to `buffer` may allocate a very large amount of</span>
@@ -2013,7 +2013,7 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span>
 
-    <span class="k">def</span> <span class="nf">write_to_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">open_file</span><span class="p">:</span> <span class="n">io</span><span class="o">.</span><span class="n">BufferedIOBase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_to_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">open_file</span><span class="p">:</span> <span class="n">io</span><span class="o">.</span><span class="n">BufferedIOBase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Writes the serialized ExecuTorch binary to the file at `open_file`. Prefer to use this over</span>
 <span class="sd">        `buffer`, as it writes to file without copying into a contiguous block of memory first,</span>
@@ -2021,7 +2021,7 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">open_file</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Saves the serialized ExecuTorch binary to the file at `path`.</span>
 <span class="sd">        &quot;&quot;&quot;</span>

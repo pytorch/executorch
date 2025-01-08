@@ -483,42 +483,42 @@
 <span class="c1"># This source code is licensed under the BSD-style license found in the</span>
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
-<span class="kn">import</span> <span class="nn">copy</span>
-<span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">from</span> <span class="nn">contextlib</span> <span class="kn">import</span> <span class="n">contextmanager</span><span class="p">,</span> <span class="n">nullcontext</span>
-<span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">singledispatch</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Generator</span><span class="p">,</span> <span class="n">List</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">contextlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">contextmanager</span><span class="p">,</span> <span class="n">nullcontext</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">singledispatch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Generator</span><span class="p">,</span> <span class="n">List</span>
 
-<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_details</span> <span class="kn">import</span> <span class="n">BackendDetails</span><span class="p">,</span> <span class="n">PreprocessResult</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.backend.compile_spec_schema</span> <span class="kn">import</span> <span class="n">CompileSpec</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.backend_details</span><span class="w"> </span><span class="kn">import</span> <span class="n">BackendDetails</span><span class="p">,</span> <span class="n">PreprocessResult</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.compile_spec_schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">CompileSpec</span>
 
-<span class="kn">from</span> <span class="nn">executorch.exir.backend.partitioner</span> <span class="kn">import</span> <span class="n">Partitioner</span><span class="p">,</span> <span class="n">PartitionResult</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.backend.utils</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">Partitioner</span><span class="p">,</span> <span class="n">PartitionResult</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.utils</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">_maybe_duplicate_constant_nodes</span><span class="p">,</span>
     <span class="n">is_identical_graph</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="kn">from</span> <span class="nn">executorch.exir.delegate</span> <span class="kn">import</span> <span class="n">executorch_call_delegate</span><span class="p">,</span> <span class="n">get_lowered_module_name</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.delegate</span><span class="w"> </span><span class="kn">import</span> <span class="n">executorch_call_delegate</span><span class="p">,</span> <span class="n">get_lowered_module_name</span>
 
-<span class="kn">from</span> <span class="nn">executorch.exir.graph_module</span> <span class="kn">import</span> <span class="n">get_control_flow_submodules</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.lowered_backend_module</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.graph_module</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_control_flow_submodules</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.lowered_backend_module</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">_unsafe_adjust_original_program</span><span class="p">,</span>
     <span class="n">create_exported_program_from_submodule</span><span class="p">,</span>
     <span class="n">create_submodule_from_nodes</span><span class="p">,</span>
     <span class="n">LoweredBackendModule</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.program._fake_program</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.program._fake_program</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">get_fake_program</span><span class="p">,</span>
     <span class="n">update_to_real_program</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">torch._export.utils</span> <span class="kn">import</span> <span class="n">is_buffer</span><span class="p">,</span> <span class="n">is_lifted_tensor_constant</span><span class="p">,</span> <span class="n">is_param</span>
-<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">ExportedProgram</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch._export.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">is_buffer</span><span class="p">,</span> <span class="n">is_lifted_tensor_constant</span><span class="p">,</span> <span class="n">is_param</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExportedProgram</span>
 
 
 <div class="viewcode-block" id="to_backend"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.to_backend">[docs]</a><span class="nd">@singledispatch</span>
-<span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">to_backend</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A generic function the dispatch happens on the type of the first argument. There are currently to overloaded to_backend function:</span>
 
@@ -543,7 +543,7 @@
 
 
 <span class="nd">@to_backend</span><span class="o">.</span><span class="n">register</span>
-<span class="k">def</span> <span class="nf">_</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span>
     <span class="n">backend_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">compile_specs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">],</span>
@@ -609,14 +609,14 @@
 <span class="n">_ENABLE_VALIDATION</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
 
 
-<span class="k">def</span> <span class="nf">disable_validation</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">disable_validation</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Disables validation&quot;&quot;&quot;</span>
     <span class="k">global</span> <span class="n">_ENABLE_VALIDATION</span>
     <span class="n">_ENABLE_VALIDATION</span> <span class="o">=</span> <span class="kc">False</span>
 
 
 <span class="nd">@contextmanager</span>
-<span class="k">def</span> <span class="nf">validation_disabled</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Generator</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">validation_disabled</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Generator</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Disables checking functions (ex. if the partitioned graph is identical to</span>
 <span class="sd">    the original graph). This context manager should only be used in certain</span>
@@ -632,7 +632,7 @@
         <span class="n">_ENABLE_VALIDATION</span> <span class="o">=</span> <span class="n">existing_setting</span>
 
 
-<span class="k">def</span> <span class="nf">_get_node_list_with_same_tag</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_node_list_with_same_tag</span><span class="p">(</span>
     <span class="n">tagged_graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
     <span class="n">tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
@@ -667,7 +667,7 @@
     <span class="k">return</span> <span class="n">node_list</span>
 
 
-<span class="k">def</span> <span class="nf">_partition_and_lower_one_graph_module</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_partition_and_lower_one_graph_module</span><span class="p">(</span>
     <span class="n">tagged_graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
     <span class="n">partition_result</span><span class="p">:</span> <span class="n">PartitionResult</span><span class="p">,</span>
     <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
@@ -740,7 +740,7 @@
                     <span class="n">call_delegate_args</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">inp_node</span><span class="p">)</span>
                     <span class="k">break</span>
 
-        <span class="k">def</span> <span class="nf">generate_debug_handle</span><span class="p">(</span><span class="n">ep</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">generate_debug_handle</span><span class="p">(</span><span class="n">ep</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">            </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">            Generate a debug handle for the given ExportedProgram.</span>
 <span class="sd">            &quot;&quot;&quot;</span>
@@ -785,7 +785,7 @@
     <span class="k">return</span> <span class="n">tagged_graph_module</span>
 
 
-<span class="k">def</span> <span class="nf">_partition_and_lower</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_partition_and_lower</span><span class="p">(</span>
     <span class="n">tagged_graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
     <span class="n">partition_result</span><span class="p">:</span> <span class="n">PartitionResult</span><span class="p">,</span>
     <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
@@ -810,7 +810,7 @@
 
 
 <span class="nd">@to_backend</span><span class="o">.</span><span class="n">register</span>
-<span class="k">def</span> <span class="nf">_</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span>
     <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">partitioner_instance</span><span class="p">:</span> <span class="n">Partitioner</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>

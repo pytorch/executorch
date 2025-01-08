@@ -486,7 +486,7 @@
 <div class="section" id="usage">
 <h2>Usage<a class="headerlink" href="#usage" title="Permalink to this heading">¶</a></h2>
 <p>User should add this code after they call <a class="reference external" href="https://pytorch.org/executorch/main/export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.to_executorch">to_executorch()</a>, and it will write memory allocation information stored on the nodes to the file path “memory_profile.json”. The file is compatible with the Chrome trace viewer; see below for more information about interpreting the results.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.util.activation_memory_profiler</span> <span class="kn">import</span> <span class="n">generate_memory_trace</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.util.activation_memory_profiler</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_memory_trace</span>
 <span class="n">generate_memory_trace</span><span class="p">(</span>
     <span class="n">executorch_program_manager</span><span class="o">=</span><span class="n">prog</span><span class="p">,</span>
     <span class="n">chrome_trace_filename</span><span class="o">=</span><span class="s2">&quot;memory_profile.json&quot;</span><span class="p">,</span>

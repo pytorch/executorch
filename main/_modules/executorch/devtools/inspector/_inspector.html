@@ -485,14 +485,14 @@
 
 <span class="c1"># pyre-unsafe</span>
 
-<span class="kn">import</span> <span class="nn">dataclasses</span>
-<span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">import</span> <span class="nn">sys</span>
-<span class="kn">import</span> <span class="nn">warnings</span>
-<span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">defaultdict</span><span class="p">,</span> <span class="n">OrderedDict</span>
-<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span>
-<span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">cached_property</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span><span class="p">,</span> <span class="n">OrderedDict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">cached_property</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">Any</span><span class="p">,</span>
     <span class="n">Callable</span><span class="p">,</span>
     <span class="n">Dict</span><span class="p">,</span>
@@ -507,19 +507,19 @@
     <span class="n">Union</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="kn">import</span> <span class="nn">executorch.devtools.etdump.schema_flatcc</span> <span class="k">as</span> <span class="nn">flatcc</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">executorch.devtools.etdump.schema_flatcc</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">flatcc</span>
 
-<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
-<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 
-<span class="kn">from</span> <span class="nn">executorch.devtools.debug_format.et_schema</span> <span class="kn">import</span> <span class="n">OperatorGraph</span><span class="p">,</span> <span class="n">OperatorNode</span>
-<span class="kn">from</span> <span class="nn">executorch.devtools.etdump.schema_flatcc</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.debug_format.et_schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">OperatorGraph</span><span class="p">,</span> <span class="n">OperatorNode</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.etdump.schema_flatcc</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">DebugEvent</span><span class="p">,</span>
     <span class="n">ETDumpFlatCC</span><span class="p">,</span>
     <span class="n">ProfileEvent</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">executorch.devtools.etrecord</span> <span class="kn">import</span> <span class="n">ETRecord</span><span class="p">,</span> <span class="n">parse_etrecord</span>
-<span class="kn">from</span> <span class="nn">executorch.devtools.inspector._inspector_utils</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.etrecord</span><span class="w"> </span><span class="kn">import</span> <span class="n">ETRecord</span><span class="p">,</span> <span class="n">parse_etrecord</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.inspector._inspector_utils</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">calculate_time_scale_factor</span><span class="p">,</span>
     <span class="n">create_debug_handle_to_op_node_mapping</span><span class="p">,</span>
     <span class="n">display_or_print_df</span><span class="p">,</span>
@@ -538,7 +538,7 @@
     <span class="n">TimeScale</span><span class="p">,</span>
     <span class="n">verify_debug_data_equivalence</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">ExportedProgram</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExportedProgram</span>
 
 
 <span class="n">log</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">Logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
@@ -546,7 +546,7 @@
 
 <span class="c1"># Signature of an InstructionEvent</span>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="k">class</span> <span class="nc">InstructionEventSignature</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">InstructionEventSignature</span><span class="p">:</span>
     <span class="n">instruction_id</span><span class="p">:</span> <span class="nb">int</span>
     <span class="n">chain_index</span><span class="p">:</span> <span class="nb">int</span>
     <span class="n">delegate_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
@@ -555,13 +555,13 @@
 
 <span class="c1"># Aggregated Runtime Events for a single instruction</span>
 <span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">InstructionEvent</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">InstructionEvent</span><span class="p">:</span>
     <span class="n">signature</span><span class="p">:</span> <span class="n">InstructionEventSignature</span>
     <span class="n">profile_events</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">ProfileEvent</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">debug_events</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">DebugEvent</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">gen_from_events</span><span class="p">(</span><span class="n">run_events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">flatcc</span><span class="o">.</span><span class="n">Event</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="s2">&quot;InstructionEvent&quot;</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">gen_from_events</span><span class="p">(</span><span class="n">run_events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">flatcc</span><span class="o">.</span><span class="n">Event</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="s2">&quot;InstructionEvent&quot;</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Given a list of events from a run in ETDump, collate the ProfileEvent</span>
 <span class="sd">        and DebugEvents by instruction id and return a list of InstructionEvents</span>
@@ -605,14 +605,14 @@
 
 <span class="c1"># Signature of a ProfileEvent</span>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="k">class</span> <span class="nc">ProfileEventSignature</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ProfileEventSignature</span><span class="p">:</span>
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">instruction_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
     <span class="n">delegate_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">delegate_id_str</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">_gen_from_event</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">ProfileEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ProfileEventSignature&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_gen_from_event</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">ProfileEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ProfileEventSignature&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Given a ProfileEvent, extract the fields into a signature</span>
 
@@ -629,14 +629,14 @@
 
 <span class="c1"># Signature of a DebugEvent</span>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="k">class</span> <span class="nc">DebugEventSignature</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DebugEventSignature</span><span class="p">:</span>
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
     <span class="n">instruction_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
     <span class="n">delegate_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">delegate_id_str</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">_gen_from_event</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">DebugEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;DebugEventSignature&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_gen_from_event</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">DebugEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;DebugEventSignature&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Given a DebugEvent, extract the fields into a signature</span>
 
@@ -653,7 +653,7 @@
 
 <span class="c1"># Signature of an Event inside of a Run</span>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="k">class</span> <span class="nc">EventSignature</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">EventSignature</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Note that (profile_event_signature, debug_event_signature) are sufficient</span>
 <span class="sd">    signature identifiers.</span>
@@ -667,7 +667,7 @@
     <span class="n">debug_event_signature</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">DebugEventSignature</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">gen_from_instruction_event</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">gen_from_instruction_event</span><span class="p">(</span>
         <span class="n">instruction_event</span><span class="p">:</span> <span class="n">InstructionEvent</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="s2">&quot;EventSignature&quot;</span><span class="p">,</span> <span class="n">InstructionEvent</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -714,7 +714,7 @@
 
 <span class="c1"># Signature of a Run</span>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="k">class</span> <span class="nc">RunSignature</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">RunSignature</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Args:</span>
 <span class="sd">        name: Name of the run</span>
@@ -740,37 +740,37 @@
 
 
 <span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">PerfData</span><span class="p">:</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">raw</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PerfData</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">raw</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">raw</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">p10</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">p10</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">p50</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">p50</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">,</span> <span class="mi">50</span><span class="p">)</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">p90</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">p90</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">,</span> <span class="mi">90</span><span class="p">)</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">avg</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">avg</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">min</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">min</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
         <span class="k">return</span> <span class="nb">min</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">max</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">max</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
         <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="Event"><a class="viewcode-back" href="../../../../model-inspector.html#executorch.devtools.inspector.Event">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">Event</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Event</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    An Event corresponds to an operator instance with perf data retrieved from the runtime and other metadata from `ETRecord`.</span>
 
@@ -815,7 +815,7 @@
     <span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="nd">@cached_property</span>
-    <span class="k">def</span> <span class="nf">delegate_debug_metadatas</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">delegate_debug_metadatas</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the parsed _delegate_debug_metadatas if a parser is available</span>
 <span class="sd">        Otherwise returns the raw _delegate_debug_metadatas</span>
@@ -825,13 +825,13 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_delegate_metadata_parser</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_delegate_debug_metadatas</span><span class="p">)</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">raw_delegate_debug_metadatas</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">raw_delegate_debug_metadatas</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Return the raw unparsed _delegate_debug_metadatas</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_delegate_debug_metadatas</span>
 
-    <span class="k">def</span> <span class="nf">to_dataframe</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">_units</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_dataframe</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">_units</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Convert the Event into a pandas DataFrame</span>
 
@@ -845,7 +845,7 @@
         <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">event_dict</span><span class="p">)</span>
 
     <span class="c1"># Override the default implementation of dataclass.asdict to handle null perf data</span>
-    <span class="k">def</span> <span class="nf">asdict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">_units</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">asdict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">_units</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Convert the Event into a dict</span>
 
@@ -856,7 +856,7 @@
 <span class="sd">            A dict with the Event data</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
-        <span class="k">def</span> <span class="nf">truncated_list</span><span class="p">(</span><span class="n">long_list</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">truncated_list</span><span class="p">(</span><span class="n">long_list</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
             <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;[&#39;</span><span class="si">{</span><span class="n">long_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;, &#39;</span><span class="si">{</span><span class="n">long_list</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39; ... &#39;</span><span class="si">{</span><span class="n">long_list</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;] (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">long_list</span><span class="p">)</span><span class="si">}</span><span class="s2"> total)&quot;</span>
 
         <span class="k">return</span> <span class="p">{</span>
@@ -884,7 +884,7 @@
         <span class="p">}</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">_gen_from_inference_events</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_gen_from_inference_events</span><span class="p">(</span>
         <span class="n">signature</span><span class="p">:</span> <span class="n">EventSignature</span><span class="p">,</span>
         <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">InstructionEvent</span><span class="p">],</span>
         <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
@@ -931,7 +931,7 @@
         <span class="k">return</span> <span class="n">ret_event</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">_calculate_elapsed_time</span><span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_calculate_elapsed_time</span><span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">):</span>
         <span class="c1"># We&#39;re assuming if there&#39;s a wraparound in the time values, then</span>
         <span class="c1"># the time representation of that platform only contains 32 bits.</span>
         <span class="c1"># This should be fine for now, but ideally we should source the max</span>
@@ -950,7 +950,7 @@
         <span class="k">return</span> <span class="n">elapsed_time</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">_populate_event_signature_fields</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_populate_event_signature_fields</span><span class="p">(</span>
         <span class="n">ret_event</span><span class="p">:</span> <span class="s2">&quot;Event&quot;</span><span class="p">,</span>
         <span class="n">event_signature</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">ProfileEventSignature</span><span class="p">,</span> <span class="n">DebugEventSignature</span><span class="p">]],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -986,7 +986,7 @@
             <span class="n">ret_event</span><span class="o">.</span><span class="n">is_delegated_op</span> <span class="o">=</span> <span class="n">is_delegated_op</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">_populate_profiling_related_fields</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_populate_profiling_related_fields</span><span class="p">(</span>
         <span class="n">ret_event</span><span class="p">:</span> <span class="s2">&quot;Event&quot;</span><span class="p">,</span>
         <span class="n">profile_event_signature</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ProfileEventSignature</span><span class="p">],</span>
         <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">InstructionEvent</span><span class="p">],</span>
@@ -1063,7 +1063,7 @@
             <span class="n">ret_event</span><span class="o">.</span><span class="n">_delegate_debug_metadatas</span> <span class="o">=</span> <span class="n">delegate_debug_metadatas</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">_populate_debugging_related_fields</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_populate_debugging_related_fields</span><span class="p">(</span>
         <span class="n">ret_event</span><span class="p">:</span> <span class="s2">&quot;Event&quot;</span><span class="p">,</span>
         <span class="n">debug_event_signature</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">DebugEventSignature</span><span class="p">],</span>
         <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">InstructionEvent</span><span class="p">],</span>
@@ -1107,7 +1107,7 @@
             <span class="k">for</span> <span class="n">debug_value</span> <span class="ow">in</span> <span class="n">debug_data</span>
         <span class="p">]</span>
 
-    <span class="k">def</span> <span class="nf">_associate_with_op_graph_nodes</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_associate_with_op_graph_nodes</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">debug_handle_to_op_node_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">OperatorNode</span><span class="p">],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -1138,7 +1138,7 @@
 
 
 <div class="viewcode-block" id="EventBlock"><a class="viewcode-back" href="../../../../model-inspector.html#executorch.devtools.inspector.EventBlock">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">EventBlock</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">EventBlock</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    An `EventBlock` contains a collection of events associated with a particular profiling/debugging block retrieved from the runtime.</span>
 <span class="sd">    Each `EventBlock` represents a pattern of execution. For example, model initiation and loading lives in a single `EventBlock`.</span>
@@ -1160,7 +1160,7 @@
     <span class="n">run_output</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ProgramOutput</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">reference_output</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ProgramOutput</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
-    <span class="k">def</span> <span class="nf">to_dataframe</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_dataframe</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">include_units</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">include_delegate_debug_data</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -1213,7 +1213,7 @@
         <span class="k">return</span> <span class="n">df</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">_gen_from_etdump</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_gen_from_etdump</span><span class="p">(</span>
         <span class="n">etdump</span><span class="p">:</span> <span class="n">ETDumpFlatCC</span><span class="p">,</span>
         <span class="n">source_time_scale</span><span class="p">:</span> <span class="n">TimeScale</span> <span class="o">=</span> <span class="n">TimeScale</span><span class="o">.</span><span class="n">NS</span><span class="p">,</span>
         <span class="n">target_time_scale</span><span class="p">:</span> <span class="n">TimeScale</span> <span class="o">=</span> <span class="n">TimeScale</span><span class="o">.</span><span class="n">MS</span><span class="p">,</span>
@@ -1242,7 +1242,7 @@
         <span class="c1">#   (1) a map from each EventSignature to InstructionEvents with the signature</span>
         <span class="c1">#   (2) the run output for this RunSignature</span>
         <span class="nd">@dataclass</span>
-        <span class="k">class</span> <span class="nc">GroupedRunInstances</span><span class="p">:</span>
+        <span class="k">class</span><span class="w"> </span><span class="nc">GroupedRunInstances</span><span class="p">:</span>
             <span class="n">events</span><span class="p">:</span> <span class="n">OrderedDict</span><span class="p">[</span><span class="n">EventSignature</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">InstructionEvent</span><span class="p">]]</span>
             <span class="n">run_output</span><span class="p">:</span> <span class="n">ProgramOutput</span>
 
@@ -1339,7 +1339,7 @@
         <span class="k">return</span> <span class="n">event_blocks</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">_collect_run_outputs</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_collect_run_outputs</span><span class="p">(</span>
         <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">flatcc</span><span class="o">.</span><span class="n">Event</span><span class="p">],</span> <span class="n">output_buffer</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ProgramOutput</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -1365,7 +1365,7 @@
         <span class="p">]</span>
 
     <span class="c1"># TODO: Considering changing ETRecord deserialization logic to cast the ints in string format to actual ints</span>
-    <span class="k">def</span> <span class="nf">_gen_resolve_debug_handles</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_gen_resolve_debug_handles</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">handle_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]],</span>
         <span class="n">delegate_map</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">DelegateMetadata</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -1431,7 +1431,7 @@
                         <span class="n">event</span><span class="o">.</span><span class="n">debug_handles</span> <span class="o">=</span> <span class="n">value</span></div>
 
 
-<span class="k">class</span> <span class="nc">Inspector</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Inspector</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    APIs for examining model architecture and performance stats.</span>
 
@@ -1442,7 +1442,7 @@
 <span class="sd">        _etrecord: Optional[ETRecord]. File under etrecord_path deserialized into an object.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">etdump_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">etdump_data</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -1540,7 +1540,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_enable_module_hierarchy</span> <span class="o">=</span> <span class="n">enable_module_hierarchy</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_consume_etrecord</span><span class="p">()</span>
 
-    <span class="k">def</span> <span class="nf">_consume_etrecord</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_consume_etrecord</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        If an ETRecord is provided, connect it to the EventBlocks and populate the Event metadata.</span>
 
@@ -1599,7 +1599,7 @@
                         <span class="n">index</span>
                     <span class="p">]</span>
 
-    <span class="k">def</span> <span class="nf">to_dataframe</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_dataframe</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">include_units</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">include_delegate_debug_data</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
@@ -1622,7 +1622,7 @@
         <span class="p">]</span>
         <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">df_list</span><span class="p">,</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_prepare_dataframe</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_prepare_dataframe</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">include_units</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">include_delegate_debug_data</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
@@ -1647,7 +1647,7 @@
 
         <span class="k">return</span> <span class="n">filtered_column_df</span>
 
-    <span class="k">def</span> <span class="nf">print_data_tabular</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">print_data_tabular</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">file</span><span class="p">:</span> <span class="n">IO</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span>
         <span class="n">include_units</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
@@ -1668,7 +1668,7 @@
         <span class="n">df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_dataframe</span><span class="p">(</span><span class="n">include_units</span><span class="p">,</span> <span class="n">include_delegate_debug_data</span><span class="p">)</span>
         <span class="n">display_or_print_df</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">file</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">save_data_to_tsv</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save_data_to_tsv</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">file</span><span class="p">:</span> <span class="n">IO</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -1685,7 +1685,7 @@
         <span class="n">df</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">file</span><span class="p">,</span> <span class="n">sep</span><span class="o">=</span><span class="s2">&quot;</span><span class="se">\t</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="c1"># TODO: write unit test</span>
-    <span class="k">def</span> <span class="nf">find_total_for_module</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">find_total_for_module</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the total average compute time of all operators within the specified module.</span>
 
@@ -1710,7 +1710,7 @@
                         <span class="k">break</span>
         <span class="k">return</span> <span class="n">total</span>
 
-    <span class="k">def</span> <span class="nf">get_op_list</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_op_list</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">event_block</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">show_delegated_ops</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Event</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -1719,14 +1719,14 @@
         <span class="c1"># TODO: implement</span>
         <span class="k">return</span> <span class="p">{}</span>
 
-    <span class="k">def</span> <span class="nf">write_tensorboard_artifact</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_tensorboard_artifact</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Write to the provided path, the artifacts required for visualization in TensorBoard</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># TODO: implement</span>
         <span class="k">pass</span>
 
-    <span class="k">def</span> <span class="nf">get_exported_program</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_exported_program</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">graph</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
