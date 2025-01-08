@@ -181,16 +181,16 @@ option(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT "Build the custom ops lib for AOT"
 )
 
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
-       OFF
+       ON
 )
 
-option(EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" OFF)
+option(EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" ON)
 
 option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
        OFF
 )
 
-option(EXECUTORCH_BUILD_EXTENSION_TENSOR "Build the Tensor extension" OFF)
+option(EXECUTORCH_BUILD_EXTENSION_TENSOR "Build the Tensor extension" ON)
 
 option(EXECUTORCH_BUILD_EXTENSION_TRAINING "Build the training extension" OFF)
 
@@ -832,6 +832,23 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
   target_link_libraries(executor_runner ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+endif()
+
+if(TRUE)
+  # Build Module
+  set(_module_libs executorch gflags)
+  list(APPEND _module_libs
+    portable_ops_lib
+    portable_kernels
+    extension_data_loader
+    extension_tensor
+    extension_module_static
+  )
+
+  add_executable(module_runner examples/portable/module/module.cpp)
+  target_link_libraries(module_runner ${_module_libs})
+  target_compile_options(module_runner PUBLIC ${_common_compile_options})
+
 endif()
 
 if(EXECUTORCH_BUILD_VULKAN)
