@@ -29,6 +29,8 @@ class Runner {
   explicit Runner(
       const std::vector<std::string>& models_path,
       const std::string& tokenizer_path,
+      const float logits_scale,
+      const int32_t logits_offset,
       const float temperature,
       const int eval_mode);
 
@@ -73,8 +75,9 @@ class Runner {
  private:
   template <typename T>
   T getMetadataHelper(std::string method_name, T default_val);
-  template <typename T>
-  int32_t logitsToToken(const executorch::aten::Tensor& logits_tensor);
+  int32_t logitsToToken(
+      const executorch::aten::Tensor& logits_tensor,
+      int64_t pos);
   void run_model_step(
       const std::string& method_name,
       std::vector<std::vector<executorch::runtime::EValue>>& inputs);
@@ -90,6 +93,8 @@ class Runner {
   const int32_t n_eos_;
   std::vector<std::shared_ptr<executorch::extension::Module>> modules_;
   std::string tokenizer_path_;
+  float logits_scale_;
+  int32_t logits_offset_;
   float temperature_;
   std::unique_ptr<executorch::extension::llm::Tokenizer> tokenizer_;
   std::unique_ptr<executorch::extension::llm::Sampler> sampler_;
