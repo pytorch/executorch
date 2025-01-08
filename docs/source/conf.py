@@ -197,7 +197,7 @@ intersphinx_mapping = {
 
 # Custom directives defintions to create cards on main landing page
 
-from custom_directives import (
+from custom_directives import (  # type: ignore[import-not-found]
     CustomCardEnd,
     CustomCardItem,
     CustomCardStart,

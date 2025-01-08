@@ -52,9 +52,7 @@ from functorch.experimental.control_flow import cond
 kernel_mode = None  # either aten mode or lean mode
 try:
     from executorch.extension.pybindings.portable_lib import (
-        _load_bundled_program_from_buffer,
         _load_for_executorch_from_buffer,
-        _load_for_executorch_from_bundled_program,
     )
 
     kernel_mode = "lean"
@@ -63,10 +61,8 @@ except ImportError as e:
     pass
 
 try:
-    from executorch.extension.pybindings.aten_lib import (
-        _load_bundled_program_from_buffer,
+    from executorch.extension.pybindings.aten_lib import (  # type: ignore[import-not-found]
         _load_for_executorch_from_buffer,
-        _load_for_executorch_from_bundled_program,
     )
 
     assert kernel_mode is None

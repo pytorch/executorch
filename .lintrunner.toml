@@ -306,8 +306,8 @@ include_patterns = [
     'profiler/**/*.py',
     'runtime/**/*.py',
     'scripts/**/*.py',
-    # 'test/**/*.py',
-    # 'util/**/*.py',
+    'test/**/*.py',
+    'util/**/*.py',
     '*.py',
 ]
 exclude_patterns = [
@@ -325,6 +325,7 @@ command = [
     '--config=.mypy.ini',
     '--show-disable',
     '--',
+    '--explicit-package-bases',
     '@{{PATHSFILE}}'
 ]
 init_command = [

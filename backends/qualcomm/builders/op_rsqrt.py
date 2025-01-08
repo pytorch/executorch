@@ -29,20 +29,20 @@ class Rsqrt(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         rsqrt_inp_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
         rsqrt_input_tensors = [rsqrt_inp_tensor_wrapper]
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
         rsqrt_output_tensors = [output_tensor_wrapper]
 

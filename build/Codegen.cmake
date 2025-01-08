@@ -18,7 +18,7 @@ function(gen_selected_ops)
   message(STATUS "  OPS_SCHEMA_YAML: ${GEN_OPS_SCHEMA_YAML}")
   message(STATUS "  ROOT_OPS: ${GEN_ROOT_OPS}")
   message(STATUS "  INCLUDE_ALL_OPS: ${GEN_INCLUDE_ALL_OPS}")
-  message(STATUS "  ADD_EXCEPTION_BOUNDARY: ${GEN_ADD_EXCEPTION_BOUNDARTY}")
+  message(STATUS "  ADD_EXCEPTION_BOUNDARY: ${GEN_ADD_EXCEPTION_BOUNDARY}")
 
   set(_oplist_yaml
       ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_operators.yaml
@@ -98,7 +98,7 @@ function(generate_bindings_for_kernels)
       --op-selection-yaml-path=${_oplist_yaml}
     )
   if(GEN_ADD_EXCEPTION_BOUNDARY)
-    set(_gen_command "${_gen_command} --add-exception-boundary")
+    set(_gen_command "${_gen_command}" --add-exception-boundary)
   endif()
 
   set(_gen_command_sources
