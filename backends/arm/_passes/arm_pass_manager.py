@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -45,6 +45,7 @@ from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPa
 from executorch.backends.arm._passes.meandim_to_averagepool_pass import (
     ConvertMeanDimToAveragePool,
 )
+from executorch.backends.arm._passes.mm_to_bmm_pass import ConvertMmToBmmPass
 from executorch.backends.arm._passes.remove_clone_pass import RemoveClonePass
 from executorch.backends.arm._passes.scalars_to_attribute_pass import (
     ScalarsToAttributePass,
@@ -79,6 +80,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMeanDimToAveragePool())
         self.add_pass(DecomposeMeanDimPass())
         self.add_pass(ConvertSplitToSlicePass())
+        self.add_pass(ConvertMmToBmmPass())
         # TODO MLETORCH-558
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeFullArgument())
@@ -99,7 +101,6 @@ class ArmPassManager(PassManager):
                     exir_ops.edge.aten.hardtanh.default,
                     exir_ops.edge.aten.log.default,
                     exir_ops.edge.aten.max_pool2d.default,
-                    exir_ops.edge.aten.mm.default,
                     exir_ops.edge.aten.mul.Tensor,
                     exir_ops.edge.aten.permute_copy.default,
                     exir_ops.edge.aten.reciprocal.default,
