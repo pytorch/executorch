@@ -270,7 +270,7 @@ class TestEmit(unittest.TestCase):
         )
 
         # Save a copy of the edge program since to_executorch is
-        # stateful to sombe degree.
+        # stateful to some degree.
         edge_copy = deepcopy(edge)
         et_config = ExecutorchBackendConfig(
             passes=[InitializedMutableBufferPass(["cache_pos"])],
@@ -289,7 +289,8 @@ class TestEmit(unittest.TestCase):
         torch.allclose(
             method_init_pass.execute((example_inputs))[0], torch.arange(1, 11)
         )
-        # Test that the mutable buffer is uninitialized and starts with default zeros.
+        # Test that the mutable buffer is uninitialized and starts with default zeros,
+        # we test equality with torch.ones because of the mutation += 1 in the model forward.
         torch.allclose(
             method_regular.execute((example_inputs))[0],
             torch.ones(10, dtype=torch.int64),
