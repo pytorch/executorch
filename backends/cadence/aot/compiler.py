@@ -17,7 +17,10 @@ from executorch.backends.cadence.aot.memory_planning import (
     print_memory_planning_info,
 )
 from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
-from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
+from executorch.backends.cadence.aot.quantizer.quantizer import (
+    CadenceDefaultQuantizer,
+    CadenceQuantizer,
+)
 from executorch.backends.cadence.aot.utils import (
     get_default_memory_config,
     MemoryConfig,
@@ -136,7 +139,7 @@ def quantize_pt2(
 
     # Instantiate the quantizer to CadenceQuantizer if not supplied
     if not quantizer:
-        quantizer = CadenceQuantizer()
+        quantizer = CadenceDefaultQuantizer()
 
     # Get converted graph module
     converted_gm = convert_pt2(model, inputs, quantizer)

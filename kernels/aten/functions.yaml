@@ -407,8 +407,6 @@
 
 - op: upsample_bilinear2d.vec_out
 
-- op: upsample_nearest2d.out
-
 - op: upsample_nearest2d.vec_out
 
 - op: var.correction_out
