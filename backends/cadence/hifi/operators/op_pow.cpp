@@ -131,7 +131,6 @@ Tensor& pow_Tensor_Tensor_out(
 
       ET_KERNEL_CHECK(ctx, ptr2 != nullptr, MemoryAllocationFailed, out);
 
-
       WORD32* __restrict__ pin1 =
           (WORD32* __restrict__)a.const_data_ptr<float>();
       WORD32* __restrict__ pin2 =
