@@ -165,12 +165,16 @@ if __name__ == "__main__":
         inputs_copy = tuple(inputs_copy)
 
     # pre-autograd export. eventually this will become torch.export
+    # TODO: revert _skip_dim_order=True once the mps issue is fixed.
+    skip_dim_order = True
     with torch.no_grad():
         model = torch.export.export_for_training(model, example_inputs).module()
         edge: EdgeProgramManager = export_to_edge(
             model,
             example_inputs,
-            edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            edge_compile_config=EdgeCompileConfig(
+                _check_ir_validity=False, _skip_dim_order=skip_dim_order
+            ),
         )
 
     edge_program_manager_copy = copy.deepcopy(edge)
@@ -192,7 +196,9 @@ if __name__ == "__main__":
         executorch_program: ExecutorchProgramManager = export_to_edge(
             lowered_module,
             example_inputs,
-            edge_compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+            edge_compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False, _skip_dim_order=skip_dim_order
+            ),
         ).to_executorch(config=ExecutorchBackendConfig(extract_delegate_segments=False))
 
     dtype = "float16" if args.use_fp16 else "float32"
