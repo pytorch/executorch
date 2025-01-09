@@ -16,7 +16,7 @@
 
 #define op(X, A, B) ${OPERATOR}
 
-#include "indexing_utils.h"
+#include "indexing_utils_u16.h"
 
 layout(std430) buffer;
 
@@ -43,13 +43,10 @@ shared u16vec2 pos_shared[gl_WorkGroupSize.x * gl_WorkGroupSize.y * gl_WorkGroup
  * size is only 1x1, making it easier to re-use loaded texels from t_kernel.
  */
 void main() {
-  const uvec2 out_limits_scaled = (out_limits.xy + TILE_SIZE - 1) / TILE_SIZE;
+  const ivec2 out_limits_scaled = (out_limits.xy + TILE_SIZE - 1) / TILE_SIZE;
   const uint shared_mem_stride = gl_WorkGroupSize.x * gl_WorkGroupSize.y * gl_WorkGroupSize.z;
 
-  const u16vec3 gpos = u16vec3(
-    gl_GlobalInvocationID.x % out_limits_scaled.x,
-    (gl_GlobalInvocationID.x / out_limits_scaled.x) % out_limits_scaled.y,
-    gl_GlobalInvocationID.x / (out_limits_scaled.x * out_limits_scaled.y));
+  const u16vec3 gpos = idx_to_u16pos_x_wise(gl_GlobalInvocationID.x, out_limits_scaled.x, out_limits_scaled.y);
 
   // Output position for TILE_SIZE = 2
   // +--------+--------+
@@ -97,7 +94,6 @@ void main() {
     const vec4 ktex_1 = texelFetchOffset(t_kernel, u16vec2(z, gpos.z), 0, u16vec2(1, 0));
     const vec4 ktex_2 = texelFetchOffset(t_kernel, u16vec2(z, gpos.z), 0, u16vec2(2, 0));
     const vec4 ktex_3 = texelFetchOffset(t_kernel, u16vec2(z, gpos.z), 0, u16vec2(3, 0));
-
 
 #pragma unroll
     for (int i = 0; i < TILE_SIZE * TILE_SIZE; ++i) {
