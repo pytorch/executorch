@@ -58,10 +58,7 @@ install_pytorch_and_domains() {
   git checkout "${TORCH_VERSION}"
   git submodule update --init --recursive
 
-  export USE_PYTORCH_METAL_EXPORT=1
-  export USE_COREML_DELEGATE=1
-  export USE_DISTRIBUTED=0
-
+  export _GLIBCXX_USE_CXX11_ABI=1
   # Then build and install PyTorch
   python setup.py bdist_wheel
   pip install "$(echo dist/*.whl)"
