@@ -131,6 +131,7 @@ if [[ -z "${GITHUB_RUNNER:-}" ]]; then
 fi
 
 print_cmake_info
+install_pytorch_and_domains
 # We build PyTorch from source here instead of using nightly. This allows CI to test against
 # the pinned commit from PyTorch
 install_executorch "use-pt-pinned-commit"
