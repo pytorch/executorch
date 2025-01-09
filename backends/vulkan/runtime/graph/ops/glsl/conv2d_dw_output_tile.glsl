@@ -20,7 +20,7 @@
 
 #define op(X, A, B) ${OPERATOR}
 
-#include "indexing_utils.h"
+#include "indexing_utils_u16.h"
 
 layout(std430) buffer;
 
