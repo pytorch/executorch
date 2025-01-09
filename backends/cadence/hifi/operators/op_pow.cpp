@@ -120,9 +120,16 @@ Tensor& pow_Tensor_Tensor_out(
   if (optimized) {
     if (broadcast) {
       WORD32* __restrict__ ptr1 =
-          (WORD32* __restrict__)malloc(num_elm * sizeof(WORD32));
+          (WORD32* __restrict__)kernels::allocate_temp_memory(
+              ctx, num_elm * sizeof(int));
+
+      ET_KERNEL_CHECK(ctx, ptr1 != nullptr, MemoryAllocationFailed, out);
+
       WORD32* __restrict__ ptr2 =
-          (WORD32* __restrict__)malloc(num_elm * sizeof(WORD32));
+          (WORD32* __restrict__)kernels::allocate_temp_memory(
+              ctx, num_elm * sizeof(int));
+
+      ET_KERNEL_CHECK(ctx, ptr2 != nullptr, MemoryAllocationFailed, out);
 
       WORD32* __restrict__ pin1 =
           (WORD32* __restrict__)a.const_data_ptr<float>();
@@ -151,11 +158,12 @@ Tensor& pow_Tensor_Tensor_out(
 
       xa_nn_elm_pow_f32(p_out, p_inp1, p_inp2, num_elm);
 
-      free(ptr1);
-      free(ptr2);
     } else if (a_is_broadcasted && (!b_is_broadcasted)) {
       FLOAT32* __restrict__ ptr1 =
-          (FLOAT32* __restrict__)malloc((num_elm + 2) * sizeof(WORD32));
+          (FLOAT32* __restrict__)kernels::allocate_temp_memory(
+              ctx, num_elm * sizeof(int));
+
+      ET_KERNEL_CHECK(ctx, ptr1 != nullptr, MemoryAllocationFailed, out);
 
       FLOAT32* __restrict__ pin1 =
           (FLOAT32* __restrict__)a.const_data_ptr<float>();
@@ -179,10 +187,12 @@ Tensor& pow_Tensor_Tensor_out(
 
       xa_nn_elm_pow_f32(p_out, p_inp1, p_inp2, num_elm);
 
-      free(ptr1);
     } else if (b_is_broadcasted && (!a_is_broadcasted)) {
       WORD32* __restrict__ ptr1 =
-          (WORD32* __restrict__)malloc(num_elm * sizeof(WORD32));
+          (WORD32* __restrict__)kernels::allocate_temp_memory(
+              ctx, num_elm * sizeof(int));
+
+      ET_KERNEL_CHECK(ctx, ptr1 != nullptr, MemoryAllocationFailed, out);
 
       WORD32* __restrict__ pin1 =
           (WORD32* __restrict__)b.const_data_ptr<float>();
@@ -205,7 +215,6 @@ Tensor& pow_Tensor_Tensor_out(
 
       xa_nn_elm_pow_f32(p_out, p_inp1, p_inp2, num_elm);
 
-      free(ptr1);
     } else {
       FLOAT32* __restrict__ p_out =
           (FLOAT32* __restrict__)out.mutable_data_ptr<float>();

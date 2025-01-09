@@ -111,8 +111,13 @@ Tensor& where_out(
 
       if (con_shape[0] != out_shape[0] || con_shape[1] != out_shape[1] ||
           con_shape[2] != out_shape[2] || con_shape[3] != out_shape[3]) {
-        void* p_scratch =
-            malloc(out_shape[0] * out_shape[1] * out_shape[2] * out_shape[3]);
+        void* p_scratch = (void*)kernels::allocate_temp_memory(
+            ctx,
+            (out_shape[0] * out_shape[1] * out_shape[2] * out_shape[3]) *
+                sizeof(int));
+
+        ET_KERNEL_CHECK(ctx, p_scratch != nullptr, MemoryAllocationFailed, out);
+
         const unsigned char* p_brd_cond = (const unsigned char*)p_scratch;
         xa_nn_broadcast_8_8(
             (WORD8* __restrict__)p_brd_cond,
@@ -133,7 +138,7 @@ Tensor& where_out(
             inp2_shape,
             p_brd_cond,
             con_shape);
-        free(p_scratch);
+
       } else {
         xa_nn_elm_where_broadcast_4D_f32xf32_f32(
             out_data,
