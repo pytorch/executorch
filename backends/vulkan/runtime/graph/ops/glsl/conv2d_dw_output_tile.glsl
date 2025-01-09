@@ -34,8 +34,6 @@ ${layout_declare_ubo(8, "float", "out_min", "float", "out_max")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
-
 /*
  * Computes a depthwise convolution. Each shader invocation calculates the
  * output at a single output location.
