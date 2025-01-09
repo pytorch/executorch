@@ -223,6 +223,11 @@ ivec3 lpos_to_pos(const ivec3 lpos, const ivec4 axis_map) {
   return pos;
 }
 
+ivec3 idx_to_ipos_x_wise(uint idx, int size_x, int size_y) {
+  const uint div_by_x = idx / size_x;
+  return ivec3(idx % size_x, div_by_x % size_y, div_by_x / size_y);
+}
+
 #ifdef USING_BUFFER
 #define load_texel(buf, idx) buf[idx]
 #elif defined(USING_TEXTURE2D)
